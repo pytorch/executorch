@@ -17,7 +17,7 @@ The ExecuTorch Developer Tools support the following features:
 - **Debugging** - Intermediate outputs and output quality analysis
 - **Numerical Discrepancy Detection** - Operator-level numerical discrepancy detection between AOT and runtime intermediate outputs to streamline numerical debugging and validation.
 - **Memory Allocation Insights** - Visualize how memory is planned, where all the live tensors are at any point in time
-- **Visualization** - Coming soon
+- **Visualization** - Visualize the model as a computational graph (see more [here](visualize.md))
 
 ## Fundamental components of the Developer Tools
 

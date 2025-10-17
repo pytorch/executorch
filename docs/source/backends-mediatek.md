@@ -38,6 +38,17 @@ cd executorch
 ```
 The exported `.pte` file is saved in a directory named after the model.
 
+### Quantizer API
+
+Quantizer can be configured with different precision. We currently support A16W16, A16W8, A16W4, A8W8 and A8W4
+
+The example code will be
+```python
+precision = "A16W16"
+quantizer = NeuropilotQuantizer()
+quantizer.setup_precision(getattr(Precision, precision))
+```
+
 ### Partitioner API
 
 A list of CompileSpec is suppported by MediaTek backend:

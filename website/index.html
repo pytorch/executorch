@@ -3,7 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ExecuTorch - PyTorch's On-Device AI Framework</title>
+    <title>ExecuTorch - On-Device AI Inference Powered by PyTorch</title>
+    <meta name="description" content="ExecuTorch is PyTorch's unified solution for deploying AI models on-device—from smartphones to microcontrollers. Deploy LLMs, vision, speech, and multimodal models with the same PyTorch APIs.">
+
+    <!-- Open Graph / Social Media -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="ExecuTorch - On-Device AI Inference Powered by PyTorch">
+    <meta property="og:description" content="PyTorch's unified solution for on-device AI. Deploy LLMs, vision, and speech models from smartphones to microcontrollers with 50KB runtime and 12+ hardware backends.">
+    <meta property="og:image" content="https://raw.githubusercontent.com/dbort/executorch-logos/main/img/executorch-chip-logo.svg">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="ExecuTorch - On-Device AI Inference Powered by PyTorch">
+    <meta name="twitter:description" content="PyTorch's unified solution for on-device AI. Deploy LLMs, vision, and speech models from smartphones to microcontrollers.">
+
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -155,6 +166,21 @@
             text-align: center;
         }
 
+        .stat-card-clickable {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card-clickable:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(222, 52, 18, 0.2);
+            border-color: var(--primary);
+        }
+
+        .stat-card-clickable:hover .stat-number {
+            color: #c62e10;
+        }
+
         .stat-number {
             font-size: 2.5rem;
             font-weight: 700;
@@ -231,16 +257,19 @@
             font-weight: 600;
             margin: 0.5rem;
             transition: all 0.3s;
+            font-size: 1rem;
         }
 
         .btn-primary {
-            background: var(--primary);
+            background: #c62e10;
             color: white;
+            box-shadow: 0 2px 8px rgba(198, 46, 16, 0.25);
         }
 
         .btn-primary:hover {
+            background: #a82609;
             transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(222, 52, 18, 0.3);
+            box-shadow: 0 10px 30px rgba(198, 46, 16, 0.4);
         }
 
         .btn-secondary {
@@ -513,8 +542,16 @@
 
         .cta .btn {
             background: white;
-            color: var(--text-dark);
+            color: #1e293b;
             border: 2px solid white;
+            font-weight: 700;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .cta .btn:hover {
+            background: #f1f5f9;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
         }
 
         /* Footer */
@@ -666,17 +703,17 @@
         .backend-card.more-backends {
             background: linear-gradient(135deg, var(--bg-gray) 0%, #e5e7eb 100%);
             border-style: dashed;
-            cursor: default;
+            cursor: pointer;
         }
 
         .backend-card.more-backends:hover {
-            border-color: var(--text-gray);
-            box-shadow: none;
-            transform: none;
+            border-color: var(--primary);
+            box-shadow: 0 4px 20px rgba(222, 52, 18, 0.1);
+            transform: translateY(-2px);
         }
 
         .backend-card.more-backends::after {
-            content: "See full list in Hardware Coverage section";
+            content: "View all backends documentation";
         }
 
         .backend-card.more-backends .backend-card-title {
@@ -923,7 +960,6 @@
                     <li><a href="#challenges">Challenges</a></li>
                     <li><a href="#features">Solution</a></li>
                     <li><a href="#performance">Performance</a></li>
-                    <li><a href="#architecture">Architecture</a></li>
                     <li><a href="#partners">Partners</a></li>
                     <li><a href="https://github.com/pytorch/executorch" target="_blank">GitHub</a></li>
                 </ul>
@@ -941,14 +977,18 @@
             <p class="hero-subtitle">Deploy PyTorch models directly to edge devices. Text, vision, and audio AI with privacy-preserving, real-time inference—no cloud required.</p>
 
             <div class="stats">
-                <div class="stat-card">
-                    <div class="stat-number">12+</div>
-                    <div class="stat-label">hardware backends supported</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">Billions</div>
-                    <div class="stat-label">users in production at Meta</div>
-                </div>
+                <a href="#performance" style="text-decoration: none;">
+                    <div class="stat-card stat-card-clickable">
+                        <div class="stat-number">12+</div>
+                        <div class="stat-label">hardware backends supported</div>
+                    </div>
+                </a>
+                <a href="https://engineering.fb.com/2025/07/28/android/executorch-on-device-ml-meta-family-of-apps/" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">
+                    <div class="stat-card stat-card-clickable">
+                        <div class="stat-number">Billions</div>
+                        <div class="stat-label">users in production at Meta</div>
+                    </div>
+                </a>
                 <div class="stat-card">
                     <div class="stat-number">50KB</div>
                     <div class="stat-label">base runtime footprint</div>
@@ -956,7 +996,7 @@
             </div>
 
             <div>
-                <a href="https://pytorch.org/executorch/stable/getting-started.html" class="btn btn-primary">Get Started</a>
+                <a href="https://docs.pytorch.org/executorch/main/getting-started.html" class="btn btn-primary">Get Started</a>
                 <a href="https://github.com/pytorch/executorch" class="btn btn-secondary">View on GitHub</a>
             </div>
         </div>
@@ -1161,27 +1201,26 @@
     </section>
 
     <!-- Code Example -->
-    <section class="alt">
+    <section class="alt" style="padding: 3rem 0;">
         <div class="code-section-container">
-            <h2 class="section-title">Simple as <span class="highlight">1-2-3</span></h2>
-            <p class="section-subtitle">Export, optimize, and run PyTorch models on edge devices with just a few lines of code</p>
+            <h2 class="section-title" style="font-size: 2.5rem; margin-bottom: 0.5rem;">Simple as <span class="highlight">1-2-3</span></h2>
+            <p class="section-subtitle" style="margin-bottom: 2rem;">Export, optimize, and run PyTorch models on edge devices</p>
 
-            <div style="background: #1e293b; border-radius: 16px; padding: 2rem; margin-top: 3rem;">
-                <div style="display: grid; grid-template-columns: 1fr; gap: 2rem;">
+            <div style="background: #1e293b; border-radius: 12px; padding: 1.5rem; margin-top: 1.5rem;">
+                <div style="display: flex; flex-direction: column; gap: 1.5rem;">
                     <!-- Step 1: Export -->
                     <div>
                         <h3 style="color: #06d6a0; font-size: 1.2rem; margin-bottom: 1rem; font-weight: 600;">
                             1. Export Your PyTorch Model
                         </h3>
                         <pre style="background: #0f172a; border-radius: 8px; padding: 1.5rem; overflow-x: auto; margin: 0;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace; font-size: 0.9rem;"><span style="color: #c084fc;">import</span> torch
-<span style="color: #c084fc;">from</span> torch.export <span style="color: #c084fc;">import</span> export
 
 <span style="color: #64748b;"># Your existing PyTorch model</span>
 model = MyModel().eval()
 example_inputs = (torch.randn(<span style="color: #06d6a0;">1</span>, <span style="color: #06d6a0;">3</span>, <span style="color: #06d6a0;">224</span>, <span style="color: #06d6a0;">224</span>),)
 
-<span style="color: #64748b;"># Creates semantically equivalent graph representation</span>
-exported_program = export(model, example_inputs)</code></pre>
+<span style="color: #64748b;"># Export to create semantically equivalent graph</span>
+exported_program = torch.export.export(model, example_inputs)</code></pre>
                     </div>
 
                     <!-- Step 2: Optimize -->
@@ -1208,53 +1247,61 @@ exported_program = export(model, example_inputs)</code></pre>
                                     <div class="backend-card-title">Qualcomm Chips</div>
                                     <div class="backend-card-desc">Hexagon NPU support</div>
                                 </div>
-                                <div class="backend-card more-backends">
-                                    <div class="backend-card-title">+ 9 More</div>
-                                    <div class="backend-card-desc">Vulkan, MediaTek, Samsung...</div>
-                                </div>
+                                <a href="https://docs.pytorch.org/executorch/main/backends-overview.html" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">
+                                    <div class="backend-card more-backends">
+                                        <div class="backend-card-title">+ 9 More</div>
+                                        <div class="backend-card-desc">Vulkan, MediaTek, Samsung...</div>
+                                    </div>
+                                </a>
                             </div>
 
                             <div id="cpu" class="backend-content active">
                                 <div style="background: #0f172a; border-radius: 8px; padding: 1.5rem; border: 1px solid #334155;">
                                     <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #c084fc;">from</span> executorch.exir <span style="color: #c084fc;">import</span> to_edge_transform_and_lower
-<span style="color: #c084fc;">from</span> executorch.backends.xnnpack <span style="color: #c084fc;">import</span> XnnpackPartitioner
+<span style="color: #c084fc;">from</span> executorch.backends.xnnpack.partition.xnnpack_partitioner <span style="color: #c084fc;">import</span> XnnpackPartitioner
 
 program = to_edge_transform_and_lower(
     exported_program,
     partitioner=[XnnpackPartitioner()]
-).to_executorch()</code></pre>
+).to_executorch()
+
+<span style="color: #64748b;"># Save to .pte file</span>
+<span style="color: #c084fc;">with</span> <span style="color: #38bdf8;">open</span>(<span style="color: #fbbf24;">"model.pte"</span>, <span style="color: #fbbf24;">"wb"</span>) <span style="color: #c084fc;">as</span> f:
+    f.write(program.buffer)</code></pre>
                                 </div>
                             </div>
 
                             <div id="apple" class="backend-content">
                                 <div style="background: #0f172a; border-radius: 8px; padding: 1.5rem; border: 1px solid #334155;">
                                     <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #c084fc;">from</span> executorch.exir <span style="color: #c084fc;">import</span> to_edge_transform_and_lower
-<span style="color: #c084fc;">from</span> executorch.backends.apple <span style="color: #c084fc;">import</span> CoreMLPartitioner
+<span style="color: #c084fc;">from</span> executorch.backends.apple.coreml.partition.coreml_partitioner <span style="color: #c084fc;">import</span> CoreMLPartitioner
 
 program = to_edge_transform_and_lower(
     exported_program,
     partitioner=[CoreMLPartitioner()]
-).to_executorch()</code></pre>
+).to_executorch()
+
+<span style="color: #64748b;"># Save to .pte file</span>
+<span style="color: #c084fc;">with</span> <span style="color: #38bdf8;">open</span>(<span style="color: #fbbf24;">"model.pte"</span>, <span style="color: #fbbf24;">"wb"</span>) <span style="color: #c084fc;">as</span> f:
+    f.write(program.buffer)</code></pre>
                                 </div>
                             </div>
 
                             <div id="qualcomm" class="backend-content">
                                 <div style="background: #0f172a; border-radius: 8px; padding: 1.5rem; border: 1px solid #334155;">
                                     <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #c084fc;">from</span> executorch.exir <span style="color: #c084fc;">import</span> to_edge_transform_and_lower
-<span style="color: #c084fc;">from</span> executorch.backends.qualcomm <span style="color: #c084fc;">import</span> QnnPartitioner
+<span style="color: #c084fc;">from</span> executorch.backends.qualcomm.partition.qnn_partitioner <span style="color: #c084fc;">import</span> QnnPartitioner
 
 program = to_edge_transform_and_lower(
     exported_program,
     partitioner=[QnnPartitioner()]
-).to_executorch()</code></pre>
-                                </div>
-                            </div>
-                        </div>
+).to_executorch()
 
-                        <div style="background: #0f172a; border-radius: 8px; padding: 1.5rem; border: 1px solid #334155; margin-top: 1rem;">
-                            <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #64748b;"># Save to .pte file</span>
+<span style="color: #64748b;"># Save to .pte file</span>
 <span style="color: #c084fc;">with</span> <span style="color: #38bdf8;">open</span>(<span style="color: #fbbf24;">"model.pte"</span>, <span style="color: #fbbf24;">"wb"</span>) <span style="color: #c084fc;">as</span> f:
     f.write(program.buffer)</code></pre>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -1285,56 +1332,56 @@ program = to_edge_transform_and_lower(
 
                             <div id="cpp" class="platform-content active">
                                 <div style="background: #0f172a; border-radius: 8px; padding: 1.5rem; border: 1px solid #334155;">
-                                    <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #64748b;">// Load and execute model</span>
-<span style="color: #38bdf8;">auto</span> module = Module(<span style="color: #fbbf24;">"model.pte"</span>);
-<span style="color: #38bdf8;">auto</span> method = module.load_method(<span style="color: #fbbf24;">"forward"</span>);
-<span style="color: #38bdf8;">auto</span> outputs = method.execute({input_tensor});
-<span style="color: #64748b;">// Access result tensors</span>
-<span style="color: #38bdf8;">auto</span> result = outputs[<span style="color: #06d6a0;">0</span>].toTensor();</code></pre>
+                                    <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #c084fc;">#include</span> <span style="color: #fbbf24;">&lt;executorch/extension/module/module.h&gt;</span>
+<span style="color: #c084fc;">#include</span> <span style="color: #fbbf24;">&lt;executorch/extension/tensor/tensor.h&gt;</span>
+
+Module module(<span style="color: #fbbf24;">"model.pte"</span>);
+<span style="color: #38bdf8;">auto</span> tensor = make_tensor_ptr({<span style="color: #06d6a0;">2</span>, <span style="color: #06d6a0;">2</span>}, {<span style="color: #06d6a0;">1.0f</span>, <span style="color: #06d6a0;">2.0f</span>, <span style="color: #06d6a0;">3.0f</span>, <span style="color: #06d6a0;">4.0f</span>});
+<span style="color: #38bdf8;">auto</span> outputs = module.forward(tensor);</code></pre>
                                 </div>
                             </div>
 
                             <div id="swift" class="platform-content">
                                 <div style="background: #0f172a; border-radius: 8px; padding: 1.5rem; border: 1px solid #334155;">
-                                    <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #64748b;">// Initialize ExecuTorch module</span>
-<span style="color: #c084fc;">let</span> module = <span style="color: #38bdf8;">try</span> ETModule(path: <span style="color: #fbbf24;">"model.pte"</span>)
-<span style="color: #64748b;">// Run inference with tensors</span>
-<span style="color: #c084fc;">let</span> outputs = <span style="color: #38bdf8;">try</span> module.forward([inputTensor])
-<span style="color: #64748b;">// Process results</span>
-<span style="color: #c084fc;">let</span> result = outputs[<span style="color: #06d6a0;">0</span>]</code></pre>
+                                    <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #c084fc;">import</span> ExecuTorch
+
+<span style="color: #c084fc;">let</span> module = Module(filePath: <span style="color: #fbbf24;">"model.pte"</span>)
+<span style="color: #c084fc;">let</span> input = Tensor&lt;Float&gt;([<span style="color: #06d6a0;">1.0</span>, <span style="color: #06d6a0;">2.0</span>, <span style="color: #06d6a0;">3.0</span>, <span style="color: #06d6a0;">4.0</span>], shape: [<span style="color: #06d6a0;">2</span>, <span style="color: #06d6a0;">2</span>])
+<span style="color: #c084fc;">let</span> outputs = <span style="color: #38bdf8;">try</span> module.forward(input)</code></pre>
                                 </div>
                             </div>
 
                             <div id="kotlin" class="platform-content">
                                 <div style="background: #0f172a; border-radius: 8px; padding: 1.5rem; border: 1px solid #334155;">
-                                    <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #64748b;">// Load model from assets</span>
-<span style="color: #c084fc;">val</span> module = Module.load(assetFilePath(<span style="color: #fbbf24;">"model.pte"</span>))
-<span style="color: #64748b;">// Execute with tensor input</span>
-<span style="color: #c084fc;">val</span> outputs = module.forward(inputTensor)
-<span style="color: #64748b;">// Extract prediction results</span>
-<span style="color: #c084fc;">val</span> prediction = outputs[<span style="color: #06d6a0;">0</span>].dataAsFloatArray</code></pre>
+                                    <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #c084fc;">val</span> module = Module.load(<span style="color: #fbbf24;">"model.pte"</span>)
+<span style="color: #c084fc;">val</span> inputTensor = Tensor.fromBlob(floatArrayOf(<span style="color: #06d6a0;">1.0f</span>, <span style="color: #06d6a0;">2.0f</span>, <span style="color: #06d6a0;">3.0f</span>, <span style="color: #06d6a0;">4.0f</span>), longArrayOf(<span style="color: #06d6a0;">2</span>, <span style="color: #06d6a0;">2</span>))
+<span style="color: #c084fc;">val</span> outputs = module.forward(EValue.from(inputTensor))</code></pre>
                                 </div>
                             </div>
 
                             <div id="objc" class="platform-content">
                                 <div style="background: #0f172a; border-radius: 8px; padding: 1.5rem; border: 1px solid #334155;">
-                                    <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #64748b;">// Initialize ExecuTorch module</span>
-ETModule *module = [[ETModule alloc] initWithPath:<span style="color: #fbbf24;">@"model.pte"</span> error:<span style="color: #38bdf8;">nil</span>];
-<span style="color: #64748b;">// Run inference with tensors</span>
-NSArray *outputs = [module forwardWithInputs:<span style="color: #fbbf24;">@[inputTensor]</span> error:<span style="color: #38bdf8;">nil</span>];
-<span style="color: #64748b;">// Process results</span>
-ETTensor *result = outputs[<span style="color: #06d6a0;">0</span>];</code></pre>
+                                    <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #c084fc;">#import</span> <span style="color: #fbbf24;">&lt;ExecuTorch/ExecuTorch.h&gt;</span>
+
+NSString *modelPath = [[NSBundle mainBundle] pathForResource:<span style="color: #fbbf24;">@"model"</span> ofType:<span style="color: #fbbf24;">@"pte"</span>];
+ExecuTorchModule *module = [[ExecuTorchModule alloc] initWithFilePath:modelPath];
+
+<span style="color: #38bdf8;">float</span> data[] = {<span style="color: #06d6a0;">1.0f</span>, <span style="color: #06d6a0;">2.0f</span>, <span style="color: #06d6a0;">3.0f</span>, <span style="color: #06d6a0;">4.0f</span>};
+ExecuTorchTensor *input = [[ExecuTorchTensor alloc] initWithBytes:data
+                                                            shape:<span style="color: #fbbf24;">@[@2, @2]</span>
+                                                         dataType:ExecuTorchDataTypeFloat];
+NSArray&lt;ExecuTorchValue *&gt; *outputs = [module forwardWithTensor:input error:<span style="color: #38bdf8;">nil</span>];</code></pre>
                                 </div>
                             </div>
 
                             <div id="wasm" class="platform-content">
                                 <div style="background: #0f172a; border-radius: 8px; padding: 1.5rem; border: 1px solid #334155;">
-                                    <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #64748b;">// Load model from ArrayBuffer</span>
-<span style="color: #c084fc;">const</span> module = et.Module.load(buffer);
-<span style="color: #64748b;">// Create input tensor from data</span>
-<span style="color: #c084fc;">const</span> inputTensor = et.Tensor.fromIter(tensorData, shape);
+                                    <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #64748b;">// Load model from file or buffer</span>
+<span style="color: #c084fc;">const</span> module = et.Module.load(<span style="color: #fbbf24;">"model.pte"</span>);
+<span style="color: #64748b;">// Create input tensor from array</span>
+<span style="color: #c084fc;">const</span> input = et.Tensor.fromArray([<span style="color: #06d6a0;">2</span>, <span style="color: #06d6a0;">2</span>], [<span style="color: #06d6a0;">1.0</span>, <span style="color: #06d6a0;">2.0</span>, <span style="color: #06d6a0;">3.0</span>, <span style="color: #06d6a0;">4.0</span>]);
 <span style="color: #64748b;">// Run inference</span>
-<span style="color: #c084fc;">const</span> output = module.forward(inputTensor);</code></pre>
+<span style="color: #c084fc;">const</span> outputs = module.forward([input]);</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -1348,10 +1395,12 @@ ETTensor *result = outputs[<span style="color: #06d6a0;">0</span>];</code></pre>
                     <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 1rem; font-style: italic;">
                         Need advanced features? ExecuTorch supports memory planning, quantization, profiling, and custom compiler passes.
                     </p>
-                    <a href="https://pytorch.org/executorch/stable/getting-started.html"
-                       style="display: inline-block; padding: 0.75rem 1.5rem; background: #06d6a0; color: #0f172a;
+                    <a href="https://docs.pytorch.org/executorch/main/getting-started.html"
+                       style="display: inline-block; padding: 0.75rem 1.5rem; background: #059669; color: #ffffff;
                               border-radius: 8px; text-decoration: none; font-weight: 600;
-                              transition: all 0.3s;">
+                              transition: all 0.3s; box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);"
+                       onmouseover="this.style.background='#047857'; this.style.boxShadow='0 4px 16px rgba(5, 150, 105, 0.4)'"
+                       onmouseout="this.style.background='#059669'; this.style.boxShadow='0 2px 8px rgba(5, 150, 105, 0.3)'">
                         Try the Full Tutorial →
                     </a>
                 </div>
@@ -1360,13 +1409,13 @@ ETTensor *result = outputs[<span style="color: #06d6a0;">0</span>];</code></pre>
     </section>
 
     <!-- Multimodal API -->
-    <section>
+    <section style="padding: 3rem 0;">
         <div class="code-section-container">
-            <h2 class="section-title">High-Level <span class="highlight">Multimodal APIs</span></h2>
-            <p class="section-subtitle">Run complex multimodal LLMs with simplified C++ interfaces</p>
+            <h2 class="section-title" style="font-size: 2.5rem; margin-bottom: 0.5rem;">High-Level <span class="highlight">Multimodal APIs</span></h2>
+            <p class="section-subtitle" style="margin-bottom: 2rem;">Run complex multimodal LLMs with simplified C++ interfaces</p>
 
-            <div style="background: #1e293b; border-radius: 16px; padding: 2rem; margin-top: 3rem;">
-                <div style="display: grid; grid-template-columns: 1fr; gap: 2rem;">
+            <div style="background: #1e293b; border-radius: 12px; padding: 1.5rem; margin-top: 1.5rem;">
+                <div style="display: grid; grid-template-columns: 1fr; gap: 1.5rem;">
                     <div>
                         <h3 style="color: #06d6a0; font-size: 1.2rem; margin-bottom: 1rem; font-weight: 600;">
                             Multimodal Runner - Text + Vision + Audio in One API
@@ -1394,29 +1443,26 @@ ETTensor *result = outputs[<span style="color: #06d6a0;">0</span>];</code></pre>
 
                             <div id="cpp-multimodal" class="multimodal-content active">
                                 <div style="background: #0f172a; border-radius: 8px; padding: 1.5rem; border: 1px solid #334155;">
-                                    <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #c084fc;">#include</span> <span style="color: #fbbf24;">"executorch/extension/llm/runner/multimodal_runner.h"</span>
+                                    <pre style="background: transparent; border: none; padding: 0; margin: 0; font-size: 0.85rem;"><code style="color: #e2e8f0; font-family: 'Courier New', monospace;"><span style="color: #c084fc;">#include</span> <span style="color: #fbbf24;">&lt;executorch/extension/llm/runner/multimodal_runner.h&gt;</span>
 
-<span style="color: #64748b;">// Initialize multimodal model (e.g., Voxtral, LLaVA)</span>
-<span style="color: #c084fc;">auto</span> runner = MultimodalRunner::create(
-    <span style="color: #fbbf24;">"model.pte"</span>,     <span style="color: #64748b;">// Text model</span>
-    <span style="color: #fbbf24;">"vision.pte"</span>,   <span style="color: #64748b;">// Vision encoder</span>
-    <span style="color: #fbbf24;">"audio.pte"</span>,    <span style="color: #64748b;">// Audio encoder</span>
-    tokenizer_path,
-    temperature
+<span style="color: #64748b;">// Create multimodal runner (LLaVA, Voxtral, etc.)</span>
+<span style="color: #c084fc;">auto</span> tokenizer = load_tokenizer(<span style="color: #fbbf24;">"tokenizer.model"</span>);
+<span style="color: #c084fc;">auto</span> runner = create_multimodal_runner(
+    <span style="color: #fbbf24;">"llava.pte"</span>, std::move(tokenizer)
 );
 
-<span style="color: #64748b;">// Run inference with audio + image + text</span>
-<span style="color: #c084fc;">auto</span> result = runner->generate_multimodal(
-    <span style="color: #fbbf24;">"Describe what you hear and see"</span>,
-    audio_tensor,   <span style="color: #64748b;">// Audio input</span>
-    image_tensor,   <span style="color: #64748b;">// Image input</span>
-    max_tokens
-);
+<span style="color: #64748b;">// Build multimodal inputs (text + image)</span>
+std::vector<MultimodalInput> inputs;
+inputs.emplace_back(make_text_input(<span style="color: #fbbf24;">"Describe this image:"</span>));
+inputs.emplace_back(make_image_input(std::move(image)));
 
-<span style="color: #64748b;">// Stream response tokens</span>
-<span style="color: #c084fc;">for</span> (<span style="color: #c084fc;">const</span> <span style="color: #c084fc;">auto</span>& token : result.tokens) {
-    std::cout << token << std::flush;
-}</code></pre>
+GenerationConfig config;
+config.max_new_tokens = <span style="color: #06d6a0;">100</span>;
+
+<span style="color: #64748b;">// Generate with streaming callback</span>
+runner->generate(inputs, config,
+    [](std::string token) { std::cout << token; }
+);</code></pre>
                                 </div>
                             </div>
 
@@ -1493,14 +1539,16 @@ result.tokens.forEach { token ->
                     </div>
                 </div>
 
-                <div style="text-align: center; margin-top: 2rem;">
+                <div style="text-align: center; margin-top: 1.5rem;">
                     <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 1rem; font-style: italic;">
                         High-level APIs abstract away model complexity - just load, prompt, and get results
                     </p>
-                    <a href="https://pytorch.org/executorch/main/llm/getting-started.html"
-                       style="display: inline-block; padding: 0.75rem 1.5rem; background: #06d6a0; color: #0f172a;
+                    <a href="https://docs.pytorch.org/executorch/main/llm/getting-started.html"
+                       style="display: inline-block; padding: 0.75rem 1.5rem; background: #059669; color: #ffffff;
                               border-radius: 8px; text-decoration: none; font-weight: 600;
-                              transition: all 0.3s;">
+                              transition: all 0.3s; box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);"
+                       onmouseover="this.style.background='#047857'; this.style.boxShadow='0 4px 16px rgba(5, 150, 105, 0.4)'"
+                       onmouseout="this.style.background='#059669'; this.style.boxShadow='0 2px 8px rgba(5, 150, 105, 0.3)'">
                         Explore LLM APIs →
                     </a>
                 </div>
@@ -1538,7 +1586,7 @@ result.tokens.forEach { token ->
     <section id="performance" class="alt">
         <div class="container">
             <h2 class="section-title">Comprehensive Hardware <span class="highlight">Ecosystem</span></h2>
-            <p class="section-subtitle">Hardware acceleration contributed by industry partners via open source</p>
+            <p class="section-subtitle">12+ hardware backends with acceleration contributed by industry partners via open source</p>
 
             <div class="grid">
                 <div class="card">
@@ -1601,6 +1649,12 @@ result.tokens.forEach { token ->
                     <p class="card-text">Digital signal processor optimization</p>
                 </div>
             </div>
+
+            <div style="text-align: center; margin-top: 2rem;">
+                <a href="https://docs.pytorch.org/executorch/main/backends-overview.html" style="color: var(--primary); text-decoration: none; font-size: 1.1rem; font-weight: 600;">
+                    → View detailed backend documentation
+                </a>
+            </div>
         </div>
     </section>
 
@@ -1612,27 +1666,28 @@ result.tokens.forEach { token ->
             <p class="section-subtitle">Production deployments and strategic partnerships accelerating edge AI</p>
 
             <div style="margin-bottom: 3rem;">
-                <h3 style="font-size: 1.5rem; margin-bottom: 1.5rem; color: var(--text-dark);">Adoption</h3>
+                <h3 style="font-size: 1.5rem; margin-bottom: 1.5rem; color: var(--text-dark);">Production Deployments</h3>
                 <ul style="color: var(--text-gray); line-height: 2; list-style: none; padding-left: 0;">
-                    <li><strong class="highlight"><a href="https://engineering.fb.com/2025/07/28/android/executorch-on-device-ml-meta-family-of-apps/" style="color: var(--primary); text-decoration: none;">Meta Family of Apps</a>:</strong> Production deployment across Instagram, Facebook, and WhatsApp</li>
-                    <li><strong class="highlight"><a href="#" style="color: var(--primary); text-decoration: none;">Meta Reality Labs</a>:</strong> Powers Quest 3 VR and Ray-Ban Meta Smart Glasses AI</li>
+                    <li><strong class="highlight"><a href="https://engineering.fb.com/2025/07/28/android/executorch-on-device-ml-meta-family-of-apps/" style="color: var(--primary); text-decoration: none;">Meta Family of Apps</a>:</strong> Production deployment across Instagram, Facebook, and WhatsApp serving billions of users</li>
+                    <li><strong class="highlight">Meta Reality Labs:</strong> Powers Quest 3 VR and Ray-Ban Meta Smart Glasses AI experiences</li>
                 </ul>
             </div>
 
             <div style="margin-bottom: 3rem;">
                 <h3 style="font-size: 1.5rem; margin-bottom: 1.5rem; color: var(--text-dark);">Ecosystem Integration</h3>
                 <ul style="color: var(--text-gray); line-height: 2; list-style: none; padding-left: 0;">
-                    <li><strong class="highlight"><a href="#" style="color: var(--primary); text-decoration: none;">Hugging Face</a>:</strong> Optimum-ExecuTorch for direct transformer model deployment</li>
-                    <li><strong class="highlight"><a href="#" style="color: var(--primary); text-decoration: none;">LiquidAI</a>:</strong> Next-generation Liquid Foundation Models optimized for edge deployment</li>
-                    <li><strong class="highlight"><a href="#" style="color: var(--primary); text-decoration: none;">Software Mansion</a>:</strong> React Native ExecuTorch bringing edge AI to mobile apps</li>
+                    <li><strong class="highlight"><a href="https://github.com/huggingface/optimum-executorch" style="color: var(--primary); text-decoration: none;">Hugging Face</a>:</strong> Optimum-ExecuTorch for direct transformer model deployment</li>
+                    <li><strong class="highlight">LiquidAI:</strong> Next-generation Liquid Foundation Models optimized for edge deployment</li>
+                    <li><strong class="highlight">Software Mansion:</strong> React Native ExecuTorch bringing edge AI to mobile apps</li>
                 </ul>
             </div>
 
             <div style="margin-bottom: 3rem;">
-                <h3 style="font-size: 1.5rem; margin-bottom: 1.5rem; color: var(--text-dark);">Demos</h3>
+                <h3 style="font-size: 1.5rem; margin-bottom: 1.5rem; color: var(--text-dark);">Examples & Models</h3>
                 <ul style="color: var(--text-gray); line-height: 2; list-style: none; padding-left: 0;">
-                    <li><strong class="highlight"><a href="https://github.com/pytorch/executorch/blob/main/examples/models/llama/README.md" style="color: var(--primary); text-decoration: none;">Llama</a>:</strong> Complete LLM implementation with quantization, KV caching, and mobile deployment</li>
-                    <li><strong class="highlight"><a href="https://github.com/pytorch/executorch/blob/main/examples/models/voxtral/README.md" style="color: var(--primary); text-decoration: none;">Voxtral</a>:</strong> Multimodal AI combining text, vision, and audio processing in one model</li>
+                    <li><strong class="highlight">LLMs:</strong> <a href="https://github.com/pytorch/executorch/blob/main/examples/models/llama/README.md" style="color: var(--primary); text-decoration: none;">Llama 3.2/3.1/3</a>, <a href="https://github.com/pytorch/executorch/blob/main/examples/models/qwen3/README.md" style="color: var(--primary); text-decoration: none;">Qwen 3</a>, <a href="https://github.com/pytorch/executorch/blob/main/examples/models/phi_4_mini/README.md" style="color: var(--primary); text-decoration: none;">Phi-4-mini</a>, <a href="https://github.com/pytorch/executorch/blob/main/examples/models/lfm2/README.md" style="color: var(--primary); text-decoration: none;">LiquidAI LFM2</a></li>
+                    <li><strong class="highlight">Multimodal:</strong> <a href="https://github.com/pytorch/executorch/blob/main/examples/models/llava/README.md" style="color: var(--primary); text-decoration: none;">Llava</a> (vision-language), <a href="https://github.com/pytorch/executorch/blob/main/examples/models/voxtral/README.md" style="color: var(--primary); text-decoration: none;">Voxtral</a> (audio-language)</li>
+                    <li><strong class="highlight">Vision/Speech:</strong> <a href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv2" style="color: var(--primary); text-decoration: none;">MobileNetV2</a>, <a href="https://github.com/meta-pytorch/executorch-examples/tree/main/dl3" style="color: var(--primary); text-decoration: none;">DeepLabV3</a>, <a href="https://github.com/meta-pytorch/executorch-examples/tree/main/whisper/android/WhisperApp" style="color: var(--primary); text-decoration: none;">Whisper</a></li>
                 </ul>
             </div>
 
@@ -1649,7 +1704,7 @@ result.tokens.forEach { token ->
         <div class="container">
             <h2 class="cta-title">Ready to Deploy AI at the Edge?</h2>
             <p class="cta-text">Join thousands of developers using ExecuTorch in production</p>
-            <a href="https://pytorch.org/executorch/stable/getting-started.html" class="btn">Get Started Today</a>
+            <a href="https://docs.pytorch.org/executorch/main/getting-started.html" class="btn">Get Started Today</a>
         </div>
     </section>
 
@@ -1659,7 +1714,7 @@ result.tokens.forEach { token ->
             <p>ExecuTorch is part of the PyTorch ecosystem • Open source under BSD license</p>
             <p style="margin-top: 1rem;">
                 <a href="https://github.com/pytorch/executorch" style="color: var(--text-gray); margin: 0 1rem; text-decoration: none;">GitHub</a>
-                <a href="https://pytorch.org/executorch" style="color: var(--text-gray); margin: 0 1rem; text-decoration: none;">Documentation</a>
+                <a href="https://docs.pytorch.org/executorch/main/index.html" style="color: var(--text-gray); margin: 0 1rem; text-decoration: none;">Documentation</a>
                 <a href="https://pytorch.org/blog" style="color: var(--text-gray); margin: 0 1rem; text-decoration: none;">Blog</a>
             </p>
         </div>
