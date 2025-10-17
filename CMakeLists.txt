@@ -887,22 +887,28 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # Set RPATH to find PyTorch libraries relative to the installation location
   # This goes from executorch/extension/pybindings up to site-packages, then to
-  # torch/lib
-  # if(APPLE)
-  #   get_target_property(existing_rpath portable_lib INSTALL_RPATH)
-  #   string(FIND "${existing_rpath}" "@loader_path" pos)
-  #   if(pos EQUAL -1)
-  #     set_target_properties(
-  #       portable_lib PROPERTIES BUILD_RPATH "@loader_path/../../../torch/lib"
-  #                               INSTALL_RPATH "@loader_path/../../../torch/lib"
-  #     )
-  #   endif()
-  # else()
-  #   set_target_properties(
-  #     portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"
-  #                             INSTALL_RPATH "$ORIGIN/../../../torch/lib"
-  #   )
-  # endif()
+  # torch/lib. Don't do this to APPLE, as it will error out on the following
+  # error:
+  #
+  get_target_property(_rpath portable_lib INSTALL_RPATH)
+  if(NOT _rpath)
+    if(APPLE)
+      set_target_properties(
+        portable_lib PROPERTIES BUILD_RPATH "@loader_path/../../../torch/lib"
+                                INSTALL_RPATH "@loader_path/../../../torch/lib"
+      )
+    else()
+      set_target_properties(
+        portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"
+                                INSTALL_RPATH "$ORIGIN/../../../torch/lib"
+      )
+    endif()
+  else()
+    message(
+      STATUS
+        "Skipping setting RPATH for portable_lib on Apple platforms, found: ${_rpath}"
+    )
+  endif()
 
   install(
     TARGETS portable_lib
