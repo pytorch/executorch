@@ -9,6 +9,7 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
@@ -26,7 +27,7 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import Node
 
 
-class ConvertMmToBmmPass(ExportPass):
+class ConvertMmToBmmPass(ArmPass):
     """
     This pass converts a MM node to a BMM one and turns input and output tensors
     from rank 2 to rank 3. The TOSA specification requires rank 3. The graph is

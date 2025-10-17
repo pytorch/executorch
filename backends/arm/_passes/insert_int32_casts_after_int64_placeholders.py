@@ -11,6 +11,7 @@ import logging
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.decompose_embedding_pass import (
     DecomposeEmbeddingPass,
@@ -23,7 +24,7 @@ from torch._subclasses.fake_tensor import FakeTensor
 logger = logging.getLogger(__name__)
 
 
-class InsertInt32CastsAfterInt64PlaceholdersPass(ExportPass):
+class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
     """
     Insert an int64->int32 cast after each int64 placeholder.
 

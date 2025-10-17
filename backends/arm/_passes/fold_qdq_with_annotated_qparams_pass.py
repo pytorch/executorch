@@ -8,7 +8,7 @@
 
 import copy
 
-from typing import cast, Dict, Set, Tuple, Type
+from typing import cast, Optional, Set, Type
 
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -20,17 +20,12 @@ from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm._passes.remove_noop_pass import RemoveNoopPass
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
-from executorch.exir.pass_base import (
-    Argument,
-    ExportPass,
-    NodeMetadata,
-    PassResult,
-    ProxyValue,
-)
+from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
 
@@ -72,7 +67,7 @@ def get_output_qparams(node: Node) -> dict[int, QuantArgs]:
     return output_qparams
 
 
-class RetraceFoldedDtypesPass(ExportPass):
+class RetraceFoldedDtypesPass(ArmPass):
     """
     FoldAndAnnotateQParamsPass folds dq and q nodes. When the graph is retraced
     some operators are retraced to types that cannot be handled by TOSA. One
@@ -90,24 +85,18 @@ class RetraceFoldedDtypesPass(ExportPass):
         exir_ops.edge.aten.sum.dim_IntList,
     }
 
-    def call_operator(
-        self,
-        op,  # pyre-ignore
-        args: Tuple[Argument, ...],
-        kwargs: Dict[str, Argument],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
+    def call_operator(self, op, args, kwargs, meta):
         if op not in self.targeted_ops:
-            return super().call_operator(op, args, kwargs, meta)
+            return super().call_operator(op, args, kwargs, meta, False)
 
         node_kwargs = kwargs.copy()
         output_qparams = meta["output_qparams"]
         if len(output_qparams) == 0:
-            return super().call_operator(op, args, kwargs, meta)
+            return super().call_operator(op, args, kwargs, meta, False)
 
         output_dtype = output_qparams[0].dtype
         node_kwargs["dtype"] = output_dtype
-        return super().call_operator(op, args, node_kwargs, meta)
+        return super().call_operator(op, args, node_kwargs, meta, True)
 
 
 class FoldAndAnnotateQParamsPass(ArmPass):
@@ -145,6 +134,10 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         InsertTableOpsPass,
         RemoveNoopPass,
     }
+
+    def __init__(self, exported_program: Optional[ExportedProgram] = None) -> None:
+        super().__init__()
+        self.exported_program = exported_program
 
     def fold_and_annotate_arg(
         self, graph_module: GraphModule, node: Node, arg_list: list[Node], i: int
@@ -249,7 +242,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         return PassResult(graph_module, True)
 
 
-class QuantizeOperatorArguments(ExportPass):
+class QuantizeOperatorArguments(ArmPass):
     """
     This pass makes sure that the arguments to clamp.default are quantized correctly.
     More specifically, this pass:

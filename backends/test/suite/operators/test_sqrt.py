@@ -33,7 +33,12 @@ class TestSqrt(OperatorTest):
         # Test with different dtypes
         model = SqrtModel().to(dtype)
         # Use non-negative values only for sqrt
-        self._test_op(model, (torch.rand(10, 10).to(dtype),), flow)
+        self._test_op(
+            model,
+            (torch.rand(10, 10).to(dtype),),
+            flow,
+            generate_random_test_inputs=False,
+        )
 
     def test_sqrt_shapes(self, flow: TestFlow) -> None:
         # Test with different tensor shapes
