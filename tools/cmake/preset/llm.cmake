@@ -31,8 +31,8 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
   # Windows-specific code: disable quantized and custom ops when building with
   # CUDA
   if(EXECUTORCH_BUILD_CUDA)
-    set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED OFF)
-    set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM OFF)
+    set(EXECUTORCH_BUILD_KERNELS_QUANTIZED OFF)
+    set(EXECUTORCH_BUILD_KERNELS_LLM OFF)
   endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
   # Android-specific code here
