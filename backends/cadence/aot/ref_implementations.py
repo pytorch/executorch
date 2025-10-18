@@ -866,6 +866,9 @@ def quantized_w8a32_conv(
     # weight comes in shape [out_ch, in_ch, kernel_dim]
     # output comes in empty with shape [batch, out_ch, in_length - kernel_dim + 1]
     # Dequantize weight using scale
+    assert weight.dtype == torch.int8
+    assert bias.dtype == torch.int8
+
     dequant_weight = weight.float() * w_scale
 
     # Dequantize bias using scale
@@ -876,6 +879,33 @@ def quantized_w8a32_conv(
     # weight: [out_ch, in_ch, kernel_dim]
     # bias: [out_ch]
     output = torch.nn.functional.conv1d(
+        src.float(),
+        dequant_weight,
+        dequant_bias,
+    )
+
+    return output
+
+
+@impl_tracked(m, "quantized_w8a32_linear")
+def quantized_w8a32_linear(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [out_dim, in_dim]
+    # output comes in empty with shape [leading_dims, out_dim]
+    assert weight.dtype == torch.int8
+    assert bias.dtype == torch.int8
+    if len(src.shape) >= 2:
+        assert src.shape[-2] == 1, "Only supporting vector-matrix multiplication"
+    dequant_weight = weight.float() * w_scale
+    dequant_bias = bias.float() * b_scale
+
+    output = torch.nn.functional.linear(
         src.float(),
         dequant_weight,
         dequant_bias,

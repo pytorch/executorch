@@ -53,7 +53,6 @@ def _validate_ref_impl_exists() -> None:
     # 1. be removed
     # 2. have a reference implementation added to ref_implementations.py
     _WARN_ONLY = {
-        "cadence::quantized_w8a32_linear",
         "cadence::quantized_add",  # We should only support per_tensor variant, should remove
         "cadence::_softmax_f32_f32",
         "cadence::requantize",  # We should only support per_tensor variant, should remove
@@ -2702,10 +2701,13 @@ def quantized_w8a32_linear_meta(
     b_scale: float,
 ) -> torch.Tensor:
     # src comes in shape [leading_dims, in_dim]
-    # weight comes in shape [in_dim, out_dim]
+    # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
     src_shape = list(src.shape)
     weight_shape = weight.shape
+    assert (src_shape[-1] % 4) == 0
+    if len(src_shape) >= 2:
+        assert src_shape[-2] == 1
     assert len(weight_shape) == 2
     assert src_shape[-1] == weight_shape[-1]
     src_shape[-1] = weight_shape[0]
