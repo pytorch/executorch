@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>Vulkan Backend &#8212; ExecuTorch main documentation</title>
+    <title>&lt;no title&gt; &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -1019,12 +1019,11 @@ document.write(`
      aria-label="Section Navigation">
   <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
   <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Edge Platforms</span></p>
-<ul class="current nav bd-sidenav">
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="android-section.html">Android</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="android-section.html">Android</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="android-backends.html">Backends</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 has-children"><a class="reference internal" href="android-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="android-xnnpack.html">XNNPACK Backend</a></li>
-<li class="toctree-l3 current active"><a class="current reference internal" href="#">Vulkan Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="android-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="android-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="android-arm-vgf.html">Arm® VGF Backend</a></li>
@@ -1128,7 +1127,7 @@ document.write(`
     
     <li class="breadcrumb-item"><a href="android-backends.html" class="nav-link">Backends</a></li>
     
-    <li class="breadcrumb-item active" aria-current="page">Vulkan Backend</li>
+    <li class="breadcrumb-item active" aria-current="page">&lt;no title&gt;</li>
   </ul>
 </nav>
 </div>
@@ -1188,7 +1187,7 @@ document.write(`
       </div>
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <meta itemprop="name" content="Vulkan Backend">
+        <meta itemprop="name" content="&lt;no title&gt;">
         <meta itemprop="position" content="4">
       </div>
     </div>
@@ -1202,215 +1201,7 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="vulkan-backend">
-<h1>Vulkan Backend<a class="headerlink" href="#vulkan-backend" title="Link to this heading">#</a></h1>
-<p>The ExecuTorch Vulkan delegate is a native GPU delegate for ExecuTorch that is
-built on top of the cross-platform Vulkan GPU API standard. It is primarily
-designed to leverage the GPU to accelerate model inference on Android devices,
-but can be used on any platform that supports an implementation of Vulkan:
-laptops, servers, and edge devices.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The Vulkan delegate is currently under active development, and its components
-are subject to change.</p>
-</div>
-<section id="what-is-vulkan">
-<h2>What is Vulkan?<a class="headerlink" href="#what-is-vulkan" title="Link to this heading">#</a></h2>
-<p>Vulkan is a low-level GPU API specification developed as a successor to OpenGL.
-It is designed to offer developers more explicit control over GPUs compared to
-previous specifications in order to reduce overhead and maximize the
-capabilities of the modern graphics hardware.</p>
-<p>Vulkan has been widely adopted among GPU vendors, and most modern GPUs (both
-desktop and mobile) in the market support Vulkan. Vulkan is also included in
-Android from Android 7.0 onwards.</p>
-<p><strong>Note that Vulkan is a GPU API, not a GPU Math Library</strong>. That is to say it
-provides a way to execute compute and graphics operations on a GPU, but does not
-come with a built-in library of performant compute kernels.</p>
-</section>
-<section id="the-vulkan-compute-library">
-<h2>The Vulkan Compute Library<a class="headerlink" href="#the-vulkan-compute-library" title="Link to this heading">#</a></h2>
-<p>The ExecuTorch Vulkan Delegate is a wrapper around a standalone runtime known as
-the <strong>Vulkan Compute Library</strong>. The aim of the Vulkan Compute Library is to
-provide GPU implementations for PyTorch operators via GLSL compute shaders.</p>
-<p>The Vulkan Compute Library is a fork/iteration of the <a class="reference external" href="https://pytorch.org/tutorials/prototype/vulkan_workflow.html">PyTorch Vulkan Backend</a>.
-The core components of the PyTorch Vulkan backend were forked into ExecuTorch
-and adapted for an AOT graph-mode style of model inference (as opposed to
-PyTorch which adopted an eager execution style of model inference).</p>
-<p>The components of the Vulkan Compute Library are contained in the
-<code class="docutils literal notranslate"><span class="pre">executorch/backends/vulkan/runtime/</span></code> directory. The core components are listed
-and described below:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>runtime/
-├── api/ .................... Wrapper API around Vulkan to manage Vulkan objects
-└── graph/ .................. ComputeGraph class which implements graph mode inference
-    └── ops/ ................ Base directory for operator implementations
-        ├── glsl/ ........... GLSL compute shaders
-        │   ├── *.glsl
-        │   └── conv2d.glsl
-        └── impl/ ........... C++ code to dispatch GPU compute shaders
-            ├── *.cpp
-            └── Conv2d.cpp
-</pre></div>
-</div>
-</section>
-<section id="features">
-<h2>Features<a class="headerlink" href="#features" title="Link to this heading">#</a></h2>
-<p>The Vulkan delegate currently supports the following features:</p>
-<ul class="simple">
-<li><p><strong>Memory Planning</strong></p>
-<ul>
-<li><p>Intermediate tensors whose lifetimes do not overlap will share memory allocations. This reduces the peak memory usage of model inference.</p></li>
-</ul>
-</li>
-<li><p><strong>Capability Based Partitioning</strong>:</p>
-<ul>
-<li><p>A graph can be partially lowered to the Vulkan delegate via a partitioner, which will identify nodes (i.e. operators) that are supported by the Vulkan delegate and lower only supported subgraphs</p></li>
-</ul>
-</li>
-<li><p><strong>Support for upper-bound dynamic shapes</strong>:</p>
-<ul>
-<li><p>Tensors can change shape between inferences as long as its current shape is smaller than the bounds specified during lowering</p></li>
-</ul>
-</li>
-</ul>
-<p>In addition to increasing operator coverage, the following features are
-currently in development:</p>
-<ul class="simple">
-<li><p><strong>Quantization Support</strong></p>
-<ul>
-<li><p>We are currently working on support for 8-bit dynamic quantization, with plans to extend to other quantization schemes in the future.</p></li>
-</ul>
-</li>
-<li><p><strong>Memory Layout Management</strong></p>
-<ul>
-<li><p>Memory layout is an important factor to optimizing performance. We plan to introduce graph passes to introduce memory layout transitions throughout a graph to optimize memory-layout sensitive operators such as Convolution and Matrix Multiplication.</p></li>
-</ul>
-</li>
-<li><p><strong>Selective Build</strong></p>
-<ul>
-<li><p>We plan to make it possible to control build size by selecting which operators/shaders you want to build with</p></li>
-</ul>
-</li>
-</ul>
-</section>
-<section id="end-to-end-example">
-<h2>End to End Example<a class="headerlink" href="#end-to-end-example" title="Link to this heading">#</a></h2>
-<p>To further understand the features of the Vulkan Delegate and how to use it,
-consider the following end to end example with a simple single operator model.</p>
-<section id="compile-and-lower-a-model-to-the-vulkan-delegate">
-<h3>Compile and lower a model to the Vulkan Delegate<a class="headerlink" href="#compile-and-lower-a-model-to-the-vulkan-delegate" title="Link to this heading">#</a></h3>
-<p>Assuming ExecuTorch has been set up and installed, the following script can be
-used to produce a lowered MobileNet V2 model as <code class="docutils literal notranslate"><span class="pre">vulkan_mobilenetv2.pte</span></code>.</p>
-<p>Once ExecuTorch has been set up and installed, the following script can be used
-to generate a simple model and lower it to the Vulkan delegate.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Note: this script is the same as the script from the &quot;Setting up ExecuTorch&quot;</span>
-<span class="c1"># page, with one minor addition to lower to the Vulkan backend.</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.vulkan.partitioner.vulkan_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">VulkanPartitioner</span>
-
-<span class="c1"># Start with a PyTorch model that adds two input tensors (matrices)</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">Add</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-  <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-    <span class="nb">super</span><span class="p">(</span><span class="n">Add</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-
-  <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
-      <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
-
-<span class="c1"># 1. torch.export: Defines the program with the ATen operator set.</span>
-<span class="n">aten_dialect</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">Add</span><span class="p">(),</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">)))</span>
-
-<span class="c1"># 2. to_edge: Make optimizations for Edge devices</span>
-<span class="n">edge_program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">aten_dialect</span><span class="p">)</span>
-<span class="c1"># 2.1 Lower to the Vulkan backend</span>
-<span class="n">edge_program</span> <span class="o">=</span> <span class="n">edge_program</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">VulkanPartitioner</span><span class="p">())</span>
-
-<span class="c1"># 3. to_executorch: Convert the graph to an ExecuTorch program</span>
-<span class="n">executorch_program</span> <span class="o">=</span> <span class="n">edge_program</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
-
-<span class="c1"># 4. Save the compiled .pte program</span>
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;vk_add.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
-    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">executorch_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>Like other ExecuTorch delegates, a model can be lowered to the Vulkan Delegate
-using the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> API. The Vulkan Delegate implements the
-<code class="docutils literal notranslate"><span class="pre">VulkanPartitioner</span></code> class which identifies nodes (i.e. operators) in the graph
-that are supported by the Vulkan delegate, and separates compatible sections of
-the model to be executed on the GPU.</p>
-<p>This means the a model can be lowered to the Vulkan delegate even if it contains
-some unsupported operators. This will just mean that only parts of the graph
-will be executed on the GPU.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/vulkan/op_registry.py#L194">supported ops list</a>
-Vulkan partitioner code can be inspected to examine which ops are currently
-implemented in the Vulkan delegate.</p>
-</div>
-</section>
-<section id="build-vulkan-delegate-libraries">
-<h3>Build Vulkan Delegate libraries<a class="headerlink" href="#build-vulkan-delegate-libraries" title="Link to this heading">#</a></h3>
-<p>The easiest way to build and test the Vulkan Delegate is to build for Android
-and test on a local Android device. Android devices have built in support for
-Vulkan, and the Android NDK ships with a GLSL compiler which is needed to
-compile the Vulkan Compute Library’s GLSL compute shaders.</p>
-<p>The Vulkan Delegate libraries can be built by setting <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_VULKAN=ON</span></code>
-when building with CMake.</p>
-<p>First, make sure that you have the Android NDK installed; any NDK version past
-NDK r19c should work. Note that the examples in this doc have been validated with
-NDK r28c. The Android SDK should also be installed so that you have access to <code class="docutils literal notranslate"><span class="pre">adb</span></code>.</p>
-<p>The instructions in this page assumes that the following environment variables
-are set.</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path_to_ndk&gt;
-<span class="c1"># Select the appropriate Android ABI for your device</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
-<span class="c1"># All subsequent commands should be performed from ExecuTorch repo root</span>
-<span class="nb">cd</span><span class="w"> </span>&lt;path_to_executorch_root&gt;
-<span class="c1"># Make sure adb works</span>
-adb<span class="w"> </span>--version
-</pre></div>
-</div>
-<p>To build and install ExecuTorch libraries (for Android) with the Vulkan
-Delegate:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="c1"># From executorch root directory</span>
-<span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>pp<span class="w"> </span>cmake<span class="w"> </span>.<span class="w"> </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="nv">$ANDROID_ABI</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_VULKAN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-Bcmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install<span class="o">)</span>
-</pre></div>
-</div>
-</section>
-<section id="run-the-vulkan-model-on-device">
-<h3>Run the Vulkan model on device<a class="headerlink" href="#run-the-vulkan-model-on-device" title="Link to this heading">#</a></h3>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Since operator support is currently limited, only binary arithmetic operators
-will run on the GPU. Expect inference to be slow as the majority of operators
-are being executed via Portable operators.</p>
-</div>
-<p>Now, the partially delegated model can be executed (partially) on your device’s
-GPU!</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="c1"># Build a model runner binary linked with the Vulkan delegate libs</span>
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>--target<span class="w"> </span>vulkan_executor_runner<span class="w"> </span>-j32
-
-<span class="c1"># Push model to device</span>
-adb<span class="w"> </span>push<span class="w"> </span>vk_add.pte<span class="w"> </span>/data/local/tmp/vk_add.pte
-<span class="c1"># Push binary to device</span>
-adb<span class="w"> </span>push<span class="w"> </span>cmake-android-out/backends/vulkan/vulkan_executor_runner<span class="w"> </span>/data/local/tmp/runner_bin
-
-<span class="c1"># Run the model</span>
-adb<span class="w"> </span>shell<span class="w"> </span>/data/local/tmp/runner_bin<span class="w"> </span>--model_path<span class="w"> </span>/data/local/tmp/vk_add.pte
-</pre></div>
-</div>
-</section>
-</section>
-</section>
-
+  
 
                 </article>
               
@@ -1527,17 +1318,9 @@ adb<span class="w"> </span>shell<span class="w"> </span>/data/local/tmp/runner_b
     <i class="fa-solid fa-list"></i> On this page
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
-    <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-is-vulkan">What is Vulkan?</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-vulkan-compute-library">The Vulkan Compute Library</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#features">Features</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#end-to-end-example">End to End Example</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#compile-and-lower-a-model-to-the-vulkan-delegate">Compile and lower a model to the Vulkan Delegate</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#build-vulkan-delegate-libraries">Build Vulkan Delegate libraries</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#run-the-vulkan-model-on-device">Run the Vulkan model on device</a></li>
+    <ul class="simple visible nav section-nav flex-column">
 </ul>
-</li>
-</ul>
+
   </nav></div>
     
        <div class="sidebar-secondary-item">
@@ -1758,11 +1541,11 @@ adb<span class="w"> </span>shell<span class="w"> </span>/data/local/tmp/runner_b
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "Vulkan Backend",
-       "headline": "Vulkan Backend",
+       "name": "\u003cno title\u003e",
+       "headline": "\u003cno title\u003e",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/android-vulkan.html",
-       "articleBody": "Vulkan Backend# The ExecuTorch Vulkan delegate is a native GPU delegate for ExecuTorch that is built on top of the cross-platform Vulkan GPU API standard. It is primarily designed to leverage the GPU to accelerate model inference on Android devices, but can be used on any platform that supports an implementation of Vulkan: laptops, servers, and edge devices. Note The Vulkan delegate is currently under active development, and its components are subject to change. What is Vulkan?# Vulkan is a low-level GPU API specification developed as a successor to OpenGL. It is designed to offer developers more explicit control over GPUs compared to previous specifications in order to reduce overhead and maximize the capabilities of the modern graphics hardware. Vulkan has been widely adopted among GPU vendors, and most modern GPUs (both desktop and mobile) in the market support Vulkan. Vulkan is also included in Android from Android 7.0 onwards. Note that Vulkan is a GPU API, not a GPU Math Library. That is to say it provides a way to execute compute and graphics operations on a GPU, but does not come with a built-in library of performant compute kernels. The Vulkan Compute Library# The ExecuTorch Vulkan Delegate is a wrapper around a standalone runtime known as the Vulkan Compute Library. The aim of the Vulkan Compute Library is to provide GPU implementations for PyTorch operators via GLSL compute shaders. The Vulkan Compute Library is a fork/iteration of the PyTorch Vulkan Backend. The core components of the PyTorch Vulkan backend were forked into ExecuTorch and adapted for an AOT graph-mode style of model inference (as opposed to PyTorch which adopted an eager execution style of model inference). The components of the Vulkan Compute Library are contained in the executorch/backends/vulkan/runtime/ directory. The core components are listed and described below: runtime/ \u251c\u2500\u2500 api/ .................... Wrapper API around Vulkan to manage Vulkan objects \u2514\u2500\u2500 graph/ .................. ComputeGraph class which implements graph mode inference \u2514\u2500\u2500 ops/ ................ Base directory for operator implementations \u251c\u2500\u2500 glsl/ ........... GLSL compute shaders \u2502 \u251c\u2500\u2500 *.glsl \u2502 \u2514\u2500\u2500 conv2d.glsl \u2514\u2500\u2500 impl/ ........... C++ code to dispatch GPU compute shaders \u251c\u2500\u2500 *.cpp \u2514\u2500\u2500 Conv2d.cpp Features# The Vulkan delegate currently supports the following features: Memory Planning Intermediate tensors whose lifetimes do not overlap will share memory allocations. This reduces the peak memory usage of model inference. Capability Based Partitioning: A graph can be partially lowered to the Vulkan delegate via a partitioner, which will identify nodes (i.e. operators) that are supported by the Vulkan delegate and lower only supported subgraphs Support for upper-bound dynamic shapes: Tensors can change shape between inferences as long as its current shape is smaller than the bounds specified during lowering In addition to increasing operator coverage, the following features are currently in development: Quantization Support We are currently working on support for 8-bit dynamic quantization, with plans to extend to other quantization schemes in the future. Memory Layout Management Memory layout is an important factor to optimizing performance. We plan to introduce graph passes to introduce memory layout transitions throughout a graph to optimize memory-layout sensitive operators such as Convolution and Matrix Multiplication. Selective Build We plan to make it possible to control build size by selecting which operators/shaders you want to build with End to End Example# To further understand the features of the Vulkan Delegate and how to use it, consider the following end to end example with a simple single operator model. Compile and lower a model to the Vulkan Delegate# Assuming ExecuTorch has been set up and installed, the following script can be used to produce a lowered MobileNet V2 model as vulkan_mobilenetv2.pte. Once ExecuTorch has been set up and installed, the following script can be used to generate a simple model and lower it to the Vulkan delegate. # Note: this script is the same as the script from the \"Setting up ExecuTorch\" # page, with one minor addition to lower to the Vulkan backend. import torch from torch.export import export from executorch.exir import to_edge from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner # Start with a PyTorch model that adds two input tensors (matrices) class Add(torch.nn.Module): def __init__(self): super(Add, self).__init__() def forward(self, x: torch.Tensor, y: torch.Tensor): return x + y # 1. torch.export: Defines the program with the ATen operator set. aten_dialect = export(Add(), (torch.ones(1), torch.ones(1))) # 2. to_edge: Make optimizations for Edge devices edge_program = to_edge(aten_dialect) # 2.1 Lower to the Vulkan backend edge_program = edge_program.to_backend(VulkanPartitioner()) # 3. to_executorch: Convert the graph to an ExecuTorch program executorch_program = edge_program.to_executorch() # 4. Save the compiled .pte program with open(\"vk_add.pte\", \"wb\") as file: file.write(executorch_program.buffer) Like other ExecuTorch delegates, a model can be lowered to the Vulkan Delegate using the to_backend() API. The Vulkan Delegate implements the VulkanPartitioner class which identifies nodes (i.e. operators) in the graph that are supported by the Vulkan delegate, and separates compatible sections of the model to be executed on the GPU. This means the a model can be lowered to the Vulkan delegate even if it contains some unsupported operators. This will just mean that only parts of the graph will be executed on the GPU. Note The supported ops list Vulkan partitioner code can be inspected to examine which ops are currently implemented in the Vulkan delegate. Build Vulkan Delegate libraries# The easiest way to build and test the Vulkan Delegate is to build for Android and test on a local Android device. Android devices have built in support for Vulkan, and the Android NDK ships with a GLSL compiler which is needed to compile the Vulkan Compute Library\u2019s GLSL compute shaders. The Vulkan Delegate libraries can be built by setting -DEXECUTORCH_BUILD_VULKAN=ON when building with CMake. First, make sure that you have the Android NDK installed; any NDK version past NDK r19c should work. Note that the examples in this doc have been validated with NDK r28c. The Android SDK should also be installed so that you have access to adb. The instructions in this page assumes that the following environment variables are set. export ANDROID_NDK=\u003cpath_to_ndk\u003e # Select the appropriate Android ABI for your device export ANDROID_ABI=arm64-v8a # All subsequent commands should be performed from ExecuTorch repo root cd \u003cpath_to_executorch_root\u003e # Make sure adb works adb --version To build and install ExecuTorch libraries (for Android) with the Vulkan Delegate: # From executorch root directory (rm -rf cmake-android-out \u0026\u0026 \\ pp cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \\ -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \\ -DANDROID_ABI=$ANDROID_ABI \\ -DEXECUTORCH_BUILD_VULKAN=ON \\ -DPYTHON_EXECUTABLE=python \\ -Bcmake-android-out \u0026\u0026 \\ cmake --build cmake-android-out -j16 --target install) Run the Vulkan model on device# Note Since operator support is currently limited, only binary arithmetic operators will run on the GPU. Expect inference to be slow as the majority of operators are being executed via Portable operators. Now, the partially delegated model can be executed (partially) on your device\u2019s GPU! # Build a model runner binary linked with the Vulkan delegate libs cmake --build cmake-android-out --target vulkan_executor_runner -j32 # Push model to device adb push vk_add.pte /data/local/tmp/vk_add.pte # Push binary to device adb push cmake-android-out/backends/vulkan/vulkan_executor_runner /data/local/tmp/runner_bin # Run the model adb shell /data/local/tmp/runner_bin --model_path /data/local/tmp/vk_add.pte",
+       "articleBody": "",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
