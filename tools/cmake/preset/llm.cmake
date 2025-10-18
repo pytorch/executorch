@@ -26,9 +26,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # Linux-specific code here
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
-                                                 "WIN32"
+                                               "WIN32"
 )
-  # Windows-specific code: disable quantized and custom ops when building with CUDA
+  # Windows-specific code: disable quantized and custom ops when building with
+  # CUDA
   if(EXECUTORCH_BUILD_CUDA)
     set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED OFF)
     set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM OFF)
