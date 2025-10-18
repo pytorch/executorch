@@ -14,14 +14,7 @@ from multiprocessing.connection import Client
 import numpy as np
 import timm
 import torch
-from executorch.backends.qualcomm._passes.expand_broadcast_tensor_shape import (
-    ExpandBroadcastTensorShape,
-)
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     get_imagenet_dataset,
@@ -59,8 +52,6 @@ def main(args):
     model = model.eval()
 
     # lower to QNN
-    passes_job = get_capture_program_passes()
-    passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
     build_executorch_binary(
         model,
         inputs[0],
@@ -68,7 +59,8 @@ def main(args):
         f"{args.artifact}/{pte_filename}",
         inputs,
         quant_dtype=QuantDtype.use_8a8w,
-        passes_job=passes_job,
+        skip_node_id_set=skip_node_id_set,
+        skip_node_op_set=skip_node_op_set,
     )
 
     if args.compile_only:
