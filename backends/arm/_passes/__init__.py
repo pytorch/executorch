@@ -76,6 +76,7 @@ from .fold_qdq_with_annotated_qparams_pass import (  # noqa
 )
 from .fuse_batchnorm2d_pass import FuseBatchnorm2DPass  # noqa
 from .fuse_constant_ops_pass import ComputeConstantOpsAOT, FuseConstantArgsPass  # noqa
+from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .insert_int32_casts_after_int64_placeholders import (  # noqa
