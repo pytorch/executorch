@@ -21,7 +21,7 @@ def get_runner_path() -> Path:
     return Path(git_root) / "build_samsung_android/backends/samsung/enn_executor_runner"
 
 
-class ADBTestManager:
+class EDBTestManager:
     def __init__(
         self,
         pte_file,
@@ -34,11 +34,10 @@ class ADBTestManager:
         self.artifacts_dir = Path(self.pte_file).parent.absolute()
         self.output_folder = f"{self.work_directory}/output"
         self.runner = str(get_runner_path())
+        self.devicefarm = "devicefarm-cli"
 
-    def _adb(self, cmd):
-        cmds = ["adb"]
-
-        assert self._is_adb_connected, "Fail to get available device to execute."
+    def _edb(self, cmd):
+        cmds = [self.devicefarm]
 
         cmds.extend(cmd)
         command = " ".join(cmds)
@@ -49,27 +48,27 @@ class ADBTestManager:
         if result.returncode != 0:
             logging.info(result.stdout.decode("utf-8").strip())
             logging.error(result.stderr.decode("utf-8").strip())
-            raise RuntimeError("adb command execute failed")
+            raise RuntimeError("edb(Exynos device bridge) command execute failed")
 
     def push(self):
-        self._adb(["shell", f"rm -rf {self.work_directory}"])
-        self._adb(["shell", f"mkdir -p {self.work_directory}"])
-        self._adb(["push", self.pte_file, self.work_directory])
-        self._adb(["push", self.runner, self.work_directory])
+        self._edb(["-E", f"'rm -rf {self.work_directory}'"])
+        self._edb(["-E", f"'mkdir -p {self.work_directory}'"])
+        self._edb(["-U", self.pte_file, self.work_directory])
+        self._edb(["-U", self.runner, self.work_directory])
 
         for input_file in self.input_files:
             input_file_path = os.path.join(self.artifacts_dir, input_file)
             if Path(input_file).name == input_file and os.path.isfile(input_file_path):
                 # default search the same level directory with pte
-                self._adb(["push", input_file_path, self.work_directory])
+                self._edb(["-U", input_file_path, self.work_directory])
             elif os.path.isfile(input_file):
-                self._adb(["push", input_file, self.work_directory])
+                self._edb(["-U", input_file, self.work_directory])
             else:
                 raise FileNotFoundError(f"Invalid input file path: {input_file}")
 
     def execute(self):
-        self._adb(["shell", f"rm -rf {self.output_folder}"])
-        self._adb(["shell", f"mkdir -p {self.output_folder}"])
+        self._edb(["-E", f"'rm -rf {self.output_folder}'"])
+        self._edb(["-E", f"'mkdir -p {self.output_folder}'"])
         # run the delegation
         input_files_list = " ".join([os.path.basename(x) for x in self.input_files])
         enn_executor_runner_args = " ".join(
@@ -82,23 +81,15 @@ class ADBTestManager:
         enn_executor_runner_cmd = " ".join(
             [
                 f"'cd {self.work_directory} &&",
+                "chmod +x ./enn_executor_runner &&",
                 f"./enn_executor_runner {enn_executor_runner_args}'",
             ]
         )
 
-        self._adb(["shell", f"{enn_executor_runner_cmd}"])
+        self._edb(["-E", f"{enn_executor_runner_cmd}"])
 
     def pull(self, output_path):
-        self._adb(["pull", "-a", self.output_folder, output_path])
-
-    @staticmethod
-    def _is_adb_connected():
-        try:
-            output = subprocess.check_output(["adb", "devices"])
-            devices = output.decode("utf-8").splitlines()[1:]
-            return [device.split()[0] for device in devices if device.strip() != ""]
-        except subprocess.CAlledProcessError:
-            return False
+        self._edb(["-D", self.output_folder, output_path])
 
 
 class RuntimeExecutor:
@@ -109,7 +100,7 @@ class RuntimeExecutor:
     def run_on_device(self) -> Tuple[torch.Tensor]:
         with tempfile.TemporaryDirectory() as tmp_dir:
             pte_filename, input_files = self._save_model_and_inputs(tmp_dir)
-            test_manager = ADBTestManager(
+            test_manager = EDBTestManager(
                 pte_file=os.path.join(tmp_dir, pte_filename),
                 work_directory="/data/local/tmp/enn-executorch-test",
                 input_files=input_files,

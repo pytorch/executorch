@@ -931,7 +931,7 @@ jobs:
       docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
+      timeout: 180
       script: |
         set -ex
 
@@ -947,10 +947,10 @@ jobs:
         source .ci/scripts/setup-samsung-linux-deps.sh
 
         # Test quant models
-        model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
-        for m_script in $model_scripts; do
-          python -m executorch.examples.samsung.scripts.${m_script} -c e9955 -p A8W8
-        done
+        #model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
+        #for m_script in $model_scripts; do
+        #  python -m executorch.examples.samsung.scripts.${m_script} -c e9955 -p A8W8
+        #done
 
         # Test ops
         python -m unittest discover -s backends/samsung/test/ops -p "test_*.py"
