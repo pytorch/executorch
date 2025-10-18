@@ -371,13 +371,19 @@ class ET_EXPERIMENTAL CudaBackend final
 
 namespace executorch::backends {
 namespace {
+// Static backend instance and registration
 auto cls = cuda::CudaBackend();
 executorch::runtime::Backend backend{"CudaBackend", &cls};
+
+#ifndef _WIN32
+// On non-Windows platforms, use static initialization
 static executorch::runtime::Error success_with_compiler =
     register_backend(backend);
+#endif
+
 } // namespace
 
-// Export an initialization function to ensure static initializers run on Windows
+// Export an initialization function for explicit backend registration
 #ifdef _WIN32
 #define CUDA_BACKEND_INIT_EXPORT __declspec(dllexport)
 #else
@@ -385,8 +391,18 @@ static executorch::runtime::Error success_with_compiler =
 #endif
 
 extern "C" CUDA_BACKEND_INIT_EXPORT void InitCudaBackend() {
-  // Force the static initializer to run by referencing it
+#ifdef _WIN32
+  // On Windows, explicitly register the backend since DLL static initializers
+  // don't run reliably
+  static bool initialized = false;
+  if (!initialized) {
+    register_backend(backend);
+    initialized = true;
+  }
+#else
+  // On other platforms, static initialization already happened
   (void)success_with_compiler;
+#endif
 }
 
 } // namespace executorch::backends
