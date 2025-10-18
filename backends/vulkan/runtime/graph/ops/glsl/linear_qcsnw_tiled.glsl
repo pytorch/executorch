@@ -114,7 +114,7 @@ void main() {
             const uvec4 packed_weight_tex = texelFetch(
               t_weight, u16vec2(weight_txcol + ${c}, pos + r), 0);
 
-          qmat2[${c}] = (VEC4_T((packed_weight_tex & 0xF0) >> 4) - 8.0);
+          qmat2[${c}] = (VEC4_T(packed_weight_tex >> 4) - 8.0);
           qmat2[${c + 1}] = (VEC4_T(packed_weight_tex & 0x0F) - 8.0);
       $else:
         $for c in range(TILE_TXCOLS):
