@@ -162,6 +162,30 @@ class CudaBackend(BackendDetails):
             "max_autotune_conv_backends": "TRITON",
         }
 
+        platform = "linux"
+        shim_library_path = None
+        for spec in compile_specs:
+            if spec.key == "platform":
+                platform = spec.value.decode("utf-8")
+            if spec.key == "shim_library_path":
+                shim_library_path = spec.value.decode("utf-8")
+
+        assert platform == "linux" or platform == "windows"
+        if platform == "windows":
+            assert shim_library_path is not None
+        if platform == "linux":
+            assert shim_library_path is None
+
+        if platform == "windows":
+            options.update(
+                {
+                    "aot_inductor.cross_target_platform": "windows",
+                    "aot_inductor.aoti_shim_library": "executorch",
+                    "aot_inductor.aoti_shim_library_path": shim_library_path,
+                    "aot_inductor.precompile_headers": False,
+                }
+            )
+
         with collect_unsupported_fallback_kernels(), torch.nn.attention.sdpa_kernel(
             [
                 SDPBackend.MATH  # pyre-ignore[16]: Module `torch.nn.attention` has no attribute `SDPBackend`.
