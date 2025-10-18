@@ -82,7 +82,11 @@ target_link_libraries(
 )
 # If you need other CUDA libraries, link them similarly:
 # target_link_libraries(aoti_cuda PUBLIC CUDA::cublas CUDA::cufft ...)
-executorch_target_link_options_shared_lib(aoti_cuda)
+
+# Only apply shared lib options on non-Windows platforms
+if(NOT MSVC)
+  executorch_target_link_options_shared_lib(aoti_cuda)
+endif()
 
 if(BUILD_TESTING)
   # Add runtime

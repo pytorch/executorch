@@ -101,14 +101,16 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # Link CUDA backend
-if(EXECUTORCH_BUILD_CUDA AND NOT MSVC)
+if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
-  list(APPEND link_libraries aoti_cuda)
-  executorch_target_link_options_shared_lib(aoti_cuda)
-elseif(EXECUTORCH_BUILD_CUDA AND MSVC)
-  find_package(CUDAToolkit REQUIRED)
-  target_link_libraries(voxtral_runner PRIVATE aoti_cuda)
-  executorch_target_link_options_shared_lib(aoti_cuda)
+  if(MSVC)
+    # On MSVC, link directly without shared lib options to use import library
+    list(APPEND link_libraries aoti_cuda)
+  else()
+    # On non-MSVC, use shared lib options
+    list(APPEND link_libraries aoti_cuda)
+    executorch_target_link_options_shared_lib(aoti_cuda)
+  endif()
 endif()
 
 target_include_directories(voxtral_runner PUBLIC ${_common_include_directories})
