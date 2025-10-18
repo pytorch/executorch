@@ -156,6 +156,10 @@ class VulkanImage final {
   Allocation memory_;
   // Indicates whether the underlying memory is owned by this resource
   bool owns_memory_;
+  // Indicates whether the allocation for the image was created with the image
+  // via vmaCreateImage; if this is false, the memory is owned but was bound
+  // separately via vmaBindImageMemory
+  bool memory_bundled_;
   // In some cases, a VulkanImage may be a copy of another VulkanImage but still
   // own a unique view of the VkImage.
   bool owns_view_;
@@ -242,21 +246,21 @@ class VulkanImage final {
     return (handles_.image == other.handles_.image) && is_copy_;
   }
 
-  inline void bind_allocation(const Allocation& memory) {
-    VK_CHECK_COND(!memory_, "Cannot bind an already bound allocation!");
-    // To prevent multiple instances of binding the same VkImage to a memory
-    // block, do not actually bind memory if this VulkanImage is a copy. Assume
-    // that the original VulkanImage is responsible for binding the image.
-    if (!is_copy_) {
-      VK_CHECK(
-          vmaBindImageMemory(allocator_, memory.allocation, handles_.image));
-    }
-    memory_.allocation = memory.allocation;
+ private:
+  void bind_allocation_impl(const Allocation& memory);
 
-    // Only create the image view if the image has been bound to memory
-    owns_view_ = true;
-    create_image_view();
-  }
+ public:
+  /*
+   * Given a memory allocation, bind it to the underlying VkImage. The lifetime
+   * of the memory allocation is assumed to be managed externally.
+   */
+  void bind_allocation(const Allocation& memory);
+
+  /*
+   * Given a rvalue memory allocation, bind it to the underlying VkImage and
+   * also acquire ownership of the memory allocation.
+   */
+  void acquire_allocation(Allocation&& memory);
 
   VkMemoryRequirements get_memory_requirements() const;
 

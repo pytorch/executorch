@@ -3,7 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
+from typing import Set, Tuple, Type
+
+from executorch.backends.arm._passes import ArmPass
+
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    QuantizeOperatorArguments,
+)
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -23,7 +29,9 @@ def get_clamp_params(op, args) -> Tuple[float | None, float | None]:
         raise ValueError(f"Getting clamp parameters for op {op} is not implemented.")
 
 
-class ConvertToClampPass(ExportPass):
+class ConvertToClampPass(ArmPass):
+    _passes_required_after: Set[Type[ExportPass]] = {QuantizeOperatorArguments}
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in edge_operators:
             return super().call_operator(op, args, kwargs, meta)
@@ -33,4 +41,5 @@ class ConvertToClampPass(ExportPass):
             (args[0], *get_clamp_params(op, args)),
             {},
             meta,
+            updated=True,
         )

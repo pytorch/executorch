@@ -86,7 +86,7 @@ void ComputeGraph::print_readable() {
       ss << v_tensor.sizes();
       std::cout << ss.str();
     } else if (val.isTensorRef()) {
-      const TensorRef tensor_ref = val.toTensorRef();
+      const TensorRef& tensor_ref = val.toTensorRef();
       std::stringstream ss;
       ss << tensor_ref.sizes;
       std::cout << ss.str();

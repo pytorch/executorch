@@ -165,7 +165,6 @@ def test_eq_scalar_u85_INT_tensor(test_module):
         test_module().get_inputs(),
         Equal.aten_op_Tensor,
         Equal.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -185,7 +184,6 @@ def test_eq_scalar_u85_INT(test_module):
         test_module().get_inputs(),
         Equal.aten_op_Tensor,
         Equal.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 

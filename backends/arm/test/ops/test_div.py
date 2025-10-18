@@ -101,17 +101,7 @@ def test_div_tensor_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-x_fails = {
-    "op_div_rank4_ones": "MLETORCH-521: Numerical issues on FVP likely due to mul op",
-    "op_div_rank4_negative_ones": "MLETORCH-521: Numerical issues on FVP likely due to mul op",
-    "op_div_rank4_ones_div_negative": "MLETORCH-521: Numerical issues on FVP likely due to mul op",
-    "op_div_rank4_large_rand": "MLETORCH-521: Numerical issues on FVP likely due to mul op",
-    "op_div_rank4_negative_large_rand": "MLETORCH-521: Numerical issues on FVP likely due to mul op",
-    "op_div_rank4_large_randn": "MLETORCH-521: Numerical issues on FVP likely due to mul op",
-}
-
-
-@common.parametrize("test_data", test_data_suite, xfails=x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_div_tensor_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -119,12 +109,11 @@ def test_div_tensor_u55_INT(test_data: Tuple):
         test_data(),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite, xfails=x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_div_tensor_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -132,7 +121,6 @@ def test_div_tensor_u85_INT(test_data: Tuple):
         test_data(),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 

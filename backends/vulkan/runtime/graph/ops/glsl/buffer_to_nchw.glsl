@@ -3,41 +3,36 @@
 #define PRECISION ${PRECISION}
 
 #define T ${buffer_scalar_type(DTYPE)}
-
-#include "indexing_utils.h"
+#define DST_T ${buffer_scalar_type(BUF_DTYPE)}
 
 ${define_required_extensions(DTYPE)}
+${define_required_extensions(BUF_DTYPE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(0, "w", "nchw_buf", DTYPE, STORAGE)}
-${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
+#include "indexing.glslh"
 
-$if USE_PUSH_CONST:
-  layout(push_constant) uniform restrict Block {
-    ivec4 in_sizes;
-    ivec4 in_strides;
-    int numel;
-  };
-$else:
-  ${layout_declare_ubo(2, "ivec4", "in_sizes")}
-  ${layout_declare_ubo(3, "ivec4", "in_strides")}
-  ${layout_declare_ubo(4, "int", "numel")}
+${layout_declare_tensor(B, "w", "nchw_buf", BUF_DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "t_inp", DTYPE, STORAGE)}
+
+${layout_declare_ubo(B, "BufferMetadata", "inp")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 // This constant is unused in this shader but is kept so that the signature is
 // consistent with image_to_nchw.
-layout(constant_id = 3) const int UNUSED_packed_dim = W_DIM;
+${layout_declare_spec_const(C, "int", "unused", "0")}
 
 void main() {
-  int nchwi = int(gl_GlobalInvocationID.x);
-  if (nchwi >= numel) {
+  uint inp_bufi = gl_GlobalInvocationID.x;
+  if (inp_bufi>= numel(inp)) {
     return;
   }
 
-  ivec4 in_tidx = nchwi_to_tidx(nchwi, in_sizes);
-  const int in_bufi = tidx_to_bufi(in_tidx, in_strides);
+  TensorIndex inp_tidx;
+  linear_idx_to_tensor_idx(inp, inp_bufi, inp_tidx);
 
-  nchw_buf[nchwi] = t_in[in_bufi];
+  uint nchwi = tensor_idx_to_contiguous_idx(inp, inp_tidx);
+
+  nchw_buf[nchwi] = DST_T(t_inp[inp_bufi]);
 }

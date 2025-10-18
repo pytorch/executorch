@@ -1,0 +1,105 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Assume the following variables are defined in the shader layout:
+ * - t_attn_weights
+ *
+ * Macro Settings:
+ * - OUTPUT_BUFFER
+ */
+
+#ifndef SDPA_FP_ATTN_WEIGHT_TILE_LOAD_GLSLH
+#define SDPA_FP_ATTN_WEIGHT_TILE_LOAD_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_output_tile.glslh"
+
+T negative_infinity_val = T(-1.0 / 0.0);
+
+void store_attn_weight_c4(
+    const VEC4_T out_texel,
+    const int c4,
+    const int s,
+    const int q_h,
+    const int C4,
+    const int S,
+    const int Q_H) {
+#ifdef OUTPUT_BUFFER
+  t_attn_weights[(q_h * S * C4) + (s * C4) + c4] = out_texel;
+#else
+  imageStore(t_attn_weights, ivec3(c4, s, q_h), out_texel);
+#endif
+}
+
+void store_attn_weight_tile_no_checks(
+    const FPOutTile tile,
+    const int c4_start,
+    const int s_start,
+    const int q_h,
+    const int C4,
+    const int S,
+    const int Q_H) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) {
+      store_attn_weight_c4(
+          tile.data[s][c4], c4_start + c4, s_start + s, q_h, C4, S, Q_H);
+    }
+  }
+}
+
+void store_attn_weight_tile_with_checks(
+    const FPOutTile tile,
+    const int c4_start,
+    const int s_start,
+    const int q_h,
+    const int C4,
+    const int S,
+    const int Q_H) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) {
+      if (c4_start + c4 < C4 && s_start + s < S) {
+        store_attn_weight_c4(
+            tile.data[s][c4], c4_start + c4, s_start + s, q_h, C4, S, Q_H);
+      }
+    }
+  }
+}
+
+void set_out_tile_to_vec(out FPOutTile tile, const VEC4_T vec) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) { tile.data[s][c4] = vec; }
+  }
+}
+
+void apply_scale_and_mask(
+    inout FPOutTile tile,
+    const VEC4_T inv_scale_vec,
+    const int input_pos,
+    const int c_idx_start,
+    const int s_idx_start) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) {
+      tile.data[s][c4] = tile.data[s][c4] * inv_scale_vec;
+
+      const int c_base = mul_4(c4);
+      [[unroll]] for (int c4i = 0; c4i < 4; ++c4i) {
+        const int c = c_base + c4i;
+        // Indices of the tile element in the overall output tensor
+        const int c_idx = c_idx_start + c;
+        const int s_idx = s_idx_start + s;
+        if (c_idx > s_idx + input_pos) {
+          tile.data[s][c4][c4i] = negative_infinity_val;
+        }
+      }
+    }
+  }
+}
+
+#endif // SDPA_FP_ATTN_WEIGHT_TILE_LOAD_GLSLH

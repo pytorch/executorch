@@ -6,7 +6,10 @@
 import numpy as np
 import torch
 
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
+    NodeConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
     set_quantization_parameters_to_tensor,
 )
@@ -18,7 +21,9 @@ class QDQQuantizeConverter(NodeConverter):
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         if "cluster" not in node.meta or node.args[5] != torch.int8:
             return False

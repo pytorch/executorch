@@ -21,8 +21,6 @@ using Tensor = executorch::aten::Tensor;
 Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
-  ET_KERNEL_CHECK(
-      ctx, in.scalar_type() != ScalarType::Bool, InvalidArgument, out);
   ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
 
   ET_KERNEL_CHECK(

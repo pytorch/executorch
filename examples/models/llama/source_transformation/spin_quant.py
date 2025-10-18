@@ -14,7 +14,7 @@ import torch
 
 import torch.nn.functional as F
 
-from executorch.examples.models.llama.llama_transformer import FeedForward
+from executorch.examples.models.llama.feed_forward import FeedForward
 from torch import nn
 
 

@@ -8,7 +8,7 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -32,6 +32,13 @@ class MinMaxSupported(SupportedTOSAOperatorCheck):
             )
 
             if not (no_argmax or no_argmax_users):
+                self.reporter.report_reject(
+                    node,
+                    (
+                        "Using the indices output is not supported; only usage of the "
+                        "values output is supported."
+                    ),
+                )
                 return False
 
         return True

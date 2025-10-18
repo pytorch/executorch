@@ -15,8 +15,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
 
@@ -33,6 +33,7 @@ class WhereVisitor_INT(NodeVisitor):
 
     def _add_node_to_tosa_graph(
         self,
+        node: Node,
         tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
@@ -51,7 +52,9 @@ class WhereVisitor_INT(NodeVisitor):
             output.tosa_spec,
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().SELECT,
             [inputs[0].name, inputs[1].name, inputs[2].name],
             [output.name],
@@ -73,7 +76,9 @@ class WhereVisitor_INT(NodeVisitor):
             ts.DType.INT32,
             ts.DType.BOOL,
         ]
-        self._add_node_to_tosa_graph(tosa_graph, inputs, output, bi_supported_dtypes)
+        self._add_node_to_tosa_graph(
+            node, tosa_graph, inputs, output, bi_supported_dtypes
+        )
 
 
 @register_node_visitor
@@ -103,4 +108,6 @@ class WhereVisitor_FP(WhereVisitor_INT):
             ts.DType.INT32,
             ts.DType.BOOL,
         ]
-        self._add_node_to_tosa_graph(tosa_graph, inputs, output, mi_supported_dtypes)
+        self._add_node_to_tosa_graph(
+            node, tosa_graph, inputs, output, mi_supported_dtypes
+        )

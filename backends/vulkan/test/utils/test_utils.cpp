@@ -43,9 +43,7 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
 
   if (v_dst.storage_type() == utils::kBuffer) {
     kernel_name = "nchw_to_buffer";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
+    add_dtype_suffix(kernel_name, v_dst.dtype());
     add_dtype_suffix(kernel_name, v_dst.dtype());
     return VK_KERNEL_FROM_STR(kernel_name);
   }
@@ -55,6 +53,7 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
     kernel_name += "_no_pc";
   }
   add_storage_type_suffix(kernel_name, v_dst.storage_type());
+  add_dtype_suffix(kernel_name, v_dst.dtype());
   add_dtype_suffix(kernel_name, v_dst.dtype());
 
   return VK_KERNEL_FROM_STR(kernel_name);
@@ -80,9 +79,7 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
 
   if (v_src.storage_type() == utils::kBuffer) {
     kernel_name = "buffer_to_nchw";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
+    add_dtype_suffix(kernel_name, v_src.dtype());
     add_dtype_suffix(kernel_name, v_src.dtype());
     return VK_KERNEL_FROM_STR(kernel_name);
   }
@@ -92,6 +89,7 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
     kernel_name += "_no_pc";
   }
   add_storage_type_suffix(kernel_name, v_src.storage_type());
+  add_dtype_suffix(kernel_name, v_src.dtype());
   add_dtype_suffix(kernel_name, v_src.dtype());
 
   return VK_KERNEL_FROM_STR(kernel_name);
@@ -120,9 +118,7 @@ void record_nchw_to_buffer_op(
           vkapi::PipelineStage::COMPUTE,
           vkapi::MemoryAccessType::WRITE),
       src_buffer,
-      v_dst.sizes_ubo(),
-      v_dst.strides_ubo(),
-      v_dst.numel_ubo());
+      v_dst.buffer_meta_ubo());
 }
 
 void record_buffer_to_nchw_op(
@@ -140,9 +136,7 @@ void record_buffer_to_nchw_op(
       0,
       dst_buffer,
       v_src.buffer(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
-      v_src.sizes_ubo(),
-      v_src.strides_ubo(),
-      v_src.numel_ubo());
+      v_src.buffer_meta_ubo());
 }
 
 void record_nchw_to_image_op(

@@ -3,21 +3,25 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
 import os
 import shutil
 import tempfile
 
+from pathlib import Path
 from typing import Tuple
 
 import pytest
 
 import torch
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
 )
+from executorch.backends.test.harness.stages import StageType
 
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -101,7 +105,7 @@ def test_INT_artifact(test_data: input_t1):
 
 @common.parametrize("test_data", Linear.inputs)
 def test_numerical_diff_print(test_data: input_t1):
-    pipeline = TosaPipelineFP[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         Linear(),
         test_data,
         [],
@@ -116,7 +120,9 @@ def test_numerical_diff_print(test_data: input_t1):
     # not present.
     try:
         # Tolerate 0 difference => we want to trigger a numerical diff
-        tester.run_method_and_compare_outputs(atol=0, rtol=0, qtol=0)
+        tester.run_method_and_compare_outputs(
+            stage=StageType.INITIAL_MODEL, atol=0, rtol=0, qtol=0
+        )
     except AssertionError:
         pass  # Implicit pass test
     else:
@@ -189,6 +195,58 @@ def test_collate_tosa_INT_tests(test_data: input_t1):
 
 
 @common.parametrize("test_data", Linear.inputs)
+def test_dump_tosa_debug_json(test_data: input_t1):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pipeline = TosaPipelineINT[input_t1](
+            module=Linear(),
+            test_data=test_data,
+            aten_op=[],
+            exir_op=[],
+            custom_path=tmpdir,
+            tosa_debug_mode=ArmCompileSpec.DebugMode.JSON,
+        )
+
+        pipeline.pop_stage("run_method_and_compare_outputs")
+        pipeline.run()
+
+        json_output_path = Path(tmpdir) / "debug.json"
+
+        # The file should exist
+        assert json_output_path.exists()
+
+        # Check the file is valid JSON and can be loaded
+        with json_output_path.open("r") as file:
+            try:
+                data = json.load(file)
+
+                # Check it's not empty
+                assert data
+            except json.JSONDecodeError:
+                pytest.fail("Failed to load debug JSON file")
+
+
+@common.parametrize("test_data", Linear.inputs)
+def test_dump_tosa_debug_tosa(test_data: input_t1):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pipeline = TosaPipelineINT[input_t1](
+            module=Linear(),
+            test_data=test_data,
+            aten_op=[],
+            exir_op=[],
+            custom_path=tmpdir,
+            tosa_debug_mode=ArmCompileSpec.DebugMode.TOSA,
+        )
+
+        pipeline.pop_stage("run_method_and_compare_outputs")
+        pipeline.run()
+
+        json_output_path = Path(tmpdir) / "debug.json"
+
+        # A JSON file should not be created when TOSA mode used
+        assert not json_output_path.exists()
+
+
+@common.parametrize("test_data", Linear.inputs)
 def test_dump_tosa_ops(caplog, test_data: input_t1):
     pipeline = TosaPipelineINT[input_t1](Linear(), test_data, [], [])
     pipeline.pop_stage("run_method_and_compare_outputs")
@@ -207,9 +265,10 @@ class Add(torch.nn.Module):
 
 
 @common.parametrize("test_data", Add.inputs)
+@common.XfailIfNoCorstone300
 def test_fail_dump_tosa_ops(caplog, test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
-        Add(), test_data, [], [], use_to_edge_transform_and_lower=True, run_on_fvp=False
+        Add(), test_data, [], [], use_to_edge_transform_and_lower=True
     )
     pipeline.dump_operator_distribution("to_edge_transform_and_lower")
     pipeline.run()

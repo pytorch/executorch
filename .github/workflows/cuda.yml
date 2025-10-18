@@ -1,0 +1,282 @@
+# Test ExecuTorch CUDA Build Compatibility
+# This workflow tests whether ExecuTorch can be successfully built with CUDA support
+# across different CUDA versions (12.6, 12.8, 12.9) using the command:
+#   ./install_executorch.sh
+#
+# Note: ExecuTorch automatically detects the system CUDA version using nvcc and
+# installs the appropriate PyTorch wheel. No manual CUDA/PyTorch installation needed.
+
+name: Test CUDA Builds
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/*
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: false
+
+jobs:
+  test-cuda-builds:
+    strategy:
+      fail-fast: false
+      matrix:
+        cuda-version: ["12.6", "12.8", "13.0"]
+
+    name: test-executorch-cuda-build-${{ matrix.cuda-version }}
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: ${{ matrix.cuda-version }}
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        # Test ExecuTorch CUDA build - ExecuTorch will automatically detect CUDA version
+        # and install the appropriate PyTorch wheel
+        source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
+
+  # This job will fail if any of the CUDA versions fail
+  check-all-cuda-builds:
+    needs: test-cuda-builds
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check if all CUDA builds succeeded
+        run: |
+          if [[ "${{ needs.test-cuda-builds.result }}" != "success" ]]; then
+            echo "ERROR: One or more ExecuTorch CUDA builds failed!"
+            echo "CUDA build results: ${{ needs.test-cuda-builds.result }}"
+            exit 1
+          else
+            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 12.8, 12.9) completed successfully!"
+          fi
+
+  test-models-cuda:
+    name: test-models-cuda
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [linear, add, add_mul, resnet18, conv1d]
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+        PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
+
+  export-voxtral-cuda-artifact:
+    name: export-voxtral-cuda-artifact
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      fail-fast: false
+    with:
+      timeout: 90
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      upload-artifact: voxtral-cuda-export
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch"
+        ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Setup Huggingface"
+        pip install -U "huggingface_hub[cli]" accelerate
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        pip install mistral-common librosa
+        pip list
+        echo "::endgroup::"
+
+        echo "::group::Export Voxtral"
+        optimum-cli export executorch \
+            --model "mistralai/Voxtral-Mini-3B-2507" \
+            --task "multimodal-text-to-text" \
+            --recipe "cuda" \
+            --dtype bfloat16 \
+            --device cuda \
+            --max_seq_len 1024 \
+            --output_dir ./
+        python -m executorch.extension.audio.mel_spectrogram \
+            --feature_size 128 \
+            --stack_output \
+            --max_audio_len 300 \
+            --output_file voxtral_preprocessor.pte
+
+        test -f model.pte
+        test -f aoti_cuda_blob.ptd
+        test -f voxtral_preprocessor.pte
+        echo "::endgroup::"
+
+        echo "::group::Store Voxtral Artifacts"
+        mkdir -p "${RUNNER_ARTIFACT_DIR}"
+        cp model.pte "${RUNNER_ARTIFACT_DIR}/"
+        cp aoti_cuda_blob.ptd "${RUNNER_ARTIFACT_DIR}/"
+        cp voxtral_preprocessor.pte "${RUNNER_ARTIFACT_DIR}/"
+        ls -al "${RUNNER_ARTIFACT_DIR}"
+        echo "::endgroup::"
+
+  benchmark-voxtral-cuda:
+    name: benchmark-voxtral-cuda
+    needs: export-voxtral-cuda-artifact
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      download-artifact: voxtral-cuda-export
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch Requirements"
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_requirements.sh
+        pip list
+        echo "::endgroup::"
+
+        echo "::group::Prepare Voxtral Artifacts"
+        cp "${RUNNER_ARTIFACT_DIR}/model.pte" .
+        cp "${RUNNER_ARTIFACT_DIR}/aoti_cuda_blob.ptd" .
+        ls -al model.pte aoti_cuda_blob.ptd
+        echo "::endgroup::"
+
+        echo "::group::Build Voxtral Benchmark"
+        cmake -DCMAKE_BUILD_TYPE=Release \
+              -DEXECUTORCH_BUILD_CUDA=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+              -DEXECUTORCH_BUILD_TESTS=ON \
+              -Bcmake-out .
+        cmake --build cmake-out -j$(( $(nproc) - 1 )) --target voxtral_runner
+        echo "::endgroup::"
+
+        echo "::group::Run Voxtral Benchmark"
+
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+        cmake-out/backends/cuda/voxtral_runner model.pte aoti_cuda_blob.ptd
+
+        echo "::endgroup::"
+
+  test-voxtral-cuda-e2e:
+    name: test-voxtral-cuda-e2e
+    needs: export-voxtral-cuda-artifact
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      download-artifact: voxtral-cuda-export
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch Requirements"
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_requirements.sh
+        pip list
+        echo "::endgroup::"
+
+        echo "::group::Prepare Voxtral Artifacts"
+        cp "${RUNNER_ARTIFACT_DIR}/model.pte" .
+        cp "${RUNNER_ARTIFACT_DIR}/aoti_cuda_blob.ptd" .
+        cp "${RUNNER_ARTIFACT_DIR}/voxtral_preprocessor.pte" .
+        TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main/tekken.json"
+        curl -L $TOKENIZER_URL -o tekken.json
+        ls -al model.pte aoti_cuda_blob.ptd voxtral_preprocessor.pte tekken.json
+        echo "::endgroup::"
+
+        echo "::group::Download Test Audio File"
+        AUDIO_URL="https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
+        curl -L $AUDIO_URL -o poem.wav
+        echo "::endgroup::"
+
+        echo "::group::Build Voxtral Runner"
+        cmake --preset llm \
+              -DEXECUTORCH_BUILD_CUDA=ON \
+              -DCMAKE_INSTALL_PREFIX=cmake-out \
+              -DCMAKE_BUILD_TYPE=Release \
+              -Bcmake-out -S.
+        cmake --build cmake-out -j$(( $(nproc) - 1 )) --target install --config Release
+
+        cmake -DEXECUTORCH_BUILD_CUDA=ON \
+              -DCMAKE_BUILD_TYPE=Release \
+              -Sexamples/models/voxtral \
+              -Bcmake-out/examples/models/voxtral/
+        cmake --build cmake-out/examples/models/voxtral --target voxtral_runner --config Release
+        echo "::endgroup::"
+
+        echo "::group::Run Voxtral Runner"
+        set +e
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+        OUTPUT=$(cmake-out/examples/models/voxtral/voxtral_runner \
+              --model_path model.pte \
+              --data_path aoti_cuda_blob.ptd \
+              --tokenizer_path tekken.json \
+              --audio_path poem.wav \
+              --processor_path voxtral_preprocessor.pte \
+              --temperature 0 2>&1)
+        EXIT_CODE=$?
+        set -e
+
+        echo "$OUTPUT"
+
+        if ! echo "$OUTPUT" | grep -iq "poem"; then
+          echo "Expected output 'poem' not found in output"
+          exit 1
+        fi
+
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "Unexpected exit code: $EXIT_CODE"
+          exit $EXIT_CODE
+        fi
+        echo "::endgroup::"

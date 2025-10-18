@@ -10,20 +10,21 @@
 
 from typing import Sequence, Tuple
 
-import pytest
-
 import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.expand.default"
+exir_op = "executorch_exir_dialects_edge__ops_aten_expand_copy_default"
+
 input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x, Input y
 
 
@@ -48,7 +49,7 @@ class Expand(torch.nn.Module):
         return x.expand(m)
 
 
-@common.parametrize("test_data", Expand.test_parameters | Expand.test_reject_set)
+@common.parametrize("test_data", Expand.test_parameters)
 def test_expand_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
         Expand(),
@@ -59,7 +60,7 @@ def test_expand_tosa_FP(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Expand.test_parameters | Expand.test_reject_set)
+@common.parametrize("test_data", Expand.test_parameters)
 def test_expand_tosa_INT(test_data: Tuple):
     pipeline = TosaPipelineINT[input_t1](
         Expand(),
@@ -70,14 +71,7 @@ def test_expand_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-x_fails = {
-    "rand_batch_2": "AssertionError: Output 0 does not match reference output.",
-    "rand_mix_neg": "AssertionError: Output 0 does not match reference output.",
-    "rand_small_neg": "AssertionError: Output 0 does not match reference output.",
-}
-
-
-@common.parametrize("test_data", Expand.test_parameters, x_fails)
+@common.parametrize("test_data", Expand.test_parameters)
 @common.XfailIfNoCorstone300
 def test_expand_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -85,12 +79,11 @@ def test_expand_u55_INT(test_data: Tuple):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Expand.test_parameters, x_fails)
+@common.parametrize("test_data", Expand.test_parameters)
 @common.XfailIfNoCorstone320
 def test_expand_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -98,12 +91,11 @@ def test_expand_u85_INT(test_data: Tuple):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Expand.test_parameters | Expand.test_reject_set)
+@common.parametrize("test_data", Expand.test_parameters)
 @common.SkipIfNoModelConverter
 def test_expand_vgf_FP(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
@@ -116,7 +108,7 @@ def test_expand_vgf_FP(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Expand.test_parameters | Expand.test_reject_set)
+@common.parametrize("test_data", Expand.test_parameters)
 @common.SkipIfNoModelConverter
 def test_expand_vgf_INT(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
@@ -130,32 +122,8 @@ def test_expand_vgf_INT(test_data: Tuple):
 
 
 @common.parametrize("test_data", Expand.test_reject_set)
-@common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="MLETORCH-716: Node will be optimized away and Vela can't handle empty graphs"
-)
-def test_expand_u55_INT_failure_set(test_data: Tuple):
-    pipeline = EthosU55PipelineINT[input_t1](
-        Expand(),
-        test_data(),
-        aten_op,
-        exir_ops=[],
-        run_on_fvp=True,
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", Expand.test_reject_set)
-@common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="MLETORCH-716: Node will be optimized away and Vela can't handle empty graphs"
-)
-def test_expand_u85_INT_failure_set(test_data: Tuple):
-    pipeline = EthosU85PipelineINT[input_t1](
-        Expand(),
-        test_data(),
-        aten_op,
-        exir_ops=[],
-        run_on_fvp=True,
+def test_expand_u55_INT_not_delegated(test_data: Tuple):
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Expand(), test_data(), {exir_op: 1}, n_expected_delegates=0
     )
     pipeline.run()

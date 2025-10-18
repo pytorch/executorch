@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # pyre-strict
 #
@@ -7,14 +8,15 @@
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
+import importlib.resources as _resources
 import json
 import os
 import tempfile
-
 from dataclasses import dataclass
 from typing import ClassVar, List
 
-import pkg_resources
+import executorch.backends.vulkan.serialization as serialization_package
+
 import torch
 
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
@@ -22,7 +24,6 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkGraph,
 )
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
-
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 
 
@@ -32,7 +33,9 @@ def convert_to_flatbuffer(vk_graph: VkGraph) -> bytes:
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "schema.fbs")
         with open(schema_path, "wb") as schema_file:
-            schema_file.write(pkg_resources.resource_string(__name__, "schema.fbs"))
+            schema_file.write(
+                _resources.read_binary(serialization_package, "schema.fbs")
+            )
         json_path = os.path.join(d, "schema.json")
         with open(json_path, "wb") as json_file:
             json_file.write(vk_graph_json.encode("ascii"))
@@ -48,7 +51,9 @@ def flatbuffer_to_vk_graph(flatbuffers: bytes) -> VkGraph:
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "schema.fbs")
         with open(schema_path, "wb") as schema_file:
-            schema_file.write(pkg_resources.resource_string(__name__, "schema.fbs"))
+            schema_file.write(
+                _resources.read_binary(serialization_package, "schema.fbs")
+            )
 
         bin_path = os.path.join(d, "schema.bin")
         with open(bin_path, "wb") as bin_file:
@@ -191,10 +196,21 @@ def serialize_constant_tensors(
 
     current_offset = len(raw_bytes)
     for tensor in const_tensors:
-        if tensor.numel() == 0:
+        # The tensor data is stored in the named data map
+        if isinstance(tensor, tuple):
+            named_key, size = tensor
+            vk_graph.constants.append(
+                VkBytes(
+                    offset=18446744073709551615,  # UINT64_MAX to indicate named data
+                    length=size,
+                    named_key=named_key,
+                )
+            )
+        elif tensor is None or (
+            isinstance(tensor, torch.Tensor) and tensor.numel() == 0
+        ):
             vk_graph.constants.append(VkBytes(current_offset, 0))
-            continue
-        else:
+        elif isinstance(tensor, torch.Tensor):
             array_type = ctypes.c_char * tensor.untyped_storage().nbytes()
             array = ctypes.cast(
                 tensor.untyped_storage().data_ptr(),
@@ -208,6 +224,8 @@ def serialize_constant_tensors(
 
             vk_graph.constants.append(VkBytes(current_offset, len(tensor_bytes)))
             current_offset += aligned_size(len(tensor_bytes))
+        else:
+            raise ValueError(f"Unsupported constant tensor type: {type(tensor)}")
 
 
 def serialize_custom_shaders(

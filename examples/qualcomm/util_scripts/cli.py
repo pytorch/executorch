@@ -229,7 +229,7 @@ def execute(args):
 
     # load input files
     logger.info("loading user inputs")
-    user_inputs, input_list = [], ""
+    user_inputs = []
     with open(args.input_list, "r") as f:
         for line in f.read().split("\n")[:-1]:
             inputs, input_names = [], ""
@@ -237,7 +237,6 @@ def execute(args):
                 input_names += f"{Path(data).stem}.raw "
                 inputs.append(torch.load(data, weights_only=True))
             user_inputs.append(inputs)
-            input_list += input_names.strip() + "\n"
 
     logger.info("retrieving graph I/O")
     # setup compiler spec dedicated to QNN HTP backend
@@ -263,7 +262,7 @@ def execute(args):
     )
 
     logger.info("pushing QNN libraries & other artifacts")
-    adb.push(inputs=user_inputs, input_list=input_list)
+    adb.push(inputs=user_inputs)
 
     logger.info("starting inference")
     adb.execute()
@@ -415,9 +414,7 @@ def main():
         "--pass_job",
         nargs="+",
         type=str,
-        help=(
-            'Add extra passes for model lowering. e.g. "ExpandBroadcastTensorShape".'
-        ),
+        help=('Add extra passes for model lowering. e.g. "TagQuantIO".'),
     )
     sub_compile.add_argument(
         "--shared_buffer",

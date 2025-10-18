@@ -6,12 +6,17 @@
 # pyre-unsafe
 
 import operator
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
+from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
+from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
 def get_group_norm_decomposition(op) -> tuple:
@@ -56,6 +61,13 @@ class DecomposeGroupNormPass(ArmPass):
 
     Source: https://pytorch.org/docs/stable/generated/torch.nn.GroupNorm.html
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        InsertTableOpsPass,
+        DecomposeMeanDimPass,
+        DecomposeVarPass,
+        SizeAdjustInputPass,
+    }
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False

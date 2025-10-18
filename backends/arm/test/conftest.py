@@ -118,7 +118,7 @@ def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
       a RuntimeError instead of returning False.
     """
 
-    if option in pytest._test_options and pytest._test_options[option]:  # type: ignore[attr-defined]
+    if hasattr(pytest, "_test_options") and option in pytest._test_options and pytest._test_options[option]:  # type: ignore[attr-defined]
         return True
     else:
         if fail_if_not_enabled:

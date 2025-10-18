@@ -52,6 +52,7 @@ class ETRecordReservedFileNames(StrEnum):
     ET_DIALECT_GRAPH_MODULE = "et_dialect_graph_module"
     DEBUG_HANDLE_MAP_NAME = "debug_handle_map"
     DELEGATE_MAP_NAME = "delegate_map"
+    INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME = "instruction_id_to_num_outs_map"
     REFERENCE_OUTPUTS = "reference_outputs"
     REPRESENTATIVE_INPUTS = "representative_inputs"
 
@@ -66,6 +67,9 @@ class ETRecord:
         _debug_handle_map: Optional[Dict[int, Union[int, List[int]]]] = None,
         _delegate_map: Optional[
             Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]
+        ] = None,
+        _instruction_id_to_num_outs_map: Optional[
+            Dict[str, Dict[int, Union[int, List[int]]]]
         ] = None,
         _reference_outputs: Optional[Dict[str, List[ProgramOutput]]] = None,
         _representative_inputs: Optional[List[ProgramInput]] = None,
@@ -92,6 +96,7 @@ class ETRecord:
         self.graph_map = graph_map
         self._debug_handle_map = _debug_handle_map
         self._delegate_map = _delegate_map
+        self._instruction_id_to_num_outs_map = _instruction_id_to_num_outs_map
         self._reference_outputs = _reference_outputs
         self._representative_inputs = _representative_inputs
 
@@ -170,6 +175,12 @@ class ETRecord:
             etrecord_zip.writestr(
                 ETRecordReservedFileNames.DELEGATE_MAP_NAME,
                 json.dumps(self._delegate_map),
+            )
+
+        if self._instruction_id_to_num_outs_map is not None:
+            etrecord_zip.writestr(
+                ETRecordReservedFileNames.INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME,
+                json.dumps(self._instruction_id_to_num_outs_map),
             )
 
         if self._reference_outputs is not None:
@@ -284,6 +295,7 @@ class ETRecord:
         if (
             self._debug_handle_map is not None
             or self._delegate_map is not None
+            or self._instruction_id_to_num_outs_map is not None
             or self._reference_outputs is not None
             or self._representative_inputs is not None
         ):
@@ -293,13 +305,18 @@ class ETRecord:
             )
 
         # Process executorch program and extract data
-        debug_handle_map, delegate_map, reference_outputs, representative_inputs = (
-            _process_executorch_program(executorch_program)
-        )
+        (
+            debug_handle_map,
+            delegate_map,
+            instruction_id_to_num_outs_map,
+            reference_outputs,
+            representative_inputs,
+        ) = _process_executorch_program(executorch_program)
 
         # Set the extracted data
         self._debug_handle_map = debug_handle_map
         self._delegate_map = delegate_map
+        self._instruction_id_to_num_outs_map = instruction_id_to_num_outs_map
         self._reference_outputs = reference_outputs
         self._representative_inputs = representative_inputs
 
@@ -593,7 +610,9 @@ def _process_executorch_program(
     executorch_program: Union[
         ExecutorchProgram, ExecutorchProgramManager, BundledProgram
     ]
-) -> tuple[Optional[Dict], Optional[Dict], Optional[Dict], Optional[List]]:
+) -> tuple[
+    Optional[Dict], Optional[Dict], Optional[Dict], Optional[Dict], Optional[List]
+]:
     """Process executorch program and return debug maps and bundled program data."""
     if isinstance(executorch_program, BundledProgram):
         reference_outputs = _get_reference_outputs(executorch_program)
@@ -602,11 +621,30 @@ def _process_executorch_program(
         debug_handle_map = executorch_program.executorch_program.debug_handle_map
         # pyre-ignore[16]: Item `None` of `typing.Union[None, exir.program._program.ExecutorchProgram, exir.program._program.ExecutorchProgramManager]` has no attribute `debug_handle_map`
         delegate_map = executorch_program.executorch_program.delegate_map
-        return debug_handle_map, delegate_map, reference_outputs, representative_inputs
+        # pyre-ignore[16]: Item `None` of `typing.Union[None, exir.program._program.ExecutorchProgram, exir.program._program.ExecutorchProgramManager]` has no attribute `instruction_id_to_num_outs_map`
+        instruction_id_to_num_outs_map = (
+            executorch_program.executorch_program.instruction_id_to_num_outs_map
+        )
+        return (
+            debug_handle_map,
+            delegate_map,
+            instruction_id_to_num_outs_map,
+            reference_outputs,
+            representative_inputs,
+        )
     else:
         debug_handle_map = executorch_program.debug_handle_map
         delegate_map = executorch_program.delegate_map
-        return debug_handle_map, delegate_map, None, None
+        instruction_id_to_num_outs_map = (
+            executorch_program.instruction_id_to_num_outs_map
+        )
+        return (
+            debug_handle_map,
+            delegate_map,
+            instruction_id_to_num_outs_map,
+            None,
+            None,
+        )
 
 
 def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
@@ -640,6 +678,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
     graph_map: Dict[str, ExportedProgram] = {}
     debug_handle_map = None
     delegate_map = None
+    instruction_id_to_num_outs_map = None
     exported_program = None
     edge_dialect_program = None
     reference_outputs = None
@@ -658,6 +697,12 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
         elif entry == ETRecordReservedFileNames.DELEGATE_MAP_NAME:
             delegate_map = json.loads(
                 etrecord_zip.read(ETRecordReservedFileNames.DELEGATE_MAP_NAME)
+            )
+        elif entry == ETRecordReservedFileNames.INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME:
+            instruction_id_to_num_outs_map = json.loads(
+                etrecord_zip.read(
+                    ETRecordReservedFileNames.INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME
+                )
             )
         elif entry == ETRecordReservedFileNames.ETRECORD_IDENTIFIER:
             continue
@@ -724,6 +769,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
         graph_map=graph_map,
         _debug_handle_map=debug_handle_map,
         _delegate_map=delegate_map,
+        _instruction_id_to_num_outs_map=instruction_id_to_num_outs_map,
         _reference_outputs=reference_outputs,
         _representative_inputs=representative_inputs,
         export_graph_id=export_graph_id,

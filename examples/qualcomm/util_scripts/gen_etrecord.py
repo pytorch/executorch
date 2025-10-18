@@ -62,8 +62,7 @@ def main(args):
         device_id=args.device,
         soc_model=args.model,
     )
-    input_list = "input_0_0.raw input_0_1.raw\n"
-    adb.push(inputs=[sample_input], input_list=input_list)
+    adb.push(inputs=[sample_input])
     adb.execute()
 
     # pull etdump back and display the statistics

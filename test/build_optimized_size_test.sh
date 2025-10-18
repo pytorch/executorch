@@ -21,7 +21,7 @@ cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a"
   clean_executorch_install_folders
   update_tokenizers_git_submodule
-  CXXFLAGS="-g" retry cmake -DBUCK2="$BUCK2" \
+  CXXFLAGS="-g" retry cmake \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=MinSizeRel \

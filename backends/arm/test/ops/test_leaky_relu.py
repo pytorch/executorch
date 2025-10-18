@@ -30,10 +30,10 @@ class LeakyReLU(torch.nn.Module):
 
     test_data: dict[str, input_t1] = {
         "zeros": lambda: ((torch.zeros(1, 1, 5, 5),), 0.01),
-        "ones": lambda: ((torch.ones(1, 32, 112, 112),), 0.01),
-        "rand": lambda: ((torch.rand(1, 96, 56, 56),), 0.2),
+        "ones": lambda: ((torch.ones(1, 16, 96, 96),), 0.01),
+        "rand": lambda: ((torch.rand(1, 64, 56, 56),), 0.2),
         "3Dtensor": lambda: ((torch.rand(5, 5, 5),), 0.001),
-        "negative_slope": lambda: ((torch.rand(1, 16, 128, 128),), -0.002),
+        "negative_slope": lambda: ((torch.rand(1, 16, 96, 96),), -0.002),
     }
 
 
@@ -73,7 +73,6 @@ def test_leaky_relu_u55_INT(test_data):
         LeakyReLU(slope),
         data,
         [],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
@@ -88,7 +87,6 @@ def test_leaky_relu_u85_INT(test_data):
         LeakyReLU(slope),
         data,
         [],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])

@@ -23,6 +23,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 # Find prebuilt executorch library
@@ -34,13 +35,9 @@ find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 #
-# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
 #
-set(EXECUTORCH_SRCS_FILE "${CMAKE_CURRENT_BINARY_DIR}/../executorch_srcs.cmake")
-
-extract_sources(${EXECUTORCH_SRCS_FILE})
-
-include(${EXECUTORCH_SRCS_FILE})
+executorch_load_build_variables()
 
 # Since extract_sources.py is not returning absolute values, we need to patch
 # the source paths.

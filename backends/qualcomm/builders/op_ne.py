@@ -16,7 +16,7 @@ from .qnn_constants import OpElementWiseNotEqual, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class NotEqual(NodeVisitor):
-    target = ["aten.ne.Tensor", "aten.ne.Scalar"]
+    target = ["aten.ne.Tensor"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

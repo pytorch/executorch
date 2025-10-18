@@ -19,7 +19,6 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/platform/runtime.h>
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -39,7 +38,7 @@ class FusionG3OperatorTest : public OperatorTest {
  protected:
   Tensor&
   add_out(const Tensor& a, const Tensor& b, const Scalar& alpha, Tensor& out) {
-    return cadence::impl::G3::native::add_out(context_, a, b, alpha, out);
+    return impl::G3::native::add_out(context_, a, b, alpha, out);
   }
 };
 
@@ -100,4 +99,3 @@ TEST_F(FusionG3OperatorTest, KernelCheckTest) {
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

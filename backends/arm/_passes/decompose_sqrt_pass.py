@@ -4,9 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-from typing import Tuple, Union
+from typing import Set, Tuple, Type, Union
 
 import torch
+from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -26,7 +28,8 @@ def get_sqrt_decomposition(op) -> Union[Tuple, torch._ops.OpOverload]:
     raise RuntimeError(f"Can't get sqrt decomposition for op {op}")
 
 
-class DecomposeSqrtPass(ExportPass):
+class DecomposeSqrtPass(ArmPass):
+    _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
 
     def call_operator(self, op, args, kwargs, meta):
         """
@@ -38,4 +41,4 @@ class DecomposeSqrtPass(ExportPass):
 
         pow_op = get_sqrt_decomposition(op)
 
-        return super().call_operator(pow_op, (args[0], 0.5), {}, meta)
+        return super().call_operator(pow_op, (args[0], 0.5), {}, meta, updated=True)

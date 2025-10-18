@@ -5,6 +5,7 @@
 
 import itertools
 
+import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
 import torch
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program

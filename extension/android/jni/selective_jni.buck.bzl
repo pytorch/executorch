@@ -10,6 +10,7 @@ def selective_jni_target(name, deps, srcs = [], soname = "libexecutorch.$(ext)")
         srcs = [
             "//xplat/executorch/extension/android/jni:jni_layer.cpp",
             "//xplat/executorch/extension/android/jni:jni_layer_runtime.cpp",
+            "//xplat/executorch/extension/android/jni:jni_helper.cpp",
         ] + srcs,
         allow_jni_merging = False,
         compiler_flags = ET_JNI_COMPILER_FLAGS,

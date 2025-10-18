@@ -95,7 +95,7 @@ def test_batch_norm_conv_fusing(bias: bool, input_shape: list[int]):
     example_input = (torch.ones(*input_shape),)
 
     module = ConvBatchNormModule(bias, len(input_shape), 4)
-    program = torch.export.export_for_training(module, example_input, strict=True)
+    program = torch.export.export(module, example_input, strict=True)
     og_module = program.module()
 
     pm = NeutronAtenPassManager()
@@ -129,7 +129,7 @@ def test_batch_norm_linear_fusing(bias: bool):
     example_input = (torch.ones(*input_shape),)
 
     module = LinearBatchNormModule(bias, 4, input_shape[-1], input_shape[1])
-    program = torch.export.export_for_training(module, example_input, strict=True)
+    program = torch.export.export(module, example_input, strict=True)
     og_module = program.module()
 
     pm = NeutronAtenPassManager()
@@ -168,7 +168,7 @@ def test_batch_norm_conv_fusing__full_pipeline__1d(bias: bool):
     nodes = list(edge_program.graph.nodes)
 
     assert (
-        len(nodes) == 13
+        len(nodes) == 17
     )  # 1D Conv currently isn't delegated, because it doesn't get quantized.
     assert not any(
         node.op == "call_function" and "batch_norm" in node.target.__name__

@@ -14,6 +14,7 @@
 /backends/transforms @kimishpatel
 /backends/vulkan @SS-JIA
 /backends/xnnpack @digantdesai @mcr229
+/backends/nxp @robert-kalmar
 
 /devtools @Gasoonjia
 
@@ -33,6 +34,7 @@
 /examples/qualcomm @cccclai
 /examples/selective_build @lucylq @larryliu0820 @JacobSzwejbka
 /examples/xnnpack @digantdesai @mcr229
+/examples/nxp @robert-kalmar
 
 /exir/backend @cccclai @kimishpatel @JacobSzwejbka
 /exir @JacobSzwejbka @larryliu0820

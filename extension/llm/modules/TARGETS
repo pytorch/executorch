@@ -1,8 +1,8 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "kv_cache",
     srcs = [
         "kv_cache.py",
@@ -13,7 +13,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "attention",
     srcs = [
         "attention.py",
@@ -26,7 +26,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "position_embeddings",
     srcs = [
         "_position_embeddings.py",
@@ -36,7 +36,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "module_lib",
     srcs = [
         "__init__.py",

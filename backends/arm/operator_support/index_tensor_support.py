@@ -2,6 +2,12 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Provide TOSA support checks for ``aten.index.Tensor``.
+
+Reject unsupported patterns such as high-rank index tensors, front-positioned
+slice/ellipsis/None markers, and cases that exceed ``int32`` element limits.
+
+"""
 
 import math
 
@@ -12,13 +18,14 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
 @register_tosa_support_check
 class IndexTensorSupported(SupportedTOSAOperatorCheck):
-    """
+    """Prevent partitioning of unsupported ``index.Tensor`` usages.
+
     This support check is intended to prevent the partitioning of
     currently unsupported usages of the index.Tensor operator.
 
@@ -95,6 +102,7 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
             t[1:3, torch.arange(5), 2:3, torch.arange(3).reshape(3,1)]
         are also possible and can result in some unintuitive behaviors
         where batching and indexing are mixed together.
+
     """
 
     targets = [exir_ops.edge.aten.index.Tensor]
@@ -107,20 +115,43 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
+        """Return True if ``aten.index.Tensor`` usage fits supported patterns.
+
+        Enforces the following constraints:
+        - No ``None`` (unsqueeze), slice, or ellipsis before an indexing tensor.
+        - Indexing tensors have rank <= 3.
+        - The value tensor element count fits in ``int32``.
+
+        """
         indices = node.args[1]
         for index in indices:  # type: ignore[union-attr]
             # Usage 2 guard
             if index is None:
+                self.reporter.report_reject(
+                    node,
+                    (
+                        "None (from slice/unsqueeze/ellipsis) before an indexing tensor"
+                        " is not supported."
+                    ),
+                )
                 return False
 
             # Usage 1 guard
             fake_tensor = get_first_fake_tensor(index)  # type: ignore[arg-type]
             if len(fake_tensor.size()) > 3:
+                self.reporter.report_reject(
+                    node,
+                    ("Indexing tensors of rank >= 4 is not supported."),
+                )
                 return False
 
         # Usage 3 guard
         total_vals = math.prod(get_first_fake_tensor(node.args[0]).shape)  # type: ignore[arg-type]
         if total_vals > torch.iinfo(torch.int32).max:
+            self.reporter.report_reject(
+                node,
+                ("Value size exceeds int32 range; would overflow flattened indexing."),
+            )
             return False
 
         return True

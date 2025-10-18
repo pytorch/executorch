@@ -42,7 +42,10 @@ set(XNNPACK_ENABLE_AVX512VNNIGFNI
     OFF
     CACHE BOOL ""
 )
-
+set(XNNPACK_ENABLE_ARM_SME2
+    ON
+    CACHE BOOL ""
+)
 if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
   set(XNNPACK_ENABLE_KLEIDIAI
       ON
@@ -53,6 +56,14 @@ else()
       OFF
       CACHE BOOL ""
   )
+endif()
+
+if(WIN32)
+  # These XNNPACK options don't currently build on Windows.
+  set_overridable_option(XNNPACK_ENABLE_AVX256SKX OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX256VNNI OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX256VNNIGFNI OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX512BF16 OFF)
 endif()
 
 set(XNNPACK_BUILD_ALL_MICROKERNELS

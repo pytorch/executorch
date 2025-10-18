@@ -20,7 +20,10 @@ foreach(schema_file ${_schema_files})
   )
 endforeach()
 
-file(MAKE_DIRECTORY ${DEVTOOLS_INCLUDE_DIR}/executorch/devtools/bundled_program)
+file(
+  MAKE_DIRECTORY
+  ${DEVTOOLS_INCLUDE_DIR_NO_BUILD_INTERFACE}/executorch/devtools/bundled_program
+)
 add_custom_command(
   OUTPUT ${_schema_outputs}
   COMMAND

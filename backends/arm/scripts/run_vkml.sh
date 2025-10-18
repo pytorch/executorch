@@ -19,14 +19,14 @@ _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly ins
 
 
 model=""
-build_path="cmake-out"
+build_path="cmake-out-vkml"
 converter="model-converter"
 
 help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
     echo "  --model=<MODEL_FILE>    .pte model file to run"
-    echo "  --build=<BUILD_PATH>    Target to build and run for Default: ${build_path}"
+    echo "  --build_path=<BUILD_PATH>  Path to executor_runner build. for Default: ${build_path}"
     exit 0
 }
 

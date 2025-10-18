@@ -189,6 +189,13 @@ if(TARGET mpsdelegate)
   executorch_target_link_options_shared_lib(mpsdelegate)
 endif()
 
+# Openvino backend
+if(TARGET openvino_backend)
+  find_package(OpenVINO REQUIRED)
+  list(APPEND link_libraries openvino_backend)
+  executorch_target_link_options_shared_lib(openvino_backend)
+endif()
+
 if(TARGET coremldelegate)
   find_library(SQLITE_LIBRARY sqlite3)
   list(
@@ -219,3 +226,9 @@ endif()
 target_include_directories(llama_main PUBLIC ${_common_include_directories})
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
+if(APPLE)
+  target_link_options(llama_main PRIVATE -Wl,-rpath,@loader_path)
+elseif(UNIX)
+  set_target_properties(llama_main PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'")
+endif()
+# Windows doesn't need rpath - DLLs are found via standard Windows search order

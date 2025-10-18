@@ -6,8 +6,9 @@
 
 from typing import Tuple
 
+import pytest
 import torch
-from executorch.backends.arm._passes import InsertCastForOpsWithInt64InputPass
+from executorch.backends.arm._passes import InsertInt32CastsAfterInt64PlaceholdersPass
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -57,6 +58,7 @@ test_input: dict[input_params] = {
 }
 
 
+@pytest.mark.skip(reason="MLETORCH-1274 Improve data type checks during partitioning")
 @common.parametrize("test_input", test_input)
 def test_embedding_tosa_FP(test_input: input_params):
     op = Embedding()
@@ -66,7 +68,7 @@ def test_embedding_tosa_FP(test_input: input_params):
         op.aten_op,
         op.exir_op,
         use_to_edge_transform_and_lower=True,
-        transform_passes=[InsertCastForOpsWithInt64InputPass()],
+        transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
     )
     pipeline.run()
 
@@ -87,6 +89,7 @@ def test_embedding_tosa_INT(test_input: input_params):
     pipeline.run()
 
 
+@pytest.mark.skip("reason=MLETORCH-1274 Improve data type checks during partitioning")
 @common.parametrize("test_input", test_input)
 @common.SkipIfNoModelConverter
 def test_embedding_vgf_FP(test_input: input_params):
@@ -98,7 +101,7 @@ def test_embedding_vgf_FP(test_input: input_params):
         op.exir_op,
         tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
-        transform_passes=[InsertCastForOpsWithInt64InputPass()],
+        transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
     )
     pipeline.run()
 

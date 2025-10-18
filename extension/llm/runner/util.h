@@ -7,10 +7,14 @@
  */
 
 #pragma once
+#include <executorch/extension/llm/runner/constants.h>
+#include <executorch/extension/module/module.h>
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <stdio.h>
 #include <time.h>
 #include <cctype>
+#include <vector>
 #if defined(__linux__) || defined(__ANDROID__) || defined(__unix__)
 #include <sys/resource.h>
 #endif
@@ -99,6 +103,77 @@ ET_EXPERIMENTAL size_t inline get_rss_bytes() {
   // when this changed.
   return 0;
 }
+
+// Returns the cache position tensor, which can be either a single start_pos
+// (when the method_name [`text_decoder` or `forward`] expects a tensor with
+// size 1 because model will populate the cache position tensor underneath), or
+// a populated tensor for cache position, for the given start_pos and seq_len.
+inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
+    Module* module,
+    int64_t& start_pos,
+    std::vector<int64_t>& cache_positions_vec,
+    int seq_len,
+    const char* method_name = "forward") {
+  // Get expected shape of cache position tensor, which should be the second
+  // argument
+  auto method_meta_result = module->method_meta(method_name);
+  if (!method_meta_result.ok()) {
+    return method_meta_result.error();
+  }
+  auto method_meta = std::move(*method_meta_result);
+  auto second_input_info_result = method_meta.input_tensor_meta(1);
+  if (!second_input_info_result.ok()) {
+    return second_input_info_result.error();
+  }
+  auto second_input_info = std::move(*second_input_info_result);
+  auto second_input_sizes = second_input_info.sizes();
+  auto numel = second_input_sizes[0];
+
+  TensorPtr start_pos_tensor;
+  if (numel > 1) {
+    // `cache_position` goes from start_pos to start_pos +
+    // encoder_output.size(1). e.g. if start_pos = 2 and encoder_output.size(1)
+    // = 5, cache_position_tensor should be [2, 3, 4, 5, 6].
+    cache_positions_vec.resize(seq_len);
+    for (int64_t i = 0; i < seq_len; ++i) {
+      cache_positions_vec[i] = start_pos + i;
+    }
+    return ::executorch::extension::from_blob(
+        cache_positions_vec.data(),
+        {static_cast<int>(seq_len)},
+        executorch::aten::ScalarType::Long);
+  } else {
+    // Cache position is size 1.
+    return ::executorch::extension::from_blob(
+        &start_pos, {1}, executorch::aten::ScalarType::Long);
+  }
+}
+
+/**
+ * Helper function to convert a float tensor to bfloat16.
+ * Creates a new tensor with bfloat16 dtype and copies/converts the data.
+ */
+inline ::executorch::runtime::Result<::executorch::extension::TensorPtr>
+convert_to_bfloat16(const ::executorch::extension::TensorPtr& src_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      src_tensor->scalar_type() == ::executorch::aten::ScalarType::Float,
+      InvalidArgument,
+      "BFloat16 conversion only supported from Float source data");
+
+  const auto num_elements = static_cast<size_t>(src_tensor->numel());
+  const float* float_data = src_tensor->const_data_ptr<float>();
+
+  auto bf16_tensor = ::executorch::extension::empty_like(
+      src_tensor, ::executorch::aten::ScalarType::BFloat16);
+  auto* bf16_data =
+      bf16_tensor->mutable_data_ptr<::executorch::aten::BFloat16>();
+  for (size_t i = 0; i < num_elements; ++i) {
+    bf16_data[i] = ::executorch::aten::BFloat16(float_data[i]);
+  }
+
+  return bf16_tensor;
+}
+
 } // namespace llm
 } // namespace extension
 } // namespace executorch

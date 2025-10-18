@@ -15,7 +15,7 @@ from typing import Tuple
 
 import pytest
 import torch
-from executorch.backends.arm._passes import InsertCastForOpsWithInt64InputPass
+from executorch.backends.arm._passes import InsertInt32CastsAfterInt64PlaceholdersPass
 
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -112,7 +112,7 @@ def test_llama_tosa_FP():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            transform_passes=[InsertCastForOpsWithInt64InputPass()],
+            transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
         )
         pipeline.run()
 
@@ -149,6 +149,7 @@ def test_llama_vgf_FP():
             exir_op=[],
             tosa_version="TOSA-1.0+FP",
             use_to_edge_transform_and_lower=True,
+            transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
         )
         pipeline.run()
 
@@ -168,6 +169,5 @@ def test_llama_vgf_INT():
             exir_op=[],
             tosa_version="TOSA-1.0+INT",
             use_to_edge_transform_and_lower=True,
-            transform_passes=[InsertCastForOpsWithInt64InputPass()],
         )
         pipeline.run()

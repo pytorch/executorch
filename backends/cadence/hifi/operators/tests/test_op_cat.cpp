@@ -19,7 +19,6 @@
 
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -38,7 +37,7 @@ class HiFiCatTest : public OperatorTest {
  public:
  protected:
   Tensor& cat_out(ArrayRef<Tensor> tensors, int64_t dim, Tensor& out) {
-    return ::cadence::impl::HiFi::native::cat_out(context_, tensors, dim, out);
+    return ::impl::HiFi::native::cat_out(context_, tensors, dim, out);
   }
 };
 
@@ -133,4 +132,3 @@ TEST_F(HiFiCatTest, ThreeDimensionalCatTest) {
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

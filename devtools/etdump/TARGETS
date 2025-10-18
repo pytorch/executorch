@@ -29,6 +29,7 @@ runtime.python_library(
     },
     visibility = [
         "//executorch/devtools/...",
+        "//executorch/runtime/test/...",
     ],
     deps = [
         "fbsource//third-party/pypi/setuptools:setuptools",

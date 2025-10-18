@@ -1,8 +1,8 @@
 import argparse
-import os
 from typing import Dict
 
 import torch
+from executorch.examples.models.checkpoint import load_checkpoint_from_pytorch_model
 
 from torchtune.models.convert_weights import get_mapped_key
 
@@ -87,10 +87,8 @@ def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.T
     Convert a state dict from torchtune's format to Meta's format. This function
     doesn't handle any sharding or splitting of state dicts. It follows the
     state_dict IN -> state_dict OUT pattern.
-
     Args:
         state_dict (Dict[str, torch.Tensor]): State dict in torchtune's format.
-
     Returns:
         Dict[str, torch.Tensor]: State dict in Meta's format.
     """
@@ -105,14 +103,15 @@ def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.T
     converted_state_dict["output.weight"] = converted_state_dict[
         "tok_embeddings.weight"
     ]
-
     return converted_state_dict
 
 
 def convert_weights(input_dir_or_checkpoint: str, output_file: str) -> None:
-    # If input_dir_or_checkpoint is a directory downloaded from HF, FullModelHFCheckpointer is used to extract the state dict
-    # If input_dir_or_checkpoint is a checkpoint (from eager model model), it is loaded directly
-    if os.path.isdir(input_dir_or_checkpoint):
+    try:
+        sd = load_checkpoint_from_pytorch_model(input_dir_or_checkpoint)
+        print("Converting checkpoint...")
+        sd = phi_4_hf_to_meta(sd)
+    except FileNotFoundError:
         checkpointer = FullModelHFCheckpointer(
             checkpoint_dir=input_dir_or_checkpoint,
             checkpoint_files=[
@@ -127,11 +126,6 @@ def convert_weights(input_dir_or_checkpoint: str, output_file: str) -> None:
         sd = sd["model"]
         print("Converting checkpoint...")
         sd = phi_4_tune_to_meta(sd)
-    else:
-        print("Loading checkpoint from file...")
-        sd = torch.load(input_dir_or_checkpoint, map_location="cpu", weights_only=True)
-        print("Converting checkpoint...")
-        sd = phi_4_hf_to_meta(sd)
 
     print("Saving checkpoint...")
     torch.save(sd, output_file)

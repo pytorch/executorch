@@ -4,18 +4,32 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
-    name = "replace_quant_nodes_pass",
-    srcs = ["replace_quant_nodes_pass.py"],
-    deps = [
+runtime.python_library(
+    name="replace_quant_nodes_pass",
+    srcs=[
+        "replace_quant_nodes_pass.py",
+        "quantized_op_fusion_pass.py",
+    ],
+    deps=[
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/backends/cortex_m/ops:ops",
-    ]
+        "//executorch/backends/cortex_m/passes:passes_utils",
+    ],
+)
+
+runtime.python_library(
+    name="passes_utils",
+    srcs=[
+        "passes_utils.py",
+    ],
+    deps=[
+        "fbcode//caffe2:torch",
+    ],
 )

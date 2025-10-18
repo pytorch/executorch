@@ -195,15 +195,15 @@ def fine_tune_executorch_model(
     momentum: float = 0.9,
 ) -> tuple[ExecuTorchModule, typing.Dict[int, typing.Dict[str, float]]]:
     """
-    Fine-tune an ExecutorTorch model using a training and validation dataset.
+    Fine-tune an ExecuTorch model using a training and validation dataset.
 
-    This function loads an ExecutorTorch model from a file, fine-tunes it using
+    This function loads an ExecuTorch model from a file, fine-tunes it using
     the provided training data loader, and evaluates it on the validation data
     loader. The function returns the fine-tuned model and a history dictionary
     containing training and validation metrics.
 
     Args:
-        model_path (str): Path to the ExecutorTorch model file to be
+        model_path (str): Path to the ExecuTorch model file to be
         fine-tuned.
         save_path (str): Path where the fine-tuned model will be saved.
         train_loader (DataLoader): DataLoader for the training dataset.
@@ -215,7 +215,7 @@ def fine_tune_executorch_model(
         (default: 0.9).
 
     Returns:
-        tuple: A tuple containing the fine-tuned ExecutorTorchModule
+        tuple: A tuple containing the fine-tuned ExecuTorchModule
                and a dictionary with training and validation metrics.
     """
     with open(model_path, "rb") as f:
@@ -335,7 +335,7 @@ def train_both_models(
     typing.Dict[int, typing.Dict[str, float]],
 ]:
     """
-    Train both a PyTorch model and an ExecutorTorch model simultaneously using the same data.
+    Train both a PyTorch model and an ExecuTorch model simultaneously using the same data.
 
     This function trains both models in parallel, using the same data batches for both,
     which makes debugging and comparison easier. It tracks metrics for both models
@@ -343,7 +343,7 @@ def train_both_models(
 
     Args:
         pytorch_model (torch.nn.Module): The PyTorch model to be trained
-        et_model_path (str): Path to the ExecutorTorch model file
+        et_model_path (str): Path to the ExecuTorch model file
         train_loader (DataLoader): DataLoader for the training dataset
         test_loader (DataLoader): DataLoader for the testing/validation dataset
         epochs (int, optional): Number of epochs for training. Defaults to 10.
@@ -354,11 +354,11 @@ def train_both_models(
     Returns:
         tuple: A tuple containing:
             - The trained PyTorch model
-            - The trained ExecutorTorch model
+            - The trained ExecuTorch model
             - Dictionary with PyTorch training and validation metrics
-            - Dictionary with ExecutorTorch training and validation metrics
+            - Dictionary with ExecuTorch training and validation metrics
     """
-    # Load the ExecutorTorch model
+    # Load the ExecuTorch model
     with open(et_model_path, "rb") as f:
         model_bytes = f.read()
         et_mod = _load_for_executorch_for_training_from_buffer(model_bytes)
@@ -442,7 +442,7 @@ def train_both_models(
             # Accumulate loss
             pytorch_epoch_loss += pytorch_loss.detach().item()
 
-            # ---- ExecutorTorch model training ----
+            # ---- ExecuTorch model training ----
             et_start_time = time.time()
 
             # Forward pass
@@ -476,7 +476,7 @@ def train_both_models(
             f"PyTorch - Train Loss: {avg_pytorch_train_loss:.4f}, Train Accuracy: {pytorch_train_accuracy:.2f}%"
         )
         print(
-            f"ExecutorTorch - Train Loss: {avg_et_train_loss:.4f}, Train Accuracy: {et_train_accuracy:.2f}%"
+            f"ExecuTorch - Train Loss: {avg_et_train_loss:.4f}, Train Accuracy: {et_train_accuracy:.2f}%"
         )
 
         # Testing/Validation phase
@@ -513,7 +513,7 @@ def train_both_models(
                 pytorch_test_correct += (pytorch_predicted == labels).sum().item()
                 pytorch_test_total += batch_size
 
-                # ---- ExecutorTorch model testing ----
+                # ---- ExecuTorch model testing ----
                 et_test_start = time.time()
 
                 et_out = et_mod.forward_backward(
@@ -540,7 +540,7 @@ def train_both_models(
             f"PyTorch - Test Loss: {avg_pytorch_test_loss:.4f}, Test Accuracy: {pytorch_test_accuracy:.2f}%"
         )
         print(
-            f"ExecutorTorch - Test Loss: {avg_et_test_loss:.4f}, Test Accuracy: {et_test_accuracy:.2f}%"
+            f"ExecuTorch - Test Loss: {avg_et_test_loss:.4f}, Test Accuracy: {et_test_accuracy:.2f}%"
         )
 
         # Compare losses
@@ -555,16 +555,14 @@ def train_both_models(
                 f"New best PyTorch model saved with test loss: {avg_pytorch_test_loss:.4f}"
             )
 
-        # Save the best ExecutorTorch model
+        # Save the best ExecuTorch model
         if avg_et_test_loss < best_et_test_loss:
             best_et_test_loss = avg_et_test_loss
-            # Save the ExecutorTorch model
+            # Save the ExecuTorch model
             save_dir = os.path.dirname(et_save_path)
             if save_dir and not os.path.exists(save_dir):
                 os.makedirs(save_dir)
-            print(
-                f"New best ExecutorTorch model with test loss: {avg_et_test_loss:.4f}"
-            )
+            print(f"New best ExecuTorch model with test loss: {avg_et_test_loss:.4f}")
 
         # Store history for both models
         pytorch_history[epoch] = {
@@ -605,7 +603,7 @@ def train_both_models(
             f"PyTorch training time: {pytorch_train_time:.4f}s, testing time: {pytorch_test_time:.4f}s"
         )
         print(
-            f"ExecutorTorch training time: {et_train_time:.4f}s, testing time: {et_test_time:.4f}s"
+            f"ExecuTorch training time: {et_train_time:.4f}s, testing time: {et_test_time:.4f}s"
         )
         print(f"Training time ratio (ET/PT): {et_train_time/pytorch_train_time:.4f}")
         print(f"Testing time ratio (ET/PT): {et_test_time/pytorch_test_time:.4f}")
@@ -613,12 +611,12 @@ def train_both_models(
     print("\nTraining Completed!\n")
     print("\n###########SUMMARY#############\n")
     print(f"Best PyTorch test loss: {best_pytorch_test_loss:.4f}")
-    print(f"Best ExecutorTorch test loss: {best_et_test_loss:.4f}")
+    print(f"Best ExecuTorch test loss: {best_et_test_loss:.4f}")
     print(
         f"Final loss difference: {abs(best_pytorch_test_loss - best_et_test_loss):.6f}"
     )
     print(f"PyTorch model saved at: {pytorch_save_path}")
-    print(f"ExecutorTorch model path: {et_save_path}")
+    print(f"ExecuTorch model path: {et_save_path}")
     print("################################\n")
 
     return pytorch_model, et_mod, pytorch_history, et_history

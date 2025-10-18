@@ -105,7 +105,7 @@ Tensor& any_dims_out(
                 in, dim_list, out, [&](const auto begin, const auto end) {
                   for (const auto out_ix : c10::irange(begin, end)) {
                     bool any = false;
-                    if (in_not_empty) {
+                    if (plan.has_value()) {
                       any = plan->execute<CTYPE_IN, bool>(
                           [](CTYPE_IN v) { return static_cast<bool>(v); },
                           [](bool outv, bool acc) { return acc || outv; },

@@ -3,7 +3,10 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_opt
 def _operator_registry_preprocessor_flags():
     max_kernel_num = native.read_config("executorch", "max_kernel_num", None)
     if max_kernel_num != None:
-        return ["-DMAX_KERNEL_NUM=" + max_kernel_num]
+        return select({
+            "DEFAULT": ["-DMAX_KERNEL_NUM=" + max_kernel_num],
+            "ovr_config//build_mode/constraints:arvr_is_host_platform": []
+        })
     elif not runtime.is_oss:
         return select({
             "DEFAULT": [],

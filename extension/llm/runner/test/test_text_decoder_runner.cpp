@@ -26,7 +26,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::Result;
 using executorch::runtime::testing::TensorFactory;
 
-// Mock Module class for testing
+namespace {
 class MockModule : public Module {
  public:
   MockModule() : Module("") {}
@@ -36,7 +36,8 @@ class TextDecoderRunnerTest : public Test {
  protected:
   void SetUp() override {
     mock_module_ = std::make_unique<MockModule>();
-    io_manager_ = std::make_unique<executorch::extension::llm::IOManager>();
+    io_manager_ =
+        std::make_unique<executorch::extension::llm::IOManager>(*mock_module_);
     runner_ = std::make_unique<TextDecoderRunner>(
         mock_module_.get(), io_manager_.get());
   }
@@ -162,8 +163,8 @@ TEST_F(TextDecoderRunnerTest, StepWithAllModels) {
                     << model_path << " with error: " << (int)load_result;
       continue;
     }
-    std::unique_ptr<executorch::extension::llm::IOManager> io_manager =
-        std::make_unique<executorch::extension::llm::IOManager>();
+    auto io_manager =
+        std::make_unique<executorch::extension::llm::IOManager>(*module);
     // Create TextDecoderRunner
     TextDecoderRunner runner(module.get(), io_manager.get());
     auto runner_load_result = runner.load();
@@ -204,3 +205,5 @@ TEST_F(TextDecoderRunnerTest, StepWithAllModels) {
   ASSERT_TRUE(any_model_tested)
       << "No models were tested despite environment variables being set";
 }
+
+} // namespace

@@ -20,9 +20,9 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
+from executorch.backends.arm.tosa import TosaSpecification
 
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
 
@@ -90,8 +90,13 @@ class ClampVisitor_INT(NodeVisitor):
             nan_mode=1,
         )
 
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().CLAMP, [inputs[0].name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.TosaOp.Op().CLAMP,
+            [inputs[0].name],
+            [output.name],
+            attr,
         )
 
 
@@ -138,6 +143,11 @@ class ClampVisitor_FP(ClampVisitor_INT):
             nan_mode=1,
         )
 
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().CLAMP, [inputs[0].name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.TosaOp.Op().CLAMP,
+            [inputs[0].name],
+            [output.name],
+            attr,
         )

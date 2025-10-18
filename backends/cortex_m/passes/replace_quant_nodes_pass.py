@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +11,6 @@ import executorch.backends.cortex_m.ops.operators  # noqa
 import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 
 
@@ -40,6 +40,10 @@ class ReplaceQuantNodesPass(ExportPass):
                 "qualifier": self._is_qualified_int8_node,
             },
         }
+        self.disallowed_targets = {
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+        }
 
     def call_operator(
         self,
@@ -48,9 +52,10 @@ class ReplaceQuantNodesPass(ExportPass):
         kwargs: Dict[str, object],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        assert isinstance(
-            op, EdgeOpOverload
-        ), "Op must be an EdgeOpOverload. Run this pass after to_edge()."
+        if op in self.disallowed_targets:
+            raise RuntimeError(
+                f"Found unexpected aten op '{op}'. Make sure you run this pass after lowering to edge."
+            )
 
         if op in self.op_replacements and self.op_replacements[op]["qualifier"](args):
             return super().call_operator(

@@ -24,7 +24,7 @@ import ExecuTorchLLM
 
 ### TextLLMRunner
 
-The `ExecuTorchTextLLMRunner` class (bridged to Swift as `TextLLMRunner`) provides a simple Objective-C/Swift interface for loading a text-generation model, configuring its tokenizer with custom special tokens, generating token streams, and stopping execution.
+The `ExecuTorchLLMTextRunner` class (bridged to Swift as `TextLLMRunner`) provides a simple Objective-C/Swift interface for loading a text-generation model, configuring its tokenizer with custom special tokens, generating token streams, and stopping execution.
 This API is experimental and subject to change.
 
 #### Initialization
@@ -38,7 +38,7 @@ NSString *modelPath     = [[NSBundle mainBundle] pathForResource:@"llama-3.2-ins
 NSString *tokenizerPath = [[NSBundle mainBundle] pathForResource:@"tokenizer" ofType:@"model"];
 NSArray<NSString *> *specialTokens = @[ @"<|bos|>", @"<|eos|>" ];
 
-ExecuTorchTextLLMRunner *runner = [[ExecuTorchTextLLMRunner alloc] initWithModelPath:modelPath
+ExecuTorchLLMTextRunner *runner = [[ExecuTorchLLMTextRunner alloc] initWithModelPath:modelPath
                                                                        tokenizerPath:tokenizerPath
                                                                        specialTokens:specialTokens];
 ```
@@ -123,4 +123,4 @@ runner.stop()
 
 ## Demo
 
-Get hands-on with our [LLaMA iOS Demo App](llama-demo-ios.md) to see the LLM runtime APIs in action.
+Get hands-on with our [etLLM iOS Demo App](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple) to see the LLM runtime APIs in action.

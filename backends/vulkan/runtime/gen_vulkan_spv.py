@@ -670,7 +670,7 @@ class SPVGenerator:
                 if len(file) > 1:
                     self.template_yaml_files.append(file)
 
-    def generateVariantCombinations(
+    def generateVariantCombinations(  # noqa: C901
         self,
         iterated_params: Dict[str, Any],
         exclude_params: Optional[Set[str]] = None,
@@ -679,7 +679,25 @@ class SPVGenerator:
             exclude_params = set()
         all_iterated_params = []
         for param_name, value_list in iterated_params.items():
-            if param_name not in exclude_params:
+            if re.match(r"^combination\d*$", param_name):
+                param_values = []
+                param_names = value_list["parameter_names"]
+                combos = value_list["combos"]
+                for combo in combos:
+                    parameter_values = combo["parameter_values"]
+                    if "suffix" in combo:
+                        suffix = combo["suffix"]
+                    else:
+                        suffix = ""
+                        for param_value in parameter_values:
+                            if len(str(param_value)) > 0:
+                                suffix += "_" + str(param_value)
+                        suffix = suffix[1:]
+                    param_values.append((param_names, suffix, parameter_values))
+
+                all_iterated_params.append(param_values)
+
+            elif param_name not in exclude_params:
                 param_values = []
                 for value in value_list:
                     if "RANGE" in value:
@@ -713,7 +731,7 @@ class SPVGenerator:
 
         return list(product(*all_iterated_params))
 
-    def parseTemplateYaml(self, yaml_file: str) -> None:
+    def parseTemplateYaml(self, yaml_file: str) -> None:  # noqa: C901
         with open(yaml_file) as f:
             contents = yaml.load(f, Loader=UniqueKeyLoader)
             for template_name, params_dict in contents.items():
@@ -762,10 +780,21 @@ class SPVGenerator:
                                     default_params_copy[key] = variant[key]
 
                             variant_name = variant["NAME"]
-                            for param_value in combination:
-                                default_params_copy[param_value[0]] = param_value[2]
-                                if len(str(param_value[1])) > 0:
-                                    variant_name = f"{variant_name}_{param_value[1]}"
+
+                            for setting in combination:
+                                param_names = setting[0]
+                                suffix = setting[1]
+                                param_values = setting[2]
+                                if isinstance(param_names, list):
+                                    for param_name, param_value in zip(
+                                        param_names, param_values
+                                    ):
+                                        default_params_copy[param_name] = param_value
+                                else:
+                                    default_params_copy[param_names] = param_values
+
+                                if len(str(suffix)) > 0:
+                                    variant_name = f"{variant_name}_{suffix}"
 
                             default_params_copy["NAME"] = variant_name
                             default_params_copy["VARIANT_NAME"] = variant["NAME"]
@@ -1103,6 +1132,9 @@ class ShaderInfo:
     requires_shader_int16_ext: bool = False
     requires_16bit_storage_ext: bool = False
     requires_8bit_storage_ext: bool = False
+    requires_integer_dot_product_ext: bool = False
+    requires_shader_int64_ext: bool = False
+    requires_shader_float64_ext: bool = False
 
 
 def getName(filePath: str) -> str:
@@ -1192,7 +1224,7 @@ def determineDescriptorType(lineStr: str) -> str:
     )
 
 
-def getShaderInfo(srcFilePath: str) -> ShaderInfo:
+def getShaderInfo(srcFilePath: str) -> ShaderInfo:  # noqa: C901
     shader_info = ShaderInfo([], [], "")
     with open(srcFilePath) as srcFile:
         for line in srcFile:
@@ -1213,6 +1245,12 @@ def getShaderInfo(srcFilePath: str) -> ShaderInfo:
                     shader_info.requires_16bit_storage_ext = True
                 if "GL_EXT_shader_8bit_storage" in line:
                     shader_info.requires_8bit_storage_ext = True
+                if "GL_EXT_integer_dot_product" in line:
+                    shader_info.requires_integer_dot_product_ext = True
+                if "GL_EXT_shader_explicit_arithmetic_types_int64" in line:
+                    shader_info.requires_shader_int64_ext = True
+                if "GL_EXT_shader_explicit_arithmetic_types_float64" in line:
+                    shader_info.requires_shader_float64_ext = True
 
     return shader_info
 
@@ -1288,6 +1326,9 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
         to_cpp_str(shader_info.requires_shader_int16_ext),
         to_cpp_str(shader_info.requires_16bit_storage_ext),
         to_cpp_str(shader_info.requires_8bit_storage_ext),
+        to_cpp_str(shader_info.requires_integer_dot_product_ext),
+        to_cpp_str(shader_info.requires_shader_int64_ext),
+        to_cpp_str(shader_info.requires_shader_float64_ext),
     ]
 
     shader_info_str = textwrap.indent(

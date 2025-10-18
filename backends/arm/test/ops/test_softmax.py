@@ -61,33 +61,29 @@ def test_softmax_tosa_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    Softmax.test_data,
-    xfails={
-        "randn_mult_batches": "MLETORCH-433: Multiple batches not supported on FVP"
-    },
-)
+@common.parametrize("test_data", Softmax.test_data)
 @common.XfailIfNoCorstone300
 def test_softmax_u55_INT(test_data):
     data, dim = test_data()
-    pipeline = EthosU55PipelineINT[input_t1](Softmax(dim), data, [], run_on_fvp=True)
+    pipeline = EthosU55PipelineINT[input_t1](
+        Softmax(dim),
+        data,
+        [],
+    )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    Softmax.test_data,
-    xfails={
-        "randn_mult_batches": "MLETORCH-433: Multiple batches not supported on FVP"
-    },
-)
+@common.parametrize("test_data", Softmax.test_data)
 @common.XfailIfNoCorstone320
 def test_softmax_u85_INT(test_data):
     data, dim = test_data()
-    pipeline = EthosU85PipelineINT[input_t1](Softmax(dim), data, [], run_on_fvp=True)
+    pipeline = EthosU85PipelineINT[input_t1](
+        Softmax(dim),
+        data,
+        [],
+    )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

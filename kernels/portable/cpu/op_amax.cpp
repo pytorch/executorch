@@ -9,6 +9,7 @@
 #include <c10/util/irange.h>
 #include <cmath>
 
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -55,7 +56,7 @@ Tensor& amax_out(
           for (const auto out_ix : c10::irange(begin, end)) {
             out_data[out_ix] = plan.execute<CTYPE>(
                 [](CTYPE v, CTYPE max_v) {
-                  return std::isnan(v) || v > max_v ? v : max_v;
+                  return utils::isnan_override(v) || v > max_v ? v : max_v;
                 },
                 out_ix);
           }

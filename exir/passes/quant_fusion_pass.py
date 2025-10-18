@@ -9,6 +9,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from torch.export import ExportedProgram
+from torch.export.exported_program import InputKind
+from torch.export.graph_signature import TensorArgument
 from torch.fx import GraphModule, subgraph_rewriter
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.utils import _pytree as pytree
@@ -104,11 +106,27 @@ def _remove_dtype_getattr_nodes(model: GraphModule) -> None:
     model.recompile()
 
 
+def _get_node_value_dict(program):
+    """
+    Returns a dict of real tensor values for buffers/parameters in the program
+    """
+    node_value_dict = {}
+    for input_ in program.graph_signature.input_specs:
+        if (
+            input_.kind in (InputKind.BUFFER, InputKind.PARAMETER)
+            and isinstance(input_.arg, TensorArgument)
+            and input_.target in program.state_dict
+        ):
+            node_value_dict[input_.arg.name] = program.state_dict[input_.target]
+    return node_value_dict
+
+
 class QuantFusionPass(ExportPass):
-    def __init__(self, _fix_node_meta_val=False):
+    def __init__(self, _fix_node_meta_val=False, node_value_dict=None):
         super().__init__()
         # TODO This pass violate IR spec because it produces a graph missing node.meta['val']
         self._fix_node_meta_val = _fix_node_meta_val
+        self.node_value_dict = node_value_dict
 
     def call(self, graph_module: GraphModule) -> PassResult:
         """Lower a quantized reference model (with reference quantized operator patterns)
@@ -124,7 +142,7 @@ class QuantFusionPass(ExportPass):
             pattern,
             replacement,
             match_filters,
-        ) in get_quant_patterns_and_replacements():
+        ) in get_quant_patterns_and_replacements(self.node_value_dict):
             subgraph_rewriter.replace_pattern_with_filters(
                 graph_module, pattern, replacement, match_filters
             )
@@ -145,7 +163,10 @@ class QuantFusionPass(ExportPass):
 
 def quant_fusion_and_const_prop_pass(program: ExportedProgram) -> ExportedProgram:
     gm = program.graph_module
-    gm_res = QuantFusionPass(_fix_node_meta_val=True)(gm)
+    node_value_dict = _get_node_value_dict(program)
+    gm_res = QuantFusionPass(_fix_node_meta_val=True, node_value_dict=node_value_dict)(
+        gm
+    )
     gm = gm_res.graph_module
 
     # Do const prop pass to remove packing/dtype conversion ops
