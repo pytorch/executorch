@@ -47,8 +47,11 @@ set(_aoti_cuda_sources
 # Build as SHARED library (.dll) on Windows MSVC, otherwise STATIC
 if(MSVC)
   add_library(aoti_cuda SHARED ${_aoti_cuda_sources})
-  # Define export macro for Windows DLL
-  target_compile_definitions(aoti_cuda PRIVATE EXPORT_AOTI_FUNCTIONS)
+  # Define export macros for Windows DLL
+  target_compile_definitions(aoti_cuda PRIVATE
+    EXPORT_AOTI_FUNCTIONS
+    BUILDING_CUDA_BACKEND
+  )
   # Ensure proper DLL import/export library naming on Windows with config-specific paths
   set_target_properties(aoti_cuda PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS OFF  # We use explicit exports via AOTI_CUDA_EXPORT

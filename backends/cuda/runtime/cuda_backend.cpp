@@ -21,6 +21,7 @@
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/cuda/runtime/cuda_backend_init.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
@@ -383,14 +384,8 @@ static executorch::runtime::Error success_with_compiler =
 
 } // namespace
 
-// Export an initialization function for explicit backend registration
-#ifdef _WIN32
-#define CUDA_BACKEND_INIT_EXPORT __declspec(dllexport)
-#else
-#define CUDA_BACKEND_INIT_EXPORT __attribute__((visibility("default")))
-#endif
-
-extern "C" CUDA_BACKEND_INIT_EXPORT void InitCudaBackend() {
+// InitCudaBackend is exported for explicit backend registration on Windows
+extern "C" CUDA_BACKEND_INIT_API void InitCudaBackend() {
   // Log immediately to confirm function is entered
   ET_LOG(Info, "InitCudaBackend: Function entered");
   
