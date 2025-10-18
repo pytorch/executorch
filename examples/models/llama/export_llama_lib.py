@@ -15,7 +15,6 @@ import json
 import logging
 import re
 import shlex
-from enum import Enum
 from functools import partial
 
 from importlib import resources as _resources
@@ -119,11 +118,6 @@ HUGGING_FACE_REPO_IDS = {
     "lfm2_700m": "LiquidAI/LFM2-700M",
     "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
 }
-
-
-class WeightType(Enum):
-    LLAMA = "LLAMA"
-    FAIRSEQ2 = "FAIRSEQ2"
 
 
 def set_pkg_name(name: str) -> None:
@@ -1247,7 +1241,6 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
 
 
 def _load_llama_model_metadata(
-    weight_type: WeightType,
     use_kv_cache: bool,
     use_sdpa_with_kv_cache: bool,
     enable_dynamic_shape: bool,
@@ -1257,10 +1250,7 @@ def _load_llama_model_metadata(
     vocab_size: int,
     metadata_str: Optional[str] = None,
 ):
-    is_fairseq2 = weight_type == WeightType.FAIRSEQ2
     metadata = {
-        "get_bos_id": 3 if is_fairseq2 else 1,
-        "get_eos_ids": [3] if is_fairseq2 else [2],
         "get_max_seq_len": max_seq_len,
         "get_max_context_len": max_context_len,
         "get_n_layers": n_layers,
@@ -1332,7 +1322,6 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
         save_exported_program=llm_config.export.export_only,
         verbose=llm_config.debug.verbose,
         metadata=_load_llama_model_metadata(
-            WeightType.FAIRSEQ2 if llm_config.base.fairseq2 else WeightType.LLAMA,
             llm_config.model.use_kv_cache,
             llm_config.model.use_sdpa_with_kv_cache,
             llm_config.model.enable_dynamic_shape,
