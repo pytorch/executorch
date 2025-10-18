@@ -391,19 +391,25 @@ static executorch::runtime::Error success_with_compiler =
 #endif
 
 extern "C" CUDA_BACKEND_INIT_EXPORT void InitCudaBackend() {
-  ET_LOG(
-      Info,
-      "CALLING INITCUDABACKEND");
 #ifdef _WIN32
   // On Windows, explicitly register the backend since DLL static initializers
   // don't run reliably
   static bool initialized = false;
   if (!initialized) {
-    register_backend(backend);
+    ET_LOG(Info, "Registering CUDA backend on Windows");
+    auto error = register_backend(backend);
+    if (error == executorch::runtime::Error::Ok) {
+      ET_LOG(Info, "Successfully registered CudaBackend");
+    } else {
+      ET_LOG(Error, "Failed to register CudaBackend: error code %d", (int)error);
+    }
     initialized = true;
+  } else {
+    ET_LOG(Info, "CUDA backend already initialized");
   }
 #else
   // On other platforms, static initialization already happened
+  ET_LOG(Info, "CUDA backend using static initialization");
   (void)success_with_compiler;
 #endif
 }
