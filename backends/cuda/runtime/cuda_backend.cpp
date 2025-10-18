@@ -391,7 +391,11 @@ static executorch::runtime::Error success_with_compiler =
 #endif
 
 extern "C" CUDA_BACKEND_INIT_EXPORT void InitCudaBackend() {
+  // Log immediately to confirm function is entered
+  ET_LOG(Info, "InitCudaBackend: Function entered");
+  
 #ifdef _WIN32
+  ET_LOG(Info, "InitCudaBackend: Windows path");
   // On Windows, explicitly register the backend since DLL static initializers
   // don't run reliably
   static bool initialized = false;
@@ -408,10 +412,12 @@ extern "C" CUDA_BACKEND_INIT_EXPORT void InitCudaBackend() {
     ET_LOG(Info, "CUDA backend already initialized");
   }
 #else
+  ET_LOG(Info, "InitCudaBackend: Non-Windows path");
   // On other platforms, static initialization already happened
-  ET_LOG(Info, "CUDA backend using static initialization");
   (void)success_with_compiler;
 #endif
+  
+  ET_LOG(Info, "InitCudaBackend: Function exiting");
 }
 
 } // namespace executorch::backends
