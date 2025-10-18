@@ -9,9 +9,9 @@ from typing import cast, Dict, List
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import numpy as np
 import torch
-from executorch.backends.qualcomm.utils.constants import QCOM_DATA
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA, QCOM_QUANT_ATTRS
 
-from .node_visitor import NodeVisitor
+from .node_visitor import NodeVisitor, PER_CHANNEL_ENCODING
 from .node_visitor_manager import register_node_visitor
 from .qnn_constants import (
     OpConv2d,
@@ -101,6 +101,29 @@ class Conv2d(NodeVisitor):
 
         return conv_op
 
+    def _reduce_bias_scales(
+        self,
+        node: torch.fx.Node,
+        filter_node: torch.fx.Node,
+        bias_node: torch.fx.Node,
+        groups: int,
+    ):
+        """_summary_
+        If transpose_conv has groups, need special handle for bias_node's per channel quant.
+        Check _derived_bias_quant_spec under backends/qualcomm/quantizer/qconfig.py for more info.
+        """
+
+        filter_scales = filter_node.meta[QCOM_QUANT_ATTRS]["scales"]
+        bias_scales = bias_node.meta[QCOM_QUANT_ATTRS]["scales"]
+        bias_zero_points = bias_node.meta[QCOM_QUANT_ATTRS]["zero_points"]
+
+        # Adding this condition to prevent reduce twice: op_validation and qnn_preprocess
+        if filter_scales.numel() != bias_scales.numel():
+            bias_scales = bias_scales.view(-1, groups)[:, 0]
+            bias_zero_points = bias_zero_points.view(-1, groups)[:, 0]
+            bias_node.meta[QCOM_QUANT_ATTRS]["scales"] = bias_scales
+            bias_node.meta[QCOM_QUANT_ATTRS]["zero_points"] = bias_zero_points
+
     def define_node(
         self,
         node: torch.fx.Node,
@@ -127,8 +150,15 @@ class Conv2d(NodeVisitor):
 
         filter_node = self.get_node(node.args[1])
         filter_tensor = get_parameter(filter_node, self.edge_program)
+
+        stride = cast(List[int], node.args[3])
+        padding = cast(List[int], node.args[4])
+        dilation = cast(List[int], node.args[5])
+        output_padding = cast(List[int], node.args[7])
+        groups = cast(int, node.args[8])
+
         # weight of pytorch OIHW(conv2d) / OIDHW(conv3d) or IOHW(conv_transpose2d) / IODHW(conv_transpose3d),
-        # yet QNN is HWIO or DHWIO
+        # yet QNN is HWIO or DHWIO for both conv and conv_transpose.
         is_transpose_conv = cast(bool, node.args[6])
         if is_conv2d:
             filter_axis_order = (2, 3, 0, 1) if is_transpose_conv else (2, 3, 1, 0)
@@ -147,6 +177,16 @@ class Conv2d(NodeVisitor):
         conv_input_tensors = [input_tensor_wrapper, filter_tensor_wrapper]
         if node.args[2] is not None:
             bias_node = self.get_node(node.args[2])
+            # TODO: Double check on condition below once QNN supports transpose_conv with block_quant.
+            # By checking node.args[1].target, only allow per_channel_quant to go through and bypass block_quant.
+            if (
+                is_transpose_conv
+                and groups != 1
+                and bias_node.meta.get(QCOM_QUANT_ATTRS) is not None
+                and node.args[1].target in PER_CHANNEL_ENCODING
+            ):
+                self._reduce_bias_scales(node, filter_node, bias_node, groups)
+
             bias_tensor = get_parameter(bias_node, self.edge_program)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
@@ -156,7 +196,6 @@ class Conv2d(NodeVisitor):
                 nodes_to_wrappers,
             )
             conv_input_tensors.append(bias_tensor_wrapper)
-
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
@@ -167,11 +206,6 @@ class Conv2d(NodeVisitor):
         )
         conv_output_tensors = [output_tensor_wrapper]
 
-        stride = cast(List[int], node.args[3])
-        padding = cast(List[int], node.args[4])
-        dilation = cast(List[int], node.args[5])
-        output_padding = cast(List[int], node.args[7])
-        groups = cast(int, node.args[8])
         # Qnn filter tensor is (H, W, Cin, Cout) or (D, H, W, Cin, Cout)
         group_input_channels = filter_tensor.shape[-2]
         group_output_channels = int(filter_tensor.shape[-1] / groups)

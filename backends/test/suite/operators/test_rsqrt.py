@@ -33,7 +33,12 @@ class TestRsqrt(OperatorTest):
         # Test with different dtypes
         model = RsqrtModel().to(dtype)
         # Use positive values only for rsqrt to avoid division by zero
-        self._test_op(model, (torch.rand(10, 10).to(dtype) + 0.01,), flow)
+        self._test_op(
+            model,
+            (torch.rand(10, 10).to(dtype) + 0.01,),
+            flow,
+            generate_random_test_inputs=False,
+        )
 
     def test_rsqrt_shapes(self, flow: TestFlow) -> None:
         # Test with different tensor shapes
