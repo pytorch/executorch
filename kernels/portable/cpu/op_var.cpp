@@ -91,10 +91,8 @@ Tensor& var_out(
   const size_t num = get_reduced_dim_product(in, dim_list);
   const size_t denom = unbiased ? num - 1 : num;
 
-  constexpr auto name = "var.out";
-
-  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE_IN, [&] {
-    ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, name, CTYPE_OUT, [&] {
+  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, "var.out", CTYPE_IN, [&] {
+    ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, "var.out", CTYPE_OUT, [&] {
       compute_variance<CTYPE_IN, CTYPE_OUT>(ctx, in, out, dim_list, num, denom);
     });
   });
@@ -123,8 +121,6 @@ Tensor& var_correction_out(
       InvalidArgument,
       out);
 
-  constexpr auto name = "var.correction_out";
-
   double correction_val = 1;
   if (correction.has_value()) {
     correction_val = utils::scalar_to<double>(correction.value());
@@ -133,8 +129,8 @@ Tensor& var_correction_out(
   const size_t num = get_reduced_dim_product(in, dim_list);
   const double denom = num - correction_val;
 
-  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE_IN, [&] {
-    ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, name, CTYPE_OUT, [&] {
+  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, "var.correction_out", CTYPE_IN, [&] {
+    ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, "var.correction_out", CTYPE_OUT, [&] {
       compute_variance<CTYPE_IN, CTYPE_OUT>(ctx, in, out, dim_list, num, denom);
     });
   });

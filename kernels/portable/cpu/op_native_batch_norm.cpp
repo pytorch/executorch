@@ -102,9 +102,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
   size_t outer = getLeadingDims(in, C_dim);
   size_t inner = getTrailingDims(in, C_dim);
 
-  constexpr auto name = "native_batch_norm_legit_no_training.out";
-
-  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
+  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, "native_batch_norm_legit_no_training.out", CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -259,9 +257,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
       InvalidArgument,
       ret_val);
 
-  constexpr auto name = "_native_batch_norm_legit.no_stats_out";
-
-  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
+  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, "_native_batch_norm_legit.no_stats_out", CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
     CTYPE* mean_data = mean_out.mutable_data_ptr<CTYPE>();
