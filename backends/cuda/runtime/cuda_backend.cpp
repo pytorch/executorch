@@ -391,6 +391,9 @@ static executorch::runtime::Error success_with_compiler =
 #endif
 
 extern "C" CUDA_BACKEND_INIT_EXPORT void InitCudaBackend() {
+  ET_LOG(
+      Info,
+      "CALLING INITCUDABACKEND");
 #ifdef _WIN32
   // On Windows, explicitly register the backend since DLL static initializers
   // don't run reliably
