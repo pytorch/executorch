@@ -55,6 +55,9 @@ jobs:
         run: |
           set -eux
 
+          OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+          echo "Using optimum-executorch version: ${OPTIMUM_ET_VERSION}"
+
           echo "::group::Setup ExecuTorch"
           PYTHON_EXECUTABLE=python3 ./install_executorch.sh
           echo "::endgroup::"
