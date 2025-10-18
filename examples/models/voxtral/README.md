@@ -39,8 +39,6 @@ This exports Voxtral with XNNPack backend acceleration and 4-bit weight/8-bit ac
 ## CUDA Support
 If your environment has CUDA support, you can enable the runner to run on CUDA for improved performance. Follow the export and runtime commands below:
 
-**Note:** We are currently working on quantization support for CUDA. Currently, only bfloat16 dtype is supported for CUDA execution.
-
 ### Exporting with CUDA
 ```
 optimum-cli export executorch \
@@ -56,6 +54,23 @@ optimum-cli export executorch \
 This will generate:
 - `model.pte` - The exported model
 - `aoti_cuda_blob.ptd` - The CUDA kernel blob required for runtime
+
+Furthermore, we support several quantization formats on CUDA.
+For example, to export Voxtral with int4 weight and int4mm for linear layers, you can use the following command,
+```
+optimum-cli export executorch \
+  --model "mistralai/Voxtral-Mini-3B-2507" \
+  --task "multimodal-text-to-text" \
+  --recipe "cuda" \
+  --dtype bfloat16 \
+  --device cuda \
+  --max_seq_len 1024 \
+  --qlinear 4w \
+  --qlinear_encoder 4w \
+  --qlinear_packing_format tile_packed_to_4d \
+  --qlinear_encoder_packing_format tile_packed_to_4d \
+  --output_dir="voxtral"
+```
 
 See the "Building the multimodal runner" section below for instructions on building with CUDA support, and the "Running the model" section for runtime instructions.
 
