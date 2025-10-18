@@ -371,9 +371,53 @@ class ET_EXPERIMENTAL CudaBackend final
 
 namespace executorch::backends {
 namespace {
+// Static backend instance and registration
 auto cls = cuda::CudaBackend();
 executorch::runtime::Backend backend{"CudaBackend", &cls};
+
+#ifndef _WIN32
+// On non-Windows platforms, use static initialization
 static executorch::runtime::Error success_with_compiler =
     register_backend(backend);
+#endif
+
 } // namespace
+
+// Export an initialization function for explicit backend registration
+#ifdef _WIN32
+#define CUDA_BACKEND_INIT_EXPORT __declspec(dllexport)
+#else
+#define CUDA_BACKEND_INIT_EXPORT __attribute__((visibility("default")))
+#endif
+
+extern "C" CUDA_BACKEND_INIT_EXPORT void InitCudaBackend() {
+  // Log immediately to confirm function is entered
+  ET_LOG(Info, "InitCudaBackend: Function entered");
+  
+#ifdef _WIN32
+  ET_LOG(Info, "InitCudaBackend: Windows path");
+  // On Windows, explicitly register the backend since DLL static initializers
+  // don't run reliably
+  static bool initialized = false;
+  if (!initialized) {
+    ET_LOG(Info, "Registering CUDA backend on Windows");
+    auto error = register_backend(backend);
+    if (error == executorch::runtime::Error::Ok) {
+      ET_LOG(Info, "Successfully registered CudaBackend");
+    } else {
+      ET_LOG(Error, "Failed to register CudaBackend: error code %d", (int)error);
+    }
+    initialized = true;
+  } else {
+    ET_LOG(Info, "CUDA backend already initialized");
+  }
+#else
+  ET_LOG(Info, "InitCudaBackend: Non-Windows path");
+  // On other platforms, static initialization already happened
+  (void)success_with_compiler;
+#endif
+  
+  ET_LOG(Info, "InitCudaBackend: Function exiting");
+}
+
 } // namespace executorch::backends
