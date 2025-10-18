@@ -88,8 +88,11 @@ list(
 if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
   list(APPEND link_libraries aoti_cuda)
-  # Handle both static library and shared library (.dll on Windows MSVC)
-  executorch_target_link_options_shared_lib(aoti_cuda)
+  # CMake will automatically use the import library on Windows
+  if(NOT MSVC)
+    # Only apply shared lib linking options on non-Windows platforms
+    executorch_target_link_options_shared_lib(aoti_cuda)
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_METAL)
@@ -103,7 +106,7 @@ list(APPEND link_libraries tokenizers::tokenizers)
 add_executable(voxtral_runner ${_srcs})
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(voxtral_runner)
-  if(NOT APPLE)
+  if(NOT APPLE AND NOT MSVC)
     target_link_options(voxtral_runner PRIVATE "LINKER:-s")
   endif()
 endif()
