@@ -44,7 +44,14 @@ set(_aoti_cuda_sources
     runtime/shims/int4mm.cu
     runtime/platform/platform.cpp
 )
-add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
+# Build as SHARED library (.dll) on Windows MSVC, otherwise STATIC
+if(MSVC)
+  add_library(aoti_cuda SHARED ${_aoti_cuda_sources})
+  # Define export macro for Windows DLL
+  target_compile_definitions(aoti_cuda PRIVATE EXPORT_AOTI_FUNCTIONS)
+else()
+  add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
+endif()
 target_include_directories(
   aoti_cuda
   PUBLIC ${CUDAToolkit_INCLUDE_DIRS}
