@@ -84,17 +84,6 @@ list(
   extension_flat_tensor
 )
 
-# Link CUDA backend
-if(EXECUTORCH_BUILD_CUDA)
-  find_package(CUDAToolkit REQUIRED)
-  list(APPEND link_libraries aoti_cuda)
-  # CMake will automatically use the import library on Windows
-  if(NOT MSVC)
-    # Only apply shared lib linking options on non-Windows platforms
-    executorch_target_link_options_shared_lib(aoti_cuda)
-  endif()
-endif()
-
 if(EXECUTORCH_BUILD_METAL)
   list(APPEND link_libraries metal_backend)
   executorch_target_link_options_shared_lib(metal_backend)
@@ -109,6 +98,17 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   if(NOT APPLE AND NOT MSVC)
     target_link_options(voxtral_runner PRIVATE "LINKER:-s")
   endif()
+endif()
+
+# Link CUDA backend
+if(EXECUTORCH_BUILD_CUDA AND NOT MSVC)
+  find_package(CUDAToolkit REQUIRED)
+  list(APPEND link_libraries aoti_cuda)
+  executorch_target_link_options_shared_lib(aoti_cuda)
+elseif(EXECUTORCH_BUILD_CUDA AND MSVC)
+  find_package(CUDAToolkit REQUIRED)
+  target_link_libraries(voxtral_runner PRIVATE aoti_cuda)
+  executorch_target_link_options_shared_lib(aoti_cuda)
 endif()
 
 target_include_directories(voxtral_runner PUBLIC ${_common_include_directories})

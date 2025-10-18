@@ -376,4 +376,17 @@ executorch::runtime::Backend backend{"CudaBackend", &cls};
 static executorch::runtime::Error success_with_compiler =
     register_backend(backend);
 } // namespace
+
+// Export an initialization function to ensure static initializers run on Windows
+#ifdef _WIN32
+#define CUDA_BACKEND_INIT_EXPORT __declspec(dllexport)
+#else
+#define CUDA_BACKEND_INIT_EXPORT __attribute__((visibility("default")))
+#endif
+
+extern "C" CUDA_BACKEND_INIT_EXPORT void InitCudaBackend() {
+  // Force the static initializer to run by referencing it
+  (void)success_with_compiler;
+}
+
 } // namespace executorch::backends

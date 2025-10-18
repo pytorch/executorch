@@ -282,7 +282,16 @@ MultimodalInput processAudioFile(
 
 } // namespace
 
+// Forward declare the initialization function from aoti_cuda
+extern "C" void InitCudaBackend();
+
 int32_t main(int32_t argc, char** argv) {
+#ifdef _WIN32
+  // On Windows, explicitly initialize the CUDA backend to ensure
+  // static initializers in the DLL run
+  InitCudaBackend();
+#endif
+  
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   const char* model_path = FLAGS_model_path.c_str();
