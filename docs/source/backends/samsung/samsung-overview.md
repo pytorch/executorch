@@ -101,17 +101,17 @@ Exynos delegated .pte file will automatically run on the registered backend.
 
 ## Reference
 
-**→{doc}`exynos-partitioner` — Partitioner options.**
+**→{doc}`samsung-partitioner` — Partitioner options.**
 
-**→{doc}`exynos-quantization` — Supported quantization schemes.**
+**→{doc}`samsung-quantization` — Supported quantization schemes.**
 
-**→{doc}`exynos-op-support` — Supported operators.**
+**→{doc}`samsung-op-support` — Supported operators.**
 
 ```{toctree}
 :maxdepth: 2
 :hidden:
 :caption: Exynos Backend
 
-exynos-partitioner
-exynos-quantization
-exynos-op-support
+samsung-partitioner
+samsung-quantization
+samsung-op-support

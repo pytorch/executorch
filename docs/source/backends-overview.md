@@ -23,7 +23,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 | [XNNPACK](backends-xnnpack)                                     | All                 | CPU           | General-purpose, fallback       |
 | [Core ML](/backends/coreml/coreml-overview.md)                  | iOS, macOS          | NPU/GPU/CPU   | Apple devices, high performance |
 | [Metal Performance Shaders](/backends/mps/mps-overview.md)      | iOS, macOS          | GPU           | Apple GPU acceleration          |
-| [Vulkan ](backends-vulkan)                                      | Android             | GPU           | Android GPU acceleration        |
+| [Vulkan ](/backends/vulkan/vulkan-overview.md)                  | Android             | GPU           | Android GPU acceleration        |
 | [Qualcomm](backends-qualcomm)                                   | Android             | NPU           | Qualcomm SoCs                   |
 | [MediaTek](backends-mediatek)                                   | Android             | NPU           | MediaTek SoCs                   |
 | [ARM EthosU](backends-arm-ethos-u)                              | Embedded            | NPU           | ARM MCUs                        |
@@ -31,7 +31,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 | [OpenVINO](build-run-openvino)                                  | Embedded            | CPU/GPU/NPU   | Intel  SoCs                     |
 | [NXP](backends-nxp)                                             | Embedded            | NPU           | NXP SoCs                        |
 | [Cadence](backends-cadence)                                     | Embedded            | DSP           | DSP-optimized workloads         |
-| [Samsung Exynos](backends-samsung-exynos)                       | Android             | NPU           | Samsung SoCs                    |
+| [Samsung Exynos](/backends/samsung/samsung-overview.md)         | Android             | NPU           | Samsung SoCs                    |
 
 **Tip:** For best performance, export a `.pte` file for each backend you plan to support.
 
@@ -53,7 +53,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 backends-xnnpack
 backends/coreml/coreml-overview
 backends/mps/mps-overview
-backends-vulkan
+backends/vulkan/vulkan-overview
 backends-qualcomm
 backends-mediatek
 backends-arm-ethos-u
@@ -61,4 +61,4 @@ backends-arm-vgf
 build-run-openvino
 backends-nxp
 backends-cadence
-backends-samsung-exynos
+backends/samsung/samsung-overview

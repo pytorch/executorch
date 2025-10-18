@@ -1,80 +1,84 @@
-# Vulkan Delegate Export Examples
+# Example export script for the ExecuTorch Vulkan backend
 
-This directory contains scripts for exporting models with the Vulkan delegate in ExecuTorch. Vulkan delegation allows you to run your models on devices with Vulkan-capable GPUs, potentially providing significant performance improvements over CPU execution.
-
-## Scripts
-
-- `export.py`: Basic export script for models to use with Vulkan delegate
-- `aot_compiler.py`: Advanced export script with quantization support
+This directory contains `export.py`, a utility script that can be used to export
+models registered in [`executorch/examples/models/__init__.py`](https://github.com/pytorch/executorch/blob/main/examples/models/__init__.py)
+to the Vulkan backend.
 
 ## Usage
 
+Note that all example commands are assumed to be executed from executorch root.
+
+```shell
+cd ~/executorch
+```
+
 ### Basic Export
 
-```bash
-python -m executorch.examples.vulkan.export -m <model_name> -o <output_dir>
+For example, to export MobileNet V2:
+
+```shell
+MODEL_NAME=mv2 && \
+OUTPUT_DIR=. && \
+python -m examples.vulkan.export -m ${MODEL_NAME} -o ${OUTPUT_DIR}
 ```
 
-### Export with Quantization (Experimental)
+This will create a file name `mv2_vulkan.pte` in the specified output directory.
 
-```bash
-python -m executorch.examples.vulkan.aot_compiler -m <model_name> -q -o <output_dir>
+### With dynamic shape support
+
+To enable exporting with dynamic shapes, simply add the `-d` flag.
+
+```shell
+MODEL_NAME=mv2 && \
+OUTPUT_DIR=. && \
+python -m examples.vulkan.export -m ${MODEL_NAME} -o ${OUTPUT_DIR} -d
 ```
 
-### Dynamic Shape Support
+### Export a bundled pte
 
-```bash
-python -m executorch.examples.vulkan.export -m <model_name> -d -o <output_dir>
+Use the `-b` flag to export a bundled PTE file (i.e. `.bpte`). This is a `.pte`
+file with bundled test cases that can be used for correctness checking.
+
+```shell
+MODEL_NAME=mv2 && \
+OUTPUT_DIR=. && \
+python -m examples.vulkan.export -m ${MODEL_NAME} -o ${OUTPUT_DIR} -d -b
 ```
 
-### Additional Options
+This will create a file called `mv2_vulkan.bpte` in the specified output directory.
 
-- `-s/--strict`: Export with strict mode (default: True)
-- `-a/--segment_alignment`: Specify segment alignment in hex (default: 0x1000)
-- `-e/--external_constants`: Save constants in external .ptd file (default: False)
-- `-r/--etrecord`: Generate and save an ETRecord to the given file location
+### With correctness testing
 
-## Examples
+The script can also execute the exported and lowered model via pybindings to
+check output correctness before writing the output file.
 
-```bash
-# Export MobileNetV2 with Vulkan delegate
-python -m executorch.examples.vulkan.export -m mobilenet_v2 -o ./exported_models
+To enable this, ensure that your machine:
 
-# Export MobileNetV3 with quantization
-python -m executorch.examples.vulkan.aot_compiler -m mobilenet_v3 -q -o ./exported_models
+1. Has the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#android) installed
+2. Has Vulkan drivers
 
-# Export with dynamic shapes
-python -m executorch.examples.vulkan.export -m mobilenet_v2 -d -o ./exported_models
+Additionally, you will need to install the executorch python package from
+source, since the Vulkan backend is not included by default in the pip package.
 
-# Export with ETRecord for debugging
-python -m executorch.examples.vulkan.export -m mobilenet_v2 -r ./records/mobilenet_record.etrecord -o ./exported_models
+```shell
+CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON " ./install_executorch.sh -e
 ```
 
-## Supported Operations
+Once these conditions are fulfilled, the `--test` flag can be passed to the
+script.
 
-The Vulkan delegate supports various operations including:
+```shell
+MODEL_NAME=mv2 && \
+OUTPUT_DIR=. && \
+python -m examples.vulkan.export -m ${MODEL_NAME} -o ${OUTPUT_DIR} -d --test
+```
 
-- Basic arithmetic (add, subtract, multiply, divide)
-- Activations (ReLU, Sigmoid, Tanh, etc.)
-- Convolutions (Conv1d, Conv2d, ConvTranspose2d)
-- Pooling operations (MaxPool2d, AvgPool2d)
-- Linear/Fully connected layers
-- BatchNorm, GroupNorm
-- Various tensor operations (cat, reshape, permute, etc.)
+You should see some output like
 
-For a complete list of supported operations, refer to the Vulkan delegate implementation in the ExecuTorch codebase.
+```shell
+INFO:root:✓ Model test PASSED - outputs match reference within tolerance
+```
 
-## Debugging and Optimization
+### Quantization support
 
-If you encounter issues with Vulkan delegation:
-
-1. Use `-r/--etrecord` to generate an ETRecord for debugging
-2. Check if your operations are supported by the Vulkan delegate
-3. Ensure your Vulkan drivers are up to date
-4. Try using the export script with `--strict False` if strict mode causes issues
-
-## Requirements
-
-- Vulkan runtime libraries (libvulkan.so.1)
-- A Vulkan-capable GPU with appropriate drivers
-- PyTorch with Vulkan support
+Support for quantization is under active development and will be added soon!
