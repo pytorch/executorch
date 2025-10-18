@@ -1013,6 +1013,7 @@ def inference(
             host_id=args.host,
             soc_model=args.model,
             shared_buffer=args.shared_buffer,
+            target=args.target,
             runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
         )
         # No pregen inputs, input_list is not required
