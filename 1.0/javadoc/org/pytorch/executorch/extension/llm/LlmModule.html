@@ -148,6 +148,12 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast"></td>
                                         </tr>
                                         
+                                        <tr class="altColor">
+                                            <td class="colFirst"><code>public final static int</code></td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModule.html#MODEL_TYPE_MULTIMODAL>MODEL_TYPE_MULTIMODAL</a></code></th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
                                     </table>
                                 </div>
                             </li>
@@ -316,12 +322,20 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                         <tr id="i10" class="altColor">
                                             <td class="colFirst"><code>long</code>
                                             </td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillAudio(Array,int,int,int)>prefillAudio</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;float&gt; audio, int batch_size, int n_bins, int n_frames) </code>
+                                            </th>
+                                            <td class="colLast">Prefill a multimodal Module with the given audio input.</td>
+                                        </tr>
+                                        
+                                        <tr id="i11" class="rowColor">
+                                            <td class="colFirst"><code>long</code>
+                                            </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillRawAudio(Array,int,int,int)>prefillRawAudio</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; audio, int batch_size, int n_channels, int n_samples) </code>
                                             </th>
                                             <td class="colLast">Prefill a multimodal Module with the given raw audio input.</td>
                                         </tr>
                                         
-                                        <tr id="i11" class="rowColor">
+                                        <tr id="i12" class="altColor">
                                             <td class="colFirst"><code>long</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillPrompt(String)>prefillPrompt</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt) </code>
@@ -329,7 +343,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Prefill a multimodal Module with the given text input.</td>
                                         </tr>
                                         
-                                        <tr id="i12" class="altColor">
+                                        <tr id="i13" class="rowColor">
                                             <td class="colFirst"><code>native void</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#resetContext()>resetContext</a>() </code>
@@ -337,7 +351,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Reset the context of the LLM.</td>
                                         </tr>
                                         
-                                        <tr id="i13" class="rowColor">
+                                        <tr id="i14" class="altColor">
                                             <td class="colFirst"><code>native void</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#stop()>stop</a>() </code>
@@ -345,7 +359,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <td class="colLast">Stop current generate() before it finishes.</td>
                                         </tr>
                                         
-                                        <tr id="i14" class="altColor">
+                                        <tr id="i15" class="rowColor">
                                             <td class="colFirst"><code>native int</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#load()>load</a>() </code>
@@ -762,6 +776,42 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             
                                             
                                             <dd><code>audio</code> - Input preprocessed audio as a byte array</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>batch_size</code> - Input batch size</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>n_bins</code> - Input number of bins</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>n_frames</code> - Input number of frames</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="prefillAudio(Array,int,int,int)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>prefillAudio</h4>
+                                        <pre class="methodSignature"> long <a href=LlmModule.html#prefillAudio(Array,int,int,int)>prefillAudio</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;float&gt; audio, int batch_size, int n_bins, int n_frames)</pre>
+                                        <div class="block"><p>Prefill a multimodal Module with the given audio input.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>audio</code> - Input preprocessed audio as a float array</dd>
                                             
                                             
                                             
