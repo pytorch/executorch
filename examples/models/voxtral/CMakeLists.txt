@@ -101,16 +101,6 @@ endif()
 list(APPEND link_libraries tokenizers::tokenizers)
 
 add_executable(voxtral_runner ${_srcs})
-
-# On MSVC, ensure the aoti_cuda DLL is copied to the output directory
-if(EXECUTORCH_BUILD_CUDA AND MSVC)
-  add_custom_command(TARGET voxtral_runner POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      $<TARGET_FILE:aoti_cuda>
-      $<TARGET_FILE_DIR:voxtral_runner>
-    COMMENT "Copying aoti_cuda.dll to output directory"
-  )
-endif()
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(voxtral_runner)
   if(NOT APPLE)

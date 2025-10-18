@@ -49,6 +49,13 @@ if(MSVC)
   add_library(aoti_cuda SHARED ${_aoti_cuda_sources})
   # Define export macro for Windows DLL
   target_compile_definitions(aoti_cuda PRIVATE EXPORT_AOTI_FUNCTIONS)
+  # Ensure proper DLL import/export library naming on Windows
+  set_target_properties(aoti_cuda PROPERTIES
+    WINDOWS_EXPORT_ALL_SYMBOLS OFF  # We use explicit exports via AOTI_CUDA_EXPORT
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
+  )
 else()
   add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
 endif()
@@ -89,5 +96,7 @@ endif()
 install(
   TARGETS aoti_cuda
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
 )
