@@ -39,18 +39,16 @@ executorch_target_link_options_shared_lib(executorch)
 set(link_libraries executorch gflags)
 set(_srcs multimodal.cpp)
 
-list(
-  APPEND
-  link_libraries
-  optimized_native_cpu_ops_lib
-  quantized_ops_lib
-  custom_ops
-  cpublas
-  eigen_blas
-)
+# Common ops for all builds
+list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
 executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
-executorch_target_link_options_shared_lib(quantized_ops_lib)
-executorch_target_link_options_shared_lib(custom_ops)
+
+# CPU-only builds need quantized and custom ops
+if(NOT EXECUTORCH_BUILD_CUDA AND MSVC)
+  list(APPEND link_libraries quantized_ops_lib custom_ops)
+  executorch_target_link_options_shared_lib(quantized_ops_lib)
+  executorch_target_link_options_shared_lib(custom_ops)
+endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
