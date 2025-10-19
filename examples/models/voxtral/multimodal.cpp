@@ -286,19 +286,23 @@ MultimodalInput processAudioFile(
 
 } // namespace
 
-
 int32_t main(int32_t argc, char** argv) {
-  // Manually register the CUDA backend (required on Windows, harmless on other platforms)
+  // Manually register the CUDA backend (required on Windows, harmless on other
+  // platforms)
   ET_LOG(Info, "Registering CUDA backend");
   static auto cuda_backend_impl = ::executorch::backends::cuda::CudaBackend();
-  static auto cuda_backend = ::executorch::runtime::Backend{"CudaBackend", &cuda_backend_impl};
+  static auto cuda_backend =
+      ::executorch::runtime::Backend{"CudaBackend", &cuda_backend_impl};
   auto register_error = ::executorch::runtime::register_backend(cuda_backend);
   if (register_error == ::executorch::runtime::Error::Ok) {
     ET_LOG(Info, "Successfully registered CudaBackend");
   } else {
-    ET_LOG(Error, "Failed to register CudaBackend: error code %d", (int)register_error);
+    ET_LOG(
+        Error,
+        "Failed to register CudaBackend: error code %d",
+        (int)register_error);
   }
-  
+
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   const char* model_path = FLAGS_model_path.c_str();

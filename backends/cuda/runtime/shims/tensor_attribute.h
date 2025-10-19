@@ -8,9 +8,9 @@
 
 #pragma once
 
+#include <executorch/backends/cuda/runtime/export.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/error.h>
-#include <executorch/backends/cuda/runtime/export.h>
 #include <cstdint>
 
 namespace executorch::backends::cuda {
@@ -25,9 +25,8 @@ extern "C" {
 using AOTITorchError = Error;
 
 // Device type functions for tensor attributes
-AOTI_CUDA_EXPORT AOTITorchError aoti_torch_get_device_type(
-    Tensor* tensor,
-    int32_t* ret_device_type);
+AOTI_CUDA_EXPORT AOTITorchError
+aoti_torch_get_device_type(Tensor* tensor, int32_t* ret_device_type);
 
 // Device type constants
 AOTI_CUDA_EXPORT int32_t aoti_torch_device_type_cuda();
