@@ -7,7 +7,7 @@
 
 set -x
 
-pip install sentencepiece
+pip install sentencepiece accelerate
 
 EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
