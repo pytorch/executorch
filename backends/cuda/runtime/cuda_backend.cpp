@@ -19,10 +19,10 @@
 #include <string>
 #include <vector>
 
-// Include our shim layer headers
+// Include class header and shim layer headers
+#include <executorch/backends/cuda/runtime/CudaBackend.h>
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/common_shims.h>
-#include <executorch/backends/cuda/runtime/cuda_backend_init.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
@@ -48,12 +48,9 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
-class ET_EXPERIMENTAL CudaBackend final
-    : public ::executorch::runtime::BackendInterface {
- private:
-  Error load_function_pointers_into_handle(
-      void* so_handle,
-      AOTIDelegateHandle* handle) const {
+Error CudaBackend::load_function_pointers_into_handle(
+    void* so_handle,
+    AOTIDelegateHandle* handle) const {
 #define LOAD_SYMBOL(member, name)                                    \
   do {                                                               \
     auto symbol_res = get_function(so_handle, #name);                \
@@ -88,17 +85,14 @@ class ET_EXPERIMENTAL CudaBackend final
     return Error::Ok;
   }
 
- public:
-  bool is_available() const override {
-    return 1;
-  }
+bool CudaBackend::is_available() const {
+  return 1;
+}
 
-  // Once per loaded binary blob
-  Result<DelegateHandle*> init(
+Result<DelegateHandle*> CudaBackend::init(
       BackendInitContext& context,
-      FreeableBuffer* processed, // This will be a empty buffer
-      ArrayRef<CompileSpec> compile_specs // This will be my empty list
-  ) const override {
+      FreeableBuffer* processed,
+      ArrayRef<CompileSpec> compile_specs) const {
     std::string method_name;
     for (const CompileSpec& spec : compile_specs) {
       if (std::strcmp(spec.key, "method_name") == 0) {
@@ -196,11 +190,10 @@ class ET_EXPERIMENTAL CudaBackend final
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
-  // Once per execution
-  Error execute(
-      BackendExecutionContext& context,
-      DelegateHandle* handle_,
-      Span<EValue*> args) const override {
+Error CudaBackend::execute(
+    BackendExecutionContext& context,
+    DelegateHandle* handle_,
+    Span<EValue*> args) const {
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
     size_t n_inputs;
@@ -322,7 +315,7 @@ class ET_EXPERIMENTAL CudaBackend final
     return Error::Ok;
   }
 
-  void destroy(DelegateHandle* handle_) const override {
+void CudaBackend::destroy(DelegateHandle* handle_) const {
     if (handle_ == nullptr) {
       return;
     }
@@ -367,54 +360,21 @@ class ET_EXPERIMENTAL CudaBackend final
     delete handle;
     clear_all_tensors();
   }
-};
 
 } // namespace executorch::backends::cuda
 
 namespace executorch::backends {
-namespace {
-// Static backend instance and registration
+
+// Backend instance - static on all platforms
 auto cls = cuda::CudaBackend();
-executorch::runtime::Backend backend{"CudaBackend", &cls};
+executorch::runtime::Backend cuda_backend{"CudaBackend", &cls};
 
 #ifndef _WIN32
-// On non-Windows platforms, use static initialization
+// On non-Windows platforms, use automatic static initialization
+namespace {
 static executorch::runtime::Error success_with_compiler =
-    register_backend(backend);
-#endif
-
+    register_backend(cuda_backend);
 } // namespace
-
-// InitCudaBackend is exported for explicit backend registration on Windows
-extern "C" CUDA_BACKEND_INIT_API void InitCudaBackend() {
-  // Log immediately to confirm function is entered
-  ET_LOG(Info, "InitCudaBackend: Function entered");
-  assert(1==2);
-  
-#ifdef _WIN32
-  ET_LOG(Info, "InitCudaBackend: Windows path");
-  // On Windows, explicitly register the backend since DLL static initializers
-  // don't run reliably
-  static bool initialized = false;
-  if (!initialized) {
-    ET_LOG(Info, "Registering CUDA backend on Windows");
-    auto error = register_backend(backend);
-    if (error == executorch::runtime::Error::Ok) {
-      ET_LOG(Info, "Successfully registered CudaBackend");
-    } else {
-      ET_LOG(Error, "Failed to register CudaBackend: error code %d", (int)error);
-    }
-    initialized = true;
-  } else {
-    ET_LOG(Info, "CUDA backend already initialized");
-  }
-#else
-  ET_LOG(Info, "InitCudaBackend: Non-Windows path");
-  // On other platforms, static initialization already happened
-  (void)success_with_compiler;
 #endif
-  
-  ET_LOG(Info, "InitCudaBackend: Function exiting");
-}
 
 } // namespace executorch::backends

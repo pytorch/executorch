@@ -25,6 +25,10 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/log.h>
 
+// Manually register the CUDA backend
+#include <executorch/backends/cuda/runtime/CudaBackend.h>
+#include <executorch/runtime/backend/interface.h>
+
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
@@ -282,14 +286,18 @@ MultimodalInput processAudioFile(
 
 } // namespace
 
-#include <executorch/backends/cuda/runtime/cuda_backend_init.h>
 
 int32_t main(int32_t argc, char** argv) {
-  // On Windows, explicitly initialize the CUDA backend to ensure
-  // static initializers in the DLL run
-  ET_LOG(Info, "About to call InitCudaBackend");
-  InitCudaBackend();
-  ET_LOG(Info, "InitCudaBackend returned");
+  // Manually register the CUDA backend (required on Windows, harmless on other platforms)
+  ET_LOG(Info, "Registering CUDA backend");
+  static auto cuda_backend_impl = ::executorch::backends::cuda::CudaBackend();
+  static auto cuda_backend = ::executorch::runtime::Backend{"CudaBackend", &cuda_backend_impl};
+  auto error = ::executorch::runtime::register_backend(cuda_backend);
+  if (error == ::executorch::runtime::Error::Ok) {
+    ET_LOG(Info, "Successfully registered CudaBackend");
+  } else {
+    ET_LOG(Error, "Failed to register CudaBackend: error code %d", (int)error);
+  }
   
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
