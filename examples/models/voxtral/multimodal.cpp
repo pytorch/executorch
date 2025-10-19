@@ -292,11 +292,11 @@ int32_t main(int32_t argc, char** argv) {
   ET_LOG(Info, "Registering CUDA backend");
   static auto cuda_backend_impl = ::executorch::backends::cuda::CudaBackend();
   static auto cuda_backend = ::executorch::runtime::Backend{"CudaBackend", &cuda_backend_impl};
-  auto error = ::executorch::runtime::register_backend(cuda_backend);
-  if (error == ::executorch::runtime::Error::Ok) {
+  auto register_error = ::executorch::runtime::register_backend(cuda_backend);
+  if (register_error == ::executorch::runtime::Error::Ok) {
     ET_LOG(Info, "Successfully registered CudaBackend");
   } else {
-    ET_LOG(Error, "Failed to register CudaBackend: error code %d", (int)error);
+    ET_LOG(Error, "Failed to register CudaBackend: error code %d", (int)register_error);
   }
   
   gflags::ParseCommandLineFlags(&argc, &argv, true);
