@@ -105,7 +105,7 @@ def test_batch_norm_conv_fusing(bias: bool, input_shape: list[int]):
     og_nodes = list(program.graph.nodes)
     transformed_nodes = list(graph_module_out.graph.nodes)
 
-    assert len(og_nodes) == (11 if bias else 10)
+    assert len(og_nodes) == (10 if bias else 9)
     assert og_nodes[9 if bias else 8].target.__name__ == "batch_norm.default"
 
     assert len(transformed_nodes) == 5
@@ -139,7 +139,7 @@ def test_batch_norm_linear_fusing(bias: bool):
     og_nodes = list(og_module.graph.nodes)
     transformed_nodes = list(graph_module_out.graph.nodes)
 
-    assert len(og_nodes) == (11 if bias else 10)
+    assert len(og_nodes) == (10 if bias else 9)
     assert og_nodes[8 if bias else 7].target.__name__ == "linear.default"
 
     assert len(transformed_nodes) == 5
