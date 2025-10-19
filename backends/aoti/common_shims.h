@@ -30,17 +30,15 @@ namespace aoti {
 using executorch::runtime::Error;
 using executorch::runtime::etensor::Tensor;
 
+// Global storage for tensor metadata
+extern std::unordered_map<Tensor*, std::vector<int64_t>> tensor_to_sizes;
+extern std::unordered_map<Tensor*, std::vector<int64_t>> tensor_to_strides;
+
 extern "C" {
 
 // Common AOTI type aliases
 using AOTIRuntimeError = Error;
 using AOTITorchError = Error;
-
-// Global storage for tensor metadata
-extern AOTI_SHIM_EXPORT std::unordered_map<Tensor*, std::vector<int64_t>>
-    tensor_to_sizes;
-extern AOTI_SHIM_EXPORT std::unordered_map<Tensor*, std::vector<int64_t>>
-    tensor_to_strides;
 
 // Attribute-related operations (memory-irrelevant)
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_get_data_ptr(
@@ -100,5 +98,3 @@ AOTI_SHIM_EXPORT void cleanup_tensor_metadata();
 } // namespace aoti
 } // namespace backends
 } // namespace executorch
-
-#undef AOTI_SHIM_EXPORT
