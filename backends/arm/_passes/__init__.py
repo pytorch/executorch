@@ -48,8 +48,8 @@ from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv_pass import DecomposeGroupedConvPass  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
-from .decompose_int16_activation_conv2d_pass import (  # noqa
-    DecomposeConv2dWithInt16ActivationPass,
+from .decompose_int16_activation_conv_pass import (  # noqa
+    DecomposeConvWithInt16ActivationPass,
 )
 from .decompose_int32_clamp_pass import DecomposeInt32ClampPass  # noqa
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
@@ -109,7 +109,7 @@ from .remove_noop_pass import RemoveNoopPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,
 )
-from .rewrite_conv2d_pass import RewriteConv2dPass  # noqa
+from .rewrite_conv_pass import RewriteConvPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa

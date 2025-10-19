@@ -4,10 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import cast, Set, Type
+from typing import cast, Sequence, Set, Type
 
 import torch
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.quant_args import QuantArgs
 
 from executorch.backends.arm.tosa.specification import get_context_spec
@@ -15,15 +15,25 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeConv2dWithInt16ActivationPass(ArmPass):
+class DecomposeConvWithInt16ActivationPass(ArmPass):
     """
     This pass decomposes a convolution with input dtype int16 and bias
-    into a convolution without bias followed by an addition of the bias
-    since the TOSA op requires the bias to be int48 which is hard to represent
+    into a convolution without bias followed by an addition of the bias.
+    We also reshape the 1D bias to [1, C, 1, …] so it broadcasts along the channel
+    dimension. Since the TOSA op requires the bias to be int48 which is hard to represent
     in torch. Instead rescale the int48 output to int16 and add the bias in int16.
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+
     _passes_required_after: Set[Type[ExportPass]] = set()
+
+    def bias_view_shape(
+        self, bias: torch.Tensor, activation_rank: int
+    ) -> Sequence[int]:
+        # reshape bias to match convolution output rank so addition broadcasts over channels
+        return [1, bias.shape[0], *([1] * (activation_rank - 2))]
 
     def call_operator(self, op, args, kwargs, meta):
         if op != exir_ops.edge.aten.convolution.default:
@@ -37,18 +47,22 @@ class DecomposeConv2dWithInt16ActivationPass(ArmPass):
         if args[2] is None:
             return super().call_operator(op, args, kwargs, meta)
 
-        if args[0].data.dtype == torch.int8:
-            return super().call_operator(op, args, kwargs, meta)
-        elif args[0].data.dtype == torch.int16:
-            if not tosa_spec.support_extension("int16"):
-                raise ValueError(
-                    "int16 activation for convolution requires TOSA int16 extension"
-                )
-        else:
+        activation_tensor = args[0].data
+        activation_rank = activation_tensor.dim()
+
+        if activation_rank not in (4, 5) or activation_tensor.dtype != torch.int16:
             return super().call_operator(op, args, kwargs, meta)
 
-        # convolution with bias and activation is int16
-        bias = args[2]
+        if not tosa_spec.support_extension("int16"):
+            raise ValueError(
+                "int16 activation for convolution requires TOSA int16 extension"
+            )
+
+        # convolution with bias and activation is int16 (expected activation rank enforced above)
+        # The bias is assumed to be quantized with the same quantization parameters as
+        # the output of the convolution
+        bias_arg = args[2]
+        bias_data = bias_arg.data
 
         no_bias_args = list(args)
         no_bias_args[2] = None
@@ -63,7 +77,7 @@ class DecomposeConv2dWithInt16ActivationPass(ArmPass):
         # reshape the tensor to the same rank as the convolution output to add the bias to the channels
         channel_bias = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
-            (bias, [1, len(bias.data), 1, 1]),
+            (bias_arg, self.bias_view_shape(bias_data, activation_rank)),
             {},
             new_meta,
         )

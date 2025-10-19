@@ -10,7 +10,7 @@ from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmPass
 
-from executorch.backends.arm._passes.rewrite_conv2d_pass import RewriteConv2dPass
+from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -29,7 +29,7 @@ class Conv1dUnsqueezePass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
-        RewriteConv2dPass,
+        RewriteConvPass,
         SizeAdjustInputPass,
     }
 
