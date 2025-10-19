@@ -2,7 +2,6 @@
 
 #pragma once
 
-#include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/cuda/runtime/export.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -12,14 +11,6 @@ namespace executorch::backends::cuda {
 
 class AOTI_CUDA_EXPORT ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
- private:
-  /**
-   * Load AOTI function pointers from the shared library into the handle.
-   */
-  ::executorch::runtime::Error load_function_pointers_into_handle(
-      void* so_handle,
-      struct AOTIDelegateHandle* handle) const;
-
  public:
   /**
    * Check if the CUDA backend is available.

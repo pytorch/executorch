@@ -48,7 +48,7 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
-Error CudaBackend::load_function_pointers_into_handle(
+Error load_function_pointers_into_handle(
     void* so_handle,
     AOTIDelegateHandle* handle) const {
 #define LOAD_SYMBOL(member, name)                                    \
