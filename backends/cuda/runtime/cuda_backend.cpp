@@ -48,9 +48,9 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
-Error load_function_pointers_into_handle(
+static Error load_function_pointers_into_handle(
     void* so_handle,
-    AOTIDelegateHandle* handle) const {
+    AOTIDelegateHandle* handle) {
 #define LOAD_SYMBOL(member, name)                                    \
   do {                                                               \
     auto symbol_res = get_function(so_handle, #name);                \
@@ -60,30 +60,30 @@ Error load_function_pointers_into_handle(
     handle->member = reinterpret_cast<name##Func>(symbol_res.get()); \
   } while (0)
 
-    LOAD_SYMBOL(create_with_device, AOTInductorModelContainerCreateWithDevice);
+  LOAD_SYMBOL(create_with_device, AOTInductorModelContainerCreateWithDevice);
 
-    LOAD_SYMBOL(delete_container, AOTInductorModelContainerDelete);
+  LOAD_SYMBOL(delete_container, AOTInductorModelContainerDelete);
 
-    LOAD_SYMBOL(get_num_inputs, AOTInductorModelContainerGetNumInputs);
+  LOAD_SYMBOL(get_num_inputs, AOTInductorModelContainerGetNumInputs);
 
-    LOAD_SYMBOL(get_num_outputs, AOTInductorModelContainerGetNumOutputs);
+  LOAD_SYMBOL(get_num_outputs, AOTInductorModelContainerGetNumOutputs);
 
-    LOAD_SYMBOL(run, AOTInductorModelContainerRun);
+  LOAD_SYMBOL(run, AOTInductorModelContainerRun);
 #undef LOAD_SYMBOL
 
-    auto symbol_res =
-        get_function(so_handle, "AOTInductorModelUpdateConstantsFromBlob");
-    if (symbol_res.ok()) {
-      handle->update_constants_from_blob =
-          reinterpret_cast<AOTInductorModelUpdateConstantsFromBlobFunc>(
-              symbol_res.get());
-    } else {
-      ET_LOG(
-          Info,
-          "Failed to load AOTInductorModelUpdateConstantsFromBlob. This .so is probably compiled on an old version of torch (<2.9.0)");
-    }
-    return Error::Ok;
+  auto symbol_res =
+      get_function(so_handle, "AOTInductorModelUpdateConstantsFromBlob");
+  if (symbol_res.ok()) {
+    handle->update_constants_from_blob =
+        reinterpret_cast<AOTInductorModelUpdateConstantsFromBlobFunc>(
+            symbol_res.get());
+  } else {
+    ET_LOG(
+        Info,
+        "Failed to load AOTInductorModelUpdateConstantsFromBlob. This .so is probably compiled on an old version of torch (<2.9.0)");
   }
+  return Error::Ok;
+}
 
 bool CudaBackend::is_available() const {
   return 1;
