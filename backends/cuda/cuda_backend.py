@@ -180,7 +180,7 @@ class CudaBackend(BackendDetails):
             options.update(
                 {
                     "aot_inductor.cross_target_platform": "windows",
-                    "aot_inductor.aoti_shim_library": "executorch",
+                    "aot_inductor.aoti_shim_library": "aoti_cuda",
                     "aot_inductor.aoti_shim_library_path": shim_library_path,
                     "aot_inductor.precompile_headers": False,
                 }
