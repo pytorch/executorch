@@ -168,13 +168,13 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     }
 #endif
 
+    std::vector<std::string> data_files_vector;
     model_type_category_ = model_type_category;
     if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       multi_modal_runner_ = llm::create_multimodal_runner(
           model_path->toStdString().c_str(),
           llm::load_tokenizer(tokenizer_path->toStdString()));
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      std::vector<std::string> data_files_vector;
       if (data_files != nullptr) {
         // Convert Java List<String> to C++ std::vector<string>
         auto list_class = facebook::jni::findClassStatic("java/util/List");
@@ -201,13 +201,16 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           model_path->toStdString().c_str(),
           data_files_vector,
           executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
-      std::string decoder_model = "llama3"; // use llama3 for now
-      runner_ = std::make_unique<example::Runner<uint16_t>>( // QNN runner
+      std::string decoder_model = "llama2"; // use llama3 for now
+      runner_ = std::make_unique<example::Runner<uint16_t>>(
           std::move(module),
-          decoder_model.c_str(),
-          model_path->toStdString().c_str(),
-          tokenizer_path->toStdString().c_str(),
-          "");
+          decoder_model.c_str(), // const std::string&
+          model_path->toStdString().c_str(), // const std::string&
+          tokenizer_path->toStdString().c_str(), // const std::string&
+          "", // performance_output_path
+          "", // dump_logits_path
+          temperature_ // temperature
+      );
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
