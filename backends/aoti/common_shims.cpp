@@ -204,7 +204,7 @@ void aoti_torch_warn(
     const char* file,
     uint32_t line,
     const char* msg) {
-  ET_LOG(Warning, "[%s:%u] %s: %s", file, line, func, msg);
+  ET_LOG(Error, "[%s:%u] %s: %s", file, line, func, msg);
 }
 
 AOTI_SHIM_EXPORT AOTITorchError
