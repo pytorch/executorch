@@ -91,8 +91,27 @@ AOTI_SHIM_EXPORT void aoti_torch_warn(
     uint32_t line,
     const char* msg);
 
-AOTI_SHIM_EXPORT AOTITorchError aoti_torch_clone_preserve_strides(
-    Tensor* self,
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_storage_size(Tensor* tensor, int64_t* ret_size);
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_clone_preserve_strides(Tensor* self, Tensor** ret_new_tensor);
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_clone(Tensor* self, Tensor** ret_new_tensor);
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_new_tensor_handle(Tensor* orig_handle, Tensor** new_handle);
+
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob(
+    void* data_ptr,
+    int64_t ndim,
+    const int64_t* sizes,
+    const int64_t* strides,
+    int64_t storage_offset,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
     Tensor** ret_new_tensor);
 
 } // extern "C"
