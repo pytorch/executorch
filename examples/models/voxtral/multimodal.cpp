@@ -282,18 +282,14 @@ MultimodalInput processAudioFile(
 
 } // namespace
 
-#ifdef EXECUTORCH_BUILD_CUDA
 #include <executorch/backends/cuda/runtime/cuda_backend_init.h>
-#endif
 
 int32_t main(int32_t argc, char** argv) {
-#ifdef EXECUTORCH_BUILD_CUDA
   // On Windows, explicitly initialize the CUDA backend to ensure
   // static initializers in the DLL run
   ET_LOG(Info, "About to call InitCudaBackend");
   InitCudaBackend();
   ET_LOG(Info, "InitCudaBackend returned");
-#endif
   
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
