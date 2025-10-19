@@ -9,4 +9,9 @@ set -x
 
 pip install sentencepiece
 
+EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+OPTIMUM_ET_VERSION=$(cat "${EXECUTORCH_ROOT}/.ci/docker/ci_commit_pins/optimum-executorch.txt")
+pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+
 pip list
