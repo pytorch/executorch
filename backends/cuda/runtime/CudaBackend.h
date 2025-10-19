@@ -2,13 +2,14 @@
 
 #pragma once
 
+#include <executorch/backends/cuda/runtime/export.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 
 namespace executorch::backends::cuda {
 
-class ET_EXPERIMENTAL CudaBackend final
+class AOTI_CUDA_EXPORT ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
   /**
