@@ -85,6 +85,16 @@ AOTI_SHIM_EXPORT void aoti_torch_grad_mode_set_enabled(bool enabled);
 // Cleanup functions for clearing global state
 AOTI_SHIM_EXPORT void cleanup_tensor_metadata();
 
+AOTI_SHIM_EXPORT void aoti_torch_warn(
+    const char* func,
+    const char* file,
+    uint32_t line,
+    const char* msg);
+
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_clone_preserve_strides(
+    Tensor* self,
+    Tensor** ret_new_tensor);
+
 } // extern "C"
 
 } // namespace aoti
