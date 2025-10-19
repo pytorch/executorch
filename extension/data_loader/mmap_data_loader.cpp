@@ -94,8 +94,13 @@ Result<MmapDataLoader> MmapDataLoader::from(
   }
 
   // Cache the file size.
+#if defined(_WIN32)
+  struct _stat64 st;
+  int err = ::_fstat64(fd, &st);
+#else
   struct stat st;
   int err = ::fstat(fd, &st);
+#endif
   if (err < 0) {
     ET_LOG(
         Error,
@@ -106,7 +111,15 @@ Result<MmapDataLoader> MmapDataLoader::from(
     ::close(fd);
     return Error::AccessFailed;
   }
-  size_t file_size = st.st_size;
+
+  uint64_t file_size_u64 = static_cast<uint64_t>(st.st_size);
+  ET_CHECK_OR_RETURN_ERROR(
+      file_size_u64 <= std::numeric_limits<size_t>::max(),
+      NotSupported,
+      "File %s is too large (%llu bytes) for current platform",
+      file_name,
+      static_cast<unsigned long long>(file_size_u64));
+  size_t file_size = static_cast<size_t>(file_size_u64);
 
   // Copy the filename so we can print better debug messages if reads fail.
   const char* file_name_copy = ::strdup(file_name);
