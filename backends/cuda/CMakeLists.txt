@@ -43,6 +43,7 @@ set(_aoti_cuda_sources
     runtime/shims/cuda_guard.cpp
     runtime/shims/int4mm.cu
     runtime/platform/platform.cpp
+    ${EXECUTORCH_ROOT}/backends/aoti/common_shims.cpp
 )
 # Build as SHARED library (.dll) on Windows MSVC, otherwise STATIC
 if(MSVC)
@@ -81,7 +82,7 @@ target_link_options(
 
 # Link against CUDA::cudart, common AOTI library, and PyTorch CUDA libraries
 target_link_libraries(
-  aoti_cuda PUBLIC aoti_common CUDA::cudart ${CMAKE_DL_LIBS}
+  aoti_cuda PUBLIC extension_tensor CUDA::cudart ${CMAKE_DL_LIBS}
 )
 # If you need other CUDA libraries, link them similarly:
 # target_link_libraries(aoti_cuda PUBLIC CUDA::cublas CUDA::cufft ...)

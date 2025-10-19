@@ -99,11 +99,10 @@ announce_configured_options(CCACHE_PROGRAM)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Force logging to always be enabled for this build.
 if(NOT EXECUTORCH_ENABLE_LOGGING)
-  # Avoid pulling in the logging strings, which can be large. Note that this
-  # will set the compiler flag for all targets in this directory, and for all
-  # subdirectories included after this point.
-  add_definitions(-DET_LOG_ENABLED=0)
+  message(STATUS "EXECUTORCH_ENABLE_LOGGING was OFF; forcing it to ON.")
+  set(EXECUTORCH_ENABLE_LOGGING ON CACHE BOOL "Build with ET_LOG_ENABLED" FORCE)
 endif()
 
 add_definitions(-DET_MIN_LOG_LEVEL=${ET_MIN_LOG_LEVEL})

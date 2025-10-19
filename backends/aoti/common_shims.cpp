@@ -16,8 +16,10 @@ namespace aoti {
 
 namespace internal {
 // Global storage for tensor metadata
-std::unordered_map<Tensor*, std::vector<int64_t>> tensor_to_sizes;
-std::unordered_map<Tensor*, std::vector<int64_t>> tensor_to_strides;
+AOTI_SHIM_EXPORT std::unordered_map<Tensor*, std::vector<int64_t>>
+    tensor_to_sizes;
+AOTI_SHIM_EXPORT std::unordered_map<Tensor*, std::vector<int64_t>>
+    tensor_to_strides;
 } // namespace internal
 
 extern "C" {
