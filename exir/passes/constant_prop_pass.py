@@ -164,6 +164,14 @@ def get_propagated_const_tensor_dict(
         with torch.no_grad():
             # Execute the `node.target` and create a new propagated constant tensor.
             prop_constant_tensor = node.target(*args_data, **kwargs_data)
+
+            # ExecuTorch doesn't support zero strides, so we need to ensure the tensor is contiguous
+            # if it has any zero strides from broadcasting/expansion operations
+            if (
+                isinstance(prop_constant_tensor, torch.Tensor)
+                and 0 in prop_constant_tensor.stride()
+            ):
+                prop_constant_tensor = prop_constant_tensor.contiguous()
         const_node_to_tensor[node] = prop_constant_tensor
 
     return const_node_to_tensor
@@ -295,7 +303,11 @@ def create_constant_nodes_and_return_specs(
     return name_to_spec_dict
 
 
-def _update_output_node_and_specs(exported_program: ExportedProgram) -> None:
+# add _skip_dim_order to ensure the introduced correct clone node for different dim order schema
+# TODO(gasoonjia): only relying on _clone_dim_order once we remove _skip_dim_order option in the EdgeCompileConfig
+def _update_output_node_and_specs(
+    exported_program: ExportedProgram, _skip_dim_order: bool
+) -> None:
     """
     Update the output node and output specs in the exported program.
     In case a constant node is used as output, we replace it with a clone of the constant node.
@@ -307,15 +319,19 @@ def _update_output_node_and_specs(exported_program: ExportedProgram) -> None:
     output_specs = exported_program.graph_signature.output_specs
     assert len(output_nodes) == len(output_specs)
 
+    clone_op = (
+        exir_ops.edge.aten.clone.default
+        if _skip_dim_order
+        else exir_ops.edge.dim_order_ops._clone_dim_order.default
+    )
+
     for i in range(len(output_specs)):
         out_node = output_nodes[i]
         if out_node not in updated_constant_placeholders:
             continue
 
         with exported_program.graph.inserting_after(out_node):
-            new_node = exported_program.graph.call_function(
-                exir_ops.edge.aten.clone.default, (out_node,)
-            )
+            new_node = exported_program.graph.call_function(clone_op, (out_node,))
         assert "val" in out_node.meta
         new_node.meta["val"] = out_node.meta["val"]
         output_nodes[i] = new_node
@@ -329,6 +345,7 @@ def _update_output_node_and_specs(exported_program: ExportedProgram) -> None:
 def constant_prop_pass(
     exported_program: ExportedProgram,
     custom_skip_targets: Optional[set[EdgeOpOverload]] = None,
+    _skip_dim_order: bool = True,
 ) -> ExportedProgram:
     """
     This pass is for constant propagation for Exported Program with lifted parameters,
@@ -376,7 +393,7 @@ def constant_prop_pass(
         new_input_specs.append(name_to_spec_dict[node.name])
     exported_program.graph_signature.input_specs = new_input_specs
 
-    _update_output_node_and_specs(exported_program)
+    _update_output_node_and_specs(exported_program, _skip_dim_order=_skip_dim_order)
 
     # Cleanup the graph.
     exported_program.graph.eliminate_dead_code()

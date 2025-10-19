@@ -19,23 +19,16 @@ set -u
 
 # Valid targets for MCU model validation
 VALID_TARGETS=(
-    "ethos-u55-32"
-    "ethos-u55-64"
-    "ethos-u55-128"
-    "ethos-u55-256"
-    "ethos-u85-128"
-    "ethos-u85-256"
-    "ethos-u85-512"
-    "ethos-u85-1024"
-    "ethos-u85-2048"
+    "cortex-m55"
+    "cortex-m85"
 )
 
 # Default models for MCU validation with portable kernels
-DEFAULT_MODELS=(mv2 mv3 lstm resnet18)
+DEFAULT_MODELS=(mv2 mv3 lstm qadd qlinear)
 # Available models (on FVP)
-AVAILABLE_MODELS=(mv2 mv3 lstm resnet18)
+AVAILABLE_MODELS=(mv2 mv3 lstm qadd qlinear)
 # Add the following models if you want to enable them later (atm they are not working on FVP)
-# edsr w2l ic3 ic4 resnet50
+# edsr w2l ic3 ic4 resnet18 resnet50
 
 # Variables
 TARGET=""
@@ -69,6 +62,22 @@ validate_models() {
         return 1
     fi
     return 0
+}
+
+cpu_to_ethos_target() {
+  local cpu=$1
+  case $cpu in
+    cortex-m55)
+      echo "ethos-u55-128"
+      ;;
+    cortex-m85)
+      echo "ethos-u85-128"
+      ;;
+    *)
+      echo "Unknown CPU: $cpu" >&2
+      return 1
+      ;;
+  esac
 }
 
 # Function to show usage
@@ -224,6 +233,13 @@ fi
 echo "✅ ExecuteTorch libraries built successfully"
 echo ""
 
+ETHOS_TARGET=$(cpu_to_ethos_target "$TARGET")
+if [[ $? -ne 0 ]]; then
+    echo "Invalid CPU target: $TARGET"
+    exit 1
+fi
+echo "Using ETHOS target: $ETHOS_TARGET"
+
 # Process each model
 for model in "${MODELS[@]}"; do
     echo "=== 🚀 Processing $model for $TARGET ==="
@@ -239,8 +255,9 @@ for model in "${MODELS[@]}"; do
     echo "⚙️  AOT compilation for $model"
     if ! python3 -m examples.arm.aot_arm_compiler \
         -m "$model" \
-        --target="$TARGET" \
+        --target="$ETHOS_TARGET" \
         --quantize \
+        --enable_qdq_fusion_pass \
         --output="arm_test/$model"; then
         echo "❌ AOT compilation failed for $model"
         MODEL_SUCCESS=false
@@ -250,8 +267,8 @@ for model in "${MODELS[@]}"; do
     if [[ "$MODEL_SUCCESS" == true ]]; then
         echo "🔨 Building executor runner for $model"
         if ! backends/arm/scripts/build_executor_runner.sh \
-            --pte="arm_test/$model/${model}_arm_${TARGET}.pte" \
-            --target="$TARGET" \
+            --pte="arm_test/$model/${model}_arm_${ETHOS_TARGET}.pte" \
+            --target="$ETHOS_TARGET" \
             --output="arm_test/$model"; then
             echo "❌ Executor runner build failed for $model"
             MODEL_SUCCESS=false
@@ -263,7 +280,7 @@ for model in "${MODELS[@]}"; do
         echo "🏃 Running $model on FVP with portable kernels"
         if ! backends/arm/scripts/run_fvp.sh \
             --elf="arm_test/$model/arm_executor_runner" \
-            --target="$TARGET"; then
+            --target="$ETHOS_TARGET"; then
             echo "❌ FVP execution failed for $model"
             MODEL_SUCCESS=false
         fi

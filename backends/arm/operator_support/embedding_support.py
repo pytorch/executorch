@@ -11,7 +11,7 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -27,11 +27,16 @@ class EmbeddingSupported(SupportedTOSAOperatorCheck):
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
-        # Note aten.embedding.default requires int64 indices and TOSA does not support it.
-        # Int32 indices here for aten.embedding.default is ok since it will be decomposed into ops that can handle it.
-        assert (
-            len(node.all_input_nodes) == 2
-        ), "Number of inputs to aten.embedding is not 2"
+        # Note aten.embedding.default requires int64 indices and TOSA does not
+        # support it. Int32 indices here for aten.embedding.default is ok since
+        # it will be decomposed into ops that can handle it.
+
+        if len(node.all_input_nodes) != 2:
+            self.reporter.report_reject(
+                node,
+                (f"Expected exactly two input nodes, got {len(node.all_input_nodes)}"),
+            )
+            return False
         indices_val = node.all_input_nodes[1].meta["val"]
         indices_dtype = indices_val.dtype
 

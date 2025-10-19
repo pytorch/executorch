@@ -5,13 +5,17 @@
 
 import hashlib
 from collections import defaultdict
+from typing import Set, Type
 
 import torch
+
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_constant_placeholder_kind,
     get_param_tensor,
     is_param_node,
 )
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
     delete_constant_placeholder,
@@ -20,16 +24,18 @@ from executorch.exir import ExportedProgram
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class FuseEqualPlaceholdersPass(ExportPass):
+class FuseEqualPlaceholdersPass(ArmPass):
     """
     This pass optimizes memory usage by finding constant placeholders
     pointing to identical tensors and fusing them to one single placeholder
     with multiple users, using a cache for faster comparison.
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     def __init__(self, exported_program: ExportedProgram):
-        self.exported_program = exported_program
         super().__init__()
+        self.exported_program = exported_program
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False
@@ -44,9 +50,14 @@ class FuseEqualPlaceholdersPass(ExportPass):
                 continue
             # Create a lightweight fingerprint: dtype + shape + SHA1 of raw bytes
             # Ensure tensor is on CPU and contiguous
+
+            # ensure we don't merge any special case int48_t tensors with int32_t tensors
+            # since int48_t tensors needs to be instantiated separately.
+            is_int48 = node.meta.get(TosaSpecialDtype.meta_key(), None)
             t_cpu = tensor.detach().cpu().contiguous()
             data_bytes = t_cpu.numpy().tobytes()
             key = (
+                is_int48,
                 str(t_cpu.dtype),
                 tuple(t_cpu.shape),
                 hashlib.sha1(data_bytes).hexdigest(),

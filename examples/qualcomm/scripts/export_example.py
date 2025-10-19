@@ -11,7 +11,6 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
-from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import save_pte_program
 
 from torchao.quantization.pt2e.quantize_pt2e import (
@@ -108,9 +107,7 @@ def main() -> None:
         m, example_inputs, compile_spec, generate_etrecord=args.generate_etrecord
     )
 
-    executorch_program = delegated_program.to_executorch(
-        config=ExecutorchBackendConfig(extract_delegate_segments=False)
-    )
+    executorch_program = delegated_program.to_executorch()
 
     if args.generate_etrecord:
         etrecord_path = args.output_folder + "etrecord.bin"

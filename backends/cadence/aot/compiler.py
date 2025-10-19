@@ -13,7 +13,6 @@ from typing import Optional
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot.compiler_funcs import (
-    convert as convert_fn,
     prepare as prepare_fn,
     trace as trace_fn,
 )
@@ -25,6 +24,7 @@ from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
 from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceDefaultQuantizer,
     CadenceQuantizer,
+    CadenceW8A32MixedQuantizer,
 )
 from executorch.backends.cadence.aot.utils import (
     get_default_memory_config,
@@ -38,10 +38,11 @@ from executorch.exir import (
     ExecutorchProgramManager,
 )
 from executorch.exir.passes import ToOutVarPass
-from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.program._program import to_edge
 
 from torch.export.exported_program import ExportedProgram
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e
 
 from .passes import apply_exir_ops_passes, apply_torch_ops_passes
 
@@ -59,6 +60,7 @@ def trace(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
+    quantizer: Optional[CadenceQuantizer] = None,
 ) -> ExportedProgram:
     """
     Trace the model with export and return an ExportedProgram.
@@ -72,6 +74,12 @@ def trace(
         torch.ops.aten.matmul.default,
         torch.ops.aten.rms_norm.default,
     ]
+
+    if isinstance(quantizer, CadenceW8A32MixedQuantizer):
+        ops_to_keep += [
+            torch.ops.aten.gru.input,
+            torch.ops.aten.gru.data,
+        ]
 
     program = trace_fn(
         model, inputs, is_qat=False, strict=True, ops_to_keep=ops_to_keep
@@ -99,7 +107,7 @@ def prepare_pt2(
     Returns a GraphModule with the prepared model.
     """
 
-    traced_program = trace(model, inputs, dump_graphs=dump_graphs)
+    traced_program = trace(model, inputs, dump_graphs=dump_graphs, quantizer=quantizer)
     prepared_program = prepare_traced_pt2(
         traced_program, quantizer, dump_graphs=dump_graphs
     )
@@ -139,7 +147,7 @@ def convert_pt2(
     Returns a GraphModule with the converted model.
     """
 
-    converted_model = convert_fn(graph_module)
+    converted_model = convert_pt2e(graph_module)
 
     if dump_graphs:
         logging.info("Graph after convert:")
@@ -184,7 +192,7 @@ def get_fake_quant_model(
     # Make the model inference mode by calling model.eval()
     model.eval()
 
-    program = trace(model, inputs, dump_graphs=dump_graphs)
+    program = trace(model, inputs, dump_graphs=dump_graphs, quantizer=quantizer)
 
     if dump_graphs:
         logging.info("Graph after trace:")
@@ -388,9 +396,6 @@ def quantize_and_export_to_cadence(
     )
 
 
-# Export the model and lower it to an EdgeProgramManager (in edge IR), and
-# apply passes specific to Cadence DSP execution. Return both to print the
-# differences.
 def export_to_executorch_gen_etrecord(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
@@ -402,7 +407,33 @@ def export_to_executorch_gen_etrecord(
     memory_config: Optional[MemoryConfig] = None,
     dump_graphs: bool = False,
 ) -> ExecutorchProgramManager:
-    edge_prog_manager = export_to_edge(model, inputs, dump_graphs)
+    ep = torch.export.export(model, inputs, strict=True)
+    return _lower_ep_to_cadence_gen_etrecord(
+        ep,
+        output_dir=output_dir,
+        opt_level=opt_level,
+        mem_algo=mem_algo,
+        alloc_graph_input=alloc_graph_input,
+        alloc_graph_output=alloc_graph_output,
+        memory_config=memory_config,
+        dump_graphs=dump_graphs,
+    )
+
+
+# Export the model and lower it to an EdgeProgramManager (in edge IR), and
+# apply passes specific to Cadence DSP execution. Return both to print the
+# differences.
+def _lower_ep_to_cadence_gen_etrecord(
+    ep: ExportedProgram,
+    output_dir: Optional[str] = None,
+    opt_level: int = 1,
+    mem_algo: int = 0,
+    alloc_graph_input: bool = True,
+    alloc_graph_output: bool = True,
+    memory_config: Optional[MemoryConfig] = None,
+    dump_graphs: bool = False,
+) -> ExecutorchProgramManager:
+    edge_prog_manager = _lower_ep_to_edge(ep, dump_graphs)
     cadence_prog_manager = apply_exir_ops_passes(opt_level, edge_prog_manager)
 
     # Print some information to terminal
@@ -429,7 +460,7 @@ def export_to_executorch_gen_etrecord(
             emit_stacktrace=False,
             to_out_var_pass=ToOutVarPass(),
             extract_delegate_segments=False,
-            sym_shape_eval_pass=HintBasedSymShapeEvalPass(),
+            sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
         ),
     )
 

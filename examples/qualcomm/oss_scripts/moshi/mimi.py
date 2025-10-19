@@ -176,9 +176,7 @@ def compile_mimi_encoder(
     )
 
 
-def inference_mimi_encoder(
-    args, encoder_inputs, encoder_input_list, encoder_pte_filename
-):
+def inference_mimi_encoder(args, encoder_inputs, encoder_pte_filename):
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
         build_path=f"{args.build_folder}",
@@ -189,7 +187,7 @@ def inference_mimi_encoder(
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
     )
-    adb.push(inputs=encoder_inputs, input_list=encoder_input_list)
+    adb.push(inputs=encoder_inputs)
     adb.execute()
 
     # collect output data
@@ -210,7 +208,7 @@ def inference_mimi_encoder(
 def export_mimi_encoder(
     args, orig_mimi, sample_pcm, pcm_chunk_size, skip_node_id_set, skip_node_op_set
 ):
-    encoder_inputs, encoder_input_list = [], ""
+    encoder_inputs = []
     count = 0
     cpu_encoded_results = []
     logging.info("streaming encoding...")
@@ -219,7 +217,6 @@ def export_mimi_encoder(
         chunk = sample_pcm[..., start_idx:end_idx]
         # Preparing QNN inputs
         encoder_inputs.append((chunk,))
-        encoder_input_list += f"input_{count}_0.raw\n"
         count += 1
         # Performing cpu encoding for golden
         codes = orig_mimi.encode(chunk)
@@ -244,7 +241,6 @@ def export_mimi_encoder(
         qnn_encoded_results = inference_mimi_encoder(
             args,
             encoder_inputs,
-            encoder_input_list,
             encoder_pte_filename,
         )
     else:
@@ -260,7 +256,6 @@ def export_mimi_encoder(
         qnn_encoded_results = inference_mimi_encoder(
             args,
             encoder_inputs,
-            encoder_input_list,
             encoder_pte_filename,
         )
 
@@ -367,7 +362,7 @@ def inference_static_mimi_decoder(
         shared_buffer=args.shared_buffer,
         runner="examples/qualcomm/oss_scripts/moshi/qnn_mimi_decoder_runner",
     )
-    adb.push(inputs=encoded_results, input_list=encoded_results_list)
+    adb.push(inputs=encoded_results)
     adb.execute(custom_runner_cmd=runner_cmd)
 
     # collect output data

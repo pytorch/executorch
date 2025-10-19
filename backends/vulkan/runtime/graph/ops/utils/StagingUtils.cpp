@@ -23,6 +23,7 @@ bool is_bitw8(vkapi::ScalarType dtype) {
 vkapi::ShaderInfo get_nchw_to_tensor_shader(
     ComputeGraph& graph,
     const ValueRef dst,
+    const vkapi::ScalarType staging_dtype,
     bool int8_buffer_enabled,
     bool push_constant_variant) {
   std::string kernel_name;
@@ -44,10 +45,8 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
 
   if (dst_storage_type == utils::kBuffer) {
     kernel_name = "nchw_to_buffer";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
     add_dtype_suffix(kernel_name, dst_dtype);
+    add_dtype_suffix(kernel_name, staging_dtype);
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
@@ -57,6 +56,7 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
   }
   add_storage_type_suffix(kernel_name, dst_storage_type);
   add_dtype_suffix(kernel_name, dst_dtype);
+  add_dtype_suffix(kernel_name, staging_dtype);
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }
@@ -64,6 +64,7 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
 vkapi::ShaderInfo get_tensor_to_nchw_shader(
     ComputeGraph& graph,
     const ValueRef src,
+    const vkapi::ScalarType staging_dtype,
     bool int8_buffer_enabled,
     bool push_constant_variant) {
   std::string kernel_name;
@@ -85,10 +86,8 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
 
   if (src_storage_type == utils::kBuffer) {
     kernel_name = "buffer_to_nchw";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
     add_dtype_suffix(kernel_name, src_dtype);
+    add_dtype_suffix(kernel_name, staging_dtype);
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
@@ -98,6 +97,7 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
   }
   add_storage_type_suffix(kernel_name, src_storage_type);
   add_dtype_suffix(kernel_name, src_dtype);
+  add_dtype_suffix(kernel_name, staging_dtype);
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }

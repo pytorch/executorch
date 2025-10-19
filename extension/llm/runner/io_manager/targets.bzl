@@ -1,8 +1,8 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def define_common_targets():
 
-    for aten in (True, False):
+    for aten in get_aten_mode_options():
         aten_suffix = "_aten" if aten else ""
 
         # Interface for IOManager. No concrete impl from this dep.
@@ -11,10 +11,9 @@ def define_common_targets():
             exported_headers = [
                 "io_manager.h",
             ],
-            deps = [
+            exported_deps = [
                 "//executorch/extension/tensor:tensor" + aten_suffix,
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-                "//executorch/runtime/executor:program_no_prim_ops" + aten_suffix,
+                "//executorch/extension/module:module" + aten_suffix,
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",

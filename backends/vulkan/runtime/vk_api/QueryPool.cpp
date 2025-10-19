@@ -209,7 +209,7 @@ std::string QueryPool::generate_string_report() {
 
   std::stringstream ss;
 
-  int kernel_name_w = 40;
+  int kernel_name_w = 120;
   int global_size_w = 25;
   int local_size_w = 25;
   int duration_w = 25;

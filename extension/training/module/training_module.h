@@ -49,6 +49,15 @@ class ET_EXPERIMENTAL TrainingModule final
   explicit TrainingModule(Module&&) = delete;
   TrainingModule& operator=(Module&&) = delete;
 
+  // Redefine to erase the tensors pointing to the released memory.
+  inline bool unload_method(const std::string& method_name) {
+    method_named_gradients_.erase(method_name);
+    method_named_parameters_.erase(method_name);
+    method_named_attributes_.erase(method_name);
+
+    return methods_.erase(method_name);
+  }
+
   /**
    * Execute a specific method with the given input and retrieve output. Only
    * valid if the specified method is a joint graph. Loads the program and

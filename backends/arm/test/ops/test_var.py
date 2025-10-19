@@ -194,7 +194,6 @@ def test_var_dim_u55_INT_no_dim(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -208,7 +207,6 @@ def test_var_dim_u85_INT_no_dim(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -276,7 +274,6 @@ def test_var_dim_u55_INT(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -290,7 +287,6 @@ def test_var_dim_u85_INT(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -357,7 +353,6 @@ def test_var_dim_u55_INT_correction(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -371,7 +366,6 @@ def test_var_dim_u85_INT_correction(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 

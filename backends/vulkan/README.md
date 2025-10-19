@@ -150,7 +150,7 @@ when building with CMake.
 
 First, make sure that you have the Android NDK installed; any NDK version past
 NDK r19c should work. Note that the examples in this doc have been validated with
-NDK r27b. The Android SDK should also be installed so that you have access to `adb`.
+NDK r28c. The Android SDK should also be installed so that you have access to `adb`.
 
 The instructions in this page assumes that the following environment variables
 are set.

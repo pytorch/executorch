@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,16 +9,15 @@
 
 # TODO(T138924864): Refactor to unify the serialization for bundled program and executorch program.
 
+import importlib.resources as _resources
 import json
 import os
 import tempfile
 
 import executorch.devtools.bundled_program.schema as bp_schema
 
-# @manual=fbsource//third-party/pypi/setuptools:setuptools
-import pkg_resources
+import executorch.devtools.bundled_program.serialize as serialization_package
 from executorch.devtools.bundled_program.core import BundledProgram
-
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 
@@ -30,7 +30,7 @@ def write_schema(d: str, schema_name: str) -> None:
     schema_path = os.path.join(d, "{}.fbs".format(schema_name))
     with open(schema_path, "wb") as schema_file:
         schema_file.write(
-            pkg_resources.resource_string(__name__, "{}.fbs".format(schema_name))
+            _resources.read_binary(serialization_package, f"{schema_name}.fbs")
         )
 
 

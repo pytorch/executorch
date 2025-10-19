@@ -14,7 +14,7 @@ def _get_quantized_sdpa_deps():
     if runtime.is_oss:
         return []
     else:
-        return ["//pytorch/ao/torchao/experimental/kernels/cpu/interface:interface"]
+        return ["//pytorch/ao/torchao/csrc/cpu/torch_free_kernels/interface:interface"]
 
 def _get_quantized_preproc_flags():
     if runtime.is_oss:

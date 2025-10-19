@@ -316,7 +316,7 @@ TEST_F(OpMaxOutTest, MismatchedDTypesDies) {
 
 TEST_F(OpMaxOutTest, AllRealInputLongOutputPasses) {
 #define TEST_ENTRY(ctype, dtype) test_max_out_dtype<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

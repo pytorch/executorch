@@ -27,7 +27,7 @@
 	url = https://github.com/google/pthreadpool.git
 [submodule "extension/llm/tokenizers"]
 	path = extension/llm/tokenizers
-	url = https://github.com/pytorch-labs/tokenizers.git
+	url = https://github.com/meta-pytorch/tokenizers.git
 [submodule "kernels/optimized/third-party/eigen"]
 	path = kernels/optimized/third-party/eigen
 	url = https://gitlab.com/libeigen/eigen.git

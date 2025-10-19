@@ -18,6 +18,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include "executorch/runtime/core/exec_aten/util/dim_order_util.h"
 
 #include <memory>
 #include <unordered_map>
@@ -26,6 +27,50 @@
 namespace executorch {
 namespace backends {
 namespace neuron {
+
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
+
+class NeuronSharedWeights {
+ public:
+  explicit NeuronSharedWeights(const FreeableBuffer& shared_weights_buffer) {
+    auto& buffer_allocator = GET_NEURON_ALLOCATOR;
+    nbytes_ = shared_weights_buffer.size();
+    data_ = buffer_allocator.Allocate(nbytes_);
+    ET_CHECK_MSG(
+        data_ != nullptr,
+        "Error: Failed to allocate memory for shared weights of size %zu",
+        nbytes_);
+    std::memcpy(data_, shared_weights_buffer.data(), nbytes_);
+  }
+
+  explicit NeuronSharedWeights(FreeableBuffer&& shared_weights_buffer)
+      : NeuronSharedWeights(shared_weights_buffer) {
+    shared_weights_buffer.Free();
+  }
+
+  ~NeuronSharedWeights() {
+    if (data_ == nullptr || nbytes_ == 0) {
+      return;
+    }
+    auto& buffer_allocator = GET_NEURON_ALLOCATOR;
+    buffer_allocator.RemoveBuffer(data_);
+  }
+
+  void* data() const {
+    return data_;
+  }
+
+  size_t size() const {
+    return nbytes_;
+  }
+
+ private:
+  void* data_ = nullptr;
+  size_t nbytes_ = 0;
+};
 
 class NeuronBackend final : public ::executorch::runtime::BackendInterface {
  public:
@@ -44,6 +89,10 @@ class NeuronBackend final : public ::executorch::runtime::BackendInterface {
   void destroy(::executorch::runtime::DelegateHandle* handle) const override;
 
   bool is_available() const override;
+
+ private:
+  mutable std::unordered_map<std::string, std::weak_ptr<NeuronSharedWeights>>
+      neuron_shared_weights_cache_;
 };
 
 extern const char kHighAddrKey[];
@@ -53,6 +102,8 @@ struct NeuronDelegateSetting {
   bool mHighAddr = false;
 
   bool mImportForever = false;
+
+  bool mSharedWeights = false;
 
   std::string ToRuntimeOption() {
     if (mHighAddr && mImportForever) {
@@ -69,6 +120,13 @@ struct NeuronDelegateSetting {
 
 class NeuronExecuTorchDelegate {
  public:
+  struct InputOutputInfo {
+    void* data_ptr;
+    size_t size;
+
+    InputOutputInfo(void* ptr, size_t sz) : data_ptr(ptr), size(sz) {}
+  };
+
   class MemoryCache {
    public:
     template <bool isInput>
@@ -104,13 +162,19 @@ class NeuronExecuTorchDelegate {
     auto res = mExecutor.LoadFromCompiledNetwork(
         payload.CompiledNetwork,
         payload.Header.DataLen,
-        payload.Header.InputCount,
+        mSettings.mSharedWeights ? payload.Header.InputCount + 1
+                                 : payload.Header.InputCount,
         payload.Header.OutputCount,
         runtimeOption);
     CHECK_NO_ERROR(res);
     CHECK_TRUE(mExecutor.IsValid());
-    SummaryIoCounts();
+    SummarizeIoSizes(payload.Header.InputCount, payload.Header.OutputCount);
     mPLock = std::unique_ptr<ScopePerformancer>(new ScopePerformancer);
+    return NEURON_NO_ERROR;
+  }
+
+  int SetSharedWeights(std::shared_ptr<NeuronSharedWeights> sharedWeights) {
+    neuron_shared_weights_.push_back(sharedWeights);
     return NEURON_NO_ERROR;
   }
 
@@ -129,19 +193,19 @@ class NeuronExecuTorchDelegate {
     mCache.UpdateCache<isInput>(index, ptr);
   }
 
-  int SummaryIoCounts() {
-    for (int i = 0;; i++) {
+  int SummarizeIoSizes(uint32_t input_count, uint32_t output_count) {
+    for (int i = 0; i < input_count; i++) {
       size_t size = mExecutor.GetInputOutputPaddedSize</*isInput*/ true>(i);
       if (size == 0) {
-        break;
+        LogWarn("NeuronBackend", "Model input:%d got size: %lu", i, size);
       }
       LogInfo("NeuronBackend", "Model input:%d size: %lu", i, size);
       mInputSizes.push_back(size);
     }
-    for (int o = 0;; o++) {
+    for (int o = 0; o < output_count; o++) {
       size_t size = mExecutor.GetInputOutputPaddedSize</*isInput*/ false>(o);
       if (size == 0) {
-        break;
+        LogWarn("NeuronBackend", "Model output:%d got size: %lu", o, size);
       }
       LogInfo("NeuronBackend", "Model output:%d size: %lu", o, size);
       mOutputSizes.push_back(size);
@@ -149,13 +213,69 @@ class NeuronExecuTorchDelegate {
     return NEURON_NO_ERROR;
   }
 
-  int HintNeuronBackend(
-      ::executorch::runtime::Span<::executorch::runtime::EValue*> args) const;
+  int CheckDimOrder(Span<EValue*> args) const {
+    size_t data_input_count = mInputSizes.size();
+    for (int i = 0; i < data_input_count; i++) {
+      auto tensor_in = args[i]->toTensor();
+      LogInfo("NeuronBackend", "Checking dim order for input %d", i);
+      if (!runtime::is_contiguous_dim_order(
+              tensor_in.dim_order().data(), tensor_in.dim())) {
+        return NEURON_BAD_DATA;
+      }
+    }
+
+    return NEURON_NO_ERROR;
+  }
+
+  int PrepareInputsOuputs(Span<EValue*> args) const {
+    bool has_shared_weights_input = neuron_shared_weights_.size() > 0;
+
+    size_t data_input_count = mInputSizes.size();
+    size_t data_output_count = mOutputSizes.size();
+
+    mPreparedInputs.clear();
+    mPreparedOutputs.clear();
+    mPreparedInputs.reserve(data_input_count);
+    mPreparedOutputs.reserve(data_output_count);
+
+    // Prepare input data
+    for (int i = 0; i < data_input_count; i++) {
+      auto tensor_in = args[i]->toTensor();
+      auto data_ptr = tensor_in.data_ptr();
+      auto data_size = tensor_in.nbytes();
+      mPreparedInputs.push_back(InputOutputInfo{data_ptr, data_size});
+    }
+
+    // Prepare shared weights if any as the last model inputs
+    if (has_shared_weights_input) {
+      for (const auto& shared_weights : neuron_shared_weights_) {
+        mPreparedInputs.push_back(
+            InputOutputInfo{shared_weights->data(), shared_weights->size()});
+      }
+    }
+
+    // Prepare output data
+    for (int o = data_input_count; o < data_input_count + data_output_count;
+         o++) {
+      auto tensor_out = args[o]->toTensor();
+      auto data_ptr = tensor_out.data_ptr();
+      auto data_size = tensor_out.nbytes();
+      mPreparedOutputs.push_back(InputOutputInfo{data_ptr, data_size});
+    }
+
+    return NEURON_NO_ERROR;
+  }
+
+  int HintNeuronBackend(Span<EValue*> args) const;
 
  private:
   std::vector<size_t> mInputSizes;
 
   std::vector<size_t> mOutputSizes;
+
+  mutable std::vector<InputOutputInfo> mPreparedInputs;
+
+  mutable std::vector<InputOutputInfo> mPreparedOutputs;
 
   mutable MemoryCache mCache;
 
@@ -166,6 +286,9 @@ class NeuronExecuTorchDelegate {
   NeuronDelegateSetting mSettings;
 
   mutable std::unordered_set<const void*> mHasImported;
+
+  mutable std::vector<std::shared_ptr<NeuronSharedWeights>>
+      neuron_shared_weights_;
 
  private:
   NeuronExecuTorchDelegate(const NeuronExecuTorchDelegate&);

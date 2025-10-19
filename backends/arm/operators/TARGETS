@@ -1,37 +1,37 @@
 # @noautodeps
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-python_library(
+runtime.python_library(
     name = "node_visitor",
     srcs = ["node_visitor.py"],
     deps = [
-        "//executorch/backends/arm:tosa_mapping",
-        "//executorch/backends/arm:tosa_specification",
+        "//executorch/backends/arm/debug:schema",
+        "//executorch/backends/arm/tosa:mapping",
+        "//executorch/backends/arm/tosa:tosa",
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "operator_validation_utils",
     srcs = ["operator_validation_utils.py"],
 )
 
-python_library(
+runtime.python_library(
     name = "ops",
     srcs = glob(["op_*.py", "ops_*.py"]),
     deps = [
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools:tosa",
         ":node_visitor",
         ":operator_validation_utils",
-        "//executorch/backends/arm:tosa_mapping",
-        "//executorch/backends/arm:tosa_quant_utils",
-        "//executorch/backends/arm:tosa_utils",
+        "//executorch/backends/arm/tosa:mapping",
+        "//executorch/backends/arm/tosa:quant_utils",
+        "//executorch/backends/arm/tosa:utils",
         "//executorch/backends/arm/_passes:passes",
         "//executorch/exir:lib",
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "lib",
     srcs = ["__init__.py"],
     deps = [

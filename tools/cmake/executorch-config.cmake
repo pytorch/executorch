@@ -53,6 +53,7 @@ set(EXECUTORCH_FOUND ON)
 include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
 
 set(optional_lib_list
+    aoti_cuda
     flatccrt
     etdump
     bundled_program
@@ -67,6 +68,7 @@ set(optional_lib_list
     portable_ops_lib
     custom_ops
     extension_evalue_util
+    extension_llm_runner
     extension_module
     extension_module_static
     extension_runner_util
@@ -84,6 +86,7 @@ set(optional_lib_list
     quantized_kernels
     quantized_ops_lib
     quantized_ops_aot_lib
+    openvino_backend
     torchao_ops_executorch
     torchao_kernels_aarch64
 )

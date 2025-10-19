@@ -75,7 +75,7 @@ def get_dataset(data_size):
     processor = AutoProcessor.from_pretrained("openai/whisper-tiny")
 
     # prepare input data
-    inputs, target, input_list = [], [], ""
+    inputs, target = [], []
     for index, data in enumerate(dataset):
         if index >= data_size:
             break
@@ -88,9 +88,8 @@ def get_dataset(data_size):
         ).input_features
         inputs.append((feature,))
         target.append(data["text"])
-        input_list += f"input_{index}_0.raw\n"
 
-    return inputs, input_list, target
+    return inputs, target
 
 
 def calibrate(
@@ -335,11 +334,6 @@ def compile_whisper(args, inputs):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
     tokenizer = AutoTokenizer.from_pretrained("openai/whisper-tiny")
     module = (
         AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-tiny")
@@ -366,7 +360,7 @@ def compile_whisper(args, inputs):
     )
 
 
-def inference_whisper(args, inputs, input_list, target):
+def inference_whisper(args, inputs, target):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/whisper"
     tokenizer = AutoTokenizer.from_pretrained("openai/whisper-tiny")
     tokenizer_json = tokenizer.save_pretrained(args.artifact)[-1]
@@ -436,7 +430,7 @@ def inference_whisper(args, inputs, input_list, target):
             runner="examples/qualcomm/oss_scripts/whisper/qnn_whisper_runner",
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=inputs, input_list=input_list, files=[tokenizer_json])
+        adb.push(inputs=inputs, files=[tokenizer_json])
         adb.execute(custom_runner_cmd=runner_cmd)
 
         adb.pull(output_path=args.artifact, callback=post_process)
@@ -483,6 +477,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
 
     if args.compile_only and args.pre_gen_pte:
         exit("Cannot set both compile_only and pre_gen_pte as true")
@@ -494,10 +489,10 @@ if __name__ == "__main__":
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, input_list, target = get_dataset(data_num)
+        inputs, target = get_dataset(data_num)
 
     if args.pre_gen_pte:
-        inference_whisper(args, inputs, input_list, target)
+        inference_whisper(args, inputs, target)
         exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
 
     if args.compile_only:
@@ -506,7 +501,7 @@ if __name__ == "__main__":
 
     try:
         compile_whisper(args, inputs)
-        inference_whisper(args, inputs, input_list, target)
+        inference_whisper(args, inputs, target)
     except Exception as e:
         if args.ip and args.port != -1:
             with Client((args.ip, args.port)) as conn:

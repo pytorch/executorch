@@ -45,7 +45,7 @@ python -m extension.llm.export.export_llm \
 ### Example run
 With ExecuTorch pybindings:
 ```
-python -m examples.models.llama.runner.native
+python -m examples.models.llama.runner.native \
   --model qwen3_0_6b \
   --pte qwen3_0_6b.pte \
   --tokenizer ~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/a9c98e602b9d36d2a2f7ba1eb0f5f31e4e8e5143/tokenizer.json \
@@ -59,9 +59,9 @@ python -m examples.models.llama.runner.native
 
 With ExecuTorch's sample c++ runner (see the Llama README's [Step 3: Run on your computer to validate](../llama/README.md#step-3-run-on-your-computer-to-validate) to build the runner):
 ```
-cmake-out/examples/models/llama/llama_main
-  --model_path qwen3_0_6b.pte
-  --tokenizer_path ~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/a9c98e602b9d36d2a2f7ba1eb0f5f31e4e8e5143/tokenizer.json
+cmake-out/examples/models/llama/llama_main \
+  --model_path qwen3_0_6b.pte \
+  --tokenizer_path ~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/a9c98e602b9d36d2a2f7ba1eb0f5f31e4e8e5143/tokenizer.json \
   --prompt="Who is the president of the US?"
 ```
 

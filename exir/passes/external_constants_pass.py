@@ -27,6 +27,7 @@ def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
 
 def external_constants_pass(
     gm: GraphModule,
+    gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
 ) -> PassResult:
     """
     Move all non-lifted constants to external file.
@@ -42,7 +43,10 @@ def external_constants_pass(
             if (node.op == "placeholder") and ("_lifted_tensor" not in node.name):
                 spec = node.meta.get("spec")
                 if isinstance(spec, TensorSpec) and spec.const:
-                    node.meta["constant_tag"] = "_default_external_constant"
+                    if gen_tag_fn is not None:
+                        node.meta["constant_tag"] = gen_tag_fn(node)
+                    else:
+                        node.meta["constant_tag"] = "_default_external_constant"
                     mutated = True
     return PassResult(gm, mutated)
 

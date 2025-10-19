@@ -216,7 +216,6 @@ extern "C" WORD32 xa_nn_transpose_32_32(
     WORD32 num_out_dims,
     WORD32 num_inp_dims);
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace kernels {
@@ -285,7 +284,6 @@ void dequantize(
     int32_t zero_point,
     size_t size);
 
-}; // namespace kernels
-}; // namespace HiFi
-}; // namespace impl
-}; // namespace cadence
+} // namespace kernels
+} // namespace HiFi
+} // namespace impl

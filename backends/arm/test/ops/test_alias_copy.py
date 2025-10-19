@@ -41,7 +41,9 @@ class AliasCopy(torch.nn.Module):
         super().__init__()
 
     def forward(self, x: torch.Tensor):
-        return torch.alias_copy(x)
+        return (
+            torch.alias_copy(x) * 1
+        )  # Multiply by one to make sure it is partitioned.
 
 
 @common.parametrize("test_data", AliasCopy.test_data)

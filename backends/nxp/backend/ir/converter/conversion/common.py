@@ -1,6 +1,6 @@
 #
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2024 NXP
+# Copyright 2023-2025 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -12,7 +12,7 @@ This file contains functions shared by the various files in the
 'conversion/builtin/' directory.
 """
 
-from typing import Any, List, MutableSequence, Optional
+from typing import List, MutableSequence, Optional
 
 import executorch.backends.nxp.backend.ir.logger as logger
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
@@ -22,28 +22,8 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
     max_pool_2d_options,
     transpose_conv_options,
 )
+
 from torch.fx import Node
-
-
-def exactly_one_is_none(obj1: Optional, obj2: Optional) -> bool:
-    """Determine if exactly 1 of the arguments is None, or not."""
-    return (obj1 is None and obj2 is not None) or (obj1 is not None and obj2 is None)
-
-
-def contains_duplicates(list_to_check: List[Any]) -> bool:
-    """Determine if given list has duplicate elements or not."""
-    return len(list_to_check) != len(set(list_to_check))
-
-
-def clamp(val: int, start: int, end: int) -> int:
-    """Clamp an int value between start and end (inclusive) and return it."""
-    if val < start:
-        return start
-
-    elif val > end:
-        return end
-
-    return val
 
 
 def try_get_input(t_op: tflite_model.Operator, idx: int) -> tflite_model.Tensor | None:
@@ -62,37 +42,25 @@ def try_get_input(t_op: tflite_model.Operator, idx: int) -> tflite_model.Tensor 
 
     tensor = t_op.tmp_inputs[idx]
 
-    if tensor.name == "":
-        # ONNX allows the name "" for optional tensors. It indicates that the tensor should be ignored, and a default
-        #  value should be used. Just like if the tensor was omitted altogether.
-        return None
-
     return tensor
 
 
-def extend_1d_pads_to_2d(onnx_1d_pads: MutableSequence):
-    """Extend the onnx 'pads' operator attribute that represents padding for a 1D kernel to 2D, by adding '0's."""
-    if onnx_1d_pads is not None:
-        onnx_1d_pads.insert(1, 0)
-        onnx_1d_pads.append(0)
+def extend_1d_padding_to_2d(tflite_1d_padding: MutableSequence):
+    """Extend the PyTorch 'padding' operator attribute that represents padding for a 1D kernel to 2D, by adding '0's."""
+    if tflite_1d_padding is not None:
+        tflite_1d_padding.append(0)
 
 
-def extend_1d_strides_to_2d(onnx_1d_strides: MutableSequence):
-    """Extend the onnx 'strides' operator attribute that represents strides for a 1D kernel to 2D, by adding '1'."""
-    if onnx_1d_strides is not None:
-        onnx_1d_strides.append(1)
+def extend_1d_stride_to_2d(tflite_1d_stride: MutableSequence):
+    """Extend the PyTorch 'stride' operator attribute that represents stride for a 1D kernel to 2D, by adding '1'."""
+    if tflite_1d_stride is not None:
+        tflite_1d_stride.append(1)
 
 
-def extend_1d_dilations_to_2d(onnx_1d_dilations: MutableSequence):
-    """Extend the onnx 'dilations' operator attribute that represents dilations for a 1D kernel to 2D, by adding '1'."""
-    if onnx_1d_dilations is not None:
-        onnx_1d_dilations.append(1)
-
-
-def extend_1d_kernel_shape_to_2d(onnx_1d_kernel_shape: MutableSequence):
-    """Extend the onnx 1D 'kernel_shape' operator attribute to 2D, by adding '1'."""
-    if onnx_1d_kernel_shape is not None:
-        onnx_1d_kernel_shape.append(1)
+def extend_1d_dilation_to_2d(tflite_1d_dilation: MutableSequence):
+    """Extend the PyTorch 'dilation' operator attribute that represents dilation for a 1D kernel to 2D, by adding '1'."""
+    if tflite_1d_dilation is not None:
+        tflite_1d_dilation.append(1)
 
 
 StridedOptions = (
@@ -108,7 +76,7 @@ def assign_2d_strides(options: StridedOptions, strides: Optional[List[int]]):
          If 'strides' is None, assign 1s.
 
     :param options: TFLite AveragePool2D, Conv2D, MaxPool2D or TransposeConv options object.
-    :param strides: An optional list of ONNX strides attribute.
+    :param strides: An optional list of ExecuTorch strides attribute.
     """
 
     if strides is None:
@@ -122,8 +90,8 @@ def assign_2d_strides(options: StridedOptions, strides: Optional[List[int]]):
 
     else:
         logger.e(
-            logger.Code.INVALID_ONNX_OPERATOR_ATTRIBUTE,
-            f"ONNX operator has invalid 'strides' attribute! ('{strides}')",
+            logger.Code.INVALID_OPERATOR_ATTRIBUTE,
+            f"ExecuTorch operator has invalid 'strides' attribute! ('{strides}')",
         )
 
 
@@ -192,32 +160,6 @@ def node_uses_shape_broadcasting(node: Node) -> bool:
     return any(
         input_tensor.meta["val"].shape != first_input_shape
         for input_tensor in node.all_input_nodes[1:]
-    )
-
-
-def uses_multiple_input_types(t_op: tflite_model.Operator) -> bool:
-    """Determine if the input tensors of given TFLite operator use different data types or not.
-
-    :param t_op: TFLite operator with 'tmp_inputs' initialized.
-    :return: True, if any two input tensors have a different data type.
-             False, if all input tensors use the same data type.
-    """
-
-    if t_op.tmp_inputs is None:
-        logger.e(
-            logger.Code.INTERNAL_ERROR,
-            "common.uses_multiple_input_types(): 'tmp_inputs' are None!",
-        )
-
-    if len(t_op.tmp_inputs) == 0:
-        logger.e(
-            logger.Code.INTERNAL_ERROR,
-            "common.uses_multiple_input_types(): Operator has no inputs!",
-        )
-
-    first_input_type = t_op.tmp_inputs[0].type
-    return any(
-        input_tensor.type != first_input_type for input_tensor in t_op.tmp_inputs[1:]
     )
 
 

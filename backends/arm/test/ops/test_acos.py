@@ -102,6 +102,7 @@ def test_acos_vgf_FP(test_data: Tuple):
         [],
         [],
         tosa_version="TOSA-1.0+FP",
+        run_on_vulkan_runtime=True,
     )
     pipeline.run()
 
@@ -115,5 +116,6 @@ def test_acos_vgf_INT(test_data: Tuple):
         [],
         [],
         tosa_version="TOSA-1.0+INT",
+        run_on_vulkan_runtime=True,
     )
     pipeline.run()

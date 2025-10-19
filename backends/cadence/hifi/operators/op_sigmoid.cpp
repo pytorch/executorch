@@ -19,7 +19,6 @@ using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::Error;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -89,4 +88,3 @@ Tensor& sigmoid_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

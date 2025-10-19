@@ -19,7 +19,7 @@ class RemoveRedundancy(ExportPass):
         self.redundant_ops_general = {
             torch.clone: self._default_condition,
             torch.ops.aten.clone.default: self._default_condition,
-            exir_ops.edge.aten.clone.default: self._default_condition,
+            exir_ops.edge.dim_order_ops._clone_dim_order.default: self._default_condition,
             torch.ops.aten.alias.default: self._default_condition,
             exir_ops.edge.aten.alias.default: self._default_condition,
             exir_ops.edge.aten.alias_copy.default: self._default_condition,
@@ -41,12 +41,7 @@ class RemoveRedundancy(ExportPass):
         )
 
     def _dim_order_op_condition(self, node):
-        dim_order = node.kwargs.get("dim_order")
-        # skip if there contains layout hint
-        # e.g. (0, 2, 3, 1) != (0, 1, 2, 3)
-        if node.meta["val"].dtype != node.args[0].meta["val"].dtype:
-            return False
-        return dim_order != list(range(len(dim_order)))
+        return node.meta["val"].dtype == node.args[0].meta["val"].dtype
 
     def _to_copy_op_condition(self, node):
         return "memory_format" in node.kwargs

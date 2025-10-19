@@ -72,7 +72,7 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l,meta-llama/Llama-3.2-1B,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8,Qwen/Qwen3-0.6B,HuggingFaceTB/SmolLM2-135M,allenai/OLMo-1B-hf,google/gemma-3-1b-it' || 'Qwen/Qwen3-0.6B' }}
+          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'mv3,mv2,ic4,ic3,resnet50,mobilebert,w2l,meta-llama/Llama-3.2-1B,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8,Qwen/Qwen3-0.6B,HuggingFaceTB/SmolLM2-135M,allenai/OLMo-1B-hf,google/gemma-3-1b-it' || 'Qwen/Qwen3-0.6B' }}
           CRON_DEFAULT_DEVICES: samsung_galaxy_s22+public
         run: |
           set -eux
@@ -292,7 +292,7 @@ jobs:
                       export.output_name="${OUT_ET_MODEL_NAME}.pte"
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
                 elif [[ ${{ matrix.config }} == "llama3_qnn_htp" ]]; then
-                    export QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029
+                    export QNN_SDK_ROOT=/tmp/qnn/2.37.0.250724
                     export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/
                     export PYTHONPATH=$(pwd)/..
 
@@ -432,7 +432,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
         mkdir -p aar-out
-        PYTHON_EXECUTABLE=python ANDROID_ABIS="arm64-v8a" BUILD_AAR_DIR=aar-out EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029 EXECUTORCH_ANDROID_PROFILING=ON bash scripts/build_android_library.sh
+        PYTHON_EXECUTABLE=python ANDROID_ABIS="arm64-v8a" BUILD_AAR_DIR=aar-out EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.37.0.250724 EXECUTORCH_ANDROID_PROFILING=ON bash scripts/build_android_library.sh
         mkdir -p extension/benchmark/android/benchmark/app/libs
         cp aar-out/executorch.aar extension/benchmark/android/benchmark/app/libs
         pushd extension/benchmark/android/benchmark

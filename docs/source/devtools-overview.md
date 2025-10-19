@@ -17,7 +17,7 @@ The ExecuTorch Developer Tools support the following features:
 - **Debugging** - Intermediate outputs and output quality analysis
 - **Numerical Discrepancy Detection** - Operator-level numerical discrepancy detection between AOT and runtime intermediate outputs to streamline numerical debugging and validation.
 - **Memory Allocation Insights** - Visualize how memory is planned, where all the live tensors are at any point in time
-- **Visualization** - Coming soon
+- **Visualization** - Visualize the model as a computational graph (see more [here](visualize.md))
 
 ## Fundamental components of the Developer Tools
 
@@ -41,6 +41,6 @@ More details are available in the [ETDump documentation](etdump.md) on how to ge
 
 
 ### Inspector APIs
-The Inspector Python APIs are the main user enrty point into the Developer Tools. They join the data sourced from ETDump and ETRecord to give users access to all the performance and debug data sourced from the runtime along with linkage back to eager model source code and module hierarchy in an easy to use API.
+The Inspector Python APIs are the main user entry point into the Developer Tools. They join the data sourced from ETDump and ETRecord to give users access to all the performance and debug data sourced from the runtime along with linkage back to eager model source code and module hierarchy in an easy to use API.
 
 More details are available in the [Inspector API documentation](model-inspector.rst) on how to use the Inspector APIs.

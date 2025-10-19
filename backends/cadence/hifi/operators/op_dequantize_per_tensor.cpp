@@ -10,15 +10,14 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <xa_nnlib_kernels_api.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
 
-using ::cadence::impl::HiFi::kernels::dequantize;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
+using ::impl::HiFi::kernels::dequantize;
 
 void dequantize_per_tensor_out(
     KernelRuntimeContext& ctx,
@@ -57,7 +56,66 @@ void dequantize_per_tensor_out(
   }
 }
 
-}; // namespace native
-}; // namespace HiFi
-}; // namespace impl
-}; // namespace cadence
+void dequantize_per_tensor_asym8u_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  float* out_data = out.mutable_data_ptr<float>();
+  size_t numel = out.numel();
+  const uint8_t* input_data = input.const_data_ptr<uint8_t>();
+  dequantize<uint8_t>(out_data, input_data, scale, zero_point, numel);
+}
+
+void dequantize_per_tensor_asym16s_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  float* out_data = out.mutable_data_ptr<float>();
+  size_t numel = out.numel();
+  const int16_t* input_data = input.const_data_ptr<int16_t>();
+  dequantize<int16_t>(out_data, input_data, scale, zero_point, numel);
+}
+
+void dequantize_per_tensor_asym16u_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  float* out_data = out.mutable_data_ptr<float>();
+  size_t numel = out.numel();
+  const uint16_t* input_data = input.const_data_ptr<uint16_t>();
+  dequantize<uint16_t>(out_data, input_data, scale, zero_point, numel);
+}
+
+void dequantize_per_tensor_asym32s_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  float* out_data = out.mutable_data_ptr<float>();
+  size_t numel = out.numel();
+  const int32_t* input_data = input.const_data_ptr<int32_t>();
+  dequantize<int32_t>(out_data, input_data, scale, zero_point, numel);
+}
+
+} // namespace native
+} // namespace HiFi
+} // namespace impl

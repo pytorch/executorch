@@ -18,7 +18,7 @@ from executorch.backends.cadence.aot.ref_implementations import *  # noqa
 
 import itertools
 
-from executorch.backends.cadence.aot.export_example import export_model
+from executorch.backends.cadence.aot.export_example import export_and_run_model
 from parameterized import parameterized
 
 
@@ -98,7 +98,7 @@ class CadenceRequantizeOpCases(unittest.TestCase):
         # For example, if the ref output is [33, 50] and the real output is [33, 49],
         # the MSE loss is around 0.5, but the relative error is < 2%. So we set
         # the epsilon to a higher value.
-        export_model(model, inputs, eps_error=1.0)
+        export_and_run_model(model, inputs, eps_error=1.0)
 
 
 if __name__ == "__main__":

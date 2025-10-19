@@ -31,6 +31,20 @@ def _create_xnnpack_flow() -> TestFlow:
     return _create_xnnpack_flow_base("xnnpack")
 
 
+def _create_xnnpack_dynamic_int8_per_channel_flow() -> TestFlow:
+    def create_quantize_stage() -> Quantize:
+        qparams = get_symmetric_quantization_config(
+            is_per_channel=True, is_dynamic=True
+        )
+        return XnnpackQuantize(
+            quantization_config=qparams,
+        )
+
+    return _create_xnnpack_flow_base(
+        "xnnpack_dynamic_int8_per_channel", create_quantize_stage
+    )
+
+
 def _create_xnnpack_static_int8_per_channel_flow() -> TestFlow:
     def create_quantize_stage() -> Quantize:
         qparams = get_symmetric_quantization_config(is_per_channel=True)
@@ -43,7 +57,23 @@ def _create_xnnpack_static_int8_per_channel_flow() -> TestFlow:
     )
 
 
+def _create_xnnpack_static_int8_per_tensor_flow() -> TestFlow:
+    def create_quantize_stage() -> Quantize:
+        qparams = get_symmetric_quantization_config(is_per_channel=False)
+        return XnnpackQuantize(
+            quantization_config=qparams,
+        )
+
+    return _create_xnnpack_flow_base(
+        "xnnpack_static_int8_per_tensor", create_quantize_stage
+    )
+
+
 XNNPACK_TEST_FLOW = _create_xnnpack_flow()
+XNNPACK_DYNAMIC_INT8_PER_CHANNEL_TEST_FLOW = (
+    _create_xnnpack_dynamic_int8_per_channel_flow()
+)
 XNNPACK_STATIC_INT8_PER_CHANNEL_TEST_FLOW = (
     _create_xnnpack_static_int8_per_channel_flow()
 )
+XNNPACK_STATIC_INT8_PER_TENSOR_TEST_FLOW = _create_xnnpack_static_int8_per_tensor_flow()

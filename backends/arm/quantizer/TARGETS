@@ -1,7 +1,7 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 # Exposed through __init__.py
-python_library(
+runtime.python_library(
     name = "quantization_config",
     srcs = ["quantization_config.py"],
     deps = [
@@ -11,7 +11,7 @@ python_library(
 )
 
 # Exposed through __init__.py
-python_library(
+runtime.python_library(
     name = "arm_quantizer",
     srcs = ["arm_quantizer.py"],
     deps = [
@@ -23,7 +23,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "quantization_annotator",
     srcs = ["quantization_annotator.py"],
     deps = [
@@ -34,7 +34,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "arm_quantizer_utils",
     srcs = ["arm_quantizer_utils.py"],
     deps = [
@@ -43,7 +43,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "lib",
     srcs = ["__init__.py"],
     deps = [

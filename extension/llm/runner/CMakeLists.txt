@@ -79,3 +79,43 @@ install(
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()
+
+# Python bindings for MultimodalRunner
+if(EXECUTORCH_BUILD_PYBIND)
+  # Create the Python extension module for LLM runners
+  pybind11_add_module(
+    _llm_runner SHARED ${CMAKE_CURRENT_SOURCE_DIR}/pybindings.cpp
+  )
+
+  find_package_torch()
+  find_library(
+    TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
+  )
+  # Link with the extension_llm_runner library and its dependencies
+  target_link_libraries(
+    _llm_runner PRIVATE extension_llm_runner tokenizers::tokenizers
+                        portable_lib ${TORCH_PYTHON_LIBRARY} ${TORCH_LIBRARIES}
+  )
+
+  # Set properties for the Python extension
+  set_target_properties(
+    _llm_runner
+    PROPERTIES POSITION_INDEPENDENT_CODE ON
+               CXX_VISIBILITY_PRESET "hidden"
+               INTERPROCEDURAL_OPTIMIZATION TRUE
+  )
+  if(APPLE)
+    set(RPATH "@loader_path/../../pybindings")
+  else()
+    set(RPATH "$ORIGIN/../../pybindings")
+  endif()
+  set_target_properties(_llm_runner PROPERTIES INSTALL_RPATH ${RPATH})
+  # Add include directories
+  target_include_directories(
+    _llm_runner PRIVATE ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
+  )
+
+  install(TARGETS _llm_runner
+          LIBRARY DESTINATION executorch/extension/llm/runner
+  )
+endif()

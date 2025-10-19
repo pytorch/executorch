@@ -8,13 +8,30 @@ import unittest
 
 import torch
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dim_order_utils import is_channel_last_dim_order
+from executorch.exir.tests.test_memory_format_ops_pass_utils import (
+    SimpleCloneChannelsLastModule,
+)
+from torch.export import export
 from torch.fx import GraphModule
 from torch.testing import FileCheck
 from torch.testing._internal.common_utils import TestCase
 
 
 class TestRemoveCloneOpsTransform(TestCase):
+    # Clone ops can appear as either aten.clone or _clone_dim_order depending on the _skip_dim_order flag.
+    # _skip_dim_order=True tests aten.clone
+    # _skip_dim_order=False tests _clone_dim_order
+    CLONE_OP_CASES = [
+        (True, "executorch_exir_dialects_edge__ops_aten_clone_default"),
+        (
+            False,
+            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default",
+        ),
+    ]
+
     def test_dq_clone_q_linear(self):
         """
         Test RemoveCloneOpsTransform on a graph with d/q -> clone -> q -> linear pattern
@@ -122,6 +139,58 @@ class TestRemoveCloneOpsTransform(TestCase):
         ).run(
             transformed_gm.code
         )
+
+    def test_clone_non_identity_survives(self):
+        """Verify clone ops that modify memory_format are preserved by RemoveCloneOpsTransform."""
+
+        for skip_dim_order, clone_op_str in self.CLONE_OP_CASES:
+            model = SimpleCloneChannelsLastModule()
+            x = torch.randn(3, 4, 5, 6).to(memory_format=torch.contiguous_format)
+
+            exported = export(model.eval(), (x,), strict=True)
+            before_epm = to_edge(
+                exported,
+                compile_config=EdgeCompileConfig(_skip_dim_order=skip_dim_order),
+            )
+
+            updated_epm = before_epm.transform([RemoveCloneOpsTransform()])
+
+            FileCheck().check_count(clone_op_str, 1, exactly=True).run(
+                updated_epm.exported_program().graph_module.code
+            )
+
+            expected = before_epm.exported_program().module()(x)
+            actual = updated_epm.exported_program().module()(x)
+            assert torch.allclose(actual, expected)
+            assert is_channel_last_dim_order(actual)
+
+    def test_clone_identity_removed(self):
+        """Verify identity clone ops are removed by RemoveCloneOpsTransform."""
+
+        for skip_dim_order, clone_op_str in self.CLONE_OP_CASES:
+            model = SimpleCloneChannelsLastModule()
+            x = torch.randn(3, 4, 5, 6).to(memory_format=torch.channels_last)
+
+            exported = export(model.eval(), (x,), strict=True)
+            before_epm = to_edge(
+                exported,
+                compile_config=EdgeCompileConfig(_skip_dim_order=skip_dim_order),
+            )
+
+            FileCheck().check_count(clone_op_str, 1, exactly=True).run(
+                before_epm.exported_program().graph_module.code
+            )
+
+            updated_epm = before_epm.transform([RemoveCloneOpsTransform()])
+
+            FileCheck().check_not(clone_op_str).run(
+                updated_epm.exported_program().graph_module.code
+            )
+
+            expected = before_epm.exported_program().module()(x)
+            actual = updated_epm.exported_program().module()(x)
+            assert torch.allclose(actual, expected)
+            assert is_channel_last_dim_order(actual)
 
 
 if __name__ == "__main__":

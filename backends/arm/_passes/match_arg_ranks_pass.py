@@ -7,12 +7,15 @@
 
 # pyre-unsafe
 
-from typing import cast
+from typing import cast, Set, Type
+
+from executorch.backends.arm._passes import ArmPass
 
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
+from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -20,7 +23,7 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
 
-class MatchArgRanksPass(ExportPass):
+class MatchArgRanksPass(ArmPass):
     """
     For ops in 'targeted_ops', make sure that the inputs share the same rank.
     New dimensions are inserted from the beginning of the inputs that have a
@@ -36,7 +39,9 @@ class MatchArgRanksPass(ExportPass):
         input2 = shape(1, 3, 1)
     """
 
-    def __init__(self, exported_program):
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
+    def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__()
         self.exported_program = exported_program
 

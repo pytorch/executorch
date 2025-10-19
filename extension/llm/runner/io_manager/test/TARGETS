@@ -10,14 +10,12 @@ define_common_targets()
 
 runtime.cxx_test(
     name = "test_io_manager",
-    srcs = ["test_io_manager.cpp"],
+    srcs = [
+        "test_io_manager.cpp",
+    ],
     deps = [
         "//executorch/extension/llm/runner/io_manager:io_manager",
-        "//executorch/extension/llm/runner/io_manager:io_manager",
-        "//executorch/extension/module:module",
-        "//executorch/extension/tensor:tensor",
-        "//executorch/runtime/executor:program",
-         "//executorch/kernels/portable:generated_lib",
+        "//executorch/kernels/portable:generated_lib",
     ],
     env = {
         "KVCACHE_CACHE_POS": "$(location fbcode//executorch/test/models:exported_programs[ModuleKVCacheCachePos.pte])",

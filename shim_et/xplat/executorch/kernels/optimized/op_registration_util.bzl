@@ -153,6 +153,9 @@ OPTIMIZED_ATEN_OPS = (
             ":add_sub_impl",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
@@ -171,15 +174,18 @@ OPTIMIZED_ATEN_OPS = (
         # is not sufficient to avoid it.
         compiler_flags = [] if runtime.is_oss else select({
             "DEFAULT": [],
-            "ovr_config//toolchain/clang/constraints:19": select({
+            "ovr_config//os:android": select({
                 "DEFAULT": [],
-                "ovr_config//os:android": ["-O3"],
+                "ovr_config//toolchain/clang/constraints:17": ["-O3"],
+                "ovr_config//toolchain/clang/constraints:19": ["-O3"],
             }),
         }),
         deps = [
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
@@ -259,6 +265,8 @@ OPTIMIZED_ATEN_OPS = (
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
@@ -278,6 +286,8 @@ OPTIMIZED_ATEN_OPS = (
             ":add_sub_impl",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),

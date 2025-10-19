@@ -19,6 +19,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_SCALE,
     QCOM_ZERO_POINT,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 from .utils import get_quant_attrs
@@ -30,9 +31,17 @@ class AnnotateQuantAttrs(ExportPass):
     generated after quantization process.
     """
 
-    def __init__(self, edge_program: torch.export.ExportedProgram):
+    def __init__(
+        self,
+        edge_program: torch.export.ExportedProgram,
+        skip_advanced_requant: bool = False,
+    ):
         super(AnnotateQuantAttrs, self).__init__()
         self.edge_program = edge_program
+        self.skip_advanced_requant = skip_advanced_requant
+        self.skip_requant_allowlist = {
+            exir_ops.edge.aten.sigmoid.default,
+        }
 
     def _annotate_source_nodes(
         self, quant_node: torch.fx.Node, quant_attrs: Dict[str, Any]
@@ -75,6 +84,10 @@ class AnnotateQuantAttrs(ExportPass):
         # node1 -> q_ui8 (n) -> dq_ui8 -> q_int32 -> dq_int32 -> node2 -> ....
         # We store {node2: quant_attr in dq_int32} in node1.meta
         if n.target in q_ops and n.args[0].target not in dq_ops:
+            # for some fixed scale op, there is no need to requantize it
+            if n.args[0].target in self.skip_requant_allowlist:
+                return
+
             dq_nodes = self._find_last_dq_nodes(n)
             q_attrs = get_quant_attrs(self.edge_program, n)
             for dq_node in dq_nodes:
@@ -82,16 +95,29 @@ class AnnotateQuantAttrs(ExportPass):
                 # TODO: Store multiple pairs of requantize attributes when we have an op builder
                 # that has multiple outputs that requires quant attributes.
 
-                if any(
-                    q_attrs[attr] != dq_attrs[attr]
-                    for attr in [
-                        QCOM_SCALE,
-                        QCOM_ZERO_POINT,
-                        QCOM_QUANT_MIN,
-                        QCOM_QUANT_MAX,
-                        QCOM_DTYPE,
-                    ]
-                ):
+                # Determine if requantization is needed based on configuration and attribute mismatch.
+                is_requant_needed = False
+                if self.skip_advanced_requant:
+                    # In skip_advanced_requant mode, only consider requant if dtypes differ.
+                    if q_attrs[QCOM_DTYPE] != dq_attrs[QCOM_DTYPE]:
+                        is_requant_needed = True
+                else:
+                    # In full requant mode, consider requant if any key attribute differs.
+                    # This aims to improve accuracy by adjusting scale, zero_point, etc.
+                    # Users can disable this if it causes regressions.
+                    if any(
+                        q_attrs[attr] != dq_attrs[attr]
+                        for attr in [
+                            QCOM_SCALE,
+                            QCOM_ZERO_POINT,
+                            QCOM_QUANT_MIN,
+                            QCOM_QUANT_MAX,
+                            QCOM_DTYPE,
+                        ]
+                    ):
+                        is_requant_needed = True
+
+                if is_requant_needed:
                     dq_attrs[QCOM_ENCODING] = q_attrs[QCOM_ENCODING]
                     user_node = list(dq_node.users)[0]
                     n.args[0].meta.setdefault(QCOM_REQUANTIZE, {})

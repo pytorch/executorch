@@ -219,6 +219,10 @@ class TestETRecord(unittest.TestCase):
                 etrecord._debug_handle_map,
                 json.loads(json.dumps(et_output.debug_handle_map)),
             )
+            self.assertEqual(
+                etrecord._instruction_id_to_num_outs_map,
+                json.loads(json.dumps(et_output.instruction_id_to_num_outs_map)),
+            )
 
     def test_etrecord_generation_with_bundled_program(self):
         (

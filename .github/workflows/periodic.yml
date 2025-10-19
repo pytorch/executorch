@@ -11,6 +11,8 @@ on:
     branches:
       - release/*
   workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}-${{ github.event.schedule }}
@@ -32,10 +34,11 @@ jobs:
           python-version: '3.10'
       - name: Extract the list of models to test
         id: gather-models
+        env:
+          EFFECTIVE_EVENT: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ciflow/periodic') && 'schedule' || github.event_name }}
         run: |
           set -eux
-
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --event "${GITHUB_EVENT_NAME}"
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --event "${EFFECTIVE_EVENT}"
 
   test-models-linux:
     name: test-models-linux

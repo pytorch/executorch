@@ -18,8 +18,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
@@ -94,7 +94,9 @@ class MaxPool2dVisitor(NodeVisitor):
             kernel=kernel_size, stride=stride, pad=pad_size_list, nan_mode=1
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().MAX_POOL2D,
             [input_tensor.name],
             [output.name],

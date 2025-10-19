@@ -5,6 +5,4 @@
 # LICENSE file in the root directory of this source tree.
 
 set -e
-
-# Install diffusers for Stable Diffusion model test
-pip install "diffusers[torch]==0.33.1"
+pip install -r backends/arm/requirements-arm-models-test.txt

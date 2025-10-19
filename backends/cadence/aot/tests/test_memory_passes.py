@@ -1044,7 +1044,7 @@ class TestMemTransform(unittest.TestCase):
             mul: blocks 1, 3
             """
 
-            def __init__(self, memory_constraints: MemoryConfig):
+            def __init__(self, memory_constraints: MemConstraints):
                 self.memory_constraints = memory_constraints
 
             def call(self, graph_module: torch.fx.GraphModule) -> PassResult:

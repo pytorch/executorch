@@ -6,10 +6,13 @@
 # pyre-unsafe
 
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 
 def _get_decorated_ops(op):
@@ -30,18 +33,19 @@ class DecorateFp32toInt32CastingPass(ArmPass):
     To lower pytorch fp32 -> int32 casting to TOSA,
     we need to transform the value with Ceil, Floor, and Where.
     Before:
-        output = to_copy(x, dtype=torch.int32)
+        output = to_dim_order_copy(x, dtype=torch.int32)
     After:
         %zero = full((1,), 0.0, dtype=torch.float32)
         is_non_negative = x >= %zero
         floor_x = floor(x)
         ceil_x = ceil(x)
         decorated_x = where(is_non_negative, floor_x, ceil_x)
-        output = to_copy(decorated_x, dtype=torch.int32)
+        output = to_dim_order_copy(decorated_x, dtype=torch.int32)
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     targets = [
-        exir_ops.edge.aten._to_copy.default,
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     ]
 

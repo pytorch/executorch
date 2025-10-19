@@ -21,8 +21,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
@@ -100,7 +100,9 @@ class ConstantPadNDVisitor(NodeVisitor):
             shape=[1], dtype=pad_const_dtype, vals=[pad_const_val]
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().PAD,
             [inputs[0].name, padding.name, pad_const.name],
             [output.name],

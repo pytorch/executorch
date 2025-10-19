@@ -29,9 +29,7 @@ class ExportTest(unittest.TestCase):
         Returns a tuple containing the outputs of the eager mode model and the executorch mode model.
         """
         eager_model = eager_model.eval()
-        model = torch.export.export_for_training(
-            eager_model, example_inputs, strict=True
-        ).module()
+        model = torch.export.export(eager_model, example_inputs, strict=True).module()
         edge_model = export_to_edge(model, example_inputs)
 
         executorch_prog = edge_model.to_executorch()

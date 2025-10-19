@@ -14,7 +14,7 @@ import executorch.exir as exir
 import torch
 from executorch.exir import EdgeProgramManager, ExecutorchProgramManager, to_edge
 from executorch.exir.tracer import Value
-from torch.export import export, export_for_training, ExportedProgram
+from torch.export import export, ExportedProgram
 
 
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
@@ -108,7 +108,7 @@ def export_to_exec_prog(
 ) -> ExecutorchProgramManager:
     m = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    m = export_for_training(m, example_inputs, strict=True).module()
+    m = export(m, example_inputs, strict=True).module()
 
     core_aten_ep = _to_core_aten(
         m,
