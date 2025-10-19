@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/cuda/runtime/export.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
