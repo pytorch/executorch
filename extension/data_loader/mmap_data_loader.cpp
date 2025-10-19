@@ -11,6 +11,7 @@
 #include <cerrno>
 #include <cstring>
 #include <limits>
+#include <cstdint>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -180,12 +181,6 @@ Error MmapDataLoader::validate_input(size_t offset, size_t size) const {
       offset,
       size,
       file_size_);
-  ET_CHECK_OR_RETURN_ERROR(
-      // Recommended by a lint warning.
-      offset <= std::numeric_limits<off_t>::max(),
-      InvalidArgument,
-      "Offset %zu too large for off_t",
-      offset);
   return Error::Ok;
 }
 
@@ -220,13 +215,19 @@ Result<FreeableBuffer> MmapDataLoader::load(
 
   // Map the pages read-only. Use shared mappings so that other processes
   // can also map the same pages and share the same memory.
+#if defined(_WIN32)
+  const std::uint64_t map_offset = static_cast<std::uint64_t>(range.start);
+#else
+  const off_t map_offset = static_cast<off_t>(range.start);
+#endif
+
   void* pages = ::mmap(
       nullptr,
       map_size,
       PROT_READ,
       MAP_SHARED,
       fd_,
-      static_cast<off_t>(range.start));
+      map_offset);
   ET_CHECK_OR_RETURN_ERROR(
       pages != MAP_FAILED,
       AccessFailed,
@@ -328,13 +329,19 @@ Error MmapDataLoader::load_into(
   // Map the pages read-only. MAP_PRIVATE vs. MAP_SHARED doesn't matter since
   // the data is read-only, but use PRIVATE just to further avoid accidentally
   // modifying the file.
+#if defined(_WIN32)
+  const std::uint64_t map_offset = static_cast<std::uint64_t>(range.start);
+#else
+  const off_t map_offset = static_cast<off_t>(range.start);
+#endif
+
   void* pages = ::mmap(
       nullptr,
       map_size,
       PROT_READ,
       MAP_PRIVATE,
       fd_,
-      static_cast<off_t>(range.start));
+      map_offset);
   ET_CHECK_OR_RETURN_ERROR(
       pages != MAP_FAILED,
       AccessFailed,
