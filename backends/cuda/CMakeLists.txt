@@ -46,7 +46,7 @@ set(_aoti_cuda_sources
 )
 # Build as SHARED library (.dll) on Windows MSVC, otherwise STATIC
 if(MSVC)
-  add_library(aoti_cuda SHARED ${_aoti_cuda_sources})
+  add_library(aoti_cuda SHARED ${_aoti_cuda_sources} ${CMAKE_CURRENT_SOURCE_DIR}/aoti_cuda.def)
   # Define export macros for Windows DLL
   target_compile_definitions(aoti_cuda PRIVATE
     EXPORT_AOTI_FUNCTIONS
@@ -54,7 +54,7 @@ if(MSVC)
   )
   # Ensure proper DLL import/export library naming on Windows with config-specific paths
   set_target_properties(aoti_cuda PROPERTIES
-    WINDOWS_EXPORT_ALL_SYMBOLS OFF  # We use explicit exports via AOTI_CUDA_EXPORT
+    WINDOWS_EXPORT_ALL_SYMBOLS OFF  # We use explicit exports via AOTI_CUDA_EXPORT and .def file
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/$<CONFIG>
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/$<CONFIG>
     ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/$<CONFIG>

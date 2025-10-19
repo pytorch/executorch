@@ -1,0 +1,3 @@
+LIBRARY aoti_cuda
+EXPORTS
+    InitCudaBackend

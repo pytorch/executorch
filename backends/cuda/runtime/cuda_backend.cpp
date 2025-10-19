@@ -12,6 +12,7 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <cstdio>
+#include <cassert>
 
 #include <filesystem>
 #include <fstream>
@@ -388,6 +389,7 @@ static executorch::runtime::Error success_with_compiler =
 extern "C" CUDA_BACKEND_INIT_API void InitCudaBackend() {
   // Log immediately to confirm function is entered
   ET_LOG(Info, "InitCudaBackend: Function entered");
+  assert(1==2)
   
 #ifdef _WIN32
   ET_LOG(Info, "InitCudaBackend: Windows path");
