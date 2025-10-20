@@ -61,8 +61,8 @@ See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/ma
 
 The XNNPACK backend also supports quantizing models with the [torchao](https://github.com/pytorch/ao) quantize_ API.  This is most commonly used for LLMs, requiring more advanced quantization.  Since quantize_ is not backend aware, it is important to use a config that is compatible with CPU/XNNPACK:
 
-* Quantize embeedings with IntxWeightOnlyConfig (with weight_dtype torch.int2, torch.int4, or torch.int8, using PerGroup or PerAxis granularity)
-* Quantize linear layers with Int8DynamicActivationIntxWeightConfig (with weight_dtype=torch.int4, using PerGroup or PerAxis granularity)
+* Quantize embeedings with `IntxWeightOnlyConfig` (with weight_dtype torch.int2, torch.int4, or torch.int8, using PerGroup or PerAxis granularity)
+* Quantize linear layers with 4 bit weight and 8bit dynamic activation, use `Int8DynamicActivationIntxWeightConfig` (with weight_dtype=torch.int4, using PerGroup or PerAxis granularity)
 
 Below is a simple example, but a more detailed tutorial including accuracy evaluation on popular LLM benchmarks can be found in the [torchao documentation](https://docs.pytorch.org/ao/main/serving.html#mobile-deployment-with-executorch).
 
