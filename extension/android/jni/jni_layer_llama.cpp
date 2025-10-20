@@ -201,16 +201,39 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           model_path->toStdString().c_str(),
           data_files_vector,
           executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
-      std::string decoder_model = "llama2"; // use llama3 for now
-      runner_ = std::make_unique<example::Runner<uint16_t>>(
-          std::move(module),
-          decoder_model.c_str(), // const std::string&
-          model_path->toStdString().c_str(), // const std::string&
-          tokenizer_path->toStdString().c_str(), // const std::string&
-          "", // performance_output_path
-          "", // dump_logits_path
-          temperature_ // temperature
-      );
+      std::string decoder_model = "llama3"; // use llama3 for now
+      example::KvBitWidth kv_bitwidth = example::KvBitWidth::kWidth8;
+      if (module->method_names()->count("get_kv_io_bit_width") > 0) {
+        kv_bitwidth = static_cast<example::KvBitWidth>(
+            module->get("get_kv_io_bit_width").get().toScalar().to<int64_t>());
+      }
+
+      if (kv_bitwidth == example::KvBitWidth::kWidth8) {
+        runner_ = std::make_unique<example::Runner<uint8_t>>(
+            std::move(module),
+            decoder_model.c_str(), // const std::string&
+            model_path->toStdString().c_str(), // const std::string&
+            tokenizer_path->toStdString().c_str(), // const std::string&
+            "", // performance_output_path
+            "", // dump_logits_path
+            temperature_ // temperature
+        );
+      } else if (kv_bitwidth == example::KvBitWidth::kWidth16) {
+        runner_ = std::make_unique<example::Runner<uint16_t>>(
+            std::move(module),
+            decoder_model.c_str(), // const std::string&
+            model_path->toStdString().c_str(), // const std::string&
+            tokenizer_path->toStdString().c_str(), // const std::string&
+            "", // performance_output_path
+            "", // dump_logits_path
+            temperature_ // temperature
+        );
+      } else {
+        ET_CHECK_MSG(
+            false,
+            "Unsupported kv bitwidth: %ld",
+            static_cast<int64_t>(kv_bitwidth));
+      }
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
