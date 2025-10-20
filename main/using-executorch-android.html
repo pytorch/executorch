@@ -1130,11 +1130,18 @@ document.write(`
                   
   <section id="using-executorch-on-android">
 <h1>Using ExecuTorch on Android<a class="headerlink" href="#using-executorch-on-android" title="Link to this heading">#</a></h1>
-<p>To use from Android, ExecuTorch provides Java/Kotlin API bindings and Android platform integration, available as an AAR file.</p>
-<p>Note: This page covers Android app integration through the AAR library. The ExecuTorch C++ APIs can also be used from Android native, and the documentation can be found on <a class="reference internal" href="using-executorch-building-from-source.html#cross-compilation"><span class="std std-ref">this page about cross compilation</span></a>.</p>
+<p>🚀 Quick Start: <strong>New to ExecuTorch</strong> ? Jump to <a class="reference internal" href="#using-aar-from-maven-central">Using AAR from Maven Central</a> for the fastest setup, then see the <a class="reference internal" href="#runtime-integration">Runtime Integration</a> example.</p>
+<p>To use from Android, ExecuTorch provides Java/Kotlin API bindings and Android platform integration, available as an AAR file.
+Note: This page covers Android app integration through the AAR library. The ExecuTorch C++ APIs can also be used from Android native, and the documentation can be found on this page about cross compilation.</p>
 <section id="installation">
 <h2>Installation<a class="headerlink" href="#installation" title="Link to this heading">#</a></h2>
-<p>All ExecuTorch Android libraries are packaged into an <a class="reference external" href="https://developer.android.com/studio/projects/android-library">Android library (AAR)</a>, <code class="docutils literal notranslate"><span class="pre">executorch.aar</span></code> for both generic (image/audio processing) and LLM (LLaMA) use case. In each release, prebuilt AAR artifacts are uploaded to <a class="reference external" href="https://repo.maven.apache.org/maven2/org/pytorch/executorch-android/">Maven</a> and S3. Users can also build the AAR from source.</p>
+<p><strong>Choose your installation method:</strong></p>
+<ul class="simple">
+<li><p><strong><a class="reference internal" href="#using-aar-from-maven-central">Maven Central</a></strong> (recommended): Easiest for most developers</p></li>
+<li><p><strong><a class="reference internal" href="#using-aar-file-directly">Direct AAR file</a></strong>: For specific versions or offline development</p></li>
+<li><p><strong><a class="reference internal" href="#building-from-source">Build from source</a></strong>: For custom backends or contributions</p></li>
+</ul>
+<p>All ExecuTorch Android libraries are packaged into an Android library (AAR), executorch.aar for both generic (image/audio processing) and LLM (LLaMA) use case. In each release, prebuilt AAR artifacts are uploaded to Maven and S3. Users can also build the AAR from source.</p>
 <section id="contents-of-library">
 <h3>Contents of library<a class="headerlink" href="#contents-of-library" title="Link to this heading">#</a></h3>
 <p>The AAR artifact contains the Java library for users to integrate with their Java/Kotlin application code, as well as the corresponding JNI library (.so file), which is loaded by the Java code during initialization.</p>
@@ -1142,7 +1149,7 @@ document.write(`
 <li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/extension/android/executorch_android/src/main/java/org/pytorch/executorch">Java library</a></p></li>
 <li><p>JNI contains the JNI binding for the corresponding Java code, and ExecuTorch native library, including</p>
 <ul>
-<li><p>core ExecuTorch runtime libraries</p></li>
+<li><p>Core ExecuTorch runtime libraries</p></li>
 <li><p>XNNPACK backend</p></li>
 <li><p>Portable kernels</p></li>
 <li><p>Optimized kernels</p></li>
@@ -1153,21 +1160,28 @@ document.write(`
 <li><p>Comes with two ABI variants, arm64-v8a and x86_64.</p></li>
 </ul>
 <p>The AAR library can be used for generic Android device with arm64-v8a or x86_64 architecture. It can be used across form factors, including phones, tablets, tv boxes, etc, as it does not contain any UI components.</p>
+<p>XNNPACK backend</p>
+<p>Portable kernels
+Optimized kernels
+Quantized kernels
+LLaMa-specific Custom ops library.
+Comes with two ABI variants, arm64-v8a and x86_64.
+The AAR library can be used for generic Android device with arm64-v8a or x86_64 architecture. It can be used across form factors, including phones, tablets, tv boxes, etc, as it does not contain any UI components.</p>
 </section>
 </section>
 <section id="using-aar-from-maven-central">
 <h2>Using AAR from Maven Central<a class="headerlink" href="#using-aar-from-maven-central" title="Link to this heading">#</a></h2>
-<p>ExecuTorch is available on <a class="reference external" href="https://mvnrepository.com/artifact/org.pytorch/executorch-android">Maven Central</a>.</p>
-<p>Simply add the target <a class="reference external" href="https://repo.maven.apache.org/maven2/org/pytorch/executorch-android/$%7Bexecutorch_version%7D/"><code class="docutils literal notranslate"><span class="pre">org.pytorch:executorch-android:${executorch_version}</span></code></a> to your Android app dependency (build.gradle), and build your app.</p>
-<p>For example:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># app/build.gradle.kts</span>
-<span class="n">dependencies</span> <span class="p">{</span>
-    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;org.pytorch:executorch-android:$</span><span class="si">{executorch_version}</span><span class="s2">&quot;</span><span class="p">)</span>
+<p>✅ Recommended for most developers
+ExecuTorch is available on Maven Central.
+Simply add the target org.pytorch:executorch-android:${executorch_version} to your Android app dependency (build.gradle), and build your app. For example:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">app</span><span class="o">/</span><span class="n">build</span><span class="p">.</span><span class="na">gradle</span><span class="p">.</span><span class="na">kts</span>
+<span class="n">dependencies</span><span class="w"> </span><span class="p">{</span>
+<span class="n">implementation</span><span class="p">(</span><span class="s">&quot;org.pytorch:executorch-android:</span><span class="si">${</span><span class="n">executorch_version</span><span class="si">}</span><span class="s">&quot;</span><span class="p">)</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>Note: If you want to use release v0.5.0, please use dependency <code class="docutils literal notranslate"><span class="pre">org.pytorch:executorch-android:0.5.1</span></code>.</p>
-<p>Click the screenshot below to watch the <em>demo video</em> on how to add the package and run a simple ExecuTorch model with Android Studio.
+<p>Note: If you want to use release v1.0.0, please use dependency org.pytorch:executorch-android:1.0.0.
+Click the screenshot below to watch the demo video on how to add the package and run a simple ExecuTorch model with Android Studio.
 <a href="_static/img/android_studio.mp4">
 <a class="reference internal" href="_images/android_studio.jpeg"><img alt="Integrating and Running ExecuTorch on Android" src="_images/android_studio.jpeg" style="width: 800px;" /></a>
 </a></p>
@@ -1176,7 +1190,7 @@ document.write(`
 <h2>Using AAR file directly<a class="headerlink" href="#using-aar-file-directly" title="Link to this heading">#</a></h2>
 <p>You can also directly specify an AAR file in the app. We upload pre-built AAR to S3 during each release, or as a snapshot.</p>
 <section id="released-versions-recommended">
-<h3>Released versions (recommended)<a class="headerlink" href="#released-versions-recommended" title="Link to this heading">#</a></h3>
+<h3>Released versions (Recommended)<a class="headerlink" href="#released-versions-recommended" title="Link to this heading">#</a></h3>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
 <tr class="row-odd"><th class="head"><p>Version</p></th>
@@ -1185,15 +1199,19 @@ document.write(`
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><a class="reference external" href="https://github.com/pytorch/executorch/releases/tag/$%7Bexecutorch_version%7D">${executorch_version}</a></p></td>
-<td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/$%7Bexecutorch_version%7D/executorch.aar">executorch.aar</a></p></td>
-<td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/$%7Bexecutorch_version%7D/executorch.aar.sha256sums">executorch.aar.sha256sums</a></p></td>
+<tr class="row-even"><td><p><a class="reference external" href="https://github.com/pytorch/executorch/releases/tag/v1.0.0">v1.0.0</a></p></td>
+<td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/v1.0.0/executorch.aar">executorch.aar</a></p></td>
+<td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/v1.0.0/executorch.aar.sha256sums">executorch.aar.sha256sums</a></p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference external" href="https://github.com/pytorch/executorch/releases/tag/v0.6.0">v0.6.0</a></p></td>
+<tr class="row-odd"><td><p><a class="reference external" href="https://github.com/pytorch/executorch/releases/tag/v0.7.0">v0.7.0</a></p></td>
+<td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/v0.7.0/executorch.aar">executorch.aar</a></p></td>
+<td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/v0.7.0/executorch.aar.sha256sums">executorch.aar.sha256sums</a></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://github.com/pytorch/executorch/releases/tag/v0.6.0">v0.6.0</a></p></td>
 <td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0/executorch.aar">executorch.aar</a></p></td>
 <td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0/executorch.aar.sha256sums">executorch.aar.sha256sums</a></p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference external" href="https://github.com/pytorch/executorch/releases/tag/v0.5.0">v0.5.0</a></p></td>
+<tr class="row-odd"><td><p><a class="reference external" href="https://github.com/pytorch/executorch/releases/tag/v0.5.0">v0.5.0</a></p></td>
 <td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar">executorch.aar</a></p></td>
 <td><p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar.sha256sums">executorch.aar.sha256sums</a></p></td>
 </tr>
@@ -1220,29 +1238,27 @@ curl<span class="w"> </span>-O<span class="w"> </span>https://ossci-android.s3.a
 </section>
 <section id="using-aar-file">
 <h2>Using AAR file<a class="headerlink" href="#using-aar-file" title="Link to this heading">#</a></h2>
-<p>To add the AAR file to your app:</p>
-<ol class="arabic simple">
-<li><p>Download the AAR.</p></li>
-<li><p>Add it to your gradle build rule as a file path.</p></li>
-</ol>
-<p>An AAR file itself does not contain dependency info, unlike the Maven one which bundled with pom.xml. The Java package requires <code class="docutils literal notranslate"><span class="pre">fbjni</span></code> and <code class="docutils literal notranslate"><span class="pre">soloader</span></code>, and currently requires users to explicitly declare the dependency. Therefore, two more <code class="docutils literal notranslate"><span class="pre">dependencies</span></code> in gradle rule is required:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
-<span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.fbjni:fbjni:0.7.0&quot;</span><span class="p">)</span>
+<p>To add the AAR file to your app:
+Download the AAR.
+Add it to your gradle build rule as a file path.
+An AAR file itself does not contain dependency info, unlike the Maven one which bundled with pom.xml. The Java package requires fbjni and soloader, and currently requires users to explicitly declare the dependency. Therefore, two more dependencies in gradle rule is required:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">implementation</span><span class="p">(</span><span class="s">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
+<span class="n">implementation</span><span class="p">(</span><span class="s">&quot;com.facebook.fbjni:fbjni:0.7.0&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 <section id="example-usage">
 <h3>Example usage<a class="headerlink" href="#example-usage" title="Link to this heading">#</a></h3>
 <p>In your app working directory, such as executorch-examples/llm/android/LlamaDemo,</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>mkdir -p app/libs
-curl https://ossci-android.s3.amazonaws.com/executorch/release/${executorch_version}/executorch.aar -o app/libs/executorch.aar
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>app/libs
+curl<span class="w"> </span>https://ossci-android.s3.amazonaws.com/executorch/release/<span class="si">${</span><span class="nv">executorch_version</span><span class="si">}</span>/executorch.aar<span class="w"> </span>-o<span class="w"> </span>app/libs/executorch.aar
 </pre></div>
 </div>
 <p>And include it in gradle:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># app/build.gradle.kts</span>
-<span class="n">dependencies</span> <span class="p">{</span>
-    <span class="n">implementation</span><span class="p">(</span><span class="n">files</span><span class="p">(</span><span class="s2">&quot;libs/executorch.aar&quot;</span><span class="p">))</span>
-    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
-    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.fbjni:fbjni:0.7.0&quot;</span><span class="p">)</span>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">app</span><span class="o">/</span><span class="n">build</span><span class="p">.</span><span class="na">gradle</span><span class="p">.</span><span class="na">kts</span>
+<span class="n">dependencies</span><span class="w"> </span><span class="p">{</span>
+<span class="n">implementation</span><span class="p">(</span><span class="n">files</span><span class="p">(</span><span class="s">&quot;libs/executorch.aar&quot;</span><span class="p">))</span>
+<span class="n">implementation</span><span class="p">(</span><span class="s">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
+<span class="n">implementation</span><span class="p">(</span><span class="s">&quot;com.facebook.fbjni:fbjni:0.7.0&quot;</span><span class="p">)</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -1251,48 +1267,53 @@ curl https://ossci-android.s3.amazonaws.com/executorch/release/${executorch_vers
 </section>
 <section id="building-from-source">
 <h2>Building from Source<a class="headerlink" href="#building-from-source" title="Link to this heading">#</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">scripts/build_android_library.sh</span></code> is a helper script to build the Java library (into .jar), native library (into .so), and the packaged AAR file.</p>
-<p>You need Android <a class="reference external" href="https://developer.android.com/studio">SDK</a> and <a class="reference external" href="https://developer.android.com/ndk/downloads">NDK</a> to use it.</p>
-<p>Current NDK version used in ExecuTorch CI: r28c.</p>
-<p>You need to set <code class="docutils literal notranslate"><span class="pre">ANDROID_HOME</span></code> to Android SDK home and <code class="docutils literal notranslate"><span class="pre">ANDROID_NDK</span></code> to the correct NDK root (containing NOTICE file).</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">export</span> <span class="n">ANDROID_HOME</span><span class="o">=/</span><span class="n">path</span><span class="o">/</span><span class="n">to</span><span class="o">/</span><span class="n">sdk</span>
-<span class="n">export</span> <span class="n">ANDROID_NDK</span><span class="o">=/</span><span class="n">path</span><span class="o">/</span><span class="n">to</span><span class="o">/</span><span class="n">ndk</span>
-<span class="n">sh</span> <span class="n">scripts</span><span class="o">/</span><span class="n">build_android_library</span><span class="o">.</span><span class="n">sh</span>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>scripts/build_android_library.sh
 </pre></div>
 </div>
-<p>Currently, XNNPACK backend is always built with the script.</p>
+<p>is a helper script to build the Java library (into .jar), native library (into .so), and the packaged AAR file.
+You need Android SDK and NDK to use it.
+Current NDK version used in ExecuTorch CI: r28c.
+You need to set ANDROID_HOME to Android SDK home and ANDROID_NDK to the correct NDK root (containing NOTICE file).</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_HOME</span><span class="o">=</span>/path/to/sdk
+<span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>/path/to/ndk
+sh<span class="w"> </span>scripts/build_android_library.sh
+</pre></div>
+</div>
+<p>NOTE: Currently, XNNPACK backend is always built with the script.</p>
 <section id="optional-environment-variables">
 <h3>Optional environment variables<a class="headerlink" href="#optional-environment-variables" title="Link to this heading">#</a></h3>
-<p>Optionally, set these environment variables before running <code class="docutils literal notranslate"><span class="pre">build_android_library.sh</span></code>.</p>
-<section id="android-abis">
-<h4>ANDROID_ABIS<a class="headerlink" href="#android-abis" title="Link to this heading">#</a></h4>
-<p>Set environment variable <code class="docutils literal notranslate"><span class="pre">ANDROID_ABIS</span></code> to either <code class="docutils literal notranslate"><span class="pre">arm64-v8a</span></code> or <code class="docutils literal notranslate"><span class="pre">x86_64</span></code> if you only need to build the native library for one ABI only.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">export</span> <span class="n">ANDROID_ABIS</span><span class="o">=</span><span class="n">arm64</span><span class="o">-</span><span class="n">v8a</span>
-<span class="c1"># or</span>
-<span class="c1"># export ANDROID_ABIS=x86_64</span>
-<span class="n">sh</span> <span class="n">scripts</span><span class="o">/</span><span class="n">build_android_library</span><span class="o">.</span><span class="n">sh</span>
+<p>Optionally, set these environment variables before running build_android_library.sh.</p>
+<ul class="simple">
+<li><p><strong>ANDROID_ABIS</strong></p></li>
+</ul>
+<p>Set environment variable ANDROID_ABIS to either arm64-v8a or x86_64 if you only need to build the native library for one ABI only.</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABIS</span><span class="o">=</span>arm64-v8a
 </pre></div>
 </div>
-</section>
-<section id="executorch-cmake-build-type">
-<h4>EXECUTORCH_CMAKE_BUILD_TYPE<a class="headerlink" href="#executorch-cmake-build-type" title="Link to this heading">#</a></h4>
-<p>Set environment variable <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_CMAKE_BUILD_TYPE</span></code> to <code class="docutils literal notranslate"><span class="pre">Release</span></code> or <code class="docutils literal notranslate"><span class="pre">Debug</span></code> based on your needs.</p>
-</section>
-<section id="using-mediatek-backend">
-<h4>Using MediaTek backend<a class="headerlink" href="#using-mediatek-backend" title="Link to this heading">#</a></h4>
-<p>To use <a class="reference internal" href="backends-mediatek.html"><span class="std std-doc">MediaTek backend</span></a>,
-after installing and setting up the SDK, set <code class="docutils literal notranslate"><span class="pre">NEURON_BUFFER_ALLOCATOR_LIB</span></code> and <code class="docutils literal notranslate"><span class="pre">NEURON_USDK_ADAPTER_LIB</span></code> to the corresponding path.</p>
-</section>
-<section id="using-qualcomm-ai-engine-backend">
-<h4>Using Qualcomm AI Engine Backend<a class="headerlink" href="#using-qualcomm-ai-engine-backend" title="Link to this heading">#</a></h4>
-<p>To use <a class="reference internal" href="backends-qualcomm.html#qualcomm-ai-engine-backend"><span class="std std-ref">Qualcomm AI Engine Backend</span></a>,
-after installing and setting up the SDK, set <code class="docutils literal notranslate"><span class="pre">QNN_SDK_ROOT</span></code> to the corresponding path.</p>
-</section>
-<section id="using-vulkan-backend">
-<h4>Using Vulkan Backend<a class="headerlink" href="#using-vulkan-backend" title="Link to this heading">#</a></h4>
-<p>To use <a class="reference internal" href="#backends-vulkan.md#vulkan-backend"><span class="xref myst">Vulkan Backend</span></a>,
-set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_VULKAN</span></code> to <code class="docutils literal notranslate"><span class="pre">ON</span></code>.</p>
-</section>
+<p>(Or)</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABIS</span><span class="o">=</span>x86_64
+</pre></div>
+</div>
+<p>And then run the script.</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>sh<span class="w"> </span>scripts/build_android_library.sh
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><strong>EXECUTORCH_CMAKE_BUILD_TYPE</strong></p></li>
+</ul>
+<p>Set environment variable EXECUTORCH_CMAKE_BUILD_TYPE to Release or Debug based on your needs.</p>
+<ul class="simple">
+<li><p><strong>Using MediaTek backend</strong></p></li>
+</ul>
+<p>To use MediaTek backend, after installing and setting up the SDK, set NEURON_BUFFER_ALLOCATOR_LIB and NEURON_USDK_ADAPTER_LIB to the corresponding path.</p>
+<ul class="simple">
+<li><p><strong>Using Qualcomm AI Engine Backend</strong></p></li>
+</ul>
+<p>To use Qualcomm AI Engine Backend, after installing and setting up the SDK, set QNN_SDK_ROOT to the corresponding path.</p>
+<ul class="simple">
+<li><p><strong>Using Vulkan Backend</strong></p></li>
+</ul>
+<p>To use Vulkan Backend, set EXECUTORCH_BUILD_VULKAN to ON.</p>
 </section>
 </section>
 <section id="android-backends">
@@ -1325,6 +1346,7 @@ set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUIL
 </tbody>
 </table>
 </div>
+<p>Start with XNNPACK (CPU backend) for maximum compatibility, then add hardware-specific backends for optimization.</p>
 </section>
 <section id="runtime-integration">
 <h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Link to this heading">#</a></h2>
@@ -1332,26 +1354,26 @@ set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUIL
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.EValue</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.Module</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.Tensor</span><span class="p">;</span>
-
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">MainActivity</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">Activity</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">Module</span><span class="w"> </span><span class="n">module</span><span class="p">;</span>
+<span class="kd">private</span><span class="w"> </span><span class="n">Module</span><span class="w"> </span><span class="n">module</span><span class="p">;</span>
 
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">protected</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onCreate</span><span class="p">(</span><span class="n">Bundle</span><span class="w"> </span><span class="n">savedInstanceState</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="kd">super</span><span class="p">.</span><span class="na">onCreate</span><span class="p">(</span><span class="n">savedInstanceState</span><span class="p">);</span>
-<span class="w">        </span><span class="c1">// Load the ExecuTorch module</span>
-<span class="w">        </span><span class="n">Module</span><span class="w"> </span><span class="n">module</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Module</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/add.pte&quot;</span><span class="p">);</span>
-<span class="w">        </span><span class="n">Tensor</span><span class="w"> </span><span class="n">tensor1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">.</span><span class="na">fromBlob</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="kt">float</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="mf">1.0f</span><span class="p">},</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="kt">long</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">});</span>
-<span class="w">        </span><span class="n">Tensor</span><span class="w"> </span><span class="n">tensor2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">.</span><span class="na">fromBlob</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="kt">float</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="mf">20.0f</span><span class="p">},</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="kt">long</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">});</span>
+<span class="nd">@Override</span>
+<span class="kd">protected</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onCreate</span><span class="p">(</span><span class="n">Bundle</span><span class="w"> </span><span class="n">savedInstanceState</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">super</span><span class="p">.</span><span class="na">onCreate</span><span class="p">(</span><span class="n">savedInstanceState</span><span class="p">);</span>
+<span class="w">    </span><span class="c1">// Load the ExecuTorch module</span>
+<span class="w">    </span><span class="n">Module</span><span class="w"> </span><span class="n">module</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Module</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/add.pte&quot;</span><span class="p">);</span>
 
-<span class="w">        </span><span class="n">EValue</span><span class="w"> </span><span class="n">eValue1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">EValue</span><span class="p">.</span><span class="na">from</span><span class="p">(</span><span class="n">tensor1</span><span class="p">);</span>
-<span class="w">        </span><span class="n">EValue</span><span class="w"> </span><span class="n">eValue2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">EValue</span><span class="p">.</span><span class="na">from</span><span class="p">(</span><span class="n">tensor2</span><span class="p">);</span>
-<span class="w">        </span><span class="kt">float</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">module</span><span class="p">.</span><span class="na">forward</span><span class="p">(</span><span class="n">eValue1</span><span class="p">,</span><span class="w"> </span><span class="n">eValue2</span><span class="p">)</span><span class="o">[</span><span class="mi">0</span><span class="o">]</span><span class="p">.</span><span class="na">toTensor</span><span class="p">().</span><span class="na">getDataAsFloatArray</span><span class="p">()</span><span class="o">[</span><span class="mi">0</span><span class="o">]</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">Tensor</span><span class="w"> </span><span class="n">tensor1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">.</span><span class="na">fromBlob</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="kt">float</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="mf">1.0f</span><span class="p">},</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="kt">long</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">});</span>
+<span class="w">    </span><span class="n">Tensor</span><span class="w"> </span><span class="n">tensor2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">.</span><span class="na">fromBlob</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="kt">float</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="mf">20.0f</span><span class="p">},</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="kt">long</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">});</span>
+
+<span class="w">    </span><span class="n">EValue</span><span class="w"> </span><span class="n">eValue1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">EValue</span><span class="p">.</span><span class="na">from</span><span class="p">(</span><span class="n">tensor1</span><span class="p">);</span>
+<span class="w">    </span><span class="n">EValue</span><span class="w"> </span><span class="n">eValue2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">EValue</span><span class="p">.</span><span class="na">from</span><span class="p">(</span><span class="n">tensor2</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kt">float</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">module</span><span class="p">.</span><span class="na">forward</span><span class="p">(</span><span class="n">eValue1</span><span class="p">,</span><span class="w"> </span><span class="n">eValue2</span><span class="p">)</span><span class="o">[</span><span class="mi">0</span><span class="o">]</span><span class="p">.</span><span class="na">toTensor</span><span class="p">().</span><span class="na">getDataAsFloatArray</span><span class="p">()</span><span class="o">[</span><span class="mi">0</span><span class="o">]</span><span class="p">;</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>Push the corresponding pte file to the phone:</p>
+<p>Push the corresponding pte file to your Android device:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>extension/module/test/resources/add.pte<span class="w"> </span>/data/local/tmp/
 </pre></div>
 </div>
@@ -1489,7 +1511,7 @@ using ExecuTorch AAR package.</p>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-aar-from-maven-central">Using AAR from Maven Central</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-aar-file-directly">Using AAR file directly</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#released-versions-recommended">Released versions (recommended)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#released-versions-recommended">Released versions (Recommended)</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#snapshots-from-main-branch">Snapshots from main branch</a></li>
 </ul>
 </li>
@@ -1498,14 +1520,7 @@ using ExecuTorch AAR package.</p>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#building-from-source">Building from Source</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#optional-environment-variables">Optional environment variables</a><ul class="nav section-nav flex-column">
-<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#android-abis">ANDROID_ABIS</a></li>
-<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#executorch-cmake-build-type">EXECUTORCH_CMAKE_BUILD_TYPE</a></li>
-<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#using-mediatek-backend">Using MediaTek backend</a></li>
-<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#using-qualcomm-ai-engine-backend">Using Qualcomm AI Engine Backend</a></li>
-<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#using-vulkan-backend">Using Vulkan Backend</a></li>
-</ul>
-</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#optional-environment-variables">Optional environment variables</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#android-backends">Android Backends</a></li>
@@ -1736,7 +1751,7 @@ using ExecuTorch AAR package.</p>
        "headline": "Using ExecuTorch on Android",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/using-executorch-android.html",
-       "articleBody": "Using ExecuTorch on Android# To use from Android, ExecuTorch provides Java/Kotlin API bindings and Android platform integration, available as an AAR file. Note: This page covers Android app integration through the AAR library. The ExecuTorch C++ APIs can also be used from Android native, and the documentation can be found on this page about cross compilation. Installation# All ExecuTorch Android libraries are packaged into an Android library (AAR), executorch.aar for both generic (image/audio processing) and LLM (LLaMA) use case. In each release, prebuilt AAR artifacts are uploaded to Maven and S3. Users can also build the AAR from source. Contents of library# The AAR artifact contains the Java library for users to integrate with their Java/Kotlin application code, as well as the corresponding JNI library (.so file), which is loaded by the Java code during initialization. Java library JNI contains the JNI binding for the corresponding Java code, and ExecuTorch native library, including core ExecuTorch runtime libraries XNNPACK backend Portable kernels Optimized kernels Quantized kernels LLaMa-specific Custom ops library. Comes with two ABI variants, arm64-v8a and x86_64. The AAR library can be used for generic Android device with arm64-v8a or x86_64 architecture. It can be used across form factors, including phones, tablets, tv boxes, etc, as it does not contain any UI components. Using AAR from Maven Central# ExecuTorch is available on Maven Central. Simply add the target org.pytorch:executorch-android:${executorch_version} to your Android app dependency (build.gradle), and build your app. For example: # app/build.gradle.kts dependencies { implementation(\"org.pytorch:executorch-android:${executorch_version}\") } Note: If you want to use release v0.5.0, please use dependency org.pytorch:executorch-android:0.5.1. Click the screenshot below to watch the demo video on how to add the package and run a simple ExecuTorch model with Android Studio. Using AAR file directly# You can also directly specify an AAR file in the app. We upload pre-built AAR to S3 during each release, or as a snapshot. Released versions (recommended)# Version AAR SHASUMS ${executorch_version} executorch.aar executorch.aar.sha256sums v0.6.0 executorch.aar executorch.aar.sha256sums v0.5.0 executorch.aar executorch.aar.sha256sums Snapshots from main branch# Starting from 2025-04-12, you can download nightly main branch snapshots: executorch.aar: https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-{YYYYMMDD}/executorch.aar executorch.aar.sha256sums: https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-{YYYYMMDD}/executorch.aar.sha256sums Replace YYYYMMDD with the actual date you want to use. AAR file is generated by this workflow. For example: curl -O https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-20250412/executorch.aar curl -O https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-20250412/executorch.aar.sha256sums We aim to make every daily snapshot available and usable. However, for best stability, please use releases, not snapshots. Using AAR file# To add the AAR file to your app: Download the AAR. Add it to your gradle build rule as a file path. An AAR file itself does not contain dependency info, unlike the Maven one which bundled with pom.xml. The Java package requires fbjni and soloader, and currently requires users to explicitly declare the dependency. Therefore, two more dependencies in gradle rule is required: implementation(\"com.facebook.soloader:soloader:0.10.5\") implementation(\"com.facebook.fbjni:fbjni:0.7.0\") Example usage# In your app working directory, such as executorch-examples/llm/android/LlamaDemo, mkdir -p app/libs curl https://ossci-android.s3.amazonaws.com/executorch/release/${executorch_version}/executorch.aar -o app/libs/executorch.aar And include it in gradle: # app/build.gradle.kts dependencies { implementation(files(\"libs/executorch.aar\")) implementation(\"com.facebook.soloader:soloader:0.10.5\") implementation(\"com.facebook.fbjni:fbjni:0.7.0\") } Now you can compile your app with the ExecuTorch Android library. Building from Source# scripts/build_android_library.sh is a helper script to build the Java library (into .jar), native library (into .so), and the packaged AAR file. You need Android SDK and NDK to use it. Current NDK version used in ExecuTorch CI: r28c. You need to set ANDROID_HOME to Android SDK home and ANDROID_NDK to the correct NDK root (containing NOTICE file). export ANDROID_HOME=/path/to/sdk export ANDROID_NDK=/path/to/ndk sh scripts/build_android_library.sh Currently, XNNPACK backend is always built with the script. Optional environment variables# Optionally, set these environment variables before running build_android_library.sh. ANDROID_ABIS# Set environment variable ANDROID_ABIS to either arm64-v8a or x86_64 if you only need to build the native library for one ABI only. export ANDROID_ABIS=arm64-v8a # or # export ANDROID_ABIS=x86_64 sh scripts/build_android_library.sh EXECUTORCH_CMAKE_BUILD_TYPE# Set environment variable EXECUTORCH_CMAKE_BUILD_TYPE to Release or Debug based on your needs. Using MediaTek backend# To use MediaTek backend, after installing and setting up the SDK, set NEURON_BUFFER_ALLOCATOR_LIB and NEURON_USDK_ADAPTER_LIB to the corresponding path. Using Qualcomm AI Engine Backend# To use Qualcomm AI Engine Backend, after installing and setting up the SDK, set QNN_SDK_ROOT to the corresponding path. Using Vulkan Backend# To use Vulkan Backend, set EXECUTORCH_BUILD_VULKAN to ON. Android Backends# The following backends are available for Android: Backend Type Doc XNNPACK CPU Doc MediaTek NeuroPilot NPU Doc Qualcomm AI Engine NPU Doc Vulkan GPU Doc Runtime Integration# Here is an example code sample in Java that demonstrates how to integrate ExecuTorch into an Android app: import org.pytorch.executorch.EValue; import org.pytorch.executorch.Module; import org.pytorch.executorch.Tensor; public class MainActivity extends Activity { private Module module; @Override protected void onCreate(Bundle savedInstanceState) { super.onCreate(savedInstanceState); // Load the ExecuTorch module Module module = Module.load(\"/data/local/tmp/add.pte\"); Tensor tensor1 = Tensor.fromBlob(new float[] {1.0f}, new long[] {1}); Tensor tensor2 = Tensor.fromBlob(new float[] {20.0f}, new long[] {1}); EValue eValue1 = EValue.from(tensor1); EValue eValue2 = EValue.from(tensor2); float result = module.forward(eValue1, eValue2)[0].toTensor().getDataAsFloatArray()[0]; } } Push the corresponding pte file to the phone: adb push extension/module/test/resources/add.pte /data/local/tmp/ This example loads an ExecuTorch module, prepares input data, runs inference, and processes the output data. Please use DeepLabV3AndroidDemo and LlamaDemo for the code examples using ExecuTorch AAR package. Java API reference# Please see Java API reference.",
+       "articleBody": "Using ExecuTorch on Android# \ud83d\ude80 Quick Start: New to ExecuTorch ? Jump to Using AAR from Maven Central for the fastest setup, then see the Runtime Integration example. To use from Android, ExecuTorch provides Java/Kotlin API bindings and Android platform integration, available as an AAR file. Note: This page covers Android app integration through the AAR library. The ExecuTorch C++ APIs can also be used from Android native, and the documentation can be found on this page about cross compilation. Installation# Choose your installation method: Maven Central (recommended): Easiest for most developers Direct AAR file: For specific versions or offline development Build from source: For custom backends or contributions All ExecuTorch Android libraries are packaged into an Android library (AAR), executorch.aar for both generic (image/audio processing) and LLM (LLaMA) use case. In each release, prebuilt AAR artifacts are uploaded to Maven and S3. Users can also build the AAR from source. Contents of library# The AAR artifact contains the Java library for users to integrate with their Java/Kotlin application code, as well as the corresponding JNI library (.so file), which is loaded by the Java code during initialization. Java library JNI contains the JNI binding for the corresponding Java code, and ExecuTorch native library, including Core ExecuTorch runtime libraries XNNPACK backend Portable kernels Optimized kernels Quantized kernels LLaMa-specific Custom ops library. Comes with two ABI variants, arm64-v8a and x86_64. The AAR library can be used for generic Android device with arm64-v8a or x86_64 architecture. It can be used across form factors, including phones, tablets, tv boxes, etc, as it does not contain any UI components. XNNPACK backend Portable kernels Optimized kernels Quantized kernels LLaMa-specific Custom ops library. Comes with two ABI variants, arm64-v8a and x86_64. The AAR library can be used for generic Android device with arm64-v8a or x86_64 architecture. It can be used across form factors, including phones, tablets, tv boxes, etc, as it does not contain any UI components. Using AAR from Maven Central# \u2705 Recommended for most developers ExecuTorch is available on Maven Central. Simply add the target org.pytorch:executorch-android:${executorch_version} to your Android app dependency (build.gradle), and build your app. For example: app/build.gradle.kts dependencies { implementation(\"org.pytorch:executorch-android:${executorch_version}\") } Note: If you want to use release v1.0.0, please use dependency org.pytorch:executorch-android:1.0.0. Click the screenshot below to watch the demo video on how to add the package and run a simple ExecuTorch model with Android Studio. Using AAR file directly# You can also directly specify an AAR file in the app. We upload pre-built AAR to S3 during each release, or as a snapshot. Released versions (Recommended)# Version AAR SHASUMS v1.0.0 executorch.aar executorch.aar.sha256sums v0.7.0 executorch.aar executorch.aar.sha256sums v0.6.0 executorch.aar executorch.aar.sha256sums v0.5.0 executorch.aar executorch.aar.sha256sums Snapshots from main branch# Starting from 2025-04-12, you can download nightly main branch snapshots: executorch.aar: https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-{YYYYMMDD}/executorch.aar executorch.aar.sha256sums: https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-{YYYYMMDD}/executorch.aar.sha256sums Replace YYYYMMDD with the actual date you want to use. AAR file is generated by this workflow. For example: curl -O https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-20250412/executorch.aar curl -O https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-20250412/executorch.aar.sha256sums We aim to make every daily snapshot available and usable. However, for best stability, please use releases, not snapshots. Using AAR file# To add the AAR file to your app: Download the AAR. Add it to your gradle build rule as a file path. An AAR file itself does not contain dependency info, unlike the Maven one which bundled with pom.xml. The Java package requires fbjni and soloader, and currently requires users to explicitly declare the dependency. Therefore, two more dependencies in gradle rule is required: implementation(\"com.facebook.soloader:soloader:0.10.5\") implementation(\"com.facebook.fbjni:fbjni:0.7.0\") Example usage# In your app working directory, such as executorch-examples/llm/android/LlamaDemo, mkdir -p app/libs curl https://ossci-android.s3.amazonaws.com/executorch/release/${executorch_version}/executorch.aar -o app/libs/executorch.aar And include it in gradle: app/build.gradle.kts dependencies { implementation(files(\"libs/executorch.aar\")) implementation(\"com.facebook.soloader:soloader:0.10.5\") implementation(\"com.facebook.fbjni:fbjni:0.7.0\") } Now you can compile your app with the ExecuTorch Android library. Building from Source# scripts/build_android_library.sh is a helper script to build the Java library (into .jar), native library (into .so), and the packaged AAR file. You need Android SDK and NDK to use it. Current NDK version used in ExecuTorch CI: r28c. You need to set ANDROID_HOME to Android SDK home and ANDROID_NDK to the correct NDK root (containing NOTICE file). export ANDROID_HOME=/path/to/sdk export ANDROID_NDK=/path/to/ndk sh scripts/build_android_library.sh NOTE: Currently, XNNPACK backend is always built with the script. Optional environment variables# Optionally, set these environment variables before running build_android_library.sh. ANDROID_ABIS Set environment variable ANDROID_ABIS to either arm64-v8a or x86_64 if you only need to build the native library for one ABI only. export ANDROID_ABIS=arm64-v8a (Or) export ANDROID_ABIS=x86_64 And then run the script. sh scripts/build_android_library.sh EXECUTORCH_CMAKE_BUILD_TYPE Set environment variable EXECUTORCH_CMAKE_BUILD_TYPE to Release or Debug based on your needs. Using MediaTek backend To use MediaTek backend, after installing and setting up the SDK, set NEURON_BUFFER_ALLOCATOR_LIB and NEURON_USDK_ADAPTER_LIB to the corresponding path. Using Qualcomm AI Engine Backend To use Qualcomm AI Engine Backend, after installing and setting up the SDK, set QNN_SDK_ROOT to the corresponding path. Using Vulkan Backend To use Vulkan Backend, set EXECUTORCH_BUILD_VULKAN to ON. Android Backends# The following backends are available for Android: Backend Type Doc XNNPACK CPU Doc MediaTek NeuroPilot NPU Doc Qualcomm AI Engine NPU Doc Vulkan GPU Doc Start with XNNPACK (CPU backend) for maximum compatibility, then add hardware-specific backends for optimization. Runtime Integration# Here is an example code sample in Java that demonstrates how to integrate ExecuTorch into an Android app: import org.pytorch.executorch.EValue; import org.pytorch.executorch.Module; import org.pytorch.executorch.Tensor; public class MainActivity extends Activity { private Module module; @Override protected void onCreate(Bundle savedInstanceState) { super.onCreate(savedInstanceState); // Load the ExecuTorch module Module module = Module.load(\"/data/local/tmp/add.pte\"); Tensor tensor1 = Tensor.fromBlob(new float[] {1.0f}, new long[] {1}); Tensor tensor2 = Tensor.fromBlob(new float[] {20.0f}, new long[] {1}); EValue eValue1 = EValue.from(tensor1); EValue eValue2 = EValue.from(tensor2); float result = module.forward(eValue1, eValue2)[0].toTensor().getDataAsFloatArray()[0]; } Push the corresponding pte file to your Android device: adb push extension/module/test/resources/add.pte /data/local/tmp/ This example loads an ExecuTorch module, prepares input data, runs inference, and processes the output data. Please use DeepLabV3AndroidDemo and LlamaDemo for the code examples using ExecuTorch AAR package. Java API reference# Please see Java API reference.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
