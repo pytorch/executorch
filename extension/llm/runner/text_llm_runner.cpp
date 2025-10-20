@@ -199,6 +199,8 @@ Error TextLLMRunner::generate(
   }
   int64_t num_generated_tokens = generate_result.get();
 
+  pos_ += num_generated_tokens;
+
   stats_->inference_end_ms = time_in_ms();
   if (!config.warming) {
     printf("\n");
