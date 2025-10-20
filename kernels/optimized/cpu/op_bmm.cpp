@@ -152,12 +152,14 @@ Tensor& opt_bmm_out(
 
   auto self_type = self.scalar_type();
 
+  static constexpr auto name = "bmm.out";
+
   if (executorch::runtime::isComplexType(self_type)) {
-    ET_SWITCH_COMPLEXH_TYPES(self_type, ctx, "bmm.out", CTYPE, [&]() {
+    ET_SWITCH_COMPLEXH_TYPES(self_type, ctx, name, CTYPE, [&]() {
       bmm_kernel<CTYPE>(self, mat2, out);
     });
   } else {
-    ET_SWITCH_REALHBF16_TYPES(self_type, ctx, "bmm.out", CTYPE, [&]() {
+    ET_SWITCH_REALHBF16_TYPES(self_type, ctx, name, CTYPE, [&]() {
       bmm_kernel<CTYPE>(self, mat2, out);
     });
   }

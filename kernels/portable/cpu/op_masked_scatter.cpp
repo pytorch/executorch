@@ -45,7 +45,9 @@ Tensor& masked_scatter_out(
   int64_t src_numel = src.numel();
   bool src_numel_check = true;
 
-  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "masked_scatter.out", CTYPE, [&]() {
+  static constexpr auto name = "masked_scatter.out";
+
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE, [&]() {
     const CTYPE* const src_data = src.const_data_ptr<CTYPE>();
     apply_binary_elementwise_fn<CTYPE, bool, CTYPE>(
         [src_data, &idx, &src_numel, &src_numel_check](
