@@ -88,7 +88,7 @@ jobs:
         PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
 
   export-voxtral-cuda-artifact:
-    name: export-voxtral-cuda-artifact
+    name: export-voxtral-cuda-${{ matrix.quant.name }}
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -96,6 +96,18 @@ jobs:
     secrets: inherit
     strategy:
       fail-fast: false
+      matrix:
+        quant:
+          - name: "non-quantized"
+            artifact: "voxtral-cuda-export"
+            extra_args: ""
+          - name: "quantized-int4-tile-packed"
+            artifact: "voxtral-cuda-quantized-int4-tile-packed"
+            extra_args: "--qlinear 4w --qlinear_encoder 4w --qlinear_packing_format tile_packed_to_4d --qlinear_encoder_packing_format tile_packed_to_4d"
+          - name: "quantized-int4-weight-only"
+            artifact: "voxtral-cuda-quantized-int4-weight-only"
+            # TODO: adding "--qlinear 4w" produces invalid results. Need further investigation.
+            extra_args: "--qlinear_encoder 4w"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -104,7 +116,7 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      upload-artifact: voxtral-cuda-export
+      upload-artifact: ${{ matrix.quant.artifact }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -122,7 +134,8 @@ jobs:
         pip list
         echo "::endgroup::"
 
-        echo "::group::Export Voxtral"
+        echo "::group::Export Voxtral (${{ matrix.quant.name }})"
+        EXTRA_ARGS="${{ matrix.quant.extra_args }}"
         optimum-cli export executorch \
             --model "mistralai/Voxtral-Mini-3B-2507" \
             --task "multimodal-text-to-text" \
@@ -130,6 +143,7 @@ jobs:
             --dtype bfloat16 \
             --device cuda \
             --max_seq_len 1024 \
+            ${EXTRA_ARGS} \
             --output_dir ./
         python -m executorch.extension.audio.mel_spectrogram \
             --feature_size 128 \
@@ -142,7 +156,7 @@ jobs:
         test -f voxtral_preprocessor.pte
         echo "::endgroup::"
 
-        echo "::group::Store Voxtral Artifacts"
+        echo "::group::Store Voxtral Artifacts (${{ matrix.quant.name }})"
         mkdir -p "${RUNNER_ARTIFACT_DIR}"
         cp model.pte "${RUNNER_ARTIFACT_DIR}/"
         cp aoti_cuda_blob.ptd "${RUNNER_ARTIFACT_DIR}/"
@@ -201,7 +215,7 @@ jobs:
         echo "::endgroup::"
 
   test-voxtral-cuda-e2e:
-    name: test-voxtral-cuda-e2e
+    name: test-voxtral-cuda-e2e-${{ matrix.format.name }}
     needs: export-voxtral-cuda-artifact
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
@@ -209,6 +223,14 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
+      matrix:
+        format:
+          - name: "non-quantized"
+            artifact: "voxtral-cuda-export"
+          - name: "quantized-int4-tile-packed"
+            artifact: "voxtral-cuda-quantized-int4-tile-packed"
+          - name: "quantized-int4-weight-only"
+            artifact: "voxtral-cuda-quantized-int4-weight-only"
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -216,7 +238,7 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      download-artifact: voxtral-cuda-export
+      download-artifact: ${{ matrix.format.artifact }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -226,7 +248,7 @@ jobs:
         pip list
         echo "::endgroup::"
 
-        echo "::group::Prepare Voxtral Artifacts"
+        echo "::group::Prepare Voxtral Artifacts (${{ matrix.format.name }})"
         cp "${RUNNER_ARTIFACT_DIR}/model.pte" .
         cp "${RUNNER_ARTIFACT_DIR}/aoti_cuda_blob.ptd" .
         cp "${RUNNER_ARTIFACT_DIR}/voxtral_preprocessor.pte" .
@@ -255,7 +277,7 @@ jobs:
         cmake --build cmake-out/examples/models/voxtral --target voxtral_runner --config Release
         echo "::endgroup::"
 
-        echo "::group::Run Voxtral Runner"
+        echo "::group::Run Voxtral Runner (${{ matrix.format.name }})"
         set +e
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
         OUTPUT=$(cmake-out/examples/models/voxtral/voxtral_runner \
