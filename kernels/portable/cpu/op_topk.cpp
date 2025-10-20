@@ -198,7 +198,7 @@ std::tuple<Tensor&, Tensor&> topk_values(
       InvalidArgument,
       out);
 
-  constexpr auto name = "topk.values";
+  static constexpr auto name = "topk.values";
 
   if (in.numel() == 0 || (k == 0 && in.dim() > 0)) {
     return out;
