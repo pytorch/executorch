@@ -183,6 +183,7 @@ class CudaBackend(BackendDetails):
                     "aot_inductor.aoti_shim_library": "aoti_cuda",
                     "aot_inductor.aoti_shim_library_path": shim_library_path,
                     "aot_inductor.precompile_headers": False,
+                    "aot_inductor.emit_multi_arch_kernel": True,
                 }
             )
 
