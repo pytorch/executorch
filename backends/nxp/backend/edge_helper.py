@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import GraphModule, Node
 from torch.nn import Parameter
 
@@ -87,3 +88,21 @@ def try_get_tensor_constant_from_node(
             return None
         attr_itr = getattr(attr_itr, atom)
     return attr_itr
+
+
+def get_non_qdq_users(node: Node) -> list[Node]:
+    users = list(node.users)
+    if len(users) != 1 and users[0].target not in [
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    ]:
+        return []
+
+    q_users = list(users[0].users)
+    if len(q_users) != 1 and q_users[0].target not in [
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    ]:
+        return []
+
+    return list(q_users[0].users)
