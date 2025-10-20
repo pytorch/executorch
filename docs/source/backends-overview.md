@@ -20,7 +20,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 
 | Backend                                                         | Platform(s)         | Hardware Type | Typical Use Case                |
 |-----------------------------------------------------------------|---------------------|---------------|---------------------------------|
-| [XNNPACK](backends-xnnpack)                                     | All                 | CPU           | General-purpose, fallback       |
+| [XNNPACK](backends/xnnpack/xnnpack-overview.md)                 | All                 | CPU           | General-purpose, fallback       |
 | [Core ML](/backends/coreml/coreml-overview.md)                  | iOS, macOS          | NPU/GPU/CPU   | Apple devices, high performance |
 | [Metal Performance Shaders](/backends/mps/mps-overview.md)      | iOS, macOS          | GPU           | Apple GPU acceleration          |
 | [Vulkan ](/backends/vulkan/vulkan-overview.md)                  | Android             | GPU           | Android GPU acceleration        |
@@ -50,7 +50,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 :hidden:
 :caption: Backend Overview
 
-backends-xnnpack
+backends/xnnpack/xnnpack-overview
 backends/coreml/coreml-overview
 backends/mps/mps-overview
 backends/vulkan/vulkan-overview

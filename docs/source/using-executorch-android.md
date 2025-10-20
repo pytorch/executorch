@@ -70,7 +70,7 @@ Starting from [v1.0.0](https://github.com/pytorch/executorch/releases/tag/v1.0.0
 
 | AAR | SHASUMS | Backend |
 | ------- | --- | ------- |
-| [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-xnnpack/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-xnnpack/executorch.aar.sha256sums) | [XNNPACK](backends-xnnpack.md) |
+| [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-xnnpack/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-xnnpack/executorch.aar.sha256sums) | [XNNPACK](backends/xnnpack/xnnpack-overview.md) |
 | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-qnn/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-qnn/executorch.aar.sha256sums) | [Qualcomm AI Engine](backends-qualcomm.md) |
 | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-vulkan/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-vulkan/executorch.aar.sha256sums) | [Vulkan](backends/vulkan/vulkan-overview.md) |
 
@@ -201,7 +201,8 @@ The following backends are available for Android:
 
 | Backend | Type | Doc |
 | ------- | -------- | --- |
-| [XNNPACK](https://github.com/google/XNNPACK) | CPU | [Doc](backends-xnnpack.md) |
+| [XNNPACK](https://github.com/google/XNNPACK) | CPU | [Doc](backends/xnnpack/xnnpack-overview.md) |
+
 | [MediaTek NeuroPilot](https://neuropilot.mediatek.com/) | NPU | [Doc](backends-mediatek.md) |
 | [Qualcomm AI Engine](https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk) | NPU | [Doc](backends-qualcomm.md) |
 | [Vulkan](https://www.vulkan.org/) | GPU | [Doc](backends/vulkan/vulkan-overview.md) |
