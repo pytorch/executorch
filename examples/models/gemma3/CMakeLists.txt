@@ -117,6 +117,8 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   endif()
 endif()
 
-target_include_directories(gemma3_e2e_runner PUBLIC ${_common_include_directories})
+target_include_directories(
+  gemma3_e2e_runner PUBLIC ${_common_include_directories}
+)
 target_link_libraries(gemma3_e2e_runner PUBLIC ${link_libraries})
 target_compile_options(gemma3_e2e_runner PUBLIC ${_common_compile_options})

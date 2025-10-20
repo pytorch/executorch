@@ -94,7 +94,9 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     if (expected_dtype == ::executorch::aten::ScalarType::BFloat16) {
       // Convert to bfloat16 for model input
       auto image_tensor_return = convert_to_bfloat16(image_tensor);
-      ET_CHECK_OK_OR_RETURN_ERROR(image_tensor_return.error(), "Failed to convert image tensor to bfloat16");
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          image_tensor_return.error(),
+          "Failed to convert image tensor to bfloat16");
       image_tensor = image_tensor_return.get();
     }
 
