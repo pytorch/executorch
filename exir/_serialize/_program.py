@@ -576,7 +576,7 @@ def serialize_pte_binary(
     return pte_data
 
 
-def _restore_segments(program: Program, segment_data: bytes) -> Program:
+def _restore_segments(program: Program, segment_data: bytes) -> Program:  # noqa: C901
     """Moves segments from `segment_data` into `program`.
 
     This should recreate the original Program that the segments were extracted
@@ -640,6 +640,48 @@ def _restore_segments(program: Program, segment_data: bytes) -> Program:
         program.constant_buffer = buffers
         program.constant_segment.segment_index = 0
         program.constant_segment.offsets = []
+
+    # Reconstruct named data blobs from segment data when present.
+    if program.named_data:
+        segment_to_buffer_index: Dict[int, int] = {}
+        named_buffers: List[BufferEntry] = []
+        key_to_buffer_index: Dict[str, int] = {}
+
+        for entry in program.named_data:
+            segment_index = entry.segment_index
+            if segment_index >= len(segments):
+                raise ValueError(
+                    "Named data segment index "
+                    f"{segment_index} >= num segments {len(segments)}"
+                )
+
+            buffer_index = segment_to_buffer_index.get(segment_index)
+            if buffer_index is None:
+                buffer_index = len(named_buffers)
+                segment_to_buffer_index[segment_index] = buffer_index
+                named_buffers.append(
+                    BufferEntry(buffer=segments[segment_index], alignment=1)
+                )
+
+            key_to_buffer_index[entry.key] = buffer_index
+
+        named_data_store = NamedDataStoreOutput(
+            buffers=named_buffers,
+            pte_data=key_to_buffer_index,
+            external_data={},
+        )
+        # Keep a convenient mapping from key to raw bytes for callers that only
+        # need to read the blobs.
+        setattr(  # noqa: B010
+            program,
+            "named_data_blobs",
+            {
+                key: named_data_store.buffers[idx].buffer
+                for key, idx in named_data_store.pte_data.items()
+            },
+        )
+        setattr(program, "named_data_store", named_data_store)  # noqa: B010
+        program.named_data = []
 
     # Clear out the segments list since the original Program didn't have one.
     program.segments = []
