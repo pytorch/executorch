@@ -481,7 +481,7 @@ class MeanDimPattern(SharedSpecPattern):
 
 class MulTensorPattern(QuantizationPattern):
     """
-    Quantization pattern for Mul Tensor quantization. Accepts 2 input nodes.
+    Quantization pattern for Mul Tensor quantization. Accepts 1 or 2 input nodes.
 
     Basic quantization for all inputs and output.
     """
@@ -492,20 +492,37 @@ class MulTensorPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors | None:
-        qspec = QuantizationSpec(
+        node = fused_partition[0].nodes[-1]
+
+        qspec1 = FixedQParamsQuantizationSpec(
             dtype=torch.int8,
+            scale=1.0 / 256.0,
+            zero_point=0,
+            quant_min=-128,
+            quant_max=127,
             qscheme=torch.per_tensor_symmetric,
-            observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12)
         )
 
-        node = fused_partition[0].nodes[-1]
-        inputs = [(node, NodeArgsIdx(0), qspec), (node, NodeArgsIdx(1), qspec)]
+        qspec2 = FixedQParamsQuantizationSpec(
+            dtype=torch.int8,
+            scale=1.0 / 256.0,
+            zero_point=0,
+            quant_min=-128,
+            quant_max=127,
+            qscheme=torch.per_tensor_symmetric,
+        )
+
+        inputs = [(node, NodeArgsIdx(0), qspec1)]
+        if len(fused_partition[0].input_nodes) == 2:
+            inputs = [(node, NodeArgsIdx(0), qspec1), (node, NodeArgsIdx(1), qspec2)]
 
         return PartitionAnchors(
-            inputs=inputs,
+            inputs=[],
             weights=[],
             biases=[],
-            output=[(node, qspec)],
+            output=[
+                (node,qspec1),
+            ],
         )
 
 
