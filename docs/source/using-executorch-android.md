@@ -61,7 +61,7 @@ Starting from [v1.0.0](https://github.com/pytorch/executorch/releases/tag/v1.0.0
 
 | AAR | SHASUMS | Backend |
 | ------- | --- | ------- |
-| [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-xnnpack/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-xnnpack/executorch.aar.sha256sums) | [XNNPACK](backends-xnnpack.md) |
+| [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-xnnpack/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-xnnpack/executorch.aar.sha256sums) | [XNNPACK](backends/xnnpack/xnnpack-overview.md) |
 | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-qnn/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-qnn/executorch.aar.sha256sums) | [Qualcomm AI Engine](backends-qualcomm.md) |
 | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-vulkan/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-vulkan/executorch.aar.sha256sums) | [Vulkan](backends/vulkan/vulkan-overview.md) |
 
