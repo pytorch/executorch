@@ -1,0 +1,46 @@
+#!/bin/bash
+
+
+if [[ -z $ANDROID_NDK_ROOT ]]; then
+  echo "Please export ANDROID_NDK_ROOT=/path/to/ndk"
+  exit -1
+fi
+
+CLEAN_BUILD="false"
+BUILD_FOLDER="build-xnnpack"
+BUILD_TYPE="release"
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -c|--clean_build) CLEAN_BUILD="true"; shift;;
+    -d|--debug) BUILD_TYPE="Debug"; shift;;
+    *) echo "unknow arg passed: $1"; exit 1;;
+  esac
+  shift
+done
+
+if [ "$CLEAN_BUILD" = true ]; then
+  rm -rf $BUILD_FOLDER
+fi
+
+cmake \
+  -DCMAKE_INSTALL_PREFIX=$BUILD_FOLDER \
+  -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI='arm64-v8a' \
+  -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
+  -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
+  -DSUPPORT_REGEX_LOOKAHEAD=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+  -DEXECUTORCH_BUILD_XNNPACK=ON \
+  -DEXECUTORCH_ENABLE_LOGGING=ON \
+  -DPYTHON_EXECUTABLE=python \
+  -B$BUILD_FOLDER .
+
+cmake --build $BUILD_FOLDER -j9 --target install --config $BUILD_TYPE

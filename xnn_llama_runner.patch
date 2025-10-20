@@ -1,0 +1,625 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7012ec641..29dea224a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1049,6 +1049,102 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
+   target_link_libraries(executor_runner ${_executor_runner_libs})
+   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+ 
++  set(QC_EXAMPLE_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/examples/qualcomm/)
++  set(_xnn_t5_runner__srcs
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/t5/qnn_t5_runner.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/t5/runner/decoder.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/t5/runner/decoder.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/t5/runner/encoder.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/t5/runner/encoder.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/t5/runner/runner.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/t5/runner/runner.h
++    ${CMAKE_CURRENT_LIST_DIR}/extension/llm/sampler/sampler.cpp
++  )
++  add_executable(xnn_t5_runner ${_xnn_t5_runner__srcs})
++
++  set(_xnn_whisper_runner__srcs
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/whisper/qnn_whisper_runner.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/whisper/runner/decoder.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/whisper/runner/decoder.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/whisper/runner/encoder.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/whisper/runner/encoder.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/whisper/runner/runner.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/whisper/runner/runner.h
++    ${CMAKE_CURRENT_LIST_DIR}/extension/llm/sampler/sampler.cpp
++  )
++  add_executable(xnn_whisper_runner ${_xnn_whisper_runner__srcs})
++
++  set(_xnn_llama_runner__srcs
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/qnn_llama_runner.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/runner.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/runner.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/cache_utils.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/decoder_runner.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/decoder_runner.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/prompt_processor.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/prompt_processor.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/token_generator.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/token_generator.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/imem_alloc.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/client_mem.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/lhd_token_generator.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/lhd_token_generator.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/rpc_mem.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/rpc_mem.h
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/kv_manager.cpp
++    ${QC_EXAMPLE_SOURCE_DIR}/oss_scripts/llama/runner/kv_manager.h
++    ${CMAKE_CURRENT_LIST_DIR}/examples/models/llama/runner/runner.cpp
++    ${CMAKE_CURRENT_LIST_DIR}/examples/models/llama/runner/runner.h
++  )
++
++  target_link_libraries(xnn_t5_runner
++    ${_executor_runner_libs}
++    extension_data_loader
++    extension_flat_tensor
++    extension_llm_runner
++    extension_module
++    extension_tensor
++    gflags
++    tokenizers::tokenizers
++  )
++  target_compile_options(xnn_t5_runner PUBLIC ${_common_compile_options})
++
++  target_link_libraries(xnn_whisper_runner
++    ${_executor_runner_libs}
++    extension_data_loader
++    extension_flat_tensor
++    extension_llm_runner
++    extension_module
++    extension_tensor
++    gflags
++    tokenizers::tokenizers
++  )
++  target_compile_options(xnn_whisper_runner PUBLIC ${_common_compile_options})
++
++  add_definitions(-DXNNPACK)
++  add_executable(xnn_llama_runner ${_xnn_llama_runner__srcs})
++  target_include_directories(
++    xnn_llama_runner PUBLIC ${_common_include_directories}
++  )
++  executorch_target_link_options_shared_lib(quantized_ops_lib)
++  target_link_libraries(xnn_llama_runner
++    ${_executor_runner_libs}
++    executorch_core
++    extension_data_loader
++    extension_flat_tensor
++    extension_llm_runner
++    extension_module
++    extension_tensor
++    gflags
++    quantized_ops_lib
++    quantized_kernels
++    tokenizers::tokenizers
++  )
++  target_include_directories(
++    xnn_llama_runner PUBLIC ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
++  )
++  target_compile_options(xnn_llama_runner PUBLIC ${_common_compile_options})
++
+   # Automatically set when using `emcmake cmake` for Wasm build.
+   if(EMSCRIPTEN)
+     # Directory of model pte files to embed in the wasm binary.
+diff --git a/examples/qualcomm/oss_scripts/llama/qnn_llama_runner.cpp b/examples/qualcomm/oss_scripts/llama/qnn_llama_runner.cpp
+index 71eaea2b8..bab8664a5 100644
+--- a/examples/qualcomm/oss_scripts/llama/qnn_llama_runner.cpp
++++ b/examples/qualcomm/oss_scripts/llama/qnn_llama_runner.cpp
+@@ -266,6 +266,8 @@ int main(int argc, char** argv) {
+     start_runner<uint8_t>(std::move(module), prompts);
+   } else if (kv_bitwidth == example::KvBitWidth::kWidth16) {
+     start_runner<uint16_t>(std::move(module), prompts);
++  } else if (kv_bitwidth == example::KvBitWidth::kWidth32) {
++    start_runner<float>(std::move(module), prompts);
+   } else {
+     ET_CHECK_MSG(
+         false,
+diff --git a/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h b/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h
+index 888e9acd4..5d9384512 100644
+--- a/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h
++++ b/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h
+@@ -56,7 +56,7 @@ class DecoderRunner {
+   inline int32_t logits_to_token(
+       const executorch::aten::Tensor& logits_tensor,
+       int64_t pos) {
+-    auto* logits = logits_tensor.mutable_data_ptr<uint16_t>();
++    auto* logits = logits_tensor.mutable_data_ptr<float>();
+     auto num_tokens = logits_tensor.size(1);
+     auto vocab_size = logits_tensor.size(2);
+     static std::vector<float> logits_f(vocab_size);
+diff --git a/examples/qualcomm/oss_scripts/llama/runner/kv_manager.cpp b/examples/qualcomm/oss_scripts/llama/runner/kv_manager.cpp
+index bd6d27d4b..72781139c 100644
+--- a/examples/qualcomm/oss_scripts/llama/runner/kv_manager.cpp
++++ b/examples/qualcomm/oss_scripts/llama/runner/kv_manager.cpp
+@@ -48,7 +48,7 @@ KVManager<T>::KVManager(KVManagerMode kv_updater, Metadata metadata)
+ 
+ template <typename T>
+ void KVManager<T>::init_attention_mask(
+-    uint16_t* attention_mask,
++    float* attention_mask,
+     const std::vector<int32_t>& attention_map,
+     int32_t ar_len,
+     int32_t n_past) {
+@@ -57,16 +57,16 @@ void KVManager<T>::init_attention_mask(
+       "The size of attention_map (%zu) doesn't match with ar_len (%d)",
+       attention_map.size(),
+       ar_len);
+-  uint16_t neg_val = 0;
+-  uint16_t pos_val = 65535;
++  float neg_val = -1e9f;
++  float pos_val = 0.0f;
+   // Clear the attention mask
+   std::fill_n(attention_mask, ar_len * metadata_.context_len, neg_val);
+ 
+   // SMART_MASK requires special handling of attention mask
+   switch (kv_updater_) {
+     case KVManagerMode::SMART_MASK: {
+-      uint16_t* past_ptr = attention_mask;
+-      uint16_t* new_ptr = attention_mask + (metadata_.context_len - ar_len);
++      float* past_ptr = attention_mask;
++      float* new_ptr = attention_mask + (metadata_.context_len - ar_len);
+       // All inputs will necessarily attend to n_past and itself
+       for (int i = 0; i < ar_len; i++) {
+         // Iterate across ar_len
+@@ -77,9 +77,9 @@ void KVManager<T>::init_attention_mask(
+           // If positive, copy attention map from (relative to 0th input) parent
+           // Parent token index
+           const int32_t pidx = attention_map[i];
+-          uint16_t* parent_ptr = attention_mask + pidx * metadata_.context_len;
++          float* parent_ptr = attention_mask + pidx * metadata_.context_len;
+           std::memcpy(
+-              past_ptr, parent_ptr, metadata_.context_len * sizeof(uint16_t));
++              past_ptr, parent_ptr, metadata_.context_len * sizeof(float));
+         }
+         // Attend to itself
+         new_ptr[i] = pos_val;
+@@ -92,7 +92,7 @@ void KVManager<T>::init_attention_mask(
+       // Only fill in ar_len. Rest will be padding
+       const size_t attn_row_start = metadata_.context_len - n_past - ar_len;
+       for (int i = 0; i < ar_len; i++) {
+-        uint16_t* cur_ptr =
++        float* cur_ptr =
+             attention_mask + i * metadata_.context_len + attn_row_start;
+         // Attend to itself
+         cur_ptr[n_past + i] = pos_val;
+@@ -103,10 +103,10 @@ void KVManager<T>::init_attention_mask(
+           // If positive, copy attention map from (relative to 0th input) parent
+           // Parent token index
+           const int32_t pidx = attention_map[i];
+-          uint16_t* parent_ptr =
++          float* parent_ptr =
+               attention_mask + pidx * metadata_.context_len + attn_row_start;
+           std::memcpy(
+-              cur_ptr, parent_ptr, (n_past + pidx + 1) * sizeof(uint16_t));
++              cur_ptr, parent_ptr, (n_past + pidx + 1) * sizeof(float));
+         }
+       }
+       break;
+@@ -118,7 +118,7 @@ void KVManager<T>::init_attention_mask(
+ 
+ template <typename T>
+ void KVManager<T>::init_attention_mask(
+-    uint16_t* attention_mask,
++    float* attention_mask,
+     const std::vector<int32_t>& attention_map,
+     int32_t ar_len,
+     int32_t n_past,
+@@ -129,16 +129,16 @@ void KVManager<T>::init_attention_mask(
+       "The size of attention_map (%zu) doesn't match with ar_len (%d)",
+       attention_map.size(),
+       ar_len);
+-  uint16_t neg_val = 0;
+-  uint16_t pos_val = 65535;
++  float neg_val = -1e9f;
++  float pos_val = 0.0f;
+   // Clear the attention mask
+   std::fill_n(attention_mask, ar_len * metadata_.context_len, neg_val);
+ 
+   // SMART_MASK requires special handling of attention mask
+   switch (kv_updater_) {
+     case KVManagerMode::SMART_MASK: {
+-      uint16_t* past_ptr = attention_mask;
+-      uint16_t* new_ptr = attention_mask + (metadata_.context_len - ar_len);
++      float* past_ptr = attention_mask;
++      float* new_ptr = attention_mask + (metadata_.context_len - ar_len);
+       // All inputs will necessarily attend to n_past and itself
+       for (int i = 0; i < ar_len; i++) {
+         // Iterate across ar_len
+@@ -149,9 +149,9 @@ void KVManager<T>::init_attention_mask(
+           // If positive, copy attention map from (relative to 0th input) parent
+           // Parent token index
+           const int32_t pidx = attention_map[i];
+-          uint16_t* parent_ptr = attention_mask + pidx * metadata_.context_len;
++          float* parent_ptr = attention_mask + pidx * metadata_.context_len;
+           std::memcpy(
+-              past_ptr, parent_ptr, metadata_.context_len * sizeof(uint16_t));
++              past_ptr, parent_ptr, metadata_.context_len * sizeof(float));
+         }
+         // Attend to itself
+         new_ptr[i] = pos_val;
+@@ -172,7 +172,7 @@ void KVManager<T>::init_attention_mask(
+       // Only fill in ar_len. Rest will be padding
+       const size_t attn_row_start = metadata_.context_len - n_past - ar_len;
+       for (int i = 0; i < ar_len; i++) {
+-        uint16_t* cur_ptr =
++        float* cur_ptr =
+             attention_mask + i * metadata_.context_len + attn_row_start;
+         // Attend to itself
+         cur_ptr[n_past + i] = pos_val;
+@@ -183,10 +183,10 @@ void KVManager<T>::init_attention_mask(
+           // If positive, copy attention map from (relative to 0th input) parent
+           // Parent token index
+           const int32_t pidx = attention_map[i];
+-          uint16_t* parent_ptr =
++          float* parent_ptr =
+               attention_mask + pidx * metadata_.context_len + attn_row_start;
+           std::memcpy(
+-              cur_ptr, parent_ptr, (n_past + pidx + 1) * sizeof(uint16_t));
++              cur_ptr, parent_ptr, (n_past + pidx + 1) * sizeof(float));
+         }
+       }
+       break;
+@@ -198,12 +198,12 @@ void KVManager<T>::init_attention_mask(
+ 
+ template <typename T>
+ void KVManager<T>::update_attention_mask(
+-    uint16_t* attention_mask,
++    float* attention_mask,
+     int32_t ar_len,
+     int32_t n_past,
+     int32_t n_update) {
+-  uint16_t pos_val = 65535;
+-  uint16_t* cur_ptr = attention_mask;
++  float pos_val = 0.0f;
++  float* cur_ptr = attention_mask;
+   if (kv_updater_ == KVManagerMode::SMART_MASK)
+     cur_ptr += n_past;
+   if (kv_updater_ == KVManagerMode::SHIFT_POINTER)
+@@ -217,15 +217,15 @@ void KVManager<T>::update_attention_mask(
+ 
+ template <typename T>
+ void KVManager<T>::update_attention_mask(
+-    uint16_t* attention_mask,
++    float* attention_mask,
+     int32_t ar_len,
+     int32_t n_past,
+     int32_t n_update,
+     int32_t sliding_window,
+     const std::vector<int32_t>& position_offset) {
+-  uint16_t pos_val = 65535;
+-  uint16_t neg_val = 0;
+-  uint16_t* cur_ptr = attention_mask;
++  float pos_val = 0.0f;
++  float neg_val = -1e9f;
++  float* cur_ptr = attention_mask;
+   if (kv_updater_ == KVManagerMode::SMART_MASK)
+     cur_ptr += n_past;
+   if (kv_updater_ == KVManagerMode::SHIFT_POINTER)
+@@ -544,6 +544,7 @@ void KVManager<T>::update_value(
+ }
+ 
+ // Explicit instantiations
++template class KVManager<float>;
+ template class KVManager<uint16_t>;
+ template class KVManager<uint8_t>;
+ 
+diff --git a/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h b/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h
+index af9cf49a3..2b2563b8e 100644
+--- a/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h
++++ b/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h
+@@ -73,7 +73,7 @@ class KVManager {
+    * @param n_past Number of past elements in the cache.
+    */
+   void init_attention_mask(
+-      uint16_t* attention_mask,
++      float* attention_mask,
+       const std::vector<int32_t>& attention_map,
+       int32_t ar_len,
+       int32_t n_past);
+@@ -100,7 +100,7 @@ class KVManager {
+    * @param position_offset (optional) attention mask position offset of
+    */
+   void init_attention_mask(
+-      uint16_t* attention_mask,
++      float* attention_mask,
+       const std::vector<int32_t>& attention_map,
+       int32_t ar_len,
+       int32_t n_past,
+@@ -116,7 +116,7 @@ class KVManager {
+    * @param n_update Number of elements to be updated.
+    */
+   void update_attention_mask(
+-      uint16_t* attention_mask,
++      float* attention_mask,
+       int32_t ar_len,
+       int32_t n_past,
+       int32_t n_update);
+@@ -134,7 +134,7 @@ class KVManager {
+    * lookahead decoder
+    */
+   void update_attention_mask(
+-      uint16_t* attention_mask,
++      float* attention_mask,
+       int32_t ar_len,
+       int32_t n_past,
+       int32_t n_update,
+diff --git a/examples/qualcomm/oss_scripts/llama/runner/lhd_token_generator.cpp b/examples/qualcomm/oss_scripts/llama/runner/lhd_token_generator.cpp
+index 1692caa27..2f594eb16 100644
+--- a/examples/qualcomm/oss_scripts/llama/runner/lhd_token_generator.cpp
++++ b/examples/qualcomm/oss_scripts/llama/runner/lhd_token_generator.cpp
+@@ -398,5 +398,6 @@ Result<int64_t> LhdTokenGenerator<T>::generate(
+ // Explicit instantiations
+ template class LhdTokenGenerator<uint16_t>;
+ template class LhdTokenGenerator<uint8_t>;
++template class LhdTokenGenerator<float>;
+ 
+ } // namespace example
+diff --git a/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.cpp b/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.cpp
+index 73da764b5..ab5731e89 100644
+--- a/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.cpp
++++ b/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.cpp
+@@ -39,21 +39,21 @@ PromptProcessor<T>::PromptProcessor(
+   switch (metadata_.cache_mode) {
+     case CacheMode::StaticCahce:
+       attention_mask_.size =
+-          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
++          metadata_.ar_len * metadata_.context_len * sizeof(float);
+       window_attention_mask_.size = 0;
+       break;
+     case CacheMode::HybridCache:
+       attention_mask_.size =
+-          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
++          metadata_.ar_len * metadata_.context_len * sizeof(float);
+       window_attention_mask_.size =
+-          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
++          metadata_.ar_len * metadata_.context_len * sizeof(float);
+       break;
+     default:
+       ET_CHECK_MSG(false, "Unsupported llama cache mode");
+       break;
+   }
+ 
+-  logits_.size = metadata_.ar_len * metadata_.vocab_size * sizeof(uint16_t);
++  logits_.size = metadata_.ar_len * metadata_.vocab_size * sizeof(float);
+ };
+ template <typename T>
+ void PromptProcessor<T>::init_io(
+@@ -78,7 +78,7 @@ void PromptProcessor<T>::init_io(
+ 
+   // [I]: attention_mask
+   Result<TensorInfo> attention_mask = method_meta->input_tensor_meta(idx++);
+-  attention_mask_.data = reinterpret_cast<uint16_t*>(
++  attention_mask_.data = reinterpret_cast<float*>(
+       buffer_manager->allocate(attention_mask_.size));
+   attention_mask_.tensor = std::make_unique<TensorImpl>(
+       attention_mask->scalar_type(),
+@@ -95,7 +95,7 @@ void PromptProcessor<T>::init_io(
+   if (metadata_.cache_mode == CacheMode::HybridCache) {
+     Result<TensorInfo> window_attention_mask =
+         method_meta->input_tensor_meta(idx++);
+-    window_attention_mask_.data = reinterpret_cast<uint16_t*>(
++    window_attention_mask_.data = reinterpret_cast<float*>(
+         buffer_manager->allocate(window_attention_mask_.size));
+     window_attention_mask_.tensor = std::make_unique<TensorImpl>(
+         window_attention_mask->scalar_type(),
+@@ -159,7 +159,7 @@ void PromptProcessor<T>::init_io(
+   // [O]: logits
+   Result<TensorInfo> logits = method_meta->output_tensor_meta(0);
+   logits_.data =
+-      reinterpret_cast<uint16_t*>(buffer_manager->allocate(logits_.size));
++      reinterpret_cast<float*>(buffer_manager->allocate(logits_.size));
+   logits_.tensor = std::make_unique<TensorImpl>(
+       logits->scalar_type(),
+       logits->sizes().size(),
+@@ -202,7 +202,7 @@ void PromptProcessor<T>::init_io(
+ }
+ 
+ template <typename T>
+-const std::vector<uint16_t>& PromptProcessor<T>::get_all_logits() {
++const std::vector<float>& PromptProcessor<T>::get_all_logits() {
+   return prompt_all_logits_;
+ }
+ 
+@@ -347,5 +347,6 @@ Result<uint64_t> PromptProcessor<T>::prefill(
+ // Explicit instantiations
+ template class PromptProcessor<uint16_t>;
+ template class PromptProcessor<uint8_t>;
++template class PromptProcessor<float>;
+ 
+ } // namespace example
+diff --git a/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.h b/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.h
+index a3dd20794..c375d0a6f 100644
+--- a/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.h
++++ b/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.h
+@@ -54,7 +54,7 @@ class PromptProcessor {
+    *
+    * @return std::vector<uint16_t>& all the logits generated
+    */
+-  virtual const std::vector<uint16_t>& get_all_logits();
++  virtual const std::vector<float>& get_all_logits();
+ 
+   /**
+    * Prefill an LLM Module with the given text input.
+@@ -110,9 +110,9 @@ class PromptProcessor {
+   // inputs and outputs
+   TensorStruct<int64_t> input_toks_;
+   TensorStruct<int32_t> input_pos_;
+-  TensorStruct<uint16_t> attention_mask_;
+-  TensorStruct<uint16_t> window_attention_mask_;
+-  TensorStruct<uint16_t> logits_;
++  TensorStruct<float> attention_mask_;
++  TensorStruct<float> window_attention_mask_;
++  TensorStruct<float> logits_;
+ 
+   // layer -> head -> TensorImpl
+   std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
+@@ -129,6 +129,6 @@ class PromptProcessor {
+   std::vector<executorch::aten::Tensor> output_tensors_;
+ 
+   // Unused by default, only used when dump_logits_path is provided.
+-  std::vector<uint16_t> prompt_all_logits_;
++  std::vector<float> prompt_all_logits_;
+ };
+ } // namespace example
+diff --git a/examples/qualcomm/oss_scripts/llama/runner/runner.cpp b/examples/qualcomm/oss_scripts/llama/runner/runner.cpp
+index 709ad3cfa..31b3b1afd 100644
+--- a/examples/qualcomm/oss_scripts/llama/runner/runner.cpp
++++ b/examples/qualcomm/oss_scripts/llama/runner/runner.cpp
+@@ -65,17 +65,17 @@ void print_performance_report(
+ 
+ void save_logits(
+     const std::string& dump_logits_path,
+-    const std::vector<uint16_t>& prefill_logits,
+-    const std::vector<uint16_t>& decode_logits) {
++    const std::vector<float>& prefill_logits,
++    const std::vector<float>& decode_logits) {
+   std::ofstream outFile(dump_logits_path.c_str(), std::ios::binary);
+   if (outFile.is_open()) {
+     outFile.write(
+         reinterpret_cast<const char*>(prefill_logits.data()),
+-        prefill_logits.size() * sizeof(uint16_t));
++        prefill_logits.size() * sizeof(float));
+ 
+     outFile.write(
+         reinterpret_cast<const char*>(decode_logits.data()),
+-        decode_logits.size() * sizeof(uint16_t));
++        decode_logits.size() * sizeof(float));
+     outFile.close();
+   } else {
+     ET_CHECK_MSG(false, "Error saving the dump logits file");
+@@ -478,5 +478,6 @@ Result<DecoderModelVersion> Runner<T>::get_decoder_model_version() {
+ // Explicit instantiations
+ template class Runner<uint16_t>;
+ template class Runner<uint8_t>;
++template class Runner<float>;
+ 
+ } // namespace example
+diff --git a/examples/qualcomm/oss_scripts/llama/runner/runner.h b/examples/qualcomm/oss_scripts/llama/runner/runner.h
+index 9f290d79c..160529f44 100644
+--- a/examples/qualcomm/oss_scripts/llama/runner/runner.h
++++ b/examples/qualcomm/oss_scripts/llama/runner/runner.h
+@@ -43,6 +43,7 @@ enum DecoderModelVersion {
+ enum KvBitWidth {
+   kWidth8 = 8,
+   kWidth16 = 16,
++  kWidth32 = 32,
+ };
+ 
+ template <typename T>
+diff --git a/examples/qualcomm/oss_scripts/llama/runner/token_generator.cpp b/examples/qualcomm/oss_scripts/llama/runner/token_generator.cpp
+index 6775c08bd..c7b786a0d 100644
+--- a/examples/qualcomm/oss_scripts/llama/runner/token_generator.cpp
++++ b/examples/qualcomm/oss_scripts/llama/runner/token_generator.cpp
+@@ -39,26 +39,26 @@ TokenGenerator<T>::TokenGenerator(
+   input_toks_.size = metadata_.ar_len * sizeof(int64_t);
+   input_pos_.size = metadata_.ar_len * sizeof(int32_t);
+   attention_mask_.size =
+-      metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
++      metadata_.ar_len * metadata_.context_len * sizeof(float);
+ 
+   switch (metadata_.cache_mode) {
+     case CacheMode::StaticCahce:
+       attention_mask_.size =
+-          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
++          metadata_.ar_len * metadata_.context_len * sizeof(float);
+       window_attention_mask_.size = 0;
+       break;
+     case CacheMode::HybridCache:
+       attention_mask_.size =
+-          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
++          metadata_.ar_len * metadata_.context_len * sizeof(float);
+       window_attention_mask_.size =
+-          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
++          metadata_.ar_len * metadata_.context_len * sizeof(float);
+       break;
+     default:
+       ET_CHECK_MSG(false, "Unsupported llama cache mode");
+       break;
+   }
+ 
+-  logits_.size = metadata_.ar_len * metadata_.vocab_size * sizeof(uint16_t);
++  logits_.size = metadata_.ar_len * metadata_.vocab_size * sizeof(float);
+ }
+ template <typename T>
+ void TokenGenerator<T>::init_io(
+@@ -83,7 +83,7 @@ void TokenGenerator<T>::init_io(
+ 
+   // [I]: attention_mask
+   Result<TensorInfo> attention_mask = method_meta->input_tensor_meta(idx++);
+-  attention_mask_.data = reinterpret_cast<uint16_t*>(
++  attention_mask_.data = reinterpret_cast<float*>(
+       buffer_manager->allocate(attention_mask_.size));
+   attention_mask_.tensor = std::make_unique<TensorImpl>(
+       attention_mask->scalar_type(),
+@@ -100,7 +100,7 @@ void TokenGenerator<T>::init_io(
+   if (metadata_.cache_mode == CacheMode::HybridCache) {
+     Result<TensorInfo> window_attention_mask =
+         method_meta->input_tensor_meta(idx++);
+-    window_attention_mask_.data = reinterpret_cast<uint16_t*>(
++    window_attention_mask_.data = reinterpret_cast<float*>(
+         buffer_manager->allocate(window_attention_mask_.size));
+     window_attention_mask_.tensor = std::make_unique<TensorImpl>(
+         window_attention_mask->scalar_type(),
+@@ -162,7 +162,7 @@ void TokenGenerator<T>::init_io(
+   // [O]: logits
+   Result<TensorInfo> logits = method_meta->output_tensor_meta(0);
+   logits_.data =
+-      reinterpret_cast<uint16_t*>(buffer_manager->allocate(logits_.size));
++      reinterpret_cast<float*>(buffer_manager->allocate(logits_.size));
+   logits_.tensor = std::make_unique<TensorImpl>(
+       logits->scalar_type(),
+       logits->sizes().size(),
+@@ -205,7 +205,7 @@ void TokenGenerator<T>::init_io(
+ }
+ 
+ template <typename T>
+-const std::vector<uint16_t>& TokenGenerator<T>::get_all_logits() {
++const std::vector<float>& TokenGenerator<T>::get_all_logits() {
+   return token_all_logits_;
+ }
+ 
+@@ -328,5 +328,6 @@ Result<int64_t> TokenGenerator<T>::generate(
+ // Explicit instantiations
+ template class TokenGenerator<uint16_t>;
+ template class TokenGenerator<uint8_t>;
++template class TokenGenerator<float>;
+ 
+ } // namespace example
+diff --git a/examples/qualcomm/oss_scripts/llama/runner/token_generator.h b/examples/qualcomm/oss_scripts/llama/runner/token_generator.h
+index 9f0198f30..10b9f832d 100644
+--- a/examples/qualcomm/oss_scripts/llama/runner/token_generator.h
++++ b/examples/qualcomm/oss_scripts/llama/runner/token_generator.h
+@@ -59,7 +59,7 @@ class TokenGenerator {
+    *
+    * @return std::vector<uint16_t>& all the logits generated
+    */
+-  virtual const std::vector<uint16_t>& get_all_logits();
++  virtual const std::vector<float>& get_all_logits();
+ 
+   /**
+      * @brief Generate tokens.
+@@ -95,9 +95,9 @@ class TokenGenerator {
+   // inputs and outputs
+   TensorStruct<int64_t> input_toks_;
+   TensorStruct<int32_t> input_pos_;
+-  TensorStruct<uint16_t> attention_mask_;
+-  TensorStruct<uint16_t> window_attention_mask_;
+-  TensorStruct<uint16_t> logits_;
++  TensorStruct<float> attention_mask_;
++  TensorStruct<float> window_attention_mask_;
++  TensorStruct<float> logits_;
+ 
+   // layer -> head -> TensorImpl
+   std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
+@@ -128,6 +128,6 @@ class TokenGenerator {
+   Metadata metadata_;
+ 
+   // Unused by default, only used when dump_logits_path is provided.
+-  std::vector<uint16_t> token_all_logits_;
++  std::vector<float> token_all_logits_;
+ };
+ } // namespace example

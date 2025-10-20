@@ -64,6 +64,8 @@ DEFINE_bool(
     false,
     "Dump intermediate outputs to etdump file.");
 
+DEFINE_bool(dump_statistics, false, "Dump inference statistics.");
+
 DEFINE_string(
     debug_output_path,
     "debug_output.bin",
@@ -303,6 +305,7 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
   ETDumpGen etdump_gen;
+  auto before_load = std::chrono::high_resolution_clock::now();
   Result<Method> method =
       program->load_method(method_name, &memory_manager, &etdump_gen);
   ET_CHECK_MSG(
@@ -310,6 +313,12 @@ int main(int argc, char** argv) {
       "Loading of method %s failed with status 0x%" PRIx32,
       method_name,
       (int)method.error());
+  auto after_load = std::chrono::high_resolution_clock::now();
+  double interval_load =
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          after_load - before_load)
+          .count() /
+      1000.0;
   ET_LOG(Info, "Method loaded.");
 
   void* debug_buffer;
@@ -570,12 +579,19 @@ int main(int argc, char** argv) {
         "Input list not provided. Inputs prepared with default values set.");
 
     // Run the method
+    auto before_exec = std::chrono::high_resolution_clock::now();
     Error status = method->execute();
     ET_CHECK_MSG(
         status == Error::Ok,
         "Execution of method %s failed with status 0x%" PRIx32,
         method_name,
         (int)status);
+    auto after_exec = std::chrono::high_resolution_clock::now();
+    double interval_1st_infs =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            after_exec - before_exec)
+            .count() /
+        1000.0;
     ET_LOG(Info, "Model executed successfully.");
 
     // Warm up
@@ -585,23 +601,33 @@ int main(int argc, char** argv) {
     }
 
     // Inference with designated iterations
-    auto before_exec = std::chrono::high_resolution_clock::now();
+    before_exec = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < FLAGS_iteration; ++i) {
       status = method->execute();
     }
-    auto after_exec = std::chrono::high_resolution_clock::now();
+    after_exec = std::chrono::high_resolution_clock::now();
     double interval_infs =
         std::chrono::duration_cast<std::chrono::microseconds>(
             after_exec - before_exec)
             .count() /
         1000.0;
 
+    auto avg_infs = interval_infs / (float)FLAGS_iteration;
     ET_LOG(
         Info,
         "%d inferences took %f ms, avg %f ms",
         FLAGS_iteration,
         interval_infs,
-        interval_infs / (float)FLAGS_iteration);
+        avg_infs);
+
+    if (FLAGS_dump_statistics) {
+      auto output_file_name = "statistics.txt";
+      std::ofstream fout(output_file_name);
+      fout << "load: " + std::to_string(interval_load)
+           << "\n1st: " + std::to_string(interval_1st_infs)
+           << "\navg: " + std::to_string(avg_infs) << std::endl;
+      fout.close();
+    }
   }
 
   // Dump the etdump data containing profiling/debugging data to the specified
