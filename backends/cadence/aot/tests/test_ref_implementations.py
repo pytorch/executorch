@@ -1188,7 +1188,7 @@ class TestRefImplementations(unittest.TestCase):
                     dtype=torch.int8,
                 ),  # weight: 4x4x3
                 0.5,  # w_scale
-                torch.tensor([2, 2, 2, 2], dtype=torch.float32),  # bias: 4
+                torch.tensor([2, 2, 2, 2], dtype=torch.int8),  # bias: 4
                 1.0,  # b_scale
                 torch.tensor(
                     [
@@ -1214,7 +1214,102 @@ class TestRefImplementations(unittest.TestCase):
         b_scale: float,
         expected_output: torch.Tensor,
     ) -> None:
+
+        # This op takes in channels last src
+        src = src.permute(0, 2, 1)
+
+        # This op takes in LNC format for weights
+        weight = weight.permute(2, 0, 1)
         output = torch.ops.cadence.quantized_w8a32_conv(
+            src, weight, w_scale, bias, b_scale
+        )
+
+        # Verify output properties
+        self.assertEqual(
+            output.dtype,
+            torch.float32,
+            f"Output dtype should be float32 in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            expected_output.shape,
+            f"Output shape should match expected shape in {name}",
+        )
+
+        # Verify output matches expected values
+        self.assertTrue(
+            torch.allclose(output, expected_output, rtol=1e-4, atol=1e-4),
+            f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+        )
+
+    @expand(
+        [
+            (
+                "multi_input_features",
+                torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32),  # src: 1x3
+                torch.tensor([[2, 1], [1, 2], [1, 1]], dtype=torch.int8),  # weight: 3x2
+                0.5,  # w_scale
+                torch.tensor([0, 1], dtype=torch.int8),  # bias: 2
+                1.0,  # b_scale
+                torch.tensor([[3.5, 5.0]], dtype=torch.float32),  # expected
+            ),
+            (
+                "batch_size_2",
+                torch.tensor(
+                    [[[1.0, 2.0]], [[3.0, 4.0]]], dtype=torch.float32
+                ),  # src: 2x2
+                torch.tensor([[1, 2], [1, -1]], dtype=torch.int8),  # weight: 2x2
+                1.0,  # w_scale
+                torch.tensor([0, 0], dtype=torch.int8),  # bias: 2
+                1.0,  # b_scale
+                torch.tensor(
+                    [[[3.0, 0.0]], [[7.0, 2.0]]], dtype=torch.float32
+                ),  # expected
+            ),
+            (
+                "shape_assertion_error",
+                torch.tensor(
+                    [[[1.0, 2.0], [3.0, 4.0]]], dtype=torch.float32
+                ),  # src: 1x2x2
+                torch.tensor([[1, 2], [1, -1]], dtype=torch.int8),  # weight: 2x2
+                1.0,  # w_scale
+                torch.tensor([0, 1], dtype=torch.int8),  # bias: 2
+                1.0,  # b_scale
+                torch.tensor(
+                    [[[3.0, 1.0], [7.0, 3.0]]], dtype=torch.float32
+                ),  # expected
+            ),
+            (
+                "negative_weights",
+                torch.tensor([[2.0, 4.0]], dtype=torch.float32),  # src: 1x2
+                torch.tensor([[-2, -3], [-1, -2]], dtype=torch.int8),  # weight: 2x2
+                0.5,  # w_scale
+                torch.tensor([2, 1], dtype=torch.int8),  # bias: 2
+                1.0,  # b_scale
+                torch.tensor([[-2.0, -6.0]], dtype=torch.float32),  # expected
+            ),
+        ]
+    )
+    def test_quantized_w8a32_linear(
+        self,
+        name: str,
+        src: torch.Tensor,
+        weight: torch.Tensor,
+        w_scale: float,
+        bias: torch.Tensor,
+        b_scale: float,
+        expected_output: torch.Tensor,
+    ) -> None:
+        if name == "shape_assertion_error":
+            with self.assertRaisesRegex(
+                AssertionError, "Only supporting vector-matrix multiplication"
+            ):
+                torch.ops.cadence.quantized_w8a32_linear(
+                    src, weight, w_scale, bias, b_scale
+                )
+            return
+
+        output = torch.ops.cadence.quantized_w8a32_linear(
             src, weight, w_scale, bias, b_scale
         )
 
