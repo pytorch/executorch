@@ -188,6 +188,8 @@ Error TextLLMRunner::generate(
       temperature_ == -1.0f ? config.temperature : temperature_,
       wrapped_callback));
 
+  pos_ += num_generated_tokens;
+
   stats_->inference_end_ms = time_in_ms();
   if (!config.warming) {
     printf("\n");
