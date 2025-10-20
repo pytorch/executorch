@@ -21,8 +21,6 @@ ${define_required_extensions(DTYPE)}
 $if WEIGHT_STORAGE == "buffer":
   ${define_required_extensions("int8")}
 
-#extension GL_EXT_control_flow_attributes : require
-
 layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, OUT_STORAGE, is_scalar_array=False)}
@@ -49,41 +47,31 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 void main() {
   // txcol stands for "texel column". One txcol corresponds to 4 scalar columns.
   $if TILE_TXCOLS > 1:
-    const uint16_t global_wg_x = uint16_t(divup(out_sizes.x, 4 * TILE_TXCOLS));
-    const uint16_t out_txcol = uint16_t(
-      (gl_GlobalInvocationID.x % global_wg_x) * TILE_TXCOLS);
+    const int global_wg_x = divup(out_sizes.x, 4 * TILE_TXCOLS);
+    const int out_txcol = (int(gl_GlobalInvocationID.x) % global_wg_x) * TILE_TXCOLS;
   $else:
-    const uint16_t global_wg_x = uint16_t(divup4(out_sizes.x));
-    const uint16_t out_txcol = uint16_t(gl_GlobalInvocationID.x % global_wg_x);
+    const int global_wg_x = divup4(out_sizes.x);
+    const int out_txcol = int(gl_GlobalInvocationID.x) % global_wg_x;
 
-  const uint16_t out_row = uint16_t(
-    (gl_GlobalInvocationID.x / global_wg_x) * TILE_ROWS);
+  const int out_row = (int(gl_GlobalInvocationID.x) / global_wg_x) * TILE_ROWS;
 
   $if QUANT_NBITS == 4:
-    const uint16_t weight_txcol = uint16_t(out_txcol / 2);
+    const int weight_txcol = out_txcol / 2;
 
-  if (out_row >= uint16_t(out_sizes.y)) {
+  if (out_row >= int(out_sizes.y)) {
     return;
   }
 
   VEC4_T sums[TILE_ROWS][TILE_TXCOLS];
-
-  VEC4_T scales[TILE_TXCOLS];
-  $for c in range(TILE_TXCOLS):
-    $if SCALES_STORAGE == "buffer":
-      scales[${c}] = VEC4_T(t_scales[out_txcol + ${c}]);
-    $else:
-      scales[${c}] = VEC4_T(
-        texelFetch(t_scales, u16vec2(out_txcol + ${c}, 0), 0));
 
   for (int r = 0; r < TILE_ROWS; ++r) {
     $for c in range(TILE_TXCOLS):
       sums[r][${c}] = VEC4_T(0.0);
   }
 
-  for (uint16_t pos = uint16_t(0), txpos = uint16_t(0);
-       pos < uint16_t(in_sizes.x);
-       pos += uint16_t(4), txpos += uint16_t(1)) {
+  for (int pos = 0, txpos = 0;
+       pos < in_sizes.x;
+       pos += 4, txpos += 1) {
 
     T mat1[TILE_ROWS][4];
 
@@ -99,7 +87,7 @@ void main() {
         mat1[i][2] = tmp.z;
         mat1[i][3] = tmp.w;
       $else:
-        VEC4_T tmp = VEC4_T(texelFetch(t_in, u16vec3(txpos, out_row + i, 0), 0));
+        VEC4_T tmp = VEC4_T(texelFetch(t_in, ivec3(txpos, out_row + i, 0), 0));
         mat1[i][0] = tmp.x;
         mat1[i][1] = tmp.y;
         mat1[i][2] = tmp.z;
@@ -114,15 +102,20 @@ void main() {
     for (int r = 0; r < 4; r++) {
       VEC4_T qmat2[TILE_TXCOLS];
       $if QUANT_NBITS == 4:
+        $if WEIGHT_STORAGE == "buffer":
+          u8vec4 packed_weight_tex;
+        $else:
+          uvec4 packed_weight_tex;
+
         $for c in range(0, TILE_TXCOLS, 2):
           $if WEIGHT_STORAGE == "buffer":
             qmat2_bufi = (pos + r) * weight_row_txstride + weight_txcol;
-            const u8vec4 packed_weight_tex = t_weight[qmat2_bufi + ${c}]
+            packed_weight_tex = t_weight[qmat2_bufi + ${c}]
           $else:
-            const uvec4 packed_weight_tex = texelFetch(
-              t_weight, u16vec2(weight_txcol + ${c}, pos + r), 0);
+            packed_weight_tex = texelFetch(
+              t_weight, ivec2(weight_txcol + ${c}, pos + r), 0);
 
-          qmat2[${c}] = (VEC4_T((packed_weight_tex & 0xF0) >> 4) - 8.0);
+          qmat2[${c}] = (VEC4_T(packed_weight_tex >> 4) - 8.0);
           qmat2[${c + 1}] = (VEC4_T(packed_weight_tex & 0x0F) - 8.0);
       $else:
         $for c in range(TILE_TXCOLS):
@@ -131,7 +124,7 @@ void main() {
             qmat2[${c}] = t_weight[qmat2_bufi + ${c}];
           $else:
             qmat2[${c}] = VEC4_T(
-              texelFetch(t_weight, u16vec2(out_txcol + ${c}, pos + r), 0));
+              texelFetch(t_weight, ivec2(out_txcol + ${c}, pos + r), 0));
 
       for (int tr = 0; tr < TILE_ROWS; ++tr) {
         $for c in range(TILE_TXCOLS):
@@ -139,6 +132,14 @@ void main() {
       }
     }
   }
+
+  VEC4_T scales[TILE_TXCOLS];
+  $for c in range(TILE_TXCOLS):
+    $if SCALES_STORAGE == "buffer":
+      scales[${c}] = VEC4_T(t_scales[out_txcol + ${c}]);
+    $else:
+      scales[${c}] = VEC4_T(
+        texelFetch(t_scales, ivec2(out_txcol + ${c}, 0), 0));
 
   // Store to output tensor
   $if OUT_STORAGE == "buffer":
