@@ -10,6 +10,7 @@ Core ML delegate is the ExecuTorch solution to take advantage of Apple's [Core M
 ## Target Requirements
 
 Below are the minimum OS requirements on various hardware for running a Core ML-delegated ExecuTorch model:
+
 - [macOS](https://developer.apple.com/macos) >= 13.0
 - [iOS](https://developer.apple.com/ios/) >= 16.0
 - [iPadOS](https://developer.apple.com/ipados/) >= 16.0
@@ -61,7 +62,6 @@ See [Partitioner API](coreml-partitioner.md) for a reference on available partit
 
 The Core ML delegate can also be used as a backend to execute quantized models. See [Core ML Quantization](coreml-quantization.md) for more information on available quantization schemes and APIs.
 
-
 ## Backward compatibility
 
 Core ML supports backward compatibility via the [`minimum_deployment_target`](coreml-partitioner.md#coreml-compilespec) option.  A model exported with a specific deployment target is guaranteed to work on all deployment targets >= the specified deployment target.  For example, a model exported with `coremltools.target.iOS17` will work on iOS 17 or higher.
@@ -91,16 +91,15 @@ target_link_libraries(
 
 No additional steps are necessary to use the backend beyond linking the target. A Core ML-delegated .pte file will automatically run on the registered backend.
 
-
 ## Reference
 
-**→{doc}`coreml-troubleshooting` — Debug common issues.**
+**→{doc}`/backends/coreml/coreml-troubleshooting` — Debug common issues.**
 
-**→{doc}`coreml-partitioner` — Partitioner options.**
+**→{doc}`/backends/coreml/coreml-partitioner` — Partitioner options.**
 
-**→{doc}`coreml-quantization` — Supported quantization schemes.**
+**→{doc}`/backends/coreml/coreml-quantization` — Supported quantization schemes.**
 
-**→{doc}`coreml-op-support` — Supported operators.**
+**→{doc}`/backends/coreml/coreml-op-support` — Supported operators.**
 
 ```{toctree}
 :maxdepth: 2

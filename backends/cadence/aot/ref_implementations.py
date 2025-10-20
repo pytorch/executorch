@@ -21,11 +21,13 @@ torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib"
 # Registry to track all ops with reference implementations
 _REGISTERED_REF_IMPLEMENTATIONS: set[str] = set()
 
+_OUTPUTS_TYPE = torch.Tensor | tuple[torch.Tensor, ...]
+
 
 # Custom impl wrapper that tracks registrations
 def impl_tracked(
     lib: Library, op_name: str
-) -> Callable[[Callable[..., torch.Tensor]], Callable[..., torch.Tensor]]:
+) -> Callable[[Callable[..., _OUTPUTS_TYPE]], Callable[..., _OUTPUTS_TYPE]]:
     """Wrapper around impl that tracks registered ops."""
     _REGISTERED_REF_IMPLEMENTATIONS.add(op_name)
     return impl(lib, op_name)
@@ -43,8 +45,7 @@ qdtype_map: dict[ScalarType, torch.dtype] = {
 }
 
 
-@impl_tracked(m, "quantize_per_tensor")
-def quantize_per_tensor(
+def quantize_per_tensor_common(
     input_tensor: torch.Tensor,
     scale: float,
     zero_point: int,
@@ -93,8 +94,68 @@ def quantize_per_tensor(
     )
 
 
-@impl_tracked(m, "dequantize_per_tensor")
-def dequantize_per_tensor(
+def quantize_per_tensor_variant(
+    dtype: torch.dtype | None = None,
+) -> Callable[[Callable[..., torch.Tensor]], Callable[..., torch.Tensor]]:
+    """Create a quantize_per_tensor variant with type checking."""
+
+    def decorator(_: Callable[..., torch.Tensor]) -> Callable[..., torch.Tensor]:
+        def variant(
+            input_tensor: torch.Tensor,
+            scale: float,
+            zero_point: int,
+            quant_min: int,
+            quant_max: int,
+            out_dtype: torch.dtype,
+        ) -> torch.Tensor:
+            if dtype and out_dtype != dtype:
+                raise ValueError(f"dtype must be {dtype}. Got {out_dtype}")
+
+            return quantize_per_tensor_common(
+                input_tensor,
+                scale,
+                zero_point,
+                quant_min,
+                quant_max,
+                out_dtype,
+            )
+
+        return variant
+
+    return decorator
+
+
+@impl_tracked(m, "quantize_per_tensor")
+@quantize_per_tensor_variant()
+def quantize_per_tensor() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "quantize_per_tensor_asym8u")
+@quantize_per_tensor_variant(torch.uint8)
+def quantize_per_tensor_asym8u() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "quantize_per_tensor_asym8s")
+@quantize_per_tensor_variant(torch.int8)
+def quantize_per_tensor_asym8s() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "quantize_per_tensor_asym16u")
+@quantize_per_tensor_variant(torch.uint16)
+def quantize_per_tensor_asym16u() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "quantize_per_tensor_asym16s")
+@quantize_per_tensor_variant(torch.int16)
+def quantize_per_tensor_asym16s() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "quantize_per_tensor_asym32s")
+@quantize_per_tensor_variant(torch.int32)
+def quantize_per_tensor_asym32s() -> torch.Tensor: ...
+
+
+def dequantize_per_tensor_common(
     input_tensor: torch.Tensor,
     scale: float,
     zero_point: int,
@@ -133,12 +194,70 @@ def dequantize_per_tensor(
     if input_tensor.dtype != dtype:
         raise ValueError("Input dtype must match dtype")
 
-    # Use the reference implementation from torch quantized_decomposed library
-    # Unlike quantize_per_tensor, dequantize_per_tensor doesn't have a behavior
-    # difference, since there's no rounding algorithm (just arithmetic).
     return torch.ops.quantized_decomposed.dequantize_per_tensor(
         input_tensor, scale, zero_point, quant_min, quant_max, dtype
     )
+
+
+def dequantize_per_tensor_variant(
+    dtype: torch.dtype | None = None,
+) -> Callable[[Callable[..., torch.Tensor]], Callable[..., torch.Tensor]]:
+    """Create a dequantize_per_tensor variant with type checking."""
+
+    def decorator(_: Callable[..., torch.Tensor]) -> Callable[..., torch.Tensor]:
+        def variant(
+            input_tensor: torch.Tensor,
+            scale: float,
+            zero_point: int,
+            quant_min: int,
+            quant_max: int,
+            in_dtype: torch.dtype,
+        ) -> torch.Tensor:
+            if dtype and in_dtype != dtype:
+                raise ValueError(f"dtype must be {dtype}. Got {in_dtype}")
+
+            return dequantize_per_tensor_common(
+                input_tensor,
+                scale,
+                zero_point,
+                quant_min,
+                quant_max,
+                in_dtype,
+            )
+
+        return variant
+
+    return decorator
+
+
+@impl_tracked(m, "dequantize_per_tensor")
+@dequantize_per_tensor_variant()
+def dequantize_per_tensor() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "dequantize_per_tensor_asym8u")
+@dequantize_per_tensor_variant(torch.uint8)
+def dequantize_per_tensor_asym8u() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "dequantize_per_tensor_asym32s")
+@dequantize_per_tensor_variant(torch.int32)
+def dequantize_per_tensor_asym32s() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "dequantize_per_tensor_asym16u")
+@dequantize_per_tensor_variant(torch.uint16)
+def dequantize_per_tensor_asym16u() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "dequantize_per_tensor_asym8s")
+@dequantize_per_tensor_variant(torch.int8)
+def dequantize_per_tensor_asym8s() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "dequantize_per_tensor_asym16s")
+@dequantize_per_tensor_variant(torch.int16)
+def dequantize_per_tensor_asym16s() -> torch.Tensor: ...
 
 
 @impl_tracked(m, "quantized_add.per_tensor")
@@ -195,7 +314,7 @@ def quantized_add_per_tensor(
     dequant_Y = Y_scale * (Y - Y_zero_point)
 
     # q_min/q_max are unused args
-    return quantize_per_tensor(
+    out = quantize_per_tensor(
         dequant_X + dequant_Y,
         out_scale,
         out_zero_point,
@@ -203,6 +322,9 @@ def quantized_add_per_tensor(
         torch.iinfo(dtype).max,
         dtype,
     )
+
+    assert isinstance(out, torch.Tensor)
+    return out
 
 
 @impl_tracked(m, "quantized_add_asym8sxasym8s_asym8s.per_tensor")
@@ -221,9 +343,11 @@ def quantized_add_asym8sxasym8s_asym8s_per_tensor(
     if Y.dtype != torch.int8:
         raise ValueError("Y dtype must be torch.int8")
 
-    return quantized_add_per_tensor(
+    out = quantized_add_per_tensor(
         X, X_scale, X_zero_point, Y, Y_scale, Y_zero_point, out_scale, out_zero_point
     )
+    assert isinstance(out, torch.Tensor)
+    return out
 
 
 @impl_tracked(m, "quantized_add_asym8uxasym8u_asym8u.per_tensor")
@@ -242,9 +366,11 @@ def quantized_add_asym8uxasym8u_asym8u_per_tensor(
     if Y.dtype != torch.uint8:
         raise ValueError("Y dtype must be torch.int8")
 
-    return quantized_add_per_tensor(
+    out = quantized_add_per_tensor(
         X, X_scale, X_zero_point, Y, Y_scale, Y_zero_point, out_scale, out_zero_point
     )
+    assert isinstance(out, torch.Tensor)
+    return out
 
 
 def quantized_linear_common(
@@ -290,14 +416,16 @@ def quantized_linear_common(
         (weight - weight_zero_point).float(),
         bias.float(),
     )
-    return quantize_per_tensor(
+    out = quantize_per_tensor(
         out,
         out_scale,
         out_zero_point,
         torch.iinfo(dtype).min,
         torch.iinfo(dtype).max,
         dtype,
-    ).reshape(*leading_dims, N)
+    )
+    assert isinstance(out, torch.Tensor)
+    return out.reshape(*leading_dims, N)
 
 
 def quantized_linear_variant(
@@ -459,7 +587,7 @@ def quantized_matmul(
         (X - X_zero_point).float(),
         (Y - Y_zero_point).float(),
     )
-    return quantize_per_tensor(
+    out = quantize_per_tensor(
         out,
         out_scale,
         out_zero_point,
@@ -467,6 +595,8 @@ def quantized_matmul(
         torch.iinfo(X.dtype).max,
         X.dtype,
     )
+    assert isinstance(out, torch.Tensor)
+    return out
 
 
 @impl_tracked(m, "quantized_matmul_asym8sxasym8s_asym8s")
@@ -486,7 +616,7 @@ def quantized_matmul_asym8sxasym8s_asym8s(
     if Y.dtype != torch.int8:
         raise ValueError("Y dtype must be torch.int8")
 
-    return quantized_matmul(
+    out = quantized_matmul(
         X,
         X_zero_point,
         Y,
@@ -497,6 +627,8 @@ def quantized_matmul_asym8sxasym8s_asym8s(
         out_zero_point,
         transposed,
     )
+    assert isinstance(out, torch.Tensor)
+    return out
 
 
 @impl_tracked(m, "quantized_matmul_asym8uxasym8u_asym8u")
@@ -516,7 +648,7 @@ def quantized_matmul_asym8uxasym8u_asym8u(
     if Y.dtype != torch.uint8:
         raise ValueError("Y dtype must be torch.uint8")
 
-    return quantized_matmul(
+    out = quantized_matmul(
         X,
         X_zero_point,
         Y,
@@ -527,6 +659,8 @@ def quantized_matmul_asym8uxasym8u_asym8u(
         out_zero_point,
         transposed,
     )
+    assert isinstance(out, torch.Tensor)
+    return out
 
 
 @impl_tracked(m, "quantized_layer_norm.per_tensor")
@@ -564,11 +698,12 @@ def quantized_layer_norm_per_tensor(
     float_input_tensor = dequantize_per_tensor(
         input_tensor, X_scale, X_zero_point, -128, 127, input_tensor.dtype
     )
+    assert isinstance(float_input_tensor, torch.Tensor)
     out = torch.nn.functional.layer_norm(
         float_input_tensor, normalized_shape, weight, bias, eps=eps
     )
 
-    return quantize_per_tensor(
+    out = quantize_per_tensor(
         out,
         output_scale,
         output_zero_point,
@@ -576,6 +711,8 @@ def quantized_layer_norm_per_tensor(
         torch.iinfo(input_tensor.dtype).max,
         input_tensor.dtype,
     )
+    assert isinstance(out, torch.Tensor)
+    return out
 
 
 def quantized_conv_per_tensor(
@@ -637,7 +774,7 @@ def quantized_conv_per_tensor(
     else:
         raise ValueError("Input tensor must be 3D or 4D")
 
-    return quantize_per_tensor(
+    out = quantize_per_tensor(
         float_out,
         output_scale,
         output_zero_point,
@@ -645,6 +782,8 @@ def quantized_conv_per_tensor(
         torch.iinfo(input_tensor.dtype).max,
         input_tensor.dtype,
     )
+    assert isinstance(out, torch.Tensor)
+    return out
 
 
 @impl_tracked(m, "quantized_conv2d_nchw.per_tensor")
@@ -866,7 +1005,7 @@ def quantized_conv_variant(
             # Call the appropriate base function
             match layout:
                 case "nchw":
-                    return quantized_conv2d_nchw_per_tensor(
+                    out = quantized_conv2d_nchw_per_tensor(
                         input_tensor,
                         weight,
                         bias,
@@ -883,7 +1022,7 @@ def quantized_conv_variant(
                         out_shift,
                     )
                 case "nhwc":
-                    return quantized_conv2d_nhwc_per_tensor(
+                    out = quantized_conv2d_nhwc_per_tensor(
                         input_tensor,
                         weight,
                         bias,
@@ -901,6 +1040,9 @@ def quantized_conv_variant(
                     )
                 case _:
                     raise ValueError(f"Unknown layout {layout}")
+
+            assert isinstance(out, torch.Tensor)
+            return out
 
         return variant
 
@@ -1176,7 +1318,7 @@ def quantized_relu_common(
     dequantized_X = torch.where(
         X > X_zero_point, X - X_zero_point, torch.zeros_like(X)
     ).to(torch.float32)
-    return quantize_per_tensor(
+    out = quantize_per_tensor(
         dequantized_X,
         out_scale,
         out_zero_point,
@@ -1184,6 +1326,8 @@ def quantized_relu_common(
         torch.iinfo(X.dtype).max,
         X.dtype,
     )
+    assert isinstance(out, torch.Tensor)
+    return out
 
 
 def quantized_relu_variant(
@@ -1440,7 +1584,7 @@ def im2row_per_tensor(
     in_zero_point: int,
     channel_last: bool = False,
 ) -> torch.Tensor:
-    return im2row(
+    out = im2row(
         input_tensor,
         kernel_size,
         dilation,
@@ -1449,6 +1593,8 @@ def im2row_per_tensor(
         torch.tensor(in_zero_point, dtype=torch.int32),
         channel_last,
     )
+    assert isinstance(out, torch.Tensor)
+    return out
 
 
 @impl_tracked(m, "transposed_im2row")
@@ -1636,3 +1782,35 @@ def quantized_embedding_byte(
     )
 
     return weight[indices]
+
+
+@impl_tracked(m, "idma_copy")
+def idma_copy(src: torch.Tensor, task_num: int = 0, channel: int = 0) -> torch.Tensor:
+    return src.clone()
+
+
+@impl_tracked(m, "idma_store")
+def idma_store(src: torch.Tensor, task_num: int = 0, channel: int = 0) -> torch.Tensor:
+    return src.clone()
+
+
+@impl_tracked(m, "idma_load")
+def idma_load(src: torch.Tensor, task_num: int = 0, channel: int = 0) -> torch.Tensor:
+    return src.clone()
+
+
+@impl_tracked(m, "idma_wait")
+def idma_wait(src: torch.Tensor, task_num: int = 0, channel: int = 0) -> torch.Tensor:
+    return src.clone()
+
+
+@impl_tracked(m, "linalg_svd")
+def linalg_svd(
+    A: torch.Tensor,
+    full_matrices: bool = False,
+    compute_uv: bool = True,
+    driver: str | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    assert compute_uv
+    U, S, Vh = torch.linalg.svd(A, full_matrices=full_matrices, driver=driver)
+    return U.contiguous(), S.contiguous(), Vh.contiguous()
