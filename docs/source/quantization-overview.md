@@ -29,7 +29,7 @@ These quantizers usually support configs that allow users to specify quantizatio
 Not all quantization options are supported by all backends. Consult backend-specific guides for supported quantization modes and configuration, and how to initialize the backend-specific PT2E quantizer:
 
 * [XNNPACK quantization](backends-xnnpack.md#quantization)
-* [CoreML quantization](backends-coreml.md#quantization)
+* [CoreML quantization](backends/coreml/coreml-quantization.md)
 * [QNN quantization](backends-qualcomm.md#step-2-optional-quantize-your-model)
 
 
