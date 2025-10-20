@@ -632,11 +632,14 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-
+        echo "::group::Setup ExecuTorch"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
-
+        echo "::endgroup::"
+                
+        echo "::group::Setup requirements"
         # install phi-3-mini requirements
         bash examples/models/phi-3-mini/install_requirements.sh
+        echo "::endgroup::"
 
         # run e2e (export, tokenizer and runner)
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh Release
