@@ -140,6 +140,7 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
 ET_EXPERIMENTAL std::unique_ptr<MultimodalRunner> create_multimodal_runner(
     const std::string& model_path,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
-    std::optional<const std::string> data_path = std::nullopt);
+    std::optional<const std::string> data_path = std::nullopt,
+    Module::LoadMode load_mode = Module::LoadMode::File);
 
 } // namespace executorch::extension::llm

@@ -59,7 +59,11 @@ void resize_pool2d_node(
 
   if (is_max_pool2d) {
     const ValueRef indices = args.at(0).refs.at(1);
-    graph->virtual_resize(indices, new_out_sizes);
+    // For max_pool2d variant, indices tensor will be a 0-dim tensor - only
+    // resize the indices tensor if this is not the case.
+    if (graph->sizes_of(indices).size() > 0) {
+      graph->virtual_resize(indices, new_out_sizes);
+    }
   }
 }
 
