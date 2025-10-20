@@ -854,7 +854,7 @@ def quantized_w8a32_conv(
     if len(weight.shape) != 3:
         raise ValueError("Weight tensor must be 3D")
 
-    out_channels, in_channels, kernel_size = weight.shape
+    kernel_size, out_channels, in_channels = weight.shape
     if kernel_size != 3:
         raise ValueError("Kernel size must be 3")
     if (out_channels % 4) != 0:
@@ -862,10 +862,15 @@ def quantized_w8a32_conv(
     if (in_channels % 4) != 0:
         raise ValueError("In channels must be a multiple of 4")
 
-    # src comes in shape [batch, in_channel, in_length]
-    # weight comes in shape [out_ch, in_ch, kernel_dim]
-    # output comes in empty with shape [batch, out_ch, in_length - kernel_dim + 1]
-    # Dequantize weight using scale
+    assert weight.dtype == torch.int8
+    assert bias.dtype == torch.int8
+
+    # To make compliant with torch (LCN -> NCL format)
+    weight = weight.permute(1, 2, 0).contiguous()
+
+    # channels last to channels first
+    src = src.permute(0, 2, 1).contiguous()
+
     dequant_weight = weight.float() * w_scale
 
     # Dequantize bias using scale
@@ -876,6 +881,36 @@ def quantized_w8a32_conv(
     # weight: [out_ch, in_ch, kernel_dim]
     # bias: [out_ch]
     output = torch.nn.functional.conv1d(
+        src.float(),
+        dequant_weight,
+        dequant_bias,
+    )
+
+    return output
+
+
+@impl_tracked(m, "quantized_w8a32_linear")
+def quantized_w8a32_linear(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [in_dim, out_dim]
+    # output comes in empty with shape [leading_dims, out_dim]
+    assert weight.dtype == torch.int8
+    assert bias.dtype == torch.int8
+    if len(src.shape) >= 2:
+        assert src.shape[-2] == 1, "Only supporting vector-matrix multiplication"
+
+    # need to transpose to make compliant with torch linear (in, out -> out, in)
+    weight = weight.transpose(1, 0).contiguous()
+    dequant_weight = weight.float() * w_scale
+    dequant_bias = bias.float() * b_scale
+
+    output = torch.nn.functional.linear(
         src.float(),
         dequant_weight,
         dequant_bias,
