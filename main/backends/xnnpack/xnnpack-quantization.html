@@ -2,14 +2,14 @@
 <!DOCTYPE html>
 
 
-<html lang="en" data-content_root="./" >
+<html lang="en" data-content_root="../../" >
 
   <head>
   <meta name="robots" content="noindex">
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>Backend Template &#8212; ExecuTorch main documentation</title>
+    <title>Quantization &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -19,47 +19,49 @@
   </script>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-<link href="_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-<link href="_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link href="../../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
 
   
-  <link href="_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+  <link href="../../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
 
-    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
-    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=047068a3" />
-    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
-    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
   
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
-<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
-  <script src="_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
 
-    <script src="_static/documentation_options.js?v=a8da1a53"></script>
-    <script src="_static/doctools.js?v=888ff710"></script>
-    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
-    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
-    <script src="_static/copybutton.js?v=f281be69"></script>
-    <script src="_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'backend-template';</script>
+    <script src="../../_static/documentation_options.js?v=a8da1a53"></script>
+    <script src="../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/xnnpack/xnnpack-quantization';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/backend-template.html" />
-    <link rel="icon" href="_static/executorch-chip-logo.svg"/>
-    <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/backends/xnnpack/xnnpack-quantization.html" />
+    <link rel="icon" href="../../_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Troubleshooting" href="xnnpack-troubleshooting.html" />
+    <link rel="prev" title="Partitioner API" href="xnnpack-partitioner.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -92,13 +94,13 @@
 <!-- Conditional CSS for header and footer height adjustment -->
 
 
-<link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
-<script type="text/javascript" src="_static/js/theme.js"></script>
+<link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="../../_static/js/theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
-<meta property="og:image" content="_static/img/pytorch_seo.png" />
-<link rel="stylesheet" href="_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta property="og:image" content="../../_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="../../_static/webfonts/all.min.css" crossorigin="anonymous">
 <meta http-equiv="Content-Security-Policy"
   content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
 <meta name="pytorch_project" content="">
@@ -564,7 +566,7 @@
     <div class="search-button__overlay"></div>
     <div class="search-button__search-container">
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -601,7 +603,7 @@
     
   
 
-<a class="navbar-brand logo" href="index.html">
+<a class="navbar-brand logo" href="../../index.html">
   
   
   
@@ -612,8 +614,8 @@
       
     
     
-    <img src="_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch main documentation - Home"/>
-    <script>document.write(`<img src="_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch main documentation - Home"/>`);</script>
+    <img src="../../_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch main documentation - Home"/>
+    <script>document.write(`<img src="../../_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch main documentation - Home"/>`);</script>
   
   
 </a></div>
@@ -653,56 +655,56 @@ document.write(`
   <ul class="bd-navbar-elements navbar-nav">
     
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="intro-section.html">
+  <a class="nav-link nav-internal" href="../../intro-section.html">
     Intro
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="quick-start-section.html">
+  <a class="nav-link nav-internal" href="../../quick-start-section.html">
     Quick Start
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+  <a class="nav-link nav-internal" href="../../edge-platforms-section.html">
     Edge
   </a>
 </li>
 
 
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="backends-section.html">
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="../../backends-section.html">
     Backends
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+  <a class="nav-link nav-internal" href="../../llm/working-with-llms.html">
     LLMs
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+  <a class="nav-link nav-internal" href="../../advanced-topics-section.html">
     Advanced
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="tools-section.html">
+  <a class="nav-link nav-internal" href="../../tools-section.html">
     Tools
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="api-section.html">
+  <a class="nav-link nav-internal" href="../../api-section.html">
     API
   </a>
 </li>
@@ -714,7 +716,7 @@ document.write(`
                 <ul id="pst-nav-more-links" class="dropdown-menu">
                     
 <li class=" ">
-  <a class="nav-link dropdown-item nav-internal" href="support-section.html">
+  <a class="nav-link dropdown-item nav-internal" href="../../support-section.html">
     Support
   </a>
 </li>
@@ -734,7 +736,7 @@ document.write(`
         <div class="navbar-item">
   
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -836,9 +838,7 @@ document.write(`
       
       
       
-        
-      
-      <div class="bd-sidebar-primary bd-sidebar hide-on-wide">
+      <div class="bd-sidebar-primary bd-sidebar">
         
 
   
@@ -854,63 +854,63 @@ document.write(`
   <ul class="bd-navbar-elements navbar-nav">
     
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="intro-section.html">
+  <a class="nav-link nav-internal" href="../../intro-section.html">
     Intro
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="quick-start-section.html">
+  <a class="nav-link nav-internal" href="../../quick-start-section.html">
     Quick Start
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+  <a class="nav-link nav-internal" href="../../edge-platforms-section.html">
     Edge
   </a>
 </li>
 
 
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="backends-section.html">
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="../../backends-section.html">
     Backends
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+  <a class="nav-link nav-internal" href="../../llm/working-with-llms.html">
     LLMs
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+  <a class="nav-link nav-internal" href="../../advanced-topics-section.html">
     Advanced
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="tools-section.html">
+  <a class="nav-link nav-internal" href="../../tools-section.html">
     Tools
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="api-section.html">
+  <a class="nav-link nav-internal" href="../../api-section.html">
     API
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="support-section.html">
+  <a class="nav-link nav-internal" href="../../support-section.html">
     Support
   </a>
 </li>
@@ -928,7 +928,7 @@ document.write(`
           <div class="navbar-item">
   
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -1013,6 +1013,59 @@ document.write(`
     
   </div>
   
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Backend Overview</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="xnnpack-overview.html">XNNPACK Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="xnnpack-partitioner.html">Partitioner API</a></li>
+
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="xnnpack-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="xnnpack-arch-internals.html">Architecture and Internals</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../coreml/coreml-overview.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-op-support.html">Op support</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../mps/mps-overview.html">MPS Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../vulkan/vulkan-overview.html">Vulkan Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-op-support.html">Operator Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../vulkan/tutorials/vulkan-tutorials.html">Vulkan Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../vulkan/tutorials/etvk-profiling-tutorial.html">Executing and profiling an ExecuTorch Vulkan model on device</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../vulkan/tutorials/etvk-llama-tutorial.html">Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-arm-vgf.html">Arm® VGF Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../build-run-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-nxp.html">NXP eIQ Neutron Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../samsung/samsung-overview.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../samsung/samsung-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../samsung/samsung-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../samsung/samsung-op-support.html">Operator Support</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
   
   <div class="sidebar-primary-items__end sidebar-primary__section">
   </div>
@@ -1041,11 +1094,17 @@ document.write(`
   <ul class="bd-breadcrumbs">
     
     <li class="breadcrumb-item breadcrumb-home">
-      <a href="index.html" class="nav-link" aria-label="Home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
-    <li class="breadcrumb-item active" aria-current="page">Backend Template</li>
+    
+    <li class="breadcrumb-item"><a href="../../backends-section.html" class="nav-link">Backends</a></li>
+    
+    
+    <li class="breadcrumb-item"><a href="xnnpack-overview.html" class="nav-link">XNNPACK Backend</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">Quantization</li>
   </ul>
 </nav>
 </div>
@@ -1087,8 +1146,20 @@ document.write(`
     <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <meta itemprop="name" content="Backend Template">
+        <link itemprop="item" href="../../backends-section.html">
+        <meta itemprop="name" content="Backends">
         <meta itemprop="position" content="1">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="xnnpack-overview.html">
+        <meta itemprop="name" content="XNNPACK Backend">
+        <meta itemprop="position" content="2">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <meta itemprop="name" content="Quantization">
+        <meta itemprop="position" content="3">
       </div>
     </div>
 
@@ -1101,51 +1172,100 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="backend-template">
-<h1>Backend Template<a class="headerlink" href="#backend-template" title="Link to this heading">#</a></h1>
-<p>Provide a brief overview/description of the backend. At a high-level, what does it do? Consider linking to top-level vendor documentation for the target hardware family and/or framework (Core ML, XNNPACK, etc.).</p>
-<section id="features">
-<h2>Features<a class="headerlink" href="#features" title="Link to this heading">#</a></h2>
-<p>List high-level features of backend, such as general operator and hardware support.</p>
-</section>
-<section id="target-requirements">
-<h2>Target Requirements<a class="headerlink" href="#target-requirements" title="Link to this heading">#</a></h2>
-<p>What hardware and software is required to run the backend on a specific device? For example, does it require specific iOS or Android OS versions? If it’s an NPU, what hardware models are supported?</p>
-</section>
-<section id="development-requirements">
-<h2>Development Requirements<a class="headerlink" href="#development-requirements" title="Link to this heading">#</a></h2>
-<p>What software and hardware is needed to create a .PTE file targeting this backend? Are there any additional dependencies that need to be installed that are not included with the ExecuTorch pip package? How does the user install them?</p>
-</section>
-<section id="using-backend-name">
-<h2>Using <em>Backend Name</em><a class="headerlink" href="#using-backend-name" title="Link to this heading">#</a></h2>
-<p>This section describes the steps users need to take in order to generate a .PTE targeting this backend. Include a full code sample for exporting and lowering a model to this backend. Make sure relevant imports for the backend partitioner are included.</p>
-<section id="partitioner-api">
-<h3>Partitioner API<a class="headerlink" href="#partitioner-api" title="Link to this heading">#</a></h3>
-<p>What options, if any, does the partitioner take? Are there any other export-time configurations that can be applied? Document each option.</p>
-</section>
-<section id="quantization">
-<h3>Quantization<a class="headerlink" href="#quantization" title="Link to this heading">#</a></h3>
-<p>What quantization schemes does this backend support? Consider including the following, as appropriate.</p>
+  <section id="quantization">
+<h1>Quantization<a class="headerlink" href="#quantization" title="Link to this heading">#</a></h1>
+<p>The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code>. <code class="docutils literal notranslate"><span class="pre">Quantizers</span></code> are backend specific, which means the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code> is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library.</p>
+<section id="supported-quantization-schemes">
+<h2>Supported Quantization Schemes<a class="headerlink" href="#supported-quantization-schemes" title="Link to this heading">#</a></h2>
+<p>The XNNPACK delegate supports the following quantization schemes:</p>
 <ul class="simple">
-<li><p>What operators are supported?</p></li>
-<li><p>Number of bits?</p></li>
-<li><p>Static vs dynamic activations?</p></li>
-<li><p>Weight only vs activations + weights?</p></li>
-<li><p>Symmetric vs asymmetric weights?</p></li>
-<li><p>Per-tensor, per-chanel, group/blockwise?</p></li>
+<li><p>8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow).</p>
+<ul>
+<li><p>Supports both static and dynamic activations.</p></li>
+<li><p>Supports per-channel and per-tensor schemes.</p></li>
+<li><p>Supports linear, convolution, add, mul, cat, and adaptive avg pool 2d operators.</p></li>
 </ul>
-<p>If using a PT2E quantizer, document how to initialize the quantizer and all relevant configs and options.</p>
-<p>Include a code snippet demonstrating how to perform quantization for this backend. Document, or link to, a description of the parameters that the user can specify.</p>
+</li>
+</ul>
+<p>Weight-only quantization is not currently supported on XNNPACK.</p>
 </section>
+<section id="bit-quantization-using-the-pt2e-flow">
+<h2>8-bit Quantization using the PT2E Flow<a class="headerlink" href="#bit-quantization-using-the-pt2e-flow" title="Link to this heading">#</a></h2>
+<p>To perform 8-bit quantization with the PT2E flow, perform the following steps prior to exporting the model:</p>
+<ol class="arabic simple">
+<li><p>Create an instance of the <code class="docutils literal notranslate"><span class="pre">XnnpackQuantizer</span></code> class. Set quantization parameters.</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">torch.export.export</span></code> to prepare for quantization.</p></li>
+<li><p>Call <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> to prepare the model for quantization.</p></li>
+<li><p>For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.</p></li>
+<li><p>Call <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> to quantize the model.</p></li>
+<li><p>Export and lower the model using the standard flow.</p></li>
+</ol>
+<p>The output of <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> is a PyTorch model which can be exported and lowered using the normal flow. As it is a regular PyTorch model, it can also be used to evaluate the accuracy of the quantized model using standard PyTorch techniques.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.quantizer.xnnpack_quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">XNNPACKQuantizer</span><span class="p">,</span> <span class="n">get_symmetric_quantization_config</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
+
+<span class="n">qparams</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">(</span><span class="n">is_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="c1"># (1)</span>
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">XNNPACKQuantizer</span><span class="p">()</span>
+<span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">qparams</span><span class="p">)</span>
+
+<span class="n">training_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span> <span class="c1"># (2)</span>
+<span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">training_ep</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span> <span class="c1"># (3)</span>
+
+<span class="k">for</span> <span class="n">cal_sample</span> <span class="ow">in</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">)]:</span> <span class="c1"># Replace with representative model inputs</span>
+	<span class="n">prepared_model</span><span class="p">(</span><span class="n">cal_sample</span><span class="p">)</span> <span class="c1"># (4) Calibrate</span>
+
+<span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span> <span class="c1"># (5)</span>
+
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span> <span class="c1"># (6)</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">quantized_model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()],</span>
+<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>See <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
 </section>
-<section id="runtime-integration">
-<h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Link to this heading">#</a></h2>
-<p>This section is intended to tell the user all of the steps they’ll need to take to be able to run a .PTE file on-device that is targeting the given backend.</p>
+<section id="llm-quantization-with-quantize">
+<h2>LLM quantization with quantize_<a class="headerlink" href="#llm-quantization-with-quantize" title="Link to this heading">#</a></h2>
+<p>The XNNPACK backend also supports quantizing models with the <a class="reference external" href="https://github.com/pytorch/ao">torchao</a> quantize_ API.  This is most commonly used for LLMs, requiring more advanced quantization.  Since quantize_ is not backend aware, it is important to use a config that is compatible with CPU/XNNPACK:</p>
 <ul class="simple">
-<li><p>What CMake targets should they link to?</p></li>
-<li><p>How is this backend compiled from source?</p></li>
-<li><p>Is the backend bundled by default in iOS and/or Android pre-built libraries?</p></li>
+<li><p>Quantize embeedings with IntxWeightOnlyConfig (with weight_dtype torch.int2, torch.int4, or torch.int8, using PerGroup or PerAxis granularity)</p></li>
+<li><p>Quantize linear layers with Int8DynamicActivationIntxWeightConfig (with weight_dtype=torch.int4, using PerGroup or PerAxis granularity)</p></li>
 </ul>
+<p>Below is a simple example, but a more detailed tutorial including accuracy evaluation on popular LLM benchmarks can be found in the <a class="reference external" href="https://docs.pytorch.org/ao/main/serving.html#mobile-deployment-with-executorch">torchao documentation</a>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.granularity</span><span class="w"> </span><span class="kn">import</span> <span class="n">PerGroup</span><span class="p">,</span> <span class="n">PerAxis</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.quant_api</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">IntxWeightOnlyConfig</span><span class="p">,</span>
+    <span class="n">Int8DynamicActivationIntxWeightConfig</span><span class="p">,</span>
+    <span class="n">quantize_</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Quantize embeddings with 8-bits, per channel</span>
+<span class="n">embedding_config</span> <span class="o">=</span> <span class="n">IntxWeightOnlyConfig</span><span class="p">(</span>
+    <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int8</span><span class="p">,</span>
+    <span class="n">granularity</span><span class="o">=</span><span class="n">PerAxis</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">qunatize_</span><span class="p">(</span>
+    <span class="n">eager_model</span><span class="p">,</span>
+    <span class="k">lambda</span> <span class="n">m</span><span class="p">,</span> <span class="n">fqn</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">),</span>
+<span class="p">)</span>
+
+
+<span class="c1"># Quatize linear layers with 8-bit dynamic activations and 4-bit weights</span>
+<span class="n">linear_config</span> <span class="o">=</span> <span class="n">Int8DynamicActivationIntxWeightConfig</span><span class="p">(</span>
+    <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int4</span><span class="p">,</span>
+    <span class="n">weight_granularity</span><span class="o">=</span><span class="n">PerGroup</span><span class="p">(</span><span class="mi">32</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">quantize_</span><span class="p">(</span><span class="n">eager_model</span><span class="p">,</span> <span class="n">linear_config</span><span class="p">)</span>
+</pre></div>
+</div>
 </section>
 </section>
 
@@ -1191,6 +1311,24 @@ document.write(`
 </div>
 
 <div class="prev-next-area">
+    <a class="left-prev"
+       href="xnnpack-partitioner.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Partitioner API</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="xnnpack-troubleshooting.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Troubleshooting</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
 </div>
 
 <div class="footer-info">
@@ -1212,6 +1350,24 @@ document.write(`
                 <footer class="prev-next-footer d-print-none">
                   
 <div class="prev-next-area">
+    <a class="left-prev"
+       href="xnnpack-partitioner.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Partitioner API</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="xnnpack-troubleshooting.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Troubleshooting</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
 </div>
                 </footer>
               
@@ -1230,15 +1386,9 @@ document.write(`
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#features">Features</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#target-requirements">Target Requirements</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#development-requirements">Development Requirements</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-backend-name">Using <em>Backend Name</em></a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#partitioner-api">Partitioner API</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#quantization">Quantization</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime-integration">Runtime Integration</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#supported-quantization-schemes">Supported Quantization Schemes</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#bit-quantization-using-the-pt2e-flow">8-bit Quantization using the PT2E Flow</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#llm-quantization-with-quantize">LLM quantization with quantize_</a></li>
 </ul>
   </nav></div>
     
@@ -1246,7 +1396,7 @@ document.write(`
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backend-template.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/xnnpack/xnnpack-quantization.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -1260,7 +1410,7 @@ document.write(`
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="_sources/backend-template.md.txt">
+      <a href="../../_sources/backends/xnnpack/xnnpack-quantization.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -1284,8 +1434,8 @@ document.write(`
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script src="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
-<script src="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+  <script src="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
 
   
 
@@ -1413,7 +1563,7 @@ document.write(`
 <div class="cookie-banner-wrapper">
   <div class="container">
     <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
-    <img class="close-button" src="_static/img/pytorch-x.svg">
+    <img class="close-button" src="../../_static/img/pytorch-x.svg">
   </div>
 </div>
   
@@ -1460,20 +1610,20 @@ document.write(`
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "Backend Template",
-       "headline": "Backend Template",
+       "name": "Quantization",
+       "headline": "Quantization",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
-       "url": "/backend-template.html",
-       "articleBody": "Backend Template# Provide a brief overview/description of the backend. At a high-level, what does it do? Consider linking to top-level vendor documentation for the target hardware family and/or framework (Core ML, XNNPACK, etc.). Features# List high-level features of backend, such as general operator and hardware support. Target Requirements# What hardware and software is required to run the backend on a specific device? For example, does it require specific iOS or Android OS versions? If it\u2019s an NPU, what hardware models are supported? Development Requirements# What software and hardware is needed to create a .PTE file targeting this backend? Are there any additional dependencies that need to be installed that are not included with the ExecuTorch pip package? How does the user install them? Using Backend Name# This section describes the steps users need to take in order to generate a .PTE targeting this backend. Include a full code sample for exporting and lowering a model to this backend. Make sure relevant imports for the backend partitioner are included. Partitioner API# What options, if any, does the partitioner take? Are there any other export-time configurations that can be applied? Document each option. Quantization# What quantization schemes does this backend support? Consider including the following, as appropriate. What operators are supported? Number of bits? Static vs dynamic activations? Weight only vs activations + weights? Symmetric vs asymmetric weights? Per-tensor, per-chanel, group/blockwise? If using a PT2E quantizer, document how to initialize the quantizer and all relevant configs and options. Include a code snippet demonstrating how to perform quantization for this backend. Document, or link to, a description of the parameters that the user can specify. Runtime Integration# This section is intended to tell the user all of the steps they\u2019ll need to take to be able to run a .PTE file on-device that is targeting the given backend. What CMake targets should they link to? How is this backend compiled from source? Is the backend bundled by default in iOS and/or Android pre-built libraries?",
+       "url": "/backends/xnnpack/xnnpack-quantization.html",
+       "articleBody": "Quantization# The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the XNNPACKQuantizer. Quantizers are backend specific, which means the XNNPACKQuantizer is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. Supported Quantization Schemes# The XNNPACK delegate supports the following quantization schemes: 8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow). Supports both static and dynamic activations. Supports per-channel and per-tensor schemes. Supports linear, convolution, add, mul, cat, and adaptive avg pool 2d operators. Weight-only quantization is not currently supported on XNNPACK. 8-bit Quantization using the PT2E Flow# To perform 8-bit quantization with the PT2E flow, perform the following steps prior to exporting the model: Create an instance of the XnnpackQuantizer class. Set quantization parameters. Use torch.export.export to prepare for quantization. Call prepare_pt2e to prepare the model for quantization. For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges. Call convert_pt2e to quantize the model. Export and lower the model using the standard flow. The output of convert_pt2e is a PyTorch model which can be exported and lowered using the normal flow. As it is a regular PyTorch model, it can also be used to evaluate the accuracy of the quantized model using standard PyTorch techniques. import torch import torchvision.models as models from torchvision.models.mobilenetv2 import MobileNet_V2_Weights from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner from executorch.exir import to_edge_transform_and_lower from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e model = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval() sample_inputs = (torch.randn(1, 3, 224, 224), ) qparams = get_symmetric_quantization_config(is_per_channel=True) # (1) quantizer = XNNPACKQuantizer() quantizer.set_global(qparams) training_ep = torch.export.export(model, sample_inputs).module() # (2) prepared_model = prepare_pt2e(training_ep, quantizer) # (3) for cal_sample in [torch.randn(1, 3, 224, 224)]: # Replace with representative model inputs prepared_model(cal_sample) # (4) Calibrate quantized_model = convert_pt2e(prepared_model) # (5) et_program = to_edge_transform_and_lower( # (6) torch.export.export(quantized_model, sample_inputs), partitioner=[XnnpackPartitioner()], ).to_executorch() See PyTorch 2 Export Post Training Quantization for more information. LLM quantization with quantize_# The XNNPACK backend also supports quantizing models with the torchao quantize_ API. This is most commonly used for LLMs, requiring more advanced quantization. Since quantize_ is not backend aware, it is important to use a config that is compatible with CPU/XNNPACK: Quantize embeedings with IntxWeightOnlyConfig (with weight_dtype torch.int2, torch.int4, or torch.int8, using PerGroup or PerAxis granularity) Quantize linear layers with Int8DynamicActivationIntxWeightConfig (with weight_dtype=torch.int4, using PerGroup or PerAxis granularity) Below is a simple example, but a more detailed tutorial including accuracy evaluation on popular LLM benchmarks can be found in the torchao documentation. from torchao.quantization.granularity import PerGroup, PerAxis from torchao.quantization.quant_api import ( IntxWeightOnlyConfig, Int8DynamicActivationIntxWeightConfig, quantize_, ) # Quantize embeddings with 8-bits, per channel embedding_config = IntxWeightOnlyConfig( weight_dtype=torch.int8, granularity=PerAxis(0), ) qunatize_( eager_model, lambda m, fqn: isinstance(m, torch.nn.Embedding), ) # Quatize linear layers with 8-bit dynamic activations and 4-bit weights linear_config = Int8DynamicActivationIntxWeightConfig( weight_dtype=torch.int4, weight_granularity=PerGroup(32), ) quantize_(eager_model, linear_config)",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
          "url": "https://pytorch.org"
        },
-       "image": "_static/img/pytorch_seo.png",
+       "image": "../../_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/backend-template.html"
+         "@id": "/backends/xnnpack/xnnpack-quantization.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"

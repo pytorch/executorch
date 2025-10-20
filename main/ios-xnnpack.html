@@ -1023,7 +1023,9 @@ document.write(`
 <li class="toctree-l1 has-children"><a class="reference internal" href="android-section.html">Android</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="android-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="android-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="android-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
 <li class="toctree-l3 has-children"><a class="reference internal" href="android-vulkan.html">Vulkan Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
 </ul>
 </details></li>
@@ -1046,7 +1048,9 @@ document.write(`
 </ul>
 </details></li>
 <li class="toctree-l3"><a class="reference internal" href="ios-mps.html">MPS Backend</a></li>
-<li class="toctree-l3 current active"><a class="current reference internal" href="#">XNNPACK Backend</a></li>
+<li class="toctree-l3 current active has-children"><a class="current reference internal" href="#">XNNPACK Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
 </ul>
 </details></li>
 <li class="toctree-l2"><a class="reference internal" href="ios-examples.html">Examples &amp; Demos</a></li>
@@ -1056,7 +1060,9 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="desktop-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="desktop-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="desktop-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
 <li class="toctree-l3"><a class="reference internal" href="desktop-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
 </ul>
 </details></li>
@@ -1252,137 +1258,40 @@ the core ExecuTorch runtime.</p>
     <span class="n">et_program</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
 </pre></div>
 </div>
-<section id="partitioner-api">
-<h3>Partitioner API<a class="headerlink" href="#partitioner-api" title="Link to this heading">#</a></h3>
-<p>The XNNPACK partitioner API allows for configuration of the model delegation to XNNPACK. Passing an <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code> instance with no additional parameters will run as much of the model as possible on the XNNPACK backend. This is the most common use-case. For advanced use cases, the partitioner exposes the following options via the <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/backends/xnnpack/partition/xnnpack_partitioner.py#L31">constructor</a>:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">configs</span></code>: Control which operators are delegated to XNNPACK. By default, all available operators all delegated. See <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/backends/xnnpack/partition/config/__init__.py#L66">../config/__init__.py</a> for an exhaustive list of available operator configs.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">config_precisions</span></code>: Filter operators by data type. By default, delegate all precisions. One or more of <code class="docutils literal notranslate"><span class="pre">ConfigPrecisionType.FP32</span></code>, <code class="docutils literal notranslate"><span class="pre">ConfigPrecisionType.STATIC_QUANT</span></code>, or <code class="docutils literal notranslate"><span class="pre">ConfigPrecisionType.DYNAMIC_QUANT</span></code>. See <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.6/backends/xnnpack/partition/config/xnnpack_config.py#L24">ConfigPrecisionType</a>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">per_op_mode</span></code>: If true, emit individual delegate calls for every operator. This is an advanced option intended to reduce memory overhead in some contexts at the cost of a small amount of runtime overhead. Defaults to false.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">verbose</span></code>: If true, print additional information during lowering.</p></li>
-</ul>
-</section>
-<section id="testing-the-model">
-<h3>Testing the Model<a class="headerlink" href="#testing-the-model" title="Link to this heading">#</a></h3>
-<p>After generating the XNNPACK-delegated .pte, the model can be tested from Python using the ExecuTorch runtime python bindings. This can be used to sanity check the model and evaluate numerical accuracy. See <a class="reference internal" href="using-executorch-export.html#testing-the-model"><span class="std std-ref">Testing the Model</span></a> for more information.</p>
-</section>
+<p>See <a class="reference internal" href="backends/xnnpack/xnnpack-partitioner.html"><span class="doc std std-doc">Partitioner API</span></a> for a reference on available partitioner options. <!-- @lint-ignore --></p>
 </section>
 <hr class="docutils" />
 <section id="quantization">
 <h2>Quantization<a class="headerlink" href="#quantization" title="Link to this heading">#</a></h2>
-<p>The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code>. <code class="docutils literal notranslate"><span class="pre">Quantizers</span></code> are backend specific, which means the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code> is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library.</p>
-<section id="supported-quantization-schemes">
-<h3>Supported Quantization Schemes<a class="headerlink" href="#supported-quantization-schemes" title="Link to this heading">#</a></h3>
-<p>The XNNPACK delegate supports the following quantization schemes:</p>
-<ul class="simple">
-<li><p>8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow).</p>
-<ul>
-<li><p>Supports both static and dynamic activations.</p></li>
-<li><p>Supports per-channel and per-tensor schemes.</p></li>
-<li><p>Supports linear, convolution, add, mul, cat, and adaptive avg pool 2d operators.</p></li>
-</ul>
-</li>
-</ul>
-<p>Weight-only quantization is not currently supported on XNNPACK.</p>
-</section>
-<section id="bit-quantization-using-the-pt2e-flow">
-<h3>8-bit Quantization using the PT2E Flow<a class="headerlink" href="#bit-quantization-using-the-pt2e-flow" title="Link to this heading">#</a></h3>
-<p>To perform 8-bit quantization with the PT2E flow, perform the following steps prior to exporting the model:</p>
-<ol class="arabic simple">
-<li><p>Create an instance of the <code class="docutils literal notranslate"><span class="pre">XnnpackQuantizer</span></code> class. Set quantization parameters.</p></li>
-<li><p>Use <code class="docutils literal notranslate"><span class="pre">torch.export.export</span></code> to prepare for quantization.</p></li>
-<li><p>Call <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> to prepare the model for quantization.</p></li>
-<li><p>For static quantization, run the prepared model with representative samples to calibrate the quantized tensor activation ranges.</p></li>
-<li><p>Call <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> to quantize the model.</p></li>
-<li><p>Export and lower the model using the standard flow.</p></li>
-</ol>
-<p>The output of <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> is a PyTorch model which can be exported and lowered using the normal flow. As it is a regular PyTorch model, it can also be used to evaluate the accuracy of the quantized model using standard PyTorch techniques.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.quantizer.xnnpack_quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">XNNPACKQuantizer</span><span class="p">,</span> <span class="n">get_symmetric_quantization_config</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
-
-<span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
-
-<span class="n">qparams</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">(</span><span class="n">is_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="c1"># (1)</span>
-<span class="n">quantizer</span> <span class="o">=</span> <span class="n">XNNPACKQuantizer</span><span class="p">()</span>
-<span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">qparams</span><span class="p">)</span>
-
-<span class="n">training_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span> <span class="c1"># (2)</span>
-<span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">training_ep</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span> <span class="c1"># (3)</span>
-
-<span class="k">for</span> <span class="n">cal_sample</span> <span class="ow">in</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">)]:</span> <span class="c1"># Replace with representative model inputs</span>
-	<span class="n">prepared_model</span><span class="p">(</span><span class="n">cal_sample</span><span class="p">)</span> <span class="c1"># (4) Calibrate</span>
-
-<span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span> <span class="c1"># (5)</span>
-
-<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span> <span class="c1"># (6)</span>
-    <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">quantized_model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span>
-    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()],</span>
-<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
-</pre></div>
-</div>
-<p>See <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
-</section>
-<section id="llm-quantization-with-quantize">
-<h3>LLM quantization with quantize_<a class="headerlink" href="#llm-quantization-with-quantize" title="Link to this heading">#</a></h3>
-<p>The XNNPACK backend also supports quantizing models with the <a class="reference external" href="https://github.com/pytorch/ao">torchao</a> quantize_ API.  This is most commonly used for LLMs, requiring more advanced quantization.  Since quantize_ is not backend aware, it is important to use a config that is compatible with CPU/XNNPACK:</p>
-<ul class="simple">
-<li><p>Quantize embeedings with IntxWeightOnlyConfig (with weight_dtype torch.int2, torch.int4, or torch.int8, using PerGroup or PerAxis granularity)</p></li>
-<li><p>Quantize linear layers with Int8DynamicActivationIntxWeightConfig (with weight_dtype=torch.int4, using PerGroup or PerAxis granularity)</p></li>
-</ul>
-<p>Below is a simple example, but a more detailed tutorial including accuracy evaluation on popular LLM benchmarks can be found in the <a class="reference external" href="https://docs.pytorch.org/ao/main/serving.html#mobile-deployment-with-executorch">torchao documentation</a>.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.granularity</span><span class="w"> </span><span class="kn">import</span> <span class="n">PerGroup</span><span class="p">,</span> <span class="n">PerAxis</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.quant_api</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">IntxWeightOnlyConfig</span><span class="p">,</span>
-    <span class="n">Int8DynamicActivationIntxWeightConfig</span><span class="p">,</span>
-    <span class="n">quantize_</span><span class="p">,</span>
-<span class="p">)</span>
-
-<span class="c1"># Quantize embeddings with 8-bits, per channel</span>
-<span class="n">embedding_config</span> <span class="o">=</span> <span class="n">IntxWeightOnlyConfig</span><span class="p">(</span>
-    <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int8</span><span class="p">,</span>
-    <span class="n">granularity</span><span class="o">=</span><span class="n">PerAxis</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
-<span class="p">)</span>
-<span class="n">qunatize_</span><span class="p">(</span>
-    <span class="n">eager_model</span><span class="p">,</span>
-    <span class="k">lambda</span> <span class="n">m</span><span class="p">,</span> <span class="n">fqn</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">),</span>
-<span class="p">)</span>
-
-
-<span class="c1"># Quatize linear layers with 8-bit dynamic activations and 4-bit weights</span>
-<span class="n">linear_config</span> <span class="o">=</span> <span class="n">Int8DynamicActivationIntxWeightConfig</span><span class="p">(</span>
-    <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int4</span><span class="p">,</span>
-    <span class="n">weight_granularity</span><span class="o">=</span><span class="n">PerGroup</span><span class="p">(</span><span class="mi">32</span><span class="p">),</span>
-<span class="p">)</span>
-<span class="n">quantize_</span><span class="p">(</span><span class="n">eager_model</span><span class="p">,</span> <span class="n">linear_config</span><span class="p">)</span>
-</pre></div>
-</div>
-</section>
+<p>The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. See <a class="reference internal" href="backends/xnnpack/xnnpack-quantization.html"><span class="doc std std-doc">XNNPACK Quantization</span></a> for more information on available quantization schemes and APIs. <!-- @lint-ignore --></p>
 </section>
 <hr class="docutils" />
 <section id="runtime-integration">
 <h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Link to this heading">#</a></h2>
-<p>To run the model on-device, use the standard ExecuTorch runtime APIs. See <a class="reference internal" href="getting-started.html#running-on-device"><span class="std std-ref">Running on Device</span></a> for more information.</p>
-<p>The XNNPACK delegate is included by default in the published Android, iOS, and pip packages. When building from source, pass <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_XNNPACK=ON</span></code> when configuring the CMake build to compile the XNNPACK backend.</p>
-<p>To link against the backend, add the <code class="docutils literal notranslate"><span class="pre">xnnpack_backend</span></code> CMake target as a build dependency, or link directly against <code class="docutils literal notranslate"><span class="pre">libxnnpack_backend</span></code>. Due to the use of static registration, it may be necessary to link with whole-archive. This can typically be done by passing <code class="docutils literal notranslate"><span class="pre">&quot;$&lt;LINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend&gt;&quot;</span></code> to <code class="docutils literal notranslate"><span class="pre">target_link_libraries</span></code>.</p>
+<p>To run the model on-device, use the standard ExecuTorch runtime APIs.</p>
+<p>The XNNPACK delegate is included by default in the published Android, iOS, and pip packages. When building from source, pass <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_XNNPACK=ON</span></code> when configuring the CMake build to compile the XNNPACK backend. See <a class="reference internal" href="getting-started.html#running-on-device"><span class="std std-ref">Running on Device</span></a> for more information.</p>
+<p>To link against the backend, add the <code class="docutils literal notranslate"><span class="pre">executorch_backends</span></code> CMake target as a build dependency, or link directly against <code class="docutils literal notranslate"><span class="pre">libxnnpack_backend</span></code>. Due to the use of static registration, it may be necessary to link with whole-archive. This can typically be done by passing <code class="docutils literal notranslate"><span class="pre">&quot;$&lt;LINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend&gt;&quot;</span></code> to <code class="docutils literal notranslate"><span class="pre">target_link_libraries</span></code>.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># CMakeLists.txt</span>
 <span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">&quot;executorch&quot;</span><span class="p">)</span>
 <span class="o">...</span>
 <span class="n">target_link_libraries</span><span class="p">(</span>
     <span class="n">my_target</span>
     <span class="n">PRIVATE</span> <span class="n">executorch</span>
-    <span class="n">extension_module_static</span>
-    <span class="n">extension_tensor</span>
-    <span class="n">optimized_native_cpu_ops_lib</span>
-    <span class="n">xnnpack_backend</span><span class="p">)</span>
+    <span class="n">executorch_backends</span>
+    <span class="o">...</span>
+<span class="p">)</span>
 </pre></div>
 </div>
 <p>No additional steps are necessary to use the backend beyond linking the target. Any XNNPACK-delegated .pte file will automatically run on the registered backend.</p>
+</section>
+<section id="reference">
+<h2>Reference<a class="headerlink" href="#reference" title="Link to this heading">#</a></h2>
+<p><strong>→<a class="reference internal" href="backends/xnnpack/xnnpack-troubleshooting.html"><span class="doc">Troubleshooting</span></a> — Debug common issues.</strong></p>
+<p><strong>→<a class="reference internal" href="backends/xnnpack/xnnpack-partitioner.html"><span class="doc">Partitioner API</span></a> — Partitioner options and supported operators.</strong></p>
+<p><strong>→<a class="reference internal" href="backends/xnnpack/xnnpack-quantization.html"><span class="doc">Quantization</span></a> — Supported quantization schemes.</strong></p>
+<p><strong>→<a class="reference internal" href="backends/xnnpack/xnnpack-arch-internals.html"><span class="doc">Architecture and Internals</span></a> — XNNPACK backend internals.</strong></p>
+<div class="toctree-wrapper compound">
+</div>
 </section>
 </section>
 
@@ -1506,18 +1415,10 @@ the core ExecuTorch runtime.</p>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#features">Features</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#target-requirements">Target Requirements</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#development-requirements">Development Requirements</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-the-xnnpack-backend">Using the XNNPACK Backend</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#partitioner-api">Partitioner API</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#testing-the-model">Testing the Model</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#quantization">Quantization</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#supported-quantization-schemes">Supported Quantization Schemes</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#bit-quantization-using-the-pt2e-flow">8-bit Quantization using the PT2E Flow</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#llm-quantization-with-quantize">LLM quantization with quantize_</a></li>
-</ul>
-</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-the-xnnpack-backend">Using the XNNPACK Backend</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#quantization">Quantization</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime-integration">Runtime Integration</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reference">Reference</a></li>
 </ul>
   </nav></div>
     
@@ -1743,7 +1644,7 @@ the core ExecuTorch runtime.</p>
        "headline": "XNNPACK Backend",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/ios-xnnpack.html",
-       "articleBody": "XNNPACK Backend# The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. XNNPACK is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs. Features# Wide operator support on Arm and x86 CPUs, available on any modern mobile phone. Support for a wide variety of quantization schemes and quantized operators. Supports fp32 and fp16 activations. Supports 8-bit quantization. Target Requirements# ARM64 on Android, iOS, macOS, Linux, and Windows. ARMv7 (with NEON) on Android. ARMv6 (with VFPv2) on Linux. x86 and x86-64 (up to AVX512) on Windows, Linux, Android. Development Requirements# The XNNPACK delegate does not introduce any development system requirements beyond those required by the core ExecuTorch runtime. Using the XNNPACK Backend# To target the XNNPACK backend during the export and lowering process, pass an instance of the XnnpackPartitioner to to_edge_transform_and_lower. The example below demonstrates this process using the MobileNet V2 model from torchvision. import torch import torchvision.models as models from torchvision.models.mobilenetv2 import MobileNet_V2_Weights from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner from executorch.exir import to_edge_transform_and_lower mobilenet_v2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval() sample_inputs = (torch.randn(1, 3, 224, 224), ) et_program = to_edge_transform_and_lower( torch.export.export(mobilenet_v2, sample_inputs), partitioner=[XnnpackPartitioner()], ).to_executorch() with open(\"mv2_xnnpack.pte\", \"wb\") as file: et_program.write_to_file(file) Partitioner API# The XNNPACK partitioner API allows for configuration of the model delegation to XNNPACK. Passing an XnnpackPartitioner instance with no additional parameters will run as much of the model as possible on the XNNPACK backend. This is the most common use-case. For advanced use cases, the partitioner exposes the following options via the constructor: configs: Control which operators are delegated to XNNPACK. By default, all available operators all delegated. See ../config/__init__.py for an exhaustive list of available operator configs. config_precisions: Filter operators by data type. By default, delegate all precisions. One or more of ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT, or ConfigPrecisionType.DYNAMIC_QUANT. See ConfigPrecisionType. per_op_mode: If true, emit individual delegate calls for every operator. This is an advanced option intended to reduce memory overhead in some contexts at the cost of a small amount of runtime overhead. Defaults to false. verbose: If true, print additional information during lowering. Testing the Model# After generating the XNNPACK-delegated .pte, the model can be tested from Python using the ExecuTorch runtime python bindings. This can be used to sanity check the model and evaluate numerical accuracy. See Testing the Model for more information. Quantization# The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the XNNPACKQuantizer. Quantizers are backend specific, which means the XNNPACKQuantizer is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. Supported Quantization Schemes# The XNNPACK delegate supports the following quantization schemes: 8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow). Supports both static and dynamic activations. Supports per-channel and per-tensor schemes. Supports linear, convolution, add, mul, cat, and adaptive avg pool 2d operators. Weight-only quantization is not currently supported on XNNPACK. 8-bit Quantization using the PT2E Flow# To perform 8-bit quantization with the PT2E flow, perform the following steps prior to exporting the model: Create an instance of the XnnpackQuantizer class. Set quantization parameters. Use torch.export.export to prepare for quantization. Call prepare_pt2e to prepare the model for quantization. For static quantization, run the prepared model with representative samples to calibrate the quantized tensor activation ranges. Call convert_pt2e to quantize the model. Export and lower the model using the standard flow. The output of convert_pt2e is a PyTorch model which can be exported and lowered using the normal flow. As it is a regular PyTorch model, it can also be used to evaluate the accuracy of the quantized model using standard PyTorch techniques. import torch import torchvision.models as models from torchvision.models.mobilenetv2 import MobileNet_V2_Weights from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner from executorch.exir import to_edge_transform_and_lower from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e model = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval() sample_inputs = (torch.randn(1, 3, 224, 224), ) qparams = get_symmetric_quantization_config(is_per_channel=True) # (1) quantizer = XNNPACKQuantizer() quantizer.set_global(qparams) training_ep = torch.export.export(model, sample_inputs).module() # (2) prepared_model = prepare_pt2e(training_ep, quantizer) # (3) for cal_sample in [torch.randn(1, 3, 224, 224)]: # Replace with representative model inputs prepared_model(cal_sample) # (4) Calibrate quantized_model = convert_pt2e(prepared_model) # (5) et_program = to_edge_transform_and_lower( # (6) torch.export.export(quantized_model, sample_inputs), partitioner=[XnnpackPartitioner()], ).to_executorch() See PyTorch 2 Export Post Training Quantization for more information. LLM quantization with quantize_# The XNNPACK backend also supports quantizing models with the torchao quantize_ API. This is most commonly used for LLMs, requiring more advanced quantization. Since quantize_ is not backend aware, it is important to use a config that is compatible with CPU/XNNPACK: Quantize embeedings with IntxWeightOnlyConfig (with weight_dtype torch.int2, torch.int4, or torch.int8, using PerGroup or PerAxis granularity) Quantize linear layers with Int8DynamicActivationIntxWeightConfig (with weight_dtype=torch.int4, using PerGroup or PerAxis granularity) Below is a simple example, but a more detailed tutorial including accuracy evaluation on popular LLM benchmarks can be found in the torchao documentation. from torchao.quantization.granularity import PerGroup, PerAxis from torchao.quantization.quant_api import ( IntxWeightOnlyConfig, Int8DynamicActivationIntxWeightConfig, quantize_, ) # Quantize embeddings with 8-bits, per channel embedding_config = IntxWeightOnlyConfig( weight_dtype=torch.int8, granularity=PerAxis(0), ) qunatize_( eager_model, lambda m, fqn: isinstance(m, torch.nn.Embedding), ) # Quatize linear layers with 8-bit dynamic activations and 4-bit weights linear_config = Int8DynamicActivationIntxWeightConfig( weight_dtype=torch.int4, weight_granularity=PerGroup(32), ) quantize_(eager_model, linear_config) Runtime Integration# To run the model on-device, use the standard ExecuTorch runtime APIs. See Running on Device for more information. The XNNPACK delegate is included by default in the published Android, iOS, and pip packages. When building from source, pass -DEXECUTORCH_BUILD_XNNPACK=ON when configuring the CMake build to compile the XNNPACK backend. To link against the backend, add the xnnpack_backend CMake target as a build dependency, or link directly against libxnnpack_backend. Due to the use of static registration, it may be necessary to link with whole-archive. This can typically be done by passing \"$\u003cLINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend\u003e\" to target_link_libraries. # CMakeLists.txt add_subdirectory(\"executorch\") ... target_link_libraries( my_target PRIVATE executorch extension_module_static extension_tensor optimized_native_cpu_ops_lib xnnpack_backend) No additional steps are necessary to use the backend beyond linking the target. Any XNNPACK-delegated .pte file will automatically run on the registered backend.",
+       "articleBody": "XNNPACK Backend# The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. XNNPACK is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs. Features# Wide operator support on Arm and x86 CPUs, available on any modern mobile phone. Support for a wide variety of quantization schemes and quantized operators. Supports fp32 and fp16 activations. Supports 8-bit quantization. Target Requirements# ARM64 on Android, iOS, macOS, Linux, and Windows. ARMv7 (with NEON) on Android. ARMv6 (with VFPv2) on Linux. x86 and x86-64 (up to AVX512) on Windows, Linux, Android. Development Requirements# The XNNPACK delegate does not introduce any development system requirements beyond those required by the core ExecuTorch runtime. Using the XNNPACK Backend# To target the XNNPACK backend during the export and lowering process, pass an instance of the XnnpackPartitioner to to_edge_transform_and_lower. The example below demonstrates this process using the MobileNet V2 model from torchvision. import torch import torchvision.models as models from torchvision.models.mobilenetv2 import MobileNet_V2_Weights from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner from executorch.exir import to_edge_transform_and_lower mobilenet_v2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval() sample_inputs = (torch.randn(1, 3, 224, 224), ) et_program = to_edge_transform_and_lower( torch.export.export(mobilenet_v2, sample_inputs), partitioner=[XnnpackPartitioner()], ).to_executorch() with open(\"mv2_xnnpack.pte\", \"wb\") as file: et_program.write_to_file(file) See Partitioner API for a reference on available partitioner options. Quantization# The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. See XNNPACK Quantization for more information on available quantization schemes and APIs. Runtime Integration# To run the model on-device, use the standard ExecuTorch runtime APIs. The XNNPACK delegate is included by default in the published Android, iOS, and pip packages. When building from source, pass -DEXECUTORCH_BUILD_XNNPACK=ON when configuring the CMake build to compile the XNNPACK backend. See Running on Device for more information. To link against the backend, add the executorch_backends CMake target as a build dependency, or link directly against libxnnpack_backend. Due to the use of static registration, it may be necessary to link with whole-archive. This can typically be done by passing \"$\u003cLINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend\u003e\" to target_link_libraries. # CMakeLists.txt add_subdirectory(\"executorch\") ... target_link_libraries( my_target PRIVATE executorch executorch_backends ... ) No additional steps are necessary to use the backend beyond linking the target. Any XNNPACK-delegated .pte file will automatically run on the registered backend. Reference# \u2192Troubleshooting \u2014 Debug common issues. \u2192Partitioner API \u2014 Partitioner options and supported operators. \u2192Quantization \u2014 Supported quantization schemes. \u2192Architecture and Internals \u2014 XNNPACK backend internals.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
