@@ -59,6 +59,7 @@ Key features:
 ## Next Steps
 
 After choosing your platform:
+
 - **{doc}`backends-section`** - Deep dive into backend selection and optimization
 - **{doc}`llm/working-with-llms`** - Working with Large Language Models on edge devices
 
