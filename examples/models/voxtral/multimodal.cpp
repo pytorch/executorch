@@ -319,7 +319,7 @@ int32_t main(int32_t argc, char** argv) {
   // Create multimodal runner
   std::unique_ptr<::executorch::extension::llm::MultimodalRunner> runner =
       ::executorch::extension::llm::create_multimodal_runner(
-          model_path, std::move(tokenizer), data_path);
+          model_path, std::move(tokenizer), data_path, Module::LoadMode::Mmap);
   if (runner == nullptr) {
     ET_LOG(Error, "Failed to create multimodal runner");
     return 1;
