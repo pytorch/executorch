@@ -542,7 +542,6 @@ def pick_storage_for_reduce(node: torch.fx.Node):
     ]
 )
 def register_reduce_op():
-
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
         supports_resize=True,
