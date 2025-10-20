@@ -64,15 +64,25 @@ Click the screenshot below to watch the demo video on how to add the package and
 
 You can also directly specify an AAR file in the app. We upload pre-built AAR to S3 during each release, or as a snapshot.
 
-### Released versions (Recommended)
+### Latest Released versions (Recommended)
+
+Starting from [v1.0.0](https://github.com/pytorch/executorch/releases/tag/v1.0.0), there are respective executorch.aar library available by backends
+
+| AAR | SHASUMS | Backend |
+| ------- | --- | ------- |
+| [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-xnnpack/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-xnnpack/executorch.aar.sha256sums) | [XNNPACK](backends-xnnpack.md) |
+| [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-qnn/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-qnn/executorch.aar.sha256sums) | [Qualcomm AI Engine](backends-qualcomm.md) |
+| [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-vulkan/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/1.0.0-vulkan/executorch.aar.sha256sums) | [Vulkan](backends/vulkan/vulkan-overview.md) |
+
+### Older Released versions
+
+Download the older released version
 
 | Version | AAR | SHASUMS |
 | ------- | --- | ------- |
-| [v1.0.0](https://github.com/pytorch/executorch/releases/tag/v1.0.0) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v1.0.0/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v1.0.0/executorch.aar.sha256sums) |
 | [v0.7.0](https://github.com/pytorch/executorch/releases/tag/v0.7.0) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.7.0/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.7.0/executorch.aar.sha256sums) |
 | [v0.6.0](https://github.com/pytorch/executorch/releases/tag/v0.6.0) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0/executorch.aar.sha256sums) |
 | [v0.5.0](https://github.com/pytorch/executorch/releases/tag/v0.5.0) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar.sha256sums) |
-
 
 ### Snapshots from main branch
 
@@ -194,7 +204,7 @@ The following backends are available for Android:
 | [XNNPACK](https://github.com/google/XNNPACK) | CPU | [Doc](backends-xnnpack.md) |
 | [MediaTek NeuroPilot](https://neuropilot.mediatek.com/) | NPU | [Doc](backends-mediatek.md) |
 | [Qualcomm AI Engine](https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk) | NPU | [Doc](backends-qualcomm.md) |
-| [Vulkan](https://www.vulkan.org/) | GPU | [Doc](backends-vulkan.md) |
+| [Vulkan](https://www.vulkan.org/) | GPU | [Doc](backends/vulkan/vulkan-overview.md) |
 
 Start with XNNPACK (CPU backend) for maximum compatibility, then add hardware-specific backends for optimization.
 
