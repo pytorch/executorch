@@ -12,8 +12,8 @@ from enum import Enum
 from typing import Any, Dict, final, List, Optional, Set
 
 import torch
-from executorch.backends.cuda.replace_slice_copy_with_slice import (
-    ReplaceSliceCopyWithSlicePass,
+from executorch.backends.aoti.passes.replace_view_copy_with_view import (
+    ReplaceViewCopyWithViewPass,
 )
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
@@ -33,7 +33,9 @@ cuda_decomposition_table = {
 }
 
 # exist fallback operators in et namespace;
-supported_fallback_kernels: Dict[str, Any] = {}
+supported_fallback_kernels: Dict[str, Any] = {
+    "at::_ops::_weight_int4pack_mm::call": None,
+}
 
 # required fallback kernels but not supported
 missing_fallback_kernels: Set[str] = set()
@@ -121,8 +123,8 @@ class CudaBackend(BackendDetails):
         # Move the edge_program from CPU to CUDA for aoti compile
         cuda_edge_program = move_to_device_pass(edge_program, "cuda")
 
-        # replace slice_copy with slice
-        ReplaceSliceCopyWithSlicePass()(cuda_edge_program.graph_module)
+        # replace slice_copy.Tensor with slice.Tensor, select_copy.int with select.int
+        ReplaceViewCopyWithViewPass()(cuda_edge_program.graph_module)
 
         cuda_edge_program = cuda_edge_program.run_decompositions(
             cuda_decomposition_table
@@ -144,8 +146,11 @@ class CudaBackend(BackendDetails):
             "aot_inductor.embed_kernel_binary": True,
             # Do not link against the full PyTorch/libtorch library
             "aot_inductor.link_libtorch": False,
-            # Package model constants and other generated files directly in the shared object (.so) file
-            "aot_inductor.package_constants_in_so": True,
+            # Separate weight constants from the .so file
+            "aot_inductor.package": True,
+            "aot_inductor.package_constants_in_so": False,
+            # Store weight constants on disk in a binary blob
+            "aot_inductor.package_constants_on_disk_format": "binary_blob",
             # Enable maximum automatic tuning for optimal performance
             "max_autotune": True,
             # Use TRITON for GEMM (General Matrix Multiply) operations tuning only to avoid using operators in libtorch
@@ -160,13 +165,28 @@ class CudaBackend(BackendDetails):
             ]
         ), torch.no_grad():
             # torch._logging.set_logs(post_grad_graphs=True)
-            so_path = torch._inductor.aot_compile(edge_program_module, tuple(user_input_placeholders), options=options)  # type: ignore[arg-type]
+            # Here we should expect 1 so file and 1 weight blob in the same directory.
+            paths = torch._inductor.aot_compile(edge_program_module, tuple(user_input_placeholders), options=options)  # type: ignore[arg-type]
             if len(missing_fallback_kernels) > 0:
                 formatted_kernels = "\n  - ".join(sorted(missing_fallback_kernels))
                 raise RuntimeError(
-                    f"Missing fallback kernels ({len(missing_fallback_kernels)} total):\n  - {formatted_kernels}\n"
+                    f"Method {CudaBackend.method_name_from_compile_specs(compile_specs)} missing fallback kernels ({len(missing_fallback_kernels)} total):\n  - {formatted_kernels}\n"
                     "Please add them to the AOTI backend."
                 )
+
+        # Extract the .so and .blob paths from the returned list
+        so_path = None
+        blob_path = None
+        for path in paths:
+            if path.endswith(".wrapper.so"):
+                so_path = path
+            elif path.endswith(".wrapper_weights.blob"):
+                blob_path = path
+
+        if so_path is None or blob_path is None:
+            raise RuntimeError(
+                f"Could not find required files in compiled paths, got {paths}"
+            )
 
         # pyre-ignorep[6]: Incompatible parameter type
         with open(so_path, "rb") as f:
@@ -174,11 +194,20 @@ class CudaBackend(BackendDetails):
 
         named_data_store = NamedDataStore()
         method_name = CudaBackend.method_name_from_compile_specs(compile_specs)
-        named_data_store.add_named_data(
-            method_name + "_so_blob", so_data, 1, "aoti_cuda_blob"
-        )
 
-        # Clean up the generated so file; it has been packaged into the NamdeDataStore
+        # Keep the so file in the NamedDataStore, so that it can be packaged into the .pte file.
+        named_data_store.add_named_data(method_name + "_so_blob", so_data, 1, None)
+
+        # Add weights blob to named data store
+        with open(blob_path, "rb") as f:
+            blob_data = f.read()
+        named_data_store.add_named_data(
+            method_name + "_weights_blob", blob_data, 1, "aoti_cuda_blob"
+        )
+        # Clean up the weights blob file
+        os.remove(blob_path)
+
+        # Clean up the generated so file; it has been packaged into the NamedDataStore
         # pyre-ignorep[6]: Incompatible parameter type
         os.remove(so_path)
 

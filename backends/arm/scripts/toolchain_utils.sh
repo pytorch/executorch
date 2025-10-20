@@ -17,6 +17,9 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
+script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+source "${script_dir}/utils.sh"
+
 function gcc_select_toolchain() {
     if [[ "${ARCH}" == "x86_64" ]] ; then
         toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
@@ -34,13 +37,15 @@ function gcc_select_toolchain() {
         fi
     else
         # This should never happen, it should be covered by setup.sh but catch it anyway
-        echo "[gcc_select_toolchain]: Unsupported arch!"; exit 1
+        log_step "toolchain" "Error: Unsupported architecture ${ARCH}"
+        exit 1
     fi
 }
 
 function zephyr_select_toolchain() {
     if [[ "${OS}" != "Linux" ]] ; then
-        echo "[zephyr_select_toolchain] Error: Linux is only supported for zephyr!"; exit 1;
+        log_step "toolchain" "Error: Linux is required for Zephyr toolchain support"
+        exit 1
     fi
 
     if [[ "${ARCH}" == "x86_64" ]] ; then
@@ -53,7 +58,8 @@ function zephyr_select_toolchain() {
         toolchain_md5_checksum="ef4ca56786204439a75270ba800cc64b"
     else
         # This should never happen, it should be covered by setup.sh but catch it anyway
-        echo "[zephyr_select_toolchain]: Unsupported arch!"; exit 1
+        log_step "toolchain" "Error: Unsupported architecture ${ARCH}"
+        exit 1
     fi
 }
 
@@ -63,7 +69,7 @@ function select_toolchain() {
     else
         gcc_select_toolchain
     fi
-    echo "[main] Info selected ${toolchain_dir} for ${ARCH} - ${OS} platform"
+    log_step "toolchain" "Selected ${toolchain_dir} for ${ARCH}/${OS}"
 }
 
 function setup_toolchain() {
@@ -71,12 +77,12 @@ function setup_toolchain() {
     # setting --target-toolchain to zephyr sets this to arm-zephyr-eabi
     cd "${root_dir}"
     if [[ ! -e "${toolchain_dir}.tar.xz" ]]; then
-        echo "[${FUNCNAME[0]}] Downloading ${toolchain_dir} toolchain ..."
+        log_step "toolchain" "Downloading ${toolchain_dir} toolchain"
         curl --output "${toolchain_dir}.tar.xz" -L "${toolchain_url}"
         verify_md5 ${toolchain_md5_checksum} "${toolchain_dir}.tar.xz" || exit 1
     fi
 
-    echo "[${FUNCNAME[0]}] Installing ${toolchain_dir} toolchain ..."
+    log_step "toolchain" "Installing ${toolchain_dir} toolchain"
     rm -rf "${toolchain_dir}"
     tar xf "${toolchain_dir}.tar.xz"
 }
