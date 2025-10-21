@@ -144,11 +144,11 @@ Any Vulkan-delegated .pte file will automatically run on the registered backend.
 
 ## Additional Resources
 
-**→{doc}`vulkan-partitioner`**
+**→{doc}`/backends/vulkan/vulkan-partitioner`**
 
-**→{doc}`vulkan-quantization`**
+**→{doc}`/backends/vulkan/vulkan-quantization`**
 
-**→{doc}`vulkan-troubleshooting`**
+**→{doc}`/backends/vulkan/vulkan-troubleshooting`**
 
 ```{toctree}
 :maxdepth: 2
