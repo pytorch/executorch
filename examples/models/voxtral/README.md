@@ -74,6 +74,26 @@ optimum-cli export executorch \
 
 See the "Building the multimodal runner" section below for instructions on building with CUDA support, and the "Running the model" section for runtime instructions.
 
+## Metal Support
+On Apple Silicon, you can enable the runner to run on Metal. Follow the export and runtime commands below:
+
+### Exporting with Metal
+```
+optimum-cli export executorch \
+  --model "mistralai/Voxtral-Mini-3B-2507" \
+  --task "multimodal-text-to-text" \
+  --recipe "metal" \
+  --dtype bfloat16 \
+  --max_seq_len 1024 \
+  --output_dir="voxtral"
+```
+
+This will generate:
+- `model.pte` - The exported model
+- `aoti_metal_blob.ptd` - The Metal kernel blob required for runtime
+
+See the "Building the multimodal runner" section below for instructions on building with Metal support, and the "Running the model" section for runtime instructions.
+
 # Running the model
 To run the model, we will use the Voxtral runner, which utilizes ExecuTorch's MultiModal runner API.
 The Voxtral runner will do the following things:
@@ -90,7 +110,12 @@ We provide a simple way to transform raw audio data into a mel spectrogram by ex
 
 ```
 # Export a preprocessor that can handle audio up to 5 mins (300s).
-python -m executorch.extension.audio.mel_spectrogram --feature_size 128 --stack_output --max_audio_len 300 --output_file voxtral_preprocessor.pte
+
+python -m executorch.extension.audio.mel_spectrogram \
+  --feature_size 128 \
+  --stack_output \
+  --max_audio_len 300 \
+  --output_file voxtral_preprocessor.pte
 ```
 
 ## Building the multimodal runner
@@ -124,6 +149,26 @@ cmake -DEXECUTORCH_BUILD_CUDA=ON \
 cmake --build cmake-out/examples/models/voxtral --target voxtral_runner --config Release
 ```
 
+### Building for Metal
+```
+# Install ExecuTorch with Metal support
+CMAKE_ARGS="-DEXECUTORCH_BUILD_METAL=ON" ./install_executorch.sh
+
+# Build the multimodal runner with Metal
+cmake --preset llm \
+      -DEXECUTORCH_BUILD_METAL=ON \
+      -DCMAKE_INSTALL_PREFIX=cmake-out \
+      -DCMAKE_BUILD_TYPE=Release \
+      -Bcmake-out -S.
+cmake --build cmake-out -j16 --target install --config Release
+
+cmake -DEXECUTORCH_BUILD_METAL=ON \
+      -DCMAKE_BUILD_TYPE=Release \
+      -Sexamples/models/voxtral \
+      -Bcmake-out/examples/models/voxtral/
+cmake --build cmake-out/examples/models/voxtral --target voxtral_runner --config Release
+```
+
 ## Running the model
 You can download the `tekken.json` tokenizer from [Voxtral's HuggingFace repo](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507).
 
@@ -148,13 +193,12 @@ If you already have a preprocessed mel spectrogram saved as a `.bin` file, you c
   --audio_path path/to/preprocessed_audio.bin
 ```
 
+### Running on CUDA or Metal:
+Add the `--data_path` argument to provide the appropriate data blob to the commands above:
+- For CUDA: `--data_path path/to/aoti_cuda_blob.ptd`
+- For Metal: `--data_path path/to/aoti_metal_blob.ptd`
 
-**For CUDA:** Add the `--data_path` argument to provide the CUDA kernel blob to the commands above:
-```
-  --data_path path/to/aoti_cuda_blob.ptd
-```
-
-Example output:
+# Example output:
 ```
 The speaker in this audio seems to be talking about their concerns about a device called the model or maybe they're just talking about the model in general. They mention that the model was trained with the speaker for inference, which suggests that
  the model was trained based on the speaker's data or instructions. They also mention that the volume is quite small, which could imply that the speaker is trying to control the volume of the model's output, likely because they are concerned about how loud the model's responses might
@@ -168,6 +212,7 @@ I 00:00:24.036822 executorch:stats.h:147]       Time to first generated token:  
 I 00:00:24.036828 executorch:stats.h:153]       Sampling time over 487 tokens:  0.099000 (seconds)
 ```
 
+# Generating audio input
 You can easily produce an `.bin` for the audio input in Python like this:
 ```
 # t = some torch.Tensor
@@ -179,4 +224,14 @@ You can also produce raw audio file as follows (for Option A):
 
 ```
 ffmpeg -i audio.mp3 -f f32le -acodec pcm_f32le -ar 16000 audio_input.bin
+```
+
+### Generating a .wav file on Mac
+On macOS, you can use the built-in `say` command to generate speech audio and convert it to a `.wav` file:
+```
+# Generate audio using text-to-speech
+say -o call_samantha_hall.aiff "Call Samantha Hall"
+
+# Convert to .wav format
+afconvert -f WAVE -d LEI16 call_samantha_hall.aiff call_samantha_hall.wav
 ```
