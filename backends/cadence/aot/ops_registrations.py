@@ -53,7 +53,6 @@ def _validate_ref_impl_exists() -> None:
     # 1. be removed
     # 2. have a reference implementation added to ref_implementations.py
     _WARN_ONLY = {
-        "cadence::_softmax_f32_f32",
         "cadence::quantized_softmax.per_tensor",
         "cadence::quantized_softmax",
         "cadence::quantized_w8a32_gru",
@@ -640,10 +639,10 @@ lib.define(
     "int sampling_ratio, bool aligned) -> (Tensor out)"
 )
 lib.define(
-    "_softmax_f32_f32(Tensor self, int dim, bool? half_to_float) -> (Tensor out)"
+    "_softmax_f32_f32(Tensor self, int dim, bool? half_to_float = None) -> (Tensor out)"
 )
 lib.define(
-    "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float, *, Tensor(a!) out) -> Tensor(a!)"
+    "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float = None, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -2652,12 +2651,13 @@ def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_meta(
 
 @register_fake("cadence::_softmax_f32_f32")
 def softmax_f32_f32_meta(
-    self: torch.Tensor,
+    input_tensor: torch.Tensor,
     dim: int,
-    dtype: torch.dtype,
     half_to_float: Optional[bool] = None,
 ) -> torch.Tensor:
-    return self.new_empty(self.size(), dtype=self.dtype)
+    assert input_tensor.dtype == torch.float32, "input_tensor must be float32"
+    assert not half_to_float, "half_to_float is not supported"
+    return input_tensor.new_empty(input_tensor.size(), dtype=torch.float32)
 
 
 @register_fake("cadence::quantized_softmax")

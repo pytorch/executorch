@@ -2885,3 +2885,12 @@ class TestRefImplementations(unittest.TestCase):
             output_scale,
             output_zero_point,
         )
+
+    def test_softmax_f32_f32(self) -> None:
+        # Just a wrapper around torch.nn.functional.softmax, so just ensure that it runs
+        input_tensor = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=torch.float32
+        )
+        output = torch.ops.cadence._softmax_f32_f32(input_tensor, dim=1)
+        self.assertEqual(output.dtype, torch.float32)
+        self.assertEqual(output.shape, input_tensor.shape)

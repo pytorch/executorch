@@ -1979,3 +1979,14 @@ def linalg_svd(
     assert compute_uv
     U, S, Vh = torch.linalg.svd(A, full_matrices=full_matrices, driver=driver)
     return U.contiguous(), S.contiguous(), Vh.contiguous()
+
+
+@impl_tracked(m, "_softmax_f32_f32")
+def softmax_f32_f32(
+    input_tensor: torch.Tensor,
+    dim: int,
+    half_to_float: bool | None = None,
+) -> torch.Tensor:
+    assert input_tensor.dtype == torch.float32, "input_tensor must be float32"
+    assert not half_to_float, "half_to_float is not supported"
+    return torch.nn.functional.softmax(input_tensor, dim=dim, dtype=torch.float32)
