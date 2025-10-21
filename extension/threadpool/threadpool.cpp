@@ -76,7 +76,7 @@ bool ThreadPool::_unsafe_reset_threadpool(uint32_t new_thread_count) {
 }
 
 void ThreadPool::run(
-    const std::function<void(size_t)>& fn,
+    runtime::FunctionRef<void(size_t)> fn,
     const size_t range) {
   // Run on same thread if NoThreadPoolGuard guard is enabled
   if (NoThreadPoolGuard::is_enabled()) {
