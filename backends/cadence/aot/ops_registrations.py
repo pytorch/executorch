@@ -55,7 +55,6 @@ def _validate_ref_impl_exists() -> None:
     _WARN_ONLY = {
         "cadence::quantized_softmax.per_tensor",
         "cadence::quantized_softmax",
-        "cadence::quantized_w8a32_gru",
     }
 
     ref_impls = get_registered_ref_implementations()
@@ -2753,7 +2752,7 @@ def quantized_w8a32_gru_meta(
     bias_hidden: torch.Tensor,
     b_h_scale: float,
 ) -> torch.Tensor:
-    return inputs.new_empty((2, hidden.shape[-1]), dtype=inputs.dtype)
+    return hidden.new_empty((2, hidden.shape[-1]), dtype=torch.float32)
 
 
 # Validate that all meta kernels have reference implementations

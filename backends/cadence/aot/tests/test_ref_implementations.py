@@ -2894,3 +2894,188 @@ class TestRefImplementations(unittest.TestCase):
         output = torch.ops.cadence._softmax_f32_f32(input_tensor, dim=1)
         self.assertEqual(output.dtype, torch.float32)
         self.assertEqual(output.shape, input_tensor.shape)
+
+    @expand(
+        [
+            (
+                "basic_hidden_dim_4",
+                torch.tensor([[1.0, 2.0]], dtype=torch.float32),  # inputs: 1x2
+                torch.tensor(
+                    [[0.5, 0.5, 0.5, 0.5]], dtype=torch.float32
+                ),  # hidden: 1x4
+                torch.ones(
+                    (12, 2), dtype=torch.int8
+                ),  # weights_inputs: 12x2 (3*4 x input_dim=2)
+                0.1,  # w_i_scale
+                torch.ones((12, 4), dtype=torch.int8),  # weights_hidden: 12x4 (3*4 x 4)
+                0.1,  # w_h_scale
+                torch.zeros(12, dtype=torch.int8),  # bias_inputs: 12
+                0.1,  # b_i_scale
+                torch.zeros(12, dtype=torch.int8),  # bias_hidden: 12
+                0.1,  # b_h_scale
+            ),
+            (
+                "invalid_batch_size_2",
+                torch.tensor(
+                    [[1.0, 2.0, 3.0], [2.0, 3.0, 4.0]], dtype=torch.float32
+                ),  # inputs: 2x3
+                torch.tensor(
+                    [[0.5, 0.5, 0.5, 0.5], [0.3, 0.3, 0.3, 0.3]], dtype=torch.float32
+                ),  # hidden: 2x4
+                torch.ones((12, 3), dtype=torch.int8),  # weights_inputs: 12x3
+                0.1,  # w_i_scale
+                torch.ones((12, 4), dtype=torch.int8),  # weights_hidden: 12x4
+                0.1,  # w_h_scale
+                torch.zeros(12, dtype=torch.int8),  # bias_inputs: 12
+                0.1,  # b_i_scale
+                torch.zeros(12, dtype=torch.int8),  # bias_hidden: 12
+                0.1,  # b_h_scale
+            ),
+            (
+                "non_zero_biases",
+                torch.tensor([[1.0, 1.0]], dtype=torch.float32),  # inputs: 1x2
+                torch.zeros((1, 4), dtype=torch.float32),  # hidden: 1x4
+                torch.ones((12, 2), dtype=torch.int8),  # weights_inputs: 12x2
+                0.2,  # w_i_scale
+                torch.ones((12, 4), dtype=torch.int8),  # weights_hidden: 12x4
+                0.1,  # w_h_scale
+                torch.tensor(
+                    [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3], dtype=torch.int8
+                ),  # bias_inputs: 12
+                0.1,  # b_i_scale
+                torch.tensor(
+                    [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3], dtype=torch.int8
+                ),  # bias_hidden: 12
+                0.1,  # b_h_scale
+            ),
+            (
+                "negative_weights",
+                torch.tensor([[1.0, -1.0]], dtype=torch.float32),  # inputs: 1x2
+                torch.tensor(
+                    [[0.5, -0.5, 0.5, -0.5]], dtype=torch.float32
+                ),  # hidden: 1x4
+                torch.tensor(
+                    [[1, -1], [-1, 1]] * 6, dtype=torch.int8
+                ),  # weights_inputs: 12x2 (alternating pattern)
+                0.1,  # w_i_scale
+                torch.tensor(
+                    [[1, -1, 1, -1], [-1, 1, -1, 1]] * 6, dtype=torch.int8
+                ),  # weights_hidden: 12x4 (alternating pattern)
+                0.1,  # w_h_scale
+                torch.zeros(12, dtype=torch.int8),  # bias_inputs: 12
+                0.1,  # b_i_scale
+                torch.zeros(12, dtype=torch.int8),  # bias_hidden: 12
+                0.1,  # b_h_scale
+            ),
+            (
+                "hidden_dim_8",
+                torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32),  # inputs: 1x3
+                torch.tensor(
+                    [[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]], dtype=torch.float32
+                ),  # hidden: 1x8
+                torch.ones((24, 3), dtype=torch.int8),  # weights_inputs: 24x3 (3*8 x 3)
+                0.1,  # w_i_scale
+                torch.ones((24, 8), dtype=torch.int8),  # weights_hidden: 24x8 (3*8 x 8)
+                0.1,  # w_h_scale
+                torch.zeros(24, dtype=torch.int8),  # bias_inputs: 24
+                0.1,  # b_i_scale
+                torch.zeros(24, dtype=torch.int8),  # bias_hidden: 24
+                0.1,  # b_h_scale
+            ),
+        ]
+    )
+    def test_quantized_w8a32_gru(
+        self,
+        name: str,
+        inputs: torch.Tensor,
+        hidden: torch.Tensor,
+        weights_inputs: torch.Tensor,
+        w_i_scale: float,
+        weights_hidden: torch.Tensor,
+        w_h_scale: float,
+        bias_inputs: torch.Tensor,
+        b_i_scale: float,
+        bias_hidden: torch.Tensor,
+        b_h_scale: float,
+    ) -> None:
+
+        if name == "invalid_batch_size_2":
+            with self.assertRaises(ValueError) as context:
+                torch.ops.cadence.quantized_w8a32_gru(
+                    inputs,
+                    hidden,
+                    weights_inputs,
+                    w_i_scale,
+                    weights_hidden,
+                    w_h_scale,
+                    bias_inputs,
+                    b_i_scale,
+                    bias_hidden,
+                    b_h_scale,
+                )
+            self.assertIn(
+                "Leading dimension of hidden state must be 1", str(context.exception)
+            )
+            return
+
+        output = torch.ops.cadence.quantized_w8a32_gru(
+            inputs,
+            hidden,
+            weights_inputs,
+            w_i_scale,
+            weights_hidden,
+            w_h_scale,
+            bias_inputs,
+            b_i_scale,
+            bias_hidden,
+            b_h_scale,
+        )
+
+        # Verify output properties
+        self.assertEqual(
+            output.dtype,
+            torch.float32,
+            f"Output dtype should be float32 in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            (2, hidden.shape[-1]),
+            f"Output shape should match {(2, hidden.shape[-1])} in {name}",
+        )
+        assert isinstance(output, torch.Tensor)
+
+        # Verify output is bounded: GRU hidden state is a convex combination of
+        # tanh([-1,1]) and previous hidden([-1,1]), so output should be in [-1,1]
+        self.assertTrue(
+            torch.all(output >= -1.0) and torch.all(output <= 1.0),
+            f"Output values should be in [-1.1, 1.1] in {name}. Got min={output.min():.4f}, max={output.max():.4f}",
+        )
+
+    def test_quantized_w8a32_gru_invalid_hidden_dim(self) -> None:
+        # Test that non-multiple of 4 hidden dimension raises error
+        inputs = torch.tensor([[1.0, 2.0]], dtype=torch.float32)  # 1x2
+        hidden = torch.tensor(
+            [[0.5, 0.5, 0.5]], dtype=torch.float32
+        )  # 1x3 (not divisible by 4)
+        weights_inputs = torch.zeros((9, 2), dtype=torch.int8)  # 9x2
+        weights_hidden = torch.zeros((9, 3), dtype=torch.int8)  # 9x3
+        bias_inputs = torch.zeros(9, dtype=torch.int8)
+        bias_hidden = torch.zeros(9, dtype=torch.int8)
+
+        with self.assertRaises(ValueError) as context:
+            torch.ops.cadence.quantized_w8a32_gru(
+                inputs,
+                hidden,
+                weights_inputs,
+                0.1,
+                weights_hidden,
+                0.1,
+                bias_inputs,
+                0.1,
+                bias_hidden,
+                0.1,
+            )
+
+        self.assertIn(
+            "Hidden dimension must be a multiple of 4", str(context.exception)
+        )
