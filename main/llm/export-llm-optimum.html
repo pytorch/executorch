@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>LLMs &#8212; ExecuTorch main documentation</title>
+    <title>Exporting LLMs with HuggingFace’s Optimum ExecuTorch &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -49,19 +49,19 @@
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="../_static/copybutton.js?v=f281be69"></script>
     <script src="../_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'llm/working-with-llms';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'llm/export-llm-optimum';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/llm/working-with-llms.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/llm/export-llm-optimum.html" />
     <link rel="icon" href="../_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Deploying LLMs to ExecuTorch" href="getting-started.html" />
-    <link rel="prev" title="Cadence Xtensa Backend" href="../backends-cadence.html" />
+    <link rel="next" title="Exporting custom LLMs" href="export-custom-llm.html" />
+    <link rel="prev" title="Exporting LLMs" href="export-llm.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -683,7 +683,7 @@ document.write(`
 
 
 <li class="nav-item current active">
-  <a class="nav-link nav-internal" href="#">
+  <a class="nav-link nav-internal" href="working-with-llms.html">
     LLMs
   </a>
 </li>
@@ -882,7 +882,7 @@ document.write(`
 
 
 <li class="nav-item current active">
-  <a class="nav-link nav-internal" href="#">
+  <a class="nav-link nav-internal" href="working-with-llms.html">
     LLMs
   </a>
 </li>
@@ -1019,10 +1019,10 @@ document.write(`
      aria-label="Section Navigation">
   <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
   <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
-<ul class="nav bd-sidenav">
+<ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="getting-started.html">Deploying LLMs to ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="export-llm.html">Exporting LLMs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export-llm-optimum.html">Exporting LLMs with HuggingFace’s Optimum ExecuTorch</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Exporting LLMs with HuggingFace’s Optimum ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="export-custom-llm.html">Exporting custom LLMs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="run-with-c-plus-plus.html">Running LLMs with C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)</a></li>
@@ -1064,7 +1064,10 @@ document.write(`
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
-    <li class="breadcrumb-item active" aria-current="page">LLMs</li>
+    
+    <li class="breadcrumb-item"><a href="working-with-llms.html" class="nav-link">LLMs</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">Exporting...</li>
   </ul>
 </nav>
 </div>
@@ -1106,8 +1109,14 @@ document.write(`
     <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="working-with-llms.html">
         <meta itemprop="name" content="LLMs">
         <meta itemprop="position" content="1">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <meta itemprop="name" content="Exporting LLMs with HuggingFace’s Optimum ExecuTorch">
+        <meta itemprop="position" content="2">
       </div>
     </div>
 
@@ -1120,21 +1129,181 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="llms">
-<span id="working-with-llms"></span><h1>LLMs<a class="headerlink" href="#llms" title="Link to this heading">#</a></h1>
-<p>Learn how to export LLM models and deploy them across different platforms and runtime environments. This section covers the complete workflow from model export to running inference on mobile devices and edge hardware.</p>
-<div class="toctree-wrapper compound">
-<p aria-level="2" class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Deploying LLMs to ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export-llm.html">Exporting LLMs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export-llm-optimum.html">Exporting LLMs with HuggingFace’s Optimum ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export-custom-llm.html">Exporting custom LLMs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="run-with-c-plus-plus.html">Running LLMs with C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="run-on-ios.html">Running LLMs on iOS</a></li>
+  <section id="exporting-llms-with-huggingface-s-optimum-executorch">
+<h1>Exporting LLMs with HuggingFace’s Optimum ExecuTorch<a class="headerlink" href="#exporting-llms-with-huggingface-s-optimum-executorch" title="Link to this heading">#</a></h1>
+<p><a class="reference external" href="https://github.com/huggingface/optimum-executorch">Optimum ExecuTorch</a> provides a streamlined way to export Hugging Face transformer models to ExecuTorch format. It offers seamless integration with the Hugging Face ecosystem, making it easy to export models directly from the Hugging Face Hub.</p>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">#</a></h2>
+<p>Optimum ExecuTorch supports a much wider variety of model architectures compared to ExecuTorch’s native <code class="docutils literal notranslate"><span class="pre">export_llm</span></code> API. While <code class="docutils literal notranslate"><span class="pre">export_llm</span></code> focuses on a limited set of highly optimized models (Llama, Qwen, Phi, and SmolLM) with advanced features like SpinQuant and attention sink, Optimum ExecuTorch can export diverse architectures including Gemma, Mistral, GPT-2, BERT, T5, Whisper, Voxtral, and many others.</p>
+<section id="use-optimum-executorch-when">
+<h3>Use Optimum ExecuTorch when:<a class="headerlink" href="#use-optimum-executorch-when" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p>You need to export models beyond the limited set supported by <code class="docutils literal notranslate"><span class="pre">export_llm</span></code></p></li>
+<li><p>Exporting directly from Hugging Face Hub model IDs, including model variants such as finetunes</p></li>
+<li><p>You want a simpler interface with Hugging Face ecosystem integration</p></li>
 </ul>
+</section>
+<section id="use-export-llm-when">
+<h3>Use export_llm when:<a class="headerlink" href="#use-export-llm-when" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p>Working with one of the highly optimized supported models (Llama, Qwen, Phi, SmolLM)</p></li>
+<li><p>You need advanced optimizations like SpinQuant or attention sink</p></li>
+<li><p>You need pt2e quantization for QNN/CoreML/Vulkan backends</p></li>
+<li><p>Working with Llama models requiring custom checkpoints</p></li>
+</ul>
+<p>See <a class="reference internal" href="export-llm.html"><span class="std std-doc">Exporting LLMs</span></a> for details on using the native <code class="docutils literal notranslate"><span class="pre">export_llm</span></code> API.</p>
+</section>
+</section>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
+<section id="installation">
+<h3>Installation<a class="headerlink" href="#installation" title="Link to this heading">#</a></h3>
+<p>First, clone and install Optimum ExecuTorch from source:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/huggingface/optimum-executorch.git
+<span class="nb">cd</span><span class="w"> </span>optimum-executorch
+pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;.[dev]&#39;</span>
+</pre></div>
 </div>
+<p>For access to the latest features and optimizations, install dependencies in dev mode:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>install_dev.py
+</pre></div>
+</div>
+<p>This installs <code class="docutils literal notranslate"><span class="pre">executorch</span></code>, <code class="docutils literal notranslate"><span class="pre">torch</span></code>, <code class="docutils literal notranslate"><span class="pre">torchao</span></code>, <code class="docutils literal notranslate"><span class="pre">transformers</span></code>, and other dependencies from nightly builds or source.</p>
+</section>
+</section>
+<section id="supported-models">
+<h2>Supported Models<a class="headerlink" href="#supported-models" title="Link to this heading">#</a></h2>
+<p>Optimum ExecuTorch supports a wide range of model architectures including decoder-only LLMs (Llama, Qwen, Gemma, Mistral, etc.), multimodal models, vision models, audio models (Whisper), encoder models (BERT, RoBERTa), and seq2seq models (T5).</p>
+<p>For the complete list of supported models, see the <a class="reference external" href="https://github.com/huggingface/optimum-executorch#-supported-models">Optimum ExecuTorch documentation</a>.</p>
+</section>
+<section id="export-methods">
+<h2>Export Methods<a class="headerlink" href="#export-methods" title="Link to this heading">#</a></h2>
+<p>Optimum ExecuTorch offers two ways to export models:</p>
+<section id="method-1-cli-export">
+<h3>Method 1: CLI Export<a class="headerlink" href="#method-1-cli-export" title="Link to this heading">#</a></h3>
+<p>The CLI is the simplest way to export models. It provides a single command to convert models from Hugging Face Hub to ExecuTorch format.</p>
+<section id="basic-export">
+<h4>Basic Export<a class="headerlink" href="#basic-export" title="Link to this heading">#</a></h4>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>optimum-cli<span class="w"> </span><span class="nb">export</span><span class="w"> </span>executorch<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--model<span class="w"> </span><span class="s2">&quot;HuggingFaceTB/SmolLM2-135M-Instruct&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--task<span class="w"> </span><span class="s2">&quot;text-generation&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--recipe<span class="w"> </span><span class="s2">&quot;xnnpack&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--output_dir<span class="o">=</span><span class="s2">&quot;./smollm2_exported&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="with-optimizations">
+<h4>With Optimizations<a class="headerlink" href="#with-optimizations" title="Link to this heading">#</a></h4>
+<p>Add custom SDPA, KV cache optimization, and quantization:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>optimum-cli<span class="w"> </span><span class="nb">export</span><span class="w"> </span>executorch<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--model<span class="w"> </span><span class="s2">&quot;HuggingFaceTB/SmolLM2-135M-Instruct&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--task<span class="w"> </span><span class="s2">&quot;text-generation&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--recipe<span class="w"> </span><span class="s2">&quot;xnnpack&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--use_custom_sdpa<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--use_custom_kv_cache<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--qlinear<span class="w"> </span>8da4w<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--qembedding<span class="w"> </span>8w<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--output_dir<span class="o">=</span><span class="s2">&quot;./smollm2_exported&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="available-cli-arguments">
+<h4>Available CLI Arguments<a class="headerlink" href="#available-cli-arguments" title="Link to this heading">#</a></h4>
+<p>Key arguments for LLM export include <code class="docutils literal notranslate"><span class="pre">--model</span></code>, <code class="docutils literal notranslate"><span class="pre">--task</span></code>, <code class="docutils literal notranslate"><span class="pre">--recipe</span></code> (backend), <code class="docutils literal notranslate"><span class="pre">--use_custom_sdpa</span></code>, <code class="docutils literal notranslate"><span class="pre">--use_custom_kv_cache</span></code>, <code class="docutils literal notranslate"><span class="pre">--qlinear</span></code> (linear quantization), <code class="docutils literal notranslate"><span class="pre">--qembedding</span></code> (embedding quantization), and <code class="docutils literal notranslate"><span class="pre">--max_seq_len</span></code>.</p>
+<p>For the complete list of arguments, run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>optimum-cli<span class="w"> </span><span class="nb">export</span><span class="w"> </span>executorch<span class="w"> </span>--help
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+<section id="optimization-options">
+<h2>Optimization Options<a class="headerlink" href="#optimization-options" title="Link to this heading">#</a></h2>
+<section id="custom-operators">
+<h3>Custom Operators<a class="headerlink" href="#custom-operators" title="Link to this heading">#</a></h3>
+<p>Optimum ExecuTorch includes custom SDPA (~3x speedup) and custom KV cache (~2.5x speedup) operators. Enable with <code class="docutils literal notranslate"><span class="pre">--use_custom_sdpa</span></code> and <code class="docutils literal notranslate"><span class="pre">--use_custom_kv_cache</span></code>.</p>
+</section>
+<section id="quantization">
+<h3>Quantization<a class="headerlink" href="#quantization" title="Link to this heading">#</a></h3>
+<p>Optimum ExecuTorch uses <a class="reference external" href="https://github.com/pytorch/ao">TorchAO</a> for quantization. Common options:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--qlinear</span> <span class="pre">8da4w</span></code>: int8 dynamic activation + int4 weight (recommended)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--qembedding</span> <span class="pre">4w</span></code> or <code class="docutils literal notranslate"><span class="pre">--qembedding</span> <span class="pre">8w</span></code>: int4/int8 embedding quantization</p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>optimum-cli<span class="w"> </span><span class="nb">export</span><span class="w"> </span>executorch<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--model<span class="w"> </span><span class="s2">&quot;meta-llama/Llama-3.2-1B&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--task<span class="w"> </span><span class="s2">&quot;text-generation&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--recipe<span class="w"> </span><span class="s2">&quot;xnnpack&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--use_custom_sdpa<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--use_custom_kv_cache<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--qlinear<span class="w"> </span>8da4w<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--qembedding<span class="w"> </span>4w<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--output_dir<span class="o">=</span><span class="s2">&quot;./llama32_1b&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="backend-support">
+<h3>Backend Support<a class="headerlink" href="#backend-support" title="Link to this heading">#</a></h3>
+<p>Supported backends: <code class="docutils literal notranslate"><span class="pre">xnnpack</span></code> (CPU), <code class="docutils literal notranslate"><span class="pre">coreml</span></code> (Apple GPU), <code class="docutils literal notranslate"><span class="pre">portable</span></code> (baseline), <code class="docutils literal notranslate"><span class="pre">cuda</span></code> (NVIDIA GPU). Specify with <code class="docutils literal notranslate"><span class="pre">--recipe</span></code>.</p>
+</section>
+</section>
+<section id="exporting-different-model-types">
+<h2>Exporting Different Model Types<a class="headerlink" href="#exporting-different-model-types" title="Link to this heading">#</a></h2>
+<p>Optimum ExecuTorch supports various model architectures with different tasks:</p>
+<ul class="simple">
+<li><p><strong>Decoder-only LLMs</strong>: Use <code class="docutils literal notranslate"><span class="pre">--task</span> <span class="pre">text-generation</span></code></p></li>
+<li><p><strong>Multimodal LLMs</strong>: Use <code class="docutils literal notranslate"><span class="pre">--task</span> <span class="pre">multimodal-text-to-text</span></code></p></li>
+<li><p><strong>Seq2Seq models</strong> (T5): Use <code class="docutils literal notranslate"><span class="pre">--task</span> <span class="pre">text2text-generation</span></code></p></li>
+<li><p><strong>ASR models</strong> (Whisper): Use <code class="docutils literal notranslate"><span class="pre">--task</span> <span class="pre">automatic-speech-recognition</span></code></p></li>
+</ul>
+<p>For detailed examples of exporting each model type, see the <a class="reference external" href="https://github.com/huggingface/optimum-executorch/blob/main/optimum/exporters/executorch/README.md">Optimum ExecuTorch export guide</a>.</p>
+</section>
+<section id="running-exported-models">
+<h2>Running Exported Models<a class="headerlink" href="#running-exported-models" title="Link to this heading">#</a></h2>
+<section id="verifying-output-with-python">
+<h3>Verifying Output with Python<a class="headerlink" href="#verifying-output-with-python" title="Link to this heading">#</a></h3>
+<p>After exporting, you can verify the model output in Python before deploying to device using classes from <code class="docutils literal notranslate"><span class="pre">modeling.py</span></code>, such as the <code class="docutils literal notranslate"><span class="pre">ExecuTorchModelForCausalLM</span></code> class for LLMs:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">optimum.executorch</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExecuTorchModelForCausalLM</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoTokenizer</span>
+
+<span class="c1"># Load the exported model</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">ExecuTorchModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;./smollm2_exported&quot;</span><span class="p">)</span>
+<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;HuggingFaceTB/SmolLM2-135M-Instruct&quot;</span><span class="p">)</span>
+
+<span class="c1"># Generate text</span>
+<span class="n">generated_text</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">text_generation</span><span class="p">(</span>
+    <span class="n">tokenizer</span><span class="o">=</span><span class="n">tokenizer</span><span class="p">,</span>
+    <span class="n">prompt</span><span class="o">=</span><span class="s2">&quot;Once upon a time&quot;</span><span class="p">,</span>
+    <span class="n">max_seq_len</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">generated_text</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="running-on-device">
+<h3>Running on Device<a class="headerlink" href="#running-on-device" title="Link to this heading">#</a></h3>
+<p>After verifying your model works correctly, deploy it to device:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="run-with-c-plus-plus.html"><span class="std std-doc">Running with C++</span></a> - Run exported models using ExecuTorch’s C++ runtime</p></li>
+<li><p><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android">Running on Android</a> - Deploy to Android devices</p></li>
+<li><p><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple">Running on iOS</a> - Deploy to iOS devices</p></li>
+</ul>
+</section>
+</section>
+<section id="performance">
+<h2>Performance<a class="headerlink" href="#performance" title="Link to this heading">#</a></h2>
+<p>For performance benchmarks and on-device metrics, see the <a class="reference external" href="https://github.com/huggingface/optimum-executorch#-benchmarks-on-mobile-devices">Optimum ExecuTorch benchmarks</a> and the <a class="reference external" href="https://hud.pytorch.org/benchmark/llms?repoName=pytorch%2Fexecutorch">ExecuTorch Benchmark Dashboard</a>.</p>
+</section>
+<section id="additional-resources">
+<h2>Additional Resources<a class="headerlink" href="#additional-resources" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/huggingface/optimum-executorch">Optimum ExecuTorch GitHub</a> - Full documentation and examples</p></li>
+<li><p><a class="reference external" href="https://github.com/huggingface/optimum-executorch#-supported-models">Supported Models</a> - Complete model list</p></li>
+<li><p><a class="reference external" href="https://github.com/huggingface/optimum-executorch/blob/main/optimum/exporters/executorch/README.md">Export Guide</a> - Detailed export examples</p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/ao">TorchAO Quantization</a> - Quantization library documentation</p></li>
+</ul>
+</section>
 </section>
 
 
@@ -1180,20 +1349,20 @@ document.write(`
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="../backends-cadence.html"
+       href="export-llm.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Cadence Xtensa Backend</p>
+        <p class="prev-next-title">Exporting LLMs</p>
       </div>
     </a>
     <a class="right-next"
-       href="getting-started.html"
+       href="export-custom-llm.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Deploying LLMs to ExecuTorch</p>
+        <p class="prev-next-title">Exporting custom LLMs</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1219,20 +1388,20 @@ document.write(`
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="../backends-cadence.html"
+       href="export-llm.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Cadence Xtensa Backend</p>
+        <p class="prev-next-title">Exporting LLMs</p>
       </div>
     </a>
     <a class="right-next"
-       href="getting-started.html"
+       href="export-custom-llm.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Deploying LLMs to ExecuTorch</p>
+        <p class="prev-next-title">Exporting custom LLMs</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1247,10 +1416,54 @@ document.write(`
 <div class="sidebar-secondary-items sidebar-secondary__inner">
     
        <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#overview">Overview</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#use-optimum-executorch-when">Use Optimum ExecuTorch when:</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#use-export-llm-when">Use export_llm when:</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#installation">Installation</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#supported-models">Supported Models</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#export-methods">Export Methods</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#method-1-cli-export">Method 1: CLI Export</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#basic-export">Basic Export</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#with-optimizations">With Optimizations</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#available-cli-arguments">Available CLI Arguments</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#optimization-options">Optimization Options</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#custom-operators">Custom Operators</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#quantization">Quantization</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#backend-support">Backend Support</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#exporting-different-model-types">Exporting Different Model Types</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#running-exported-models">Running Exported Models</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#verifying-output-with-python">Verifying Output with Python</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#running-on-device">Running on Device</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#performance">Performance</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#additional-resources">Additional Resources</a></li>
+</ul>
+  </nav></div>
+    
+       <div class="sidebar-secondary-item">
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/llm/working-with-llms.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/llm/export-llm-optimum.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -1264,7 +1477,7 @@ document.write(`
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="../_sources/llm/working-with-llms.md.txt">
+      <a href="../_sources/llm/export-llm-optimum.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -1464,11 +1677,11 @@ document.write(`
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "LLMs",
-       "headline": "LLMs",
+       "name": "Exporting LLMs with HuggingFace\u2019s Optimum ExecuTorch",
+       "headline": "Exporting LLMs with HuggingFace\u2019s Optimum ExecuTorch",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
-       "url": "/llm/working-with-llms.html",
-       "articleBody": "LLMs# Learn how to export LLM models and deploy them across different platforms and runtime environments. This section covers the complete workflow from model export to running inference on mobile devices and edge hardware. Working with LLMs Deploying LLMs to ExecuTorch Exporting LLMs Exporting LLMs with HuggingFace\u2019s Optimum ExecuTorch Exporting custom LLMs Running LLMs with C++ Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend) Running LLMs on iOS",
+       "url": "/llm/export-llm-optimum.html",
+       "articleBody": "Exporting LLMs with HuggingFace\u2019s Optimum ExecuTorch# Optimum ExecuTorch provides a streamlined way to export Hugging Face transformer models to ExecuTorch format. It offers seamless integration with the Hugging Face ecosystem, making it easy to export models directly from the Hugging Face Hub. Overview# Optimum ExecuTorch supports a much wider variety of model architectures compared to ExecuTorch\u2019s native export_llm API. While export_llm focuses on a limited set of highly optimized models (Llama, Qwen, Phi, and SmolLM) with advanced features like SpinQuant and attention sink, Optimum ExecuTorch can export diverse architectures including Gemma, Mistral, GPT-2, BERT, T5, Whisper, Voxtral, and many others. Use Optimum ExecuTorch when:# You need to export models beyond the limited set supported by export_llm Exporting directly from Hugging Face Hub model IDs, including model variants such as finetunes You want a simpler interface with Hugging Face ecosystem integration Use export_llm when:# Working with one of the highly optimized supported models (Llama, Qwen, Phi, SmolLM) You need advanced optimizations like SpinQuant or attention sink You need pt2e quantization for QNN/CoreML/Vulkan backends Working with Llama models requiring custom checkpoints See Exporting LLMs for details on using the native export_llm API. Prerequisites# Installation# First, clone and install Optimum ExecuTorch from source: git clone https://github.com/huggingface/optimum-executorch.git cd optimum-executorch pip install \u0027.[dev]\u0027 For access to the latest features and optimizations, install dependencies in dev mode: python install_dev.py This installs executorch, torch, torchao, transformers, and other dependencies from nightly builds or source. Supported Models# Optimum ExecuTorch supports a wide range of model architectures including decoder-only LLMs (Llama, Qwen, Gemma, Mistral, etc.), multimodal models, vision models, audio models (Whisper), encoder models (BERT, RoBERTa), and seq2seq models (T5). For the complete list of supported models, see the Optimum ExecuTorch documentation. Export Methods# Optimum ExecuTorch offers two ways to export models: Method 1: CLI Export# The CLI is the simplest way to export models. It provides a single command to convert models from Hugging Face Hub to ExecuTorch format. Basic Export# optimum-cli export executorch \\ --model \"HuggingFaceTB/SmolLM2-135M-Instruct\" \\ --task \"text-generation\" \\ --recipe \"xnnpack\" \\ --output_dir=\"./smollm2_exported\" With Optimizations# Add custom SDPA, KV cache optimization, and quantization: optimum-cli export executorch \\ --model \"HuggingFaceTB/SmolLM2-135M-Instruct\" \\ --task \"text-generation\" \\ --recipe \"xnnpack\" \\ --use_custom_sdpa \\ --use_custom_kv_cache \\ --qlinear 8da4w \\ --qembedding 8w \\ --output_dir=\"./smollm2_exported\" Available CLI Arguments# Key arguments for LLM export include --model, --task, --recipe (backend), --use_custom_sdpa, --use_custom_kv_cache, --qlinear (linear quantization), --qembedding (embedding quantization), and --max_seq_len. For the complete list of arguments, run: optimum-cli export executorch --help Optimization Options# Custom Operators# Optimum ExecuTorch includes custom SDPA (~3x speedup) and custom KV cache (~2.5x speedup) operators. Enable with --use_custom_sdpa and --use_custom_kv_cache. Quantization# Optimum ExecuTorch uses TorchAO for quantization. Common options: --qlinear 8da4w: int8 dynamic activation + int4 weight (recommended) --qembedding 4w or --qembedding 8w: int4/int8 embedding quantization Example: optimum-cli export executorch \\ --model \"meta-llama/Llama-3.2-1B\" \\ --task \"text-generation\" \\ --recipe \"xnnpack\" \\ --use_custom_sdpa \\ --use_custom_kv_cache \\ --qlinear 8da4w \\ --qembedding 4w \\ --output_dir=\"./llama32_1b\" Backend Support# Supported backends: xnnpack (CPU), coreml (Apple GPU), portable (baseline), cuda (NVIDIA GPU). Specify with --recipe. Exporting Different Model Types# Optimum ExecuTorch supports various model architectures with different tasks: Decoder-only LLMs: Use --task text-generation Multimodal LLMs: Use --task multimodal-text-to-text Seq2Seq models (T5): Use --task text2text-generation ASR models (Whisper): Use --task automatic-speech-recognition For detailed examples of exporting each model type, see the Optimum ExecuTorch export guide. Running Exported Models# Verifying Output with Python# After exporting, you can verify the model output in Python before deploying to device using classes from modeling.py, such as the ExecuTorchModelForCausalLM class for LLMs: from optimum.executorch import ExecuTorchModelForCausalLM from transformers import AutoTokenizer # Load the exported model model = ExecuTorchModelForCausalLM.from_pretrained(\"./smollm2_exported\") tokenizer = AutoTokenizer.from_pretrained(\"HuggingFaceTB/SmolLM2-135M-Instruct\") # Generate text generated_text = model.text_generation( tokenizer=tokenizer, prompt=\"Once upon a time\", max_seq_len=128, ) print(generated_text) Running on Device# After verifying your model works correctly, deploy it to device: Running with C++ - Run exported models using ExecuTorch\u2019s C++ runtime Running on Android - Deploy to Android devices Running on iOS - Deploy to iOS devices Performance# For performance benchmarks and on-device metrics, see the Optimum ExecuTorch benchmarks and the ExecuTorch Benchmark Dashboard. Additional Resources# Optimum ExecuTorch GitHub - Full documentation and examples Supported Models - Complete model list Export Guide - Detailed export examples TorchAO Quantization - Quantization library documentation",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
@@ -1477,7 +1690,7 @@ document.write(`
        "image": "../_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/llm/working-with-llms.html"
+         "@id": "/llm/export-llm-optimum.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"
