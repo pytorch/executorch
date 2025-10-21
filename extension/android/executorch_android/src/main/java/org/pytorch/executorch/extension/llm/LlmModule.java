@@ -26,6 +26,7 @@ public class LlmModule {
 
   public static final int MODEL_TYPE_TEXT = 1;
   public static final int MODEL_TYPE_TEXT_VISION = 2;
+  public static final int MODEL_TYPE_MULTIMODAL = 2;
 
   private final HybridData mHybridData;
   private static final int DEFAULT_SEQ_LEN = 128;
@@ -181,8 +182,10 @@ public class LlmModule {
       LlmCallback llmCallback,
       boolean echo) {
     prefillPrompt(prompt);
-    prefillImages(image, width, height, channels);
-    return generate("", llmCallback, echo);
+    if (image != null) {
+      prefillImages(image, width, height, channels);
+    }
+    return generate(prompt, seqLen, llmCallback, echo);
   }
 
   /**

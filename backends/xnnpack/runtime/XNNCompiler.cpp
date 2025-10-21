@@ -1539,8 +1539,9 @@ Error defineGenericUnaryNode(
     MAYBE_UNUSED(graph);                                          \
     auto graph_node = node->xnode_union_as_XNN##name();           \
     std::pair<float, float> min_max = getOutputMinMax(node);      \
-    union xnn_unary_params params = {                             \
-        .clamp = {.min = min_max.first, .max = min_max.second}};  \
+    union xnn_unary_params params;                                \
+    params.clamp.min = min_max.first;                             \
+    params.clamp.max = min_max.second;                            \
     return defineGenericUnaryNode(                                \
         subgraph_ptr,                                             \
         remapped_ids,                                             \
@@ -1554,48 +1555,49 @@ Error defineGenericUnaryNode(
   }
 
 // Macro for unary operations with leaky_relu parameters
-#define _DEFINE_UNARY_NODE_WITH_LEAKY_RELU(name)                         \
-  Error define##name##Node(                                              \
-      xnn_subgraph_t subgraph_ptr,                                       \
-      const std::unordered_map<uint32_t, uint32_t>& remapped_ids,        \
-      const NodePtr node,                                                \
-      const fb_xnnpack::XNNGraph* graph) noexcept {                      \
-    MAYBE_UNUSED(graph);                                                 \
-    auto graph_node = node->xnode_union_as_XNNLeakyReLU();               \
-    union xnn_unary_params params = {                                    \
-        .leaky_relu = {.negative_slope = graph_node->negative_slope()}}; \
-    return defineGenericUnaryNode(                                       \
-        subgraph_ptr,                                                    \
-        remapped_ids,                                                    \
-        graph_node->input_id(),                                          \
-        graph_node->output_id(),                                         \
-        graph_node->flags(),                                             \
-        xnn_unary_leaky_relu,                                            \
-        &params,                                                         \
-        node->xnode_union_type(),                                        \
-        node->debug_handle());                                           \
+#define _DEFINE_UNARY_NODE_WITH_LEAKY_RELU(name)                     \
+  Error define##name##Node(                                          \
+      xnn_subgraph_t subgraph_ptr,                                   \
+      const std::unordered_map<uint32_t, uint32_t>& remapped_ids,    \
+      const NodePtr node,                                            \
+      const fb_xnnpack::XNNGraph* graph) noexcept {                  \
+    MAYBE_UNUSED(graph);                                             \
+    auto graph_node = node->xnode_union_as_XNNLeakyReLU();           \
+    union xnn_unary_params params;                                   \
+    params.leaky_relu.negative_slope = graph_node->negative_slope(); \
+    return defineGenericUnaryNode(                                   \
+        subgraph_ptr,                                                \
+        remapped_ids,                                                \
+        graph_node->input_id(),                                      \
+        graph_node->output_id(),                                     \
+        graph_node->flags(),                                         \
+        xnn_unary_leaky_relu,                                        \
+        &params,                                                     \
+        node->xnode_union_type(),                                    \
+        node->debug_handle());                                       \
   }
 
 // Macro for unary operations with elu parameters
-#define _DEFINE_UNARY_NODE_WITH_ELU(name)                                    \
-  Error define##name##Node(                                                  \
-      xnn_subgraph_t subgraph_ptr,                                           \
-      const std::unordered_map<uint32_t, uint32_t>& remapped_ids,            \
-      const NodePtr node,                                                    \
-      const fb_xnnpack::XNNGraph* graph) noexcept {                          \
-    MAYBE_UNUSED(graph);                                                     \
-    auto graph_node = node->xnode_union_as_XNNELU();                         \
-    union xnn_unary_params params = {.elu = {.alpha = graph_node->alpha()}}; \
-    return defineGenericUnaryNode(                                           \
-        subgraph_ptr,                                                        \
-        remapped_ids,                                                        \
-        graph_node->input_id(),                                              \
-        graph_node->output_id(),                                             \
-        graph_node->flags(),                                                 \
-        xnn_unary_elu,                                                       \
-        &params,                                                             \
-        node->xnode_union_type(),                                            \
-        node->debug_handle());                                               \
+#define _DEFINE_UNARY_NODE_WITH_ELU(name)                         \
+  Error define##name##Node(                                       \
+      xnn_subgraph_t subgraph_ptr,                                \
+      const std::unordered_map<uint32_t, uint32_t>& remapped_ids, \
+      const NodePtr node,                                         \
+      const fb_xnnpack::XNNGraph* graph) noexcept {               \
+    MAYBE_UNUSED(graph);                                          \
+    auto graph_node = node->xnode_union_as_XNNELU();              \
+    union xnn_unary_params params;                                \
+    params.elu.alpha = graph_node->alpha();                       \
+    return defineGenericUnaryNode(                                \
+        subgraph_ptr,                                             \
+        remapped_ids,                                             \
+        graph_node->input_id(),                                   \
+        graph_node->output_id(),                                  \
+        graph_node->flags(),                                      \
+        xnn_unary_elu,                                            \
+        &params,                                                  \
+        node->xnode_union_type(),                                 \
+        node->debug_handle());                                    \
   }
 
 // Generic helper function for binary operations
@@ -1628,25 +1630,26 @@ Error defineGenericBinaryNode(
 }
 
 // Macro for binary operations with min/max parameters
-#define _DEFINE_BINARY_NODE_WITH_MINMAX(name, op_type)              \
-  Error define##name##Node(                                         \
-      xnn_subgraph_t subgraph_ptr,                                  \
-      const std::unordered_map<uint32_t, uint32_t>& remapped_ids,   \
-      const NodePtr node,                                           \
-      const fb_xnnpack::XNNGraph* graph) noexcept {                 \
-    MAYBE_UNUSED(graph);                                            \
-    auto graph_node = node->xnode_union_as_XNN##name();             \
-    std::pair<float, float> min_max = getOutputMinMax(node);        \
-    struct xnn_binary_params params = {                             \
-        .output_min = min_max.first, .output_max = min_max.second}; \
-    return defineGenericBinaryNode(                                 \
-        subgraph_ptr,                                               \
-        remapped_ids,                                               \
-        graph_node,                                                 \
-        op_type,                                                    \
-        &params,                                                    \
-        node->xnode_union_type(),                                   \
-        node->debug_handle());                                      \
+#define _DEFINE_BINARY_NODE_WITH_MINMAX(name, op_type)            \
+  Error define##name##Node(                                       \
+      xnn_subgraph_t subgraph_ptr,                                \
+      const std::unordered_map<uint32_t, uint32_t>& remapped_ids, \
+      const NodePtr node,                                         \
+      const fb_xnnpack::XNNGraph* graph) noexcept {               \
+    MAYBE_UNUSED(graph);                                          \
+    auto graph_node = node->xnode_union_as_XNN##name();           \
+    std::pair<float, float> min_max = getOutputMinMax(node);      \
+    struct xnn_binary_params params;                              \
+    params.output_min = min_max.first;                            \
+    params.output_max = min_max.second;                           \
+    return defineGenericBinaryNode(                               \
+        subgraph_ptr,                                             \
+        remapped_ids,                                             \
+        graph_node,                                               \
+        op_type,                                                  \
+        &params,                                                  \
+        node->xnode_union_type(),                                 \
+        node->debug_handle());                                    \
   }
 
 // Macro for binary operations without parameters
