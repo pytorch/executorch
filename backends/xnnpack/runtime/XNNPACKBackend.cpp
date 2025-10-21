@@ -82,7 +82,11 @@ class XnnpackBackend final
 
     auto program_id =
         reinterpret_cast<uintptr_t>(context.get_runtime_allocator());
-    auto workspace = ET_UNWRAP(get_or_create_workspace(program_id));
+    auto workspace_result = get_or_create_workspace(program_id);
+    if (!workspace_result.ok()) {
+      return workspace_result.error();
+    }
+    auto workspace = workspace_result.get();
 
 #ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
     const std::lock_guard<std::mutex> lock_weight_cache(weights_cache_mutex_);

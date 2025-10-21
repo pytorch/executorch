@@ -5,6 +5,7 @@ Even if you don't use CMake directly, CMake can emit scripts for other format
 like Make, Ninja or Xcode. For information, see [cmake-generators(7)](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html).
 
 ## System Requirements
+
 ### Operating System
 
 ExecuTorch is tested on the following systems, although it should also work in similar environments.
@@ -20,6 +21,7 @@ ExecuTorch is tested on the following systems, although it should also work in s
     * Windows 10+ with Visual Studio 2022+ (experimental)
 
 ### Software Requirements
+
 * `conda` or another virtual environment manager
   - `conda` is recommended as it provides cross-language
     support and integrates smoothly with `pip` (Python's built-in package manager)
@@ -385,7 +387,7 @@ xcode-select --install
 ```
 
 Run the above command with `--help` flag to learn more on how to build additional backends
-(like [Core ML](backends-coreml.md), [MPS](backends-mps.md) or XNNPACK), etc.
+(like [Core ML](backends/coreml/coreml-overview.md), [MPS](backends/mps/mps-overview.md) or XNNPACK), etc.
 Note that some backends may require additional dependencies and certain versions of Xcode and iOS.
 See backend-specific documentation for more details.
 
