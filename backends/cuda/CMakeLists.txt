@@ -39,8 +39,7 @@ set(_tensor_maker_sources runtime/tensor/tensor_maker.cpp)
 add_library(cuda_tensor_maker STATIC ${_tensor_maker_sources})
 target_include_directories(
   cuda_tensor_maker
-  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
-         $<INSTALL_INTERFACE:include>
+  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
          $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
 )
 target_compile_options(
@@ -96,7 +95,8 @@ target_link_options(
   aoti_cuda PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
 )
 
-# Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and PyTorch CUDA libraries
+# Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and PyTorch
+# CUDA libraries
 target_link_libraries(
   aoti_cuda PUBLIC aoti_common cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
 )
