@@ -36,34 +36,33 @@ cmake_build_phi_3_mini() {
   cmake --build ${BUILD_DIR}/${MODEL_DIR} -j${NPROC} --config ${BUILD_TYPE}
 }
 
-# Download and convert tokenizer.model
+# Download tokenizer.model
 prepare_tokenizer() {
-  echo "Downloading and converting tokenizer.model"
-  wget -O tokenizer.model "https://huggingface.co/microsoft/Phi-3-mini-128k-instruct/resolve/main/tokenizer.model?download=true"
-  $PYTHON_EXECUTABLE -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
+  echo "Downloading tokenizer.model"
+  wget -O tokenizer.model "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct/resolve/main/tokenizer.model?download=true"
 }
 
 # Export phi-3-mini model to pte
 export_phi_3_mini () {
   echo "Exporting phi-3-mini. This will take a few minutes"
-  $PYTHON_EXECUTABLE -m executorch.examples.models.phi-3-mini.export_phi-3-mini -c "4k" -s 128 -o phi-3-mini.pte
+  optimum-cli export executorch --model microsoft/Phi-3-mini-4k-instruct --task text-generation --recipe xnnpack --output_dir ./
 }
 
 run_and_verify() {
     NOW=$(date +"%H:%M:%S")
     echo "Starting to run phi-3-mini runner at ${NOW}"
-    if [[ ! -f "phi-3-mini.pte" ]]; then
-        echo "Export failed. Abort"
+    if [[ ! -f "model.pte" ]]; then
+        echo "Missing model artifact. Abort"
         exit 1
     fi
-    if [[ ! -f "tokenizer.bin" ]]; then
-        echo "tokenizer.bin is missing."
+    if [[ ! -f "tokenizer.model" ]]; then
+        echo "tokenizer.model is missing."
         exit 1
     fi
 
     ${BUILD_DIR}/${MODEL_DIR}/phi_3_mini_runner \
-    --model_path=phi-3-mini.pte \
-    --tokenizer_path=tokenizer.bin \
+    --model_path=model.pte \
+    --tokenizer_path=tokenizer.model \
     --seq_len=60 \
     --temperature=0 \
     --prompt="<|system|>
@@ -92,7 +91,7 @@ What is the capital of France?<|end|>
 cmake_install_executorch_libraries
 cmake_build_phi_3_mini
 
-# Step 2. Export the tokenizer and model
+# Step 2. Export the model
 prepare_tokenizer
 export_phi_3_mini
 
