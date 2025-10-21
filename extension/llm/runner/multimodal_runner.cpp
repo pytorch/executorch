@@ -49,8 +49,10 @@ Error MultimodalRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
+  stats_->model_load_start_ms = time_in_ms();
   ET_CHECK_OK_OR_RETURN_ERROR(multimodal_prefiller_->load());
   ET_CHECK_OK_OR_RETURN_ERROR(text_token_generator_->load());
+  stats_->model_load_end_ms = time_in_ms();
   return Error::Ok;
 }
 
@@ -86,9 +88,7 @@ Error MultimodalRunner::generate(
   }
 
   if (!is_loaded()) {
-    stats_->model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
-    stats_->model_load_end_ms = time_in_ms();
   }
 
   if (config.warming) {
