@@ -165,7 +165,7 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   // Create ExecutorTorch tensor that wraps the existing memory
   // Note: We're NOT copying the data, just wrapping it
   // Using CUDA-specific tensor maker that supports incontiguous tensors
-  auto tensor = executorch::backends::cuda::make_tensor(
+  auto tensor = make_tensor(
       sizes, // tensor dimensions
       data, // existing memory (don't copy!)
       {}, // dim_order (empty, will be auto-generated)
@@ -272,7 +272,7 @@ AOTITorchError aoti_torch_empty_strided(
 
   // ETensor creation with dynamic shape support for edge cases
   // Using CUDA-specific tensor maker that supports incontiguous tensors
-  auto tensor = executorch::backends::cuda::make_tensor(
+  auto tensor = make_tensor(
       sizes,
       ptr,
       {}, // dim_order (empty, will be auto-generated)
@@ -656,7 +656,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   // Create new tensor view that reinterprets the same memory with different
   // shape/strides This creates a view, not a copy - the data pointer is shared
   // Using CUDA-specific tensor maker that supports incontiguous tensors
-  std::shared_ptr<Tensor> tensor = executorch::backends::cuda::make_tensor(
+  std::shared_ptr<Tensor> tensor = make_tensor(
       sizes, // New sizes with explicit SizesType
       data_ptr, // Reuse the same memory from source tensor
       {}, // dim_order (empty, will be auto-generated)
