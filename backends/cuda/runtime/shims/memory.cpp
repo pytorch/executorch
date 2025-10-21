@@ -234,10 +234,9 @@ AOTITorchError aoti_torch_empty_strided(
     }
     // For each dimension, add stride[i] * (size[i] - 1)
     // This gives us the maximum offset in that dimension
-    int64_t stride_i = (strides_ptr != nullptr) ? strides_ptr[i] : 0;
+    int64_t stride_i = (strides_ptr != nullptr) ? strides_ptr[i] : 1;
     if (strides_ptr == nullptr) {
       // Calculate contiguous stride if not provided
-      stride_i = 1;
       for (int64_t j = i + 1; j < ndim; j++) {
         stride_i *= sizes_ptr[j];
       }
