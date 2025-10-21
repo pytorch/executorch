@@ -11,6 +11,7 @@
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
+#include <executorch/backends/cuda/runtime/tensor/tensor_maker.h>
 #include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/platform/log.h>
 #include <cstdint>
@@ -163,9 +164,11 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
 
   // Create ExecutorTorch tensor that wraps the existing memory
   // Note: We're NOT copying the data, just wrapping it
-  auto tensor = executorch::extension::from_blob(
-      data, // existing memory (don't copy!)
+  // Using CUDA-specific tensor maker that supports incontiguous tensors
+  auto tensor = executorch::backends::cuda::make_tensor(
       sizes, // tensor dimensions
+      data, // existing memory (don't copy!)
+      {}, // dim_order (empty, will be auto-generated)
       strides, // tensor strides (allows different strides)
       dtype_to_scalar_type(dtype) // map int32_t dtype to ScalarType
   );
@@ -268,8 +271,13 @@ AOTITorchError aoti_torch_empty_strided(
   auto strides = convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
 
   // ETensor creation with dynamic shape support for edge cases
-  auto tensor = executorch::extension::from_blob(
-      ptr, sizes, strides, dtype_to_scalar_type(dtype));
+  // Using CUDA-specific tensor maker that supports incontiguous tensors
+  auto tensor = executorch::backends::cuda::make_tensor(
+      sizes,
+      ptr,
+      {}, // dim_order (empty, will be auto-generated)
+      strides,
+      dtype_to_scalar_type(dtype));
 
   // Store the tensor so it doesn't get destroyed
   tensors.insert(tensor);
@@ -647,9 +655,11 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
   // Create new tensor view that reinterprets the same memory with different
   // shape/strides This creates a view, not a copy - the data pointer is shared
-  std::shared_ptr<Tensor> tensor = executorch::extension::from_blob(
-      data_ptr, // Reuse the same memory from source tensor
+  // Using CUDA-specific tensor maker that supports incontiguous tensors
+  std::shared_ptr<Tensor> tensor = executorch::backends::cuda::make_tensor(
       sizes, // New sizes with explicit SizesType
+      data_ptr, // Reuse the same memory from source tensor
+      {}, // dim_order (empty, will be auto-generated)
       strides, // New strides with explicit StridesType
       dtype_to_scalar_type(dtype) // Convert dtype with explicit type casting
   );
