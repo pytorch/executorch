@@ -28,6 +28,25 @@ runtime.cxx_library(
 )
 
 runtime.cxx_library(
+    name = "tensor_maker",
+    srcs = [
+        "tensor/tensor_maker.cpp",
+    ],
+    headers = [
+        "tensor/tensor_maker.h",
+    ],
+    # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+    link_whole = True,
+    supports_python_dlopen = True,
+    visibility = ["@EXECUTORCH_CLIENTS"],
+    deps = [
+        "//executorch/runtime/core:core",
+        "//executorch/runtime/core/exec_aten:lib",
+        "//executorch/runtime/core/exec_aten/util:tensor_util",
+    ],
+)
+
+runtime.cxx_library(
     name = "runtime_shims",
     srcs = [
         "guard.cpp",
@@ -52,8 +71,8 @@ runtime.cxx_library(
     compiler_flags = ["-Wno-global-constructors"],
     visibility = ["@EXECUTORCH_CLIENTS"],
     deps = [
+        ":tensor_maker",
         "//executorch/backends/aoti:common_shims",
-        "//executorch/extension/tensor:tensor",
         "//executorch/runtime/core:core",
         "//executorch/runtime/core/exec_aten:lib",
         "//executorch/runtime/platform:platform",
