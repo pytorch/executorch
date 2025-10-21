@@ -15,6 +15,8 @@ import numpy as np
 import torch
 from executorch.backends.cadence.aot.typing_stubs import expand
 
+from executorch.exir.scalar_type import ScalarType
+
 
 class TestRefImplementations(unittest.TestCase):
     @expand(
@@ -103,7 +105,7 @@ class TestRefImplementations(unittest.TestCase):
             ("uint8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 6, torch.uint8),
         ]
     )
-    def test_quantized_add(
+    def test_quantized_add_per_tensor(
         self,
         name: str,
         X: int,
@@ -121,28 +123,12 @@ class TestRefImplementations(unittest.TestCase):
         Y_tensor = torch.tensor([Y], dtype=dtype)
         expected_output = torch.tensor([expected_value], dtype=dtype)
 
-        quantized_add = (
+        quantized_add_per_tensor = (
             torch.ops.cadence.quantized_add_asym8sxasym8s_asym8s.per_tensor
             if dtype == torch.int8
             else torch.ops.cadence.quantized_add_asym8uxasym8u_asym8u.per_tensor
         )
-        output = quantized_add(
-            X_tensor,
-            X_scale,
-            X_zero_point,
-            Y_tensor,
-            Y_scale,
-            Y_zero_point,
-            out_scale,
-            out_zero_point,
-        )
-
-        self.assertTrue(
-            torch.equal(output, expected_output),
-            f"Values don't match in {name}: got {output}, expected {expected_output}",
-        )
-
-        output = torch.ops.cadence.quantized_add(
+        output = quantized_add_per_tensor(
             X_tensor,
             X_scale,
             X_zero_point,
@@ -1412,7 +1398,7 @@ class TestRefImplementations(unittest.TestCase):
             ],
         ]
     )
-    def test_quantized_relu(
+    def test_quantized_relu_per_tensor(
         self,
         name: str,
         X: torch.Tensor,
@@ -1426,17 +1412,17 @@ class TestRefImplementations(unittest.TestCase):
 
         match dtype:
             case torch.int8:
-                quantized_relu = (
+                quantized_relu_per_tensor = (
                     torch.ops.cadence.quantized_relu_asym8s_asym8s.per_tensor
                 )
             case torch.uint8:
-                quantized_relu = (
+                quantized_relu_per_tensor = (
                     torch.ops.cadence.quantized_relu_asym8u_asym8u.per_tensor
                 )
             case _:
-                quantized_relu = torch.ops.cadence.quantized_relu_per_tensor
+                quantized_relu_per_tensor = torch.ops.cadence.quantized_relu_per_tensor
 
-        output = quantized_relu(
+        output = quantized_relu_per_tensor(
             X,
             X_zero_point,
             out_zero_point,
@@ -2758,3 +2744,144 @@ class TestRefImplementations(unittest.TestCase):
         self.assertTrue(U.dtype == dtype, "U dtype mismatch")
         self.assertTrue(S.dtype == dtype, "S dtype mismatch")
         self.assertTrue(Vh.dtype == dtype, "Vh dtype mismatch")
+
+    def test_quantized_add(self) -> None:
+        # Test quantized_add (default variant), just to make sure it runs since wrapper around per_tensor variant
+        X = torch.tensor([[1, 2], [3, 4]], dtype=torch.int8)
+        X_scale = torch.tensor([0.1])
+        X_zero_point = torch.tensor([0])
+        Y = torch.tensor([[5, 6], [7, 8]], dtype=torch.int8)
+        Y_scale = torch.tensor([0.1])
+        Y_zero_point = torch.tensor([0])
+        out_scale = 0.1
+        out_zero_point = 0
+        torch.ops.cadence.quantized_add(
+            X,
+            X_scale,
+            X_zero_point,
+            Y,
+            Y_scale,
+            Y_zero_point,
+            out_scale,
+            out_zero_point,
+        )
+
+    def test_requantize(self) -> None:
+        # Test requantize (default variant), just to make sure it runs since wrapper around per_tensor variant
+        input_tensor = torch.tensor([[1, 2], [3, 4]], dtype=torch.int8)
+        in_scale = torch.tensor([0.1])
+        in_zero_point = torch.tensor([0])
+        out_scale_tensor = torch.tensor([0.2])
+        out_zero_point_tensor = torch.tensor([0])
+        torch.ops.cadence.requantize(
+            input_tensor,
+            in_scale,
+            in_zero_point,
+            out_scale_tensor,
+            out_zero_point_tensor,
+            ScalarType.CHAR,
+        )
+
+    def test_quantized_conv2d_nchw(self) -> None:
+        # Test quantized_conv2d_nchw (default variant), just to make sure it runs since wrapper around per_tensor variant
+        input_conv = torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.int8)
+        weight_conv = torch.tensor([[[[1, 0], [0, 1]]]], dtype=torch.int8)
+        bias_conv = torch.tensor([0], dtype=torch.int32)
+        stride = [1, 1]
+        padding = [0, 0]
+        dilation = [1, 1]
+        groups = 1
+        input_zero_point = 0
+        weight_zero_point = torch.tensor([0])
+        bias_scale = torch.tensor([1.0])
+        conv_out_scale = 0.1
+        conv_out_zero_point = 0
+        out_multiplier = torch.tensor([1073741824], dtype=torch.int32)
+        out_shift = torch.tensor([0], dtype=torch.int32)
+        torch.ops.cadence.quantized_conv2d_nchw(
+            input_conv,
+            weight_conv,
+            bias_conv,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_zero_point,
+            weight_zero_point,
+            bias_scale,
+            conv_out_scale,
+            conv_out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+
+    def test_quantized_relu(self) -> None:
+        # Test quantized_relu (default variant), just to make sure it runs since wrapper around per_tensor variant
+        X_relu = torch.tensor([[-1, 0, 1, 3]], dtype=torch.int8)
+        X_zero_point_relu = torch.tensor([0])
+        relu_out_zero_point = 0
+        out_multiplier_relu = torch.tensor([1073741824], dtype=torch.int32)
+        out_shift_relu = torch.tensor([0], dtype=torch.int32)
+        torch.ops.cadence.quantized_relu(
+            X_relu,
+            X_zero_point_relu,
+            relu_out_zero_point,
+            out_multiplier_relu,
+            out_shift_relu,
+        )
+
+    def test_quantized_conv2d_nhwc(self) -> None:
+        # Test quantized_conv2d_nhwc (default variant), just to make sure it runs since wrapper around per_tensor variant
+        stride = [1, 1]
+        padding = [0, 0]
+        dilation = [1, 1]
+        groups = 1
+        input_zero_point = 0
+        weight_zero_point = torch.tensor([0])
+        bias_scale = torch.tensor([1.0])
+        conv_out_scale = 0.1
+        conv_out_zero_point = 0
+        input_nhwc = torch.tensor([[[[1], [2]], [[3], [4]]]], dtype=torch.int8)
+        weight_nhwc = torch.tensor([[[[1], [0]], [[0], [1]]]], dtype=torch.int8)
+        bias_nhwc = torch.tensor([0], dtype=torch.int32)
+        out_multiplier = torch.tensor([1073741824], dtype=torch.int32)
+        out_shift = torch.tensor([0], dtype=torch.int32)
+        torch.ops.cadence.quantized_conv2d_nhwc(
+            input_nhwc,
+            weight_nhwc,
+            bias_nhwc,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_zero_point,
+            weight_zero_point,
+            bias_scale,
+            conv_out_scale,
+            conv_out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+
+    def test_quantized_layer_norm(self) -> None:
+        # Test quantized_layer_norm (default variant), just to make sure it runs since wrapper around per_tensor variant
+        X_ln = torch.tensor([[-1, 1]], dtype=torch.int8)
+        X_scale_ln = torch.tensor([0.1])
+        X_zero_point_ln = torch.tensor([0])
+        normalized_shape = [2]
+        weight_ln = torch.tensor([1.0, 1.0])
+        bias_ln = torch.tensor([0.0, 0.0])
+        eps = 1e-5
+        output_scale = 0.1
+        output_zero_point = 0
+        torch.ops.cadence.quantized_layer_norm(
+            X_ln,
+            X_scale_ln,
+            X_zero_point_ln,
+            normalized_shape,
+            weight_ln,
+            bias_ln,
+            eps,
+            output_scale,
+            output_zero_point,
+        )
