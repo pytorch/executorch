@@ -1,19 +1,13 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
-#include <executorch/extension/tensor/tensor_ptr.h>
+#include <executorch/backends/cuda/runtime/tensor/tensor_maker.h>
 
 #include <numeric>
 
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
-namespace executorch {
-namespace extension {
+namespace executorch::backends::cuda {
+
 namespace {
 #ifndef USE_ATEN_LIB
 /**
@@ -54,7 +48,7 @@ struct Storage final {
 #endif // USE_ATEN_LIB
 } // namespace
 
-TensorPtr make_tensor_ptr(
+TensorPtr make_tensor(
     std::vector<executorch::aten::SizesType> sizes,
     void* data,
     std::vector<executorch::aten::DimOrderType> dim_order,
@@ -80,31 +74,9 @@ TensorPtr make_tensor_ptr(
     }
   }
 
-// Skip stride calculation and incontiguous tensor check for CUDA backend since
-// AOTI-CUDA handles both contiguous and incontiguous tensors. This will be
-// removed after SlimTensor migration.
-#ifndef USE_CUDA_BACKEND
-  std::vector<executorch::aten::StridesType> computed_strides(dim);
-
-  auto error = runtime::dim_order_to_stride(
-      sizes.data(), dim_order.data(), dim, computed_strides.data());
-  ET_CHECK_MSG(error == runtime::Error::Ok, "Failed to compute strides.");
-
-  if (!strides.empty()) {
-    for (size_t i = 0; i < dim; i++) {
-      ET_CHECK_MSG(
-          strides[i] == computed_strides[i] || sizes[i] == 1,
-          "invalid strides for dim %zu: %" ET_PRI_SIZES_AND_STRIDES
-          "!= %" ET_PRI_SIZES_AND_STRIDES
-          " while its size is %" ET_PRI_SIZES_AND_STRIDES " != 1",
-          i,
-          strides[i],
-          computed_strides[i],
-          sizes[i]);
-    }
-  }
-  strides = std::move(computed_strides);
-#endif // USE_CUDA_BACKEND
+  // AOTI backends (like AOTI-CUDA) handle both contiguous and incontiguous
+  // tensors, so we skip stride calculation and incontiguous tensor checks.
+  // Strides are passed through as-is without validation.
 
 #ifndef USE_ATEN_LIB
   executorch::aten::TensorImpl tensor_impl(
@@ -145,71 +117,4 @@ TensorPtr make_tensor_ptr(
 #endif // USE_ATEN_LIB
 }
 
-TensorPtr make_tensor_ptr(
-    std::vector<executorch::aten::SizesType> sizes,
-    std::vector<uint8_t> data,
-    std::vector<executorch::aten::DimOrderType> dim_order,
-    std::vector<executorch::aten::StridesType> strides,
-    executorch::aten::ScalarType type,
-    executorch::aten::TensorShapeDynamism dynamism) {
-  ET_CHECK_MSG(
-      data.size() ==
-          executorch::aten::compute_numel(sizes.data(), sizes.size()) *
-              executorch::aten::elementSize(type),
-      "Data size does not match tensor size.");
-  auto data_ptr = data.data();
-  return make_tensor_ptr(
-      std::move(sizes),
-      data_ptr,
-      std::move(dim_order),
-      std::move(strides),
-      type,
-      dynamism,
-      // Data is moved into the deleter and is destroyed together with Storage.
-      [data = std::move(data)](void*) {});
-}
-
-TensorPtr clone_tensor_ptr(const executorch::aten::Tensor& tensor) {
-  std::vector<executorch::aten::SizesType> sizes(
-      tensor.sizes().begin(), tensor.sizes().end());
-  std::vector<executorch::aten::DimOrderType> dim_order{
-#ifndef USE_ATEN_LIB
-      tensor.dim_order().begin(), tensor.dim_order().end()
-#endif // USE_ATEN_LIB
-  };
-  std::vector<executorch::aten::StridesType> strides(
-      tensor.strides().begin(), tensor.strides().end());
-  auto dynamism = executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND;
-#ifndef USE_ATEN_LIB
-  dynamism = tensor.shape_dynamism();
-#endif // USE_ATEN_LIB
-  return tensor.const_data_ptr()
-      ? make_tensor_ptr(
-            std::move(sizes),
-            std::vector<uint8_t>(
-                (uint8_t*)tensor.const_data_ptr(),
-                (uint8_t*)tensor.const_data_ptr() + tensor.nbytes()),
-            std::move(dim_order),
-            std::move(strides),
-            tensor.scalar_type(),
-            dynamism)
-      : make_tensor_ptr(
-            std::move(sizes),
-            nullptr,
-            std::move(dim_order),
-            std::move(strides),
-            tensor.scalar_type(),
-            dynamism);
-}
-
-runtime::Error resize_tensor_ptr(
-    TensorPtr& tensor,
-    const std::vector<executorch::aten::SizesType>& sizes) {
-  return ET_RUNTIME_NAMESPACE::resize_tensor(
-      *tensor,
-      executorch::aten::ArrayRef<executorch::aten::SizesType>(
-          sizes.data(), sizes.size()));
-}
-
-} // namespace extension
-} // namespace executorch
+} // namespace executorch::backends::cuda
