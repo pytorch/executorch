@@ -106,7 +106,7 @@ PyTorch-native quantization and optimization library for preparing efficient mod
 
 Optimize LLM fine-tuning with faster training and reduced VRAM usage, then deploy efficiently with ExecuTorch.
 
-[Example Model →](https://huggingface.co/metascroy/Llama-3.2-1B-Instruct-int8-int4)
+[Example Model →](https://huggingface.co/metascroy/Qwen3-4B-int8-int4-unsloth)
 :::
 
 ::::
