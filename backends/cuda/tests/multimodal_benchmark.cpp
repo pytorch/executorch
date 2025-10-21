@@ -17,6 +17,9 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/portable_type/tensor.h>
 
+#include <cuda_runtime.h>
+#include <nvml.h>
+
 namespace {
 
 using executorch::aten::ScalarType;
@@ -201,7 +204,20 @@ TensorPtr create_fallback_text_embedding(const ModelConfig& config) {
 struct MethodTiming {
   double load_ms{0.0};
   double run_ms{0.0};
+  size_t peak_gpu_memory_bytes{0};
 };
+
+size_t get_gpu_memory_used() {
+  size_t free_bytes = 0;
+  size_t total_bytes = 0;
+  cudaError_t status = cudaMemGetInfo(&free_bytes, &total_bytes);
+  if (status != cudaSuccess) {
+    std::cerr << "Warning: cudaMemGetInfo failed: "
+              << cudaGetErrorString(status) << std::endl;
+    return 0;
+  }
+  return total_bytes - free_bytes;
+}
 
 enum class MethodCategory { ENCODER, TOKEN_EMBEDDING, TEXT_DECODER, UNKNOWN };
 
@@ -306,6 +322,9 @@ Error execute_method(
   std::vector<EValue> inputs = create_inputs_for_method(
       method_name, category, model_type, config, token_output, owned_inputs);
 
+  cudaDeviceSynchronize();
+  size_t mem_before = get_gpu_memory_used();
+
   const auto run_start = Clock::now();
   ET_LOG(Info, "%s running", method_name.c_str());
   Result<std::vector<EValue>> output_result =
@@ -313,6 +332,11 @@ Error execute_method(
   ET_LOG(Info, "%s done", method_name.c_str());
   const auto run_end = Clock::now();
   timing.run_ms = DurationMs(run_end - run_start).count();
+
+  cudaDeviceSynchronize();
+  size_t mem_after = get_gpu_memory_used();
+  timing.peak_gpu_memory_bytes =
+      mem_after > mem_before ? (mem_after - mem_before) : 0;
 
   if (output_result.error() != Error::Ok) {
     std::cerr << method_name << " execution failed: error code "
@@ -455,6 +479,13 @@ int main(int argc, char** argv) {
     std::cout << "\nRun latency (ms):" << std::endl;
     for (const auto& [name, timing] : timings) {
       std::cout << "  " << name << ": " << timing.run_ms << std::endl;
+    }
+
+    std::cout << "\nPeak GPU memory usage:" << std::endl;
+    for (const auto& [name, timing] : timings) {
+      double memory_mb = timing.peak_gpu_memory_bytes / (1024.0 * 1024.0);
+      std::cout << "  " << name << ": " << memory_mb << " MB ("
+                << timing.peak_gpu_memory_bytes << " bytes)" << std::endl;
     }
 
     return 0;
