@@ -180,3 +180,7 @@ You can also produce raw audio file as follows (for Option A):
 ```
 ffmpeg -i audio.mp3 -f f32le -acodec pcm_f32le -ar 16000 audio_input.bin
 ```
+
+### Android and iOS mobile demo apps
+
+We have example mobile demo apps for Android and iOS (using XNNPACK) [here](https://github.com/meta-pytorch/executorch-examples/tree/main/llm)
