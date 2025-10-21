@@ -39,7 +39,7 @@ All operators support dynamic input shapes unless otherwise noted (i.e. "no
 resize support"). The expectation is that over time, all operators will be able
 to support dynamic shapes.
 
-.. csv-table:: Operator Support
+.. csv-table:: Vulkan Backend Operator Support
    :file: vulkan-op-support-table.csv
    :header-rows: 1
    :widths: 25 25 75
