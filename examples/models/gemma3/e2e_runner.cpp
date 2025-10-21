@@ -23,6 +23,8 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/log.h>
 
+#include <cuda_runtime.h>
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
@@ -66,6 +68,20 @@ using ::executorch::extension::llm::make_image_input;
 using ::executorch::extension::llm::make_text_input;
 using ::executorch::extension::llm::MultimodalInput;
 using ::executorch::runtime::EValue;
+
+size_t get_gpu_memory_used() {
+  size_t free_bytes = 0;
+  size_t total_bytes = 0;
+  cudaError_t status = cudaMemGetInfo(&free_bytes, &total_bytes);
+  if (status != cudaSuccess) {
+    ET_LOG(
+        Error,
+        "Warning: cudaMemGetInfo failed: %s",
+        cudaGetErrorString(status));
+    return 0;
+  }
+  return total_bytes - free_bytes;
+}
 
 bool ends_with(const std::string& str, const std::string& suffix) {
   return str.size() >= suffix.size() &&
@@ -200,12 +216,28 @@ int32_t main(int32_t argc, char** argv) {
     return 1;
   }
 
+  // Measure memory before loading
+  cudaDeviceSynchronize();
+  size_t mem_before_load = get_gpu_memory_used();
+  ET_LOG(
+      Info,
+      "GPU memory before loading: %.2f MB",
+      mem_before_load / (1024.0 * 1024.0));
+
   // Load runner
   auto load_error = runner->load();
   if (load_error != ::executorch::runtime::Error::Ok) {
     ET_LOG(Error, "Failed to load multimodal runner");
     return 1;
   }
+
+  // Measure memory after loading
+  cudaDeviceSynchronize();
+  size_t mem_after_load = get_gpu_memory_used();
+  ET_LOG(
+      Info,
+      "GPU memory after loading: %.2f MB",
+      mem_after_load / (1024.0 * 1024.0));
 
   // Prepare inputs
   std::vector<MultimodalInput> inputs = {
@@ -230,13 +262,64 @@ int32_t main(int32_t argc, char** argv) {
     runner->reset();
   }
 
+  // Measure memory before generation
+  cudaDeviceSynchronize();
+  size_t mem_before_gen = get_gpu_memory_used();
+
   auto error = runner->generate(inputs, config);
 
   if (error != ::executorch::runtime::Error::Ok) {
     ET_LOG(Error, "Failed to generate with multimodal runner\n");
     return 1;
   }
+
+  // Measure memory after generation
+  cudaDeviceSynchronize();
+  size_t mem_after_gen = get_gpu_memory_used();
+
   ET_LOG(Info, "Generated successfully");
+
+  // Calculate and print memory usage statistics
+  size_t load_memory = mem_after_load - mem_before_load;
+  size_t gen_memory =
+      mem_after_gen > mem_before_gen ? (mem_after_gen - mem_before_gen) : 0;
+  size_t total_memory = mem_after_gen - mem_before_load;
+  size_t peak_memory = mem_after_gen;
+
+  std::printf("\n=== CUDA Memory Usage Statistics ===\n");
+  std::printf(
+      "Memory before loading:          %.2f MB (%zu bytes)\n",
+      mem_before_load / (1024.0 * 1024.0),
+      mem_before_load);
+  std::printf(
+      "Memory after loading:           %.2f MB (%zu bytes)\n",
+      mem_after_load / (1024.0 * 1024.0),
+      mem_after_load);
+  std::printf(
+      "Memory consumed by loading:     %.2f MB (%zu bytes)\n",
+      load_memory / (1024.0 * 1024.0),
+      load_memory);
+  std::printf(
+      "Memory before generation:       %.2f MB (%zu bytes)\n",
+      mem_before_gen / (1024.0 * 1024.0),
+      mem_before_gen);
+  std::printf(
+      "Memory after generation:        %.2f MB (%zu bytes)\n",
+      mem_after_gen / (1024.0 * 1024.0),
+      mem_after_gen);
+  std::printf(
+      "Memory consumed by generation:  %.2f MB (%zu bytes)\n",
+      gen_memory / (1024.0 * 1024.0),
+      gen_memory);
+  std::printf(
+      "Total memory consumed:          %.2f MB (%zu bytes)\n",
+      total_memory / (1024.0 * 1024.0),
+      total_memory);
+  std::printf(
+      "Peak GPU memory used:           %.2f MB (%zu bytes)\n",
+      peak_memory / (1024.0 * 1024.0),
+      peak_memory);
+  std::printf("====================================\n\n");
 
   return 0;
 }
