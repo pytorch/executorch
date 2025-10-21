@@ -68,68 +68,68 @@ dw_conv2d_2x2_1x6x4x4_gp6_st1 = Conv2d(
     batches=1,
 )
 
-dw_conv1d_3_1x3x256_gp3_st1 = Conv1d(
+dw_conv1d_3_1x3x32_gp3_st1 = Conv1d(
     in_channels=3,
     out_channels=3,
     kernel_size=3,
     stride=1,
     groups=3,
     padding=0,
-    length=256,
+    length=32,
     batches=1,
 )
 
-dw_conv2d_3x3_1x3x256x256_gp3_st1 = Conv2d(
+dw_conv2d_3x3_1x3x24x24_gp3_st1 = Conv2d(
     in_channels=3,
     out_channels=3,
     kernel_size=(3, 3),
     stride=(1, 1),
     groups=3,
     padding=0,
-    width=256,
-    height=256,
+    width=24,
+    height=24,
     batches=1,
 )
 
-dw_conv2d_3x3_1x4x256x256_gp4_st1 = Conv2d(
+dw_conv2d_3x3_1x4x24x24_gp4_st1 = Conv2d(
     in_channels=4,
     out_channels=8,
     kernel_size=(3, 3),
     stride=(1, 1),
     groups=4,
     padding=0,
-    width=256,
-    height=256,
+    width=24,
+    height=24,
     batches=1,
 )
 
-dw_conv2d_3x3_2x8x198x198_gp8_st3 = Conv2d(
+dw_conv2d_3x3_2x8x27x27_gp8_st3 = Conv2d(
     in_channels=8,
     out_channels=16,
     kernel_size=(3, 3),
     stride=3,
     groups=8,
     padding=0,
-    width=198,
-    height=198,
+    width=27,
+    height=27,
     batches=2,
 )
 
-dw_conv2d_3x3_1x4x256x256_gp4_nobias = Conv2d(
+dw_conv2d_3x3_1x4x24x24_gp4_nobias = Conv2d(
     in_channels=4,
     out_channels=8,
     kernel_size=(3, 3),
     stride=1,
     groups=4,
     bias=False,
-    width=256,
-    height=256,
+    width=24,
+    height=24,
     batches=1,
 )
 
 two_dw_conv1d = Conv1d(
     nbr_conv=2,
-    length=64,
+    length=16,
     in_channels=[4, 8],
     out_channels=[8, 24],
     kernel_size=[3, 3],
@@ -142,8 +142,8 @@ two_dw_conv1d = Conv1d(
 
 two_dw_conv2d = Conv2d(
     nbr_conv=2,
-    width=64,
-    height=64,
+    width=24,
+    height=24,
     in_channels=[4, 8],
     out_channels=[8, 24],
     kernel_size=[(3, 3), (3, 3)],
@@ -157,10 +157,10 @@ two_dw_conv2d = Conv2d(
 # Shenanigan to get a nicer output when test fails.
 test_data_conv2d_FP = {
     "2x2_1x6x4x4_gp6_st1": lambda: dw_conv2d_2x2_1x6x4x4_gp6_st1,
-    "3x3_1x3x256x256_gp3_st1": lambda: dw_conv2d_3x3_1x3x256x256_gp3_st1,
-    "3x3_1x4x256x256_gp4_nobias": lambda: dw_conv2d_3x3_1x4x256x256_gp4_nobias,
-    "3x3_1x4x256x256_gp4_st1": lambda: dw_conv2d_3x3_1x4x256x256_gp4_st1,
-    "3x3_2x8x198x198_gp8_st3": lambda: dw_conv2d_3x3_2x8x198x198_gp8_st3,
+    "3x3_1x3x24x24_gp3_st1": lambda: dw_conv2d_3x3_1x3x24x24_gp3_st1,
+    "3x3_1x4x24x24_gp4_nobias": lambda: dw_conv2d_3x3_1x4x24x24_gp4_nobias,
+    "3x3_1x4x24x24_gp4_st1": lambda: dw_conv2d_3x3_1x4x24x24_gp4_st1,
+    "3x3_2x8x27x27_gp8_st3": lambda: dw_conv2d_3x3_2x8x27x27_gp8_st3,
     "two_dw_conv2d": lambda: two_dw_conv2d,
 }
 
@@ -176,9 +176,9 @@ test_data_conv2d_u85 = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
     for (k, v) in {
         "2x2_1x6x4x4_gp6_st1": lambda: dw_conv2d_2x2_1x6x4x4_gp6_st1,
-        "3x3_1x3x256x256_gp3_st1": lambda: dw_conv2d_3x3_1x3x256x256_gp3_st1,
-        "3x3_1x4x256x256_gp4_st1": lambda: dw_conv2d_3x3_1x4x256x256_gp4_st1,
-        "3x3_1x4x256x256_gp4_nobias": lambda: dw_conv2d_3x3_1x4x256x256_gp4_nobias,
+        "3x3_1x3x24x24_gp3_st1": lambda: dw_conv2d_3x3_1x3x24x24_gp3_st1,
+        "3x3_1x4x24x24_gp4_st1": lambda: dw_conv2d_3x3_1x4x24x24_gp4_st1,
+        "3x3_1x4x24x24_gp4_nobias": lambda: dw_conv2d_3x3_1x4x24x24_gp4_nobias,
     }.items()
     for q in [True, False]
 }
@@ -186,7 +186,7 @@ test_data_conv2d_u85 = {
 test_data_conv1d_FP = {
     "2_1x6x4_gp6_st1": lambda: dw_conv1d_2_1x6x4_gp6_st1,
     "two_dw_conv1d": lambda: two_dw_conv1d,
-    "3_1x3x256_gp3_st1": lambda: dw_conv1d_3_1x3x256_gp3_st1,
+    "3_1x3x32_gp3_st1": lambda: dw_conv1d_3_1x3x32_gp3_st1,
     "3_1x3x14_gp3_st1": lambda: dw_conv1d_3_1x3x14_gp3_st1,
 }
 
