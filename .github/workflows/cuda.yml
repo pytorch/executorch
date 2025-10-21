@@ -164,6 +164,61 @@ jobs:
         ls -al "${RUNNER_ARTIFACT_DIR}"
         echo "::endgroup::"
 
+  export-gemma3-cuda-artifact:
+    name: export-gemma3-cuda-artifact
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      fail-fast: false
+    with:
+      timeout: 90
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      upload-artifact: gemma3-cuda-export
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch"
+        ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Setup Huggingface"
+        pip install -U "huggingface_hub[cli]" accelerate
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        pip list
+        echo "::endgroup::"
+
+        echo "::group::Export Gemma3"
+        optimum-cli export executorch \
+            --model "google/gemma-3-4b-it" \
+            --task "multimodal-text-to-text" \
+            --recipe "cuda" \
+            --dtype bfloat16 \
+            --device cuda \
+            --max_seq_len 64 \
+            --output_dir ./
+
+        test -f model.pte
+        test -f aoti_cuda_blob.ptd
+        echo "::endgroup::"
+
+        echo "::group::Store Gemma3 Artifacts"
+        mkdir -p "${RUNNER_ARTIFACT_DIR}/"
+        cp model.pte "${RUNNER_ARTIFACT_DIR}/"
+        cp aoti_cuda_blob.ptd "${RUNNER_ARTIFACT_DIR}/"
+        ls -al "${RUNNER_ARTIFACT_DIR}/"
+        echo "::endgroup::"
+
   benchmark-voxtral-cuda:
     name: benchmark-voxtral-cuda
     needs: export-voxtral-cuda-artifact
@@ -204,13 +259,63 @@ jobs:
               -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
               -DEXECUTORCH_BUILD_TESTS=ON \
               -Bcmake-out .
-        cmake --build cmake-out -j$(( $(nproc) - 1 )) --target voxtral_runner
+        cmake --build cmake-out -j$(( $(nproc) - 1 )) --target multimodal_benchmark
         echo "::endgroup::"
 
         echo "::group::Run Voxtral Benchmark"
 
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        cmake-out/backends/cuda/voxtral_runner model.pte aoti_cuda_blob.ptd
+        cmake-out/backends/cuda/multimodal_benchmark voxtral model.pte aoti_cuda_blob.ptd
+
+        echo "::endgroup::"
+
+  benchmark-gemma3-cuda:
+    name: benchmark-gemma3-cuda
+    needs: export-gemma3-cuda-artifact
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      download-artifact: gemma3-cuda-export
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch Requirements"
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_requirements.sh
+        pip list
+        echo "::endgroup::"
+
+        echo "::group::Prepare Gemma3 Artifacts"
+        cp "${RUNNER_ARTIFACT_DIR}/model.pte" .
+        cp "${RUNNER_ARTIFACT_DIR}/aoti_cuda_blob.ptd" .
+        ls -al model.pte aoti_cuda_blob.ptd
+        echo "::endgroup::"
+
+        echo "::group::Build Gemma3 Benchmark"
+        cmake -DCMAKE_BUILD_TYPE=Release \
+              -DEXECUTORCH_BUILD_CUDA=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+              -DEXECUTORCH_BUILD_TESTS=ON \
+              -Bcmake-out .
+        cmake --build cmake-out -j$(( $(nproc) - 1 )) --target multimodal_benchmark
+        echo "::endgroup::"
+
+        echo "::group::Run Gemma3 Benchmark"
+
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+        cmake-out/backends/cuda/multimodal_benchmark gemma3 model.pte aoti_cuda_blob.ptd
 
         echo "::endgroup::"
 
