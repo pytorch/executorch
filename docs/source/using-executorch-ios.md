@@ -72,6 +72,10 @@ let package = Package(
         .product(name: "kernels_optimized", package: "executorch"),
         // Add other backends and kernels as needed.
       ]),
+      linkerSettings: [
+         // Force load all symbols from static libraries to trigger backends and kernels registration
+         .unsafeFlags(["-Wl,-all_load"])
+      ]
   ]
 )
 ```
