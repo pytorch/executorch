@@ -1719,6 +1719,83 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(external_map["linear.weight"], 0)
         self.assertEqual(external_map["linear.bias"], 1)
 
+    def test_constant_tagged_tensor_dedup(self) -> None:
+        class ConstantModule(nn.Module):
+            def __init__(self):
+                super().__init__()
+                constant = torch.tensor([1.0, 2.0, 3.0])
+
+                # Register the same value with two different names as persistent buffers
+                self.register_buffer("c0", constant.clone(), persistent=True)
+                self.register_buffer("c1", constant.clone(), persistent=True)
+
+            def forward(self, x):
+                return x + self.c0 + self.c1
+
+        model = to_edge(
+            export(ConstantModule(), (torch.ones(1, 3),), strict=True)
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                external_constants=True,
+            )
+        )
+        emitter_output = model._emitter_output
+        # constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # only one item in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 1)
+        # Setting external_constants=True, saves all constants to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(len(external_map), 2)
+        self.assertEqual(external_map["c0"], 0)
+        self.assertEqual(external_map["c1"], 0)
+
+    def test_constant_tagged_tensor_dedup_2(self) -> None:
+        class ConstantModule(nn.Module):
+            def __init__(self):
+                super().__init__()
+                constant0_4 = torch.tensor([1.0, 2.0, 3.0])
+                constant4_5 = torch.tensor([2.0, 3.0, 4.0])
+
+                # Register the same value with two different names as persistent buffers
+                self.register_buffer("c0", constant0_4.clone(), persistent=True)
+                self.register_buffer("c1", constant0_4.clone(), persistent=True)
+                self.register_buffer("c2", constant0_4.clone(), persistent=True)
+                self.register_buffer("c3", constant0_4.clone(), persistent=True)
+                self.register_buffer("c4", constant4_5.clone(), persistent=True)
+                self.register_buffer("c5", constant4_5.clone(), persistent=True)
+
+            def forward(self, x):
+                return x + self.c0 + self.c1 + self.c2 + self.c3 + self.c4 + self.c5
+
+        model = to_edge(
+            export(ConstantModule(), (torch.ones(1, 3),), strict=True)
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                external_constants=True,
+            )
+        )
+        emitter_output = model._emitter_output
+        # constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # Two items in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 2)
+        # Setting external_constants=True, saves all constants to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(len(external_map), 6)
+        self.assertEqual(external_map["c0"], 0)
+        self.assertEqual(external_map["c1"], 0)
+        self.assertEqual(external_map["c2"], 0)
+        self.assertEqual(external_map["c3"], 0)
+        self.assertEqual(external_map["c4"], 1)
+        self.assertEqual(external_map["c5"], 1)
+
     def test_delegate_deduplicate(self) -> None:
         class SharedModule(torch.nn.Module):
             def __init__(self):
