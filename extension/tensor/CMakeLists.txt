@@ -24,11 +24,6 @@ target_include_directories(
 )
 target_compile_options(extension_tensor PUBLIC ${_common_compile_options})
 
-# Define USE_CUDA_BACKEND when building with CUDA backend support
-if(EXECUTORCH_BUILD_CUDA)
-  target_compile_definitions(extension_tensor PUBLIC USE_CUDA_BACKEND)
-endif()
-
 # Install libraries
 install(
   TARGETS extension_tensor
