@@ -1,5 +1,5 @@
 # Getting Started with ExecuTorch
-This section is intended to describe the necessary steps to take PyTorch model and run it using ExecuTorch. To use the framework, you will typically need to take the following steps:
+This section is intended to describe the necessary steps to take a PyTorch model and run it using ExecuTorch. To use the framework, you will typically need to take the following steps:
 - Install the ExecuTorch python package and runtime libraries.
 - Export the PyTorch model for the target hardware configuration.
 - Run the model using the ExecuTorch runtime APIs on your development platform.
@@ -77,7 +77,7 @@ Quantization can also be done at this stage to reduce model size and runtime. Qu
 
 After successfully generating a .pte file, it is common to use the Python runtime APIs to validate the model on the development platform. This can be used to evaluate model accuracy before running on-device.
 
-For the MobileNet V2 model from torchvision used in this example, image inputs are expected as a normalized, float32 tensor with a dimensions of (batch, channels, height, width). The output See [torchvision.models.mobilenet_v2](https://pytorch.org/vision/main/models/generated/torchvision.models.mobilenet_v2.html) for more information on the input and output tensor format for this model.
+For the MobileNet V2 model from torchvision used in this example, image inputs are expected as a normalized, float32 tensor with a dimensions of (batch, channels, height, width). The output is a tensor containing class logits. See [torchvision.models.mobilenet_v2](https://pytorch.org/vision/main/models/generated/torchvision.models.mobilenet_v2.html) for more information on the input and output tensor format for this model.
 
 ```python
 import torch

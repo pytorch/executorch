@@ -35,7 +35,7 @@ Commonly used hardware backends are listed below. For mobile, consider using XNN
 - [XNNPACK (CPU)](backends/xnnpack/xnnpack-overview.md)
 - [Core ML (iOS)](backends/coreml/coreml-overview.md)
 - [Metal Performance Shaders (iOS GPU)](backends/mps/mps-overview.md)
-- [Vulkan (Android GPU)](backends-vulkan.md)
+- [Vulkan (Android GPU)](backends/vulkan/vulkan-overview.md)
 - [Qualcomm NPU](backends-qualcomm.md)
 - [MediaTek NPU](backends-mediatek.md)
 - [Arm Ethos-U NPU](backends-arm-ethos-u.md)
