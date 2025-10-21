@@ -16,7 +16,7 @@ Available hardware acceleration backends for Android deployment.
 - {doc}`android-qualcomm` — Qualcomm AI Engine (NPU)
 - {doc}`android-mediatek` — MediaTek NPU acceleration
 - {doc}`android-arm-vgf` — ARM VGF Backend
-- {doc}`android-samsung-exynos` — Samsung Exynos NPU
+- {doc}`backends/samsung/samsung-overview` — Samsung Exynos NPU
 
 ```{toctree}
 :hidden:
@@ -25,4 +25,4 @@ android-vulkan
 android-qualcomm
 android-mediatek
 android-arm-vgf
-android-samsung-exynos
+backends/samsung/samsung-overview
