@@ -37,7 +37,7 @@ class _QuantProperty:
     """Specify how the input/output at 'index' must be quantized."""
 
     index: int
-    qspec: type[QuantizationSpecBase] | List[type[QuantizationSpecBase]]
+    qspec: QuantizationSpecBase | List[QuantizationSpecBase]
     optional: bool = False
     mark_annotated: bool = False
 
@@ -515,24 +515,24 @@ def get_quant_properties(  # noqa: C901
             _QuantProperty(0, input_act_qspec),
             _QuantProperty(
                 1,
-                input_act_qspec if node.args[0] == node.args[1] else shared_qspec,  # type: ignore[arg-type]
+                input_act_qspec if node.args[0] == node.args[1] else shared_qspec,
             ),
         ]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
     elif node.target in (torch.ops.aten.where.self,):
         shared_qspec = SharedQuantizationSpec(node.args[1])  # type: ignore[arg-type]
         quant_properties.quant_inputs = [
-            _QuantProperty(1, shared_qspec),  # type: ignore[arg-type]
-            _QuantProperty(2, shared_qspec),  # type: ignore[arg-type]
+            _QuantProperty(1, shared_qspec),
+            _QuantProperty(2, shared_qspec),
         ]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
     elif node.target in _one_to_one_shared_input_or_input_act_qspec:
         input_qspec = (
             SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
-            if is_output_annotated(node.args[0])  # type: ignore
+            if is_output_annotated(node.args[0])  # type: ignore[arg-type]
             else input_act_qspec
         )
-        quant_properties.quant_inputs = [_QuantProperty(0, input_qspec)]  # type: ignore[arg-type]
+        quant_properties.quant_inputs = [_QuantProperty(0, input_qspec)]
         quant_properties.quant_output = _QuantProperty(
             0,
             SharedQuantizationSpec((node.args[0], node)),  # type: ignore[arg-type]
@@ -551,7 +551,7 @@ def get_quant_properties(  # noqa: C901
         if len(node.args[0]) == 0:
             raise ValueError("Expected non-empty list for node.args[0]")
 
-        shared_qspec = SharedQuantizationSpec((node.args[0][0], node))
+        shared_qspec = SharedQuantizationSpec((node.args[0][0], node))  # type: ignore[arg-type]
         quant_properties.quant_inputs = [
             _QuantProperty(
                 0,
@@ -561,7 +561,7 @@ def get_quant_properties(  # noqa: C901
                 ],
             )
         ]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
     elif node.target in _one_to_one:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
@@ -583,7 +583,7 @@ def get_quant_properties(  # noqa: C901
             _QuantProperty(0, input_act_qspec),
             _QuantProperty(
                 1,
-                input_act_qspec if node.args[0] == node.args[1] else shared_qspec,  # type: ignore[arg-type]
+                input_act_qspec if node.args[0] == node.args[1] else shared_qspec,
             ),
         ]
         quant_properties.quant_output = None
@@ -596,11 +596,11 @@ def get_quant_properties(  # noqa: C901
         quant_properties.quant_inputs = []
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in [operator.getitem]:
-        if not is_output_annotated(node.args[0]):  # type: ignore[attr-defined, arg-type]
+        if not is_output_annotated(node.args[0]):  # type: ignore[arg-type]
             return None
         shared_qspec = SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
-        quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]  # type: ignore[arg-type]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+        quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
     else:
         return None
 
