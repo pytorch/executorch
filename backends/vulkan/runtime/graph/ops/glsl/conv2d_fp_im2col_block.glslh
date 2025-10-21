@@ -23,7 +23,7 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-#include "common.glslh"
+#include "indexing.glslh"
 #include "conv2d_common.glslh"
 
 struct Im2ColMatrixIdx {
