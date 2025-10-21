@@ -397,7 +397,7 @@ def get_args_and_kwargs_mixed_w8a32_conv(
     )
     transposed_weights = graph_module.graph.call_function(
         torch.ops.aten.permute.default,
-        (weights_inputs[0], [2, 0, 1]),  # NCL -> NLC
+        (weights_inputs[0], [2, 0, 1]),  # NCL -> LNC
     )
 
     args = (

@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ExecuTorch - On-Device AI Inference Powered by PyTorch</title>
     <meta name="description" content="ExecuTorch is PyTorch's unified solution for deploying AI models on-device—from smartphones to microcontrollers. Deploy LLMs, vision, speech, and multimodal models with the same PyTorch APIs.">
+    <link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/dbort/executorch-logos/main/img/executorch-chip-logo.svg">
 
     <!-- Open Graph / Social Media -->
     <meta property="og:type" content="website">
@@ -16,966 +18,44 @@
     <meta name="twitter:description" content="PyTorch's unified solution for on-device AI. Deploy LLMs, vision, and speech models from smartphones to microcontrollers.">
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --primary: #de3412;
-            --bg-light: #ffffff;
-            --bg-gray: #f8fafc;
-            --text-dark: #1e293b;
-            --text-gray: #64748b;
-            --border: #e2e8f0;
-            --max-width: 1200px;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            line-height: 1.6;
-            color: var(--text-dark);
-            background: var(--bg-light);
-        }
-
-        /* Container */
-        .container {
-            max-width: var(--max-width);
-            margin: 0 auto;
-            padding: 0 2rem;
-        }
-
-        /* Navigation */
-        nav {
-            position: fixed;
-            top: 0;
-            width: 100%;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-bottom: 1px solid var(--border);
-            z-index: 1000;
-        }
-
-        .nav-content {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 1rem 0;
-        }
-
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--text-dark);
-        }
-
-        .nav-links {
-            display: flex;
-            gap: 2rem;
-            list-style: none;
-        }
-
-        .nav-links a {
-            color: var(--text-gray);
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.3s;
-        }
-
-        .nav-links a:hover {
-            color: var(--primary);
-        }
-
-        /* Sections */
-        section {
-            padding: 5rem 0;
-        }
-
-        section.alt {
-            background: var(--bg-gray);
-        }
-
-        /* Typography */
-        .section-title {
-            font-size: 3rem;
-            font-weight: 700;
-            text-align: center;
-            margin-bottom: 1rem;
-            color: var(--text-dark);
-        }
-
-        .section-subtitle {
-            font-size: 1.25rem;
-            text-align: center;
-            color: var(--text-gray);
-            margin-bottom: 3rem;
-            max-width: 800px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .highlight {
-            color: var(--primary);
-        }
-
-        /* Hero */
-        .hero {
-            padding: 8rem 0 6rem;
-            text-align: center;
-            background: linear-gradient(180deg, var(--bg-gray) 0%, var(--bg-light) 100%);
-        }
-
-        .hero-title {
-            font-size: 4rem;
-            font-weight: 800;
-            margin-bottom: 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 1.5rem;
-        }
-
-        .hero-logo {
-            height: 80px;
-        }
-
-        .hero-subtitle {
-            font-size: 1.5rem;
-            color: var(--text-gray);
-            margin-bottom: 3rem;
-        }
-
-        /* Stats Grid */
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 2rem;
-            margin: 3rem 0;
-        }
-
-        .stat-card {
-            background: var(--bg-light);
-            padding: 2rem;
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            text-align: center;
-        }
-
-        .stat-card-clickable {
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .stat-card-clickable:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 24px rgba(222, 52, 18, 0.2);
-            border-color: var(--primary);
-        }
-
-        .stat-card-clickable:hover .stat-number {
-            color: #c62e10;
-        }
-
-        .stat-number {
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: var(--primary);
-            margin-bottom: 0.5rem;
-        }
-
-        .stat-label {
-            color: var(--text-gray);
-            font-size: 0.9rem;
-        }
-
-        /* Grid Layout */
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-        }
-
-        .grid-2x2 {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 2rem;
-        }
-
-        .grid-2 {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 3rem;
-            align-items: start;
-        }
-
-        /* Cards */
-        .card {
-            background: var(--bg-light);
-            padding: 2rem;
-            border-radius: 16px;
-            border: 1px solid var(--border);
-            height: 100%;
-        }
-
-        .card-icon {
-            width: 60px;
-            height: 60px;
-            background: var(--bg-gray);
-            border: 2px solid var(--primary);
-            color: var(--primary);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .card-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-            color: var(--text-dark);
-        }
-
-        .card-text {
-            color: var(--text-gray);
-            line-height: 1.6;
-        }
-
-        /* Buttons */
-        .btn {
-            display: inline-block;
-            padding: 1rem 2rem;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: 600;
-            margin: 0.5rem;
-            transition: all 0.3s;
-            font-size: 1rem;
-        }
-
-        .btn-primary {
-            background: #c62e10;
-            color: white;
-            box-shadow: 0 2px 8px rgba(198, 46, 16, 0.25);
-        }
-
-        .btn-primary:hover {
-            background: #a82609;
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(198, 46, 16, 0.4);
-        }
-
-        .btn-secondary {
-            background: transparent;
-            color: var(--text-dark);
-            border: 2px solid var(--border);
-        }
-
-        .btn-secondary:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-        }
-
-        /* Features Grid */
-        .features-3 {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 2rem;
-            text-align: center;
-            margin: 3rem 0;
-        }
-
-        .feature-item {
-            background: var(--bg-light);
-            padding: 2rem;
-            border-radius: 12px;
-            border: 1px solid var(--border);
-        }
-
-        .feature-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: var(--primary);
-            margin-bottom: 0.5rem;
-        }
-
-        .feature-text {
-            color: var(--text-gray);
-            font-size: 0.9rem;
-        }
-
-        /* Problem/Solution */
-        .problem-solution {
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            gap: 2rem;
-            align-items: center;
-            margin: 3rem 0;
-        }
-
-        .problem-card {
-            text-align: center;
-            padding: 2rem;
-            border-radius: 12px;
-            border: 2px solid var(--border);
-        }
-
-        .problem-card.good {
-            background: var(--bg-light);
-        }
-
-        .problem-card.bad {
-            background: #fef2f2;
-            border-color: #fca5a5;
-        }
-
-        .arrow {
-            font-size: 2rem;
-            color: var(--primary);
-        }
-
-        /* Issues Grid */
-        .issues {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 1.5rem;
-            text-align: center;
-        }
-
-        .issue-item {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .issue-icon {
-            color: var(--primary);
-            font-size: 1.2rem;
-        }
-
-        .issue-title {
-            font-weight: 600;
-            color: var(--text-dark);
-        }
-
-        .issue-text {
-            color: var(--text-gray);
-            font-size: 0.9rem;
-        }
-
-        /* Solution Box */
-        .solution-box {
-            text-align: center;
-            padding: 3rem;
-            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-            border-radius: 16px;
-            border: 2px solid #0ea5e9;
-            margin: 3rem 0;
-        }
-
-        .solution-title {
-            font-size: 1.8rem;
-            margin-bottom: 1rem;
-            color: var(--text-dark);
-        }
-
-        .solution-text {
-            color: var(--text-gray);
-            font-size: 1.1rem;
-            max-width: 700px;
-            margin: 0 auto;
-        }
-
-        /* Performance */
-        .metric {
-            margin-bottom: 1.5rem;
-        }
-
-        .metric-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 0.5rem;
-        }
-
-        .metric-value {
-            color: var(--primary);
-            font-weight: 600;
-        }
-
-        .metric-bar {
-            height: 8px;
-            background: var(--border);
-            border-radius: 4px;
-            overflow: hidden;
-        }
-
-        .metric-fill {
-            height: 100%;
-            background: var(--primary);
-            border-radius: 4px;
-        }
-
-        /* Architecture Flow */
-        .flow {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 2rem;
-            flex-wrap: wrap;
-            margin: 3rem 0;
-            text-align: center;
-        }
-
-        .flow-step {
-            background: var(--bg-light);
-            padding: 1.5rem;
-            border-radius: 12px;
-            border: 2px solid var(--border);
-            min-width: 150px;
-        }
-
-        .flow-step h4 {
-            color: var(--primary);
-            margin-bottom: 0.5rem;
-        }
-
-        .flow-step p {
-            color: var(--text-gray);
-            font-size: 0.9rem;
-        }
-
-        .flow-arrow {
-            color: var(--text-gray);
-            font-size: 2rem;
-        }
-
-        /* Partners */
-        .partners {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-        }
-
-        .partner-card {
-            background: var(--bg-light);
-            padding: 1.5rem;
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            text-align: center;
-        }
-
-        .partner-name {
-            font-weight: 600;
-            color: var(--text-dark);
-            margin-bottom: 0.5rem;
-        }
-
-        .partner-desc {
-            color: var(--text-gray);
-            font-size: 0.9rem;
-        }
-
-        /* Code Section Container */
-        .code-section-container {
-            max-width: var(--max-width);
-            margin: 0 auto;
-            padding: 0 2rem;
-        }
-
-        /* Backend Grid */
-        .backend-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .backend-option {
-            background: #0f172a;
-            border-radius: 12px;
-            padding: 1.5rem;
-            border: 1px solid #334155;
-        }
-
-        .backend-option h4 {
-            color: #94a3b8;
-            font-size: 1rem;
-            margin-bottom: 1rem;
-            text-align: center;
-        }
-
-        .save-code {
-            background: #0f172a;
-            border-radius: 12px;
-            padding: 1.5rem;
-            border: 1px solid #334155;
-        }
-
-        /* CTA */
-        .cta {
-            background: linear-gradient(135deg, var(--text-dark) 0%, #374151 100%);
-            padding: 4rem 0;
-            text-align: center;
-            color: white;
-        }
-
-        .cta-title {
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
-        }
-
-        .cta-text {
-            font-size: 1.25rem;
-            margin-bottom: 2rem;
-            opacity: 0.9;
-        }
-
-        .cta .btn {
-            background: white;
-            color: #1e293b;
-            border: 2px solid white;
-            font-weight: 700;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-        }
-
-        .cta .btn:hover {
-            background: #f1f5f9;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-        }
-
-        /* Footer */
-        footer {
-            background: var(--bg-gray);
-            padding: 3rem 0;
-            text-align: center;
-            color: var(--text-gray);
-            border-top: 1px solid var(--border);
-        }
-
-        /* Domain Slider Animation */
-        .domain-slider {
-            overflow: hidden;
-            white-space: nowrap;
-            position: relative;
-        }
-
-        .domain-track {
-            display: inline-flex;
-            gap: 1.5rem;
-            animation: slide 20s linear infinite;
-        }
-
-        .domain-track span {
-            background: var(--bg-gray);
-            padding: 0.75rem 1.5rem;
-            border-radius: 25px;
-            font-weight: 600;
-            color: var(--text-dark);
-            flex-shrink: 0;
-        }
-
-        @keyframes slide {
-            0% {
-                transform: translateX(0);
-            }
-            100% {
-                transform: translateX(-50%);
-            }
-        }
-
-        /* Backend Switcher Cards */
-        .backend-switcher {
-            margin-bottom: 1rem;
-            border: 2px solid var(--border);
-            border-radius: 12px;
-            background: var(--bg-gray);
-            padding: 1rem;
-        }
-
-        .backend-cards {
-            display: flex;
-            justify-content: flex-start;
-            gap: 0;
-            margin-bottom: 0;
-            flex-wrap: wrap;
-        }
-
-        .backend-card {
-            background: var(--bg-light);
-            border: 2px solid var(--border);
-            border-radius: 8px 8px 0 0;
-            border-bottom: none;
-            padding: 0.75rem 1rem;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-align: center;
-            min-width: 140px;
-            position: relative;
-        }
-
-        .backend-card:not(:first-child) {
-            border-left: none;
-            border-radius: 0 8px 0 0;
-        }
-
-        .backend-card:first-child {
-            border-radius: 8px 0 0 0;
-        }
-
-        .backend-card:last-child {
-            border-radius: 0 8px 0 0;
-        }
-
-        .backend-card:only-child {
-            border-radius: 8px 8px 0 0;
-        }
-
-        .backend-card::after {
-            content: "Click to view code";
-            position: absolute;
-            top: -2rem;
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--text-dark);
-            color: white;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.7rem;
-            opacity: 0;
-            transition: opacity 0.3s;
-            pointer-events: none;
-            white-space: nowrap;
-        }
-
-        .backend-card:hover::after {
-            opacity: 1;
-        }
-
-        .backend-card:hover {
-            border-color: var(--primary);
-            box-shadow: 0 4px 20px rgba(222, 52, 18, 0.1);
-            transform: translateY(-2px);
-        }
-
-        .backend-card.active {
-            border-color: var(--primary);
-            background: var(--primary);
-            color: white;
-            box-shadow: 0 4px 20px rgba(222, 52, 18, 0.25);
-            transform: translateY(-2px);
-        }
-
-        .backend-card.active::after {
-            opacity: 0;
-        }
-
-        .backend-card-title {
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: var(--text-dark);
-            margin-bottom: 0.25rem;
-        }
-
-        .backend-card-desc {
-            font-size: 0.75rem;
-            color: var(--text-gray);
-        }
-
-        .backend-card.active .backend-card-title {
-            color: white;
-        }
-
-        .backend-card.active .backend-card-desc {
-            color: rgba(255, 255, 255, 0.9);
-        }
-
-        .backend-card.more-backends {
-            background: linear-gradient(135deg, var(--bg-gray) 0%, #e5e7eb 100%);
-            border-style: dashed;
-            cursor: pointer;
-        }
-
-        .backend-card.more-backends:hover {
-            border-color: var(--primary);
-            box-shadow: 0 4px 20px rgba(222, 52, 18, 0.1);
-            transform: translateY(-2px);
-        }
-
-        .backend-card.more-backends::after {
-            content: "View all backends documentation";
-        }
-
-        .backend-card.more-backends .backend-card-title {
-            color: var(--text-gray);
-        }
-
-        .backend-card.more-backends .backend-card-desc {
-            color: var(--text-gray);
-            opacity: 0.8;
-        }
-
-        .backend-content {
-            display: none;
-        }
-
-        .backend-content.active {
-            display: block;
-        }
-
-        .backend-content > div {
-            border-radius: 0 8px 8px 8px !important;
-            border-top: none !important;
-        }
-
-        /* Platform Switcher - Same Style */
-        .platform-switcher {
-            margin-bottom: 1rem;
-            border: 2px solid var(--border);
-            border-radius: 12px;
-            background: var(--bg-gray);
-            padding: 1rem;
-        }
-
-        .platform-cards {
-            display: flex;
-            justify-content: flex-start;
-            gap: 0;
-            margin-bottom: 0;
-            flex-wrap: wrap;
-        }
-
-        .platform-card {
-            background: var(--bg-light);
-            border: 2px solid var(--border);
-            border-radius: 8px 8px 0 0;
-            border-bottom: none;
-            padding: 0.75rem 1rem;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-align: center;
-            min-width: 120px;
-            position: relative;
-        }
-
-        .platform-card:not(:first-child) {
-            border-left: none;
-            border-radius: 0 8px 0 0;
-        }
-
-        .platform-card:first-child {
-            border-radius: 8px 0 0 0;
-        }
-
-        .platform-card:last-child {
-            border-radius: 0 8px 0 0;
-        }
-
-        .platform-card:only-child {
-            border-radius: 8px 8px 0 0;
-        }
-
-        .platform-card::after {
-            content: "Click to view code";
-            position: absolute;
-            top: -2rem;
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--text-dark);
-            color: white;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.7rem;
-            opacity: 0;
-            transition: opacity 0.3s;
-            pointer-events: none;
-            white-space: nowrap;
-        }
-
-        .platform-card:hover::after {
-            opacity: 1;
-        }
-
-        .platform-card:hover {
-            border-color: var(--primary);
-            box-shadow: 0 4px 20px rgba(222, 52, 18, 0.1);
-            transform: translateY(-2px);
-        }
-
-        .platform-card.active {
-            border-color: var(--primary);
-            background: var(--primary);
-            color: white;
-            box-shadow: 0 4px 20px rgba(222, 52, 18, 0.25);
-            transform: translateY(-2px);
-        }
-
-        .platform-card.active::after {
-            opacity: 0;
-        }
-
-        .platform-card-title {
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: var(--text-dark);
-        }
-
-        .platform-card.active .platform-card-title {
-            color: white;
-        }
-
-        .platform-content {
-            display: none;
-        }
-
-        .platform-content.active {
-            display: block;
-        }
-
-        .platform-content > div {
-            border-radius: 0 8px 8px 8px !important;
-            border-top: none !important;
-        }
-
-        /* Multimodal Platform Switcher */
-        .multimodal-content {
-            display: none;
-        }
-
-        .multimodal-content.active {
-            display: block;
-        }
-
-        .multimodal-content > div {
-            border-radius: 0 8px 8px 8px !important;
-            border-top: none !important;
-        }
-
-        .code-instruction {
-            text-align: center;
-            color: var(--text-gray);
-            font-size: 0.85rem;
-            margin-bottom: 0.5rem;
-            font-style: italic;
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .container {
-                padding: 0 1rem;
-            }
-
-            .hero-title {
-                font-size: 2.5rem;
-                flex-direction: column;
-                gap: 1rem;
-            }
-
-            .hero-logo {
-                height: 60px;
-            }
-
-            .section-title {
-                font-size: 2.2rem;
-            }
-
-            .grid-2 {
-                grid-template-columns: 1fr;
-                gap: 2rem;
-            }
-
-            .grid-2x2 {
-                grid-template-columns: 1fr;
-            }
-
-            .features-3 {
-                grid-template-columns: 1fr;
-            }
-
-            .issues {
-                grid-template-columns: 1fr;
-            }
-
-            .backend-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .problem-solution {
-                grid-template-columns: 1fr;
-            }
-
-            .arrow {
-                transform: rotate(90deg);
-            }
-
-            .flow {
-                flex-direction: column;
-            }
-
-            .flow-arrow {
-                transform: rotate(90deg);
-            }
-
-            .nav-links {
-                display: none;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .hero-title {
-                font-size: 2rem;
-            }
-
-            .stats {
-                grid-template-columns: 1fr;
-            }
-
-            .section-title {
-                font-size: 1.8rem;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <!-- Navigation -->
     <nav>
         <div class="container">
             <div class="nav-content">
-                <div class="logo">
-                    <img src="https://raw.githubusercontent.com/dbort/executorch-logos/main/img/executorch-chip-logo.svg" alt="ExecuTorch Logo" height="40">
-                    <span>ExecuTorch</span>
-                </div>
-                <ul class="nav-links">
-                    <li><a href="#why-ondevice">Why On-Device</a></li>
-                    <li><a href="#challenges">Challenges</a></li>
-                    <li><a href="#features">Solution</a></li>
-                    <li><a href="#performance">Performance</a></li>
-                    <li><a href="#partners">Partners</a></li>
-                    <li><a href="https://github.com/pytorch/executorch" target="_blank">GitHub</a></li>
-                </ul>
+            <div class="logo">
+                <img src="https://raw.githubusercontent.com/dbort/executorch-logos/main/img/executorch-chip-logo.svg" alt="ExecuTorch Logo" height="40">
+                <span style="color:#e0f2fe;">ExecuTorch</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="#why-ondevice">Why On-Device</a></li>
+                <li><a href="#challenges">Challenges</a></li>
+                <li><a href="#features">Solution</a></li>
+                <li><a href="#performance">Performance</a></li>
+                <li><a href="#partners">Partners</a></li>
+                <li><a href="https://github.com/pytorch/executorch" target="_blank">GitHub</a></li>
+            </ul>
+            <form class="nav-search" action="https://docs.pytorch.org/executorch/1.0/search.html" method="get">
+                <input type="text" placeholder="Search docs…" name="q" style="padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid #e2e8f0;">
+            </form>
             </div>
         </div>
     </nav>
 
     <!-- Hero -->
+    <section class="title_banner">
+        <div class="title_banner-container">
+            <div class="logo-text-container">
+                <img src="https://raw.githubusercontent.com/dbort/executorch-logos/main/img/executorch-chip-logo.svg" alt="ExecuTorch" class="title_banner-logo">
+                <span class="banner_highlight">Execu<span class="highlight">Torch</span></span>
+            </div>
+        </div>
+    </section>
     <section class="hero">
         <div class="container">
-            <h1 class="hero-title">
-                <img src="https://raw.githubusercontent.com/dbort/executorch-logos/main/img/executorch-chip-logo.svg" alt="ExecuTorch" class="hero-logo">
-                <span>Execu<span class="highlight">Torch</span></span>
-            </h1>
-            <p class="hero-subtitle">Deploy PyTorch models directly to edge devices. Text, vision, and audio AI with privacy-preserving, real-time inference—no cloud required.</p>
-
+            <p class="hero-subtitle">Deploy PyTorch models directly to edge devices. Text, vision, and audio AI with privacy-preserving, real-time inference — no cloud required.</p>
             <div class="stats">
                 <a href="#performance" style="text-decoration: none;">
                     <div class="stat-card stat-card-clickable">
@@ -1003,36 +83,58 @@
     </section>
 
     <!-- Why On-Device -->
+
+    <!-- Why On-Device Cards -->
     <section id="why-ondevice">
         <div class="container">
-            <h2 class="section-title">Why On-Device AI <span class="highlight">Matters</span></h2>
-            <p class="section-subtitle">The future of AI is at the edge, where privacy meets performance</p>
-
-            <div class="grid-2x2">
-                <div class="card">
-                    <div class="card-icon">🔒</div>
-                    <h3 class="card-title">Enhanced Privacy</h3>
-                    <p class="card-text">Data never leaves the device. Process personal content, conversations, and media locally without cloud exposure.</p>
+        <h2 class="section-title">Why On-Device AI <span class="highlight">Matters</span></h2>
+        <div class="grid-2x2">
+            <div class="card">
+                <div class="card-icon">
+                    <!-- Privacy SVG -->
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="16" r="16" fill="#de3412"/>
+                    <path d="M16 10a4 4 0 0 1 4 4v2h-8v-2a4 4 0 0 1 4-4zm-6 6v6a6 6 0 0 0 12 0v-6" stroke="#fff" stroke-width="2"/>
+                    </svg>
                 </div>
-
-                <div class="card">
-                    <div class="card-icon">⚡</div>
-                    <h3 class="card-title">Real-Time Response</h3>
-                    <p class="card-text">Instant inference with no network round-trips. Perfect for AR/VR experiences, multimodal AI interactions, and responsive conversational agents.</p>
-                </div>
-
-                <div class="card">
-                    <div class="card-icon">🌐</div>
-                    <h3 class="card-title">Offline & Low-Bandwidth Ready</h3>
-                    <p class="card-text">Zero network dependency for inference. Works seamlessly in low-bandwidth regions, remote areas, or completely offline.</p>
-                </div>
-
-                <div class="card">
-                    <div class="card-icon">💰</div>
-                    <h3 class="card-title">Cost Efficient</h3>
-                    <p class="card-text">No cloud compute bills. No API rate limits. Scale to billions of users without infrastructure costs growing linearly.</p>
-                </div>
+            <h3 class="card-title">Enhanced Privacy</h3>
+            <p class="card-text">Data never leaves the device. Process personal content, conversations, and media locally without cloud exposure.</p>
             </div>
+            <div class="card">
+                <div class="card-icon">
+                    <!-- Lightning SVG -->
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="16" r="16" fill="#de3412"/>
+                    <polygon points="14,8 22,16 16,16 18,24 10,16 16,16" fill="#fff"/>
+                    </svg>
+                </div>
+            <h3 class="card-title">Real-Time Response</h3>
+            <p class="card-text">Instant inference with no network round-trips. Perfect for AR/VR experiences, multimodal AI interactions, and responsive conversational agents.</p>
+            </div>
+            <div class="card">
+                <div class="card-icon">
+                    <!-- Globe SVG -->
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="16" r="16" fill="#de3412"/>
+                    <ellipse cx="16" cy="16" rx="10" ry="6" stroke="#fff" stroke-width="2"/>
+                    <ellipse cx="16" cy="16" rx="6" ry="10" stroke="#fff" stroke-width="2"/>
+                    </svg>
+                </div>
+            <h3 class="card-title">Offline & Low-Bandwidth Ready</h3>
+            <p class="card-text">Zero network dependency for inference. Works seamlessly in low-bandwidth regions, remote areas, or completely offline.</p>
+            </div>
+            <div class="card">
+                <div class="card-icon">
+                    <!-- Dollar SVG -->
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="16" r="16" fill="#de3412"/>
+                    <text x="10" y="22" font-size="16" fill="#fff" font-family="Inter, Arial, sans-serif">$</text>
+                    </svg>
+                </div>
+            <h3 class="card-title">Cost Efficient</h3>
+            <p class="card-text">No cloud compute bills. No API rate limits. Scale to billions of users without infrastructure costs growing linearly.</p>
+            </div>
+        </div>
         </div>
     </section>
 
@@ -1068,29 +170,94 @@
     <section id="challenges">
         <div class="container">
             <h2 class="section-title">Why On-Device AI Was <span class="highlight">Hard</span></h2>
-            <p class="section-subtitle">The technical challenges that made edge deployment complex... until now</p>
 
             <div class="grid-2x2">
                 <div class="card">
-                    <div class="card-icon">🔋</div>
+                    <!-- Power Constraints (Battery) -->
+                    <div class="card-icon">
+                        <svg width="64" height="64" viewBox="0 0 48 48" fill="none">
+                        <!-- Battery body -->
+                        <rect x="10" y="12" width="28" height="24" rx="6" fill="#fff" stroke="#de3412" stroke-width="3"/>
+                        <!-- Battery tip -->
+                        <rect x="20" y="8" width="8" height="6" rx="2" fill="#de3412"/>
+                        <!-- Low charge indicator -->
+                        <rect x="14" y="28" width="8" height="4" rx="2" fill="#de3412"/>
+                        <!-- Power bolt -->
+                        <polygon points="30,18 26,26 32,26 28,34" fill="#de3412" stroke="#de3412" stroke-width="1"/>
+                        <!-- Optional: subtle shadow for depth -->
+                        <ellipse cx="24" cy="40" rx="12" ry="3" fill="#de3412" opacity="0.08"/>
+                        </svg>
+                    </div>
+
                     <h3 class="card-title">Power Constraints</h3>
                     <p class="card-text">From battery-powered phones to energy-harvesting sensors, edge devices have strict power budgets. Microcontrollers may run on milliwatts, requiring extreme efficiency.</p>
                 </div>
 
                 <div class="card">
-                    <div class="card-icon">🌡️</div>
+                    <div class="card-icon">
+                        <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+                        <!-- Thermometer bulb -->
+                        <circle cx="32" cy="48" r="10" fill="#de3412" stroke="#de3412" stroke-width="2"/>
+                        <!-- Thermometer tube -->
+                        <rect x="28" y="16" width="8" height="32" rx="4" fill="#fff" stroke="#de3412" stroke-width="2"/>
+                        <!-- Mercury column -->
+                        <rect x="30.5" y="20" width="3" height="24" rx="1.5" fill="#de3412"/>
+                        <!-- Heat waves -->
+                        <path d="M44 20c2 2 6 2 8 0" stroke="#de3412" stroke-width="2" fill="none" stroke-linecap="round"/>
+                        <path d="M44 14c2 2 6 2 8 0" stroke="#de3412" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.7"/>
+                        <!-- Optional: subtle shadow for depth -->
+                        <ellipse cx="32" cy="58" rx="14" ry="4" fill="#de3412" opacity="0.08"/>
+                        </svg>
+                    </div>
                     <h3 class="card-title">Thermal Management</h3>
                     <p class="card-text">Sustained inference generates heat without active cooling. From smartphones to industrial IoT devices, thermal throttling limits continuous AI workloads.</p>
                 </div>
 
                 <div class="card">
-                    <div class="card-icon">💾</div>
+                    <div class="card-icon">
+                        <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+                        <!-- RAM chip body -->
+                        <rect x="14" y="22" width="36" height="20" rx="4" fill="#fff" stroke="#de3412" stroke-width="3"/>
+                        <!-- RAM chip pins (top) -->
+                        <rect x="18" y="18" width="4" height="6" rx="1" fill="#de3412"/>
+                        <rect x="26" y="18" width="4" height="6" rx="1" fill="#de3412"/>
+                        <rect x="34" y="18" width="4" height="6" rx="1" fill="#de3412"/>
+                        <rect x="42" y="18" width="4" height="6" rx="1" fill="#de3412"/>
+                        <rect x="50" y="18" width="4" height="6" rx="1" fill="#de3412"/>
+                        <!-- RAM chip pins (bottom) -->
+                        <rect x="18" y="42" width="4" height="6" rx="1" fill="#de3412"/>
+                        <rect x="26" y="42" width="4" height="6" rx="1" fill="#de3412"/>
+                        <rect x="34" y="42" width="4" height="6" rx="1" fill="#de3412"/>
+                        <rect x="42" y="42" width="4" height="6" rx="1" fill="#de3412"/>
+                        <rect x="50" y="42" width="4" height="6" rx="1" fill="#de3412"/>
+                        <!-- Memory cells (interior) -->
+                        <rect x="22" y="28" width="20" height="8" rx="2" fill="#de3412" opacity="0.15"/>
+                        <!-- Optional: subtle shadow for depth -->
+                        <ellipse cx="32" cy="54" rx="16" ry="4" fill="#de3412" opacity="0.08"/>
+                        </svg>
+                    </div>
                     <h3 class="card-title">Memory Limitations</h3>
                     <p class="card-text">Edge devices range from high-end phones to tiny microcontrollers. Beyond capacity, limited memory bandwidth creates bottlenecks when moving tensors between compute units.</p>
                 </div>
 
                 <div class="card">
-                    <div class="card-icon">🔧</div>
+                    <div class="card-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="#F5F5F5"/>
+                            <!-- CPU -->
+                            <rect x="6" y="6" width="12" height="12" rx="3" fill="#de3412" stroke="#de3412" stroke-width="2"/>
+                            <!-- GPU -->
+                            <rect x="30" y="6" width="12" height="12" rx="2" fill="#fff" stroke="#de3412" stroke-width="2"/>
+                            <circle cx="12" cy="36" r="6" fill="#de3412" stroke="#de3412" stroke-width="2"/>
+                            <!-- NPU/FPGA (hexagon) -->
+                            <polygon points="36,30 42,33 42,39 36,42 30,39 30,33" fill="#fff" stroke="#de3412" stroke-width="2"/>
+                            <!-- Interconnecting lines -->
+                            <line x1="18" y1="12" x2="30" y2="12" stroke="#de3412" stroke-width="2"/>
+                            <line x1="12" y1="18" x2="12" y2="30" stroke="#de3412" stroke-width="2"/>
+                            <line x1="18" y1="36" x2="30" y2="36" stroke="#de3412" stroke-width="2"/>
+                            <line x1="36" y1="18" x2="36" y2="30" stroke="#de3412" stroke-width="2"/>
+                        </svg>
+                    </div>
                     <h3 class="card-title">Hardware Heterogeneity</h3>
                     <p class="card-text">From microcontrollers to smartphone NPUs to embedded GPUs. Each architecture demands unique optimizations, making broad deployment across diverse form factors extremely challenging.</p>
                 </div>
@@ -1101,7 +268,7 @@
     <!-- PyTorch Problem -->
     <section class="alt">
         <div class="container">
-            <h2 class="section-title">PyTorch Powers <span class="highlight">92%</span> of AI Research</h2>
+            <h2 class="section-title">PyTorch Powers <span class="highlight">>90%</span> of AI Research</h2>
             <p class="section-subtitle">But deploying PyTorch models to edge devices meant losing everything that made PyTorch great</p>
 
             <div class="problem-solution">
@@ -1162,37 +329,115 @@
 
             <div class="grid">
                 <div class="card">
-                    <div class="card-icon">🎯</div>
+                    <div class="card-icon">
+                       <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="#F5F5F5"/>
+                            <!-- Left data table -->
+                            <rect x="8" y="16" width="10" height="16" rx="2" fill="#FF6F00"/>
+                            <line x1="10" y1="20" x2="16" y2="20" stroke="#fff" stroke-width="1.5"/>
+                            <line x1="10" y1="24" x2="16" y2="24" stroke="#fff" stroke-width="1.5"/>
+                            <line x1="10" y1="28" x2="16" y2="28" stroke="#fff" stroke-width="1.5"/>
+                            <!-- Right data table -->
+                            <rect x="30" y="16" width="10" height="16" rx="2" fill="#FF6F00"/>
+                            <line x1="32" y1="20" x2="38" y2="20" stroke="#fff" stroke-width="1.5"/>
+                            <line x1="32" y1="24" x2="38" y2="24" stroke="#fff" stroke-width="1.5"/>
+                            <line x1="32" y1="28" x2="38" y2="28" stroke="#fff" stroke-width="1.5"/>
+                            <!-- Arrow -->
+                            <line x1="18" y1="24" x2="30" y2="24" stroke="#FF6F00" stroke-width="2" stroke-linecap="round"/>
+                            <!-- Checkmark above arrow -->
+                            <path d="M20 32 L24 36 L32 22" stroke="#388e3c" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+                        </svg>
+                    </div>
                     <h3 class="card-title">No Conversions</h3>
                     <p class="card-text">Direct export from PyTorch to edge. Core ATen operators preserved. No intermediate formats, no vendor lock-in.</p>
                 </div>
 
                 <div class="card">
-                    <div class="card-icon">⚙️</div>
+                    <div class="card-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="#F5F5F5"/>
+                            <rect x="12" y="12" width="24" height="24" rx="6" fill="#de3412"/>
+                            <rect x="20" y="20" width="8" height="8" rx="2" fill="#fff"/>
+                            <path d="M24 18 L22 26 L26 26 L24 34" stroke="#de3412" stroke-width="2" fill="none"/>
+                            <path d="M8 24 H12" stroke="#888" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M36 24 H40" stroke="#888" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M24 8 V12" stroke="#888" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M24 36 V40" stroke="#888" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </div>
                     <h3 class="card-title">Ahead-of-Time Compilation</h3>
                     <p class="card-text">Optimize models offline for target device capabilities. Hardware-specific performance tuning before deployment.</p>
                 </div>
 
                 <div class="card">
-                    <div class="card-icon">🔧</div>
+                    <div class="card-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="#F5F5F5"/>
+                            <rect x="10" y="10" width="14" height="14" rx="3" fill="#de3412"/>
+                            <rect x="24" y="24" width="14" height="14" rx="3" fill="#de3412" fill-opacity="0.7"/>
+                            <rect x="17" y="17" width="14" height="14" rx="3" fill="#de3412" fill-opacity="0.4"/>
+                            <rect x="10" y="10" width="14" height="14" rx="3" stroke="#de3412" stroke-width="2"/>
+                            <rect x="24" y="24" width="14" height="14" rx="3" stroke="#de3412" stroke-width="2"/>
+                            <rect x="17" y="17" width="14" height="14" rx="3" stroke="#de3412" stroke-width="2"/>
+                        </svg>
+                    </div>
                     <h3 class="card-title">Modular by Design</h3>
                     <p class="card-text">Pick and choose optimization steps. Composable at both compile-time and runtime for maximum flexibility.</p>
                 </div>
 
                 <div class="card">
-                    <div class="card-icon">🚀</div>
+                    <div class="card-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="#F5F5F5"/>
+                            <rect x="14" y="14" width="20" height="20" rx="4" fill="#de3412"/>
+                            <!-- Connection nodes -->
+                            <circle cx="24" cy="6" r="2" fill="#de3412"/>
+                            <circle cx="24" cy="42" r="2" fill="#de3412"/>
+                            <circle cx="6" cy="24" r="2" fill="#de3412"/>
+                            <circle cx="42" cy="24" r="2" fill="#de3412"/>
+                            <circle cx="10" cy="10" r="2" fill="#de3412" fill-opacity="0.7"/>
+                            <circle cx="38" cy="10" r="2" fill="#de3412" fill-opacity="0.7"/>
+                            <circle cx="10" cy="38" r="2" fill="#de3412" fill-opacity="0.7"/>
+                            <circle cx="38" cy="38" r="2" fill="#de3412" fill-opacity="0.7"/>
+                            <!-- Chip outline -->
+                            <rect x="14" y="14" width="20" height="20" rx="4" stroke="#de3412" stroke-width="2"/>
+                        </svg>
+                    </div>
                     <h3 class="card-title">Hardware Ecosystem</h3>
                     <p class="card-text">Fully open source with hardware partner contributions. Built on PyTorch's standardized IR and operator set.</p>
                 </div>
 
                 <div class="card">
-                    <div class="card-icon">💾</div>
+                    <div class="card-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="#F5F5F5"/>
+                            <!-- Microchip -->
+                            <rect x="14" y="14" width="20" height="20" rx="4" fill="#de3412" stroke="#de3412" stroke-width="2"/>
+                            <!-- Feather (lightweight/embedded) -->
+                            <path d="M20 30 Q28 18 28 30 Q26 28 24 30 Q22 32 20 30 Z" fill="#fff" fill-opacity="0.9" stroke="#de3412" stroke-width="1.5"/>
+                        </svg>
+                    </div>
                     <h3 class="card-title">Embedded-Friendly Runtime</h3>
                     <p class="card-text">Portable C++ runtime runs on microcontrollers to smartphones.</p>
                 </div>
 
                 <div class="card">
-                    <div class="card-icon">🔗</div>
+                    <div class="card-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <!-- Background -->
+                            <rect width="48" height="48" rx="12" fill="#F5F5F5"/>
+                            <!-- Official PyTorch Flame (stylized, based on www.pytorch.org) -->
+                            <path d="M24 10 C28 18, 20 22, 24 34 C28 28, 36 20, 24 10 Z" fill="#FF6F00"/>
+                            <circle cx="24" cy="24" r="4" fill="#fff" stroke="#FF6F00" stroke-width="1.5"/>
+                            <!-- Ecosystem: Orbiting nodes -->
+                            <circle cx="38" cy="24" r="3" fill="#de3412" fill-opacity="0.7"/>
+                            <circle cx="24" cy="38" r="3" fill="#de3412" fill-opacity="0.7"/>
+                            <circle cx="10" cy="24" r="3" fill="#de3412" fill-opacity="0.7"/>
+                            <circle cx="24" cy="10" r="3" fill="#de3412" fill-opacity="0.7"/>
+                            <!-- Dashed orbit ring -->
+                            <circle cx="24" cy="24" r="14" stroke="#de3412" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>
+                        </svg>
+                    </div>
                     <h3 class="card-title">PyTorch Ecosystem</h3>
                     <p class="card-text">Native integration with PyTorch ecosystem, including torchao for quantization. Stay in familiar tools throughout.</p>
                 </div>
@@ -1201,7 +446,7 @@
     </section>
 
     <!-- Code Example -->
-    <section class="alt" style="padding: 3rem 0;">
+    <section class="alt">
         <div class="code-section-container">
             <h2 class="section-title" style="font-size: 2.5rem; margin-bottom: 0.5rem;">Simple as <span class="highlight">1-2-3</span></h2>
             <p class="section-subtitle" style="margin-bottom: 2rem;">Export, optimize, and run PyTorch models on edge devices</p>
@@ -1235,17 +480,17 @@ exported_program = torch.export.export(model, example_inputs)</code></pre>
                         <div class="backend-switcher">
                             <div class="code-instruction">Choose your target hardware to see the corresponding code:</div>
                             <div class="backend-cards">
-                                <div class="backend-card active" onclick="switchBackend('cpu')">
+                                <div class="backend-card active" onclick="switchBackend('cpu', event)">
                                     <div class="backend-card-title">CPU Optimization</div>
-                                    <div class="backend-card-desc">XNNPACK with KleidiAI</div>
+                                    <div class="backend-card-desc">XNNPACK with Arm Kleidi</div>
                                 </div>
-                                <div class="backend-card" onclick="switchBackend('apple')">
+                                <div class="backend-card" onclick="switchBackend('apple', event)">
                                     <div class="backend-card-title">Apple Devices</div>
                                     <div class="backend-card-desc">Core ML partitioner</div>
                                 </div>
-                                <div class="backend-card" onclick="switchBackend('qualcomm')">
-                                    <div class="backend-card-title">Qualcomm Chips</div>
-                                    <div class="backend-card-desc">Hexagon NPU support</div>
+                                <div class="backend-card" onclick="switchBackend('qualcomm', event)">
+                                    <div class="backend-card-title">Qualcomm® AI Engine</div>
+                                    <div class="backend-card-desc">Qualcomm® Hexagon™ NPU</div>
                                 </div>
                                 <a href="https://docs.pytorch.org/executorch/main/backends-overview.html" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">
                                     <div class="backend-card more-backends">
@@ -1313,19 +558,19 @@ program = to_edge_transform_and_lower(
                         <div class="platform-switcher">
                             <div class="code-instruction">Choose your platform to see the native API:</div>
                             <div class="platform-cards">
-                                <div class="platform-card active" onclick="switchPlatform('cpp')">
+                                <div class="platform-card active" onclick="switchPlatform('cpp', event)">
                                     <div class="platform-card-title">C++</div>
                                 </div>
-                                <div class="platform-card" onclick="switchPlatform('swift')">
+                                <div class="platform-card" onclick="switchPlatform('swift', event)">
                                     <div class="platform-card-title">Swift</div>
                                 </div>
-                                <div class="platform-card" onclick="switchPlatform('kotlin')">
+                                <div class="platform-card" onclick="switchPlatform('kotlin', event)">
                                     <div class="platform-card-title">Kotlin</div>
                                 </div>
-                                <div class="platform-card" onclick="switchPlatform('objc')">
+                                <div class="platform-card" onclick="switchPlatform('objc', event)">
                                     <div class="platform-card-title">Objective-C</div>
                                 </div>
-                                <div class="platform-card" onclick="switchPlatform('wasm')">
+                                <div class="platform-card" onclick="switchPlatform('wasm', event)">
                                     <div class="platform-card-title">WebAssembly</div>
                                 </div>
                             </div>
@@ -1409,7 +654,7 @@ NSArray&lt;ExecuTorchValue *&gt; *outputs = [module forwardWithTensor:input erro
     </section>
 
     <!-- Multimodal API -->
-    <section style="padding: 3rem 0;">
+    <section>
         <div class="code-section-container">
             <h2 class="section-title" style="font-size: 2.5rem; margin-bottom: 0.5rem;">High-Level <span class="highlight">Multimodal APIs</span></h2>
             <p class="section-subtitle" style="margin-bottom: 2rem;">Run complex multimodal LLMs with simplified C++ interfaces</p>
@@ -1427,15 +672,15 @@ NSArray&lt;ExecuTorchValue *&gt; *outputs = [module forwardWithTensor:input erro
                         <div class="platform-switcher-multimodal">
                             <div class="code-instruction">Unified API across mobile platforms:</div>
                             <div class="platform-cards">
-                                <div class="platform-card active" onclick="switchMultimodalPlatform('cpp')">
+                                <div class="platform-card active" onclick="switchMultimodalPlatform('cpp', event)">
                                     <div class="platform-card-title">C++</div>
                                     <div class="platform-card-desc">Cross-platform</div>
                                 </div>
-                                <div class="platform-card" onclick="switchMultimodalPlatform('swift')">
+                                <div class="platform-card" onclick="switchMultimodalPlatform('swift', event)">
                                     <div class="platform-card-title">Swift</div>
                                     <div class="platform-card-desc">iOS native</div>
                                 </div>
-                                <div class="platform-card" onclick="switchMultimodalPlatform('kotlin')">
+                                <div class="platform-card" onclick="switchMultimodalPlatform('kotlin', event)">
                                     <div class="platform-card-title">Kotlin</div>
                                     <div class="platform-card-desc">Android native</div>
                                 </div>
@@ -1590,22 +835,22 @@ result.tokens.forEach { token ->
 
             <div class="grid">
                 <div class="card">
-                    <h3 class="card-title">XNNPACK with KleidiAI</h3>
-                    <p class="card-text">CPU acceleration across ARM and x86 architectures</p>
+                    <h3 class="card-title">XNNPACK with Arm Kleidi</h3>
+                    <p class="card-text">CPU acceleration across Arm and x86 architectures</p>
                 </div>
 
                 <div class="card">
-                    <h3 class="card-title">Apple Core ML</h3>
+                    <h3 class="card-title">Apple Core ML for Apple silicon</h3>
                     <p class="card-text">Neural Engine and Apple Silicon optimization</p>
                 </div>
 
                 <div class="card">
-                    <h3 class="card-title">Qualcomm Snapdragon</h3>
-                    <p class="card-text">Hexagon NPU support</p>
+                    <h3 class="card-title">Qualcomm® AI Engine for Qualcomm® Hexagon™ NPU</h3>
+                    <p class="card-text">Hardware-accelerated AI inference on Qualcomm platforms</p>
                 </div>
 
                 <div class="card">
-                    <h3 class="card-title">ARM Ethos-U</h3>
+                    <h3 class="card-title">Arm Ethos-U NPU</h3>
                     <p class="card-text">Microcontroller NPU for ultra-low power</p>
                 </div>
 
@@ -1615,7 +860,7 @@ result.tokens.forEach { token ->
                 </div>
 
                 <div class="card">
-                    <h3 class="card-title">Intel OpenVINO</h3>
+                    <h3 class="card-title">OpenVINO from Intel</h3>
                     <p class="card-text">x86 CPU and integrated GPU optimization</p>
                 </div>
 
@@ -1625,22 +870,22 @@ result.tokens.forEach { token ->
                 </div>
 
                 <div class="card">
-                    <h3 class="card-title">Samsung Exynos</h3>
+                    <h3 class="card-title">Samsung Exynos NPU</h3>
                     <p class="card-text">Integrated NPU optimization</p>
                 </div>
 
                 <div class="card">
-                    <h3 class="card-title">NXP Neutron</h3>
+                    <h3 class="card-title">NXP Semiconductors' eIQ® Neutron NPU</h3>
                     <p class="card-text">Automotive and IoT acceleration</p>
                 </div>
 
                 <div class="card">
-                    <h3 class="card-title">Apple MPS</h3>
-                    <p class="card-text">Metal Performance Shaders for GPU acceleration</p>
+                    <h3 class="card-title">Apple Metal Performance Shaders (MPS)</h3>
+                    <p class="card-text">GPU acceleration on macOS and iOS</p>
                 </div>
 
                 <div class="card">
-                    <h3 class="card-title">ARM VGF</h3>
+                    <h3 class="card-title">Arm VGF</h3>
                     <p class="card-text">Versatile graphics framework support</p>
                 </div>
 
@@ -1725,10 +970,10 @@ result.tokens.forEach { token ->
         window.addEventListener('scroll', function() {
             const navbar = document.querySelector('nav');
             if (window.scrollY > 50) {
-                navbar.style.background = 'rgba(255, 255, 255, 0.98)';
-                navbar.style.boxShadow = '0 2px 20px rgba(0, 0, 0, 0.1)';
+                navbar.style.background = 'rgba(48,48,48,0.97)';
+                navbar.style.boxShadow = '0 2px 20px rgba(0,0,0,0.1)';
             } else {
-                navbar.style.background = 'rgba(255, 255, 255, 0.95)';
+                navbar.style.background = 'rgba(48,48,48,0.97)';
                 navbar.style.boxShadow = 'none';
             }
         });
@@ -1748,7 +993,7 @@ result.tokens.forEach { token ->
         });
 
         // Backend switcher
-        function switchBackend(backend) {
+        function switchBackend(backend, event) {
             // Hide all backend content
             document.querySelectorAll('.backend-content').forEach(content => {
                 content.classList.remove('active');
@@ -1767,7 +1012,7 @@ result.tokens.forEach { token ->
         }
 
         // Platform switcher
-        function switchPlatform(platform) {
+        function switchPlatform(platform, event) {
             // Hide all platform content
             document.querySelectorAll('.platform-content').forEach(content => {
                 content.classList.remove('active');
@@ -1786,7 +1031,7 @@ result.tokens.forEach { token ->
         }
 
         // Multimodal platform switcher
-        function switchMultimodalPlatform(platform) {
+        function switchMultimodalPlatform(platform, event) {
             // Hide all multimodal platform content
             document.querySelectorAll('.multimodal-content').forEach(content => {
                 content.classList.remove('active');
@@ -1803,6 +1048,22 @@ result.tokens.forEach { token ->
             // Add active class to clicked card
             event.currentTarget.classList.add('active');
         }
+
+        // Hamburger menu toggle
+        function toggleNav() {
+            var navLinks = document.getElementById('navLinks');
+            navLinks.classList.toggle('open');
+        }
+
+        // Highlight active nav link on click
+        document.querySelectorAll('.nav-links a').forEach(function(link) {
+            link.addEventListener('click', function() {
+                document.querySelectorAll('.nav-links a').forEach(function(l) {
+                    l.classList.remove('active');
+                });
+                this.classList.add('active');
+            });
+        });
     </script>
 </body>
 </html>

@@ -9,7 +9,7 @@ set -euo pipefail
 
 unset CMAKE_PREFIX_PATH
 unset XTENSA_CORE
-export XTENSA_CORE=FCV_FG3GP
+export XTENSA_CORE=VANILLA_G3
 git submodule sync
 git submodule update --init
 ./backends/cadence/install_requirements.sh

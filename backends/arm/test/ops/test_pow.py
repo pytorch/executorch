@@ -62,10 +62,10 @@ class Pow_TensorScalar(torch.nn.Module):
 
     test_data = {
         # Test whole number exponents
-        "exp_minus_three": lambda: (torch.randn((10, 5)), -3.0),
-        "exp_minus_one": lambda: (torch.randn((42,)), -1.0),
-        "exp_zero": lambda: (torch.randn((1, 2, 3, 7)), 0.0),
-        "exp_one": lambda: (torch.randn((1, 4, 6, 2)), 1.0),
+        "exp_minus_three": lambda: (torch.randn((10, 5)).relu() + 0.1, -3.0),
+        "exp_minus_one": lambda: (torch.randn((42,)).relu() + 0.1, -1.0),
+        "exp_zero": lambda: (torch.randn((1, 2, 3, 7)).relu(), 0.0),
+        "exp_one": lambda: (torch.randn((1, 4, 6, 2)).relu(), 1.0),
         "exp_two": lambda: (torch.randn((1, 2, 3, 6)), 2.0),
         # Test decimal exponent (base must be non-negative)
         "non_neg_base_exp_pos_decimal": lambda: (
@@ -117,11 +117,7 @@ def test_pow_tensor_tensor_vgf_FP(test_data: Pow_TensorTensor.input_t):
 
 
 x_fail = {
-    "exp_minus_three": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
-    "exp_minus_one": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
-    "exp_zero": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
-    "exp_one": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
-    "exp_two": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "exp_two": "TOSA constraints: If x <0 .",
     "non_neg_base_exp_pos_decimal": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
 }
 
@@ -138,7 +134,7 @@ def test_pow_tensor_scalar_tosa_FP(test_data: Pow_TensorScalar.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
+@common.parametrize("test_data", Pow_TensorScalar.test_data, strict=False)
 def test_pow_tensor_scalar_tosa_INT(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
     pipeline = TosaPipelineINT[Pow_TensorScalar.input_t](

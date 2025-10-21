@@ -286,15 +286,7 @@ def test_mean_dim_tosa_INT(test_data):
     pipeline.run()
 
 
-xfails = {
-    "rank5_01234": "Rank 5 graph input currently not supported in EthosUBackend (passes since CHW are all averaged over so data order does not matter in this case)",
-    "rank5_234": "Rank 5 graph input currently not supported in EthosUBackend (passes since CHW are all averaged over so data order does not matter in this case)",
-    "rank5_12": "Rank 5 graph input currently not supported in EthosUBackend",
-    "rank5_2": "Rank 5 graph input currently not supported in EthosUBackend",
-}
-
-
-@common.parametrize("test_data", MeanDim.test_data_suite, xfails=xfails, strict=False)
+@common.parametrize("test_data", MeanDim.test_data_suite)
 @common.XfailIfNoCorstone300
 def test_mean_dim_u55_INT(test_data):
     test_data, dim, keep_dim = test_data()
@@ -313,7 +305,7 @@ def test_mean_dim_u55_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", MeanDim.test_data_suite, xfails=xfails, strict=False)
+@common.parametrize("test_data", MeanDim.test_data_suite)
 @common.XfailIfNoCorstone320
 def test_mean_dim_u85_INT(test_data):
     test_data, dim, keep_dim = test_data()
