@@ -102,14 +102,15 @@ TEST_F(VulkanComputeAPITest, print_adapter) {
   std::cout << *(context()->adapter_ptr()) << std::endl;
 }
 
-#if defined(VULKAN_DEBUG) && defined(VK_KHR_pipeline_executable_properties)
+#if defined(VK_KHR_pipeline_executable_properties) && \
+    defined(ETVK_INSPECT_PIPELINES)
 
 TEST_F(VulkanComputeAPITest, print_shader_executable_properties) {
   context()->print_shader_executable_properties(
       VK_KERNEL(binary_add_nobroadcast__test_half), {0});
 }
 
-#endif // VULKAN_DEBUG && VK_KHR_pipeline_executable_properties
+#endif // VK_KHR_pipeline_executable_properties && ETVK_INSPECT_PIPELINES
 
 std::vector<int64_t> get_reference_strides(
     const std::vector<int64_t>& sizes,
