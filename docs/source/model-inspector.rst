@@ -26,7 +26,7 @@ Inspector Methods
 Constructor
 ~~~~~~~~~~~
 
-.. autofunction:: executorch.devtools.Inspector.__init__
+.. automethod:: executorch.devtools.Inspector.__init__
 
 **Example Usage:**
 
@@ -39,13 +39,13 @@ Constructor
 to_dataframe
 ~~~~~~~~~~~~~~~~
 
-.. autofunction:: executorch.devtools.Inspector.to_dataframe
+.. automethod:: executorch.devtools.Inspector.to_dataframe
 
 
 print_data_tabular
 ~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: executorch.devtools.Inspector.print_data_tabular
+.. automethod:: executorch.devtools.Inspector.print_data_tabular
 
 .. _example-usage-1:
 
@@ -62,7 +62,7 @@ Note that the unit of delegate profiling events is "cycles". We're working on pr
 find_total_for_module
 ~~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: executorch.devtools.Inspector.find_total_for_module
+.. automethod:: executorch.devtools.Inspector.find_total_for_module
 
 .. _example-usage-2:
 
@@ -80,7 +80,7 @@ find_total_for_module
 get_exported_program
 ~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: executorch.devtools.Inspector.get_exported_program
+.. automethod:: executorch.devtools.Inspector.get_exported_program
 
 .. _example-usage-3:
 
@@ -109,7 +109,7 @@ get_exported_program
 calculate_numeric_gap
 ~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: executorch.devtools.Inspector.calculate_numeric_gap
+.. automethod:: executorch.devtools.Inspector.calculate_numeric_gap
 
 .. _example-usage-4:
 
