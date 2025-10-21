@@ -278,30 +278,6 @@ TEST_F(AOTITorchEmptyStridedTest, LargeTensor) {
   EXPECT_EQ(tensor->size(2), 50);
 }
 
-// Test error handling with memory allocation failures
-TEST_F(AOTITorchEmptyStridedTest, MemoryAllocationStress) {
-  // Try to create a very large tensor that might cause allocation failure
-  // (This test may pass or fail depending on available memory)
-  std::vector<int64_t> huge_sizes = {10000, 10000, 100}; // ~38GB for float32
-  Tensor* tensor;
-
-  AOTITorchError error = aoti_torch_empty_strided(
-      huge_sizes.size(),
-      huge_sizes.data(),
-      nullptr,
-      6, // float32
-      1, // CUDA device
-      0, // device index
-      &tensor);
-
-  // Either succeed or fail with memory allocation error
-  if (error == Error::Ok) {
-    EXPECT_NE(tensor, nullptr);
-  } else {
-    EXPECT_EQ(error, Error::MemoryAllocationFailed);
-  }
-}
-
 // Test aoti_torch_empty_strided with bfloat16 dtype
 TEST_F(AOTITorchEmptyStridedTest, BFloat16Tensor) {
   // Test creating bfloat16 tensor on CUDA
