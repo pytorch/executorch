@@ -1,4 +1,4 @@
-# XNNPACK Delegate Internals
+# Architecture and Internals
 
 This is a high-level overview of the ExecuTorch XNNPACK backend delegate. This high performance delegate is aimed to reduce CPU inference latency for ExecuTorch models. We will provide a brief introduction to the XNNPACK library and explore the delegate’s overall architecture and intended use cases.
 
@@ -6,18 +6,18 @@ This is a high-level overview of the ExecuTorch XNNPACK backend delegate. This h
 XNNPACK is a library of highly-optimized neural network operators for ARM, x86, and WebAssembly architectures in Android, iOS, Windows, Linux, and macOS environments. It is an open source project, you can find more information about it on [github](https://github.com/google/XNNPACK).
 
 ## What are ExecuTorch delegates?
-A delegate is an entry point for backends to process and execute parts of the ExecuTorch program. Delegated portions of ExecuTorch models hand off execution to backends. The XNNPACK backend delegate is one of many available in ExecuTorch. It leverages the XNNPACK third-party library to accelerate ExecuTorch programs efficiently across a variety of CPUs. More detailed information on the delegates and developing your own delegates is available [here](compiler-delegate-and-partitioner.md). It is recommended that you get familiar with that content before continuing on to the Architecture section.
+A delegate is an entry point for backends to process and execute parts of the ExecuTorch program. Delegated portions of ExecuTorch models hand off execution to backends. The XNNPACK backend delegate is one of many available in ExecuTorch. It leverages the XNNPACK third-party library to accelerate ExecuTorch programs efficiently across a variety of CPUs. More detailed information on the delegates and developing your own delegates is available [here](/compiler-delegate-and-partitioner.md). It is recommended that you get familiar with that content before continuing on to the Architecture section.
 
 ## Architecture
-![High Level XNNPACK delegate Architecture](xnnpack-delegate-architecture.png)
+![High Level XNNPACK delegate Architecture](/backends/xnnpack/xnnpack-delegate-architecture.png) <!-- @lint-ignore linter doesn't like this link for some reason -->
 
 ### Ahead-of-time
 In the ExecuTorch export flow, lowering to the XNNPACK delegate happens at the `to_backend()` stage. In this stage, the model is partitioned by the `XnnpackPartitioner`. Partitioned sections of the graph are converted to a XNNPACK specific graph represenationed and then serialized via flatbuffer. The serialized flatbuffer is then ready to be deserialized and executed by the XNNPACK backend at runtime.
 
-![ExecuTorch XNNPACK delegate Export Flow](xnnpack-et-flow-diagram.png)
+![ExecuTorch XNNPACK delegate Export Flow](/backends/xnnpack/xnnpack-et-flow-diagram.png) <!-- @lint-ignore linter doesn't like this link for some reason -->
 
 #### Partitioner
-The partitioner is implemented by backend delegates to mark nodes suitable for lowering. The `XnnpackPartitioner` lowers using node targets and module metadata. Some more references for partitioners can be found [here](compiler-delegate-and-partitioner.md)
+The partitioner is implemented by backend delegates to mark nodes suitable for lowering. The `XnnpackPartitioner` lowers using node targets and module metadata. Some more references for partitioners can be found [here](/compiler-delegate-and-partitioner.md)
 
 ##### Module-based partitioning
 
@@ -54,7 +54,7 @@ After partitioning the lowerable subgraphs from the model, The XNNPACK delegate 
 The XNNPACK delegate uses flatbuffer for serialization. In order to improve runtime performance, the XNNPACK delegate’s flatbuffer [schema](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/serialization/schema.fbs) mirrors the XNNPACK Library’s graph level API calls. The serialized data are arguments to XNNPACK’s APIs, so that at runtime, the XNNPACK execution graph can efficiently be created with successive calls to XNNPACK’s APIs.
 
 ### Runtime
-The XNNPACK backend’s runtime interfaces with the ExecuTorch runtime through the custom `init` and `execute` function. Each delegated subgraph is contained in an individually serialized XNNPACK blob. When the model is initialized, ExecuTorch calls `init` on all XNNPACK Blobs to load the subgraph from serialized flatbuffer. After, when the model is executed, each subgraph is executed via the backend through the custom `execute` function. To read more about how delegate runtimes interface with ExecuTorch, refer to this [resource](compiler-delegate-and-partitioner.md).
+The XNNPACK backend’s runtime interfaces with the ExecuTorch runtime through the custom `init` and `execute` function. Each delegated subgraph is contained in an individually serialized XNNPACK blob. When the model is initialized, ExecuTorch calls `init` on all XNNPACK Blobs to load the subgraph from serialized flatbuffer. After, when the model is executed, each subgraph is executed via the backend through the custom `execute` function. To read more about how delegate runtimes interface with ExecuTorch, refer to this [resource](/compiler-delegate-and-partitioner.md).
 
 
 #### **XNNPACK Library**
@@ -70,7 +70,7 @@ Since weight packing creates an extra copy of the weights inside XNNPACK, We fre
 When executing the XNNPACK subgraphs, we prepare the tensor inputs and outputs and feed them to the XNNPACK runtime graph. After executing the runtime graph, the output pointers are filled with the computed tensors.
 
 #### **Profiling**
-We have enabled basic profiling for the XNNPACK delegate that can be enabled with the compiler flag `-DEXECUTORCH_ENABLE_EVENT_TRACER` (add `-DENABLE_XNNPACK_PROFILING` for additional details). With ExecuTorch's Developer Tools integration, you can also now use the Developer Tools to profile the model. You can follow the steps in [Using the ExecuTorch Developer Tools to Profile a Model](tutorials/devtools-integration-tutorial) <!-- @lint-ignore --> on how to profile ExecuTorch models and use Developer Tools' Inspector API to view XNNPACK's internal profiling information. An example implementation is available in the `executor_runner` (see [tutorial here](tutorial-xnnpack-delegate-lowering.md#profiling)).
+We have enabled basic profiling for the XNNPACK delegate that can be enabled with the compiler flag `-DEXECUTORCH_ENABLE_EVENT_TRACER` (add `-DENABLE_XNNPACK_PROFILING` for additional details). With ExecuTorch's Developer Tools integration, you can also now use the Developer Tools to profile the model. You can follow the steps in [Using the ExecuTorch Developer Tools to Profile a Model](/tutorials/devtools-integration-tutorial) <!-- @lint-ignore --> on how to profile ExecuTorch models and use Developer Tools' Inspector API to view XNNPACK's internal profiling information. An example implementation is available in the `executor_runner` (see [tutorial here](/tutorial-xnnpack-delegate-lowering.md#profiling)).
 
 
 [comment]: <> (TODO: Refactor quantizer to a more official quantization doc)
@@ -142,5 +142,5 @@ def _qdq_quantized_linear(
 You can read more indepth explanations on PyTorch 2 quantization [here](https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html).
 
 ## See Also
-- [Integrating XNNPACK Delegate in Android AAR](using-executorch-android.md)
-- [Complete the Lowering to XNNPACK Tutorial](tutorial-xnnpack-delegate-lowering.md)
+- [Integrating XNNPACK Delegate in Android AAR](/using-executorch-android.md)
+- [Complete the Lowering to XNNPACK Tutorial](/tutorial-xnnpack-delegate-lowering.md)

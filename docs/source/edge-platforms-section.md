@@ -65,7 +65,7 @@ After choosing your platform:
 
 ```{toctree}
 :hidden:
-:maxdepth: 2
+:maxdepth: 3
 :caption: Edge Platforms
 
 android-section

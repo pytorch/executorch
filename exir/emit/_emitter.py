@@ -372,6 +372,21 @@ class _Emitter(torch.fx.Interpreter):
             )
         return allocation_info
 
+    def _save_to_external_constant_map(
+        self,
+        fqn: str,
+        buffer_idx: int,
+        constant_tag: str,
+    ) -> None:
+        """
+        Saves external constant to the map.
+        """
+        # buffer data should be in the external_constant_buffer already.
+        assert buffer_idx < len(self.program_state.external_constant_buffer)
+        if constant_tag not in self.program_state.external_constant_map:
+            self.program_state.external_constant_map[constant_tag] = {}
+        self.program_state.external_constant_map[constant_tag][fqn] = buffer_idx
+
     def _save_new_const_tensor(
         self,
         spec: TensorSpec,
@@ -403,11 +418,9 @@ class _Emitter(torch.fx.Interpreter):
             buffer_idx = len(self.program_state.external_constant_buffer)
             self.program_state.external_constant_hash[hashed] = buffer_idx
             self.program_state.external_constant_buffer.append(buffer_data)
-            if constant_tag not in self.program_state.external_constant_map:
-                self.program_state.external_constant_map[constant_tag] = {}
-            self.program_state.external_constant_map[constant_tag][
-                spec.extra_tensor_info.fully_qualified_name  # pyre-ignore Undefined attribute [16]: `Optional` has no attribute `fully_qualified_name`.
-            ] = buffer_idx
+            self._save_to_external_constant_map(
+                spec.extra_tensor_info.fully_qualified_name, buffer_idx, constant_tag
+            )
         # Tensor is mutable with initial state. Place into mutable segment
         elif allocation_info:
             buffer_idx = len(self.program_state.mutable_buffer)
@@ -466,6 +479,19 @@ class _Emitter(torch.fx.Interpreter):
                 and spec.extra_tensor_info.location == TensorDataLocation.EXTERNAL
             ):
                 buffer_idx = self.program_state.external_constant_hash.get(hashed, -1)
+                if buffer_idx != -1:
+                    # This constant already exists in the external_constant_buffer,
+                    # And doesn't need to be duplicated. However, the fqn is unique
+                    # and should be added. ie, we have the case: fqn0->data, fqn1->data.
+                    # When buffer_idx == 1, the data is new and added with
+                    # `_save_new_const_tensor` below.
+                    assert spec.extra_tensor_info.fully_qualified_name is not None
+                    assert constant_tag is not None
+                    self._save_to_external_constant_map(
+                        spec.extra_tensor_info.fully_qualified_name,
+                        buffer_idx,
+                        constant_tag,
+                    )
             else:
                 buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
 

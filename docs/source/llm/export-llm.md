@@ -20,6 +20,8 @@ As of this doc, the list of supported LLMs include the following:
 
 The up-to-date list of supported LLMs can be found in the code [here](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L32).
 
+**Note:** If you need to export models that are not on this list or other model architectures (such as Gemma, Mistral, BERT, T5, Whisper, etc.), see [Exporting LLMs with Optimum](export-llm-optimum.md) which supports a much wider variety of models from Hugging Face Hub.
+
 ## The export_llm API
 `export_llm` is ExecuTorch's high-level export API for LLMs. In this tutorial, we will focus on exporting Llama 3.2 1B using this API. `export_llm`'s arguments are specified either through CLI args or through a yaml configuration whose fields are defined in [`LlmConfig`](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py). To call `export_llm`:
 

@@ -9,7 +9,7 @@ set -euo pipefail
 
 unset CMAKE_PREFIX_PATH
 unset XTENSA_CORE
-export XTENSA_CORE=nxp_rt600_RI23_11_newlib
+export XTENSA_CORE=VANILLA_HIFI
 git submodule sync
 git submodule update --init
 ./backends/cadence/install_requirements.sh
