@@ -105,11 +105,10 @@ target_link_libraries(
 executorch_target_link_options_shared_lib(aoti_cuda)
 
 if(BUILD_TESTING)
-  # Add runtime
-  add_executable(voxtral_runner tests/voxtral_runner.cpp)
+  add_executable(multimodal_benchmark tests/multimodal_benchmark.cpp)
   target_link_libraries(
-    voxtral_runner PUBLIC aoti_cuda extension_module_static
-                          extension_flat_tensor portable_ops_lib
+    multimodal_benchmark PUBLIC aoti_cuda extension_module_static
+                                extension_flat_tensor portable_ops_lib
   )
 endif()
 
