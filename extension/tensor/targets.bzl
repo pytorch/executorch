@@ -10,10 +10,6 @@ def define_common_targets():
     for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
 
-        # Check if USE_CUDA_BACKEND flag is set via build config
-        use_cuda_backend = native.read_config("executorch", "use_cuda_backend", "false") == "true"
-        preprocessor_flags = ["-DUSE_CUDA_BACKEND"] if use_cuda_backend else []
-
         runtime.cxx_library(
             name = "tensor" + aten_suffix,
             srcs = [
@@ -29,7 +25,6 @@ def define_common_targets():
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
-            preprocessor_flags = preprocessor_flags,
             deps = [
                 "//executorch/runtime/core/exec_aten/util:dim_order_util" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
