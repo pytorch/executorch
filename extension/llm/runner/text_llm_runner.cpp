@@ -183,7 +183,7 @@ Error TextLLMRunner::generate(
   // Generate max_new_tokens - 1 because prefill already generated 1 token.
   int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
       prompt_tokens,
-      num_prompt_tokens,
+      pos_,
       max_new_tokens - 1,
       temperature_ == -1.0f ? config.temperature : temperature_,
       wrapped_callback));
