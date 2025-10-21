@@ -1208,6 +1208,471 @@ when lowering to the Vulkan backend.</p></li>
 <p>All operators support dynamic input shapes unless otherwise noted (i.e. “no
 resize support”). The expectation is that over time, all operators will be able
 to support dynamic shapes.</p>
+<div class="pst-scrollable-table-container"><table class="table table-left" id="id1">
+<caption><span class="caption-text">Vulkan Backend Operator Support</span><a class="headerlink" href="#id1" title="Link to this table">#</a></caption>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 60%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Namespace</p></th>
+<th class="head"><p>Operator</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>_log_softmax</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>_native_batch_norm_legit_no_training</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>_softmax</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>_to_copy</p></td>
+<td><p>dtype conversion between float types only</p></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>_weight_int8pack_mm</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>abs</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>add</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>addmm</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>amax</p></td>
+<td><p>keepdim=True required; max 2D reductions</p></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>amin</p></td>
+<td><p>keepdim=True required; max 2D reductions</p></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>arange</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>avg_pool2d</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>bmm</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>cat</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>clamp</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>clone</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>constant_pad_nd</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>convolution</p></td>
+<td><p>batch=1 for 2D conv; no transposed 1D conv; no 3D conv</p></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>cos</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>div</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>div.Tensor_mode</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>embedding</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>eq</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>exp</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>expand_copy</p></td>
+<td><p>no resize support</p></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>flip</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>full</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>full_like</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>ge</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>gelu</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>gt</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>hardshrink</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>hardtanh</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>index_select</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>le</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>leaky_relu</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>linear</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>lt</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>max_pool2d</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>max_pool2d_with_indices</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>mean</p></td>
+<td><p>keepdim=True required; max 2D reductions</p></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>minimum</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>mm</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>native_group_norm</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>native_layer_norm</p></td>
+<td><p>resize supported</p></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>neg</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>ones</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>ones_like</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>permute</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>permute_copy</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>pow</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>relu</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>repeat</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>round</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>rsqrt</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>scalar_tensor</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>select_copy</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>sigmoid</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>sin</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>slice_copy</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>split</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>split_with_sizes_copy</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>sqrt</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>squeeze_copy</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>sub</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>sum</p></td>
+<td><p>keepdim=True required; max 2D reductions</p></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>t_copy</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>tanh</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>unsqueeze_copy</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>upsample_bilinear2d</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>upsample_nearest2d</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>view_copy</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>zeros</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>zeros_like</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>_assert_scalar</p></td>
+<td><p>removed via graph pass</p></td>
+</tr>
+<tr class="row-odd"><td><p>aten</p></td>
+<td><p>sym_constrain_range_for_size</p></td>
+<td><p>removed via graph pass</p></td>
+</tr>
+<tr class="row-even"><td><p>aten</p></td>
+<td><p>sym_size</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>dim_order_ops</p></td>
+<td><p>_clone_dim_order</p></td>
+<td><p>no dtype conversion; removable if no dtype change</p></td>
+</tr>
+<tr class="row-even"><td><p>dim_order_ops</p></td>
+<td><p>_to_dim_order_copy</p></td>
+<td><p>no dtype conversion; removable if no dtype change</p></td>
+</tr>
+<tr class="row-odd"><td><p>llama</p></td>
+<td><p>custom_sdpa</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>llama</p></td>
+<td><p>sdpa_with_kv_cache</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>llama</p></td>
+<td><p>update_cache</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>operator</p></td>
+<td><p>add</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>operator</p></td>
+<td><p>eq</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>operator</p></td>
+<td><p>ge</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>operator</p></td>
+<td><p>getitem</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>operator</p></td>
+<td><p>gt</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>operator</p></td>
+<td><p>le</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>operator</p></td>
+<td><p>lt</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>quantized_decomposed</p></td>
+<td><p>choose_qparams</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>quantized_decomposed</p></td>
+<td><p>choose_qparams_per_token_asymmetric</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>quantized_decomposed</p></td>
+<td><p>dequantize_per_channel</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>quantized_decomposed</p></td>
+<td><p>dequantize_per_tensor</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>quantized_decomposed</p></td>
+<td><p>dequantize_per_token</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>quantized_decomposed</p></td>
+<td><p>quantize_per_channel</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>quantized_decomposed</p></td>
+<td><p>quantize_per_tensor</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>quantized_decomposed</p></td>
+<td><p>quantize_per_token</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>torchao</p></td>
+<td><p>choose_qparams_affine</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>torchao</p></td>
+<td><p>dequantize_affine</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>torchao</p></td>
+<td><p>quantize_affine</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>et_vk</p></td>
+<td><p>add_q8ta_q8ta_q8to</p></td>
+<td><p>no resize support</p></td>
+</tr>
+<tr class="row-odd"><td><p>et_vk</p></td>
+<td><p>apply_rotary_emb</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>et_vk</p></td>
+<td><p>conv2d_q8ta_q8csw_q8to</p></td>
+<td><p>no resize support</p></td>
+</tr>
+<tr class="row-odd"><td><p>et_vk</p></td>
+<td><p>conv2d_q8ta_q8csw_q8to_dw</p></td>
+<td><p>no resize support</p></td>
+</tr>
+<tr class="row-even"><td><p>et_vk</p></td>
+<td><p>conv_with_clamp</p></td>
+<td><p>batch=1 for 2D conv; no transposed 1D conv</p></td>
+</tr>
+<tr class="row-odd"><td><p>et_vk</p></td>
+<td><p>dequantize_q8to_from_conv2d</p></td>
+<td><p>no resize support</p></td>
+</tr>
+<tr class="row-even"><td><p>et_vk</p></td>
+<td><p>grid_priors</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>et_vk</p></td>
+<td><p>linear_dq8ca_q4gsw</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>et_vk</p></td>
+<td><p>linear_q4gsw</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>et_vk</p></td>
+<td><p>linear_q8ta_q8csw</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>et_vk</p></td>
+<td><p>linear_qcs4w</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>et_vk</p></td>
+<td><p>quantize_q8ta_for_conv2d</p></td>
+<td><p>no resize support</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 </section>
 
 
@@ -1541,7 +2006,7 @@ to support dynamic shapes.</p>
        "headline": "Operator Support",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/backends/vulkan/vulkan-op-support.html",
-       "articleBody": "Operator Support# This page lists the operators currently supported by the Vulkan backend. The source of truth for this information is op_registry.py, which is used by the Vulkan Partitioner to determine which operators should be lowered to the Vulkan backend and additionally describes the capabilities of each operator implementation. If an operator used in your model is not in this list, feel free to create a feature request on Github and we will do our best to add an implementation for the operator. The namespace of an operator describes where it originates from: aten - operators in this namespace correspond 1:1 to operators in PyTorch\u2019s ATen library. They all support fp16 and fp32 dtypes at a minimum. dim_order_op - these operators are inserted when lowering to ExecuTorch in order to manage optimal tensor memory layouts. They are typically removed, since the Vulkan backend manages optimal tensor representations internally. llama - custom ops targeted for LLM inference. These are typically inserted by model source transformations applied to a nn.Module and are not invoked directly by a PyTorch model. operator - these operators work with symbolic integers, which are also supported by the Vulkan backend. quantized_decomposed / torchao - these ops are introduced by quantization workflows (either torchao\u2019s quantize_ API or the PT2E quantization flow). They typically represent quantizing/dequantizing a tensor, or choosing the quantization parameters for a tensor. In practice, most instances of these operators will be fused into a custom op in the et_vk namespace. et_vk - these are custom operators implemented only in the Vulkan backend. They typically represent quantized variants of aten operators, or fusions of common operator patterns. They are inserted by operator fusion graph passes when lowering to the Vulkan backend. All operators support dynamic input shapes unless otherwise noted (i.e. \u201cno resize support\u201d). The expectation is that over time, all operators will be able to support dynamic shapes.",
+       "articleBody": "Operator Support# This page lists the operators currently supported by the Vulkan backend. The source of truth for this information is op_registry.py, which is used by the Vulkan Partitioner to determine which operators should be lowered to the Vulkan backend and additionally describes the capabilities of each operator implementation. If an operator used in your model is not in this list, feel free to create a feature request on Github and we will do our best to add an implementation for the operator. The namespace of an operator describes where it originates from: aten - operators in this namespace correspond 1:1 to operators in PyTorch\u2019s ATen library. They all support fp16 and fp32 dtypes at a minimum. dim_order_op - these operators are inserted when lowering to ExecuTorch in order to manage optimal tensor memory layouts. They are typically removed, since the Vulkan backend manages optimal tensor representations internally. llama - custom ops targeted for LLM inference. These are typically inserted by model source transformations applied to a nn.Module and are not invoked directly by a PyTorch model. operator - these operators work with symbolic integers, which are also supported by the Vulkan backend. quantized_decomposed / torchao - these ops are introduced by quantization workflows (either torchao\u2019s quantize_ API or the PT2E quantization flow). They typically represent quantizing/dequantizing a tensor, or choosing the quantization parameters for a tensor. In practice, most instances of these operators will be fused into a custom op in the et_vk namespace. et_vk - these are custom operators implemented only in the Vulkan backend. They typically represent quantized variants of aten operators, or fusions of common operator patterns. They are inserted by operator fusion graph passes when lowering to the Vulkan backend. All operators support dynamic input shapes unless otherwise noted (i.e. \u201cno resize support\u201d). The expectation is that over time, all operators will be able to support dynamic shapes. Vulkan Backend Operator Support# Namespace Operator Notes aten _log_softmax aten _native_batch_norm_legit_no_training aten _softmax aten _to_copy dtype conversion between float types only aten _weight_int8pack_mm aten abs aten add aten addmm aten amax keepdim=True required; max 2D reductions aten amin keepdim=True required; max 2D reductions aten arange aten avg_pool2d aten bmm aten cat aten clamp aten clone aten constant_pad_nd aten convolution batch=1 for 2D conv; no transposed 1D conv; no 3D conv aten cos aten div aten div.Tensor_mode aten embedding aten eq aten exp aten expand_copy no resize support aten flip aten full aten full_like aten ge aten gelu aten gt aten hardshrink aten hardtanh aten index_select aten le aten leaky_relu aten linear aten lt aten max_pool2d aten max_pool2d_with_indices aten mean keepdim=True required; max 2D reductions aten minimum aten mm aten native_group_norm aten native_layer_norm resize supported aten neg aten ones aten ones_like aten permute aten permute_copy aten pow aten relu aten repeat aten round aten rsqrt aten scalar_tensor aten select_copy aten sigmoid aten sin aten slice_copy aten split aten split_with_sizes_copy aten sqrt aten squeeze_copy aten sub aten sum keepdim=True required; max 2D reductions aten t_copy aten tanh aten unsqueeze_copy aten upsample_bilinear2d aten upsample_nearest2d aten view_copy aten zeros aten zeros_like aten _assert_scalar removed via graph pass aten sym_constrain_range_for_size removed via graph pass aten sym_size dim_order_ops _clone_dim_order no dtype conversion; removable if no dtype change dim_order_ops _to_dim_order_copy no dtype conversion; removable if no dtype change llama custom_sdpa llama sdpa_with_kv_cache llama update_cache operator add operator eq operator ge operator getitem operator gt operator le operator lt quantized_decomposed choose_qparams quantized_decomposed choose_qparams_per_token_asymmetric quantized_decomposed dequantize_per_channel quantized_decomposed dequantize_per_tensor quantized_decomposed dequantize_per_token quantized_decomposed quantize_per_channel quantized_decomposed quantize_per_tensor quantized_decomposed quantize_per_token torchao choose_qparams_affine torchao dequantize_affine torchao quantize_affine et_vk add_q8ta_q8ta_q8to no resize support et_vk apply_rotary_emb et_vk conv2d_q8ta_q8csw_q8to no resize support et_vk conv2d_q8ta_q8csw_q8to_dw no resize support et_vk conv_with_clamp batch=1 for 2D conv; no transposed 1D conv et_vk dequantize_q8to_from_conv2d no resize support et_vk grid_priors et_vk linear_dq8ca_q4gsw et_vk linear_q4gsw et_vk linear_q8ta_q8csw et_vk linear_qcs4w et_vk quantize_q8ta_for_conv2d no resize support",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
