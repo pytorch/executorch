@@ -836,6 +836,50 @@ void vTensor::BufferMetadata::update(
   numel = utils::safe_downcast<uint32_t>(src_numel);
 }
 
+vTensor::TextureMetadata::TextureMetadata(
+    const std::vector<int64_t>& src_sizes,
+    const TextureLimits& src_logical_limits,
+    const std::vector<int64_t>& src_axis_map,
+    const int32_t src_packed_dim) {
+  update(src_sizes, src_logical_limits, src_axis_map, src_packed_dim);
+}
+
+void vTensor::TextureMetadata::update(
+    const std::vector<int64_t>& src_sizes,
+    const TextureLimits& src_logical_limits,
+    const std::vector<int64_t>& src_axis_map,
+    const int32_t src_packed_dim) {
+  // Convert sizes to flipped and unsqueezed format (fixed to 4 dimensions for
+  // texture)
+  std::vector<int32_t> fu_sizes =
+      flip_and_unsqueeze<int32_t>(src_sizes, kTensorSizes, 0, 4);
+
+  // Copy sizes (up to 4 elements)
+  for (int i = 0; i < 4; ++i) {
+    sizes[i] = fu_sizes.at(i);
+  }
+
+  // Copy logical limits (3 elements)
+  logical_limits[0] =
+      utils::safe_downcast<int32_t>(src_logical_limits.limits[0]);
+  logical_limits[1] =
+      utils::safe_downcast<int32_t>(src_logical_limits.limits[1]);
+  logical_limits[2] =
+      utils::safe_downcast<int32_t>(src_logical_limits.limits[2]);
+  logical_limits[3] = 1u;
+
+  // Copy axis map (up to 4 elements)
+  for (int i = 0; i < 4 && i < src_axis_map.size(); ++i) {
+    axis_map[i] = utils::safe_downcast<int32_t>(src_axis_map.at(i));
+  }
+  // Pad with zeros if axis_map is smaller than 4
+  for (int i = src_axis_map.size(); i < 4; ++i) {
+    axis_map[i] = 0;
+  }
+
+  packed_dim = src_packed_dim;
+}
+
 vkapi::VulkanImage& vTensor::image(
     vkapi::PipelineBarrier& pipeline_barrier,
     const vkapi::PipelineStageFlags stage) & {
@@ -948,6 +992,16 @@ const vkapi::BufferBindInfo vTensor::buffer_meta_ubo() {
   return vkapi::BufferBindInfo(buffer_meta_.buffer(), 0, ubo_nbytes);
 }
 
+const vkapi::BufferBindInfo vTensor::texture_meta_ubo() {
+  size_t ubo_nbytes = sizeof(TextureMetadata);
+  if (!texture_meta_.buffer()) {
+    TextureLimits limits(logical_limits());
+    TextureMetadata data(sizes_, limits, axis_map_, packed_dim_);
+    texture_meta_ = ParamsBuffer(storage_->context_, data);
+  }
+  return vkapi::BufferBindInfo(texture_meta_.buffer(), 0, ubo_nbytes);
+}
+
 VkMemoryRequirements vTensor::get_memory_requirements() const {
   switch (storage_type()) {
     case utils::kBuffer:
@@ -1030,6 +1084,12 @@ void vTensor::update_metadata() {
   if (buffer_meta_.buffer()) {
     BufferMetadata data(sizes_, dim_order_, strides_, numel_);
     buffer_meta_.update(data);
+  }
+
+  if (texture_meta_.buffer()) {
+    TextureMetadata data(
+        sizes_, uniform_data_->logical_limits, axis_map_, packed_dim_);
+    texture_meta_.update(data);
   }
 }
 

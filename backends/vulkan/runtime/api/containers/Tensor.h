@@ -285,6 +285,25 @@ class vTensor final {
         size_t numel);
   };
 
+  struct TextureMetadata {
+    int32_t sizes[4];
+    int32_t logical_limits[4];
+    int32_t axis_map[4];
+    int32_t packed_dim;
+
+    TextureMetadata(
+        const std::vector<int64_t>& sizes,
+        const TextureLimits& logical_limits,
+        const std::vector<int64_t>& axis_map,
+        const int32_t packed_dim);
+
+    void update(
+        const std::vector<int64_t>& sizes,
+        const TextureLimits& logical_limits,
+        const std::vector<int64_t>& axis_map,
+        const int32_t packed_dim);
+  };
+
  private:
   /*
    * "Core" tensor metadata. They are the minimum amount of information required
@@ -359,6 +378,12 @@ class vTensor final {
    * Used to store data for BufferMetadata to pass to shaders as buffer_meta_ubo
    */
   ParamsBuffer buffer_meta_;
+
+  /*
+   * Used to store data for TextureMetadata to pass to shaders as
+   * texture_meta_ubo
+   */
+  ParamsBuffer texture_meta_;
 
   uint32_t uniforms_size_ = 0u;
   uint32_t sizes_uniform_offset_ = kUniformOffsetUnset;
@@ -586,6 +611,8 @@ class vTensor final {
   const vkapi::BufferBindInfo numel_ubo();
 
   const vkapi::BufferBindInfo buffer_meta_ubo();
+
+  const vkapi::BufferBindInfo texture_meta_ubo();
 
  public:
   inline size_t staging_buffer_numel() const {

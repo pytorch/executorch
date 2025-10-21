@@ -449,6 +449,18 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().buffer_meta_ubo();
   }
 
+  inline vkapi::BufferBindInfo texture_meta_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().texture_meta_ubo();
+  }
+
+  inline vkapi::BufferBindInfo meta_ubo(const ValueRef idx) {
+    if (is_buffer_storage(idx)) {
+      return buffer_meta_ubo(idx);
+    } else {
+      return texture_meta_ubo(idx);
+    }
+  }
+
   inline vkapi::BufferBindInfo strides_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().strides_ubo();
   }
