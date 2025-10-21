@@ -28,17 +28,8 @@ The AAR artifact contains the Java library for users to integrate with their Jav
   - Optimized kernels
   - Quantized kernels
   - LLaMa-specific Custom ops library.
-- Comes with two ABI variants, arm64-v8a and x86\_64.
+- Comes with two ABI variants, arm64-v8a and x86_64.
 
-The AAR library can be used for generic Android device with arm64-v8a or x86_64 architecture. It can be used across form factors, including phones, tablets, tv boxes, etc, as it does not contain any UI components.
-
-XNNPACK backend
-
-Portable kernels
-Optimized kernels
-Quantized kernels
-LLaMa-specific Custom ops library.
-Comes with two ABI variants, arm64-v8a and x86_64.
 The AAR library can be used for generic Android device with arm64-v8a or x86_64 architecture. It can be used across form factors, including phones, tablets, tv boxes, etc, as it does not contain any UI components.
 
 ## Using AAR from Maven Central
