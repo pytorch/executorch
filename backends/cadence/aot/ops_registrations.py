@@ -53,16 +53,10 @@ def _validate_ref_impl_exists() -> None:
     # 1. be removed
     # 2. have a reference implementation added to ref_implementations.py
     _WARN_ONLY = {
-        "cadence::quantized_add",  # We should only support per_tensor variant, should remove
         "cadence::_softmax_f32_f32",
-        "cadence::requantize",  # We should only support per_tensor variant, should remove
         "cadence::quantized_softmax.per_tensor",
-        "cadence::quantized_conv2d_nchw",  # We should only support per_tensor variant, should remove
-        "cadence::quantized_relu",  # We should only support per_tensor variant, should remove
-        "cadence::quantized_conv2d_nhwc",  # We should only support per_tensor variant, should remove
         "cadence::quantized_softmax",
         "cadence::quantized_w8a32_gru",
-        "cadence::quantized_layer_norm",  # We should only support per_tensor variant, should remove
     }
 
     ref_impls = get_registered_ref_implementations()
