@@ -1144,8 +1144,8 @@ like Make, Ninja or Xcode. For information, see <a class="reference external" hr
 </li>
 <li><p>Windows (x86_64)</p>
 <ul>
+<li><p>Windows 10+ with Visual Studio 2022+ and <a class="reference external" href="https://learn.microsoft.com/en-us/cpp/build/clang-support-msbuild?view=msvc-170">Clang-CL</a></p></li>
 <li><p>Windows Subsystem for Linux (WSL) with any of the Linux options</p></li>
-<li><p>Windows 10+ with Visual Studio 2022+ (experimental)</p></li>
 </ul>
 </li>
 </ul>
@@ -1163,24 +1163,40 @@ support and integrates smoothly with <code class="docutils literal notranslate">
 <li><p><code class="docutils literal notranslate"><span class="pre">g++</span></code> version 7 or higher, <code class="docutils literal notranslate"><span class="pre">clang++</span></code> version 5 or higher, or another
 C++17-compatible toolchain.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">python</span></code> version 3.10-3.12</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">Xcode</span> <span class="pre">Command</span> <span class="pre">Line</span> <span class="pre">Tools</span></code> (macOS only)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ccache</span></code> (optional) - A compiler cache that speeds up recompilation</p></li>
+<li><p><strong>macOS</strong></p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">Xcode</span> <span class="pre">Command</span> <span class="pre">Line</span> <span class="pre">Tools</span></code></p></li>
 </ul>
-<p>Additional dependencies will be installed automatically when running the <a class="reference internal" href="#building-the-python-package">Python installation</a>.
+</li>
+<li><p><strong>Windows</strong></p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">Visual</span> <span class="pre">Studio</span> <span class="pre">Clang</span> <span class="pre">Tools</span></code> - See <a class="reference external" href="https://learn.microsoft.com/en-us/cpp/build/clang-support-msbuild?view=msvc-170">Clang/LLVM support in Visual Studio</a>.</p></li>
+</ul>
+</li>
+</ul>
+<p>Additional dependencies will be automatically installed when running the <a class="reference internal" href="#building-the-python-package">Python installation</a>.
 Note that the cross-compilable core runtime code supports a wider range of
-toolchains, down to C++17. See the <a class="reference internal" href="runtime-overview.html"><span class="std std-doc">Runtime Overview</span></a> for
+toolchains, down to C++17. See <a class="reference internal" href="runtime-overview.html"><span class="std std-doc">Runtime Overview</span></a> for
 portability details.</p>
 </section>
 </section>
 <section id="environment-setup">
 <h2>Environment Setup<a class="headerlink" href="#environment-setup" title="Link to this heading">#</a></h2>
-<p>Clone the ExecuTorch repository from GitHub and create a conda environment as follows. Venv can be used in place on conda.</p>
+<p>Clone the ExecuTorch repository from GitHub and create a conda environment. Venv can be used in place on conda.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </span>viable/strict<span class="w"> </span>https://github.com/pytorch/executorch.git
 <span class="nb">cd</span><span class="w"> </span>executorch
 conda<span class="w"> </span>create<span class="w"> </span>-yn<span class="w"> </span>executorch<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10.0
 conda<span class="w"> </span>activate<span class="w"> </span>executorch
 </pre></div>
 </div>
+<blockquote>
+<div><p><strong><em>NOTE:</em></strong> Addition Windows Setup</p>
+<p>ExecuTorch requires symlinks to be enabled to build the Python components. To enable symlinks, run the following command before cloning the repository. Missing symlinks will manifest as an error related to <code class="docutils literal notranslate"><span class="pre">version.py</span></code> when running <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">.</span></code>. See <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/src/README.md">src/README.md</a> for more information.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="w">  </span>git<span class="w"> </span>config<span class="w"> </span>--system<span class="w"> </span>core.symlinks<span class="w"> </span><span class="nb">true</span>
+</pre></div>
+</div>
+</div></blockquote>
 <hr/>
 </section>
 <section id="building-the-python-package">
@@ -1196,12 +1212,19 @@ This will install the ExecuTorch python package and its dependencies into the ac
 <li><p><code class="docutils literal notranslate"><span class="pre">--clean</span></code>: Removes build artifacts.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">--editable</span></code>: Install the ExecuTorch python package in editable mode (see <a class="reference internal" href="#editable-install">Editable Install</a>).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">--minimal</span></code>: Install only the minimal set of dependencies required to run ExecuTorch. Do not install dependencies for examples.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--use-pt-pinned-commit</span></code>: Install the pinned PyTorch commit. When not specified, the latest PyTorch nightly build is installed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--use-pt-pinned-commit</span></code>: Install the pinned PyTorch commit or release version. When not specified, the latest PyTorch nightly build is installed.</p></li>
 </ul>
 <p>For Intel-based macOS systems, use <code class="docutils literal notranslate"><span class="pre">--use-pt-pinned-commit</span> <span class="pre">--minimal</span></code>. As PyTorch does not provide pre-built binaries for Intel Mac, installation requires building PyTorch from source. Instructions can be found in <a class="reference external" href="https://github.com/pytorch/pytorch#installation">PyTorch Installation</a>.</p>
 <p>Note that only the XNNPACK and CoreML backends are built by default. Additional backends can be enabled or disabled by setting the corresponding CMake flags:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Enable the MPS backend</span>
 <span class="nv">CMAKE_ARGS</span><span class="o">=</span><span class="s2">&quot;-DEXECUTORCH_BUILD_MPS=ON&quot;</span><span class="w"> </span>./install_executorch.sh
+</pre></div>
+</div>
+</section>
+<section id="verify-the-build">
+<h2>Verify the Build<a class="headerlink" href="#verify-the-build" title="Link to this heading">#</a></h2>
+<p>To verify that the Python components are installed correctly, run the following command. This will create a file named mv2_xnnpack_fp32.pte in the current directory for the MobileNet V2 model with the XNNPACK backend. If it completes without error, the ExecuTorch Python components are installed successfully.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>executorch.examples.xnnpack.aot_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv2&quot;</span><span class="w"> </span>--delegate
 </pre></div>
 </div>
 <section id="editable-install">
@@ -1243,44 +1266,49 @@ git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w
 </section>
 <section id="building-the-c-runtime">
 <h2>Building the C++ Runtime<a class="headerlink" href="#building-the-c-runtime" title="Link to this heading">#</a></h2>
-<p>The ExecuTorch C++ runtime is built using CMake. It can be compiled standalone to run examples, added as a CMake dependency, or cross-compiled for Android, iOS, or embedded platforms.</p>
+<p>The ExecuTorch runtime uses CMake as the build system. When using ExecuTorch from C++ user code with CMake, adding ExecuTorch as a submodule and referencing via CMake <code class="docutils literal notranslate"><span class="pre">add_subdirectory</span></code> will build the runtime as part of the user build.</p>
+<p>When user code is not using CMake, the runtime can be built standalone and linked. The CMake options described below apply in both cases. Scripts are also provided for <a class="reference internal" href="#cross-compiling-for-android">Android AAR</a> and <a class="reference internal" href="#cross-compiling-for-ios">iOS framework</a> builds.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head text-left"><p>Use Case</p></th>
+<th class="head text-left"><p>How to Build</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td class="text-left"><p>C++ with user CMake</p></td>
+<td class="text-left"><p>Use CMake <code class="docutils literal notranslate"><span class="pre">add_subdirectory</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p>C++ without user CMake</p></td>
+<td class="text-left"><p>Bulild ExecuTorch standalone with CMake. Link libraries with user build.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p>Android with Java/Kotlin</p></td>
+<td class="text-left"><p>Use <a class="reference internal" href="#cross-compiling-for-android">scripts/build_android_libraries.sh</a>.</p></td>
+</tr>
+<tr class="row-odd"><td class="text-left"><p>Android with C++</p></td>
+<td class="text-left"><p>Follow C++ build steps, <a class="reference internal" href="#cross-compiling-for-android">cross-compile for Android</a>.</p></td>
+</tr>
+<tr class="row-even"><td class="text-left"><p>iOS</p></td>
+<td class="text-left"><p>Use <a class="reference internal" href="#cross-compiling-for-ios">scripts/build_ios_frameworks.sh</a>.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 <section id="configuring">
 <h3>Configuring<a class="headerlink" href="#configuring" title="Link to this heading">#</a></h3>
 <p>Configuration should be done after cloning, pulling the upstream repo, or changing build options. Once this is done, you won’t need to do it again until you pull from the upstream repo or modify any CMake-related files.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
-<span class="nb">cd</span><span class="w"> </span>executorch
-
-<span class="c1"># Clean and configure the CMake build system. It&#39;s good practice to do this</span>
-<span class="c1"># whenever cloning or pulling the upstream repo.</span>
-./install_executorch.sh<span class="w"> </span>--clean
-<span class="o">(</span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
+<p>When building as a submodule as part of a user CMake build, ExecuTorch CMake options can be specified either as part of the user CMake configuration or in user CMake code.</p>
+<p>CMake configuration for standalone runtime build:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>cmake-out
+cmake<span class="w"> </span>-B<span class="w"> </span>cmake-out<span class="w"> </span>--preset<span class="w"> </span><span class="o">[</span>preset<span class="o">]</span><span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j10
 </pre></div>
 </div>
-</section>
-<section id="building">
-<h3>Building<a class="headerlink" href="#building" title="Link to this heading">#</a></h3>
-<p>Build all targets with <code class="docutils literal notranslate"><span class="pre">cmake</span> <span class="pre">--build</span></code>.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
-<span class="nb">cd</span><span class="w"> </span>executorch
-
-<span class="c1"># Build using the configuration that you previously generated under the</span>
-<span class="c1"># `cmake-out` directory.</span>
-<span class="c1">#</span>
-<span class="c1"># NOTE: The `-j` argument specifies how many jobs/processes to use when</span>
-<span class="c1"># building, and tends to speed up the build significantly. It&#39;s typical to use</span>
-<span class="c1"># &quot;core count + 1&quot; as the `-j` value.</span>
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j9
-</pre></div>
-</div>
-<blockquote>
-<div><p><strong><em>TIP:</em></strong> For faster rebuilds, consider installing ccache (see <a class="reference internal" href="#compiler-cache-ccache">Compiler Cache section</a> above). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.</p>
-</div></blockquote>
-</section>
 <section id="build-presets">
-<h3>Build Presets<a class="headerlink" href="#build-presets" title="Link to this heading">#</a></h3>
-<p>ExecuTorch provides fine-grained control over what is built, as described in <a class="reference internal" href="#build-options">Build Options</a>. These options are grouped into CMake presets to cover common scenarios, while providing the ability to override individual options. Presets can be specified when configuring CMake by specifying <code class="docutils literal notranslate"><span class="pre">--preset</span> <span class="pre">[name]</span></code> when configuring.</p>
+<h4>Build Presets<a class="headerlink" href="#build-presets" title="Link to this heading">#</a></h4>
+<p>ExecuTorch provides fine-grained control over what is built, as described in <a class="reference internal" href="#build-options">Build Options</a>. These options are grouped into CMake presets to cover common scenarios while preserving the ability to override individual options. Presets can be specified when configuring CMake by specifying <code class="docutils literal notranslate"><span class="pre">--preset</span> <span class="pre">[name]</span></code> when configuring.</p>
 <p>Preset values for common scenarios are listed below. Using a platform preset is recommended to avoid needing to specify many fine-grained build options.</p>
 <ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">android</span></code> - Build featuers and backends common for Android targets.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">arm-baremetal</span></code> - Build for bare-metal ARM targets.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ios</span></code> - Build features and backends common for iOS targets.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">macos</span></code> - Build features and backends common for Mac targets.</p></li>
@@ -1289,71 +1317,30 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class
 <li><p><code class="docutils literal notranslate"><span class="pre">profiling</span></code> - Build the ExecuTorch runtime with profiling enabled.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">zephyr</span></code> - Build for Zephyr RTOS.</p></li>
 </ul>
+<p>User CMake:</p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="nb">set</span><span class="p">(</span><span class="s">EXECUTORCH_BUILD_PRESET_FILE</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_SOURCE_DIR</span><span class="o">}</span><span class="s">/executorch/tools/cmake/preset/llm.cmake</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Standalone build:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Configure the build with the ios preset.</span>
 cmake<span class="w"> </span>..<span class="w"> </span>--preset<span class="w"> </span>ios
 </pre></div>
 </div>
 </section>
-<section id="cmake-targets-and-libraries">
-<h3>CMake Targets and Libraries<a class="headerlink" href="#cmake-targets-and-libraries" title="Link to this heading">#</a></h3>
-<p>To link against the ExecuTorch framework from CMake, the following top-level targets are exposed:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch::backends</span></code>: Contains all configured backends.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch::extensions</span></code>: Contains all configured extensions.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch::kernels</span></code>: Contains all configured kernel libraries.</p></li>
-</ul>
-<p>The backends, extensions, and kernels included in these targets are controlled by the various <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_</span></code> CMake options specified by the build. Using these targets will automatically pull in the required dependencies to use the configured features.</p>
-</section>
-<section id="running-an-example-model">
-<h3>Running an Example Model<a class="headerlink" href="#running-an-example-model" title="Link to this heading">#</a></h3>
-<p>The example <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> binary can be used to run a model and sanity-check the build. Run the following commands to generate and run a simple model.
-You should see the message “Model executed successfully” followed by the output values.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.portable.scripts.export<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;add&quot;</span>
-./cmake-out/executor_runner<span class="w"> </span>--model_path<span class="w"> </span>add.pte
-</pre></div>
-</div>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000526</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">82</span><span class="p">]</span> <span class="n">Model</span> <span class="n">file</span> <span class="n">add</span><span class="o">.</span><span class="n">pte</span> <span class="ow">is</span> <span class="n">loaded</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000595</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">91</span><span class="p">]</span> <span class="n">Using</span> <span class="n">method</span> <span class="n">forward</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000612</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">138</span><span class="p">]</span> <span class="n">Setting</span> <span class="n">up</span> <span class="n">planned</span> <span class="n">buffer</span> <span class="mi">0</span><span class="p">,</span> <span class="n">size</span> <span class="mf">48.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000669</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">161</span><span class="p">]</span> <span class="n">Method</span> <span class="n">loaded</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000685</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">171</span><span class="p">]</span> <span class="n">Inputs</span> <span class="n">prepared</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000764</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">180</span><span class="p">]</span> <span class="n">Model</span> <span class="n">executed</span> <span class="n">successfully</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000770</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">184</span><span class="p">]</span> <span class="mi">1</span> <span class="n">outputs</span><span class="p">:</span>
-<span class="n">Output</span> <span class="mi">0</span><span class="p">:</span> <span class="n">tensor</span><span class="p">(</span><span class="n">sizes</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mf">2.</span><span class="p">])</span>
-</pre></div>
-</div>
-</section>
-<section id="compiler-cache-ccache">
-<h3>Compiler Cache (ccache)<a class="headerlink" href="#compiler-cache-ccache" title="Link to this heading">#</a></h3>
-<p>ExecuTorch automatically detects and enables <a class="reference external" href="https://ccache.dev/">ccache</a> if it’s installed. This significantly speeds up recompilation by caching previously compiled objects:</p>
-<ul class="simple">
-<li><p>If ccache is detected, you’ll see: <code class="docutils literal notranslate"><span class="pre">ccache</span> <span class="pre">found</span> <span class="pre">and</span> <span class="pre">enabled</span> <span class="pre">for</span> <span class="pre">faster</span> <span class="pre">builds</span></code></p></li>
-<li><p>If ccache is not installed, you’ll see: <code class="docutils literal notranslate"><span class="pre">ccache</span> <span class="pre">not</span> <span class="pre">found,</span> <span class="pre">builds</span> <span class="pre">will</span> <span class="pre">not</span> <span class="pre">be</span> <span class="pre">cached</span></code></p></li>
-</ul>
-<p>To install ccache:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Ubuntu/Debian</span>
-sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>ccache
-
-<span class="c1"># macOS</span>
-brew<span class="w"> </span>install<span class="w"> </span>ccache
-
-<span class="c1"># CentOS/RHEL</span>
-sudo<span class="w"> </span>yum<span class="w"> </span>install<span class="w"> </span>ccache
-<span class="c1"># or</span>
-sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>ccache
-</pre></div>
-</div>
-<p>No additional configuration is needed - the build system will automatically use ccache when available.</p>
-<p>See <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CMakeLists.txt">CMakeLists.txt</a></p>
-<hr/>
-</section>
-</section>
 <section id="build-options">
-<h2>Build Options<a class="headerlink" href="#build-options" title="Link to this heading">#</a></h2>
+<h4>Build Options<a class="headerlink" href="#build-options" title="Link to this heading">#</a></h4>
 <p>CMake options can be used to for fine-grained control of build type, control which features are built, and configure functionality, such as logging. Options are typically specified during CMake configuration. Default values of each option are set by the active preset, but can be overridden by specifying the option when configuring.</p>
 <p>Note that many build options require other options to be enabled. This may require enabling multiple options to enable a given feature. The CMake build output will provide an error message when a required option is not enabled.</p>
+<p>User CMake:</p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="nb">set</span><span class="p">(</span><span class="s">EXECUTORCH_BUILD_XNNPACK</span><span class="w"> </span><span class="s">ON</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Standalone build:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>ON
+</pre></div>
+</div>
 <section id="build-type">
-<h3>Build Type<a class="headerlink" href="#build-type" title="Link to this heading">#</a></h3>
+<h5>Build Type<a class="headerlink" href="#build-type" title="Link to this heading">#</a></h5>
 <p>The CMake build is typically set to <code class="docutils literal notranslate"><span class="pre">Debug</span></code> or <code class="docutils literal notranslate"><span class="pre">Release</span></code>. For production use or profiling, release mode should be used to improve performance and reduce binary size. It disables program verification and executorch logging and adds optimizations flags. The <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_OPTIMIZE_SIZE</span></code> flag can be used to further optimize for size with a small performance tradeoff.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Specify build type during CMake configuration</span>
 cmake<span class="w"> </span>..<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release
@@ -1361,7 +1348,7 @@ cmake<span class="w"> </span>..<span class="w"> </span>-DCMAKE_BUILD_TYPE<span c
 </div>
 </section>
 <section id="backends">
-<h3>Backends<a class="headerlink" href="#backends" title="Link to this heading">#</a></h3>
+<h5>Backends<a class="headerlink" href="#backends" title="Link to this heading">#</a></h5>
 <p>Typically, each hardware backend exposes a CMake option to control whether the backend is built. See backend-specific documentation for more details.</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_CADENCE</span></code> - Build the Cadence DSP backend.</p></li>
@@ -1381,7 +1368,7 @@ cmake<span class="w"> </span>..<span class="w"> </span>-DEXECUTORCH_BUILD_XNNPAC
 </div>
 </section>
 <section id="extensions">
-<h3>Extensions<a class="headerlink" href="#extensions" title="Link to this heading">#</a></h3>
+<h5>Extensions<a class="headerlink" href="#extensions" title="Link to this heading">#</a></h5>
 <p>ExecuTorch extensions provide optional functionality outside of the core runtime. As the core runtime is designed to run in constrained environments, these features are typically disabled by default. Extensions include higher-level APIs (Module and Tensor), multi-threading support (Threadpool), training, and more.</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_APPLE</span></code> - Build the Apple extension. This provides Swift and Objective-C bindings, log routing, and platform integration with Mac and iOS. See <a class="reference internal" href="using-executorch-ios.html"><span class="std std-doc">Using ExecuTorch on iOS</span></a>.</p></li>
@@ -1402,7 +1389,7 @@ cmake<span class="w"> </span>..<span class="w"> </span>-DEXECUTORCH_BUILD_XNNPAC
 </div>
 </section>
 <section id="logging">
-<h3>Logging<a class="headerlink" href="#logging" title="Link to this heading">#</a></h3>
+<h5>Logging<a class="headerlink" href="#logging" title="Link to this heading">#</a></h5>
 <p>Logging is enabled by default in debug builds and disabled in release. When enabled, the default log level is Info. Both log enable and level can be overriden with options. See <a class="reference internal" href="using-executorch-runtime-integration.html#logging"><span class="std std-ref">Logging</span></a>. Disabling logging and decreasing log verbosity will reduce binary size by stripping unused strings from the build.</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_ENABLE_LOGGING</span></code> - Enable or disable framework log messages.</p></li>
@@ -1413,8 +1400,40 @@ cmake<span class="w"> </span>..<span class="w"> </span>-DEXECUTORCH_BUILD_XNNPAC
 </pre></div>
 </div>
 </section>
-<section id="output-libraries">
-<h3>Output Libraries<a class="headerlink" href="#output-libraries" title="Link to this heading">#</a></h3>
+</section>
+</section>
+<section id="building">
+<h3>Building<a class="headerlink" href="#building" title="Link to this heading">#</a></h3>
+<p>Build all targets with <code class="docutils literal notranslate"><span class="pre">cmake</span> <span class="pre">--build</span></code>.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
+<span class="nb">cd</span><span class="w"> </span>executorch
+
+<span class="c1"># Build using the configuration that you previously generated under the</span>
+<span class="c1"># `cmake-out` directory.</span>
+<span class="c1">#</span>
+<span class="c1"># NOTE: The `-j` argument specifies how many jobs/processes to use when</span>
+<span class="c1"># building, and tends to speed up the build significantly. It&#39;s typical to use</span>
+<span class="c1"># &quot;core count + 1&quot; as the `-j` value.</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j9
+</pre></div>
+</div>
+<blockquote>
+<div><p><strong><em>TIP:</em></strong> For faster rebuilds, consider installing ccache (see <a class="reference internal" href="#compiler-cache-ccache">Compiler Cache section</a> above). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.</p>
+</div></blockquote>
+<hr/>
+</section>
+</section>
+<section id="cmake-targets-and-output-libraries">
+<h2>CMake Targets and Output Libraries<a class="headerlink" href="#cmake-targets-and-output-libraries" title="Link to this heading">#</a></h2>
+<p>To link against the ExecuTorch framework from CMake, the following top-level targets are exposed:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch::backends</span></code>: Contains all configured backends.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch::extensions</span></code>: Contains all configured extensions.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch::kernels</span></code>: Contains all configured kernel libraries.</p></li>
+</ul>
+<p>The backends, extensions, and kernels included in these targets are controlled by the various <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_</span></code> CMake options specified by the build. Using these targets will automatically pull in the required dependencies to use the configured features.</p>
+<section id="linking-without-cmake">
+<h3>Linking Without CMake<a class="headerlink" href="#linking-without-cmake" title="Link to this heading">#</a></h3>
 <p>To link against the runtime from outside of the CMake ecosystem, the runtime can be first built with CMake and then linked directly. A few of the relevant top-level targets are described below. Note that this is a more involved process than using CMake and is only recommended when using CMake is not viable.</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch.a</span></code>: The core of the ExecuTorch runtime. Does not contain any
@@ -1434,6 +1453,24 @@ implements.</p></li>
 </li>
 </ul>
 <p>Backends typically introduce additional targets. See backend-specific documentation for more details.</p>
+</section>
+<section id="id1">
+<h3>Verify the Build<a class="headerlink" href="#id1" title="Link to this heading">#</a></h3>
+<p>To verify the build, ExecuTorch optionally compiles a simple, stand-alone model runner to run PTE files with all-one input tensors. It is not enabled by default in most presets, but can be enabled by configuring with <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON</span> <span class="pre">-DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=ON</span></code>.</p>
+<p>Once compiled, invoke the runner with a sample PTE (such as the one generated by <a class="reference internal" href="#verify-the-build">verifying the Python build</a>).</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cmake-out/executor_runner<span class="w"> </span>--model_path<span class="o">=</span>mv2_xnnpack_fp32.pte
+</pre></div>
+</div>
+<p>If the runner runs successfully, you should see output similar to the following:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.043703</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">379</span><span class="p">]</span> <span class="n">Model</span> <span class="n">executed</span> <span class="n">successfully</span> <span class="mi">1</span> <span class="n">time</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="ow">in</span> <span class="mf">15.013292</span> <span class="n">ms</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.043720</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">383</span><span class="p">]</span> <span class="mi">1</span> <span class="n">outputs</span><span class="p">:</span>
+<span class="n">OutputX</span> <span class="mi">0</span><span class="p">:</span> <span class="n">tensor</span><span class="p">(</span><span class="n">sizes</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1000</span><span class="p">],</span> <span class="p">[</span>
+  <span class="o">-</span><span class="mf">0.509859</span><span class="p">,</span> <span class="mf">0.300644</span><span class="p">,</span> <span class="mf">0.0953884</span><span class="p">,</span> <span class="mf">0.147724</span><span class="p">,</span> <span class="mf">0.231202</span><span class="p">,</span> <span class="mf">0.338554</span><span class="p">,</span> <span class="mf">0.206888</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.0575762</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.389273</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.0606864</span><span class="p">,</span>
+  <span class="o">...</span><span class="p">,</span>
+  <span class="mf">0.421219</span><span class="p">,</span> <span class="mf">0.100447</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.506771</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.115824</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.693017</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.183262</span><span class="p">,</span> <span class="mf">0.154781</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.410684</span><span class="p">,</span> <span class="mf">0.0119296</span><span class="p">,</span> <span class="mf">0.449713</span><span class="p">,</span>
+<span class="p">])</span>
+</pre></div>
+</div>
 <hr/>
 </section>
 </section>
@@ -1454,8 +1491,7 @@ implements.</p></li>
 </section>
 <section id="building-the-aar">
 <h3>Building the AAR<a class="headerlink" href="#building-the-aar" title="Link to this heading">#</a></h3>
-<p>With the NDK installed, the <code class="docutils literal notranslate"><span class="pre">build_android_library.sh</span></code> script will build the ExecuTorch Java AAR. This file contains the ExecuTorch Java bindings
-and native code. See <a class="reference internal" href="using-executorch-android.html#using-aar-file"><span class="std std-ref">Using the AAR File</span></a> for usage.</p>
+<p>With the NDK installed, the <code class="docutils literal notranslate"><span class="pre">build_android_library.sh</span></code> script will build the ExecuTorch Java AAR, which contains ExecuTorch Java bindings. See <a class="reference internal" href="using-executorch-android.html#using-aar-file"><span class="std std-ref">Using the AAR File</span></a> for usage.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABIS</span><span class="o">=</span>arm64-v8a
 <span class="nb">export</span><span class="w"> </span><span class="nv">BUILD_AAR_DIR</span><span class="o">=</span>aar-out
 mkdir<span class="w"> </span>-p<span class="w"> </span><span class="nv">$BUILD_AAR_DIR</span>
@@ -1463,27 +1499,12 @@ sh<span class="w"> </span>scripts/build_android_library.sh
 </pre></div>
 </div>
 </section>
-<section id="building-the-example-runner">
-<h3>Building the Example Runner<a class="headerlink" href="#building-the-example-runner" title="Link to this heading">#</a></h3>
-<p>The native executor runner can be cross-compiled for android and deployed via ADB. This step is intended as
-an example of CMake cross compilation and is not necessary for integration into an app.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Run the following lines from the `executorch/` folder</span>
-./install_executorch.sh<span class="w"> </span>--clean
-mkdir<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-android-out
-
-<span class="c1"># point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed</span>
-cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w">  </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span>..
-
-<span class="nb">cd</span><span class="w">  </span>..
-cmake<span class="w"> </span>--build<span class="w">  </span>cmake-android-out<span class="w">  </span>-j9
-
-adb<span class="w"> </span>shell<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/data/local/tmp/executorch
-<span class="c1"># push the binary to an Android device</span>
-adb<span class="w"> </span>push<span class="w">  </span>cmake-android-out/executor_runner<span class="w">  </span>/data/local/tmp/executorch
-<span class="c1"># push the model file</span>
-adb<span class="w"> </span>push<span class="w">  </span>add.pte<span class="w">  </span>/data/local/tmp/executorch
-
-adb<span class="w"> </span>shell<span class="w">  </span><span class="s2">&quot;/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.pte&quot;</span>
+<section id="android-native">
+<h3>Android Native<a class="headerlink" href="#android-native" title="Link to this heading">#</a></h3>
+<p>To use the ExecuTorch runtime from native Android C++ code, the runtime can be cross-compiled for Android. The recommended approach is to add ExecuTorch as a submodule of the user project and use <a class="reference external" href="https://developer.android.com/ndk/guides/cmake">CMake</a> for the native build. The above steps for C++ with CMake can be followed.</p>
+<p>For direct cross-compilation, the ExecuTorch runtime can be configured to build with the NDK toolchain:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed</span>
+cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span>..
 </pre></div>
 </div>
 <hr/>
@@ -1491,9 +1512,9 @@ adb<span class="w"> </span>shell<span class="w">  </span><span class="s2">&quot;
 </section>
 <section id="cross-compiling-for-ios">
 <h2>Cross-Compiling for iOS<a class="headerlink" href="#cross-compiling-for-ios" title="Link to this heading">#</a></h2>
-<p>For iOS, we’ll build <a class="reference external" href="https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle">frameworks</a> instead of static libraries. The frameworks contain the compiled ExecuTorch runtime and public headers.</p>
-<section id="id1">
-<h3>Pre-requisites<a class="headerlink" href="#id1" title="Link to this heading">#</a></h3>
+<p>iOS binaries are built as <a class="reference external" href="https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle">frameworks</a> instead of static libraries. The frameworks contain the compiled ExecuTorch runtime and public headers.</p>
+<section id="id2">
+<h3>Pre-requisites<a class="headerlink" href="#id2" title="Link to this heading">#</a></h3>
 <ul class="simple">
 <li><p>Install Xcode from the
 <a class="reference external" href="https://apps.apple.com/app/xcode/id497799835">Mac App Store</a> and install
@@ -1503,8 +1524,8 @@ the Command Line Tools using the terminal.</p></li>
 </pre></div>
 </div>
 </section>
-<section id="id2">
-<h3>Building<a class="headerlink" href="#id2" title="Link to this heading">#</a></h3>
+<section id="id3">
+<h3>Building<a class="headerlink" href="#id3" title="Link to this heading">#</a></h3>
 <ol class="arabic simple">
 <li><p>Build the frameworks:</p></li>
 </ol>
@@ -1519,117 +1540,31 @@ See backend-specific documentation for more details.</p>
 <li><p>Copy over the generated <code class="docutils literal notranslate"><span class="pre">.xcframework</span></code> bundles to your Xcode project, link them against
 your targets and don’t forget to add an extra linker flag <code class="docutils literal notranslate"><span class="pre">-all_load</span></code>.</p></li>
 </ol>
-<p>Check out the <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">iOS Demo App</a> tutorial for more info.</p>
-<hr/>
+<p>See the <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">iOS Demo App</a> tutorial for example usage of the ExecuTorch frameworks.</p>
 </section>
 </section>
-<section id="building-on-windows">
-<h2>Building on Windows<a class="headerlink" href="#building-on-windows" title="Link to this heading">#</a></h2>
-<p>ExecuTorch provides experimental support for native Windows builds.</p>
-<blockquote>
-<div><p><strong><em>NOTE:</em></strong>  All commands should be executed on Windows powershell in administrator mode.</p>
-</div></blockquote>
-<section id="id3">
-<h3>Environment Setup<a class="headerlink" href="#id3" title="Link to this heading">#</a></h3>
-<section id="id4">
-<h4>Pre-requisites<a class="headerlink" href="#id4" title="Link to this heading">#</a></h4>
-<ol class="arabic simple">
-<li><p>Install miniconda for Windows from the <a class="reference external" href="https://docs.conda.io/en/latest/miniconda.html">official website</a>.</p></li>
-<li><p>Install Git for Windows from the <a class="reference external" href="https://git-scm.com/download/win">official website</a>.</p></li>
-<li><p>Install ClangCL for Windows from the <a class="reference external" href="https://learn.microsoft.com/en-us/cpp/build/clang-support-msbuild?view=msvc-170">official website</a> or through a <a class="reference external" href="https://learn.microsoft.com/en-us/cpp/build/clang-support-msbuild?view=msvc-170">Visual Studio</a> or <a class="reference external" href="https://code.visualstudio.com/docs/cpp/config-clang-mac">Visual Studio Code</a> installation.</p></li>
-</ol>
-</section>
-<section id="clone-and-configure-environment">
-<h4>Clone and Configure Environment<a class="headerlink" href="#clone-and-configure-environment" title="Link to this heading">#</a></h4>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>config<span class="w"> </span>--global<span class="w"> </span>core.symlinks<span class="w"> </span><span class="nb">true</span>
-git<span class="w"> </span>clone<span class="w"> </span>--recurse<span class="w"> </span>-submodules<span class="w"> </span>https://github.com/pytorch/executorch.git
-<span class="nb">cd</span><span class="w"> </span>executorch
-conda<span class="w"> </span>create<span class="w"> </span>-yn<span class="w"> </span>et<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.12
-conda<span class="w"> </span>activate<span class="w"> </span>et
-</pre></div>
-</div>
-<p>If Conda is not available, run conda-hook.ps1, where <code class="docutils literal notranslate"><span class="pre">$miniconda_dir</span></code> is the directory where miniconda is installed.
-This is <code class="docutils literal notranslate"><span class="pre">“C:\Users\&lt;username&gt;\AppData\Local”</span></code> by default.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">$miniconda_dir</span><span class="se">\\</span>shell<span class="se">\\</span>condabin<span class="se">\\</span>conda-hook.ps1
-</pre></div>
-</div>
-</section>
-</section>
-<section id="build-the-python-package">
-<h3>Build the Python Package<a class="headerlink" href="#build-the-python-package" title="Link to this heading">#</a></h3>
-<p>Run <code class="docutils literal notranslate"><span class="pre">install_executorch.bat</span></code> to build and install the ExecuTorch Python package and runtime bindings.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-./install_executorch.bat
-</pre></div>
-</div>
-<blockquote>
-<div><p><strong><em>NOTE</em></strong> Many components are not currently buildable on Windows. These instructions install a very minimal ExecuTorch which can be used as a sanity check.</p>
-</div></blockquote>
-</section>
-<section id="build-the-c-runtime">
-<h3>Build the C++ Runtime<a class="headerlink" href="#build-the-c-runtime" title="Link to this heading">#</a></h3>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>del<span class="w"> </span>-Recurse<span class="w"> </span>-Force<span class="w"> </span>cmake-out<span class="p">;</span><span class="w"> </span><span class="sb">`</span>
-cmake<span class="w"> </span>.<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-DPYTHON_EXECUTABLE<span class="o">=</span><span class="nv">$miniconda_dir</span><span class="se">\\</span>envs<span class="se">\\</span>et<span class="se">\\</span>python.exe<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="nv">$miniconda_dir</span><span class="se">\\</span>envs<span class="se">\\</span>et<span class="se">\\</span>Lib<span class="se">\\</span>site-packages<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_PYBIND<span class="o">=</span>OFF<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_KERNELS_LLM<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span>ON<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-T<span class="w"> </span>ClangCL<span class="w"> </span><span class="sb">`</span>
-<span class="w">  </span>-Bcmake-out<span class="p">;</span><span class="w"> </span><span class="sb">`</span>
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j64<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release
-</pre></div>
-</div>
-<blockquote>
-<div><p><strong><em>NOTE</em></strong> <code class="docutils literal notranslate"><span class="pre">$miniconda_dir</span></code> is the directory where you installed miniconda. This is <code class="docutils literal notranslate"><span class="pre">“C:\Users\&lt;username&gt;\AppData\Local”</span></code> by default.</p>
-</div></blockquote>
-</section>
-<section id="id5">
-<h3>Running an Example Model<a class="headerlink" href="#id5" title="Link to this heading">#</a></h3>
-<p>To validate the installation by running a model, create a file named export_mv2.py. Then, run the powershell commands to export and run the model.
-The expected output is a tensor of size 1x1000, containing class scores.</p>
-<div class="highlight-py notranslate"><div class="highlight"><pre><span></span><span class="c1"># export_mv2.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">mobilenet_v2</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
-
-<span class="n">mv2</span> <span class="o">=</span> <span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">)),)</span>
-
-<span class="n">program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
-  <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
-<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
-
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;mv2_xnnpack.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
-    <span class="n">executorch_program</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
-</pre></div>
-</div>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>.<span class="se">\\</span>export_mv2.py
-.<span class="se">\\</span>cmake-out<span class="se">\\</span>backends<span class="se">\\</span>xnnpack<span class="se">\\</span>Release<span class="se">\\</span>xnn_executor_runner.exe<span class="w"> </span>--model_path<span class="o">=</span>.<span class="se">\\</span>mv2_xnnpack.pte
-</pre></div>
-</div>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>Output<span class="w"> </span><span class="m">0</span>:<span class="w"> </span>tensor<span class="o">(</span><span class="nv">sizes</span><span class="o">=[</span><span class="m">1</span>,<span class="w"> </span><span class="m">1000</span><span class="o">]</span>,<span class="w"> </span><span class="o">[</span>
-<span class="w">  </span>-0.50986,<span class="w"> </span><span class="m">0</span>.30064,<span class="w"> </span><span class="m">0</span>.0953904,<span class="w"> </span><span class="m">0</span>.147726,<span class="w"> </span><span class="m">0</span>.231205,<span class="w"> </span><span class="m">0</span>.338555,<span class="w"> </span><span class="m">0</span>.206892,<span class="w"> </span>-0.0575775,<span class="w"> </span>…<span class="w"> </span><span class="o">])</span>
-</pre></div>
-</div>
-</section>
-</section>
-<section id="next-steps">
-<h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
+<section id="compiler-cache-ccache">
+<h2>Compiler Cache (ccache)<a class="headerlink" href="#compiler-cache-ccache" title="Link to this heading">#</a></h2>
+<p>ExecuTorch automatically detects and enables <a class="reference external" href="https://ccache.dev/">ccache</a> if it’s installed. This significantly speeds up recompilation by caching previously compiled objects:</p>
 <ul class="simple">
-<li><p><a class="reference internal" href="kernel-library-selective-build.html"><span class="std std-doc">Selective Build</span></a> to link only kernels used by the program. This can provide significant binary size savings.</p></li>
-<li><p>Tutorials on building <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Android</a> and <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">iOS</a> demo apps.</p></li>
-<li><p>Tutorials on deploying applications to embedded devices such as <a class="reference internal" href="backends-arm-ethos-u.html"><span class="std std-doc">ARM Cortex-M/Ethos-U</span></a> and <a class="reference internal" href="backends-cadence.html"><span class="std std-doc">XTensa HiFi DSP</span></a>.</p></li>
+<li><p>If ccache is detected, you’ll see: <code class="docutils literal notranslate"><span class="pre">ccache</span> <span class="pre">found</span> <span class="pre">and</span> <span class="pre">enabled</span> <span class="pre">for</span> <span class="pre">faster</span> <span class="pre">builds</span></code></p></li>
+<li><p>If ccache is not installed, you’ll see: <code class="docutils literal notranslate"><span class="pre">ccache</span> <span class="pre">not</span> <span class="pre">found,</span> <span class="pre">builds</span> <span class="pre">will</span> <span class="pre">not</span> <span class="pre">be</span> <span class="pre">cached</span></code></p></li>
 </ul>
+<p>To install ccache:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Ubuntu/Debian</span>
+sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>ccache
+
+<span class="c1"># macOS</span>
+brew<span class="w"> </span>install<span class="w"> </span>ccache
+
+<span class="c1"># CentOS/RHEL</span>
+sudo<span class="w"> </span>yum<span class="w"> </span>install<span class="w"> </span>ccache
+<span class="c1"># or</span>
+sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>ccache
+</pre></div>
+</div>
+<p>No additional configuration is needed - the build system will automatically use ccache when available.</p>
+<p>See <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CMakeLists.txt">CMakeLists.txt</a></p>
 </section>
 </section>
 
@@ -1756,50 +1691,43 @@ The expected output is a tensor of size 1x1000, containing class scores.</p>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#environment-setup">Environment Setup</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#building-the-python-package">Building the Python package</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#building-the-python-package">Building the Python package</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#verify-the-build">Verify the Build</a><ul class="visible nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#editable-install">Editable Install</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#building-the-c-runtime">Building the C++ Runtime</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#configuring">Configuring</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#building">Building</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#build-presets">Build Presets</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#cmake-targets-and-libraries">CMake Targets and Libraries</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#running-an-example-model">Running an Example Model</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#compiler-cache-ccache">Compiler Cache (ccache)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#configuring">Configuring</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#build-presets">Build Presets</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#build-options">Build Options</a><ul class="nav section-nav flex-column">
+<li class="toc-h5 nav-item toc-entry"><a class="reference internal nav-link" href="#build-type">Build Type</a></li>
+<li class="toc-h5 nav-item toc-entry"><a class="reference internal nav-link" href="#backends">Backends</a></li>
+<li class="toc-h5 nav-item toc-entry"><a class="reference internal nav-link" href="#extensions">Extensions</a></li>
+<li class="toc-h5 nav-item toc-entry"><a class="reference internal nav-link" href="#logging">Logging</a></li>
 </ul>
 </li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build-options">Build Options</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#build-type">Build Type</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#backends">Backends</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#extensions">Extensions</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#logging">Logging</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#output-libraries">Output Libraries</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#building">Building</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cmake-targets-and-output-libraries">CMake Targets and Output Libraries</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#linking-without-cmake">Linking Without CMake</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id1">Verify the Build</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cross-compiling-for-android">Cross-Compiling for Android</a><ul class="visible nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pre-requisites">Pre-requisites</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#building-the-aar">Building the AAR</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#building-the-example-runner">Building the Example Runner</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#android-native">Android Native</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cross-compiling-for-ios">Cross-Compiling for iOS</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id1">Pre-requisites</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">Building</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">Pre-requisites</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">Building</a></li>
 </ul>
 </li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#building-on-windows">Building on Windows</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">Environment Setup</a><ul class="nav section-nav flex-column">
-<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#id4">Pre-requisites</a></li>
-<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#clone-and-configure-environment">Clone and Configure Environment</a></li>
-</ul>
-</li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#build-the-python-package">Build the Python Package</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#build-the-c-runtime">Build the C++ Runtime</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id5">Running an Example Model</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">Next Steps</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#compiler-cache-ccache">Compiler Cache (ccache)</a></li>
 </ul>
   </nav></div>
     
@@ -2025,7 +1953,7 @@ The expected output is a tensor of size 1x1000, containing class scores.</p>
        "headline": "Building from Source",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/using-executorch-building-from-source.html",
-       "articleBody": "Building from Source# ExecuTorch uses CMake as the primary build system. Even if you don\u2019t use CMake directly, CMake can emit scripts for other format like Make, Ninja or Xcode. For information, see cmake-generators(7). System Requirements# Operating System# ExecuTorch is tested on the following systems, although it should also work in similar environments. Linux (x86_64) CentOS 8+ Ubuntu 20.04.6 LTS+ RHEL 8+ macOS (x86_64/ARM64) Big Sur (11.0)+ Windows (x86_64) Windows Subsystem for Linux (WSL) with any of the Linux options Windows 10+ with Visual Studio 2022+ (experimental) Software Requirements# conda or another virtual environment manager conda is recommended as it provides cross-language support and integrates smoothly with pip (Python\u2019s built-in package manager) Otherwise, Python\u2019s built-in virtual environment manager python venv is a good alternative. g++ version 7 or higher, clang++ version 5 or higher, or another C++17-compatible toolchain. python version 3.10-3.12 Xcode Command Line Tools (macOS only) ccache (optional) - A compiler cache that speeds up recompilation Additional dependencies will be installed automatically when running the Python installation. Note that the cross-compilable core runtime code supports a wider range of toolchains, down to C++17. See the Runtime Overview for portability details. Environment Setup# Clone the ExecuTorch repository from GitHub and create a conda environment as follows. Venv can be used in place on conda. git clone -b viable/strict https://github.com/pytorch/executorch.git cd executorch conda create -yn executorch python=3.10.0 conda activate executorch Building the Python package# To build and install the ExecuTorch Python components, used for PTE creation and Python runtime bindings, run the following command. This will install the ExecuTorch python package and its dependencies into the active Python environment. # Install ExecuTorch pip package and its dependencies. ./install_executorch.sh The install_executorch.sh script supports the following flags: --clean: Removes build artifacts. --editable: Install the ExecuTorch python package in editable mode (see Editable Install). --minimal: Install only the minimal set of dependencies required to run ExecuTorch. Do not install dependencies for examples. --use-pt-pinned-commit: Install the pinned PyTorch commit. When not specified, the latest PyTorch nightly build is installed. For Intel-based macOS systems, use --use-pt-pinned-commit --minimal. As PyTorch does not provide pre-built binaries for Intel Mac, installation requires building PyTorch from source. Instructions can be found in PyTorch Installation. Note that only the XNNPACK and CoreML backends are built by default. Additional backends can be enabled or disabled by setting the corresponding CMake flags: # Enable the MPS backend CMAKE_ARGS=\"-DEXECUTORCH_BUILD_MPS=ON\" ./install_executorch.sh Editable Install# For development, include the --editable flag, which allows for local changes to ExecuTorch Python code to be reflected without a re-install. Note that when C++ files are modified, you will need to re-run the full installation to reflect the changes. ./install_executorch.sh --editable # Or you can directly do the following if dependencies are already installed # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first. pip install -e . --no-build-isolation WARNING: Some modules can\u2019t be imported directly in editable mode. This is a known issue and we are actively working on a fix for this. To work around this: # This will fail python -c \"from executorch.exir import CaptureConfig\" # But this will succeed python -c \"from executorch.exir.capture import CaptureConfig\" NOTE: Cleaning the build system When fetching a new version of the upstream repo (via git fetch or git pull) it is a good idea to clean the old build artifacts. The build system does not currently adapt well to changes in build dependencies. You should also update and pull the submodules again, in case their versions have changed. # From the root of the executorch repo: ./install_executorch.sh --clean git submodule sync git submodule update --init --recursive The --clean command removes build artifacts, pip outputs, and also clears the ccache if it\u2019s installed, ensuring a completely fresh build environment. Building the C++ Runtime# The ExecuTorch C++ runtime is built using CMake. It can be compiled standalone to run examples, added as a CMake dependency, or cross-compiled for Android, iOS, or embedded platforms. Configuring# Configuration should be done after cloning, pulling the upstream repo, or changing build options. Once this is done, you won\u2019t need to do it again until you pull from the upstream repo or modify any CMake-related files. # cd to the root of the executorch repo cd executorch # Clean and configure the CMake build system. It\u0027s good practice to do this # whenever cloning or pulling the upstream repo. ./install_executorch.sh --clean (mkdir cmake-out \u0026\u0026 cd cmake-out \u0026\u0026 cmake ..) Building# Build all targets with cmake --build. # cd to the root of the executorch repo cd executorch # Build using the configuration that you previously generated under the # `cmake-out` directory. # # NOTE: The `-j` argument specifies how many jobs/processes to use when # building, and tends to speed up the build significantly. It\u0027s typical to use # \"core count + 1\" as the `-j` value. cmake --build cmake-out -j9 TIP: For faster rebuilds, consider installing ccache (see Compiler Cache section above). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster. Build Presets# ExecuTorch provides fine-grained control over what is built, as described in Build Options. These options are grouped into CMake presets to cover common scenarios, while providing the ability to override individual options. Presets can be specified when configuring CMake by specifying --preset [name] when configuring. Preset values for common scenarios are listed below. Using a platform preset is recommended to avoid needing to specify many fine-grained build options. arm-baremetal - Build for bare-metal ARM targets. ios - Build features and backends common for iOS targets. macos - Build features and backends common for Mac targets. linux - Build features and backends for Linux targets. llm - Build Large Language Model-specific features. profiling - Build the ExecuTorch runtime with profiling enabled. zephyr - Build for Zephyr RTOS. # Configure the build with the ios preset. cmake .. --preset ios CMake Targets and Libraries# To link against the ExecuTorch framework from CMake, the following top-level targets are exposed: executorch::backends: Contains all configured backends. executorch::extensions: Contains all configured extensions. executorch::kernels: Contains all configured kernel libraries. The backends, extensions, and kernels included in these targets are controlled by the various EXECUTORCH_ CMake options specified by the build. Using these targets will automatically pull in the required dependencies to use the configured features. Running an Example Model# The example executor_runner binary can be used to run a model and sanity-check the build. Run the following commands to generate and run a simple model. You should see the message \u201cModel executed successfully\u201d followed by the output values. python -m examples.portable.scripts.export --model_name=\"add\" ./cmake-out/executor_runner --model_path add.pte I 00:00:00.000526 executorch:executor_runner.cpp:82] Model file add.pte is loaded. I 00:00:00.000595 executorch:executor_runner.cpp:91] Using method forward I 00:00:00.000612 executorch:executor_runner.cpp:138] Setting up planned buffer 0, size 48. I 00:00:00.000669 executorch:executor_runner.cpp:161] Method loaded. I 00:00:00.000685 executorch:executor_runner.cpp:171] Inputs prepared. I 00:00:00.000764 executorch:executor_runner.cpp:180] Model executed successfully. I 00:00:00.000770 executorch:executor_runner.cpp:184] 1 outputs: Output 0: tensor(sizes=[1], [2.]) Compiler Cache (ccache)# ExecuTorch automatically detects and enables ccache if it\u2019s installed. This significantly speeds up recompilation by caching previously compiled objects: If ccache is detected, you\u2019ll see: ccache found and enabled for faster builds If ccache is not installed, you\u2019ll see: ccache not found, builds will not be cached To install ccache: # Ubuntu/Debian sudo apt install ccache # macOS brew install ccache # CentOS/RHEL sudo yum install ccache # or sudo dnf install ccache No additional configuration is needed - the build system will automatically use ccache when available. See CMakeLists.txt Build Options# CMake options can be used to for fine-grained control of build type, control which features are built, and configure functionality, such as logging. Options are typically specified during CMake configuration. Default values of each option are set by the active preset, but can be overridden by specifying the option when configuring. Note that many build options require other options to be enabled. This may require enabling multiple options to enable a given feature. The CMake build output will provide an error message when a required option is not enabled. Build Type# The CMake build is typically set to Debug or Release. For production use or profiling, release mode should be used to improve performance and reduce binary size. It disables program verification and executorch logging and adds optimizations flags. The EXECUTORCH_OPTIMIZE_SIZE flag can be used to further optimize for size with a small performance tradeoff. # Specify build type during CMake configuration cmake .. -DCMAKE_BUILD_TYPE=Release Backends# Typically, each hardware backend exposes a CMake option to control whether the backend is built. See backend-specific documentation for more details. EXECUTORCH_BUILD_CADENCE - Build the Cadence DSP backend. EXECUTORCH_BUILD_COREML - Build the Apple CoreML backend. EXECUTORCH_BUILD_CORTEX_M - Build the ARM Cortex-M backend. EXECUTORCH_BUILD_MPS - Build the Apple Metal Performance Shader backend. EXECUTORCH_BUILD_NEURON - Build the MediaTek Neuron backend. EXECUTORCH_BUILD_OPENVINO - Build the Intel OpenVINO backend. EXECUTORCH_BUILD_QNN - Build the Qualcomm AI Engine backend. EXECUTORCH_BUILD_VGF - Build the ARM VGF backend. EXECUTORCH_BUILD_VULKAN - Build the Vulkan GPU backend. EXECUTORCH_BUILD_XNNPACK - Build the XNNPACK CPU backend. # Build the XNNPACK and Vulkan backends. cmake .. -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON Extensions# ExecuTorch extensions provide optional functionality outside of the core runtime. As the core runtime is designed to run in constrained environments, these features are typically disabled by default. Extensions include higher-level APIs (Module and Tensor), multi-threading support (Threadpool), training, and more. EXECUTORCH_BUILD_EXTENSION_APPLE - Build the Apple extension. This provides Swift and Objective-C bindings, log routing, and platform integration with Mac and iOS. See Using ExecuTorch on iOS. EXECUTORCH_BUILD_EXTENSION_DATA_LOADER - Build the data loader extension. Provides classes to load PTEs from files or buffers. EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR - Build the flat tensor extension. Provides functionality to load and save tensor data in .ptd format. EXECUTORCH_BUILD_EXTENSION_LLM - Build the Large Language Model extension. Provides LLM-specific functionality, such as tokenizer APIs. See Working with LLMs. EXECUTORCH_BUILD_EXTENSION_LLM_APPLE - Build the Large Language Model Apple extensions. EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER - Build the Large Language Model runner extension. EXECUTORCH_BUILD_EXTENSION_MODULE - Build the Module API extension. See High-Level APIs. EXECUTORCH_BUILD_EXTENSION_TENSOR - Build the Tensor API extension. Provides convenience APIs for creating and managing tensors. See High-Level APIs and extension/tensor. EXECUTORCH_BUILD_EXTENSION_TRAINING - Build the training extension. This is experimental. EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL - Build the EValue utility extension. Provides a method to print EValue objects. See print_evalue.h. EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL - Build the runner utility extension. Provides utility methods for running models, such as allocating input and output tensor memory and generating inputs. See executor_runner.cpp for example usage. # Enable the data loader extension. cmake .. -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON Logging# Logging is enabled by default in debug builds and disabled in release. When enabled, the default log level is Info. Both log enable and level can be overriden with options. See Logging. Disabling logging and decreasing log verbosity will reduce binary size by stripping unused strings from the build. EXECUTORCH_ENABLE_LOGGING - Enable or disable framework log messages. EXECUTORCH_LOG_LEVEL - The minimum log level to emit. One of debug, info, error, or fatal. # Enable logging at debug cmake .. -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=debug Output Libraries# To link against the runtime from outside of the CMake ecosystem, the runtime can be first built with CMake and then linked directly. A few of the relevant top-level targets are described below. Note that this is a more involved process than using CMake and is only recommended when using CMake is not viable. libexecutorch.a: The core of the ExecuTorch runtime. Does not contain any operator/kernel definitions or backend definitions. libportable_kernels.a: The implementations of ATen-compatible operators, following the signatures in //kernels/portable/functions.yaml. libportable_kernels_bindings.a: Generated code that registers the contents of libportable_kernels.a with the runtime. NOTE: This must be linked into your application with a flag like -Wl,-force_load or -Wl,--whole-archive. It contains load-time functions that automatically register the kernels, but linkers will often prune those functions by default because there are no direct calls to them. libportable_kernels.a, so the program may use any of the operators it implements. Backends typically introduce additional targets. See backend-specific documentation for more details. Cross-Compiling for Android# Pre-requisites# Set up a Python environment and clone the ExecuTorch repository, as described in Environment Setup. Install the Android SDK. Android Studio is recommended. Install the Android NDK. Option 1: Install via Android Studio. Option 2: Download from NDK Downloads. Building the AAR# With the NDK installed, the build_android_library.sh script will build the ExecuTorch Java AAR. This file contains the ExecuTorch Java bindings and native code. See Using the AAR File for usage. export ANDROID_ABIS=arm64-v8a export BUILD_AAR_DIR=aar-out mkdir -p $BUILD_AAR_DIR sh scripts/build_android_library.sh Building the Example Runner# The native executor runner can be cross-compiled for android and deployed via ADB. This step is intended as an example of CMake cross compilation and is not necessary for integration into an app. # Run the following lines from the `executorch/` folder ./install_executorch.sh --clean mkdir cmake-android-out \u0026\u0026 cd cmake-android-out # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a .. cd .. cmake --build cmake-android-out -j9 adb shell mkdir -p /data/local/tmp/executorch # push the binary to an Android device adb push cmake-android-out/executor_runner /data/local/tmp/executorch # push the model file adb push add.pte /data/local/tmp/executorch adb shell \"/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.pte\" Cross-Compiling for iOS# For iOS, we\u2019ll build frameworks instead of static libraries. The frameworks contain the compiled ExecuTorch runtime and public headers. Pre-requisites# Install Xcode from the Mac App Store and install the Command Line Tools using the terminal. xcode-select --install Building# Build the frameworks: ./scripts/build_apple_frameworks.sh Run the above command with --help flag to learn more on how to build additional backends (like Core ML, MPS or XNNPACK), etc. Note that some backends may require additional dependencies and certain versions of Xcode and iOS. See backend-specific documentation for more details. Copy over the generated .xcframework bundles to your Xcode project, link them against your targets and don\u2019t forget to add an extra linker flag -all_load. Check out the iOS Demo App tutorial for more info. Building on Windows# ExecuTorch provides experimental support for native Windows builds. NOTE: All commands should be executed on Windows powershell in administrator mode. Environment Setup# Pre-requisites# Install miniconda for Windows from the official website. Install Git for Windows from the official website. Install ClangCL for Windows from the official website or through a Visual Studio or Visual Studio Code installation. Clone and Configure Environment# git config --global core.symlinks true git clone --recurse -submodules https://github.com/pytorch/executorch.git cd executorch conda create -yn et python=3.12 conda activate et If Conda is not available, run conda-hook.ps1, where $miniconda_dir is the directory where miniconda is installed. This is \u201cC:\\Users\\\u003cusername\u003e\\AppData\\Local\u201d by default. $miniconda_dir\\\\shell\\\\condabin\\\\conda-hook.ps1 Build the Python Package# Run install_executorch.bat to build and install the ExecuTorch Python package and runtime bindings. cd executorch ./install_executorch.bat NOTE Many components are not currently buildable on Windows. These instructions install a very minimal ExecuTorch which can be used as a sanity check. Build the C++ Runtime# del -Recurse -Force cmake-out; ` cmake . ` -DCMAKE_INSTALL_PREFIX=cmake-out ` -DPYTHON_EXECUTABLE=$miniconda_dir\\\\envs\\\\et\\\\python.exe ` -DCMAKE_PREFIX_PATH=$miniconda_dir\\\\envs\\\\et\\\\Lib\\\\site-packages ` -DCMAKE_BUILD_TYPE=Release ` -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON ` -DEXECUTORCH_BUILD_FLATC=ON ` -DEXECUTORCH_BUILD_PYBIND=OFF ` -DEXECUTORCH_BUILD_XNNPACK=ON ` -DEXECUTORCH_BUILD_KERNELS_LLM=ON ` -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON ` -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON ` -DEXECUTORCH_ENABLE_LOGGING=ON ` -T ClangCL ` -Bcmake-out; ` cmake --build cmake-out -j64 --target install --config Release NOTE $miniconda_dir is the directory where you installed miniconda. This is \u201cC:\\Users\\\u003cusername\u003e\\AppData\\Local\u201d by default. Running an Example Model# To validate the installation by running a model, create a file named export_mv2.py. Then, run the powershell commands to export and run the model. The expected output is a tensor of size 1x1000, containing class scores. # export_mv2.py import torch from executorch.exir import to_edge_transform_and_lower from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner from torchvision.models import mobilenet_v2 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights mv2 = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval() example_inputs = (torch.randn((1, 3, 224, 224)),) program = to_edge_transform_and_lower( torch.export.export(model, example_inputs) ).to_executorch() with open(\"mv2_xnnpack.pte\", \"wb\") as file: executorch_program.write_to_file(file) python .\\\\export_mv2.py .\\\\cmake-out\\\\backends\\\\xnnpack\\\\Release\\\\xnn_executor_runner.exe --model_path=.\\\\mv2_xnnpack.pte Output 0: tensor(sizes=[1, 1000], [ -0.50986, 0.30064, 0.0953904, 0.147726, 0.231205, 0.338555, 0.206892, -0.0575775, \u2026 ]) Next Steps# Selective Build to link only kernels used by the program. This can provide significant binary size savings. Tutorials on building Android and iOS demo apps. Tutorials on deploying applications to embedded devices such as ARM Cortex-M/Ethos-U and XTensa HiFi DSP.",
+       "articleBody": "Building from Source# ExecuTorch uses CMake as the primary build system. Even if you don\u2019t use CMake directly, CMake can emit scripts for other format like Make, Ninja or Xcode. For information, see cmake-generators(7). System Requirements# Operating System# ExecuTorch is tested on the following systems, although it should also work in similar environments. Linux (x86_64) CentOS 8+ Ubuntu 20.04.6 LTS+ RHEL 8+ macOS (x86_64/ARM64) Big Sur (11.0)+ Windows (x86_64) Windows 10+ with Visual Studio 2022+ and Clang-CL Windows Subsystem for Linux (WSL) with any of the Linux options Software Requirements# conda or another virtual environment manager conda is recommended as it provides cross-language support and integrates smoothly with pip (Python\u2019s built-in package manager) Otherwise, Python\u2019s built-in virtual environment manager python venv is a good alternative. g++ version 7 or higher, clang++ version 5 or higher, or another C++17-compatible toolchain. python version 3.10-3.12 ccache (optional) - A compiler cache that speeds up recompilation macOS Xcode Command Line Tools Windows Visual Studio Clang Tools - See Clang/LLVM support in Visual Studio. Additional dependencies will be automatically installed when running the Python installation. Note that the cross-compilable core runtime code supports a wider range of toolchains, down to C++17. See Runtime Overview for portability details. Environment Setup# Clone the ExecuTorch repository from GitHub and create a conda environment. Venv can be used in place on conda. git clone -b viable/strict https://github.com/pytorch/executorch.git cd executorch conda create -yn executorch python=3.10.0 conda activate executorch NOTE: Addition Windows Setup ExecuTorch requires symlinks to be enabled to build the Python components. To enable symlinks, run the following command before cloning the repository. Missing symlinks will manifest as an error related to version.py when running pip install .. See src/README.md for more information. git config --system core.symlinks true Building the Python package# To build and install the ExecuTorch Python components, used for PTE creation and Python runtime bindings, run the following command. This will install the ExecuTorch python package and its dependencies into the active Python environment. # Install ExecuTorch pip package and its dependencies. ./install_executorch.sh The install_executorch.sh script supports the following flags: --clean: Removes build artifacts. --editable: Install the ExecuTorch python package in editable mode (see Editable Install). --minimal: Install only the minimal set of dependencies required to run ExecuTorch. Do not install dependencies for examples. --use-pt-pinned-commit: Install the pinned PyTorch commit or release version. When not specified, the latest PyTorch nightly build is installed. For Intel-based macOS systems, use --use-pt-pinned-commit --minimal. As PyTorch does not provide pre-built binaries for Intel Mac, installation requires building PyTorch from source. Instructions can be found in PyTorch Installation. Note that only the XNNPACK and CoreML backends are built by default. Additional backends can be enabled or disabled by setting the corresponding CMake flags: # Enable the MPS backend CMAKE_ARGS=\"-DEXECUTORCH_BUILD_MPS=ON\" ./install_executorch.sh Verify the Build# To verify that the Python components are installed correctly, run the following command. This will create a file named mv2_xnnpack_fp32.pte in the current directory for the MobileNet V2 model with the XNNPACK backend. If it completes without error, the ExecuTorch Python components are installed successfully. python -m executorch.examples.xnnpack.aot_compiler --model_name=\"mv2\" --delegate Editable Install# For development, include the --editable flag, which allows for local changes to ExecuTorch Python code to be reflected without a re-install. Note that when C++ files are modified, you will need to re-run the full installation to reflect the changes. ./install_executorch.sh --editable # Or you can directly do the following if dependencies are already installed # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first. pip install -e . --no-build-isolation WARNING: Some modules can\u2019t be imported directly in editable mode. This is a known issue and we are actively working on a fix for this. To work around this: # This will fail python -c \"from executorch.exir import CaptureConfig\" # But this will succeed python -c \"from executorch.exir.capture import CaptureConfig\" NOTE: Cleaning the build system When fetching a new version of the upstream repo (via git fetch or git pull) it is a good idea to clean the old build artifacts. The build system does not currently adapt well to changes in build dependencies. You should also update and pull the submodules again, in case their versions have changed. # From the root of the executorch repo: ./install_executorch.sh --clean git submodule sync git submodule update --init --recursive The --clean command removes build artifacts, pip outputs, and also clears the ccache if it\u2019s installed, ensuring a completely fresh build environment. Building the C++ Runtime# The ExecuTorch runtime uses CMake as the build system. When using ExecuTorch from C++ user code with CMake, adding ExecuTorch as a submodule and referencing via CMake add_subdirectory will build the runtime as part of the user build. When user code is not using CMake, the runtime can be built standalone and linked. The CMake options described below apply in both cases. Scripts are also provided for Android AAR and iOS framework builds. Use Case How to Build C++ with user CMake Use CMake add_subdirectory. C++ without user CMake Bulild ExecuTorch standalone with CMake. Link libraries with user build. Android with Java/Kotlin Use scripts/build_android_libraries.sh. Android with C++ Follow C++ build steps, cross-compile for Android. iOS Use scripts/build_ios_frameworks.sh. Configuring# Configuration should be done after cloning, pulling the upstream repo, or changing build options. Once this is done, you won\u2019t need to do it again until you pull from the upstream repo or modify any CMake-related files. When building as a submodule as part of a user CMake build, ExecuTorch CMake options can be specified either as part of the user CMake configuration or in user CMake code. CMake configuration for standalone runtime build: mkdir cmake-out cmake -B cmake-out --preset [preset] [options] cmake --build cmake-out -j10 Build Presets# ExecuTorch provides fine-grained control over what is built, as described in Build Options. These options are grouped into CMake presets to cover common scenarios while preserving the ability to override individual options. Presets can be specified when configuring CMake by specifying --preset [name] when configuring. Preset values for common scenarios are listed below. Using a platform preset is recommended to avoid needing to specify many fine-grained build options. android - Build featuers and backends common for Android targets. arm-baremetal - Build for bare-metal ARM targets. ios - Build features and backends common for iOS targets. macos - Build features and backends common for Mac targets. linux - Build features and backends for Linux targets. llm - Build Large Language Model-specific features. profiling - Build the ExecuTorch runtime with profiling enabled. zephyr - Build for Zephyr RTOS. User CMake: set(EXECUTORCH_BUILD_PRESET_FILE ${CMAKE_SOURCE_DIR}/executorch/tools/cmake/preset/llm.cmake) Standalone build: # Configure the build with the ios preset. cmake .. --preset ios Build Options# CMake options can be used to for fine-grained control of build type, control which features are built, and configure functionality, such as logging. Options are typically specified during CMake configuration. Default values of each option are set by the active preset, but can be overridden by specifying the option when configuring. Note that many build options require other options to be enabled. This may require enabling multiple options to enable a given feature. The CMake build output will provide an error message when a required option is not enabled. User CMake: set(EXECUTORCH_BUILD_XNNPACK ON) Standalone build: cmake -DEXECUTORCH_BUILD_XNNPACK=ON Build Type# The CMake build is typically set to Debug or Release. For production use or profiling, release mode should be used to improve performance and reduce binary size. It disables program verification and executorch logging and adds optimizations flags. The EXECUTORCH_OPTIMIZE_SIZE flag can be used to further optimize for size with a small performance tradeoff. # Specify build type during CMake configuration cmake .. -DCMAKE_BUILD_TYPE=Release Backends# Typically, each hardware backend exposes a CMake option to control whether the backend is built. See backend-specific documentation for more details. EXECUTORCH_BUILD_CADENCE - Build the Cadence DSP backend. EXECUTORCH_BUILD_COREML - Build the Apple CoreML backend. EXECUTORCH_BUILD_CORTEX_M - Build the ARM Cortex-M backend. EXECUTORCH_BUILD_MPS - Build the Apple Metal Performance Shader backend. EXECUTORCH_BUILD_NEURON - Build the MediaTek Neuron backend. EXECUTORCH_BUILD_OPENVINO - Build the Intel OpenVINO backend. EXECUTORCH_BUILD_QNN - Build the Qualcomm AI Engine backend. EXECUTORCH_BUILD_VGF - Build the ARM VGF backend. EXECUTORCH_BUILD_VULKAN - Build the Vulkan GPU backend. EXECUTORCH_BUILD_XNNPACK - Build the XNNPACK CPU backend. # Build the XNNPACK and Vulkan backends. cmake .. -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON Extensions# ExecuTorch extensions provide optional functionality outside of the core runtime. As the core runtime is designed to run in constrained environments, these features are typically disabled by default. Extensions include higher-level APIs (Module and Tensor), multi-threading support (Threadpool), training, and more. EXECUTORCH_BUILD_EXTENSION_APPLE - Build the Apple extension. This provides Swift and Objective-C bindings, log routing, and platform integration with Mac and iOS. See Using ExecuTorch on iOS. EXECUTORCH_BUILD_EXTENSION_DATA_LOADER - Build the data loader extension. Provides classes to load PTEs from files or buffers. EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR - Build the flat tensor extension. Provides functionality to load and save tensor data in .ptd format. EXECUTORCH_BUILD_EXTENSION_LLM - Build the Large Language Model extension. Provides LLM-specific functionality, such as tokenizer APIs. See Working with LLMs. EXECUTORCH_BUILD_EXTENSION_LLM_APPLE - Build the Large Language Model Apple extensions. EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER - Build the Large Language Model runner extension. EXECUTORCH_BUILD_EXTENSION_MODULE - Build the Module API extension. See High-Level APIs. EXECUTORCH_BUILD_EXTENSION_TENSOR - Build the Tensor API extension. Provides convenience APIs for creating and managing tensors. See High-Level APIs and extension/tensor. EXECUTORCH_BUILD_EXTENSION_TRAINING - Build the training extension. This is experimental. EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL - Build the EValue utility extension. Provides a method to print EValue objects. See print_evalue.h. EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL - Build the runner utility extension. Provides utility methods for running models, such as allocating input and output tensor memory and generating inputs. See executor_runner.cpp for example usage. # Enable the data loader extension. cmake .. -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON Logging# Logging is enabled by default in debug builds and disabled in release. When enabled, the default log level is Info. Both log enable and level can be overriden with options. See Logging. Disabling logging and decreasing log verbosity will reduce binary size by stripping unused strings from the build. EXECUTORCH_ENABLE_LOGGING - Enable or disable framework log messages. EXECUTORCH_LOG_LEVEL - The minimum log level to emit. One of debug, info, error, or fatal. # Enable logging at debug cmake .. -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=debug Building# Build all targets with cmake --build. # cd to the root of the executorch repo cd executorch # Build using the configuration that you previously generated under the # `cmake-out` directory. # # NOTE: The `-j` argument specifies how many jobs/processes to use when # building, and tends to speed up the build significantly. It\u0027s typical to use # \"core count + 1\" as the `-j` value. cmake --build cmake-out -j9 TIP: For faster rebuilds, consider installing ccache (see Compiler Cache section above). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster. CMake Targets and Output Libraries# To link against the ExecuTorch framework from CMake, the following top-level targets are exposed: executorch::backends: Contains all configured backends. executorch::extensions: Contains all configured extensions. executorch::kernels: Contains all configured kernel libraries. The backends, extensions, and kernels included in these targets are controlled by the various EXECUTORCH_ CMake options specified by the build. Using these targets will automatically pull in the required dependencies to use the configured features. Linking Without CMake# To link against the runtime from outside of the CMake ecosystem, the runtime can be first built with CMake and then linked directly. A few of the relevant top-level targets are described below. Note that this is a more involved process than using CMake and is only recommended when using CMake is not viable. libexecutorch.a: The core of the ExecuTorch runtime. Does not contain any operator/kernel definitions or backend definitions. libportable_kernels.a: The implementations of ATen-compatible operators, following the signatures in //kernels/portable/functions.yaml. libportable_kernels_bindings.a: Generated code that registers the contents of libportable_kernels.a with the runtime. NOTE: This must be linked into your application with a flag like -Wl,-force_load or -Wl,--whole-archive. It contains load-time functions that automatically register the kernels, but linkers will often prune those functions by default because there are no direct calls to them. libportable_kernels.a, so the program may use any of the operators it implements. Backends typically introduce additional targets. See backend-specific documentation for more details. Verify the Build# To verify the build, ExecuTorch optionally compiles a simple, stand-alone model runner to run PTE files with all-one input tensors. It is not enabled by default in most presets, but can be enabled by configuring with -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON -DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=ON. Once compiled, invoke the runner with a sample PTE (such as the one generated by verifying the Python build). cmake-out/executor_runner --model_path=mv2_xnnpack_fp32.pte If the runner runs successfully, you should see output similar to the following: I 00:00:00.043703 executorch:executor_runner.cpp:379] Model executed successfully 1 time(s) in 15.013292 ms. I 00:00:00.043720 executorch:executor_runner.cpp:383] 1 outputs: OutputX 0: tensor(sizes=[1, 1000], [ -0.509859, 0.300644, 0.0953884, 0.147724, 0.231202, 0.338554, 0.206888, -0.0575762, -0.389273, -0.0606864, ..., 0.421219, 0.100447, -0.506771, -0.115824, -0.693017, -0.183262, 0.154781, -0.410684, 0.0119296, 0.449713, ]) Cross-Compiling for Android# Pre-requisites# Set up a Python environment and clone the ExecuTorch repository, as described in Environment Setup. Install the Android SDK. Android Studio is recommended. Install the Android NDK. Option 1: Install via Android Studio. Option 2: Download from NDK Downloads. Building the AAR# With the NDK installed, the build_android_library.sh script will build the ExecuTorch Java AAR, which contains ExecuTorch Java bindings. See Using the AAR File for usage. export ANDROID_ABIS=arm64-v8a export BUILD_AAR_DIR=aar-out mkdir -p $BUILD_AAR_DIR sh scripts/build_android_library.sh Android Native# To use the ExecuTorch runtime from native Android C++ code, the runtime can be cross-compiled for Android. The recommended approach is to add ExecuTorch as a submodule of the user project and use CMake for the native build. The above steps for C++ with CMake can be followed. For direct cross-compilation, the ExecuTorch runtime can be configured to build with the NDK toolchain: # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a .. Cross-Compiling for iOS# iOS binaries are built as frameworks instead of static libraries. The frameworks contain the compiled ExecuTorch runtime and public headers. Pre-requisites# Install Xcode from the Mac App Store and install the Command Line Tools using the terminal. xcode-select --install Building# Build the frameworks: ./scripts/build_apple_frameworks.sh Run the above command with --help flag to learn more on how to build additional backends (like Core ML, MPS or XNNPACK), etc. Note that some backends may require additional dependencies and certain versions of Xcode and iOS. See backend-specific documentation for more details. Copy over the generated .xcframework bundles to your Xcode project, link them against your targets and don\u2019t forget to add an extra linker flag -all_load. See the iOS Demo App tutorial for example usage of the ExecuTorch frameworks. Compiler Cache (ccache)# ExecuTorch automatically detects and enables ccache if it\u2019s installed. This significantly speeds up recompilation by caching previously compiled objects: If ccache is detected, you\u2019ll see: ccache found and enabled for faster builds If ccache is not installed, you\u2019ll see: ccache not found, builds will not be cached To install ccache: # Ubuntu/Debian sudo apt install ccache # macOS brew install ccache # CentOS/RHEL sudo yum install ccache # or sudo dnf install ccache No additional configuration is needed - the build system will automatically use ccache when available. See CMakeLists.txt",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",

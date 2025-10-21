@@ -10,9 +10,9 @@ The following are required to install the ExecuTorch host libraries, needed to e
 
 - Python 3.10 - 3.12
 - g++ version 7 or higher, clang++ version 5 or higher, or another C++17-compatible toolchain.
-- Linux (x86_64 or ARM64) or macOS (ARM64).
+- Linux (x86_64 or ARM64), macOS (ARM64), or Windows (x86_64).
     - Intel-based macOS systems require building PyTorch from source (see [Building From Source](using-executorch-building-from-source.md) for instructions).
-    - Windows is supported via WSL.
+- On Windows, Visual Studio 2022 or later. Clang build tools are needed to build from source.
 
 ## Installation
 To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries. Pip is the recommended way to install the ExecuTorch python package.
@@ -25,6 +25,7 @@ pip install executorch
 
 To build the framework from source, see [Building From Source](using-executorch-building-from-source.md). Backend delegates may require additional dependencies. See the appropriate backend documentation for more information.
 
+> **_NOTE:_** On Windows, ExecuTorch requires a [Visual Studio Developer Powershell](https://learn.microsoft.com/en-us/visualstudio/ide/reference/command-prompt-powershell?view=vs-2022). Running from outside of a developer prompt will manifest as errors related to CL.exe.
 
 <hr/>
 
@@ -44,7 +45,7 @@ ExecuTorch provides hardware acceleration for a wide variety of hardware. The mo
 For mobile use cases, consider using XNNPACK for Android and Core ML or XNNPACK for iOS as a first step. See [Hardware Backends](backends-overview.md) for more information.
 
 ### Exporting
-Exporting is done using Python APIs. ExecuTorch provides a high degree of customization during the export process, but the typical flow is as follows. This example uses the MobileNet V2 image classification model implementation in torchvision, but the process supports any [export-compliant](https://pytorch.org/docs/stable/export.html) PyTorch model. For users working with Hugging Face models,
+Exporting is done using Python APIs. ExecuTorch provides a high degree of customization during the export process, but the typical flow is as follows. This example uses the MobileNet V2 image classification model implementation in torchvision, but the process supports any [export-compliant](https://pytorch.org/docs/stable/export.html) PyTorch model. For Hugging Face models,
 you can find a list of supported models in the [*huggingface/optimum-executorch*](https://github.com/huggingface/optimum-executorch) repo.
 
 ```python
@@ -103,7 +104,7 @@ print(torch.allclose(output[0], eager_reference_output, rtol=1e-3, atol=1e-5))
 
 For complete examples of exporting and running the model, please refer to our [examples GitHub repository](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2/python).
 
-Additionally, if you work with Hugging Face models, the [*huggingface/optimum-executorch*](https://github.com/huggingface/optimum-executorch) library simplifies running these models end-to-end with ExecuTorch, using familiar Hugging Face APIs. Visit the repository for specific examples and supported models.
+Additionally, for Hugging Face models, the [*huggingface/bptimum-executorch*](https://github.com/huggingface/optimum-executorch) library simplifies running these models end-to-end with ExecuTorch using familiar Hugging Face APIs. Visit the repository for specific examples and supported models.
 
 <hr/>
 
@@ -131,7 +132,7 @@ dependencies {
 ```
 
 #### Runtime APIs
-Models can be loaded and run using the `Module` class:
+Models can be loaded and run from Java or Kotlin using the `Module` class.
 ```java
 import org.pytorch.executorch.EValue;
 import org.pytorch.executorch.Module;
@@ -147,7 +148,10 @@ EValue[] output = model.forward(input_evalue);
 float[] scores = output[0].toTensor().getDataAsFloatArray();
 ```
 
+Note that the [C++](#c) APIs can be used when targeting Android native.
+
 For a full example of running a model on Android, see the [DeepLabV3AndroidDemo](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo). For more information on Android development, including building from source, a full description of the Java APIs, and information on using ExecuTorch from Android native code, see [Using ExecuTorch on Android](using-executorch-android.md).
+
 
 ### iOS
 
@@ -165,22 +169,27 @@ For more information on iOS integration, including an API reference, logging set
 ExecuTorch provides C++ APIs, which can be used to target embedded or mobile devices. The C++ APIs provide a greater level of control compared to other language bindings, allowing for advanced memory management, data loading, and platform integration.
 
 #### Installation
-CMake is the preferred build system for the ExecuTorch C++ runtime. To use with CMake, clone the ExecuTorch repository as a subdirectory of your project, and use CMake's `add_subdirectory("executorch")` to include the dependency. The `executorch` target, as well as kernel and backend targets will be made available to link against. The runtime can also be built standalone to support diverse toolchains. See [Using ExecuTorch with C++](using-executorch-cpp.md) for a detailed description of build integration, targets, and cross compilation.
+CMake is the preferred build system for the ExecuTorch C++ runtime. To use with CMake, clone the ExecuTorch repository as a subdirectory of your project, and use CMake's `add_subdirectory("executorch")` to include the dependency. The `executorch` target, as well as kernel and backend targets will be made available to link against. The runtime can also be built standalone to support diverse toolchains. See [Using ExecuTorch with C++](using-executorch-cpp.md) and [Building from Source](using-executorch-building-from-source.md) for a detailed description of build integration, targets, and cross compilation.
 
 ```
 git clone -b viable/strict https://github.com/pytorch/executorch.git
 ```
-```python
+```cmake
+# Set CMAKE_CXX_STANDARD to 17 or above.
+set(CMAKE_CXX_STANDARD 17)
+
 # CMakeLists.txt
+set(EXECUTORCH_BUILD_PRESET_FILE ${CMAKE_SOURCE_DIR}/executorch/tools/cmake/preset/llm.cmake)
+# Set other ExecuTorch options here.
+
 add_subdirectory("executorch")
 ...
 target_link_libraries(
   my_target
   PRIVATE executorch
-          extension_module_static
-          extension_tensor
-          optimized_native_cpu_ops_lib
-          xnnpack_backend)
+          executorch::backends
+          executorch::extensions
+          executorch::kernels)
 ```
 
 
