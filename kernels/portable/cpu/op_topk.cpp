@@ -117,7 +117,8 @@ void perform_topk(
         queue[i].second = i;
       }
 
-      // Perform topk on the queue
+      // Perform topk on the queue, explict typing for the lambda to satisfy
+      // msvc compiler.
       bool (*elem_greater)(const elem_t&, const elem_t&) =
           [](const elem_t& x, const elem_t& y) -> bool {
         return float_less_than(y.first, x.first);
