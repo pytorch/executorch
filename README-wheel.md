@@ -11,7 +11,7 @@ The `executorch` pip package is in beta.
 The prebuilt `executorch.runtime` module included in this package provides a way
 to run ExecuTorch `.pte` files, with some restrictions:
 * Only [core ATen operators](docs/source/ir-ops-set-definition.md) are linked into the prebuilt module
-* Only the [XNNPACK backend delegate](docs/source/backends-xnnpack.md) is linked into the prebuilt module.
+* Only the [XNNPACK backend delegate](docs/source/backends/xnnpack/xnnpack-overview.md) is linked into the prebuilt module.
 * \[macOS only] [Core ML](docs/source/backends/coreml/coreml-overview.md) and [MPS](docs/source/backends/mps/mps-overview.md) backend
   are also linked into the prebuilt module.
 
