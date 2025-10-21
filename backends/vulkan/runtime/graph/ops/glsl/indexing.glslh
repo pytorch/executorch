@@ -81,6 +81,25 @@ bool are_equal(const BufferMetadata meta1, const BufferMetadata meta2) {
   return true;
 }
 
+bool out_of_bounds(const uint bufi, const BufferMetadata meta) {
+  return bufi >= meta.ndim_numel[1];
+}
+
+//
+// TextureMetadata
+//
+
+struct TextureMetadata {
+  ivec4 sizes;
+  ivec3 limits;
+  ivec4 axis_map;
+  int packed_dim;
+};
+
+bool out_of_bounds(const ivec3 pos, const TextureMetadata meta) {
+  return any(greaterThanEqual(pos, meta.limits));
+}
+
 //
 // TensorIndex
 //
@@ -186,6 +205,8 @@ void clamp_tensor_idx(const BufferMetadata meta, inout TensorIndex tidx) {
 
 #ifdef DEBUG_MODE
 
+#extension GL_EXT_debug_printf : enable
+
 void printTensorIndex(const TensorIndex tidx) {
     debugPrintfEXT(
         "TensorIndex: tidx=[%u %u %u %u %u %u %u %u]\\n",
@@ -208,6 +229,16 @@ void printBufferMetadata(const BufferMetadata meta) {
         meta.strides[0][2], meta.strides[0][3],
         meta.strides[1][1], meta.strides[1][1],
         meta.strides[1][2], meta.strides[1][3]
+    );
+}
+
+void printTextureMetadata(const TextureMetadata meta) {
+    debugPrintfEXT(
+        "TextureMetadata:\\n  sizes=[%u %u %u %u]\\n  limits=[%u %u %u]\\n  axis_map=[%u %u %u %u]\\n  packed_dim=%u\\n",
+        meta.sizes[0], meta.sizes[1], meta.sizes[2], meta.sizes[3],
+        meta.limits[0], meta.limits[1], meta.limits[2],
+        meta.axis_map[0], meta.axis_map[1], meta.axis_map[2], meta.axis_map[3],
+        meta.packed_dim
     );
 }
 
