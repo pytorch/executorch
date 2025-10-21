@@ -6,8 +6,6 @@
 
 from typing import Tuple
 
-import pytest
-
 import torch
 
 from executorch.backends.arm.constants import MAX_RANK
@@ -192,9 +190,12 @@ def test_pixel_unshuffle_u55_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", PixelUnShuffle.test_data_generators)
+@common.parametrize(
+    "test_data",
+    PixelUnShuffle.test_data_generators,
+    xfails={"rand_4d": "MLETORCH-1424: rand test fails"},
+)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(reason="MLETORCH-1424: rand test fails")
 def test_pixel_unshuffle_u85_INT(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
         PixelUnShuffle(),
@@ -219,9 +220,12 @@ def test_pixel_shuffle_u55_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", PixelShuffle.test_data_generators)
+@common.parametrize(
+    "test_data",
+    PixelShuffle.test_data_generators,
+    xfails={"rand_4d": "MLETORCH-1424: rand test fails"},
+)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(reason="MLETORCH-1424: rand test fails")
 def test_pixel_shuffle_u85_INT(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
         PixelShuffle(),
