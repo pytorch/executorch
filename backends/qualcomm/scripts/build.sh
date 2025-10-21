@@ -5,7 +5,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 set -e
-set -o xtrace
+
+# Check if running on macOS/Darwin
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    echo "Error: Qualcomm backend Python interface requires Linux operating system."
+    echo "macOS/Darwin is not supported for building the Qualcomm backend."
+    echo "Please use a x64 Linux system or x64 Linux container to build this backend."
+    exit 1
+fi
 
 if [[ -z ${QNN_SDK_ROOT} ]]; then
     echo "Please export QNN_SDK_ROOT=/path/to/qnn_sdk"
@@ -13,6 +20,7 @@ if [[ -z ${QNN_SDK_ROOT} ]]; then
 fi
 
 
+set -o xtrace
 
 usage() {
   echo "Usage: Build the aarch64 version of executor runner or the python interface of Qnn Manager"
