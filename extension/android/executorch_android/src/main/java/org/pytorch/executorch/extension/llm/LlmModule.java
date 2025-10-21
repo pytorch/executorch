@@ -182,8 +182,10 @@ public class LlmModule {
       LlmCallback llmCallback,
       boolean echo) {
     prefillPrompt(prompt);
-    prefillImages(image, width, height, channels);
-    return generate("", llmCallback, echo);
+    if (image != null) {
+      prefillImages(image, width, height, channels);
+    }
+    return generate(prompt, seqLen, llmCallback, echo);
   }
 
   /**
