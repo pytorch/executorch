@@ -9,13 +9,10 @@
 #ifndef INDEXING_GLSLH
 #define INDEXING_GLSLH
 
+#include "common.glslh"
+
 #define DIMLIMIT 8
 #define DIMLIMIT_DIV4 2
-
-#define mul_4(x) ((x) << 2)
-#define div_4(x) ((x) >> 2)
-
-#define mod_4(x) ((x) & 3)
 
 //
 // BufferMetadata
@@ -54,6 +51,14 @@ uint stride_at(const BufferMetadata meta, const int dim) {
 
 uint stride_at(const BufferMetadata meta, const uint dim) {
   return meta.strides[div_4(dim)][mod_4(dim)];
+}
+
+uint width(const BufferMetadata meta) {
+  return meta.sizes[0][0];
+}
+
+uint height(const BufferMetadata meta) {
+  return meta.sizes[0][1];
 }
 
 uint size_at(const BufferMetadata meta, const int dim) {
@@ -117,6 +122,10 @@ uint idx_at(const TensorIndex tidx, const int dim) {
   return tidx.data[div_4(dim)][mod_4(dim)];
 }
 
+uint idx_at(const TensorIndex tidx, const uint dim) {
+  return tidx.data[div_4(dim)][mod_4(dim)];
+}
+
 void permute(inout TensorIndex tidx, const ivec4 permute_order[DIMLIMIT_DIV4]) {
   TensorIndex new_tidx = tidx;
   for (int d = 0; d < DIMLIMIT; ++d) {
@@ -125,6 +134,27 @@ void permute(inout TensorIndex tidx, const ivec4 permute_order[DIMLIMIT_DIV4]) {
   }
   tidx = new_tidx;
 }
+
+uint x(const TensorIndex tidx) {
+  return tidx.data[0][0];
+}
+
+//
+// TensorIndex4D (useful for texture backed tensors)
+//
+
+struct TensorIndex4D {
+  ivec4 data;
+};
+
+//
+// TextureElementIndex
+//
+
+struct TextureElementIndex {
+  ivec3 pos;
+  int comp;
+};
 
 //
 // Index Conversions
@@ -150,6 +180,14 @@ void contiguous_idx_to_tensor_idx(
     tidx.data[div_4(d)][mod_4(d)] = contiguous_idx / dim_stride;
     contiguous_idx = contiguous_idx % dim_stride;
   }
+}
+
+TensorIndex contiguous_idx_to_tensor_idx(
+    const BufferMetadata meta,
+    uint contiguous_idx) {
+  TensorIndex tidx;
+  contiguous_idx_to_tensor_idx(meta, contiguous_idx, tidx);
+  return tidx;
 }
 
 uint tensor_idx_to_contiguous_idx(
@@ -184,6 +222,14 @@ void linear_idx_to_tensor_idx(
   }
 }
 
+TensorIndex linear_idx_to_tensor_idx(
+    const BufferMetadata meta,
+    uint linear_idx) {
+  TensorIndex tidx;
+  linear_idx_to_tensor_idx(meta, linear_idx, tidx);
+  return tidx;
+}
+
 uint tensor_idx_to_linear_idx(
     const BufferMetadata meta,
     const TensorIndex tidx) {
@@ -199,6 +245,33 @@ void clamp_tensor_idx(const BufferMetadata meta, inout TensorIndex tidx) {
   tidx.data[1] = min(tidx.data[1], meta.sizes[1] - 1);
 }
 
+TensorIndex4D zero_tensor4d_idx() {
+  TensorIndex4D tidx;
+  tidx.data = ivec4(0);
+  return tidx;
+}
+
+// Does not account for axis mapping or batches
+TensorIndex4D texture_pos_to_tensor_idx_simple(
+    const ivec3 pos, const TextureMetadata meta) {
+  TensorIndex4D tidx;
+  tidx.data.xyz = pos;
+  tidx.data.w = 0;
+  tidx.data[meta.packed_dim] *= 4;
+  return tidx;
+}
+
+// Does not account for axis mapping or batches
+TextureElementIndex tensor_idx_to_texture_element_idx_simple(
+    const TensorIndex4D tidx, const TextureMetadata meta) {
+  const int packed_dim_idx = tidx.data[meta.packed_dim];
+  TextureElementIndex tex_idx;
+  tex_idx.pos = tidx.data.xyz;
+  tex_idx.pos[meta.packed_dim] = div_4(packed_dim_idx);
+  tex_idx.comp = mod_4(packed_dim_idx);
+  return tex_idx;
+}
+
 //
 // Debug utilities
 //
@@ -212,6 +285,13 @@ void printTensorIndex(const TensorIndex tidx) {
         "TensorIndex: tidx=[%u %u %u %u %u %u %u %u]\\n",
         tidx.data[0][0], tidx.data[0][1], tidx.data[0][2], tidx.data[0][3],
         tidx.data[1][0], tidx.data[1][1], tidx.data[1][2], tidx.data[1][3]
+    );
+}
+
+void printTensorIndex4D(const TensorIndex tidx) {
+    debugPrintfEXT(
+        "TensorIndex4D: [%u, %u, %u, %u]\\n",
+        tidx.data[0][0], tidx.data[0][1], tidx.data[0][2], tidx.data[0][3]
     );
 }
 
