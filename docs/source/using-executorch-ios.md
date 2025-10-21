@@ -18,9 +18,9 @@ The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection 
 
 Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
 
-**Note:** You may need to add some extra linker flags for the build settings of the components that links against ExecuTorch backends or kernels to let them register properly at the app startup. See the [Linkage](#Linkage) section for more details
+**Note:** You may need to add some extra linker flags for the build settings of the components that links against ExecuTorch backends or kernels to let them register properly at the app startup. See the [Linkage](#Linkage) section for more details.
 
-**Note:** To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the `executorch_debug` framework. For optimal performance, always link against the Release version of the deliverables (those without the `_debug` suffix), which have all logging overhead removed. See the [Logging](#Logging) section for more details
+**Note:** To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the `executorch_debug` framework. For optimal performance, always link against the Release version of the deliverables (those without the `_debug` suffix), which have all logging overhead removed. See the [Logging](#Logging) section for more details.
 
 ### Swift Package Manager
 
