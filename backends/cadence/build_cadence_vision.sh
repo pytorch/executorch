@@ -9,7 +9,7 @@ set -euo pipefail
 
 unset CMAKE_PREFIX_PATH
 unset XTENSA_CORE
-export XTENSA_CORE=XRC_Vision_130_AO
+export XTENSA_CORE=VANILLA_VISION
 git submodule sync
 git submodule update --init --recursive
 ./install_requirements.sh
