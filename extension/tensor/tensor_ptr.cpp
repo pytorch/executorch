@@ -79,11 +79,6 @@ TensorPtr make_tensor_ptr(
       });
     }
   }
-
-// Skip stride calculation and incontiguous tensor check for CUDA backend since
-// AOTI-CUDA handles both contiguous and incontiguous tensors. This will be
-// removed after SlimTensor migration.
-#ifndef USE_CUDA_BACKEND
   std::vector<executorch::aten::StridesType> computed_strides(dim);
 
   auto error = runtime::dim_order_to_stride(
@@ -103,8 +98,8 @@ TensorPtr make_tensor_ptr(
           sizes[i]);
     }
   }
+
   strides = std::move(computed_strides);
-#endif // USE_CUDA_BACKEND
 
 #ifndef USE_ATEN_LIB
   executorch::aten::TensorImpl tensor_impl(
