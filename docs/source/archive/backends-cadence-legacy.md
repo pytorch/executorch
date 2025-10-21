@@ -1,12 +1,19 @@
+# Cadence Xtensa Backend (Legacy / Outdated)
+
+```{warning}
+**⚠️ THIS DOCUMENTATION IS OUTDATED AND NO LONGER MAINTAINED**
+
+**For current Cadence backend documentation and support:**
+- Please refer to the up-to-date documentation in [backends-cadence.md](../backends-cadence.md)
+```
+
+---
 # Cadence Xtensa Backend
 
 
-In this tutorial we will walk you through the process of getting setup to build ExecuTorch for Cadence Xtensa DSPs and running models on them.
+In this tutorial we will walk you through the process of getting setup to build ExecuTorch for an Xtensa HiFi4 DSP and running a simple model on it.
 
-[Cadence](https://www.cadence.com/en_US/home.html) is both a hardware and software vendor, providing solutions for many computational workloads, including to run on power-limited embedded devices. The Cadence backend supports multiple DSP families optimized for different workloads:
-- **HiFi Audio DSPs** (HiFi4/HiFi5): Optimized for audio processing, speech recognition, and wake word detection
-- **Fusion G3 DSPs**: General-purpose AI acceleration
-- **Vision P-Series DSPs**: Specialized for computer vision and CNN workloads
+[Cadence](https://www.cadence.com/en_US/home.html) is both a hardware and software vendor, providing solutions for many computational workloads, including to run on power-limited embedded devices. The [Xtensa HiFi4 DSP](https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html) is a Digital Signal Processor (DSP) that is optimized for running audio based neural networks such as wake word detection, Automatic Speech Recognition (ASR), etc.
 
 In addition to the chip, the HiFi4 Neural Network Library ([nnlib](https://github.com/foss-xtensa/nnlib-hifi4)) offers an optimized set of library functions commonly used in NN processing that we utilize in this example to demonstrate how common operations can be accelerated.
 
@@ -70,98 +77,41 @@ The working tree is:
 executorch
 ├── backends
 │   └── cadence
-│       ├── aot                      # Ahead-of-Time compilation tools
-│       │   ├── compiler.py         # Main compilation API
-│       │   ├── export_example.py   # Export workflow example
-│       │   ├── quantizer/          # Quantization infrastructure
-│       │   │   ├── quantizer.py    # Multiple quantizer implementations
-│       │   │   ├── patterns.py     # Quantization patterns
-│       │   │   └── fusion_pass.py  # Op fusion pass
-│       │   ├── passes.py           # Graph optimization passes
-│       │   ├── functions.yaml      # Generic operator definitions
-│       │   ├── functions_hifi.yaml # HiFi-specific definitions
-│       │   ├── functions_fusion_g3.yaml # Fusion G3 definitions
-│       │   └── functions_vision.yaml # Vision-specific definitions
-│       ├── runtime/                # Runtime execution infrastructure
-│       ├── utils/                  # Build utilities (FACTO, header gen)
-│       ├── hifi/                   # HiFi Audio DSP family (70+ ops)
-│       │   ├── kernels            # Optimized HiFi4/HiFi5 kernels
-│       │   ├── operators          # HiFi operator implementations
-│       │   └── third-party
-│       │       └── nnlib          # Cadence NNLIB integration
-│       ├── fusion_g3/             # Fusion G3 DSP family (25+ ops)
+│       ├── aot
+│       ├── ops_registration
+│       ├── tests
+│       ├── utils
+│       ├── hifi
 │       │   ├── kernels
 │       │   ├── operators
 │       │   └── third-party
-│       │       └── nnlib
-│       ├── vision/                # Vision P-Series DSP family (17+ ops)
-│       │   ├── kernels
-│       │   ├── operators
-│       │   └── third-party        # Vision-specific library
-│       └── generic/               # Generic fallback implementations (15+ ops)
-│           └── operators
+│       │       └── hifi4-nnlib
+│       └── [other cadence DSP families]
+│           ├── kernels
+│           ├── operators
+│           └── third-party
+│               └── [any required lib]
 └── examples
     └── cadence
-        ├── models                 # 9 example models
-        │   ├── rnnt_encoder.py   # ASR encoder (ConvEmformer)
-        │   ├── rnnt_predictor.py # ASR predictor
-        │   ├── rnnt_joiner.py    # ASR joiner
-        │   ├── wav2vec2.py       # Self-supervised speech
-        │   ├── mobilenet_v2.py   # Image classification
-        │   ├── resnet18.py       # Image classification
-        │   ├── resnet50.py       # Image classification
-        │   ├── vision_transformer.py # ViT
-        │   └── babyllama.py      # Small LLM
-        └── operators             # Operator test examples
-            ├── test_add_op.py    # Add operation tests
-            ├── test_quantized_linear_op.py
-            ├── test_quantized_conv1d_op.py
-            ├── test_requantize_op.py
-            └── test_g3_ops.py    # FACTO-based G3 tests
+        ├── models
+        └── operators
 ```
 
 ***AoT (Ahead-of-Time) Components***:
 
-The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch `.pte` file. The main components include:
+The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch `.pte` file. In our case, [export_example.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/export_example.py) is an API that takes a model (nn.Module) and representative inputs and runs it through the quantizer (from [quantizer.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer/quantizer.py)). Then a few compiler passes, also defined in [quantizer.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer/quantizer.py), will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in [ops_registrations.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/ops_registrations.py) and have corresponding implemetations in the other folders.
 
-- **Compiler API** ([compiler.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/compiler.py)): High-level APIs for model compilation including `trace()`, `quantize_pt2()`, `export_to_edge()`, and `export_to_cadence()`.
+***Operators***:
 
-- **Quantizer** ([quantizer/quantizer.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer/quantizer.py)): Multiple quantization strategies:
-  - `CadenceDefaultQuantizer`: Standard A8W8 (8-bit asymmetric activations, 8-bit weights)
-  - `CadenceWithLayerNormQuantizer`: Adds layer normalization support
-  - `CadenceWakeWordQuantizer`: Optimized for audio wake word models
-  - `CadenceW8A32MixedQuantizer`: Experimental mixed precision (8-bit weights, 32-bit activations)
-  - `CadenceWithSoftmaxQuantizer`: Includes A16 (16-bit activation) softmax
-
-- **Compiler Passes** ([passes.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/passes.py)): Graph optimization passes including operator fusion, replacement, simplification, and reordering.
-
-- **Operator Registrations** ([ops_registrations.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/ops_registrations.py)): Registers 100+ custom Cadence operators with meta kernels for shape inference. Supports quantized operations for conv1d/2d, linear, matmul, layer norm, and more.
-
-- **Export Example** ([export_example.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/export_example.py)): Reference implementation demonstrating the complete export workflow from model to `.pte` file.
-
-***DSP Family-Specific Implementations***:
-
-Each DSP family has its own optimized operator and kernel implementations:
-
-- **HiFi**: Extensive support for quantized convolutions (1D/2D, depthwise, dilated), linear, matmul, layer norm, ReLU, add, and more. Uses Cadence NNLIB for optimized primitives.
-
-- **Fusion G3**: General-purpose operations including arithmetic (add, sub, mul, div), activations (sigmoid, tanh, softmax), layer normalization, and tensor manipulation.
-
-- **Vision**: Vision-focused operations including quantized conv, linear, matmul, im2row transformation, and softmax with custom vision library.
-
-- **Generic**: Reference implementations used as fallback when DSP-specific optimizations aren't available.
+The operators folder contains two kinds of operators: existing operators from the [ExecuTorch portable library](https://github.com/pytorch/executorch/tree/main/kernels/portable/cpu) and new operators that define custom computations. The former is simply dispatching the operator to the relevant ExecuTorch implementation, while the latter acts as an interface, setting up everything needed for the custom kernels to compute the outputs.
 
 ***Kernels***:
 
-The kernels folders contain optimized implementations that use Xtensa intrinsics to deliver high performance at low power. Each DSP family has its own kernel implementations tuned for the specific architecture characteristics.
+The kernels folder contains the optimized kernels that will run on the HiFi4 chip. They use Xtensa intrinsics to deliver high performance at low-power.
 
 ## Build
 
 In this step, you will generate the ExecuTorch program from different models. You'll then use this Program (the `.pte` file) during the runtime build step to bake this Program into the DSP image.
-
-### Model Export Examples
-
-The Cadence backend provides multiple example models covering different use cases:
 
 ***Simple Model***:
 
@@ -174,79 +124,28 @@ python3 -m examples.portable.scripts.export --model_name="add"
 
 ***Quantized Operators***:
 
-Test individual quantized operations:
+The other, more complex model are custom operators, including:
+  - a quantized [linear](https://pytorch.org/docs/stable/generated/torch.nn.Linear.html) operation. The model is defined [here](https://github.com/pytorch/executorch/blob/main/examples/cadence/operators/test_quantized_linear_op.py#L30). Linear is the backbone of most Automatic Speech Recognition (ASR) models.
+  - a quantized [conv1d](https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html) operation. The model is defined [here](https://github.com/pytorch/executorch/blob/main/examples/cadence/operators/test_quantized_conv1d_op.py#L40). Convolutions are important in wake word and many denoising models.
 
-- **Quantized Linear**: [Linear](https://pytorch.org/docs/stable/generated/torch.nn.Linear.html) operation (32→16 features). Linear is the backbone of most ASR models.
-  ```bash
-  python3 -m examples.cadence.operators.test_quantized_linear_op
-  ```
+In both cases the generated file is called `CadenceDemoModel.pte`.
 
-- **Quantized Conv1D**: [Conv1d](https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html) operation (8→16 channels). Important for wake word and denoising models.
-  ```bash
-  python3 -m examples.cadence.operators.test_quantized_conv1d_op
-  ```
+```bash
+cd executorch
+python3 -m examples.cadence.operators.quantized_<linear,conv1d>_op
+```
 
-- **Requantize Operation**: Tests dtype conversion between different quantized types.
-  ```bash
-  python3 -m examples.cadence.operators.test_requantize_op
-  ```
+***Small Model: RNNT predictor***:
 
-In all cases the generated file is called `CadenceDemoModel.pte`.
+The torchaudio [RNNT-emformer](https://pytorch.org/audio/stable/tutorials/online_asr_tutorial.html) model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels: an encoder, a predictor and a joiner.
+The [predictor](https://github.com/pytorch/executorch/blob/main/examples/cadence/models/rnnt_predictor.py) is a sequence of basic ops (embedding, ReLU, linear, layer norm) and can be exported using:
 
-***Speech/Audio Models***:
+```bash
+cd executorch
+python3 -m examples.cadence.models.rnnt_predictor
+```
 
-The torchaudio [RNNT-emformer](https://pytorch.org/audio/stable/tutorials/online_asr_tutorial.html) model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels:
-
-- **RNNT Predictor**: Sequence of basic ops (embedding, ReLU, linear, layer norm)
-  ```bash
-  python3 -m examples.cadence.models.rnnt_predictor
-  ```
-
-- **RNNT Encoder**: ConvEmformer-based encoder with time reduction and transformer layers
-  ```bash
-  python3 -m examples.cadence.models.rnnt_encoder
-  ```
-
-- **RNNT Joiner**: Joint network combining encoder and predictor outputs
-  ```bash
-  python3 -m examples.cadence.models.rnnt_joiner
-  ```
-
-- **Wav2Vec 2.0**: Self-supervised speech representation model
-  ```bash
-  python3 -m examples.cadence.models.wav2vec2
-  ```
-
-***Computer Vision Models***:
-
-- **MobileNet V2**: Efficient image classification
-  ```bash
-  python3 -m examples.cadence.models.mobilenet_v2
-  ```
-
-- **ResNet-18**: Image classification
-  ```bash
-  python3 -m examples.cadence.models.resnet18
-  ```
-
-- **ResNet-50**: Deeper image classification
-  ```bash
-  python3 -m examples.cadence.models.resnet50
-  ```
-
-- **Vision Transformer (ViT)**: Transformer-based vision model
-  ```bash
-  python3 -m examples.cadence.models.vision_transformer
-  ```
-
-***Language Model***:
-
-- **Baby LLaMA**: Small LLM for testing transformer operations on DSP
-  ```bash
-  python3 -m examples.cadence.models.babyllama
-  ```
-
-All model exports generate `CadenceDemoModel.pte` files ready for deployment.
+The generated file is called `CadenceDemoModel.pte`.
 
 ### Runtime
 
@@ -259,21 +158,9 @@ In this step, you'll be building the DSP firmware image that consists of the sam
 export XTENSA_TOOLCHAIN=/home/user_name/cadence/XtDevTools/install/tools
 # The version of the toolchain that was installed. This is essentially the name of the directory
 # that is present in the XTENSA_TOOLCHAIN directory from above.
-export TOOLCHAIN_VER=RI-2023.11-linux
+export TOOLCHAIN_VER=RI-2021.8-linux
 # The Xtensa core that you're targeting.
-# For HiFi4 (NXP RT600):
-export XTENSA_CORE=VANILLA_HIFI
-# For Fusion G3:
-# export XTENSA_CORE=VANILLA_G3
-# For Vision P6:
-# export XTENSA_CORE=VANILLA_VISION
-```
-
-```{note}
-The Cadence backend supports multiple DSP families:
-- **HiFi Audio DSPs** (HiFi4/HiFi5): Core `VANILLA_HIFI`, enable with `-DEXECUTORCH_NNLIB_OPT=ON`
-- **Fusion G3 DSPs**: Core `VANILLA_G3`, enable with `-DEXECUTORCH_FUSION_G3_OPT=ON`
-- **Vision P-Series DSPs**: Core `VANILLA_VISION`, enable with `-DEXECUTORCH_VISION_OPT=ON`
+export XTENSA_CORE=nxp_rt600_RI2021_8_newlib
 ```
 
 ***Step 2***. Clone the [nnlib repo](https://github.com/foss-xtensa/nnlib-hifi4), which contains optimized kernels and primitives for HiFi4 DSPs, with `git clone git@github.com:foss-xtensa/nnlib-hifi4.git`.
@@ -322,7 +209,7 @@ cmake-xt/dsp_data_release.bin  cmake-xt/dsp_text_release.bin
 
 ***Step 1***. You now take the DSP binary images generated from the previous step and copy them over into your NXP workspace created in the [Setting up  Developer Environment](#setting-up-developer-environment) section. Copy the DSP images into the `dsp_binary` section highlighted in the image below.
 
-![MCUXpresso IDE](_static/img/dsp_binary.png)
+![MCUXpresso IDE](../_static/img/dsp_binary.png)
 
 ```{note}
 As long as binaries have been built using the Xtensa toolchain on Linux, flashing the board and running on the chip can be done only with the MCUXpresso IDE, which is available on all platforms (Linux, MacOS, Windows).
