@@ -4,6 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
+import serializer.tosa_serializer as ts
+
 """Provide a visitor for lowering 2D convolution to TOSA (INT/FP)."""
 
 import itertools
@@ -59,7 +61,6 @@ class Conv2dVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         """Define the TOSA CONV2D/DEPTHWISE_CONV2D operator and post-rescale."""
-        import serializer.tosa_serializer as ts  # type: ignore
         from tosa.RoundingMode import RoundingMode  # type: ignore
 
         input, weight, bias, stride, pad, dilation, _, _, group = inputs

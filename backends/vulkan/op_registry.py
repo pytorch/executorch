@@ -230,6 +230,18 @@ def register_binary_op():
 
 @update_features(
     [
+        exir_ops.edge.aten.pow.Tensor_Scalar,
+    ]
+)
+def register_binary_scalar_op():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+    )
+
+
+@update_features(
+    [
         exir_ops.edge.aten.abs.default,
         exir_ops.edge.aten.clamp.default,
         exir_ops.edge.aten.cos.default,
