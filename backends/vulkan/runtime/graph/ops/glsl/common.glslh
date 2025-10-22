@@ -29,10 +29,6 @@
 #define mod_4(x) ((x) & 3)
 #define mod_8(x) ((x) & 7)
 
-struct TensorIndex4D {
-  ivec4 data;
-};
-
 int sign_extend_8bit(const int val) {
   if ((val & 0x80) != 0) {
     return val | (~0xFF);
@@ -85,20 +81,5 @@ int quantize_and_pack(const vec4 vals, const float inv_scale, const int zp) {
   quantized = clamp(quantized, -128, 127);
   return pack_into_int32(quantized);
 }
-
-#ifdef DEBUG_MODE
-
-#extension GL_EXT_debug_printf : require
-
-void printTensorIndex4D(const TensorIndex4D index) {
-  debugPrintfEXT(
-      "tensor_idx: %d, %d, %d, %d\\n",
-      index.data.x,
-      index.data.y,
-      index.data.z,
-      index.data.w);
-}
-
-#endif // DEBUG_MODE
 
 #endif // COMMON_GLSLH
