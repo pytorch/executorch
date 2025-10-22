@@ -148,7 +148,6 @@ def validate_valid_dtype(
         validate_valid_dtype,
     )
 
-    import serializer.tosa_serializer as ts
 
     validate_valid_dtype(
         self.target,

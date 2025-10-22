@@ -10,7 +10,7 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any, Optional
 
-import serializer.tosa_serializer as ts  # type: ignore
+import serializer.tosa_serializer as ts
 import torch
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec

@@ -9,6 +9,7 @@
 from typing import Any, List, Tuple
 
 import numpy as np
+import serializer.tosa_serializer as ts
 import torch
 
 from executorch.backends.arm.operators.node_visitor import (
@@ -67,8 +68,6 @@ class ClampVisitor_INT(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, [2, 3])
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
@@ -118,8 +117,6 @@ class ClampVisitor_FP(ClampVisitor_INT):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, [2, 3])
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(

@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 import numpy as np
-import serializer.tosa_serializer as ts  # type: ignore
+import serializer.tosa_serializer as ts
 
 import sympy  # type: ignore
 

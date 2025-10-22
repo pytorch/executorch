@@ -6,6 +6,8 @@
 # pyre-unsafe
 from typing import Any, List
 
+import serializer.tosa_serializer as ts
+
 import torch
 
 from executorch.backends.arm.operators.node_visitor import (
@@ -39,8 +41,6 @@ class ResizeVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         validate_num_inputs(self.target, inputs, [3, 4])
         if node.kwargs.get("resize_mode") == "bilinear":
             resize_mode = ResizeMode.BILINEAR

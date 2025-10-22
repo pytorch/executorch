@@ -5,6 +5,8 @@
 # pyre-unsafe
 from typing import Any, List
 
+import serializer.tosa_serializer as ts
+
 import torch.fx
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -36,8 +38,6 @@ class ERFVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(

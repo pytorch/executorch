@@ -6,6 +6,8 @@
 # pyre-unsafe
 from typing import Any, List
 
+import serializer.tosa_serializer as ts
+
 import torch.fx
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
@@ -53,8 +55,6 @@ class NegVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         supported_dtypes = [
             ts.DType.INT8,
             ts.DType.INT16,

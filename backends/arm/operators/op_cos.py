@@ -6,7 +6,7 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
+import serializer.tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,

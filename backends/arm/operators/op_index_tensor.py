@@ -11,6 +11,7 @@ from typing import Any, List
 import executorch.backends.arm.tosa.utils as tutils
 
 import numpy as np
+import serializer.tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -127,7 +128,6 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
         If the number of total elements in the values tensor exceeds int32 limits
         then this approach falls apart.
         """
-        import serializer.tosa_serializer as ts
 
         validate_same_dtype(self.target, [inputs[0], output])
 

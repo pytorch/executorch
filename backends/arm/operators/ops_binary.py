@@ -7,6 +7,8 @@
 
 from typing import Any, List
 
+import serializer.tosa_serializer as ts
+
 import torch
 import torch.fx
 
@@ -36,8 +38,6 @@ def binary_operator_factory(bw_target: str, tosa_op):
             inputs: List[TosaArg],
             output: TosaArg,
         ) -> None:
-            import serializer.tosa_serializer as ts  # type: ignore  # noqa: F401
-
             validate_num_inputs(self.target, inputs, 2)
             validate_same_dtype(self.target, [*inputs, output], ts)
 
@@ -75,8 +75,6 @@ def binary_operator_factory(bw_target: str, tosa_op):
 
     register_node_visitor(BinaryOperator)
 
-
-import serializer.tosa_serializer as ts  # type: ignore
 
 binary_operator_factory("aten.bitwise_and.Tensor", ts.TosaOp.Op().BITWISE_AND)
 binary_operator_factory("aten.bitwise_xor.Tensor", ts.TosaOp.Op().BITWISE_XOR)

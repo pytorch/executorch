@@ -8,6 +8,7 @@
 from typing import Any, List
 
 import executorch.backends.arm.tosa.quant_utils as tqutils  # noqa: F401
+import serializer.tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -46,9 +47,6 @@ class IndexSelectVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
-        import serializer.tosa_serializer as ts  # type: ignore
-
         if len(inputs) != 3:
             raise ValueError(f"Number of inputs are not 3: {len(inputs)}")
 

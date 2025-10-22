@@ -6,6 +6,8 @@
 # pyre-unsafe
 from typing import Any, List
 
+import serializer.tosa_serializer as ts
+
 import torch
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
@@ -47,8 +49,6 @@ class AvgPool2dVisitor(NodeVisitor):
         output_zp: int,
         accumulator_type: Any,
     ) -> None:
-
-        import serializer.tosa_serializer as ts  # type: ignore
 
         input_tensor = inputs[0]
         kernel_size_list = inputs[1].special
@@ -116,8 +116,6 @@ class AvgPool2dVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, [3, 4, 5, 6, 7])
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
@@ -155,8 +153,6 @@ class AvgPool2dVisitor_FP(AvgPool2dVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, [3, 4, 5, 6, 7])
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
