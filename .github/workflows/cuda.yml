@@ -255,7 +255,7 @@ jobs:
         set -eux
 
         echo "::group::Setup ExecuTorch Requirements"
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_requirements.sh
+        ./install_requirements.sh
         pip list
         echo "::endgroup::"
 
@@ -305,7 +305,7 @@ jobs:
         set -eux
 
         echo "::group::Setup ExecuTorch Requirements"
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_requirements.sh
+        ./install_requirements.sh
         pip list
         echo "::endgroup::"
 
@@ -363,7 +363,7 @@ jobs:
         set -eux
 
         echo "::group::Setup ExecuTorch Requirements"
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_requirements.sh
+        ./install_requirements.sh
         pip list
         echo "::endgroup::"
 
