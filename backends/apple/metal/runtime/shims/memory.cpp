@@ -254,7 +254,9 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
           // Tensor never owned the memory, skip freeing
           // Just remove tensor from tracking
           tensors.erase(it);
-          ET_LOG(Debug, "aoti_torch_delete_tensor_object: tensor doesn't own memory, skipping free");
+          ET_LOG(
+              Debug,
+              "aoti_torch_delete_tensor_object: tensor doesn't own memory, skipping free");
           return Error::Ok;
         } else if (ref_count == 1) {
           // Only current tensor using this memory, free it
@@ -265,7 +267,8 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
             // This is CPU memory - free immediately
             free(data_ptr);
             data_ptr = nullptr;
-            ET_LOG(Debug, "aoti_torch_delete_tensor_object: freeing CPU memory");
+            ET_LOG(
+                Debug, "aoti_torch_delete_tensor_object: freeing CPU memory");
           }
 
           // Remove from memory tracking
@@ -273,7 +276,11 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
         } else if (ref_count > 1) {
           // Other tensors still using this memory, just decrement count
           memory_to_n_tensor[data_ptr] = ref_count - 1;
-          ET_LOG(Debug, "aoti_torch_delete_tensor_object: decremented ref count from %d to %d", ref_count, ref_count - 1);
+          ET_LOG(
+              Debug,
+              "aoti_torch_delete_tensor_object: decremented ref count from %d to %d",
+              ref_count,
+              ref_count - 1);
         }
       } else {
         ET_CHECK_OR_RETURN_ERROR(
