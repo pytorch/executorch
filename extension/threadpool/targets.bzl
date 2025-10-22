@@ -47,9 +47,7 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "threadpool",
-        # TODO: OSS doesn't have os:iphoneos. Sync buck2 prelude
-        # update to add it and remove duplication.
-        exported_deps = (select({
+        exported_deps = select({
             # Major operating systems should be able to use threadpool.
             "ovr_config//os:linux": [":threadpool_lib"],
             "ovr_config//os:macos": [":threadpool_lib"],
@@ -60,17 +58,7 @@ def define_common_targets():
             "ovr_config//os:none": ["//executorch/runtime/kernel:thread_parallel_interface"],
             # If we don't know what it is, disable threadpool out of caution.
             "DEFAULT": ["//executorch/runtime/kernel:thread_parallel_interface"],
-        }) if not runtime.is_oss else select({
-            # Major operating systems should be able to use threadpool.
-            "ovr_config//os:linux": [":threadpool_lib"],
-            "ovr_config//os:macos": [":threadpool_lib"],
-            "ovr_config//os:windows": [":threadpool_lib"],
-            "ovr_config//os:android": [":threadpool_lib"],
-            # Machines without an operating system shouldn't.
-            "ovr_config//os:none": ["//executorch/runtime/kernel:thread_parallel_interface"],
-            # If we don't know what it is, disable threadpool out of caution.
-            "DEFAULT": ["//executorch/runtime/kernel:thread_parallel_interface"],
-        })),
+        }),
         visibility = [
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
