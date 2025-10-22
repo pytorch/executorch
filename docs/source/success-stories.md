@@ -29,7 +29,7 @@ Powers Instagram, WhatsApp, Facebook, and Messenger with real-time on-device AI 
 **Industry:** AR/VR & Wearables
 **Hardware:** Quest 3, Ray-Ban Meta Smart Glasses, Meta Ray-Ban Display
 
-Enables immersive mixed reality with real-time computer vision, hand tracking, voice commands, and translation on power-constrained wearable devices.
+Enables real-time computer vision, hand tracking, voice commands, and translation on power-constrained wearable devices.
 :::
 
 :::{grid-item-card} **Liquid AI: Efficient, Flexible On-Device Intelligence**
