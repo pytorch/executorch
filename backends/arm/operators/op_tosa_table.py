@@ -7,6 +7,8 @@
 
 from typing import Any, List
 
+import serializer.tosa_serializer as ts
+
 import torch
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -34,8 +36,6 @@ class TableVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 2)
         validate_valid_dtype(
             self.target, inputs, [ts.DType.INT8, ts.DType.INT16], output.tosa_spec

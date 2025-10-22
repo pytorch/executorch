@@ -11,7 +11,7 @@ import math
 
 from typing import Any, Tuple
 
-import serializer.tosa_serializer as ts  # type: ignore
+import serializer.tosa_serializer as ts
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -374,7 +374,6 @@ def build_rescale(
     rounding_mode: RoundingMode,
     per_channel=False,
 ):
-    import serializer.tosa_serializer as ts  # type: ignore
 
     import tosa.Op as TosaOp  # type: ignore
 

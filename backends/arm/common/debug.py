@@ -7,7 +7,7 @@ import logging
 import os
 from typing import Optional
 
-import serializer.tosa_serializer as ts  # type: ignore
+import serializer.tosa_serializer as ts
 import torch
 from executorch.exir.print_program import inspect_node
 
