@@ -83,7 +83,7 @@ portability details.
   CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
   ```
 
-  ## Verify the Build
+  ### Verify the Build
 
 To verify that the Python components are installed correctly, run the following command. This will create a file named mv2_xnnpack_fp32.pte in the current directory for the MobileNet V2 model with the XNNPACK backend. If it completes without error, the ExecuTorch Python components are installed successfully.
 ```bash
@@ -162,7 +162,8 @@ ExecuTorch provides fine-grained control over what is built, as described in [Bu
 
 Preset values for common scenarios are listed below. Using a platform preset is recommended to avoid needing to specify many fine-grained build options.
 
- * `android` - Build featuers and backends common for Android targets.
+ * `android-arm64-v8a` - Build features and backends common for arm64-v8a Android targets.
+ * `android-x86_64` - Build features and backends common for x86_64 Android targets.
  * `arm-baremetal` - Build for bare-metal ARM targets.
  * `ios` - Build features and backends common for iOS targets.
  * `macos` - Build features and backends common for Mac targets.

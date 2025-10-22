@@ -12,7 +12,7 @@ The following are required to install the ExecuTorch host libraries, needed to e
 - g++ version 7 or higher, clang++ version 5 or higher, or another C++17-compatible toolchain.
 - Linux (x86_64 or ARM64), macOS (ARM64), or Windows (x86_64).
     - Intel-based macOS systems require building PyTorch from source (see [Building From Source](using-executorch-building-from-source.md) for instructions).
-- On Windows, Visual Studio 2022 or later. Clang build tools are needed to build from source.
+- On Windows, Visual Studio 2022 or later.
 
 ## Installation
 To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries. Pip is the recommended way to install the ExecuTorch python package.
