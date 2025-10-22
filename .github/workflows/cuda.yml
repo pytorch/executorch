@@ -176,12 +176,12 @@ jobs:
       matrix:
         quant:
           - name: "non-quantized"
-            artifact: "voxtral-cuda-export"
+            artifact: "gemma3-cuda-export"
             extra_args: ""
           - name: "quantized-int4-tile-packed"
-            artifact: "voxtral-cuda-quantized-int4-tile-packed"
+            artifact: "gemma3-cuda-quantized-int4-tile-packed"
             extra_args: "--qlinear 4w --qlinear_encoder 4w --qlinear_packing_format tile_packed_to_4d --qlinear_encoder_packing_format tile_packed_to_4d"
-            # TODO: enable int4-weight-only on gemma3.
+          # TODO: enable int4-weight-only on gemma3.
           # - name: "quantized-int4-weight-only"
           #   artifact: "voxtral-cuda-quantized-int4-weight-only"
           #   # TODO: adding "--qlinear 4w" produces invalid results. Need further investigation.
