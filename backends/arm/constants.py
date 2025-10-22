@@ -34,10 +34,13 @@ NHWC_ORDER: Final = (0, 2, 3, 1)
 NHWC_INVERSE_ORDER: Final = (0, 3, 1, 2)
 NNHWC_ORDER: Final = (0, 1, 3, 4, 2)
 NNHWC_INVERSE_ORDER: Final = (0, 1, 4, 2, 3)
+NNNHWC_ORDER: Final = (0, 1, 2, 4, 5, 3)
+NNNHWC_INVERSE_ORDER: Final = (0, 1, 2, 5, 3, 4)
 
 NCHW_ORDER: Final = (0, 1, 2, 3)
-NCHW_INVERSE_ORDER: Final = (0, 2, 3, 1)
 NNCHW_ORDER: Final = (0, 1, 2, 3, 4)
-NNCHW_INVERSE_ORDER: Final = (0, 1, 3, 4, 2)
+NNNCHW_ORDER: Final = (0, 1, 2, 3, 4, 5)
 
 HWCM_ORDER: Final = (2, 3, 0, 1)
+
+MAX_RANK: Final = 6
