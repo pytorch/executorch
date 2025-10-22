@@ -751,14 +751,9 @@ class CustomBuild(build):
             f"-DCMAKE_BUILD_TYPE={cmake_build_type}",
         ]
 
-        # Use ClangCL on Windows by default, unless EXECUTORCH_USE_MSVC is set.
+        # Use ClangCL on Windows.
         if _is_windows():
-            if os.environ.get("EXECUTORCH_USE_MSVC"):
-                # Use default MSVC toolchain
-                pass
-            else:
-                # Use ClangCL toolchain
-                cmake_configuration_args += ["-T ClangCL"]
+            cmake_configuration_args += ["-T ClangCL"]
 
         # Allow adding extra cmake args through the environment. Used by some
         # tests and demos to expand the set of targets included in the pip
