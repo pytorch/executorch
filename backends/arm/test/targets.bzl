@@ -18,6 +18,7 @@ def define_arm_tests():
         "ops/test_addmm.py",
         "ops/test_avg_pool2d.py",
         "ops/test_cat.py",
+        "ops/test_conv2d.py",
         "ops/test_linear.py", 
         "ops/test_mul.py",
         "ops/test_permute.py",
