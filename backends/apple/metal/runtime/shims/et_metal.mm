@@ -86,6 +86,21 @@ void* metal_allocate_buffer(long bytes) {
     }
 }
 
+void metal_deallocate_buffer(void* ptr) {
+    @autoreleasepool {
+        auto it = ptr_to_mtl_buffer.find(ptr);
+        if (it != ptr_to_mtl_buffer.end()) {
+            id<MTLBuffer> buffer = it->second;
+            [buffer release];
+            ptr_to_mtl_buffer.erase(it);
+            ET_LOG(Debug, "Deallocated Metal buffer for pointer %p", ptr);
+            ptr = nullptr;
+        } else {
+            ET_LOG(Error, "Failed to find Metal buffer for pointer %p", ptr);
+        }
+    }
+}
+
 void metal_cleanup_resources() {
     if (!ptr_to_mtl_buffer.empty()) {
         @autoreleasepool {
