@@ -11,6 +11,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import cast, List, Optional, Sequence, Set, Type
 
+# Import these for the cadence function signatures.
+import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
+
 import torch
 import torch.fx
 from executorch.backends.cadence.aot.pass_utils import (
