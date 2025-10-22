@@ -6,11 +6,26 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <limits>
+#include <string>
+#include <iostream>
 
 #include <gflags/gflags.h>
+
+#if defined(__has_include)
+#if __has_include(<cuda_runtime_api.h>)
+#define ET_GEMMA3_HAS_CUDA_RUNTIME 1
+#include <cuda_runtime_api.h>
+#else
+#define ET_GEMMA3_HAS_CUDA_RUNTIME 0
+#endif
+#else
+#define ET_GEMMA3_HAS_CUDA_RUNTIME 0
+#endif
 
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
@@ -66,6 +81,99 @@ using ::executorch::extension::llm::make_image_input;
 using ::executorch::extension::llm::make_text_input;
 using ::executorch::extension::llm::MultimodalInput;
 using ::executorch::runtime::EValue;
+
+#if ET_GEMMA3_HAS_CUDA_RUNTIME
+class CudaMemoryTracker {
+ public:
+  CudaMemoryTracker() {
+    if (!query(&last_free_bytes_, &total_bytes_)) {
+      return;
+    }
+    available_ = true;
+    min_free_bytes_ = last_free_bytes_;
+    log_state("startup", last_free_bytes_, total_bytes_);
+  }
+
+  void log_sample(const char* tag) {
+    if (!available_) {
+      return;
+    }
+    size_t free_bytes = 0;
+    size_t total_bytes = 0;
+    if (!query(&free_bytes, &total_bytes)) {
+      return;
+    }
+    min_free_bytes_ = std::min(min_free_bytes_, free_bytes);
+    total_bytes_ = total_bytes;
+    last_free_bytes_ = free_bytes;
+    log_state(tag, free_bytes, total_bytes);
+  }
+
+  ~CudaMemoryTracker() {
+    if (!available_) {
+      return;
+    }
+    size_t free_bytes = 0;
+    size_t total_bytes = 0;
+    if (!query(&free_bytes, &total_bytes)) {
+      return;
+    }
+    min_free_bytes_ = std::min(min_free_bytes_, free_bytes);
+    total_bytes_ = total_bytes;
+    last_free_bytes_ = free_bytes;
+    const double peak_mb =
+        static_cast<double>(total_bytes_ - min_free_bytes_) / (1024.0 * 1024.0);
+    const double total_mb =
+        static_cast<double>(total_bytes_) / (1024.0 * 1024.0);
+    std::cout << "CUDA memory peak usage: " << peak_mb
+              << " MB, total: " << total_mb << " MB" << std::endl;
+  }
+
+ private:
+  bool query(size_t* free_bytes, size_t* total_bytes) {
+    cudaError_t err = cudaMemGetInfo(free_bytes, total_bytes);
+    if (err != cudaSuccess) {
+      if (!error_logged_) {
+        error_logged_ = true;
+        std::cerr << "Warning: cudaMemGetInfo failed with error: "
+                  << cudaGetErrorString(err) << std::endl;
+      }
+      available_ = false;
+      return false;
+    }
+    return true;
+  }
+
+  void log_state(
+      const char* tag,
+      size_t free_bytes,
+      size_t total_bytes) const {
+    const double used_mb =
+        static_cast<double>(total_bytes - free_bytes) / (1024.0 * 1024.0);
+    const double free_mb =
+        static_cast<double>(free_bytes) / (1024.0 * 1024.0);
+    const double total_mb =
+        static_cast<double>(total_bytes) / (1024.0 * 1024.0);
+    std::cout << "CUDA memory (" << tag << "): used " << used_mb
+              << " MB, free " << free_mb << " MB, total " << total_mb << " MB"
+              << std::endl;
+  }
+
+  bool available_{false};
+  bool error_logged_{false};
+  size_t last_free_bytes_{0};
+  size_t total_bytes_{0};
+  size_t min_free_bytes_{std::numeric_limits<size_t>::max()};
+};
+#else
+class CudaMemoryTracker {
+ public:
+  CudaMemoryTracker() = default;
+  void log_sample(const char* tag) {
+    (void)tag;
+  }
+};
+#endif
 
 bool ends_with(const std::string& str, const std::string& suffix) {
   return str.size() >= suffix.size() &&
@@ -171,6 +279,8 @@ int32_t main(int32_t argc, char** argv) {
   int32_t cpu_threads = FLAGS_cpu_threads;
   bool warmup = FLAGS_warmup;
 
+  CudaMemoryTracker cuda_memory_tracker;
+
 #if defined(ET_USE_THREADPOOL)
   uint32_t num_performant_cores = cpu_threads == -1
       ? ::executorch::extension::cpuinfo::get_num_performant_cores()
@@ -206,6 +316,7 @@ int32_t main(int32_t argc, char** argv) {
     ET_LOG(Error, "Failed to load multimodal runner");
     return 1;
   }
+  cuda_memory_tracker.log_sample("post-runner-load");
 
   // Prepare inputs
   std::vector<MultimodalInput> inputs = {
@@ -214,6 +325,7 @@ int32_t main(int32_t argc, char** argv) {
       make_text_input(
           std::string(prompt) + "<end_of_turn>\n<start_of_turn>model\n"),
   };
+  cuda_memory_tracker.log_sample("post-input-prep");
 
   ::executorch::extension::llm::GenerationConfig config;
   config.max_new_tokens = 100;
@@ -222,7 +334,10 @@ int32_t main(int32_t argc, char** argv) {
   // Run warmup if requested
   if (warmup) {
     ET_LOG(Info, "Running warmup...");
-    auto warmup_error = runner->generate(inputs, config);
+    auto warmup_token_callback = [&cuda_memory_tracker](const std::string&) {
+      cuda_memory_tracker.log_sample("warmup-token");
+    };
+    auto warmup_error = runner->generate(inputs, config, warmup_token_callback);
     if (warmup_error != ::executorch::runtime::Error::Ok) {
       ET_LOG(Error, "Failed to run warmup");
       return 1;
@@ -236,6 +351,7 @@ int32_t main(int32_t argc, char** argv) {
     ET_LOG(Error, "Failed to generate with multimodal runner\n");
     return 1;
   }
+  cuda_memory_tracker.log_sample("post-generate");
   ET_LOG(Info, "Generated successfully");
 
   return 0;

@@ -49,8 +49,10 @@ Error MultimodalRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
+  stats_->model_load_start_ms = time_in_ms();
   ET_CHECK_OK_OR_RETURN_ERROR(multimodal_prefiller_->load());
   ET_CHECK_OK_OR_RETURN_ERROR(text_token_generator_->load());
+  stats_->model_load_end_ms = time_in_ms();
   return Error::Ok;
 }
 
@@ -86,9 +88,7 @@ Error MultimodalRunner::generate(
   }
 
   if (!is_loaded()) {
-    stats_->model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
-    stats_->model_load_end_ms = time_in_ms();
   }
 
   if (config.warming) {
@@ -117,6 +117,9 @@ Error MultimodalRunner::generate(
 
   uint64_t prefill_next_token = 0;
   // Process multimodal inputs in order
+
+  // Add red coloring for multimodal input prompt
+  wrapped_callback("\033[1;31m");
   for (size_t i = 0; i < inputs.size(); ++i) {
     const MultimodalInput& input = inputs[i];
     ET_LOG(
@@ -134,6 +137,8 @@ Error MultimodalRunner::generate(
     }
     prefill_next_token = prefill_result.get();
   }
+  // Reset to default coloring
+  wrapped_callback("\033[0m");
 
   stats_->first_token_ms = time_in_ms();
   stats_->prompt_eval_end_ms = time_in_ms();
@@ -148,6 +153,8 @@ Error MultimodalRunner::generate(
         static_cast<uint32_t>(decode_result.error()));
     return Error::InvalidArgument;
   }
+  // Add some green coloring for the first generated token
+  wrapped_callback("\033[1;32m");
   wrapped_callback(std::move(*decode_result));
 
   RUNNER_ET_LOG(
@@ -195,7 +202,8 @@ Error MultimodalRunner::generate(
   if (!config.warming) {
     printf("\n");
   }
-
+  // Restore to default coloring
+  wrapped_callback("\033[0m");
   if (config.warming) {
     ET_LOG(Info, "Warmup run finished!");
   } else {
