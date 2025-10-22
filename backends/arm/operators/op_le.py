@@ -7,6 +7,8 @@
 
 from typing import Any, List
 
+import serializer.tosa_serializer as ts
+
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -41,9 +43,6 @@ class LessEqualVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, inputs, ts)
         validate_valid_dtype(
