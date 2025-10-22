@@ -106,7 +106,14 @@ PyTorch-native quantization and optimization library for preparing efficient mod
 
 Optimize LLM fine-tuning with faster training and reduced VRAM usage, then deploy efficiently with ExecuTorch.
 
-[Example Model →](https://huggingface.co/metascroy/Qwen3-4B-int8-int4-unsloth)
+[Example Model →](https://huggingface.co/metascroy/Qwen3-4B-int8-int4-unsloth)  •  [Blog →](https://docs.unsloth.ai/new/quantization-aware-training-qat)
+:::
+
+:::{grid-item-card} **Ultralytics**
+:class-header: bg-secondary text-white
+
+Deploy on-device inference for Ultralytics YOLO models using ExecuTorch.
+[Explore →](https://docs.ultralytics.com/integrations/executorch/)
 :::
 
 ::::
