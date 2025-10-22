@@ -31,7 +31,12 @@ using namespace executorch::backends::aoti;
 
 // Global storage for tensors and their metadata
 std::unordered_set<std::shared_ptr<Tensor>> tensors;
-std::unordered_map<Tensor*, bool> is_tensor_own_memory;
+
+// Reference counting for memory addresses
+// Maps memory address to number of tensors using it
+// Special value: NOT_OWN (-1) means tensor never owns the memory
+constexpr int32_t NOT_OWN = -1;
+std::unordered_map<void*, int32_t> memory_to_n_tensor;
 
 extern "C" {
 
@@ -110,7 +115,18 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   // Store the tensor so it doesn't get destroyed
   tensors.insert(tensor);
   *ret_new_tensor = tensor.get();
-  is_tensor_own_memory[tensor.get()] = false;
+
+  // Check if this memory address is already being tracked
+  auto memory_it = memory_to_n_tensor.find(adjusted_data);
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it == memory_to_n_tensor.end(),
+      InvalidArgument,
+      "Memory address %p is already being tracked by another tensor",
+      adjusted_data);
+
+  // Mark this memory as NOT_OWN since tensor created from blob never owns
+  // memory
+  memory_to_n_tensor[adjusted_data] = NOT_OWN;
 
   ET_LOG(Debug, "aoti_torch_create_tensor_from_blob_v2: successfull");
   return Error::Ok;
@@ -192,7 +208,9 @@ AOTITorchError aoti_torch_empty_strided(
   // Store the tensor so it doesn't get destroyed
   tensors.insert(tensor);
   *ret_new_tensor = tensor.get();
-  is_tensor_own_memory[tensor.get()] = true;
+
+  // This tensor owns the memory it allocated, set reference count to 1
+  memory_to_n_tensor[ptr] = 1;
 
   ET_LOG(Debug, "aoti_torch_empty_strided: successfull");
   return Error::Ok;
@@ -200,51 +218,88 @@ AOTITorchError aoti_torch_empty_strided(
 
 AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
   ET_LOG(Debug, "aoti_torch_delete_tensor_object: entered");
-  // Find tensor in the set
+
+  // Handle null tensor pointer
+  if (tensor == nullptr) {
+    ET_LOG(Debug, "aoti_torch_delete_tensor_object: null tensor");
+    return Error::Ok;
+  }
+
+  // Check if tensor exists in our tracking
+  bool found_in_tensors = false;
   for (auto it = tensors.begin(); it != tensors.end(); ++it) {
     if (it->get() == tensor) {
+      found_in_tensors = true;
+      break;
+    }
+  }
+
+  // If tensor not found in our tracking, it's invalid
+  ET_CHECK_OR_RETURN_ERROR(
+      found_in_tensors, InvalidArgument, "Didn't find tensor %p", tensor);
+
+  // Find and delete the tensor
+  for (auto it = tensors.begin(); it != tensors.end(); ++it) {
+    if (it->get() == tensor) {
+      // Get the tensor before erasing
       auto tensor_ptr = *it;
+      void* data_ptr = tensor_ptr->mutable_data_ptr();
 
-      // Check ownership before cleaning up
-      auto ownership_it = is_tensor_own_memory.find(tensor);
-      bool owns_memory = (ownership_it != is_tensor_own_memory.end())
-          ? ownership_it->second
-          : false;
+      // Find the reference count for this memory address
+      auto memory_it = memory_to_n_tensor.find(data_ptr);
+      if (memory_it != memory_to_n_tensor.end()) {
+        int32_t ref_count = memory_it->second;
 
-      // Clean up ownership metadata
-      is_tensor_own_memory.erase(tensor);
-
-      if (owns_memory) {
-        // et tensor owns the memory; need to free it manually
-        void* data_ptr = tensor_ptr->mutable_data_ptr();
-
-        // Check if it's Metal GPU memory
-        if (metal_is_device_pointer(data_ptr)) {
-          // This is Metal GPU memory - the Metal helper will handle cleanup
-          // Metal buffers are automatically managed by ARC when the buffer is
-          // released
+        if (ref_count == NOT_OWN) {
+          // Tensor never owned the memory, skip freeing
+          // Just remove tensor from tracking
           tensors.erase(it);
           ET_LOG(
               Debug,
-              "aoti_torch_delete_tensor_object: successfull (Metal GPU memory)");
+              "aoti_torch_delete_tensor_object: tensor doesn't own memory, skipping free");
           return Error::Ok;
+        } else if (ref_count == 1) {
+          // Only current tensor using this memory, free it
+          // Check if it's Metal GPU memory
+          if (metal_is_device_pointer(data_ptr)) {
+            metal_deallocate_buffer(data_ptr);
+          } else {
+            // This is CPU memory - free immediately
+            free(data_ptr);
+            data_ptr = nullptr;
+            ET_LOG(
+                Debug, "aoti_torch_delete_tensor_object: freeing CPU memory");
+          }
+
+          // Remove from memory tracking
+          memory_to_n_tensor.erase(memory_it);
+        } else if (ref_count > 1) {
+          // Other tensors still using this memory, just decrement count
+          memory_to_n_tensor[data_ptr] = ref_count - 1;
+          ET_LOG(
+              Debug,
+              "aoti_torch_delete_tensor_object: decremented ref count from %d to %d",
+              ref_count,
+              ref_count - 1);
         }
-
-        // This is CPU memory - free immediately
-        free(data_ptr);
+      } else {
+        ET_CHECK_OR_RETURN_ERROR(
+            false,
+            Internal,
+            "Internal error: memory not found during deletion");
       }
-      // else: Don't free memory since the tensor doesn't own it
 
-      // Remove from set (this will call the destructor if it's the last
+      // Remove tensor from set (this will call the destructor if it's the last
       // reference)
       tensors.erase(it);
-      ET_LOG(
-          Debug, "aoti_torch_delete_tensor_object: successfull (CPU memory)");
+      ET_LOG(Debug, "aoti_torch_delete_tensor_object: successfull");
       return Error::Ok;
     }
   }
-  ET_LOG(Error, "Didn't find tensor %p", tensor);
-  return Error::InvalidArgument;
+
+  // This should never be reached since we found it above
+  ET_CHECK_OR_RETURN_ERROR(
+      false, Internal, "Internal error: tensor not found after validation");
 }
 
 AOTITorchError aoti_torch_copy_(
@@ -375,6 +430,24 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       InvalidArgument,
       "aoti_torch__reinterpret_tensor failed: ret_new_tensor is null");
 
+  // Check if storage_offset is not 0 - return error if not
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_storage_offset(storage_offset));
+
+  // Get the device info from the source tensor to perform device_index
+  // validation
+  int32_t device_type = 0;
+  int32_t device_index = 0;
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_device_type(self, &device_type));
+
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_device_index(self, &device_index));
+
+  // Ensure device_index is always 0
+  ET_CHECK_OR_RETURN_ERROR(
+      device_index == 0,
+      InvalidArgument,
+      "device_index must be 0, got: %d",
+      device_index);
+
   // Get the dtype from the source tensor
   int32_t dtype = 0;
   ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_dtype(self, &dtype));
@@ -382,54 +455,52 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   // Validate dtype using SupportedDTypes
   ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
 
-  int32_t device_type = 0;
-  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_device_type(self, &device_type));
-
-  int32_t device_index = 0;
-  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_device_index(self, &device_index));
-
-  // Get the base data pointer from the source tensor
-  void* base_data_ptr = self->mutable_data_ptr();
+  // Get the original data pointer from the source tensor
+  void* data_ptr = self->mutable_data_ptr();
   ET_CHECK_OR_RETURN_ERROR(
-      base_data_ptr != nullptr,
+      data_ptr != nullptr,
       InvalidArgument,
       "Source tensor has null data pointer");
 
-  // Calculate new tensor size in elements for logging
-  int64_t new_numel = 1;
-  for (int64_t i = 0; i < ndim; i++) {
-    new_numel *= sizes_ptr[i];
-  }
+  // Check if the given memory is in the map, if not return error
+  auto memory_it = memory_to_n_tensor.find(data_ptr);
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it != memory_to_n_tensor.end(),
+      InvalidArgument,
+      "Memory address %p is not being tracked by reference counting system",
+      data_ptr);
 
-  ET_LOG(
-      Debug,
-      "aoti_torch__reinterpret_tensor: base_data_ptr=%p, new_numel=%lld, storage_offset=%lld",
-      base_data_ptr,
-      new_numel,
-      storage_offset);
+  // Convert sizes using utility function from utils.h
+  std::vector<aten::SizesType> sizes = convert_sizes_to_vector(ndim, sizes_ptr);
 
-  // Create a new tensor view that shares the same underlying storage
-  // This is the correct way to implement reinterpret_tensor - as a view, not a
-  // copy
-  AOTITorchError create_err = aoti_torch_create_tensor_from_blob_v2(
-      base_data_ptr, // Same underlying data pointer
-      ndim, // New dimensions
-      sizes_ptr, // New sizes
-      strides_ptr, // New strides
-      storage_offset, // Storage offset (will be handled properly now)
-      dtype,
-      device_type,
-      device_index,
-      ret_new_tensor,
-      0, // layout (default)
-      nullptr, // opaque_metadata
-      0 // opaque_metadata_size
+  // Convert strides using utility function from utils.h
+  std::vector<aten::StridesType> strides =
+      convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
+
+  // Create new tensor view that reinterprets the same memory with different
+  // shape/strides This creates a view, not a copy - the data pointer is shared
+  std::shared_ptr<Tensor> tensor = executorch::extension::from_blob(
+      data_ptr, // Reuse the same memory from source tensor
+      sizes, // New sizes with explicit SizesType
+      strides, // New strides with explicit StridesType
+      dtype_to_scalar_type(dtype) // Convert dtype with explicit type casting
   );
 
-  if (create_err != Error::Ok) {
-    ET_LOG(Error, "failed to create reinterpreted tensor view");
-    return create_err;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr,
+      InvalidArgument,
+      "Failed to create reinterpreted tensor view");
+
+  // Store the tensor so it doesn't get destroyed
+  tensors.insert(tensor);
+
+  *ret_new_tensor = tensor.get();
+
+  // Increment the reference count for this memory address only if it is owned
+  // by tensor
+  memory_to_n_tensor[data_ptr] = memory_to_n_tensor[data_ptr] == NOT_OWN
+      ? NOT_OWN
+      : memory_to_n_tensor[data_ptr] + 1;
 
   ET_LOG(Debug, "aoti_torch__reinterpret_tensor: successfull");
   return Error::Ok;
@@ -437,13 +508,27 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
 // Cleanup function for clearing global state
 void cleanup_memory() {
-  is_tensor_own_memory.clear();
-  if (!tensors.empty()) {
-    ET_LOG(Error, "Warning: tensors not empty during cleanup");
+  // Use aoti_torch_delete_tensor_object to properly delete each tensor
+  // Note: We need to collect tensor pointers first since deletion modifies the
+  // set
+  std::vector<Tensor*> tensor_ptrs;
+  tensor_ptrs.reserve(tensors.size());
+  for (const auto& tensor_shared : tensors) {
+    tensor_ptrs.push_back(tensor_shared.get());
   }
+
+  // Now delete each tensor - this will modify the global tensors set
+  for (Tensor* tensor_ptr : tensor_ptrs) {
+    aoti_torch_delete_tensor_object(tensor_ptr);
+  }
+
+  // tensors set should now be empty, but ensure it's cleared
+  tensors.clear();
 
   // Clean up Metal resources
   metal_cleanup_resources();
+
+  ET_LOG(Info, "Cleared all tensors and Metal resources");
 }
 
 } // extern "C"

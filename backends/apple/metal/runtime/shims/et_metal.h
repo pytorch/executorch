@@ -354,6 +354,7 @@ extern "C" {
 
 // Memory management functions for Metal
 void* metal_allocate_buffer(long bytes);
+void metal_deallocate_buffer(void* ptr);
 bool metal_is_device_pointer(void* ptr);
 int metal_copy_memory(
     void* dst,

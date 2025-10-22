@@ -736,9 +736,12 @@ AOTITorchError aoti_torch_mps_convolution(
         throw std::runtime_error("Tensor size mismatch");
       }
 
-      // Store the tensor handle - mark that we own the memory since we manually allocated it with malloc
+      // Store the tensor handle - mark that we own the memory since we manually allocated it
       *ret0 = output_tensor_handle;
-      is_tensor_own_memory[et_tensor] = true;  // We allocated the GPU memory
+      // Note: memory_to_n_tensor is managed automatically in aoti_torch_create_tensor_from_blob_v2
+      // The function sets it to NOT_OWN, but we need to change it to 1 since we allocated it
+      extern std::unordered_map<void*, int32_t> memory_to_n_tensor;
+      memory_to_n_tensor[tensor_data] = 1;
 
       ET_LOG(Debug, "aoti_torch_mps_convolution: Created output tensor with %zu elements using MPSGraph", actual_numel);
 
@@ -1327,10 +1330,11 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
         }
 
         // Mark that we own the memory for these tensors
-        auto* out_et_tensor = reinterpret_cast<Tensor*>(out_tensor_handle);
-        auto* attn_et_tensor = reinterpret_cast<Tensor*>(attn_tensor_handle);
-        is_tensor_own_memory[out_et_tensor] = true;
-        is_tensor_own_memory[attn_et_tensor] = true;
+        // Note: memory_to_n_tensor is managed automatically in aoti_torch_create_tensor_from_blob_v2
+        // The function sets it to NOT_OWN, but we need to change it to 1 since we allocated it
+        extern std::unordered_map<void*, int32_t> memory_to_n_tensor;
+        memory_to_n_tensor[out_contents_ptr] = 1;
+        memory_to_n_tensor[attn_contents_ptr] = 1;
 
         // Set output tensor handles
         *ret0 = out_tensor_handle;
