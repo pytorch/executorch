@@ -18,17 +18,17 @@
 
 ${define_required_extensions(DTYPE)}
 
-$if WEIGHT_STORAGE == "buffer":
-  ${define_required_extensions("int8")}
-
 layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, OUT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, IN_STORAGE, is_scalar_array=False)}
-$if QUANT_NBITS == 4:
-  ${layout_declare_tensor(B, "r", "t_weight", "uint8", WEIGHT_STORAGE, is_scalar_array=False)}
+$if WEIGHT_STORAGE == "buffer":
+  ${layout_declare_tensor(B, "r", "t_weight", "uint", WEIGHT_STORAGE, is_scalar_array=True)}
 $else:
-  ${layout_declare_tensor(B, "r", "t_weight", "int8", WEIGHT_STORAGE, is_scalar_array=False)}
+  $if QUANT_NBITS == 4:
+    ${layout_declare_tensor(B, "r", "t_weight", "uint8", WEIGHT_STORAGE, is_scalar_array=False)}
+  $else:
+    ${layout_declare_tensor(B, "r", "t_weight", "int8", WEIGHT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_scales", DTYPE, SCALES_STORAGE, is_scalar_array=False)}
 
 
@@ -91,22 +91,20 @@ void main() {
     $if WEIGHT_STORAGE == "buffer":
       uint qmat2_bufi;
       uint weight_row_txstride = div4(weight_sizes.x);
+      uint encoded_weight;
 
     // Preload weight tensor
     for (int r = 0; r < 4; r++) {
       T qmat2[TILE_TXCOLS * 4];
       VEC4_T qmat2_vec4;
+      uvec4 packed_weight_tex;
 
       $if QUANT_NBITS == 4:
-        $if WEIGHT_STORAGE == "buffer":
-          u8vec4 packed_weight_tex;
-        $else:
-          uvec4 packed_weight_tex;
-
         $for c in range(0, TILE_TXCOLS, 2):
           $if WEIGHT_STORAGE == "buffer":
             qmat2_bufi = (pos + r) * weight_row_txstride + weight_txcol;
-            packed_weight_tex = t_weight[qmat2_bufi + ${c}]
+            encoded_weight = t_weight[qmat2_bufi + ${c}];
+            packed_weight_tex = uvec4(encoded_weight & 0xFF, (encoded_weight >> 8) & 0xFF, (encoded_weight >> 16) & 0xFF, encoded_weight >> 24);
           $else:
             packed_weight_tex = texelFetch(
               t_weight, ivec2(weight_txcol + ${c}, pos + r), 0);
@@ -126,7 +124,9 @@ void main() {
         $for c in range(TILE_TXCOLS):
           $if WEIGHT_STORAGE == "buffer":
             qmat2_bufi = (pos + r) * weight_row_txstride + out_txcol;
-            qmat2_vec4 = t_weight[qmat2_bufi + ${c}];
+            encoded_weight = t_weight[qmat2_bufi + ${c}];
+            packed_weight_tex = uvec4(encoded_weight & 0xFF, (encoded_weight >> 8) & 0xFF, (encoded_weight >> 16) & 0xFF, encoded_weight >> 24);
+            qmat2_vec4 = VEC4_T(packed_weight_tex);
           $else:
             qmat2_vec4 = VEC4_T(texelFetch(t_weight, ivec2(out_txcol + ${c}, pos + r), 0));
           $for j in range(4):

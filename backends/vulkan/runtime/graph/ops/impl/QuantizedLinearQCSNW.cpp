@@ -225,7 +225,8 @@ void add_linear_qcs8w_node(
   } else {
     pcs = {
         graph.logical_limits_pc_of(out_W_packed),
-        graph.sizes_pc_of(mat1_W_packed)};
+        graph.sizes_pc_of(mat1_W_packed),
+        graph.sizes_pc_of(q_mat2)};
   }
 
   const utils::uvec3 global_wg = {
@@ -351,7 +352,9 @@ void add_linear_qcsnw_tiled_node(
       // Shader params buffers
       {},
       // Push Constants
-      {{graph.sizes_pc_of(out), graph.sizes_pc_of(mat1)}},
+      {{graph.sizes_pc_of(out),
+        graph.sizes_pc_of(mat1),
+        graph.sizes_pc_of(q_mat2)}},
       // Specialization Constants
       {},
       // Resize Args
