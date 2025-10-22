@@ -8,8 +8,6 @@ import logging
 from collections import defaultdict
 from typing import Dict, final, List
 
-import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
-
 import torch  # noqa: F401
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
@@ -20,7 +18,9 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 )
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
-    option_to_flatbuffer,
+)
+from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
+    get_current_qnn_manager,
 )
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -30,6 +30,7 @@ from executorch.exir.backend.backend_details import (
 from torch.export.exported_program import ExportedProgram
 
 DEFAULT_DEBUG_HANDLE = 65535
+DEFAULT_GRAPH_NAME = "forward"
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -102,9 +103,9 @@ class QnnBackend(BackendDetails):
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
         option = generate_qnn_executorch_option(compile_specs)
-        qnn_manager = PyQnnManager.QnnManager(option)
-        qnn_manager.Init()
         obj_options = flatbuffer_to_option(option)
+        qnn_manager = get_current_qnn_manager(obj_options.backend_options.backend_type)
+        qnn_manager.InitContext([DEFAULT_GRAPH_NAME])
         py_op_wrapper_list = QnnBackend._build_op_wrappers(
             edge_program,
             qnn_manager.IsTensorDump(),
@@ -122,7 +123,7 @@ class QnnBackend(BackendDetails):
                 f"Record all QNN API calls from saver backend at: {obj_options.saver_output_dir}"
             )
         assert len(qnn_context_binary) != 0, "Failed to generate Qnn context binary."
-        qnn_manager.Destroy()
+        qnn_manager.DestroyContext()
         # For now, debug_handle_map is not used by QNN ExecuTorch
         return PreprocessResult(
             processed_bytes=bytes(qnn_context_binary),
@@ -136,12 +137,9 @@ class QnnBackend(BackendDetails):
     ) -> PreprocessResult:
         # TODO: refactor QnnManager to consume multiple compile_spec
         # take first compile_specs here for the same partitions
-        graph_name = list(edge_programs.keys())
+        graph_names = list(edge_programs.keys())
         compile_spec = list(compile_specs.values())[0][0]
-        # gather all graph names
         option = flatbuffer_to_option(compile_spec[0].value)
-        option.graph_name = graph_name
-        compile_spec[0].value = option_to_flatbuffer(option)
         # check if each graph has equal number of partitions
         num_sub_graphs = set()
         for edge_program in edge_programs.values():
@@ -153,15 +151,13 @@ class QnnBackend(BackendDetails):
 
         all_processed_results = {key: [] for key in edge_programs.keys()}
         num_sub_graphs = next(iter(num_sub_graphs))
+        qnn_manager = get_current_qnn_manager(option.backend_options.backend_type)
         for i in range(num_sub_graphs):
             # e.g. 2 methods (x, y) with 3 partitions
             #      > context_binary_0: [x.subgraph_0, y.subgraph_0]
             #      > context_binary_1: [x.subgraph_1, y.subgraph_1]
             #      > context_binary_2: [x.subgraph_2, y.subgraph_2]
-            qnn_manager = PyQnnManager.QnnManager(
-                generate_qnn_executorch_option(compile_spec)
-            )
-            qnn_manager.Init()
+            qnn_manager.InitContext(graph_names)
             py_op_wrapper_list, ctx_binary_list = [], []
             for j, programs in enumerate(edge_programs.values()):
                 logger.info(f"Processing Method({j}): ({i+1}/{num_sub_graphs})")
@@ -182,7 +178,9 @@ class QnnBackend(BackendDetails):
                     )
 
             if len(py_op_wrapper_list) == len(edge_programs.values()):
-                qnn_context_binary = qnn_manager.Compile(graph_name, py_op_wrapper_list)
+                qnn_context_binary = qnn_manager.Compile(
+                    graph_names, py_op_wrapper_list
+                )
                 if option.saver:
                     # TODO: Currently, only the first method is saved. Update this logic if saving multiple methods becomes necessary in the future.
                     exit(
@@ -191,7 +189,7 @@ class QnnBackend(BackendDetails):
                 assert (
                     len(qnn_context_binary) != 0
                 ), "Failed to generate Qnn context binary."
-                qnn_manager.Destroy()
+                qnn_manager.DestroyContext()
                 # methods should share the same context binary for current partition
                 for key in edge_programs.keys():
                     all_processed_results[key].append(

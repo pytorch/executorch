@@ -24,7 +24,7 @@ namespace qnn {
 class HtpDevice : public QnnDevice {
  public:
   HtpDevice(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnLogger* logger,
       const SocInfo* soc_info,
       const QnnExecuTorchHtpBackendOptions* htp_options)
