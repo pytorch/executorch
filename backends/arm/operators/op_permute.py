@@ -117,7 +117,7 @@ class PermuteVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.FP32],
             output.tosa_spec,
         )
 
