@@ -123,6 +123,4 @@ Optimize LLM fine-tuning with faster training and reduced VRAM usage, then deplo
 
 - **OpenVINO from Intel** - Deploy [Yolo12](https://github.com/pytorch/executorch/tree/main/examples/models/yolo12), [Llama](https://github.com/pytorch/executorch/tree/main/examples/openvino/llama), and [Stable Diffusion](https://github.com/pytorch/executorch/tree/main/examples/openvino/stable_diffusion) on [OpenVINO from Intel](https://www.intel.com/content/www/us/en/developer/articles/community/optimizing-executorch-on-ai-pcs.html).
 
-- **Demo title** - Brief description of the demo [Try →](#)
-
 *Want to showcase your demo? [Submit here →](https://github.com/pytorch/executorch/issues)*
