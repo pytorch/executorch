@@ -237,6 +237,7 @@ class TOSABackend(BackendDetails):
         tosa_spec = compile_spec.tosa_spec
         node_to_id_map = _annotate_external_ids(graph_module.graph)
         artifact_path = compile_spec.get_intermediate_path()
+        output_order_workaround = compile_spec.get_output_order_workaround()
 
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
@@ -249,7 +250,12 @@ class TOSABackend(BackendDetails):
         from executorch.backends.arm.operators.node_visitor import get_node_visitors
 
         node_visitors = get_node_visitors(edge_program, tosa_spec, debug_hook)
-        graph_module = _sort_outputs(graph_module, node_to_id_map)
+
+        if output_order_workaround:
+            logger.debug("Re-sorting outputs during TOSA lowering.")
+            graph_module = _sort_outputs(graph_module, node_to_id_map)
+        else:
+            logger.debug("No re-sorting outputs (workaround) during TOSA lowering.")
 
         if submodule_name is not None:
             tosa_graph.startRegion(submodule_name)
@@ -327,4 +333,5 @@ class TOSABackend(BackendDetails):
             TosaCompileSpec(compile_spec.tosa_spec)
             .dump_intermediate_artifacts_to(compile_spec.get_intermediate_path())
             .dump_debug_info(compile_spec.tosa_debug_mode)
+            .set_output_order_workaround(compile_spec.output_order_workaround)
         )
