@@ -477,9 +477,24 @@ def run_corstone(
     # Regex to check for error or fault messages in stdout from FVP
     result_stdout = result.stdout.decode()
     error_regex = r"(^[EF][: ].*$)|(^.*Hard fault.*$)|(^.*Assertion.*$)"
-    if re.compile(error_regex, re.MULTILINE).search(result_stdout):
-        raise RuntimeError(
+    pattern = re.compile(error_regex, re.MULTILINE)
+    regex_matches = [m.group(0) for m in pattern.finditer(result_stdout)]
+
+    if regex_matches:
+        logger.error(
             f"Corstone simulation failed:\ncmd: {' '.join(command_args)}\nlog: \n {result_stdout}\n{result.stderr.decode()}"
+        )
+        # Pretty-print regex matches
+        pretty_matches = "\n".join(f"{m.strip()}" for i, m in enumerate(regex_matches))
+        logger.error(
+            f"Corstone simulation failed. Problems: {len(regex_matches)} found:\n{pretty_matches}"
+        )
+        raise RuntimeError(
+            f"Corstone simulation failed. Problems: {len(regex_matches)} found:\n{pretty_matches}"
+        )
+    else:
+        logger.info(
+            f"Corstone simulation:\ncmd: {' '.join(command_args)}\nlog: \n {result_stdout}\n{result.stderr.decode()}"
         )
 
     return get_output_from_file(exported_program, intermediate_path, output_base_name)
