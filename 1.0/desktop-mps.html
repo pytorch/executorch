@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>MPS Backend &#8212; ExecuTorch 1.0 documentation</title>
+    <title>&lt;no title&gt; &#8212; ExecuTorch 1.0 documentation</title>
   
   
   
@@ -1018,16 +1018,25 @@ document.write(`
      aria-label="Section Navigation">
   <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
   <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Edge Platforms</span></p>
-<ul class="current nav bd-sidenav">
+<ul class="nav bd-sidenav">
 <li class="toctree-l1 has-children"><a class="reference internal" href="android-section.html">Android</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="android-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="android-xnnpack.html">XNNPACK Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="android-vulkan.html">Vulkan Backend</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="android-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="android-vulkan.html">Vulkan Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
 <li class="toctree-l3"><a class="reference internal" href="android-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="android-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="android-arm-vgf.html">Arm® VGF Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="android-samsung-exynos.html">Samsung Exynos Backend (TBD)</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="backends/samsung/samsung-overview.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-quantization.html">Quantization</a></li>
+<li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-op-support.html">Operator Support</a></li>
+</ul>
+</details></li>
 </ul>
 </details></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="android-examples.html">Examples &amp; Demos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -1039,20 +1048,26 @@ document.write(`
 <li class="toctree-l1 has-children"><a class="reference internal" href="ios-section.html">iOS</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="ios-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="ios-coreml.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
 <li class="toctree-l3"><a class="reference internal" href="ios-mps.html">MPS Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="ios-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="ios-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
 </ul>
 </details></li>
 <li class="toctree-l2"><a class="reference internal" href="ios-examples.html">Examples &amp; Demos</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="desktop-section.html">Desktop &amp; Laptop Platforms</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="desktop-section.html">Desktop &amp; Laptop Platforms</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="desktop-backends.html">Backends</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l3"><a class="reference internal" href="desktop-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="desktop-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="desktop-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
 <li class="toctree-l3"><a class="reference internal" href="desktop-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
-<li class="toctree-l3 current active"><a class="current reference internal" href="#">MPS Backend</a></li>
 </ul>
 </details></li>
 <li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
@@ -1073,6 +1088,7 @@ document.write(`
 </details></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
 <li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pico2_tutorial.html">Pico2: A simple MNIST Tutorial</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
@@ -1124,7 +1140,7 @@ document.write(`
     
     <li class="breadcrumb-item"><a href="desktop-backends.html" class="nav-link">Backends</a></li>
     
-    <li class="breadcrumb-item active" aria-current="page">MPS Backend</li>
+    <li class="breadcrumb-item active" aria-current="page">&lt;no title&gt;</li>
   </ul>
 </nav>
 </div>
@@ -1184,7 +1200,7 @@ document.write(`
       </div>
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <meta itemprop="name" content="MPS Backend">
+        <meta itemprop="name" content="&lt;no title&gt;">
         <meta itemprop="position" content="4">
       </div>
     </div>
@@ -1198,197 +1214,7 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="mps-backend">
-<h1>MPS Backend<a class="headerlink" href="#mps-backend" title="Link to this heading">#</a></h1>
-<p>In this tutorial we will walk you through the process of getting setup to build the MPS backend for ExecuTorch and running a simple model on it.</p>
-<p>The MPS backend device maps machine learning computational graphs and primitives on the <a class="reference external" href="https://developer.apple.com/documentation/metalperformanceshadersgraph/mpsgraph?language=objc">MPS Graph</a> framework and tuned kernels provided by <a class="reference external" href="https://developer.apple.com/documentation/metalperformanceshaders?language=objc">MPS</a>.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-What you will learn in this tutorial:</div>
-<ul class="simple">
-<li><p class="sd-card-text">In this tutorial you will learn how to export <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model to the MPS delegate.</p></li>
-<li><p class="sd-card-text">You will also learn how to compile and deploy the ExecuTorch runtime with the MPS delegate on macOS and iOS.</p></li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-Tutorials we recommend you complete before this:</div>
-<ul class="simple">
-<li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="std std-doc">Introduction to ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="getting-started.html"><span class="std std-doc">Getting Started</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="using-executorch-building-from-source.html"><span class="std std-doc">Building ExecuTorch with CMake</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">ExecuTorch iOS Demo App</a></p></li>
-<li><p class="sd-card-text"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple">ExecuTorch LLM iOS Demo App</a></p></li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-</div>
-<section id="prerequisites-hardware-and-software">
-<h2>Prerequisites (Hardware and Software)<a class="headerlink" href="#prerequisites-hardware-and-software" title="Link to this heading">#</a></h2>
-<p>In order to be able to successfully build and run a model using the MPS backend for ExecuTorch, you’ll need the following hardware and software components:</p>
-<section id="hardware">
-<h3>Hardware:<a class="headerlink" href="#hardware" title="Link to this heading">#</a></h3>
-<ul class="simple">
-<li><p>A <a class="reference external" href="https://www.apple.com/mac/">mac</a> for tracing the model</p></li>
-</ul>
-</section>
-<section id="software">
-<h3>Software:<a class="headerlink" href="#software" title="Link to this heading">#</a></h3>
-<ul class="simple">
-<li><p><strong>Ahead of time</strong> tracing:</p>
-<ul>
-<li><p><a class="reference external" href="https://www.apple.com/macos/">macOS</a> 12</p></li>
-</ul>
-</li>
-<li><p><strong>Runtime</strong>:</p>
-<ul>
-<li><p><a class="reference external" href="https://www.apple.com/macos/">macOS</a> &gt;= 12.4</p></li>
-<li><p><a class="reference external" href="https://www.apple.com/ios">iOS</a> &gt;= 15.4</p></li>
-<li><p><a class="reference external" href="https://developer.apple.com/xcode/">Xcode</a> &gt;= 14.1</p></li>
-</ul>
-</li>
-</ul>
-</section>
-</section>
-<section id="setting-up-developer-environment">
-<h2>Setting up Developer Environment<a class="headerlink" href="#setting-up-developer-environment" title="Link to this heading">#</a></h2>
-<p><em><strong>Step 1.</strong></em> Complete the steps in <a class="reference internal" href="getting-started.html"><span class="std std-doc">Getting Started</span></a> to set up the ExecuTorch development environment.</p>
-<p>You will also need a local clone of the ExecuTorch repository. See <a class="reference internal" href="#using-executorch-building-from-source.html"><span class="xref myst">Building ExecuTorch from Source</span></a> for instructions. All commands in this document should be run from the executorch repository.</p>
-</section>
-<section id="build">
-<h2>Build<a class="headerlink" href="#build" title="Link to this heading">#</a></h2>
-<section id="aot-ahead-of-time-components">
-<h3>AOT (Ahead-of-time) Components<a class="headerlink" href="#aot-ahead-of-time-components" title="Link to this heading">#</a></h3>
-<p><strong>Compiling model for MPS delegate</strong>:</p>
-<ul class="simple">
-<li><p>In this step, you will generate a simple ExecuTorch program that lowers MobileNetV3 model to the MPS delegate. You’ll then pass this Program (the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file) during the runtime to run it using the MPS backend.</p></li>
-</ul>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-<span class="c1"># Note: `mps_example` script uses by default the MPSPartitioner for ops that are not yet supported by the MPS delegate. To turn it off, pass `--no-use_partitioner`.</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--bundled<span class="w"> </span>--use_fp16
-
-<span class="c1"># To see all options, run following command:</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--help
-</pre></div>
-</div>
-</section>
-<section id="runtime">
-<h3>Runtime<a class="headerlink" href="#runtime" title="Link to this heading">#</a></h3>
-<p><strong>Building the MPS executor runner:</strong></p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># In this step, you&#39;ll be building the `mps_executor_runner` that is able to run MPS lowered modules:</span>
-<span class="nb">cd</span><span class="w"> </span>executorch
-./examples/apple/mps/scripts/build_mps_executor_runner.sh
-</pre></div>
-</div>
-</section>
-</section>
-<section id="run-the-mv3-generated-model-using-the-mps-executor-runner">
-<h2>Run the mv3 generated model using the mps_executor_runner<a class="headerlink" href="#run-the-mv3-generated-model-using-the-mps-executor-runner" title="Link to this heading">#</a></h2>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./cmake-out/examples/apple/mps/mps_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>mv3_mps_float16_bundled.pte<span class="w"> </span>--bundled_program
-</pre></div>
-</div>
-<ul class="simple">
-<li><p>You should see the following results. Note that no output file will be generated in this example:</p></li>
-</ul>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003290</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">286</span><span class="p">]</span> <span class="n">Model</span> <span class="n">file</span> <span class="n">mv3_mps_float16_bundled</span><span class="o">.</span><span class="n">pte</span> <span class="ow">is</span> <span class="n">loaded</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003306</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">292</span><span class="p">]</span> <span class="n">Program</span> <span class="n">methods</span><span class="p">:</span> <span class="mi">1</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003308</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">294</span><span class="p">]</span> <span class="n">Running</span> <span class="n">method</span> <span class="n">forward</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003311</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">349</span><span class="p">]</span> <span class="n">Setting</span> <span class="n">up</span> <span class="n">non</span><span class="o">-</span><span class="n">const</span> <span class="n">buffer</span> <span class="mi">1</span><span class="p">,</span> <span class="n">size</span> <span class="mf">606112.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003374</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">376</span><span class="p">]</span> <span class="n">Setting</span> <span class="n">up</span> <span class="n">memory</span> <span class="n">manager</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003376</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">392</span><span class="p">]</span> <span class="n">Loading</span> <span class="n">method</span> <span class="n">name</span> <span class="kn">from</span><span class="w"> </span><span class="nn">plan</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.018942</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">399</span><span class="p">]</span> <span class="n">Method</span> <span class="n">loaded</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.018944</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">404</span><span class="p">]</span> <span class="n">Loading</span> <span class="n">bundled</span> <span class="n">program</span><span class="o">...</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.018980</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">421</span><span class="p">]</span> <span class="n">Inputs</span> <span class="n">prepared</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.118731</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">438</span><span class="p">]</span> <span class="n">Model</span> <span class="n">executed</span> <span class="n">successfully</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.122615</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">501</span><span class="p">]</span> <span class="n">Model</span> <span class="n">verified</span> <span class="n">successfully</span><span class="o">.</span>
-</pre></div>
-</div>
-<section id="optional-run-the-generated-model-directly-using-pybind">
-<h3>[Optional] Run the generated model directly using pybind<a class="headerlink" href="#optional-run-the-generated-model-directly-using-pybind" title="Link to this heading">#</a></h3>
-<ol class="arabic simple">
-<li><p>Make sure <code class="docutils literal notranslate"><span class="pre">pybind</span></code> MPS support was installed:</p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">CMAKE_ARGS</span><span class="o">=</span><span class="s2">&quot;-DEXECUTORCH_BUILD_MPS=ON&quot;</span><span class="w"> </span>./install_executorch.sh
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p>Run the <code class="docutils literal notranslate"><span class="pre">mps_example</span></code> script to trace the model and run it directly from python:</p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-<span class="c1"># Check correctness between PyTorch eager forward pass and ExecuTorch MPS delegate forward pass</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--no-use_fp16<span class="w"> </span>--check_correctness
-<span class="c1"># You should see following output: `Results between ExecuTorch forward pass with MPS backend and PyTorch forward pass for mv3_mps are matching!`</span>
-
-<span class="c1"># Check performance between PyTorch MPS forward pass and ExecuTorch MPS forward pass</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--no-use_fp16<span class="w"> </span>--bench_pytorch
-</pre></div>
-</div>
-</section>
-<section id="profiling">
-<h3>Profiling:<a class="headerlink" href="#profiling" title="Link to this heading">#</a></h3>
-<ol class="arabic simple">
-<li><p>[Optional] Generate an <a class="reference internal" href="etrecord.html"><span class="std std-doc">ETRecord</span></a> while you’re exporting your model.</p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--generate_etrecord<span class="w"> </span>-b
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p>Run your Program on the ExecuTorch runtime and generate an <a class="reference internal" href="etdump.html"><span class="std std-doc">ETDump</span></a>.</p></li>
-</ol>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">apple</span><span class="o">/</span><span class="n">mps</span><span class="o">/</span><span class="n">mps_executor_runner</span> <span class="o">--</span><span class="n">model_path</span> <span class="n">mv3_mps_float16_bundled</span><span class="o">.</span><span class="n">pte</span> <span class="o">--</span><span class="n">bundled_program</span> <span class="o">--</span><span class="n">dump</span><span class="o">-</span><span class="n">outputs</span>
-</pre></div>
-</div>
-<ol class="arabic simple" start="3">
-<li><p>Create an instance of the Inspector API by passing in the ETDump you have sourced from the runtime along with the optionally generated ETRecord from step 1.</p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>devtools.inspector.inspector_cli<span class="w"> </span>--etdump_path<span class="w"> </span>etdump.etdp<span class="w"> </span>--etrecord_path<span class="w"> </span>etrecord.bin
-</pre></div>
-</div>
-</section>
-</section>
-<section id="deploying-and-running-on-device">
-<h2>Deploying and Running on Device<a class="headerlink" href="#deploying-and-running-on-device" title="Link to this heading">#</a></h2>
-<p><em><strong>Step 1</strong></em>. Create the ExecuTorch core and MPS delegate frameworks to link on iOS</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-./scripts/build_apple_frameworks.sh<span class="w"> </span>--mps
-</pre></div>
-</div>
-<p><code class="docutils literal notranslate"><span class="pre">mps_delegate.xcframework</span></code> will be in <code class="docutils literal notranslate"><span class="pre">cmake-out</span></code> folder, along with <code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code> and <code class="docutils literal notranslate"><span class="pre">portable_delegate.xcframework</span></code>:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ls
-</pre></div>
-</div>
-<p><em><strong>Step 2</strong></em>. Link the frameworks into your XCode project:
-Go to project Target’s  <code class="docutils literal notranslate"><span class="pre">Build</span> <span class="pre">Phases</span></code>  -  <code class="docutils literal notranslate"><span class="pre">Link</span> <span class="pre">Binaries</span> <span class="pre">With</span> <span class="pre">Libraries</span></code>, click the <strong>+</strong> sign and add the frameworks: files located in  <code class="docutils literal notranslate"><span class="pre">Release</span></code> folder.</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">portable_delegate.xcframework</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">mps_delegate.xcframework</span></code></p></li>
-</ul>
-<p>From the same page, include the needed libraries for the MPS delegate:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">MetalPerformanceShaders.framework</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">MetalPerformanceShadersGraph.framework</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">Metal.framework</span></code></p></li>
-</ul>
-<p>In this tutorial, you have learned how to lower a model to the MPS delegate, build the mps_executor_runner and run a lowered model through the MPS delegate, or directly on device using the MPS delegate static library.</p>
-</section>
-<section id="frequently-encountered-errors-and-resolution">
-<h2>Frequently encountered errors and resolution.<a class="headerlink" href="#frequently-encountered-errors-and-resolution" title="Link to this heading">#</a></h2>
-<p>If you encountered any bugs or issues following this tutorial please file a bug/issue on the <a class="reference external" href="https://github.com/pytorch/executorch/issues">ExecuTorch repository</a>, with hashtag <strong>#mps</strong>.</p>
-</section>
-</section>
-
+  
 
                 </article>
               
@@ -1505,26 +1331,9 @@ Go to project Target’s  <code class="docutils literal notranslate"><span class
     <i class="fa-solid fa-list"></i> On this page
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
-    <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites-hardware-and-software">Prerequisites (Hardware and Software)</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#hardware">Hardware:</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#software">Software:</a></li>
+    <ul class="simple visible nav section-nav flex-column">
 </ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#setting-up-developer-environment">Setting up Developer Environment</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build">Build</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#aot-ahead-of-time-components">AOT (Ahead-of-time) Components</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime">Runtime</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#run-the-mv3-generated-model-using-the-mps-executor-runner">Run the mv3 generated model using the mps_executor_runner</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#optional-run-the-generated-model-directly-using-pybind">[Optional] Run the generated model directly using pybind</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#profiling">Profiling:</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#deploying-and-running-on-device">Deploying and Running on Device</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#frequently-encountered-errors-and-resolution">Frequently encountered errors and resolution.</a></li>
-</ul>
+
   </nav></div>
     
        <div class="sidebar-secondary-item">
@@ -1745,11 +1554,11 @@ Go to project Target’s  <code class="docutils literal notranslate"><span class
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "MPS Backend",
-       "headline": "MPS Backend",
+       "name": "\u003cno title\u003e",
+       "headline": "\u003cno title\u003e",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/desktop-mps.html",
-       "articleBody": "MPS Backend# In this tutorial we will walk you through the process of getting setup to build the MPS backend for ExecuTorch and running a simple model on it. The MPS backend device maps machine learning computational graphs and primitives on the MPS Graph framework and tuned kernels provided by MPS. What you will learn in this tutorial: In this tutorial you will learn how to export MobileNet V3 model to the MPS delegate. You will also learn how to compile and deploy the ExecuTorch runtime with the MPS delegate on macOS and iOS. Tutorials we recommend you complete before this: Introduction to ExecuTorch Getting Started Building ExecuTorch with CMake ExecuTorch iOS Demo App ExecuTorch LLM iOS Demo App Prerequisites (Hardware and Software)# In order to be able to successfully build and run a model using the MPS backend for ExecuTorch, you\u2019ll need the following hardware and software components: Hardware:# A mac for tracing the model Software:# Ahead of time tracing: macOS 12 Runtime: macOS \u003e= 12.4 iOS \u003e= 15.4 Xcode \u003e= 14.1 Setting up Developer Environment# Step 1. Complete the steps in Getting Started to set up the ExecuTorch development environment. You will also need a local clone of the ExecuTorch repository. See Building ExecuTorch from Source for instructions. All commands in this document should be run from the executorch repository. Build# AOT (Ahead-of-time) Components# Compiling model for MPS delegate: In this step, you will generate a simple ExecuTorch program that lowers MobileNetV3 model to the MPS delegate. You\u2019ll then pass this Program (the .pte file) during the runtime to run it using the MPS backend. cd executorch # Note: `mps_example` script uses by default the MPSPartitioner for ops that are not yet supported by the MPS delegate. To turn it off, pass `--no-use_partitioner`. python3 -m examples.apple.mps.scripts.mps_example --model_name=\"mv3\" --bundled --use_fp16 # To see all options, run following command: python3 -m examples.apple.mps.scripts.mps_example --help Runtime# Building the MPS executor runner: # In this step, you\u0027ll be building the `mps_executor_runner` that is able to run MPS lowered modules: cd executorch ./examples/apple/mps/scripts/build_mps_executor_runner.sh Run the mv3 generated model using the mps_executor_runner# ./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_float16_bundled.pte --bundled_program You should see the following results. Note that no output file will be generated in this example: I 00:00:00.003290 executorch:mps_executor_runner.mm:286] Model file mv3_mps_float16_bundled.pte is loaded. I 00:00:00.003306 executorch:mps_executor_runner.mm:292] Program methods: 1 I 00:00:00.003308 executorch:mps_executor_runner.mm:294] Running method forward I 00:00:00.003311 executorch:mps_executor_runner.mm:349] Setting up non-const buffer 1, size 606112. I 00:00:00.003374 executorch:mps_executor_runner.mm:376] Setting up memory manager I 00:00:00.003376 executorch:mps_executor_runner.mm:392] Loading method name from plan I 00:00:00.018942 executorch:mps_executor_runner.mm:399] Method loaded. I 00:00:00.018944 executorch:mps_executor_runner.mm:404] Loading bundled program... I 00:00:00.018980 executorch:mps_executor_runner.mm:421] Inputs prepared. I 00:00:00.118731 executorch:mps_executor_runner.mm:438] Model executed successfully. I 00:00:00.122615 executorch:mps_executor_runner.mm:501] Model verified successfully. [Optional] Run the generated model directly using pybind# Make sure pybind MPS support was installed: CMAKE_ARGS=\"-DEXECUTORCH_BUILD_MPS=ON\" ./install_executorch.sh Run the mps_example script to trace the model and run it directly from python: cd executorch # Check correctness between PyTorch eager forward pass and ExecuTorch MPS delegate forward pass python3 -m examples.apple.mps.scripts.mps_example --model_name=\"mv3\" --no-use_fp16 --check_correctness # You should see following output: `Results between ExecuTorch forward pass with MPS backend and PyTorch forward pass for mv3_mps are matching!` # Check performance between PyTorch MPS forward pass and ExecuTorch MPS forward pass python3 -m examples.apple.mps.scripts.mps_example --model_name=\"mv3\" --no-use_fp16 --bench_pytorch Profiling:# [Optional] Generate an ETRecord while you\u2019re exporting your model. cd executorch python3 -m examples.apple.mps.scripts.mps_example --model_name=\"mv3\" --generate_etrecord -b Run your Program on the ExecuTorch runtime and generate an ETDump. ./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_float16_bundled.pte --bundled_program --dump-outputs Create an instance of the Inspector API by passing in the ETDump you have sourced from the runtime along with the optionally generated ETRecord from step 1. python3 -m devtools.inspector.inspector_cli --etdump_path etdump.etdp --etrecord_path etrecord.bin Deploying and Running on Device# Step 1. Create the ExecuTorch core and MPS delegate frameworks to link on iOS cd executorch ./scripts/build_apple_frameworks.sh --mps mps_delegate.xcframework will be in cmake-out folder, along with executorch.xcframework and portable_delegate.xcframework: cd cmake-out \u0026\u0026 ls Step 2. Link the frameworks into your XCode project: Go to project Target\u2019s Build Phases - Link Binaries With Libraries, click the + sign and add the frameworks: files located in Release folder. executorch.xcframework portable_delegate.xcframework mps_delegate.xcframework From the same page, include the needed libraries for the MPS delegate: MetalPerformanceShaders.framework MetalPerformanceShadersGraph.framework Metal.framework In this tutorial, you have learned how to lower a model to the MPS delegate, build the mps_executor_runner and run a lowered model through the MPS delegate, or directly on device using the MPS delegate static library. Frequently encountered errors and resolution.# If you encountered any bugs or issues following this tutorial please file a bug/issue on the ExecuTorch repository, with hashtag #mps.",
+       "articleBody": "",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",

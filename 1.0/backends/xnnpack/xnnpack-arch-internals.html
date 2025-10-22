@@ -2,13 +2,13 @@
 <!DOCTYPE html>
 
 
-<html lang="en" data-content_root="./" >
+<html lang="en" data-content_root="../../" >
 
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>XNNPACK Delegate Internals &#8212; ExecuTorch 1.0 documentation</title>
+    <title>Architecture and Internals &#8212; ExecuTorch 1.0 documentation</title>
   
   
   
@@ -18,49 +18,49 @@
   </script>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-<link href="_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-<link href="_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link href="../../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
 
   
-  <link href="_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+  <link href="../../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
 
-    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
-    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=047068a3" />
-    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
-    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
   
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
-<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
-  <script src="_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
 
-    <script src="_static/documentation_options.js?v=a8da1a53"></script>
-    <script src="_static/doctools.js?v=888ff710"></script>
-    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
-    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
-    <script src="_static/copybutton.js?v=f281be69"></script>
-    <script src="_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'backend-delegates-xnnpack-reference';</script>
+    <script src="../../_static/documentation_options.js?v=a8da1a53"></script>
+    <script src="../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/xnnpack/xnnpack-arch-internals';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = '1.0';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/backend-delegates-xnnpack-reference.html" />
-    <link rel="icon" href="_static/executorch-chip-logo.svg"/>
-    <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Third-Party Dependency Management for Backend Delegates" href="backend-delegates-dependencies.html" />
-    <link rel="prev" title="Integrating a Backend Delegate into ExecuTorch" href="backend-delegates-integration.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/backends/xnnpack/xnnpack-arch-internals.html" />
+    <link rel="icon" href="../../_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Core ML Backend" href="../coreml/coreml-overview.html" />
+    <link rel="prev" title="Troubleshooting" href="xnnpack-troubleshooting.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -93,13 +93,13 @@
 <!-- Conditional CSS for header and footer height adjustment -->
 
 
-<link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
-<script type="text/javascript" src="_static/js/theme.js"></script>
+<link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="../../_static/js/theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
-<meta property="og:image" content="_static/img/pytorch_seo.png" />
-<link rel="stylesheet" href="_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta property="og:image" content="../../_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="../../_static/webfonts/all.min.css" crossorigin="anonymous">
 <meta http-equiv="Content-Security-Policy"
   content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
 <meta name="pytorch_project" content="">
@@ -565,7 +565,7 @@
     <div class="search-button__overlay"></div>
     <div class="search-button__search-container">
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -602,7 +602,7 @@
     
   
 
-<a class="navbar-brand logo" href="index.html">
+<a class="navbar-brand logo" href="../../index.html">
   
   
   
@@ -613,8 +613,8 @@
       
     
     
-    <img src="_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch 1.0 documentation - Home"/>
-    <script>document.write(`<img src="_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch 1.0 documentation - Home"/>`);</script>
+    <img src="../../_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch 1.0 documentation - Home"/>
+    <script>document.write(`<img src="../../_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch 1.0 documentation - Home"/>`);</script>
   
   
 </a></div>
@@ -654,56 +654,56 @@ document.write(`
   <ul class="bd-navbar-elements navbar-nav">
     
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="intro-section.html">
+  <a class="nav-link nav-internal" href="../../intro-section.html">
     Intro
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="quick-start-section.html">
+  <a class="nav-link nav-internal" href="../../quick-start-section.html">
     Quick Start
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+  <a class="nav-link nav-internal" href="../../edge-platforms-section.html">
     Edge
   </a>
 </li>
 
 
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="backends-section.html">
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="../../backends-section.html">
     Backends
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+  <a class="nav-link nav-internal" href="../../llm/working-with-llms.html">
     LLMs
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+  <a class="nav-link nav-internal" href="../../advanced-topics-section.html">
     Advanced
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="tools-section.html">
+  <a class="nav-link nav-internal" href="../../tools-section.html">
     Tools
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="api-section.html">
+  <a class="nav-link nav-internal" href="../../api-section.html">
     API
   </a>
 </li>
@@ -715,7 +715,7 @@ document.write(`
                 <ul id="pst-nav-more-links" class="dropdown-menu">
                     
 <li class=" ">
-  <a class="nav-link dropdown-item nav-internal" href="support-section.html">
+  <a class="nav-link dropdown-item nav-internal" href="../../support-section.html">
     Support
   </a>
 </li>
@@ -735,7 +735,7 @@ document.write(`
         <div class="navbar-item">
   
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -853,63 +853,63 @@ document.write(`
   <ul class="bd-navbar-elements navbar-nav">
     
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="intro-section.html">
+  <a class="nav-link nav-internal" href="../../intro-section.html">
     Intro
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="quick-start-section.html">
+  <a class="nav-link nav-internal" href="../../quick-start-section.html">
     Quick Start
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+  <a class="nav-link nav-internal" href="../../edge-platforms-section.html">
     Edge
   </a>
 </li>
 
 
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="backends-section.html">
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="../../backends-section.html">
     Backends
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+  <a class="nav-link nav-internal" href="../../llm/working-with-llms.html">
     LLMs
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+  <a class="nav-link nav-internal" href="../../advanced-topics-section.html">
     Advanced
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="tools-section.html">
+  <a class="nav-link nav-internal" href="../../tools-section.html">
     Tools
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="api-section.html">
+  <a class="nav-link nav-internal" href="../../api-section.html">
     API
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="support-section.html">
+  <a class="nav-link nav-internal" href="../../support-section.html">
     Support
   </a>
 </li>
@@ -927,7 +927,7 @@ document.write(`
           <div class="navbar-item">
   
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -1017,7 +1017,51 @@ document.write(`
 <nav class="bd-docs-nav bd-links"
      aria-label="Section Navigation">
   <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
-  <div class="bd-toc-item navbar-nav"></div>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Backend Overview</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="xnnpack-overview.html">XNNPACK Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="xnnpack-partitioner.html">Partitioner API</a></li>
+
+<li class="toctree-l2"><a class="reference internal" href="xnnpack-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="xnnpack-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Architecture and Internals</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../coreml/coreml-overview.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-op-support.html">Op support</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../mps/mps-overview.html">MPS Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../vulkan/vulkan-overview.html">Vulkan Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-op-support.html">Operator Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../vulkan/tutorials/vulkan-tutorials.html">Vulkan Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../vulkan/tutorials/etvk-profiling-tutorial.html">Executing and profiling an ExecuTorch Vulkan model on device</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../vulkan/tutorials/etvk-llama-tutorial.html">Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-arm-vgf.html">Arm® VGF Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../build-run-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-nxp.html">NXP eIQ Neutron Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../samsung/samsung-overview.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../samsung/samsung-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../samsung/samsung-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../samsung/samsung-op-support.html">Operator Support</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
 </nav></div>
     </div>
   
@@ -1049,17 +1093,17 @@ document.write(`
   <ul class="bd-breadcrumbs">
     
     <li class="breadcrumb-item breadcrumb-home">
-      <a href="index.html" class="nav-link" aria-label="Home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
     
-    <li class="breadcrumb-item"><a href="advanced-topics-section.html" class="nav-link">Advanced</a></li>
+    <li class="breadcrumb-item"><a href="../../backends-section.html" class="nav-link">Backends</a></li>
     
     
-    <li class="breadcrumb-item"><a href="backend-delegate-advanced.html" class="nav-link">Backend &amp; Delegates</a></li>
+    <li class="breadcrumb-item"><a href="xnnpack-overview.html" class="nav-link">XNNPACK Backend</a></li>
     
-    <li class="breadcrumb-item active" aria-current="page">XNNPACK...</li>
+    <li class="breadcrumb-item active" aria-current="page">Architecture...</li>
   </ul>
 </nav>
 </div>
@@ -1101,19 +1145,19 @@ document.write(`
     <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <link itemprop="item" href="advanced-topics-section.html">
-        <meta itemprop="name" content="Advanced">
+        <link itemprop="item" href="../../backends-section.html">
+        <meta itemprop="name" content="Backends">
         <meta itemprop="position" content="1">
       </div>
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <link itemprop="item" href="backend-delegate-advanced.html">
-        <meta itemprop="name" content="Backend &amp; Delegates">
+        <link itemprop="item" href="xnnpack-overview.html">
+        <meta itemprop="name" content="XNNPACK Backend">
         <meta itemprop="position" content="2">
       </div>
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <meta itemprop="name" content="XNNPACK Delegate Internals">
+        <meta itemprop="name" content="Architecture and Internals">
         <meta itemprop="position" content="3">
       </div>
     </div>
@@ -1127,8 +1171,8 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="xnnpack-delegate-internals">
-<h1>XNNPACK Delegate Internals<a class="headerlink" href="#xnnpack-delegate-internals" title="Link to this heading">#</a></h1>
+  <section id="architecture-and-internals">
+<h1>Architecture and Internals<a class="headerlink" href="#architecture-and-internals" title="Link to this heading">#</a></h1>
 <p>This is a high-level overview of the ExecuTorch XNNPACK backend delegate. This high performance delegate is aimed to reduce CPU inference latency for ExecuTorch models. We will provide a brief introduction to the XNNPACK library and explore the delegate’s overall architecture and intended use cases.</p>
 <section id="what-is-xnnpack">
 <h2>What is XNNPACK?<a class="headerlink" href="#what-is-xnnpack" title="Link to this heading">#</a></h2>
@@ -1136,18 +1180,18 @@ document.write(`
 </section>
 <section id="what-are-executorch-delegates">
 <h2>What are ExecuTorch delegates?<a class="headerlink" href="#what-are-executorch-delegates" title="Link to this heading">#</a></h2>
-<p>A delegate is an entry point for backends to process and execute parts of the ExecuTorch program. Delegated portions of ExecuTorch models hand off execution to backends. The XNNPACK backend delegate is one of many available in ExecuTorch. It leverages the XNNPACK third-party library to accelerate ExecuTorch programs efficiently across a variety of CPUs. More detailed information on the delegates and developing your own delegates is available <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="std std-doc">here</span></a>. It is recommended that you get familiar with that content before continuing on to the Architecture section.</p>
+<p>A delegate is an entry point for backends to process and execute parts of the ExecuTorch program. Delegated portions of ExecuTorch models hand off execution to backends. The XNNPACK backend delegate is one of many available in ExecuTorch. It leverages the XNNPACK third-party library to accelerate ExecuTorch programs efficiently across a variety of CPUs. More detailed information on the delegates and developing your own delegates is available <a class="reference internal" href="../../compiler-delegate-and-partitioner.html"><span class="std std-doc">here</span></a>. It is recommended that you get familiar with that content before continuing on to the Architecture section.</p>
 </section>
 <section id="architecture">
 <h2>Architecture<a class="headerlink" href="#architecture" title="Link to this heading">#</a></h2>
-<p><img alt="High Level XNNPACK delegate Architecture" src="_images/xnnpack-delegate-architecture.png" /></p>
+<p><img alt="High Level XNNPACK delegate Architecture" src="../../_images/xnnpack-delegate-architecture.png" /> <!-- @lint-ignore linter doesn't like this link for some reason --></p>
 <section id="ahead-of-time">
 <h3>Ahead-of-time<a class="headerlink" href="#ahead-of-time" title="Link to this heading">#</a></h3>
 <p>In the ExecuTorch export flow, lowering to the XNNPACK delegate happens at the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> stage. In this stage, the model is partitioned by the <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. Partitioned sections of the graph are converted to a XNNPACK specific graph represenationed and then serialized via flatbuffer. The serialized flatbuffer is then ready to be deserialized and executed by the XNNPACK backend at runtime.</p>
-<p><img alt="ExecuTorch XNNPACK delegate Export Flow" src="_images/xnnpack-et-flow-diagram.png" /></p>
+<p><img alt="ExecuTorch XNNPACK delegate Export Flow" src="../../_images/xnnpack-et-flow-diagram.png" /> <!-- @lint-ignore linter doesn't like this link for some reason --></p>
 <section id="partitioner">
 <h4>Partitioner<a class="headerlink" href="#partitioner" title="Link to this heading">#</a></h4>
-<p>The partitioner is implemented by backend delegates to mark nodes suitable for lowering. The <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code> lowers using node targets and module metadata. Some more references for partitioners can be found <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="std std-doc">here</span></a></p>
+<p>The partitioner is implemented by backend delegates to mark nodes suitable for lowering. The <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code> lowers using node targets and module metadata. Some more references for partitioners can be found <a class="reference internal" href="../../compiler-delegate-and-partitioner.html"><span class="std std-doc">here</span></a></p>
 <section id="module-based-partitioning">
 <h5>Module-based partitioning<a class="headerlink" href="#module-based-partitioning" title="Link to this heading">#</a></h5>
 <p><code class="docutils literal notranslate"><span class="pre">source_fn_stack</span></code> is embedded in the node’s metadata and gives information on where these nodes come from. For example, modules like <code class="docutils literal notranslate"><span class="pre">torch.nn.Linear</span></code> when captured and exported <code class="docutils literal notranslate"><span class="pre">to_edge</span></code> generate groups of nodes for their computation. The group of nodes associated with computing the linear module then has a <code class="docutils literal notranslate"><span class="pre">source_fn_stack</span></code> of <code class="docutils literal notranslate"><span class="pre">torch.nn.Linear.</span> <span class="pre">Partitioning</span> <span class="pre">based</span> <span class="pre">on</span> </code>source_fn_stack` allows us to identify groups of nodes which are lowerable via XNNPACK.</p>
@@ -1194,7 +1238,7 @@ document.write(`
 </section>
 <section id="runtime">
 <h3>Runtime<a class="headerlink" href="#runtime" title="Link to this heading">#</a></h3>
-<p>The XNNPACK backend’s runtime interfaces with the ExecuTorch runtime through the custom <code class="docutils literal notranslate"><span class="pre">init</span></code> and <code class="docutils literal notranslate"><span class="pre">execute</span></code> function. Each delegated subgraph is contained in an individually serialized XNNPACK blob. When the model is initialized, ExecuTorch calls <code class="docutils literal notranslate"><span class="pre">init</span></code> on all XNNPACK Blobs to load the subgraph from serialized flatbuffer. After, when the model is executed, each subgraph is executed via the backend through the custom <code class="docutils literal notranslate"><span class="pre">execute</span></code> function. To read more about how delegate runtimes interface with ExecuTorch, refer to this <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="std std-doc">resource</span></a>.</p>
+<p>The XNNPACK backend’s runtime interfaces with the ExecuTorch runtime through the custom <code class="docutils literal notranslate"><span class="pre">init</span></code> and <code class="docutils literal notranslate"><span class="pre">execute</span></code> function. Each delegated subgraph is contained in an individually serialized XNNPACK blob. When the model is initialized, ExecuTorch calls <code class="docutils literal notranslate"><span class="pre">init</span></code> on all XNNPACK Blobs to load the subgraph from serialized flatbuffer. After, when the model is executed, each subgraph is executed via the backend through the custom <code class="docutils literal notranslate"><span class="pre">execute</span></code> function. To read more about how delegate runtimes interface with ExecuTorch, refer to this <a class="reference internal" href="../../compiler-delegate-and-partitioner.html"><span class="std std-doc">resource</span></a>.</p>
 <section id="xnnpack-library">
 <h4><strong>XNNPACK Library</strong><a class="headerlink" href="#xnnpack-library" title="Link to this heading">#</a></h4>
 <p>XNNPACK delegate supports CPU’s on multiple platforms; more information on the supported hardware architectures can be found on the XNNPACK Library’s <a class="reference external" href="https://github.com/google/XNNPACK">README</a>.</p>
@@ -1210,7 +1254,7 @@ document.write(`
 </section>
 <section id="profiling">
 <h4><strong>Profiling</strong><a class="headerlink" href="#profiling" title="Link to this heading">#</a></h4>
-<p>We have enabled basic profiling for the XNNPACK delegate that can be enabled with the compiler flag <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_ENABLE_EVENT_TRACER</span></code> (add <code class="docutils literal notranslate"><span class="pre">-DENABLE_XNNPACK_PROFILING</span></code> for additional details). With ExecuTorch’s Developer Tools integration, you can also now use the Developer Tools to profile the model. You can follow the steps in <a class="reference internal" href="tutorials/devtools-integration-tutorial.html"><span class="doc std std-doc">Using the ExecuTorch Developer Tools to Profile a Model</span></a> <!-- @lint-ignore --> on how to profile ExecuTorch models and use Developer Tools’ Inspector API to view XNNPACK’s internal profiling information. An example implementation is available in the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> (see <a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html#profiling"><span class="std std-ref">tutorial here</span></a>).</p>
+<p>We have enabled basic profiling for the XNNPACK delegate that can be enabled with the compiler flag <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_ENABLE_EVENT_TRACER</span></code> (add <code class="docutils literal notranslate"><span class="pre">-DENABLE_XNNPACK_PROFILING</span></code> for additional details). With ExecuTorch’s Developer Tools integration, you can also now use the Developer Tools to profile the model. You can follow the steps in <a class="reference internal" href="../../tutorials/devtools-integration-tutorial.html"><span class="doc std std-doc">Using the ExecuTorch Developer Tools to Profile a Model</span></a> <!-- @lint-ignore --> on how to profile ExecuTorch models and use Developer Tools’ Inspector API to view XNNPACK’s internal profiling information. An example implementation is available in the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> (see <a class="reference internal" href="../../tutorial-xnnpack-delegate-lowering.html#profiling"><span class="std std-ref">tutorial here</span></a>).</p>
 </section>
 </section>
 </section>
@@ -1292,8 +1336,8 @@ document.write(`
 <section id="see-also">
 <h2>See Also<a class="headerlink" href="#see-also" title="Link to this heading">#</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="using-executorch-android.html"><span class="std std-doc">Integrating XNNPACK Delegate in Android AAR</span></a></p></li>
-<li><p><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html"><span class="std std-doc">Complete the Lowering to XNNPACK Tutorial</span></a></p></li>
+<li><p><a class="reference internal" href="../../using-executorch-android.html"><span class="std std-doc">Integrating XNNPACK Delegate in Android AAR</span></a></p></li>
+<li><p><a class="reference internal" href="../../tutorial-xnnpack-delegate-lowering.html"><span class="std std-doc">Complete the Lowering to XNNPACK Tutorial</span></a></p></li>
 </ul>
 </section>
 </section>
@@ -1341,20 +1385,20 @@ document.write(`
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="backend-delegates-integration.html"
+       href="xnnpack-troubleshooting.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Integrating a Backend Delegate into ExecuTorch</p>
+        <p class="prev-next-title">Troubleshooting</p>
       </div>
     </a>
     <a class="right-next"
-       href="backend-delegates-dependencies.html"
+       href="../coreml/coreml-overview.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Third-Party Dependency Management for Backend Delegates</p>
+        <p class="prev-next-title">Core ML Backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1380,20 +1424,20 @@ document.write(`
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="backend-delegates-integration.html"
+       href="xnnpack-troubleshooting.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Integrating a Backend Delegate into ExecuTorch</p>
+        <p class="prev-next-title">Troubleshooting</p>
       </div>
     </a>
     <a class="right-next"
-       href="backend-delegates-dependencies.html"
+       href="../coreml/coreml-overview.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Third-Party Dependency Management for Backend Delegates</p>
+        <p class="prev-next-title">Core ML Backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1453,7 +1497,7 @@ document.write(`
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backend-delegates-xnnpack-reference.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/xnnpack/xnnpack-arch-internals.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -1467,7 +1511,7 @@ document.write(`
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="_sources/backend-delegates-xnnpack-reference.md.txt">
+      <a href="../../_sources/backends/xnnpack/xnnpack-arch-internals.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -1491,8 +1535,8 @@ document.write(`
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script src="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
-<script src="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+  <script src="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
 
   
 
@@ -1620,7 +1664,7 @@ document.write(`
 <div class="cookie-banner-wrapper">
   <div class="container">
     <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
-    <img class="close-button" src="_static/img/pytorch-x.svg">
+    <img class="close-button" src="../../_static/img/pytorch-x.svg">
   </div>
 </div>
   
@@ -1667,20 +1711,20 @@ document.write(`
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "XNNPACK Delegate Internals",
-       "headline": "XNNPACK Delegate Internals",
+       "name": "Architecture and Internals",
+       "headline": "Architecture and Internals",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
-       "url": "/backend-delegates-xnnpack-reference.html",
-       "articleBody": "XNNPACK Delegate Internals# This is a high-level overview of the ExecuTorch XNNPACK backend delegate. This high performance delegate is aimed to reduce CPU inference latency for ExecuTorch models. We will provide a brief introduction to the XNNPACK library and explore the delegate\u2019s overall architecture and intended use cases. What is XNNPACK?# XNNPACK is a library of highly-optimized neural network operators for ARM, x86, and WebAssembly architectures in Android, iOS, Windows, Linux, and macOS environments. It is an open source project, you can find more information about it on github. What are ExecuTorch delegates?# A delegate is an entry point for backends to process and execute parts of the ExecuTorch program. Delegated portions of ExecuTorch models hand off execution to backends. The XNNPACK backend delegate is one of many available in ExecuTorch. It leverages the XNNPACK third-party library to accelerate ExecuTorch programs efficiently across a variety of CPUs. More detailed information on the delegates and developing your own delegates is available here. It is recommended that you get familiar with that content before continuing on to the Architecture section. Architecture# Ahead-of-time# In the ExecuTorch export flow, lowering to the XNNPACK delegate happens at the to_backend() stage. In this stage, the model is partitioned by the XnnpackPartitioner. Partitioned sections of the graph are converted to a XNNPACK specific graph represenationed and then serialized via flatbuffer. The serialized flatbuffer is then ready to be deserialized and executed by the XNNPACK backend at runtime. Partitioner# The partitioner is implemented by backend delegates to mark nodes suitable for lowering. The XnnpackPartitioner lowers using node targets and module metadata. Some more references for partitioners can be found here Module-based partitioning# source_fn_stack is embedded in the node\u2019s metadata and gives information on where these nodes come from. For example, modules like torch.nn.Linear when captured and exported to_edge generate groups of nodes for their computation. The group of nodes associated with computing the linear module then has a source_fn_stack of torch.nn.Linear. Partitioning based on source_fn_stack` allows us to identify groups of nodes which are lowerable via XNNPACK. For example after capturing torch.nn.Linear you would find the following key in the metadata for the addmm node associated with linear: \u003e\u003e\u003e print(linear_node.meta[\"source_fn_stack\"]) \u0027source_fn_stack\u0027: (\u0027fn\u0027, \u003cclass \u0027torch.nn.modules.linear.Linear\u0027\u003e) Op-based partitioning# The XnnpackPartitioner also partitions using op targets. It traverses the graph and identifies individual nodes which are lowerable to XNNPACK. A drawback to module-based partitioning is that operators which come from decompositions may be skipped. For example, an operator like torch.nn.Hardsigmoid is decomposed into add, muls, divs, and clamps. While hardsigmoid is not lowerable, we can lower the decomposed ops. Relying on source_fn_stack metadata would skip these lowerables because they belong to a non-lowerable module, so in order to improve model performance, we greedily lower operators based on the op targets as well as the source_fn_stack. Passes# Before any serialization, we apply passes on the subgraphs to prepare the graph. These passes are essentially graph transformations that help improve the performance of the delegate. We give an overview of the most significant passes and their function below. For a description of all passes see here: Channels Last Reshape ExecuTorch tensors tend to be contiguous before passing them into delegates, while XNNPACK only accepts channels-last memory layout. This pass minimizes the number of permutation operators inserted to pass in channels-last memory format. Conv1d to Conv2d Allows us to delegate Conv1d nodes by transforming them to Conv2d Conv and BN Fusion Fuses batch norm operations with the previous convolution node Serialiazation# After partitioning the lowerable subgraphs from the model, The XNNPACK delegate pre-processes these subgraphs and serializes them via flatbuffer for the XNNPACK backend. Serialization Schema# The XNNPACK delegate uses flatbuffer for serialization. In order to improve runtime performance, the XNNPACK delegate\u2019s flatbuffer schema mirrors the XNNPACK Library\u2019s graph level API calls. The serialized data are arguments to XNNPACK\u2019s APIs, so that at runtime, the XNNPACK execution graph can efficiently be created with successive calls to XNNPACK\u2019s APIs. Runtime# The XNNPACK backend\u2019s runtime interfaces with the ExecuTorch runtime through the custom init and execute function. Each delegated subgraph is contained in an individually serialized XNNPACK blob. When the model is initialized, ExecuTorch calls init on all XNNPACK Blobs to load the subgraph from serialized flatbuffer. After, when the model is executed, each subgraph is executed via the backend through the custom execute function. To read more about how delegate runtimes interface with ExecuTorch, refer to this resource. XNNPACK Library# XNNPACK delegate supports CPU\u2019s on multiple platforms; more information on the supported hardware architectures can be found on the XNNPACK Library\u2019s README. Init# When calling XNNPACK delegate\u2019s init, we deserialize the preprocessed blobs via flatbuffer. We define the nodes (operators) and edges (intermediate tensors) to build the XNNPACK execution graph using the information we serialized ahead-of-time. As we mentioned earlier, the majority of processing has been done ahead-of-time, so that at runtime we can just call the XNNPACK APIs with the serialized arguments in succession. As we define static data into the execution graph, XNNPACK performs weight packing at runtime to prepare static data like weights and biases for efficient execution. After creating the execution graph, we create the runtime object and pass it on to execute. Since weight packing creates an extra copy of the weights inside XNNPACK, We free the original copy of the weights inside the preprocessed XNNPACK Blob, this allows us to remove some of the memory overhead. Execute# When executing the XNNPACK subgraphs, we prepare the tensor inputs and outputs and feed them to the XNNPACK runtime graph. After executing the runtime graph, the output pointers are filled with the computed tensors. Profiling# We have enabled basic profiling for the XNNPACK delegate that can be enabled with the compiler flag -DEXECUTORCH_ENABLE_EVENT_TRACER (add -DENABLE_XNNPACK_PROFILING for additional details). With ExecuTorch\u2019s Developer Tools integration, you can also now use the Developer Tools to profile the model. You can follow the steps in Using the ExecuTorch Developer Tools to Profile a Model on how to profile ExecuTorch models and use Developer Tools\u2019 Inspector API to view XNNPACK\u2019s internal profiling information. An example implementation is available in the executor_runner (see tutorial here). Quantization# The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. For quantized model delegation, we quantize models using the XNNPACKQuantizer. Quantizers are backend specific, which means the XNNPACKQuantizer is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. We will not go over the details of how to implement your custom quantizer, you can follow the docs here to do so. However, we will provide a brief overview of how to quantize the model to leverage quantized execution of the XNNPACK delegate. Configuring the XNNPACKQuantizer# from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import ( XNNPACKQuantizer, get_symmetric_quantization_config, ) quantizer = XNNPACKQuantizer() quantizer.set_global(get_symmetric_quantization_config()) Here we initialize the XNNPACKQuantizer and set the quantization config to be symmetrically quantized. Symmetric quantization is when weights are symmetrically quantized with qmin = -127 and qmax = 127, which forces the quantization zeropoints to be zero. get_symmetric_quantization_config() can be configured with the following arguments: is_per_channel Weights are quantized across channels is_qat Quantize aware training is_dynamic Dynamic quantization We can then configure the XNNPACKQuantizer as we wish. We set the following configs below as an example: quantizer.set_global(quantization_config) .set_object_type(torch.nn.Conv2d, quantization_config) # can configure by module type .set_object_type(torch.nn.functional.linear, quantization_config) # or torch functional op typea .set_module_name(\"foo.bar\", quantization_config) # or by module fully qualified name Quantizing your model with the XNNPACKQuantizer# After configuring our quantizer, we are now ready to quantize our model from torch.export import export exported_model = export(model_to_quantize, example_inputs).module() prepared_model = prepare_pt2e(exported_model, quantizer) print(prepared_model.graph) Prepare performs some Conv2d-BN fusion, and inserts quantization observers in the appropriate places. For Post-Training Quantization, we generally calibrate our model after this step. We run sample examples through the prepared_model to observe the statistics of the Tensors to calculate the quantization parameters. Finally, we convert our model here: quantized_model = convert_pt2e(prepared_model) print(quantized_model) You will now see the Q/DQ representation of the model, which means torch.ops.quantized_decomposed.dequantize_per_tensor are inserted at quantized operator inputs and torch.ops.quantized_decomposed.quantize_per_tensor are inserted at operator outputs. Example: def _qdq_quantized_linear( x_i8, x_scale, x_zero_point, x_quant_min, x_quant_max, weight_i8, weight_scale, weight_zero_point, weight_quant_min, weight_quant_max, bias_fp32, out_scale, out_zero_point, out_quant_min, out_quant_max ): x_fp32 = torch.ops.quantized_decomposed.dequantize_per_tensor( x_i8, x_scale, x_zero_point, x_quant_min, x_quant_max, torch.int8) weight_fp32 = torch.ops.quantized_decomposed.dequantize_per_tensor( weight_i8, weight_scale, weight_zero_point, weight_quant_min, weight_quant_max, torch.int8) out_fp32 = torch.ops.aten.linear.default(x_fp32, weight_fp32, bias_fp32) out_i8 = torch.ops.quantized_decomposed.quantize_per_tensor( out_fp32, out_scale, out_zero_point, out_quant_min, out_quant_max, torch.int8) return out_i8 You can read more indepth explanations on PyTorch 2 quantization here. See Also# Integrating XNNPACK Delegate in Android AAR Complete the Lowering to XNNPACK Tutorial",
+       "url": "/backends/xnnpack/xnnpack-arch-internals.html",
+       "articleBody": "Architecture and Internals# This is a high-level overview of the ExecuTorch XNNPACK backend delegate. This high performance delegate is aimed to reduce CPU inference latency for ExecuTorch models. We will provide a brief introduction to the XNNPACK library and explore the delegate\u2019s overall architecture and intended use cases. What is XNNPACK?# XNNPACK is a library of highly-optimized neural network operators for ARM, x86, and WebAssembly architectures in Android, iOS, Windows, Linux, and macOS environments. It is an open source project, you can find more information about it on github. What are ExecuTorch delegates?# A delegate is an entry point for backends to process and execute parts of the ExecuTorch program. Delegated portions of ExecuTorch models hand off execution to backends. The XNNPACK backend delegate is one of many available in ExecuTorch. It leverages the XNNPACK third-party library to accelerate ExecuTorch programs efficiently across a variety of CPUs. More detailed information on the delegates and developing your own delegates is available here. It is recommended that you get familiar with that content before continuing on to the Architecture section. Architecture# Ahead-of-time# In the ExecuTorch export flow, lowering to the XNNPACK delegate happens at the to_backend() stage. In this stage, the model is partitioned by the XnnpackPartitioner. Partitioned sections of the graph are converted to a XNNPACK specific graph represenationed and then serialized via flatbuffer. The serialized flatbuffer is then ready to be deserialized and executed by the XNNPACK backend at runtime. Partitioner# The partitioner is implemented by backend delegates to mark nodes suitable for lowering. The XnnpackPartitioner lowers using node targets and module metadata. Some more references for partitioners can be found here Module-based partitioning# source_fn_stack is embedded in the node\u2019s metadata and gives information on where these nodes come from. For example, modules like torch.nn.Linear when captured and exported to_edge generate groups of nodes for their computation. The group of nodes associated with computing the linear module then has a source_fn_stack of torch.nn.Linear. Partitioning based on source_fn_stack` allows us to identify groups of nodes which are lowerable via XNNPACK. For example after capturing torch.nn.Linear you would find the following key in the metadata for the addmm node associated with linear: \u003e\u003e\u003e print(linear_node.meta[\"source_fn_stack\"]) \u0027source_fn_stack\u0027: (\u0027fn\u0027, \u003cclass \u0027torch.nn.modules.linear.Linear\u0027\u003e) Op-based partitioning# The XnnpackPartitioner also partitions using op targets. It traverses the graph and identifies individual nodes which are lowerable to XNNPACK. A drawback to module-based partitioning is that operators which come from decompositions may be skipped. For example, an operator like torch.nn.Hardsigmoid is decomposed into add, muls, divs, and clamps. While hardsigmoid is not lowerable, we can lower the decomposed ops. Relying on source_fn_stack metadata would skip these lowerables because they belong to a non-lowerable module, so in order to improve model performance, we greedily lower operators based on the op targets as well as the source_fn_stack. Passes# Before any serialization, we apply passes on the subgraphs to prepare the graph. These passes are essentially graph transformations that help improve the performance of the delegate. We give an overview of the most significant passes and their function below. For a description of all passes see here: Channels Last Reshape ExecuTorch tensors tend to be contiguous before passing them into delegates, while XNNPACK only accepts channels-last memory layout. This pass minimizes the number of permutation operators inserted to pass in channels-last memory format. Conv1d to Conv2d Allows us to delegate Conv1d nodes by transforming them to Conv2d Conv and BN Fusion Fuses batch norm operations with the previous convolution node Serialiazation# After partitioning the lowerable subgraphs from the model, The XNNPACK delegate pre-processes these subgraphs and serializes them via flatbuffer for the XNNPACK backend. Serialization Schema# The XNNPACK delegate uses flatbuffer for serialization. In order to improve runtime performance, the XNNPACK delegate\u2019s flatbuffer schema mirrors the XNNPACK Library\u2019s graph level API calls. The serialized data are arguments to XNNPACK\u2019s APIs, so that at runtime, the XNNPACK execution graph can efficiently be created with successive calls to XNNPACK\u2019s APIs. Runtime# The XNNPACK backend\u2019s runtime interfaces with the ExecuTorch runtime through the custom init and execute function. Each delegated subgraph is contained in an individually serialized XNNPACK blob. When the model is initialized, ExecuTorch calls init on all XNNPACK Blobs to load the subgraph from serialized flatbuffer. After, when the model is executed, each subgraph is executed via the backend through the custom execute function. To read more about how delegate runtimes interface with ExecuTorch, refer to this resource. XNNPACK Library# XNNPACK delegate supports CPU\u2019s on multiple platforms; more information on the supported hardware architectures can be found on the XNNPACK Library\u2019s README. Init# When calling XNNPACK delegate\u2019s init, we deserialize the preprocessed blobs via flatbuffer. We define the nodes (operators) and edges (intermediate tensors) to build the XNNPACK execution graph using the information we serialized ahead-of-time. As we mentioned earlier, the majority of processing has been done ahead-of-time, so that at runtime we can just call the XNNPACK APIs with the serialized arguments in succession. As we define static data into the execution graph, XNNPACK performs weight packing at runtime to prepare static data like weights and biases for efficient execution. After creating the execution graph, we create the runtime object and pass it on to execute. Since weight packing creates an extra copy of the weights inside XNNPACK, We free the original copy of the weights inside the preprocessed XNNPACK Blob, this allows us to remove some of the memory overhead. Execute# When executing the XNNPACK subgraphs, we prepare the tensor inputs and outputs and feed them to the XNNPACK runtime graph. After executing the runtime graph, the output pointers are filled with the computed tensors. Profiling# We have enabled basic profiling for the XNNPACK delegate that can be enabled with the compiler flag -DEXECUTORCH_ENABLE_EVENT_TRACER (add -DENABLE_XNNPACK_PROFILING for additional details). With ExecuTorch\u2019s Developer Tools integration, you can also now use the Developer Tools to profile the model. You can follow the steps in Using the ExecuTorch Developer Tools to Profile a Model on how to profile ExecuTorch models and use Developer Tools\u2019 Inspector API to view XNNPACK\u2019s internal profiling information. An example implementation is available in the executor_runner (see tutorial here). Quantization# The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. For quantized model delegation, we quantize models using the XNNPACKQuantizer. Quantizers are backend specific, which means the XNNPACKQuantizer is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. We will not go over the details of how to implement your custom quantizer, you can follow the docs here to do so. However, we will provide a brief overview of how to quantize the model to leverage quantized execution of the XNNPACK delegate. Configuring the XNNPACKQuantizer# from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import ( XNNPACKQuantizer, get_symmetric_quantization_config, ) quantizer = XNNPACKQuantizer() quantizer.set_global(get_symmetric_quantization_config()) Here we initialize the XNNPACKQuantizer and set the quantization config to be symmetrically quantized. Symmetric quantization is when weights are symmetrically quantized with qmin = -127 and qmax = 127, which forces the quantization zeropoints to be zero. get_symmetric_quantization_config() can be configured with the following arguments: is_per_channel Weights are quantized across channels is_qat Quantize aware training is_dynamic Dynamic quantization We can then configure the XNNPACKQuantizer as we wish. We set the following configs below as an example: quantizer.set_global(quantization_config) .set_object_type(torch.nn.Conv2d, quantization_config) # can configure by module type .set_object_type(torch.nn.functional.linear, quantization_config) # or torch functional op typea .set_module_name(\"foo.bar\", quantization_config) # or by module fully qualified name Quantizing your model with the XNNPACKQuantizer# After configuring our quantizer, we are now ready to quantize our model from torch.export import export exported_model = export(model_to_quantize, example_inputs).module() prepared_model = prepare_pt2e(exported_model, quantizer) print(prepared_model.graph) Prepare performs some Conv2d-BN fusion, and inserts quantization observers in the appropriate places. For Post-Training Quantization, we generally calibrate our model after this step. We run sample examples through the prepared_model to observe the statistics of the Tensors to calculate the quantization parameters. Finally, we convert our model here: quantized_model = convert_pt2e(prepared_model) print(quantized_model) You will now see the Q/DQ representation of the model, which means torch.ops.quantized_decomposed.dequantize_per_tensor are inserted at quantized operator inputs and torch.ops.quantized_decomposed.quantize_per_tensor are inserted at operator outputs. Example: def _qdq_quantized_linear( x_i8, x_scale, x_zero_point, x_quant_min, x_quant_max, weight_i8, weight_scale, weight_zero_point, weight_quant_min, weight_quant_max, bias_fp32, out_scale, out_zero_point, out_quant_min, out_quant_max ): x_fp32 = torch.ops.quantized_decomposed.dequantize_per_tensor( x_i8, x_scale, x_zero_point, x_quant_min, x_quant_max, torch.int8) weight_fp32 = torch.ops.quantized_decomposed.dequantize_per_tensor( weight_i8, weight_scale, weight_zero_point, weight_quant_min, weight_quant_max, torch.int8) out_fp32 = torch.ops.aten.linear.default(x_fp32, weight_fp32, bias_fp32) out_i8 = torch.ops.quantized_decomposed.quantize_per_tensor( out_fp32, out_scale, out_zero_point, out_quant_min, out_quant_max, torch.int8) return out_i8 You can read more indepth explanations on PyTorch 2 quantization here. See Also# Integrating XNNPACK Delegate in Android AAR Complete the Lowering to XNNPACK Tutorial",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
          "url": "https://pytorch.org"
        },
-       "image": "_static/img/pytorch_seo.png",
+       "image": "../../_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/backend-delegates-xnnpack-reference.html"
+         "@id": "/backends/xnnpack/xnnpack-arch-internals.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"

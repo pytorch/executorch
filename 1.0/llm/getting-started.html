@@ -1021,6 +1021,7 @@ document.write(`
 <ul class="current nav bd-sidenav">
 <li class="toctree-l1 current active"><a class="current reference internal" href="#">Deploying LLMs to ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="export-llm.html">Exporting LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="export-llm-optimum.html">Exporting LLMs with HuggingFace’s Optimum ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="export-custom-llm.html">Exporting custom LLMs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="run-with-c-plus-plus.html">Running LLMs with C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)</a></li>
@@ -1143,14 +1144,23 @@ other components. We hope this project serves as a useful guide in your journey 
 <section id="next-steps">
 <h2>Next steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
 <p>Deploying LLMs to ExecuTorch can be boiled down to a two-step process: (1) exporting the LLM to a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file and (2) running the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file using our C++ APIs or Swift/Java bindings.</p>
+<section id="exporting">
+<h3>Exporting<a class="headerlink" href="#exporting" title="Link to this heading">#</a></h3>
 <ul class="simple">
-<li><p><a class="reference internal" href="export-llm.html"><span class="std std-doc">Exporting LLMs</span></a></p></li>
+<li><p><a class="reference internal" href="export-llm.html"><span class="std std-doc">Exporting LLMs</span></a> - Export using ExecuTorch’s native <code class="docutils literal notranslate"><span class="pre">export_llm</span></code> API with advanced optimizations</p></li>
+<li><p><a class="reference internal" href="export-llm-optimum.html"><span class="std std-doc">Exporting LLMs with Optimum</span></a> - Export Hugging Face models with broader architecture support</p></li>
 <li><p><a class="reference internal" href="export-custom-llm.html"><span class="std std-doc">Exporting custom LLMs</span></a></p></li>
+</ul>
+</section>
+<section id="running">
+<h3>Running<a class="headerlink" href="#running" title="Link to this heading">#</a></h3>
+<ul class="simple">
 <li><p><a class="reference internal" href="run-with-c-plus-plus.html"><span class="std std-doc">Running with C++</span></a></p></li>
 <li><p><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android">Running on Android (XNNPack)</a></p></li>
 <li><p><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html"><span class="std std-doc">Running on Android (Qualcomm)</span></a></p></li>
 <li><p><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple">Running on iOS</a></p></li>
 </ul>
+</section>
 </section>
 </section>
 
@@ -1272,7 +1282,11 @@ other components. We hope this project serves as a useful guide in your journey 
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">Next steps</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">Next steps</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#exporting">Exporting</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#running">Running</a></li>
+</ul>
+</li>
 </ul>
   </nav></div>
     
@@ -1498,7 +1512,7 @@ other components. We hope this project serves as a useful guide in your journey 
        "headline": "Deploying LLMs to ExecuTorch",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/llm/getting-started.html",
-       "articleBody": "Deploying LLMs to ExecuTorch# ExecuTorch is designed to support all types of machine learning models, and LLMs are no exception. In this section we demonstrate how to leverage ExecuTorch to performantly run state of the art LLMs on-device out of the box with our provided export LLM APIs, acceleration backends, quantization libraries, tokenizers, and more. We encourage users to use this project as a starting point and adapt it to their specific needs, which includes creating your own versions of the tokenizer, sampler, acceleration backends, and other components. We hope this project serves as a useful guide in your journey with LLMs and ExecuTorch. Prerequisites# To follow this guide, you\u2019ll need to install ExecuTorch. Please see Setting Up ExecuTorch. Next steps# Deploying LLMs to ExecuTorch can be boiled down to a two-step process: (1) exporting the LLM to a .pte file and (2) running the .pte file using our C++ APIs or Swift/Java bindings. Exporting LLMs Exporting custom LLMs Running with C++ Running on Android (XNNPack) Running on Android (Qualcomm) Running on iOS",
+       "articleBody": "Deploying LLMs to ExecuTorch# ExecuTorch is designed to support all types of machine learning models, and LLMs are no exception. In this section we demonstrate how to leverage ExecuTorch to performantly run state of the art LLMs on-device out of the box with our provided export LLM APIs, acceleration backends, quantization libraries, tokenizers, and more. We encourage users to use this project as a starting point and adapt it to their specific needs, which includes creating your own versions of the tokenizer, sampler, acceleration backends, and other components. We hope this project serves as a useful guide in your journey with LLMs and ExecuTorch. Prerequisites# To follow this guide, you\u2019ll need to install ExecuTorch. Please see Setting Up ExecuTorch. Next steps# Deploying LLMs to ExecuTorch can be boiled down to a two-step process: (1) exporting the LLM to a .pte file and (2) running the .pte file using our C++ APIs or Swift/Java bindings. Exporting# Exporting LLMs - Export using ExecuTorch\u2019s native export_llm API with advanced optimizations Exporting LLMs with Optimum - Export Hugging Face models with broader architecture support Exporting custom LLMs Running# Running with C++ Running on Android (XNNPack) Running on Android (Qualcomm) Running on iOS",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",

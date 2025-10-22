@@ -2,13 +2,13 @@
 <!DOCTYPE html>
 
 
-<html lang="en" data-content_root="./" >
+<html lang="en" data-content_root="../../../" >
 
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>MPS Backend &#8212; ExecuTorch 1.0 documentation</title>
+    <title>Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device &#8212; ExecuTorch 1.0 documentation</title>
   
   
   
@@ -18,49 +18,49 @@
   </script>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-<link href="_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-<link href="_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link href="../../../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
 
   
-  <link href="_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+  <link href="../../../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
 
-    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
-    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=047068a3" />
-    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
-    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
   
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
-<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
-  <script src="_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
 
-    <script src="_static/documentation_options.js?v=a8da1a53"></script>
-    <script src="_static/doctools.js?v=888ff710"></script>
-    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
-    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
-    <script src="_static/copybutton.js?v=f281be69"></script>
-    <script src="_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'backends-mps';</script>
+    <script src="../../../_static/documentation_options.js?v=a8da1a53"></script>
+    <script src="../../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/vulkan/tutorials/etvk-llama-tutorial';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = '1.0';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/backends-mps.html" />
-    <link rel="icon" href="_static/executorch-chip-logo.svg"/>
-    <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Vulkan Backend" href="backends-vulkan.html" />
-    <link rel="prev" title="Op support" href="backends/coreml/coreml-op-support.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/backends/vulkan/tutorials/etvk-llama-tutorial.html" />
+    <link rel="icon" href="../../../_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="Qualcomm AI Engine Backend" href="../../../backends-qualcomm.html" />
+    <link rel="prev" title="Executing and profiling an ExecuTorch Vulkan model on device" href="etvk-profiling-tutorial.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -93,13 +93,13 @@
 <!-- Conditional CSS for header and footer height adjustment -->
 
 
-<link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
-<script type="text/javascript" src="_static/js/theme.js"></script>
+<link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="../../../_static/js/theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
-<meta property="og:image" content="_static/img/pytorch_seo.png" />
-<link rel="stylesheet" href="_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta property="og:image" content="../../../_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="../../../_static/webfonts/all.min.css" crossorigin="anonymous">
 <meta http-equiv="Content-Security-Policy"
   content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
 <meta name="pytorch_project" content="">
@@ -565,7 +565,7 @@
     <div class="search-button__overlay"></div>
     <div class="search-button__search-container">
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -602,7 +602,7 @@
     
   
 
-<a class="navbar-brand logo" href="index.html">
+<a class="navbar-brand logo" href="../../../index.html">
   
   
   
@@ -613,8 +613,8 @@
       
     
     
-    <img src="_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch 1.0 documentation - Home"/>
-    <script>document.write(`<img src="_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch 1.0 documentation - Home"/>`);</script>
+    <img src="../../../_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch 1.0 documentation - Home"/>
+    <script>document.write(`<img src="../../../_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch 1.0 documentation - Home"/>`);</script>
   
   
 </a></div>
@@ -654,56 +654,56 @@ document.write(`
   <ul class="bd-navbar-elements navbar-nav">
     
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="intro-section.html">
+  <a class="nav-link nav-internal" href="../../../intro-section.html">
     Intro
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="quick-start-section.html">
+  <a class="nav-link nav-internal" href="../../../quick-start-section.html">
     Quick Start
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+  <a class="nav-link nav-internal" href="../../../edge-platforms-section.html">
     Edge
   </a>
 </li>
 
 
 <li class="nav-item current active">
-  <a class="nav-link nav-internal" href="backends-section.html">
+  <a class="nav-link nav-internal" href="../../../backends-section.html">
     Backends
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+  <a class="nav-link nav-internal" href="../../../llm/working-with-llms.html">
     LLMs
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+  <a class="nav-link nav-internal" href="../../../advanced-topics-section.html">
     Advanced
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="tools-section.html">
+  <a class="nav-link nav-internal" href="../../../tools-section.html">
     Tools
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="api-section.html">
+  <a class="nav-link nav-internal" href="../../../api-section.html">
     API
   </a>
 </li>
@@ -715,7 +715,7 @@ document.write(`
                 <ul id="pst-nav-more-links" class="dropdown-menu">
                     
 <li class=" ">
-  <a class="nav-link dropdown-item nav-internal" href="support-section.html">
+  <a class="nav-link dropdown-item nav-internal" href="../../../support-section.html">
     Support
   </a>
 </li>
@@ -735,7 +735,7 @@ document.write(`
         <div class="navbar-item">
   
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -853,63 +853,63 @@ document.write(`
   <ul class="bd-navbar-elements navbar-nav">
     
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="intro-section.html">
+  <a class="nav-link nav-internal" href="../../../intro-section.html">
     Intro
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="quick-start-section.html">
+  <a class="nav-link nav-internal" href="../../../quick-start-section.html">
     Quick Start
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+  <a class="nav-link nav-internal" href="../../../edge-platforms-section.html">
     Edge
   </a>
 </li>
 
 
 <li class="nav-item current active">
-  <a class="nav-link nav-internal" href="backends-section.html">
+  <a class="nav-link nav-internal" href="../../../backends-section.html">
     Backends
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+  <a class="nav-link nav-internal" href="../../../llm/working-with-llms.html">
     LLMs
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+  <a class="nav-link nav-internal" href="../../../advanced-topics-section.html">
     Advanced
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="tools-section.html">
+  <a class="nav-link nav-internal" href="../../../tools-section.html">
     Tools
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="api-section.html">
+  <a class="nav-link nav-internal" href="../../../api-section.html">
     API
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="support-section.html">
+  <a class="nav-link nav-internal" href="../../../support-section.html">
     Support
   </a>
 </li>
@@ -927,7 +927,7 @@ document.write(`
           <div class="navbar-item">
   
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -1019,24 +1019,47 @@ document.write(`
   <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
   <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Backend Overview</span></p>
 <ul class="current nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="backends/coreml/coreml-overview.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="backends/coreml/coreml-troubleshooting.html">Troubleshooting</a></li>
-<li class="toctree-l2"><a class="reference internal" href="backends/coreml/coreml-partitioner.html">Partitioner API</a></li>
-<li class="toctree-l2"><a class="reference internal" href="backends/coreml/coreml-quantization.html">Quantization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="backends/coreml/coreml-op-support.html">Op support</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../xnnpack/xnnpack-overview.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../xnnpack/xnnpack-partitioner.html">Partitioner API</a></li>
+
+<li class="toctree-l2"><a class="reference internal" href="../../xnnpack/xnnpack-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../xnnpack/xnnpack-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../xnnpack/xnnpack-arch-internals.html">Architecture and Internals</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1 current active"><a class="current reference internal" href="#">MPS Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-arm-vgf.html">Arm® VGF Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-samsung-exynos.html">Samsung Exynos Backend (TBD)</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../coreml/coreml-overview.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../coreml/coreml-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../coreml/coreml-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../coreml/coreml-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../coreml/coreml-op-support.html">Op support</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../mps/mps-overview.html">MPS Backend</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../vulkan-overview.html">Vulkan Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../vulkan-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan-op-support.html">Operator Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="vulkan-tutorials.html">Vulkan Backend Tutorials</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="etvk-profiling-tutorial.html">Executing and profiling an ExecuTorch Vulkan model on device</a></li>
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../backends-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../backends-arm-vgf.html">Arm® VGF Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../build-run-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../backends-nxp.html">NXP eIQ Neutron Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../samsung/samsung-overview.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../samsung/samsung-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../samsung/samsung-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../samsung/samsung-op-support.html">Operator Support</a></li>
+</ul>
+</details></li>
 </ul>
 </div>
 </nav></div>
@@ -1066,18 +1089,26 @@ document.write(`
 
 
 
+
+
 <nav aria-label="Breadcrumb" class="d-print-none">
   <ul class="bd-breadcrumbs">
     
     <li class="breadcrumb-item breadcrumb-home">
-      <a href="index.html" class="nav-link" aria-label="Home">
+      <a href="../../../index.html" class="nav-link" aria-label="Home">
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
     
-    <li class="breadcrumb-item"><a href="backends-section.html" class="nav-link">Backends</a></li>
+    <li class="breadcrumb-item"><a href="../../../backends-section.html" class="nav-link">Backends</a></li>
     
-    <li class="breadcrumb-item active" aria-current="page">MPS Backend</li>
+    
+    <li class="breadcrumb-item"><i class="fa-solid fa-ellipsis"></i></li>
+    
+    
+    <li class="breadcrumb-item"><a href="vulkan-tutorials.html" class="nav-link">Vulkan Backend Tutorials</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">Exporting...</li>
   </ul>
 </nav>
 </div>
@@ -1119,14 +1150,26 @@ document.write(`
     <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <link itemprop="item" href="backends-section.html">
+        <link itemprop="item" href="../../../backends-section.html">
         <meta itemprop="name" content="Backends">
         <meta itemprop="position" content="1">
       </div>
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <meta itemprop="name" content="MPS Backend">
+        <link itemprop="item" href="../vulkan-overview.html">
+        <meta itemprop="name" content="Vulkan Backend">
         <meta itemprop="position" content="2">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="vulkan-tutorials.html">
+        <meta itemprop="name" content="Vulkan Backend Tutorials">
+        <meta itemprop="position" content="3">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <meta itemprop="name" content="Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device">
+        <meta itemprop="position" content="4">
       </div>
     </div>
 
@@ -1139,194 +1182,145 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="mps-backend">
-<h1>MPS Backend<a class="headerlink" href="#mps-backend" title="Link to this heading">#</a></h1>
-<p>In this tutorial we will walk you through the process of getting setup to build the MPS backend for ExecuTorch and running a simple model on it.</p>
-<p>The MPS backend device maps machine learning computational graphs and primitives on the <a class="reference external" href="https://developer.apple.com/documentation/metalperformanceshadersgraph/mpsgraph?language=objc">MPS Graph</a> framework and tuned kernels provided by <a class="reference external" href="https://developer.apple.com/documentation/metalperformanceshaders?language=objc">MPS</a>.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-What you will learn in this tutorial:</div>
-<ul class="simple">
-<li><p class="sd-card-text">In this tutorial you will learn how to export <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model to the MPS delegate.</p></li>
-<li><p class="sd-card-text">You will also learn how to compile and deploy the ExecuTorch runtime with the MPS delegate on macOS and iOS.</p></li>
-</ul>
+  <section id="exporting-llama-3-2-1b-3b-instruct-to-executorch-vulkan-and-running-on-device">
+<h1>Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device<a class="headerlink" href="#exporting-llama-3-2-1b-3b-instruct-to-executorch-vulkan-and-running-on-device" title="Link to this heading">#</a></h1>
+<p>This tutorial assumes that you have a working local copy of the ExecuTorch repo,
+and have gone through the steps to install the executorch pip package or have
+installed it by building from source.</p>
+<p>This tutorial also assumes that you have the Android SDK tools installed and
+that you are able to connect to an Android device via <code class="docutils literal notranslate"><span class="pre">adb</span></code>.</p>
+<p>Finally, the Android NDK should also be installed, and your environment should
+have a variable <code class="docutils literal notranslate"><span class="pre">ANDROID_NDK</span></code> that points to the root directory of the NDK.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path_to_ndk&gt;
+</pre></div>
 </div>
-</div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-Tutorials we recommend you complete before this:</div>
-<ul class="simple">
-<li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="std std-doc">Introduction to ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="getting-started.html"><span class="std std-doc">Getting Started</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="using-executorch-building-from-source.html"><span class="std std-doc">Building ExecuTorch with CMake</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">ExecuTorch iOS Demo App</a></p></li>
-<li><p class="sd-card-text"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple">ExecuTorch LLM iOS Demo App</a></p></li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-</div>
-<section id="prerequisites-hardware-and-software">
-<h2>Prerequisites (Hardware and Software)<a class="headerlink" href="#prerequisites-hardware-and-software" title="Link to this heading">#</a></h2>
-<p>In order to be able to successfully build and run a model using the MPS backend for ExecuTorch, you’ll need the following hardware and software components:</p>
-<section id="hardware">
-<h3>Hardware:<a class="headerlink" href="#hardware" title="Link to this heading">#</a></h3>
-<ul class="simple">
-<li><p>A <a class="reference external" href="https://www.apple.com/mac/">mac</a> for tracing the model</p></li>
-</ul>
+<section id="download-the-llama-3-2-1b-3b-instruct-model-checkpoint-and-tokenizer">
+<h2>Download the Llama 3.2 1B/3B Instruct model checkpoint and tokenizer<a class="headerlink" href="#download-the-llama-3-2-1b-3b-instruct-model-checkpoint-and-tokenizer" title="Link to this heading">#</a></h2>
+<p>The model checkpoint and tokenizer can be downloaded from the
+<a class="reference external" href="https://www.llama.com/llama-downloads/">Meta Llama website</a>.</p>
+<p>The model files should be downloaded to <code class="docutils literal notranslate"><span class="pre">~/.llama/checkpoints/Llama3.2-1B-Instruct</span></code>.</p>
 </section>
-<section id="software">
-<h3>Software:<a class="headerlink" href="#software" title="Link to this heading">#</a></h3>
-<ul class="simple">
-<li><p><strong>Ahead of time</strong> tracing:</p>
-<ul>
-<li><p><a class="reference external" href="https://www.apple.com/macos/">macOS</a> 12</p></li>
-</ul>
-</li>
-<li><p><strong>Runtime</strong>:</p>
-<ul>
-<li><p><a class="reference external" href="https://www.apple.com/macos/">macOS</a> &gt;= 12.4</p></li>
-<li><p><a class="reference external" href="https://www.apple.com/ios">iOS</a> &gt;= 15.4</p></li>
-<li><p><a class="reference external" href="https://developer.apple.com/xcode/">Xcode</a> &gt;= 14.1</p></li>
-</ul>
-</li>
-</ul>
+<section id="export-the-llama-3-2-1b-3b-model">
+<h2>Export the Llama 3.2 1B/3B model<a class="headerlink" href="#export-the-llama-3-2-1b-3b-model" title="Link to this heading">#</a></h2>
+<p>First, navigate to the root of the ExecuTorch repo.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="c1"># Navigate to executorch root</span>
+<span class="nb">cd</span><span class="w"> </span>~/executorch
+</pre></div>
+</div>
+<p>Then, set some environment variables to describe how the model should be
+exported. Feel free to tune the values to your preferences.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">LLM_NAME</span><span class="o">=</span>Llama3.2<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">LLM_SIZE</span><span class="o">=</span>1B<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">LLM_SUFFIX</span><span class="o">=</span><span class="s2">&quot;-Instruct&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">QUANT</span><span class="o">=</span>8da4w<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">BACKEND</span><span class="o">=</span>vulkan<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">GROUP_SIZE</span><span class="o">=</span><span class="m">64</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">CONTEXT_LENGTH</span><span class="o">=</span><span class="m">2048</span>
+</pre></div>
+</div>
+<p>Then, export the Llama 3.2 1B/3B Instruct model to ExecuTorch Vulkan. Note that
+that <code class="docutils literal notranslate"><span class="pre">--vulkan-force-fp16</span></code> flag is set, which will improve model inference
+latency at the cost of model accuracy. Feel free to remove this flag.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.models.llama.export_llama<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-c<span class="w"> </span><span class="nv">$HOME</span>/.llama/checkpoints/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>/consolidated.00.pth<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-p<span class="w"> </span><span class="nv">$HOME</span>/.llama/checkpoints/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>/params.json<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span>fp32<span class="w"> </span>--<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-qmode<span class="w"> </span><span class="si">${</span><span class="nv">QUANT</span><span class="si">}</span><span class="w"> </span>-G<span class="w"> </span><span class="si">${</span><span class="nv">GROUP_SIZE</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--max_seq_length<span class="w"> </span><span class="si">${</span><span class="nv">CONTEXT_LENGTH</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--max_context_length<span class="w"> </span><span class="si">${</span><span class="nv">CONTEXT_LENGTH</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-kv<span class="w"> </span>--use_sdpa_with_kv_cache<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--metadata<span class="w"> </span><span class="s1">&#39;{&quot;append_eos_to_prompt&quot;: 0, &quot;get_bos_id&quot;:128000, &quot;get_eos_ids&quot;:[128009, 128001]}&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--model<span class="w"> </span><span class="s2">&quot;llama3_2&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--output_name<span class="w"> </span><span class="nv">$HOME</span>/.llama/checkpoints/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>_<span class="si">${</span><span class="nv">QUANT</span><span class="si">}</span>_g<span class="si">${</span><span class="nv">GROUP_SIZE</span><span class="si">}</span>_c<span class="si">${</span><span class="nv">CONTEXT_LENGTH</span><span class="si">}</span>.pte
+</pre></div>
+</div>
+<p>After exporting the model, push the exported <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file and the tokenizer to
+your device.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>adb<span class="w"> </span>shell<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/data/local/tmp/llama<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+adb<span class="w"> </span>push<span class="w"> </span>~/.llama/checkpoints/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>/tokenizer.model<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>/data/local/tmp/llama/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>_tokenizer.model<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+adb<span class="w"> </span>push<span class="w"> </span>~/.llama/checkpoints/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>_<span class="si">${</span><span class="nv">QUANT</span><span class="si">}</span>_g<span class="si">${</span><span class="nv">GROUP_SIZE</span><span class="si">}</span>_c<span class="si">${</span><span class="nv">CONTEXT_LENGTH</span><span class="si">}</span>.pte<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>/data/local/tmp/llama/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>_<span class="si">${</span><span class="nv">QUANT</span><span class="si">}</span>_g<span class="si">${</span><span class="nv">GROUP_SIZE</span><span class="si">}</span>_c<span class="si">${</span><span class="nv">CONTEXT_LENGTH</span><span class="si">}</span>.pte
+</pre></div>
+</div>
 </section>
+<section id="build-core-executorch-components">
+<h2>Build Core Executorch Components<a class="headerlink" href="#build-core-executorch-components" title="Link to this heading">#</a></h2>
+<p>To be able to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file on device, first the core libraries,
+including the Vulkan backend, must be compiled for Android.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>.<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out-android-so<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--preset<span class="w"> </span><span class="s2">&quot;android-arm64-v8a&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_PLATFORM<span class="o">=</span>android-28<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_PAL_DEFAULT<span class="o">=</span>posix<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_LLAMA_JNI<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_VULKAN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_TESTS<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Bcmake-out-android-so<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-android-so<span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release
+</pre></div>
+</div>
 </section>
-<section id="setting-up-developer-environment">
-<h2>Setting up Developer Environment<a class="headerlink" href="#setting-up-developer-environment" title="Link to this heading">#</a></h2>
-<p><em><strong>Step 1.</strong></em> Complete the steps in <a class="reference internal" href="getting-started.html"><span class="std std-doc">Getting Started</span></a> to set up the ExecuTorch development environment.</p>
-<p>You will also need a local clone of the ExecuTorch repository. See <a class="reference internal" href="#using-executorch-building-from-source.html"><span class="xref myst">Building ExecuTorch from Source</span></a> for instructions. All commands in this document should be run from the executorch repository.</p>
+<section id="build-and-push-the-llama-runner-binary-to-android">
+<h2>Build and push the llama runner binary to Android<a class="headerlink" href="#build-and-push-the-llama-runner-binary-to-android" title="Link to this heading">#</a></h2>
+<p>Then, build a binary that can be used to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>examples/models/llama<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out-android-so<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w">  </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_PLATFORM<span class="o">=</span>android-28<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Bcmake-out-android-so/examples/models/llama<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-android-so/examples/models/llama<span class="w"> </span>-j16<span class="w"> </span>--config<span class="w"> </span>Release
+</pre></div>
+</div>
+<p>Once the binary is built, it can be pushed to your Android device.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>adb<span class="w"> </span>shell<span class="w"> </span>mkdir<span class="w"> </span>/data/local/tmp/etvk/<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+adb<span class="w"> </span>push<span class="w"> </span>cmake-out-android-so/examples/models/llama/llama_main<span class="w"> </span>/data/local/tmp/etvk/
+</pre></div>
+</div>
 </section>
-<section id="build">
-<h2>Build<a class="headerlink" href="#build" title="Link to this heading">#</a></h2>
-<section id="aot-ahead-of-time-components">
-<h3>AOT (Ahead-of-time) Components<a class="headerlink" href="#aot-ahead-of-time-components" title="Link to this heading">#</a></h3>
-<p><strong>Compiling model for MPS delegate</strong>:</p>
-<ul class="simple">
-<li><p>In this step, you will generate a simple ExecuTorch program that lowers MobileNetV3 model to the MPS delegate. You’ll then pass this Program (the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file) during the runtime to run it using the MPS backend.</p></li>
-</ul>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-<span class="c1"># Note: `mps_example` script uses by default the MPSPartitioner for ops that are not yet supported by the MPS delegate. To turn it off, pass `--no-use_partitioner`.</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--bundled<span class="w"> </span>--use_fp16
+<section id="execute-the-llama-runner-binary">
+<h2>Execute the llama runner binary<a class="headerlink" href="#execute-the-llama-runner-binary" title="Link to this heading">#</a></h2>
+<p>Finally, we can execute the lowered <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file on your device.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>adb<span class="w"> </span>shell<span class="w"> </span>/data/local/tmp/etvk/llama_main<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--model_path<span class="o">=</span>/data/local/tmp/llama/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>_<span class="si">${</span><span class="nv">QUANT</span><span class="si">}</span>_g<span class="si">${</span><span class="nv">GROUP_SIZE</span><span class="si">}</span>_c<span class="si">${</span><span class="nv">CONTEXT_LENGTH</span><span class="si">}</span>.pte<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--tokenizer_path<span class="o">=</span>/data/local/tmp/llama/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>_tokenizer.model<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--temperature<span class="o">=</span><span class="m">0</span><span class="w"> </span>--seq_len<span class="o">=</span><span class="m">400</span><span class="w"> </span>--warmup<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--prompt<span class="o">=</span><span class="se">\&quot;\&lt;\|</span>begin_of_text<span class="se">\|\&gt;\&lt;\|</span>start_header_id<span class="se">\|\&gt;</span>system<span class="se">\&lt;\|</span>end_header_id<span class="se">\|\&gt;</span>Write<span class="w"> </span>me<span class="w"> </span>a<span class="w"> </span>short<span class="w"> </span>poem.<span class="se">\&lt;\|</span>eot_id<span class="se">\|\&gt;\&lt;\|</span>start_header_id<span class="se">\|\&gt;</span>assistant<span class="se">\&lt;\|</span>end_header_id<span class="se">\|\&gt;\&quot;</span>
+</pre></div>
+</div>
+<p>Here is some sample output captured from a Galaxy S24:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>E<span class="w"> </span>tokenizers:hf_tokenizer.cpp:60<span class="o">]</span><span class="w"> </span>Error<span class="w"> </span>parsing<span class="w"> </span>json<span class="w"> </span>file:<span class="w"> </span><span class="o">[</span>json.exception.parse_error.101<span class="o">]</span><span class="w"> </span>parse<span class="w"> </span>error<span class="w"> </span>at<span class="w"> </span>line<span class="w"> </span><span class="m">1</span>,<span class="w"> </span>column<span class="w"> </span><span class="m">1</span>:<span class="w"> </span>syntax<span class="w"> </span>error<span class="w"> </span><span class="k">while</span><span class="w"> </span>parsing<span class="w"> </span>value<span class="w"> </span>-<span class="w"> </span>invalid<span class="w"> </span>literal<span class="p">;</span><span class="w"> </span>last<span class="w"> </span>read:<span class="w"> </span><span class="s1">&#39;I&#39;</span>
+&lt;<span class="p">|</span>begin_of_text<span class="p">|</span>&gt;&lt;<span class="p">|</span>start_header_id<span class="p">|</span>&gt;system&lt;<span class="p">|</span>end_header_id<span class="p">|</span>&gt;Write<span class="w"> </span>me<span class="w"> </span>a<span class="w"> </span>short<span class="w"> </span>poem.&lt;<span class="p">|</span>eot_id<span class="p">|</span>&gt;&lt;<span class="p">|</span>start_header_id<span class="p">|</span>&gt;assistant&lt;<span class="p">|</span>end_header_id<span class="p">|</span>&gt;
 
-<span class="c1"># To see all options, run following command:</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--help
-</pre></div>
-</div>
-</section>
-<section id="runtime">
-<h3>Runtime<a class="headerlink" href="#runtime" title="Link to this heading">#</a></h3>
-<p><strong>Building the MPS executor runner:</strong></p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># In this step, you&#39;ll be building the `mps_executor_runner` that is able to run MPS lowered modules:</span>
-<span class="nb">cd</span><span class="w"> </span>executorch
-./examples/apple/mps/scripts/build_mps_executor_runner.sh
-</pre></div>
-</div>
-</section>
-</section>
-<section id="run-the-mv3-generated-model-using-the-mps-executor-runner">
-<h2>Run the mv3 generated model using the mps_executor_runner<a class="headerlink" href="#run-the-mv3-generated-model-using-the-mps-executor-runner" title="Link to this heading">#</a></h2>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./cmake-out/examples/apple/mps/mps_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>mv3_mps_float16_bundled.pte<span class="w"> </span>--bundled_program
-</pre></div>
-</div>
-<ul class="simple">
-<li><p>You should see the following results. Note that no output file will be generated in this example:</p></li>
-</ul>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003290</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">286</span><span class="p">]</span> <span class="n">Model</span> <span class="n">file</span> <span class="n">mv3_mps_float16_bundled</span><span class="o">.</span><span class="n">pte</span> <span class="ow">is</span> <span class="n">loaded</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003306</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">292</span><span class="p">]</span> <span class="n">Program</span> <span class="n">methods</span><span class="p">:</span> <span class="mi">1</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003308</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">294</span><span class="p">]</span> <span class="n">Running</span> <span class="n">method</span> <span class="n">forward</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003311</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">349</span><span class="p">]</span> <span class="n">Setting</span> <span class="n">up</span> <span class="n">non</span><span class="o">-</span><span class="n">const</span> <span class="n">buffer</span> <span class="mi">1</span><span class="p">,</span> <span class="n">size</span> <span class="mf">606112.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003374</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">376</span><span class="p">]</span> <span class="n">Setting</span> <span class="n">up</span> <span class="n">memory</span> <span class="n">manager</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003376</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">392</span><span class="p">]</span> <span class="n">Loading</span> <span class="n">method</span> <span class="n">name</span> <span class="kn">from</span><span class="w"> </span><span class="nn">plan</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.018942</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">399</span><span class="p">]</span> <span class="n">Method</span> <span class="n">loaded</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.018944</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">404</span><span class="p">]</span> <span class="n">Loading</span> <span class="n">bundled</span> <span class="n">program</span><span class="o">...</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.018980</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">421</span><span class="p">]</span> <span class="n">Inputs</span> <span class="n">prepared</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.118731</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">438</span><span class="p">]</span> <span class="n">Model</span> <span class="n">executed</span> <span class="n">successfully</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.122615</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">501</span><span class="p">]</span> <span class="n">Model</span> <span class="n">verified</span> <span class="n">successfully</span><span class="o">.</span>
-</pre></div>
-</div>
-<section id="optional-run-the-generated-model-directly-using-pybind">
-<h3>[Optional] Run the generated model directly using pybind<a class="headerlink" href="#optional-run-the-generated-model-directly-using-pybind" title="Link to this heading">#</a></h3>
-<ol class="arabic simple">
-<li><p>Make sure <code class="docutils literal notranslate"><span class="pre">pybind</span></code> MPS support was installed:</p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">CMAKE_ARGS</span><span class="o">=</span><span class="s2">&quot;-DEXECUTORCH_BUILD_MPS=ON&quot;</span><span class="w"> </span>./install_executorch.sh
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p>Run the <code class="docutils literal notranslate"><span class="pre">mps_example</span></code> script to trace the model and run it directly from python:</p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-<span class="c1"># Check correctness between PyTorch eager forward pass and ExecuTorch MPS delegate forward pass</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--no-use_fp16<span class="w"> </span>--check_correctness
-<span class="c1"># You should see following output: `Results between ExecuTorch forward pass with MPS backend and PyTorch forward pass for mv3_mps are matching!`</span>
+Here<span class="w"> </span>is<span class="w"> </span>a<span class="w"> </span>short<span class="w"> </span>poem<span class="w"> </span>I<span class="w"> </span>came<span class="w"> </span>up<span class="w"> </span>with:
 
-<span class="c1"># Check performance between PyTorch MPS forward pass and ExecuTorch MPS forward pass</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--no-use_fp16<span class="w"> </span>--bench_pytorch
+<span class="s2">&quot;Moonlight whispers secrets to the night</span>
+<span class="s2">A gentle breeze that rustles the light</span>
+<span class="s2">The stars up high, a twinkling show</span>
+<span class="s2">A peaceful world, where dreams grow slow&quot;</span>
+
+I<span class="w"> </span>hope<span class="w"> </span>you<span class="w"> </span>enjoy<span class="w"> </span>it!&lt;<span class="p">|</span>eot_id<span class="p">|</span>&gt;
+
+PyTorchObserver<span class="w"> </span><span class="o">{</span><span class="s2">&quot;prompt_tokens&quot;</span>:14,<span class="s2">&quot;generated_tokens&quot;</span>:54,<span class="s2">&quot;model_load_start_ms&quot;</span>:1760077800721,<span class="s2">&quot;model_load_end_ms&quot;</span>:1760077802998,<span class="s2">&quot;inference_start_ms&quot;</span>:1760077802998,<span class="s2">&quot;inference_end_ms&quot;</span>:1760077804187,<span class="s2">&quot;prompt_eval_end_ms&quot;</span>:1760077803162,<span class="s2">&quot;first_token_ms&quot;</span>:1760077803162,<span class="s2">&quot;aggregate_sampling_time_ms&quot;</span>:19,<span class="s2">&quot;SCALING_FACTOR_UNITS_PER_SECOND&quot;</span>:1000<span class="o">}</span>
+<span class="w">        </span>Prompt<span class="w"> </span>Tokens:<span class="w"> </span><span class="m">14</span><span class="w">    </span>Generated<span class="w"> </span>Tokens:<span class="w"> </span><span class="m">54</span>
+<span class="w">        </span>Model<span class="w"> </span>Load<span class="w"> </span>Time:<span class="w">                </span><span class="m">2</span>.277000<span class="w"> </span><span class="o">(</span>seconds<span class="o">)</span>
+<span class="w">        </span>Total<span class="w"> </span>inference<span class="w"> </span>time:<span class="w">           </span><span class="m">1</span>.189000<span class="w"> </span><span class="o">(</span>seconds<span class="o">)</span><span class="w">               </span>Rate:<span class="w">  </span><span class="m">45</span>.416316<span class="w"> </span><span class="o">(</span>tokens/second<span class="o">)</span>
+<span class="w">                </span>Prompt<span class="w"> </span>evaluation:<span class="w">      </span><span class="m">0</span>.164000<span class="w"> </span><span class="o">(</span>seconds<span class="o">)</span><span class="w">               </span>Rate:<span class="w">  </span><span class="m">85</span>.365854<span class="w"> </span><span class="o">(</span>tokens/second<span class="o">)</span>
+<span class="w">                </span>Generated<span class="w"> </span><span class="m">54</span><span class="w"> </span>tokens:<span class="w">    </span><span class="m">1</span>.025000<span class="w"> </span><span class="o">(</span>seconds<span class="o">)</span><span class="w">               </span>Rate:<span class="w">  </span><span class="m">52</span>.682927<span class="w"> </span><span class="o">(</span>tokens/second<span class="o">)</span>
+<span class="w">        </span>Time<span class="w"> </span>to<span class="w"> </span>first<span class="w"> </span>generated<span class="w"> </span>token:<span class="w">  </span><span class="m">0</span>.164000<span class="w"> </span><span class="o">(</span>seconds<span class="o">)</span>
+<span class="w">        </span>Sampling<span class="w"> </span><span class="nb">time</span><span class="w"> </span>over<span class="w"> </span><span class="m">68</span><span class="w"> </span>tokens:<span class="w">   </span><span class="m">0</span>.019000<span class="w"> </span><span class="o">(</span>seconds<span class="o">)</span>
 </pre></div>
 </div>
-</section>
-<section id="profiling">
-<h3>Profiling:<a class="headerlink" href="#profiling" title="Link to this heading">#</a></h3>
-<ol class="arabic simple">
-<li><p>[Optional] Generate an <a class="reference internal" href="etrecord.html"><span class="std std-doc">ETRecord</span></a> while you’re exporting your model.</p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--generate_etrecord<span class="w"> </span>-b
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p>Run your Program on the ExecuTorch runtime and generate an <a class="reference internal" href="etdump.html"><span class="std std-doc">ETDump</span></a>.</p></li>
-</ol>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">apple</span><span class="o">/</span><span class="n">mps</span><span class="o">/</span><span class="n">mps_executor_runner</span> <span class="o">--</span><span class="n">model_path</span> <span class="n">mv3_mps_float16_bundled</span><span class="o">.</span><span class="n">pte</span> <span class="o">--</span><span class="n">bundled_program</span> <span class="o">--</span><span class="n">dump</span><span class="o">-</span><span class="n">outputs</span>
-</pre></div>
-</div>
-<ol class="arabic simple" start="3">
-<li><p>Create an instance of the Inspector API by passing in the ETDump you have sourced from the runtime along with the optionally generated ETRecord from step 1.</p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>devtools.inspector.inspector_cli<span class="w"> </span>--etdump_path<span class="w"> </span>etdump.etdp<span class="w"> </span>--etrecord_path<span class="w"> </span>etrecord.bin
-</pre></div>
-</div>
-</section>
-</section>
-<section id="deploying-and-running-on-device">
-<h2>Deploying and Running on Device<a class="headerlink" href="#deploying-and-running-on-device" title="Link to this heading">#</a></h2>
-<p><em><strong>Step 1</strong></em>. Create the ExecuTorch core and MPS delegate frameworks to link on iOS</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-./scripts/build_apple_frameworks.sh<span class="w"> </span>--mps
-</pre></div>
-</div>
-<p><code class="docutils literal notranslate"><span class="pre">mps_delegate.xcframework</span></code> will be in <code class="docutils literal notranslate"><span class="pre">cmake-out</span></code> folder, along with <code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code> and <code class="docutils literal notranslate"><span class="pre">portable_delegate.xcframework</span></code>:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ls
-</pre></div>
-</div>
-<p><em><strong>Step 2</strong></em>. Link the frameworks into your XCode project:
-Go to project Target’s  <code class="docutils literal notranslate"><span class="pre">Build</span> <span class="pre">Phases</span></code>  -  <code class="docutils literal notranslate"><span class="pre">Link</span> <span class="pre">Binaries</span> <span class="pre">With</span> <span class="pre">Libraries</span></code>, click the <strong>+</strong> sign and add the frameworks: files located in  <code class="docutils literal notranslate"><span class="pre">Release</span></code> folder.</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">portable_delegate.xcframework</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">mps_delegate.xcframework</span></code></p></li>
-</ul>
-<p>From the same page, include the needed libraries for the MPS delegate:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">MetalPerformanceShaders.framework</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">MetalPerformanceShadersGraph.framework</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">Metal.framework</span></code></p></li>
-</ul>
-<p>In this tutorial, you have learned how to lower a model to the MPS delegate, build the mps_executor_runner and run a lowered model through the MPS delegate, or directly on device using the MPS delegate static library.</p>
-</section>
-<section id="frequently-encountered-errors-and-resolution">
-<h2>Frequently encountered errors and resolution.<a class="headerlink" href="#frequently-encountered-errors-and-resolution" title="Link to this heading">#</a></h2>
-<p>If you encountered any bugs or issues following this tutorial please file a bug/issue on the <a class="reference external" href="https://github.com/pytorch/executorch/issues">ExecuTorch repository</a>, with hashtag <strong>#mps</strong>.</p>
 </section>
 </section>
 
@@ -1373,20 +1367,20 @@ Go to project Target’s  <code class="docutils literal notranslate"><span class
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="backends/coreml/coreml-op-support.html"
+       href="etvk-profiling-tutorial.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Op support</p>
+        <p class="prev-next-title">Executing and profiling an ExecuTorch Vulkan model on device</p>
       </div>
     </a>
     <a class="right-next"
-       href="backends-vulkan.html"
+       href="../../../backends-qualcomm.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Vulkan Backend</p>
+        <p class="prev-next-title">Qualcomm AI Engine Backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1412,20 +1406,20 @@ Go to project Target’s  <code class="docutils literal notranslate"><span class
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="backends/coreml/coreml-op-support.html"
+       href="etvk-profiling-tutorial.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Op support</p>
+        <p class="prev-next-title">Executing and profiling an ExecuTorch Vulkan model on device</p>
       </div>
     </a>
     <a class="right-next"
-       href="backends-vulkan.html"
+       href="../../../backends-qualcomm.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Vulkan Backend</p>
+        <p class="prev-next-title">Qualcomm AI Engine Backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1447,24 +1441,11 @@ Go to project Target’s  <code class="docutils literal notranslate"><span class
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites-hardware-and-software">Prerequisites (Hardware and Software)</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#hardware">Hardware:</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#software">Software:</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#setting-up-developer-environment">Setting up Developer Environment</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build">Build</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#aot-ahead-of-time-components">AOT (Ahead-of-time) Components</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime">Runtime</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#run-the-mv3-generated-model-using-the-mps-executor-runner">Run the mv3 generated model using the mps_executor_runner</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#optional-run-the-generated-model-directly-using-pybind">[Optional] Run the generated model directly using pybind</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#profiling">Profiling:</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#deploying-and-running-on-device">Deploying and Running on Device</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#frequently-encountered-errors-and-resolution">Frequently encountered errors and resolution.</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#download-the-llama-3-2-1b-3b-instruct-model-checkpoint-and-tokenizer">Download the Llama 3.2 1B/3B Instruct model checkpoint and tokenizer</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#export-the-llama-3-2-1b-3b-model">Export the Llama 3.2 1B/3B model</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build-core-executorch-components">Build Core Executorch Components</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build-and-push-the-llama-runner-binary-to-android">Build and push the llama runner binary to Android</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#execute-the-llama-runner-binary">Execute the llama runner binary</a></li>
 </ul>
   </nav></div>
     
@@ -1472,7 +1453,7 @@ Go to project Target’s  <code class="docutils literal notranslate"><span class
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends-mps.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/vulkan/tutorials/etvk-llama-tutorial.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -1486,7 +1467,7 @@ Go to project Target’s  <code class="docutils literal notranslate"><span class
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="_sources/backends-mps.md.txt">
+      <a href="../../../_sources/backends/vulkan/tutorials/etvk-llama-tutorial.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -1510,8 +1491,8 @@ Go to project Target’s  <code class="docutils literal notranslate"><span class
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script src="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
-<script src="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+  <script src="../../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
 
   
 
@@ -1639,7 +1620,7 @@ Go to project Target’s  <code class="docutils literal notranslate"><span class
 <div class="cookie-banner-wrapper">
   <div class="container">
     <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
-    <img class="close-button" src="_static/img/pytorch-x.svg">
+    <img class="close-button" src="../../../_static/img/pytorch-x.svg">
   </div>
 </div>
   
@@ -1686,20 +1667,20 @@ Go to project Target’s  <code class="docutils literal notranslate"><span class
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "MPS Backend",
-       "headline": "MPS Backend",
+       "name": "Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device",
+       "headline": "Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
-       "url": "/backends-mps.html",
-       "articleBody": "MPS Backend# In this tutorial we will walk you through the process of getting setup to build the MPS backend for ExecuTorch and running a simple model on it. The MPS backend device maps machine learning computational graphs and primitives on the MPS Graph framework and tuned kernels provided by MPS. What you will learn in this tutorial: In this tutorial you will learn how to export MobileNet V3 model to the MPS delegate. You will also learn how to compile and deploy the ExecuTorch runtime with the MPS delegate on macOS and iOS. Tutorials we recommend you complete before this: Introduction to ExecuTorch Getting Started Building ExecuTorch with CMake ExecuTorch iOS Demo App ExecuTorch LLM iOS Demo App Prerequisites (Hardware and Software)# In order to be able to successfully build and run a model using the MPS backend for ExecuTorch, you\u2019ll need the following hardware and software components: Hardware:# A mac for tracing the model Software:# Ahead of time tracing: macOS 12 Runtime: macOS \u003e= 12.4 iOS \u003e= 15.4 Xcode \u003e= 14.1 Setting up Developer Environment# Step 1. Complete the steps in Getting Started to set up the ExecuTorch development environment. You will also need a local clone of the ExecuTorch repository. See Building ExecuTorch from Source for instructions. All commands in this document should be run from the executorch repository. Build# AOT (Ahead-of-time) Components# Compiling model for MPS delegate: In this step, you will generate a simple ExecuTorch program that lowers MobileNetV3 model to the MPS delegate. You\u2019ll then pass this Program (the .pte file) during the runtime to run it using the MPS backend. cd executorch # Note: `mps_example` script uses by default the MPSPartitioner for ops that are not yet supported by the MPS delegate. To turn it off, pass `--no-use_partitioner`. python3 -m examples.apple.mps.scripts.mps_example --model_name=\"mv3\" --bundled --use_fp16 # To see all options, run following command: python3 -m examples.apple.mps.scripts.mps_example --help Runtime# Building the MPS executor runner: # In this step, you\u0027ll be building the `mps_executor_runner` that is able to run MPS lowered modules: cd executorch ./examples/apple/mps/scripts/build_mps_executor_runner.sh Run the mv3 generated model using the mps_executor_runner# ./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_float16_bundled.pte --bundled_program You should see the following results. Note that no output file will be generated in this example: I 00:00:00.003290 executorch:mps_executor_runner.mm:286] Model file mv3_mps_float16_bundled.pte is loaded. I 00:00:00.003306 executorch:mps_executor_runner.mm:292] Program methods: 1 I 00:00:00.003308 executorch:mps_executor_runner.mm:294] Running method forward I 00:00:00.003311 executorch:mps_executor_runner.mm:349] Setting up non-const buffer 1, size 606112. I 00:00:00.003374 executorch:mps_executor_runner.mm:376] Setting up memory manager I 00:00:00.003376 executorch:mps_executor_runner.mm:392] Loading method name from plan I 00:00:00.018942 executorch:mps_executor_runner.mm:399] Method loaded. I 00:00:00.018944 executorch:mps_executor_runner.mm:404] Loading bundled program... I 00:00:00.018980 executorch:mps_executor_runner.mm:421] Inputs prepared. I 00:00:00.118731 executorch:mps_executor_runner.mm:438] Model executed successfully. I 00:00:00.122615 executorch:mps_executor_runner.mm:501] Model verified successfully. [Optional] Run the generated model directly using pybind# Make sure pybind MPS support was installed: CMAKE_ARGS=\"-DEXECUTORCH_BUILD_MPS=ON\" ./install_executorch.sh Run the mps_example script to trace the model and run it directly from python: cd executorch # Check correctness between PyTorch eager forward pass and ExecuTorch MPS delegate forward pass python3 -m examples.apple.mps.scripts.mps_example --model_name=\"mv3\" --no-use_fp16 --check_correctness # You should see following output: `Results between ExecuTorch forward pass with MPS backend and PyTorch forward pass for mv3_mps are matching!` # Check performance between PyTorch MPS forward pass and ExecuTorch MPS forward pass python3 -m examples.apple.mps.scripts.mps_example --model_name=\"mv3\" --no-use_fp16 --bench_pytorch Profiling:# [Optional] Generate an ETRecord while you\u2019re exporting your model. cd executorch python3 -m examples.apple.mps.scripts.mps_example --model_name=\"mv3\" --generate_etrecord -b Run your Program on the ExecuTorch runtime and generate an ETDump. ./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_float16_bundled.pte --bundled_program --dump-outputs Create an instance of the Inspector API by passing in the ETDump you have sourced from the runtime along with the optionally generated ETRecord from step 1. python3 -m devtools.inspector.inspector_cli --etdump_path etdump.etdp --etrecord_path etrecord.bin Deploying and Running on Device# Step 1. Create the ExecuTorch core and MPS delegate frameworks to link on iOS cd executorch ./scripts/build_apple_frameworks.sh --mps mps_delegate.xcframework will be in cmake-out folder, along with executorch.xcframework and portable_delegate.xcframework: cd cmake-out \u0026\u0026 ls Step 2. Link the frameworks into your XCode project: Go to project Target\u2019s Build Phases - Link Binaries With Libraries, click the + sign and add the frameworks: files located in Release folder. executorch.xcframework portable_delegate.xcframework mps_delegate.xcframework From the same page, include the needed libraries for the MPS delegate: MetalPerformanceShaders.framework MetalPerformanceShadersGraph.framework Metal.framework In this tutorial, you have learned how to lower a model to the MPS delegate, build the mps_executor_runner and run a lowered model through the MPS delegate, or directly on device using the MPS delegate static library. Frequently encountered errors and resolution.# If you encountered any bugs or issues following this tutorial please file a bug/issue on the ExecuTorch repository, with hashtag #mps.",
+       "url": "/backends/vulkan/tutorials/etvk-llama-tutorial.html",
+       "articleBody": "Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device# This tutorial assumes that you have a working local copy of the ExecuTorch repo, and have gone through the steps to install the executorch pip package or have installed it by building from source. This tutorial also assumes that you have the Android SDK tools installed and that you are able to connect to an Android device via adb. Finally, the Android NDK should also be installed, and your environment should have a variable ANDROID_NDK that points to the root directory of the NDK. export ANDROID_NDK=\u003cpath_to_ndk\u003e Download the Llama 3.2 1B/3B Instruct model checkpoint and tokenizer# The model checkpoint and tokenizer can be downloaded from the Meta Llama website. The model files should be downloaded to ~/.llama/checkpoints/Llama3.2-1B-Instruct. Export the Llama 3.2 1B/3B model# First, navigate to the root of the ExecuTorch repo. # Navigate to executorch root cd ~/executorch Then, set some environment variables to describe how the model should be exported. Feel free to tune the values to your preferences. export LLM_NAME=Llama3.2 \u0026\u0026 \\ export LLM_SIZE=1B \u0026\u0026 \\ export LLM_SUFFIX=\"-Instruct\" \u0026\u0026 \\ export QUANT=8da4w \u0026\u0026 \\ export BACKEND=vulkan \u0026\u0026 \\ export GROUP_SIZE=64 \u0026\u0026 \\ export CONTEXT_LENGTH=2048 Then, export the Llama 3.2 1B/3B Instruct model to ExecuTorch Vulkan. Note that that --vulkan-force-fp16 flag is set, which will improve model inference latency at the cost of model accuracy. Feel free to remove this flag. python -m examples.models.llama.export_llama \\ -c $HOME/.llama/checkpoints/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}/consolidated.00.pth \\ -p $HOME/.llama/checkpoints/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}/params.json \\ -d fp32 --${BACKEND} \\ -qmode ${QUANT} -G ${GROUP_SIZE} \\ --max_seq_length ${CONTEXT_LENGTH} \\ --max_context_length ${CONTEXT_LENGTH} \\ -kv --use_sdpa_with_kv_cache \\ --metadata \u0027{\"append_eos_to_prompt\": 0, \"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}\u0027 \\ --model \"llama3_2\" \\ --output_name $HOME/.llama/checkpoints/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}_${BACKEND}_${QUANT}_g${GROUP_SIZE}_c${CONTEXT_LENGTH}.pte After exporting the model, push the exported .pte file and the tokenizer to your device. adb shell mkdir -p /data/local/tmp/llama \u0026\u0026 \\ adb push ~/.llama/checkpoints/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}/tokenizer.model \\ /data/local/tmp/llama/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}_tokenizer.model \u0026\u0026 \\ adb push ~/.llama/checkpoints/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}_${BACKEND}_${QUANT}_g${GROUP_SIZE}_c${CONTEXT_LENGTH}.pte \\ /data/local/tmp/llama/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}_${BACKEND}_${QUANT}_g${GROUP_SIZE}_c${CONTEXT_LENGTH}.pte Build Core Executorch Components# To be able to run the .pte file on device, first the core libraries, including the Vulkan backend, must be compiled for Android. cmake . \\ -DCMAKE_INSTALL_PREFIX=cmake-out-android-so \\ -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \\ -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \\ --preset \"android-arm64-v8a\" \\ -DANDROID_PLATFORM=android-28 \\ -DPYTHON_EXECUTABLE=python \\ -DCMAKE_BUILD_TYPE=Release \\ -DEXECUTORCH_PAL_DEFAULT=posix \\ -DEXECUTORCH_BUILD_LLAMA_JNI=ON \\ -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \\ -DEXECUTORCH_BUILD_VULKAN=ON \\ -DEXECUTORCH_BUILD_TESTS=OFF \\ -Bcmake-out-android-so \u0026\u0026 \\ cmake --build cmake-out-android-so -j16 --target install --config Release Build and push the llama runner binary to Android# Then, build a binary that can be used to run the .pte file. cmake examples/models/llama \\ -DCMAKE_INSTALL_PREFIX=cmake-out-android-so \\ -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \\ -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \\ -DEXECUTORCH_ENABLE_LOGGING=ON \\ -DANDROID_ABI=arm64-v8a \\ -DANDROID_PLATFORM=android-28 \\ -DCMAKE_BUILD_TYPE=Release \\ -DPYTHON_EXECUTABLE=python \\ -Bcmake-out-android-so/examples/models/llama \u0026\u0026 \\ cmake --build cmake-out-android-so/examples/models/llama -j16 --config Release Once the binary is built, it can be pushed to your Android device. adb shell mkdir /data/local/tmp/etvk/ \u0026\u0026 \\ adb push cmake-out-android-so/examples/models/llama/llama_main /data/local/tmp/etvk/ Execute the llama runner binary# Finally, we can execute the lowered .pte file on your device. adb shell /data/local/tmp/etvk/llama_main \\ --model_path=/data/local/tmp/llama/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}_${BACKEND}_${QUANT}_g${GROUP_SIZE}_c${CONTEXT_LENGTH}.pte \\ --tokenizer_path=/data/local/tmp/llama/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}_tokenizer.model \\ --temperature=0 --seq_len=400 --warmup \\ --prompt=\\\"\\\u003c\\|begin_of_text\\|\\\u003e\\\u003c\\|start_header_id\\|\\\u003esystem\\\u003c\\|end_header_id\\|\\\u003eWrite me a short poem.\\\u003c\\|eot_id\\|\\\u003e\\\u003c\\|start_header_id\\|\\\u003eassistant\\\u003c\\|end_header_id\\|\\\u003e\\\" Here is some sample output captured from a Galaxy S24: E tokenizers:hf_tokenizer.cpp:60] Error parsing json file: [json.exception.parse_error.101] parse error at line 1, column 1: syntax error while parsing value - invalid literal; last read: \u0027I\u0027 \u003c|begin_of_text|\u003e\u003c|start_header_id|\u003esystem\u003c|end_header_id|\u003eWrite me a short poem.\u003c|eot_id|\u003e\u003c|start_header_id|\u003eassistant\u003c|end_header_id|\u003e Here is a short poem I came up with: \"Moonlight whispers secrets to the night A gentle breeze that rustles the light The stars up high, a twinkling show A peaceful world, where dreams grow slow\" I hope you enjoy it!\u003c|eot_id|\u003e PyTorchObserver {\"prompt_tokens\":14,\"generated_tokens\":54,\"model_load_start_ms\":1760077800721,\"model_load_end_ms\":1760077802998,\"inference_start_ms\":1760077802998,\"inference_end_ms\":1760077804187,\"prompt_eval_end_ms\":1760077803162,\"first_token_ms\":1760077803162,\"aggregate_sampling_time_ms\":19,\"SCALING_FACTOR_UNITS_PER_SECOND\":1000} Prompt Tokens: 14 Generated Tokens: 54 Model Load Time: 2.277000 (seconds) Total inference time: 1.189000 (seconds) Rate: 45.416316 (tokens/second) Prompt evaluation: 0.164000 (seconds) Rate: 85.365854 (tokens/second) Generated 54 tokens: 1.025000 (seconds) Rate: 52.682927 (tokens/second) Time to first generated token: 0.164000 (seconds) Sampling time over 68 tokens: 0.019000 (seconds)",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
          "url": "https://pytorch.org"
        },
-       "image": "_static/img/pytorch_seo.png",
+       "image": "../../../_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/backends-mps.html"
+         "@id": "/backends/vulkan/tutorials/etvk-llama-tutorial.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"
