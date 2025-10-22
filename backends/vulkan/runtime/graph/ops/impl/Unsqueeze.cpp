@@ -54,12 +54,21 @@ void resize_unsqueeze_node(
   const ValueRef in = args.at(1).refs.at(0);
   const ValueRef dims_ref = extra_args.at(0);
 
-  const IntListPtr dims = graph->get_int_list(dims_ref);
+  std::vector<int64_t> dims_vec;
+  if (graph->is_scalar_or_none(dims_ref)) {
+    // Handle scalar case
+    int64_t dim = graph->extract_scalar<int64_t>(dims_ref);
+    dims_vec.push_back(dim);
+  } else {
+    // Handle list case
+    const IntListPtr dims = graph->get_int_list(dims_ref);
+    dims_vec.assign(dims->begin(), dims->end());
+  }
 
   std::vector<int64_t> out_sizes = graph->sizes_of(in);
 
   // Insert singleton dimensions at the specified positions
-  for (auto dim : *dims) {
+  for (auto dim : dims_vec) {
     int64_t d = dim;
     if (d < 0) {
       d += static_cast<int64_t>(out_sizes.size()) + 1;

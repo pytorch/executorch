@@ -57,13 +57,7 @@ def test_unflatten_int_tosa_INT(test_data: test_data_t):
     pipeline.run()
 
 
-xfails = {
-    "rand_3d_batch3": "Batch size > 1 currently not supported for FVP tests",
-    "randn_4d_dim1": "Batch size > 1 currently not supported for FVP tests",
-}
-
-
-@common.parametrize("test_data", Unflatten.test_data, xfails=xfails, strict=False)
+@common.parametrize("test_data", Unflatten.test_data, strict=False)
 @common.XfailIfNoCorstone300
 def test_unflatten_int_u55_INT(test_data: test_data_t):
     module, inputs = test_data()
@@ -75,7 +69,7 @@ def test_unflatten_int_u55_INT(test_data: test_data_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Unflatten.test_data, xfails=xfails, strict=False)
+@common.parametrize("test_data", Unflatten.test_data, strict=False)
 @common.XfailIfNoCorstone320
 def test_unflatten_int_u85_INT(test_data: test_data_t):
     module, inputs = test_data()

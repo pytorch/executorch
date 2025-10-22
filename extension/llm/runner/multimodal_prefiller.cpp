@@ -69,6 +69,11 @@ Result<uint64_t> MultimodalPrefiller::prefill(
           image.is_uint8(),
           InvalidArgument,
           "Model expects uint8_t image data, but image has float data.");
+    } else if (expected_dtype == ::executorch::aten::ScalarType::BFloat16) {
+      ET_CHECK_OR_RETURN_ERROR(
+          image.is_float(),
+          InvalidArgument,
+          "Model expects BFloat16 data, we need to take image in float32 type and convert afterwards. But now image has uint8_t data.");
     } else {
       ET_CHECK_OR_RETURN_ERROR(
           false,
@@ -85,6 +90,16 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     ET_CHECK_OK_OR_RETURN_ERROR(
         image_tensor_result.error(), "Failed to convert image to tensor");
     auto image_tensor = image_tensor_result.get();
+
+    if (expected_dtype == ::executorch::aten::ScalarType::BFloat16) {
+      // Convert to bfloat16 for model input
+      auto image_tensor_return = convert_to_bfloat16(image_tensor);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          image_tensor_return.error(),
+          "Failed to convert image tensor to bfloat16");
+      image_tensor = image_tensor_return.get();
+    }
+
     ET_LOG(
         Info,
         "Image tensor dim: %zu, dtype: %s",

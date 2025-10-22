@@ -33,7 +33,7 @@ executorch
 │   ├── <a href="backends/openvino">openvino</a> - OpenVINO backend for Intel hardware.
 │   ├── <a href="backends/qualcomm">qualcomm</a> - Qualcomm-specific backends. See <a href="docs/source/backends-qualcomm.md">doc</a>.
 │   ├── <a href="backends/transforms">transforms</a> - Transformations for backend optimization.
-│   ├── <a href="backends/vulkan">vulkan</a> - Vulkan backend for cross-platform GPU support. See <a href="docs/source/backends-vulkan.md">doc</a>.
+│   ├── <a href="backends/vulkan">vulkan</a> - Vulkan backend for cross-platform GPU support. See <a href="docs/source/backends/vulkan/vulkan-overview.md">doc</a>.
 │   └── <a href="backends/xnnpack">xnnpack</a> - XNNPACK backend for optimized neural network operations. See <a href="docs/source/backends/xnnpack/xnnpack-overview.md">doc</a>.
 ├── <a href="codegen">codegen</a> - Tooling to autogenerate bindings between kernels and the runtime.
 ├── <a href="configurations">configurations</a> - Configuration files.

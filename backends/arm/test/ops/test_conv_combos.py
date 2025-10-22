@@ -48,7 +48,7 @@ class ComboBlockBottleneckResidual(torch.nn.Module):
         # 1. 1x1 CONV2d + ReLU6 (Pointwise)
         self.pointwise_conv2d = torch.nn.Conv2d(
             in_channels=16, out_channels=96, kernel_size=1, stride=1, groups=1
-        )  ## (1, 128, 81, 81)
+        )  ## Example output shape (1, 96, 33, 33)
         self.batch_norm2d_16 = torch.nn.BatchNorm2d(96, affine=False)
         self.relu6 = torch.nn.ReLU6()
 
@@ -60,15 +60,15 @@ class ComboBlockBottleneckResidual(torch.nn.Module):
             padding=1,
             stride=1,
             groups=96,
-        )  ## (1, 128, H, W)
+        )  ## Example output shape (1, 96, H, W)
 
         # 3. Linear 1x1 Conv2d
         self.pointwise_conv2d_linear = torch.nn.Conv2d(
             in_channels=96, out_channels=16, kernel_size=1, stride=1, groups=1
-        )  ## (1, 32, 81, 81)
+        )  ## Example output shape (1, 16, 33, 33)
 
     def get_inputs(self) -> Tuple[torch.Tensor]:
-        return (torch.randn(1, 16, 81, 81),)
+        return (torch.randn(1, 16, 33, 33),)
 
     def forward(self, x):
         input = x
@@ -106,7 +106,7 @@ class ComboConv2dMeandim(torch.nn.Module):
         self.adaptive_avg_pool2d = torch.nn.AdaptiveAvgPool2d((1, 1))
 
     def get_inputs(self) -> Tuple[torch.Tensor]:
-        return (torch.randn(1, 3, 128, 128),)
+        return (torch.randn(1, 3, 48, 48),)
 
     def forward(self, x):
         x = self.conv2d(x)
@@ -145,7 +145,7 @@ class ComboConvBatchnormRelu6(torch.nn.Module):
         self.relu6 = torch.nn.ReLU6()
 
     def get_inputs(self) -> Tuple[torch.Tensor]:
-        return (torch.randn(1, 3, 256, 256),)
+        return (torch.randn(1, 3, 64, 64),)
 
     def forward(self, x):
         x = self.conv2d(x)
@@ -161,11 +161,11 @@ class ComboConvRelu6(torch.nn.Module):
     ]
 
     test_data_FP = {
-        "combo_conv_relu_2_x_4d": lambda: (2 * torch.randn(1, 3, 256, 256),),
-        "combo_conv_relu_0_5_x_4d": lambda: (0.5 * torch.randn(1, 3, 256, 256),),
-        "combo_conv_relu_4d": lambda: (torch.randn(1, 3, 256, 256),),
-        "combo_conv_relu_neg_0_5_x_4d": lambda: (-0.5 * torch.randn(1, 3, 256, 256),),
-        "combo_conv_relu_neg_2_x_4d": lambda: (-2 * torch.randn(1, 3, 256, 256),),
+        "combo_conv_relu_2_x_4d": lambda: (2 * torch.randn(1, 3, 64, 64),),
+        "combo_conv_relu_0_5_x_4d": lambda: (0.5 * torch.randn(1, 3, 64, 64),),
+        "combo_conv_relu_4d": lambda: (torch.randn(1, 3, 64, 64),),
+        "combo_conv_relu_neg_0_5_x_4d": lambda: (-0.5 * torch.randn(1, 3, 64, 64),),
+        "combo_conv_relu_neg_2_x_4d": lambda: (-2 * torch.randn(1, 3, 64, 64),),
     }
 
     # Generate a new test set paired with per_channel_quant=True/False.
@@ -196,10 +196,10 @@ class ComboConvAvgPool2d(torch.nn.Module):
     ]
 
     test_data_FP = {
-        "combo_conv_avgpool_20_x_4d": lambda: (20 * torch.randn(1, 3, 64, 32),),
-        "combo_conv_avgpool_4d": lambda: (torch.randn(1, 3, 100, 200),),
-        "combo_conv_avgpool_5_x_4d_randn": lambda: (5 * torch.randn(1, 3, 256, 256),),
-        "combo_conv_avgpool_2_x_4d": lambda: (torch.rand(1, 3, 512, 128),),
+        "combo_conv_avgpool_20_x_4d": lambda: (20 * torch.randn(1, 3, 48, 24),),
+        "combo_conv_avgpool_4d": lambda: (torch.randn(1, 3, 60, 120),),
+        "combo_conv_avgpool_5_x_4d_randn": lambda: (5 * torch.randn(1, 3, 64, 64),),
+        "combo_conv_avgpool_2_x_4d": lambda: (torch.rand(1, 3, 96, 32),),
     }
 
     # Generate a new test set paired with per_channel_quant=True/False.

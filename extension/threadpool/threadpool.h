@@ -14,6 +14,8 @@
 
 #include <pthreadpool.h>
 
+#include <executorch/runtime/core/function_ref.h>
+
 /*
  * Threadpool Options:
  *
@@ -74,7 +76,7 @@ class ThreadPool final {
    * multiple threads with the scope of the guard When NoThreadPoolGuard is not
    * used all calls to run method are serialized.
    */
-  void run(const std::function<void(size_t)>& fn, size_t range);
+  void run(runtime::FunctionRef<void(size_t)> fn, size_t range);
 
  private:
   friend pthreadpool_t get_pthreadpool();

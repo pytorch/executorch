@@ -150,7 +150,8 @@ Tensor& opt_bmm_out(
   ET_KERNEL_CHECK(
       ctx, check_bmm_out_args(self, mat2, out), InvalidArgument, out);
 
-  constexpr auto name = "bmm.out";
+  static constexpr auto name = "bmm.out";
+
   auto self_type = self.scalar_type();
 
   if (executorch::runtime::isComplexType(self_type)) {

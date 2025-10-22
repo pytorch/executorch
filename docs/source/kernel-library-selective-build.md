@@ -61,7 +61,7 @@ gen_selected_ops(
   ROOT_OPS              # comma separated operator names to be selected
   INCLUDE_ALL_OPS       # boolean flag to include all operators
   OPS_FROM_MODEL        # path to a pte file of model to select operators from
-  DTYPE_SELECTIVE_BUILD # boolean flag to enable dtye selection
+  DTYPE_SELECTIVE_BUILD # boolean flag to enable dtype selection
 )
 ```
 

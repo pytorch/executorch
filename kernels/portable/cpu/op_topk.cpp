@@ -6,13 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <c10/util/irange.h>
-#include <cmath>
-#include <tuple>
-
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+
+#include <c10/util/irange.h>
+#include <cmath>
+#include <tuple>
 
 namespace torch {
 namespace executor {
@@ -117,14 +117,18 @@ void perform_topk(
         queue[i].second = i;
       }
 
-      // Perform topk on the queue
-      const auto elem_greater = [](const elem_t& x, const elem_t& y) -> bool {
+      // Perform topk on the queue, explict typing for the lambda to satisfy
+      // msvc compiler.
+      bool (*elem_greater)(const elem_t&, const elem_t&) =
+          [](const elem_t& x, const elem_t& y) -> bool {
         return float_less_than(y.first, x.first);
       };
-      const auto elem_less = [](const elem_t& x, const elem_t& y) -> bool {
+      bool (*elem_less)(const elem_t&, const elem_t&) =
+          [](const elem_t& x, const elem_t& y) -> bool {
         return float_less_than(x.first, y.first);
       };
-      const auto cmp = largest ? elem_greater : elem_less;
+      bool (*cmp)(const elem_t&, const elem_t&) =
+          largest ? elem_greater : elem_less;
       if (use_partial_sort) {
         std::partial_sort(queue, queue + k, queue + dim_size, cmp);
       } else {
@@ -187,7 +191,7 @@ std::tuple<Tensor&, Tensor&> topk_values(
       InvalidArgument,
       out);
 
-  constexpr auto name = "topk.values";
+  static constexpr auto name = "topk.values";
 
   if (in.numel() == 0 || (k == 0 && in.dim() > 0)) {
     return out;

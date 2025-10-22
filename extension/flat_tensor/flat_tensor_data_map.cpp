@@ -218,7 +218,7 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   size_t expected_size = fh->segment_base_offset + fh->segment_data_size;
   size_t actual_size = loader->size().get();
   ET_CHECK_OR_RETURN_ERROR(
-      expected_size == actual_size,
+      expected_size <= actual_size,
       InvalidExternalData,
       "File size is too small; file may be corrupted or truncated. Expected %zu from flat_tensor header, received %zu from data loader",
       expected_size,

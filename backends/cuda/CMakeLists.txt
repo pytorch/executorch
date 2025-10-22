@@ -34,6 +34,39 @@ find_package(CUDAToolkit REQUIRED)
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
+# CUDA tensor maker for backends that support incontiguous tensors
+set(_tensor_maker_sources runtime/tensor/tensor_maker.cpp)
+add_library(cuda_tensor_maker STATIC ${_tensor_maker_sources})
+target_include_directories(
+  cuda_tensor_maker
+  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
+         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+)
+target_compile_options(
+  cuda_tensor_maker
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+)
+# Ensure symbols are exported properly
+if(APPLE)
+  target_link_options(cuda_tensor_maker PUBLIC -Wl,-export_dynamic)
+else()
+  target_link_options(
+    cuda_tensor_maker PUBLIC
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
+  )
+endif()
+
+# Link against ExecuTorch core libraries
+target_link_libraries(cuda_tensor_maker PUBLIC executorch ${CMAKE_DL_LIBS})
+executorch_target_link_options_shared_lib(cuda_tensor_maker)
+
+install(
+  TARGETS cuda_tensor_maker
+  EXPORT ExecuTorchTargets
+  DESTINATION lib
+)
+
 # CUDA-specific AOTI functionality
 set(_aoti_cuda_sources
     runtime/cuda_backend.cpp
@@ -62,20 +95,20 @@ target_link_options(
   aoti_cuda PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
 )
 
-# Link against CUDA::cudart, common AOTI library, and PyTorch CUDA libraries
+# Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and PyTorch
+# CUDA libraries
 target_link_libraries(
-  aoti_cuda PUBLIC aoti_common CUDA::cudart ${CMAKE_DL_LIBS}
+  aoti_cuda PUBLIC aoti_common cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
 )
 # If you need other CUDA libraries, link them similarly:
 # target_link_libraries(aoti_cuda PUBLIC CUDA::cublas CUDA::cufft ...)
 executorch_target_link_options_shared_lib(aoti_cuda)
 
 if(BUILD_TESTING)
-  # Add runtime
-  add_executable(voxtral_runner tests/voxtral_runner.cpp)
+  add_executable(multimodal_benchmark tests/multimodal_benchmark.cpp)
   target_link_libraries(
-    voxtral_runner PUBLIC aoti_cuda extension_module_static
-                          extension_flat_tensor portable_ops_lib
+    multimodal_benchmark PUBLIC aoti_cuda extension_module_static
+                                extension_flat_tensor portable_ops_lib
   )
 endif()
 

@@ -44,8 +44,9 @@ class Quantize(BaseStages.Quantize):
 
 class Partition(BaseStages.Partition):
     def __init__(self, partitioner: Optional[Partitioner] = None):
+        vk_compile_spec = {"skip_bool_tensors": True}
         super().__init__(
-            partitioner=partitioner or VulkanPartitioner(),
+            partitioner=partitioner or VulkanPartitioner(vk_compile_spec),
         )
 
 
@@ -55,6 +56,10 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
     ):
+        if partitioners is None:
+            vk_compile_spec = {"skip_bool_tensors": True}
+            partitioners = [VulkanPartitioner(vk_compile_spec)]
+
         super().__init__(
             default_partitioner_cls=VulkanPartitioner,
             partitioners=partitioners,

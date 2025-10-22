@@ -79,9 +79,6 @@ def test_resnet_u55_INT(per_channel_quantization):
 
 
 @pytest.mark.slow
-@pytest.mark.xfail(
-    reason="For resnet18 for Ethos-U85, the SRAM memory footprint is very high. The compiler team is investigating."
-)
 @common.XfailIfNoCorstone320
 @common.parametrize("per_channel_quantization", quant_test_data)
 def test_resnet_u85_INT(per_channel_quantization):

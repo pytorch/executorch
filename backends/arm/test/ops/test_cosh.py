@@ -76,9 +76,6 @@ def test_cosh_u55_INT(test_data: Tuple):
 @common.parametrize(
     "test_data",
     test_data_suite,
-    xfails={
-        "ones_4D": "MLBEDSW-11046 - Incorrect output for TABLE followed by RESHAPE"
-    },
     strict=False,
 )
 def test_cosh_u85_INT(test_data: Tuple):

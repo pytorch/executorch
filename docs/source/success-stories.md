@@ -106,7 +106,7 @@ PyTorch-native quantization and optimization library for preparing efficient mod
 
 Optimize LLM fine-tuning with faster training and reduced VRAM usage, then deploy efficiently with ExecuTorch.
 
-[Example Model →](https://huggingface.co/metascroy/Llama-3.2-1B-Instruct-int8-int4)
+[Example Model →](https://huggingface.co/metascroy/Qwen3-4B-int8-int4-unsloth)
 :::
 
 ::::
@@ -122,7 +122,5 @@ Optimize LLM fine-tuning with faster training and reduced VRAM usage, then deplo
 - **LoRA adapter** - Export two LoRA adapters that share a single foundation weight file, saving memory and disk space. [Try →](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation/cpp/lora_example)
 
 - **OpenVINO from Intel** - Deploy [Yolo12](https://github.com/pytorch/executorch/tree/main/examples/models/yolo12), [Llama](https://github.com/pytorch/executorch/tree/main/examples/openvino/llama), and [Stable Diffusion](https://github.com/pytorch/executorch/tree/main/examples/openvino/stable_diffusion) on [OpenVINO from Intel](https://www.intel.com/content/www/us/en/developer/articles/community/optimizing-executorch-on-ai-pcs.html).
-
-- **Demo title** - Brief description of the demo [Try →](#)
 
 *Want to showcase your demo? [Submit here →](https://github.com/pytorch/executorch/issues)*

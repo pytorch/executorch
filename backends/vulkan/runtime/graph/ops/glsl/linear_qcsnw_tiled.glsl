@@ -69,14 +69,13 @@ void main() {
       sums[r][${c}] = VEC4_T(0.0);
   }
 
+  const int in_row_txstride = div4(in_sizes.x);
+
   for (int pos = 0, txpos = 0;
-       pos < in_sizes.x;
+       txpos < in_row_txstride;
        pos += 4, txpos += 1) {
 
     T mat1[TILE_ROWS][4];
-
-    $if IN_STORAGE == "buffer":
-      uint in_row_txstride = div4(in_sizes.x);
 
     // Preload input tensor
     for (int i = 0; i < TILE_ROWS; i++) {

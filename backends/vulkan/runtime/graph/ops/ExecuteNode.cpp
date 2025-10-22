@@ -21,9 +21,10 @@ ExecuteNode::ExecuteNode(
       name_(name) {}
 
 bool ExecuteNode::trigger_resize(ComputeGraph* graph) {
-  const bool any_arg_updated = was_any_arg_updated(graph);
-  if (resize_fn_ && any_arg_updated) {
+  bool any_arg_updated = was_any_arg_updated(graph);
+  if (resize_fn_ && (any_arg_updated || graph->graphconfig().force_resize)) {
     resize_fn_(graph, args_, resize_args_);
+    any_arg_updated = true;
   }
   return any_arg_updated;
 }

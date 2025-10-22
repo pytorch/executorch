@@ -70,7 +70,12 @@ public class LlmModule {
    */
   public LlmModule(
       int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath) {
-    this(modelType, modulePath, tokenizerPath, temperature, List.of(dataPath));
+    this(
+        modelType,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        dataPath != null ? List.of(dataPath) : List.of());
   }
 
   /** Constructs a LLM Module for a model with given model path, tokenizer, temperature. */

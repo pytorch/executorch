@@ -116,8 +116,14 @@ Error TextLLMRunner::generate(
       /*bos=*/config.num_bos,
       /*eos=*/config.num_eos);
 
-  ET_CHECK_TK_OK_OR_RETURN_ERROR(
-      encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
+  if (!encode_res.ok()) {
+    ET_LOG(
+        Error,
+        "Failed to encode prompt %s. Tokenizers error code %d",
+        prompt.c_str(),
+        static_cast<uint32_t>(encode_res.error()));
+    return Error::InvalidArgument;
+  }
 
   // encode the (string) prompt into tokens sequence
   std::vector<uint64_t> prompt_tokens = encode_res.get();
@@ -169,6 +175,11 @@ Error TextLLMRunner::generate(
   stats_->first_token_ms = time_in_ms();
   stats_->prompt_eval_end_ms = time_in_ms();
 
+  RUNNER_ET_LOG(
+      config.warming,
+      "RSS after prompt prefill: %f MiB (0 if unsupported)",
+      get_rss_bytes() / 1024.0 / 1024.0);
+
   // print the first token from prefill. No prev_token so use cur_token for it.
   auto decode_result = tokenizer_->decode(cur_token, cur_token);
   if (!decode_result.ok()) {
@@ -179,10 +190,6 @@ Error TextLLMRunner::generate(
     return ::executorch::runtime::Error::InvalidArgument;
   }
   wrapped_callback(std::move(*decode_result));
-  RUNNER_ET_LOG(
-      config.warming,
-      "RSS after prompt prefill: %f MiB (0 if unsupported)",
-      get_rss_bytes() / 1024.0 / 1024.0);
 
   // start the main loop
   prompt_tokens.push_back(cur_token);
@@ -232,8 +239,10 @@ Error TextLLMRunner::generate(
 
 Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
   // Create a GenerationConfig for warmup
-  GenerationConfig config{
-      .echo = false, .max_new_tokens = max_new_tokens, .warming = true};
+  GenerationConfig config;
+  config.echo = false;
+  config.max_new_tokens = max_new_tokens;
+  config.warming = true;
 
   // Call generate with the warmup config
   Error err = generate(prompt, config);

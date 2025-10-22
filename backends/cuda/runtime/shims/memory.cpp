@@ -11,6 +11,7 @@
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
+#include <executorch/backends/cuda/runtime/tensor/tensor_maker.h>
 #include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/platform/log.h>
 #include <cstdint>
@@ -163,9 +164,11 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
 
   // Create ExecutorTorch tensor that wraps the existing memory
   // Note: We're NOT copying the data, just wrapping it
-  auto tensor = executorch::extension::from_blob(
-      data, // existing memory (don't copy!)
+  // Using CUDA-specific tensor maker that supports incontiguous tensors
+  auto tensor = make_tensor(
       sizes, // tensor dimensions
+      data, // existing memory (don't copy!)
+      {}, // dim_order (empty, will be auto-generated)
       strides, // tensor strides (allows different strides)
       dtype_to_scalar_type(dtype) // map int32_t dtype to ScalarType
   );
@@ -210,10 +213,6 @@ AOTITorchError aoti_torch_empty_strided(
 
   // This requires us to reserve CUDA memory and put it into a ETensor
   void* ptr;
-  int64_t numel = 1;
-  for (int64_t i = 0; i < ndim; i++) {
-    numel *= sizes_ptr[i];
-  }
 
   ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
 
@@ -223,7 +222,28 @@ AOTITorchError aoti_torch_empty_strided(
       InvalidArgument,
       "Invalid element size for dtype: %d",
       dtype);
-  int64_t nbytes = numel * element_size;
+
+  // Calculate storage size based on strides, matching PyTorch's behavior
+  // This is critical when sizes and strides don't match the expected contiguous
+  // layout Reference: PyTorch's computeStorageNbytes in EmptyTensor.cpp
+  int64_t storage_size = 1; // storage offset (0) + 1
+  for (int64_t i = 0; i < ndim; i++) {
+    if (sizes_ptr[i] == 0) {
+      storage_size = 0;
+      break;
+    }
+    // For each dimension, add stride[i] * (size[i] - 1)
+    // This gives us the maximum offset in that dimension
+    int64_t stride_i = (strides_ptr != nullptr) ? strides_ptr[i] : 1;
+    if (strides_ptr == nullptr) {
+      // Calculate contiguous stride if not provided
+      for (int64_t j = i + 1; j < ndim; j++) {
+        stride_i *= sizes_ptr[j];
+      }
+    }
+    storage_size += stride_i * (sizes_ptr[i] - 1);
+  }
+  int64_t nbytes = storage_size * element_size;
 
   if (device_type == static_cast<int32_t>(SupportedDevices::CUDA)) {
     ET_CUDA_CHECK_OR_RETURN_ERROR(
@@ -250,8 +270,13 @@ AOTITorchError aoti_torch_empty_strided(
   auto strides = convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
 
   // ETensor creation with dynamic shape support for edge cases
-  auto tensor = executorch::extension::from_blob(
-      ptr, sizes, strides, dtype_to_scalar_type(dtype));
+  // Using CUDA-specific tensor maker that supports incontiguous tensors
+  auto tensor = make_tensor(
+      sizes,
+      ptr,
+      {}, // dim_order (empty, will be auto-generated)
+      strides,
+      dtype_to_scalar_type(dtype));
 
   // Store the tensor so it doesn't get destroyed
   tensors.insert(tensor);
@@ -259,7 +284,6 @@ AOTITorchError aoti_torch_empty_strided(
 
   // This tensor owns the memory it allocated, set reference count to 1
   memory_to_n_tensor[ptr] = 1;
-
   return Error::Ok;
 }
 
@@ -630,9 +654,11 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
   // Create new tensor view that reinterprets the same memory with different
   // shape/strides This creates a view, not a copy - the data pointer is shared
-  std::shared_ptr<Tensor> tensor = executorch::extension::from_blob(
-      data_ptr, // Reuse the same memory from source tensor
+  // Using CUDA-specific tensor maker that supports incontiguous tensors
+  std::shared_ptr<Tensor> tensor = make_tensor(
       sizes, // New sizes with explicit SizesType
+      data_ptr, // Reuse the same memory from source tensor
+      {}, // dim_order (empty, will be auto-generated)
       strides, // New strides with explicit StridesType
       dtype_to_scalar_type(dtype) // Convert dtype with explicit type casting
   );

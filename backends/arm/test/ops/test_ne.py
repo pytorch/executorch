@@ -159,9 +159,6 @@ def test_ne_scalar_u55_INT(test_module):
 @common.parametrize(
     "test_module",
     test_data_tensor,
-    xfails={
-        "ne_tensor_rank4_randn": "MLETORCH-517: Batch size > 1 not fully supported",
-    },
     strict=False,
 )
 @common.XfailIfNoCorstone320
@@ -179,7 +176,6 @@ def test_ne_tensor_u85_INT(test_module):
     "test_module",
     test_data_scalar,
     xfails={
-        "ne_scalar_rank4_randn": "MLETORCH-517: Batch size > 1 not fully supported",
         "ne_scalar_rank4_randn_1batch": "MLETORCH-847: Boolean ne result unstable on U85",
     },
     strict=False,

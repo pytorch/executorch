@@ -41,6 +41,9 @@
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#include <executorch/extension/threadpool/threadpool_guard.h>
+
+#include <optional>
 #endif
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
@@ -162,6 +165,11 @@ int main(int argc, char** argv) {
   if (num_performant_cores > 0) {
     ::executorch::extension::threadpool::get_threadpool()
         ->_unsafe_reset_threadpool(num_performant_cores);
+  }
+  std::optional<::executorch::extension::threadpool::NoThreadPoolGuard>
+      opt_guard;
+  if (cpu_threads == 1) {
+    opt_guard.emplace();
   }
 #endif // ET_USE_THREADPOOL
   // Create a loader to get the data of the program file. There are other
