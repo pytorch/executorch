@@ -93,9 +93,5 @@ add_executable(whisper_runner runner.cpp main.cpp)
 
 target_include_directories(whisper_runner PUBLIC ${_common_include_directories})
 
-target_link_libraries(
-  whisper_runner
-  PUBLIC
-  ${link_libraries}
-)
+target_link_libraries(whisper_runner PUBLIC ${link_libraries})
 target_compile_options(whisper_runner PUBLIC ${_common_compile_options})

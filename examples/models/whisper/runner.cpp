@@ -255,7 +255,8 @@ Result<std::vector<int64_t>> WhisperRunner::transcribe(
   decoder_inputs.emplace_back(decoder_input_ptr);
   decoder_inputs.emplace_back(encoder_output_ptr);
   decoder_inputs.emplace_back(cache_position_ptr);
-
+  // Add some green coloring for the first generated token
+  token_callback("\033[1;32m");
   while (generated_tokens < config.max_new_tokens) {
     input_id = tokens.back();
     auto decoder_result = module_->execute(kDecoderMethodName, decoder_inputs);
@@ -308,7 +309,8 @@ Result<std::vector<int64_t>> WhisperRunner::transcribe(
       break;
     }
   }
-
+  // Reset coloring
+  token_callback("\033[0m");
   // Update stats and print report
   stats_.num_generated_tokens = generated_tokens;
   stats_.inference_end_ms = ::executorch::extension::llm::time_in_ms();
