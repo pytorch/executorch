@@ -194,7 +194,7 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      upload-artifact: gemma3-cuda-export
+      upload-artifact: ${{ matrix.quant.artifact }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
