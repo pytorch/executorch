@@ -10,7 +10,7 @@ ExecuTorch is a lightweight, flexible runtime designed for efficient AI inferenc
 - **No CUDA Support**: For a long time, ExecuTorch did not offer a CUDA backend, limiting GPU acceleration on NVIDIA hardware.
 
 ## Recent Developments
-With increased demand for local inference on consumer desktops and laptops, exemplified by popular runtimes like llama.cpp and MLX, ExecuTorch is now experimenting with CUDA and Metal support. This is achieved by leveraging Inductor compiler technology from PyTorch, specifically using Ahead-of-Time Inductor (AOTI) to avoid reinventing the wheel.
+With increased demand for local inference on consumer desktops and laptops, exemplified by popular runtimes like llama.cpp and MLX, ExecuTorch is now experimenting with CUDA and Metal support. This is achieved by leveraging Inductor compiler technology from PyTorch, specifically using Ahead-of-Time Inductor [AOTI](https://docs.pytorch.org/docs/stable/torch.compiler_aot_inductor.html) to avoid reinventing the wheel.
 
 ## Key Benefits
 - **Model Agnostic**: Validated on models such as [Voxtral](../examples/models/voxtral), [Gemma3-4b](../examples/models/gemma3), ResNet, and Whisper (WIP). Theoretically, any model exportable via torch.export is supported.
@@ -29,3 +29,4 @@ Backends leveraging AoTi
 - **Experimental Status**: CUDA and Metal backends via AoTi are currently experimental. Contributions and feedback are welcome!
 - **Model Compatibility**: While most models exportable via torch.export should work, validation is ongoing for broader model support.
 - **Portability**: Figuring out the balance and trade-off between performance, portability and model filesize.
+- **Windows-native WIP**: On windows we only supports WSL right now. Native Windows support is WIP.
