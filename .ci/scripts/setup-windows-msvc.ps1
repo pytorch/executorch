@@ -1,6 +1,9 @@
 conda create --yes --quiet -n et python=3.12
 conda activate et
 
+# Install cmake
+conda install -y cmake
+
 # Activate the VS environment - this is required for MSVC to work
 # There are a bunch of environment variables that it requires.
 # See https://learn.microsoft.com/en-us/cpp/build/building-on-the-command-line.
