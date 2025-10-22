@@ -180,6 +180,7 @@ Error TextLLMRunner::generate(
       "RSS after prompt prefill: %f MiB (0 if unsupported)",
       get_rss_bytes() / 1024.0 / 1024.0);
 
+  printf("\033[32m");
   // print the first token from prefill. No prev_token so use cur_token for it.
   auto decode_result = tokenizer_->decode(cur_token, cur_token);
   if (!decode_result.ok()) {
@@ -201,6 +202,8 @@ Error TextLLMRunner::generate(
       max_new_tokens - 1,
       temperature_ == -1.0f ? config.temperature : temperature_,
       wrapped_callback);
+
+  printf("\033[0m");
   if (!generate_result.ok()) {
     return generate_result.error();
   }
