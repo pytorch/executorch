@@ -680,12 +680,16 @@ void ETMetalStream::endKernelCoalescing() {
 
 // Commit methods
 void ETMetalStream::commit() {
-    if (enableCommitAndContinue_ && commandBuffer_) {
-        // Use commit-and-continue for better performance
-        commitAndContinue();
-    } else {
-        flush();
+    if (!commandBuffer_) {
+        ET_LOG(Error, "ETMetalStream::commit: No command buffer to commit");
+        return;
     }
+
+    [commandBuffer_ commit];
+    ET_LOG(Debug, "ETMetalStream::commit: Committed buffer %p", commandBuffer_);
+
+    [commandBuffer_ release];
+    commandBuffer_ = nil;
 }
 
 void ETMetalStream::commitAndWait() {
