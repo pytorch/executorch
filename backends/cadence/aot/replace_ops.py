@@ -2106,6 +2106,7 @@ class ReplaceTorchQuantizedEmbeddingWithCadenceQuantizedEmbedding(ExportPass):
 
 class CommonReplacePasses:
     passes = [
+        ReplaceScalarWithTensorArgPass,
         ReplaceSqueezeAndUnsqueezeWithViewPass,
         ReplaceSplitWithSlicePass,
         ReplaceSelectWithViewOpPass,
@@ -2143,7 +2144,6 @@ class CadenceReplaceOpsInGraph:
         ReplaceEmptyTensorsWithFullPass,
         ReplaceFunctionallyEquivalentOpTargets,
         ReplacePermuteWithTransposePass,
-        ReplaceScalarWithTensorArgPass,
         ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
         ReplaceAddMMWithLinearPass,
         RemoveNopSelectOpPass,
