@@ -14,7 +14,7 @@ the TOSA serializer types and shapes used during initial compilation.
 from enum import Enum
 from typing import Any, Optional, Sequence
 
-import serializer.tosa_serializer as ts  # type: ignore
+import serializer.tosa_serializer as ts
 
 import torch
 from executorch.backends.arm.tosa.specification import TosaSpecification

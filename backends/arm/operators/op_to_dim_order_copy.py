@@ -6,6 +6,8 @@
 # pyre-unsafe
 from typing import Any, List
 
+import serializer.tosa_serializer as ts
+
 import torch
 
 from executorch.backends.arm.operators.node_visitor import (
@@ -40,8 +42,6 @@ class ToDimOrderCopyVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 1)
 
         self._serialize_operator(

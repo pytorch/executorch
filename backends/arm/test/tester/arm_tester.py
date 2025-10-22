@@ -24,7 +24,7 @@ from typing import (
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
-import serializer.tosa_serializer as ts  # type: ignore[import-untyped]
+import serializer.tosa_serializer as ts
 
 import torch.fx
 import torch.utils._pytree as pytree
