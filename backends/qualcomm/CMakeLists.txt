@@ -150,6 +150,7 @@ add_library(qnn_executorch_backend SHARED)
 add_library(qnn_executorch_header INTERFACE)
 add_library(qnn_executorch_logging STATIC)
 add_library(qnn_factory STATIC)
+add_library(qnn_backend_unified_registry STATIC)
 add_library(qnn_function_interface INTERFACE)
 add_library(qnn_graph STATIC)
 add_library(qnn_implementation STATIC)
@@ -213,13 +214,30 @@ target_link_libraries(
 )
 
 target_link_libraries(
-  qnn_dlc_manager PRIVATE qnn_factory qnn_backend qnn_device qnn_context
-                          qnn_graph qnn_mem_manager
+  qnn_backend_unified_registry PRIVATE qnn_schema qnn_backend qnn_device
+                                       qnn_implementation
 )
 
 target_link_libraries(
-  qnn_manager PRIVATE qnn_factory wrappers qnn_schema utils shared_buffer
-                      qnn_dlc_manager
+  qnn_dlc_manager
+  PRIVATE qnn_factory
+          qnn_backend_unified_registry
+          qnn_backend
+          qnn_device
+          qnn_context
+          qnn_graph
+          qnn_mem_manager
+)
+
+target_link_libraries(
+  qnn_manager
+  PRIVATE qnn_factory
+          qnn_backend_unified_registry
+          wrappers
+          qnn_schema
+          utils
+          shared_buffer
+          qnn_dlc_manager
 )
 target_link_libraries(
   qnn_executorch_backend
