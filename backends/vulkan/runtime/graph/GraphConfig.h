@@ -35,6 +35,9 @@ struct GraphConfig final {
 
   // Whether or not the ComputeGraph should expect input shapes to be dynamic
   bool expect_dynamic_shapes;
+  // Used for testing/debugging only. Forces ExecuteNode to trigger the resize
+  // function even if none of the inputs have been updated.
+  bool force_resize = false;
 
   // Execution properties that determine specifics re: how command buffer
   // submission is handled, etc. 0 means this field is not set.
