@@ -5,7 +5,7 @@
 
 from typing import Any, List, Sequence
 
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -53,13 +53,15 @@ class WhereVisitor_INT(NodeVisitor):
             output.tosa_spec,
         )
 
+        attr = ts.TosaSerializerAttribute()
+        attr.SelectAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().SELECT,
+            ts.Op.SELECT,
             [inputs[0].name, inputs[1].name, inputs[2].name],
             [output.name],
-            None,
+            attr,
         )
 
     def define_node(

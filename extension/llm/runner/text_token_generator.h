@@ -128,13 +128,9 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       if (eos_ids_->find(cur_token) != eos_ids_->end()) {
         printf("\n");
         ET_LOG(Info, "\nReached to the end of generation");
-        return pos - start_pos;
+        break;
       }
     }
-    ET_LOG(
-        Info,
-        "\nFinished generation. Generated %" PRIi32 " tokens.",
-        start_pos + max_new_tokens);
     return pos - start_pos;
   }
 
