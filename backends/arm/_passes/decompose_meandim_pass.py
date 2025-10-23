@@ -19,13 +19,13 @@ from executorch.exir.pass_base import ExportPass
 
 
 def get_meandim_decomposition(op) -> tuple:
-    if op == exir_ops.edge.aten.mean.dim:
+    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
         return (
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.mul.Tensor,
         )
-    if op == torch.ops.aten.mean.dim:
+    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
         return (
             torch.ops.aten.sum.dim_IntList,
             torch.ops.aten.full.default,
@@ -35,17 +35,17 @@ def get_meandim_decomposition(op) -> tuple:
 
 
 def get_avgpool(op):
-    if op == exir_ops.edge.aten.mean.dim:
+    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
         return exir_ops.edge.aten.avg_pool2d.default
-    if op == torch.ops.aten.mean.dim:
+    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
         return torch.ops.aten.avg_pool2d.default
     raise RuntimeError(f"Can't get meandim decomposition for op {op}")
 
 
 def get_view(op):
-    if op == exir_ops.edge.aten.mean.dim:
+    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
         return exir_ops.edge.aten.view_copy.default
-    if op == torch.ops.aten.mean.dim:
+    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
         return torch.ops.aten.view_copy.default
     raise RuntimeError(f"Can't get meandim decomposition for op {op}")
 
@@ -87,13 +87,18 @@ class DecomposeMeanDimPass(ArmPass):
         )
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (exir_ops.edge.aten.mean.dim, torch.ops.aten.mean.dim):
+        if op not in (
+            exir_ops.edge.aten.mean.dim,
+            torch.ops.aten.mean.dim,
+            exir_ops.edge.aten.mean.default,
+            torch.ops.aten.mean.default,
+        ):
             return super().call_operator(op, args, kwargs, meta)
 
         x = get_node_arg(args, 0)
         input_shape = list(x.data.shape)
         output_shape = list(meta["val"].shape)
-        dims_to_reduce = get_node_arg(args, 1)
+        dims_to_reduce = get_node_arg(args, 1, range(len(input_shape)))
         if dims_to_reduce is None:
             dims_to_reduce = range(len(input_shape))
         dims_to_reduce = [dim % len(input_shape) for dim in dims_to_reduce]
