@@ -6,9 +6,9 @@
 # pyre-unsafe
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
-
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -90,13 +90,16 @@ class MaxPool2dVisitor(NodeVisitor):
 
         attr = ts.TosaSerializerAttribute()
         attr.MaxPool2dAttribute(
-            kernel=kernel_size, stride=stride, pad=pad_size_list, nan_mode=1
+            kernel=kernel_size,
+            stride=stride,
+            pad=pad_size_list,
+            nan_mode=ts.NanPropagationMode.PROPAGATE,
         )
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().MAX_POOL2D,
+            ts.Op.MAX_POOL2D,
             [input_tensor.name],
             [output.name],
             attr,

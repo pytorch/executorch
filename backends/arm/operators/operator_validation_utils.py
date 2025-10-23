@@ -6,8 +6,6 @@
 from math import ceil, floor
 from typing import Any, List, Optional
 
-import serializer.tosa_serializer as ts
-
 
 def validate_num_inputs(op_name: str, inputs: List[Any], expected: int | List[int]):
     """
@@ -98,18 +96,14 @@ def validate_same_dtype(op_name: str, tensors: List[Any], ts: Optional[Any] = No
 
     # Get dtype of the first tensor to reference for comparison
     reference_dtype = tensors[0].dtype
+    reference_dtype_name = str(reference_dtype)
 
     for tensor in tensors:
-        ref_dtype_name = (
-            ts.DTypeNames[reference_dtype] if ts is not None else str(reference_dtype)
-        )
-        inconsistent_dtype_name = (
-            ts.DTypeNames[tensor.dtype] if ts is not None else str(tensor.dtype)
-        )
         if tensor.dtype != reference_dtype:
+            inconsistent_dtype_name = str(tensor.dtype)
             raise ValueError(
-                f"{op_name}: Expected all tensors to have dtype {ref_dtype_name}, but "
-                f"found inconsistent dtype {inconsistent_dtype_name}."
+                f"{op_name}: Expected all tensors to have dtype {reference_dtype_name}, "
+                f"but found inconsistent dtype {inconsistent_dtype_name}."
             )
 
 
@@ -171,10 +165,11 @@ def validate_valid_dtype(
 
     for tensor in tensors:
         if tensor.dtype not in valid_dtypes:
+            valid_names = [str(dtype) for dtype in valid_dtypes]
+            got_name = str(tensor.dtype)
             raise ValueError(
                 f"Expected tensor {tensor.name} in {op_name} to have one of the "
-                f"following dtypes: {[ts.DTypeNames[i] for i in valid_dtypes]}, "
-                f"got: {ts.DTypeNames[tensor.dtype]}"
+                f"following dtypes: {valid_names}, got: {got_name}"
             )
 
 

@@ -35,6 +35,9 @@ toolchain_url=""
 toolchain_dir=""
 toolchain_md5_checksum=""
 
+# Load logging helpers early so option parsing can emit status messages.
+source "$et_dir/backends/arm/scripts/utils.sh"
+
 
 # List of supported options and their descriptions
 OPTION_LIST=(
@@ -145,7 +148,7 @@ function check_options() {
                 shift
                 ;;
             --setup-test-dependency)
-                echo "Installing test dependency..."
+                log_step "deps" "Installing test dependency..."
                 source $et_dir/backends/arm/scripts/install_models_for_test.sh
                 exit 0
                 ;;
@@ -218,7 +221,6 @@ if [[ $is_script_sourced -eq 0 ]]; then
     check_options "$@"
 
     # Import utils
-    source $et_dir/backends/arm/scripts/utils.sh
     source $et_dir/backends/arm/scripts/fvp_utils.sh
     source $et_dir/backends/arm/scripts/toolchain_utils.sh
     source $et_dir/backends/arm/scripts/vulkan_utils.sh
@@ -277,11 +279,39 @@ if [[ $is_script_sourced -eq 0 ]]; then
     # Create the setup_path.sh used to create the PATH variable for shell
     create_setup_path
 
-    # Setup the tosa_reference_model and dependencies
+    # Setup the TOSA reference model and serialization dependencies
     log_step "deps" "Installing TOSA reference model dependencies"
     CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        pip install --no-dependencies -r "$et_dir/backends/arm/requirements-arm-tosa.txt"
+
+    pushd "$root_dir"
+    if [[ ! -d "tosa-tools" ]]; then
+        git clone https://git.gitlab.arm.com/tosa/tosa-tools.git
+    fi
+
+    pushd tosa-tools
+    git checkout 8468d041c50c6d806f3c1c18c66d7ef641e46580 # serialization lib pybindings
+    if [[ ! -d "reference_model" ]]; then
+        log_step "main" "[error] Missing reference_model directory in tosa-tools repo."
+        exit 1
+    fi
+    if [[ ! -d "serialization" ]]; then
+        log_step "main" "[error] Missing serialization directory in tosa-tools repo."
+        exit 1
+    fi
+
+
+    export CMAKE_BUILD_PARALLEL_LEVEL="$(get_parallel_jobs)"
+
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
         BUILD_PYBIND=1 \
-        pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-tosa.txt
+        pip install --no-dependencies ./reference_model
+
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        BUILD_PYBIND=1 \
+        pip install --no-dependencies ./serialization
+    popd
+    popd
 
     if [[ "${enable_vela}" -eq 1 ]]; then
         log_step "deps" "Installing Ethos-U Vela compiler"

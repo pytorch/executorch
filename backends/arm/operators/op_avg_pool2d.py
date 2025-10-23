@@ -6,9 +6,9 @@
 # pyre-unsafe
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
-
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -93,17 +93,14 @@ class AvgPool2dVisitor(NodeVisitor):
             pad=pad_size_list,
             acc_type=accumulator_type,
         )
-        input_zp_tensor = tosa_graph.addConst(
-            shape=[1], dtype=output.dtype, vals=[input_zp]
-        )
-        output_zp_tensor = tosa_graph.addConst(
-            shape=[1], dtype=output.dtype, vals=[output_zp]
-        )
+        dt: ts.DType = output.dtype
+        input_zp_tensor = tosa_graph.addConst(shape=[1], dtype=dt, vals=[input_zp])
+        output_zp_tensor = tosa_graph.addConst(shape=[1], dtype=dt, vals=[output_zp])
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().AVG_POOL2D,
+            ts.Op.AVG_POOL2D,
             [input_tensor.name, input_zp_tensor.name, output_zp_tensor.name],
             [output.name],
             attr,

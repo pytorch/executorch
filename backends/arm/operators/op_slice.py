@@ -7,7 +7,7 @@
 
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -23,17 +23,34 @@ from torch.fx import Node
 
 
 def _fixup_start(start, shape, dim):
-    if start.number < 0:
-        return start.number % shape[dim]
-    else:
-        return start.number
+    # Normalize start index and clamp into [0, shape[dim]].
+    # If not a constant, default to 0.
+    idx = getattr(start, "number", 0)
+    # Handle negative wrap-around
+    if idx < 0:
+        idx = idx % shape[dim]
+    # Clamp into valid bounds
+    if idx < 0:
+        idx = 0
+    elif idx > shape[dim]:
+        idx = shape[dim]
+    return idx
 
 
 def _fixup_end(end, shape, dim):
-    if end.number < 0:
-        return end.number % shape[dim]
-    else:
-        return min(end.number, shape[dim])
+    # Normalize end index and clamp into [0, shape[dim]].
+    max_dim = shape[dim]
+    # If not a constant, default to the full size
+    idx = getattr(end, "number", max_dim)
+    # Handle negative wrap-around
+    if idx < 0:
+        idx = idx % max_dim
+    # Clamp into valid bounds
+    if idx < 0:
+        idx = 0
+    elif idx > max_dim:
+        idx = max_dim
+    return idx
 
 
 @register_node_visitor
@@ -117,11 +134,13 @@ class SliceVisitor(NodeVisitor):
             (sizes_len,), ts.DType.SHAPE, sizes, node.name + "_sizes_shape"
         )
 
+        attr = ts.TosaSerializerAttribute()
+        attr.SliceAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().SLICE,
+            ts.Op.SLICE,
             [input_node.name, start_tensor.name, sizes_tensor.name],
             [output.name],
-            None,
+            attr,
         )

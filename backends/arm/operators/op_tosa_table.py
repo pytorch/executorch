@@ -7,9 +7,9 @@
 
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
-
 import torch
+
+import tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -59,12 +59,13 @@ class TableVisitor(NodeVisitor):
             table.detach().numpy(),
             name=table_tensor_name,
         )
-
+        attr = ts.TosaSerializerAttribute()
+        attr.TableAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().TABLE,
+            ts.Op.TABLE,
             [inputs[0].name, table_tensor_name],
             [output.name],
-            None,
+            attr,
         )

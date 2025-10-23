@@ -15,7 +15,7 @@ from collections import deque
 from itertools import count
 from typing import cast, Dict, final, List, Set
 
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
 from executorch.backends.arm.debug.schema import DebugHook
@@ -102,6 +102,9 @@ class TOSABackend(BackendDetails):
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
+        if not artifact_path:
+            artifact_path = ""
+
         tosa_graph = ts.TosaSerializer(artifact_path)
 
         if not (
@@ -171,13 +174,16 @@ class TOSABackend(BackendDetails):
                     # any checking of compatibility.
                     raise RuntimeError(f"{node.name} is unsupported op {node.op}")
             except Exception:
-                debug_fail(node, graph_module, tosa_graph, artifact_path)
+                debug_fail(node, graph_module, tosa_graph.serialize(), artifact_path)
                 raise
+
+        # Serialize and return the TOSA flatbuffer.
+        binary = tosa_graph.serialize()
 
         if artifact_path:
             tag = arm_get_first_delegation_tag(graph_module)
             debug_tosa_dump(
-                tosa_graph,
+                binary,
                 artifact_path,
                 suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),
             )
@@ -187,9 +193,6 @@ class TOSABackend(BackendDetails):
                     json_output = debug_hook.serialize()
                     with open(f"{artifact_path}/debug.json", "w") as f:
                         f.write(json_output)
-
-        # Serialize and return the TOSA flatbuffer.
-        binary = bytes(tosa_graph.serialize())
 
         return PreprocessResult(processed_bytes=binary)
 

@@ -7,7 +7,7 @@
 
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -42,8 +42,6 @@ class MaxVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        from tosa.NanPropagationMode import NanPropagationMode  # type: ignore
-
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
@@ -54,13 +52,12 @@ class MaxVisitor(NodeVisitor):
         )
 
         attr_maximum = ts.TosaSerializerAttribute()
-        # Set to PROPAGATE as default
-        attr_maximum.MaximumAttribute(nan_mode=NanPropagationMode.PROPAGATE)
+        attr_maximum.MaximumAttribute(nan_mode=ts.NanPropagationMode.PROPAGATE)
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().MAXIMUM,
+            ts.Op.MAXIMUM,
             [
                 inputs[0].name,
                 inputs[1].name,

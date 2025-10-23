@@ -6,9 +6,9 @@
 # pyre-unsafe
 from typing import Any, cast, List
 
-import serializer.tosa_serializer as ts
-
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -75,7 +75,7 @@ class ViewVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().RESHAPE,
+            ts.Op.RESHAPE,
             [inputs[0].name, shape.name],
             [output.name],
             attr,

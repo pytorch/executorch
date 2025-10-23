@@ -9,6 +9,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 import torch
+import tosa_serializer as ts
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.debug.schema import DebugHook
@@ -46,12 +47,12 @@ class NodeVisitor:
         self,
         node: torch.fx.Node,
         tosa_graph: Any,
-        tosa_op: Any,
+        tosa_op: ts.Op,
         inputs: List[str],
         outputs: List[str],
         attributes: Optional[Any] = None,
     ) -> None:
-        op_location = ""
+        op_location = ts.TosaOpLocation()
         if self.debug_hook:
             debug_info = self.debug_hook.add(
                 node,
@@ -60,7 +61,7 @@ class NodeVisitor:
             )
 
             if self.debug_hook.mode == ArmCompileSpec.DebugMode.TOSA:
-                op_location = json.dumps(debug_info.to_dict())
+                op_location.text = json.dumps(debug_info.to_dict())
 
         tosa_graph.addOperator(
             tosa_op,

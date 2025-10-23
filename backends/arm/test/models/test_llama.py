@@ -111,9 +111,12 @@ def test_llama_tosa_FP():
             llama_inputs,
             aten_op=[],
             exir_op=[],
+            custom_path="llama_tosa_fb",
+            run_on_tosa_ref_model=False,  # Just want to write TOSA FB to disk
             use_to_edge_transform_and_lower=True,
             transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
         )
+        pipeline.add_stage_after("to_executorch", pipeline.tester.serialize)
         pipeline.run()
 
 
@@ -129,8 +132,11 @@ def test_llama_tosa_INT():
             llama_inputs,
             aten_op=[],
             exir_op=[],
+            custom_path="llama_tosa_fb_int",
+            run_on_tosa_ref_model=False,  # Just want to write TOSA FB to disk
             use_to_edge_transform_and_lower=True,
         )
+        pipeline.add_stage_after("to_executorch", pipeline.tester.serialize)
         pipeline.run()
 
 
@@ -150,6 +156,7 @@ def test_llama_vgf_FP():
             tosa_version="TOSA-1.0+FP",
             use_to_edge_transform_and_lower=True,
             transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
+            run_on_vulkan_runtime=True,
         )
         pipeline.run()
 
@@ -169,5 +176,6 @@ def test_llama_vgf_INT():
             exir_op=[],
             tosa_version="TOSA-1.0+INT",
             use_to_edge_transform_and_lower=True,
+            run_on_vulkan_runtime=True,
         )
         pipeline.run()

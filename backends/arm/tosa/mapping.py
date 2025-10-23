@@ -14,9 +14,8 @@ the TOSA serializer types and shapes used during initial compilation.
 from enum import Enum
 from typing import Any, Optional, Sequence
 
-import serializer.tosa_serializer as ts
-
 import torch
+import tosa_serializer as ts
 from executorch.backends.arm.tosa.specification import TosaSpecification
 
 UNSUPPORTED_DTYPES = (
@@ -40,7 +39,7 @@ class TosaSpecialDtype(Enum):
 
     INT48 = ts.DType.INT48
 
-    def get_tosa_dtype(self) -> ts.TosaDType.DType:
+    def get_tosa_dtype(self) -> ts.DType:
         return self.value
 
     @staticmethod

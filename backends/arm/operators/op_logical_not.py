@@ -5,9 +5,9 @@
 
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
-
 import torch.fx
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -50,10 +50,13 @@ class LogicalNotVisitor(NodeVisitor):
             output.tosa_spec,
         )
 
+        attr = ts.TosaSerializerAttribute()
+        attr.LogicalNotAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().LOGICAL_NOT,
+            ts.Op.LOGICAL_NOT,
             [inputs[0].name],
             [output.name],
+            attr,
         )
