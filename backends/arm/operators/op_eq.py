@@ -7,7 +7,7 @@
 
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -53,12 +53,13 @@ class EqualVisitor(NodeVisitor):
         )
         validate_valid_dtype(self.target, output, ts.DType.BOOL, output.tosa_spec)
 
-        # Do the equal comparison
+        attr = ts.TosaSerializerAttribute()
+        attr.EqualAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().EQUAL,
+            ts.Op.EQUAL,
             [inputs[0].name, inputs[1].name],
             [output.name],
-            None,
+            attr,
         )
