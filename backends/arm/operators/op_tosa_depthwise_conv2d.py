@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
+import tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import register_node_visitor
 from executorch.backends.arm.operators.op_tosa_conv2d import Conv2dVisitor
 from executorch.backends.arm.tosa import TosaSpecification
@@ -21,9 +22,7 @@ class DepthwiseConv2dVisitor(Conv2dVisitor):
     ]
 
     def _get_tosa_op(self):
-        import serializer.tosa_serializer as ts  # type: ignore
-
-        return ts.TosaOp.Op().DEPTHWISE_CONV2D
+        return ts.Op.DEPTHWISE_CONV2D
 
     def _get_attr_func(self, attr):
         return attr.DepthwiseConv2dAttribute

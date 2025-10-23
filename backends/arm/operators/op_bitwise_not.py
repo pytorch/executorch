@@ -5,7 +5,7 @@
 
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -49,10 +49,14 @@ class BitwiseNotVisitor(NodeVisitor):
             output.tosa_spec,
         )
 
+        attr = ts.TosaSerializerAttribute()
+        attr.BitwiseNotAttribute()
+
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().BITWISE_NOT,
+            ts.Op.BITWISE_NOT,
             [inputs[0].name],
             [output.name],
+            attr,
         )

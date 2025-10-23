@@ -11,7 +11,7 @@ from typing import Any, List
 import executorch.backends.arm.tosa.utils as tutils
 
 import numpy as np
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -167,12 +167,15 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
             data = np.full(index_shape, int(values_strides[i] / C))
             mul_const = tosa_graph.addConst(index_shape, index_dtype, data)
             tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{node.name}_{i}_shift")
+            attr = ts.TosaSerializerAttribute()
+            attr.MulAttribute()
             self._serialize_operator(
                 node,
                 tosa_graph,
-                ts.TosaOp.Op().MUL,
+                ts.Op.MUL,
                 [index_name, mul_const.name, f"{node.name}_{i}_shift"],
                 [stride_shifted_indices.name],
+                attr,
             )
 
             reshaped_idxs = tosa_graph.addIntermediate(
@@ -196,12 +199,15 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
                     reshaped_idxs.shape,
                     reshaped_idxs.dtype,
                 )
+                attr = ts.TosaSerializerAttribute()
+                attr.AddAttribute()
                 self._serialize_operator(
                     node,
                     tosa_graph,
-                    ts.TosaOp.Op().ADD,
+                    ts.Op.ADD,
                     [gather_index_name, reshaped_idxs.name],
                     [add_idxs.name],
+                    attr,
                 )
                 gather_index_name = add_idxs.name
 
@@ -221,13 +227,15 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
             gather_out_shape,
             output.dtype,
         )
+        attr = ts.TosaSerializerAttribute()
+        attr.GatherAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().GATHER,
+            ts.Op.GATHER,
             [reshaped_input.name, gather_index_name],
             [gather_out.name],
-            None,
+            attr,
         )
 
         output_shape = tutils.tosa_shape(output.shape, output.dim_order)
