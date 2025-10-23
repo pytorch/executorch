@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
+import operator
 from typing import Any, cast, Dict
 
 import numpy as np
@@ -45,9 +46,15 @@ def process_call_function(
             f"Failed processing call_function: {node.name}. "
             "Is the original torch function supported?"
         ) from e
-    tosa_graph.currRegion.currBasicBlock.addTensor(
-        output.name, tosa_shape(output.shape, output.dim_order), output.dtype
-    )
+
+    if not output.multiple_output_names:
+        tosa_graph.currRegion.currBasicBlock.addTensor(
+            output.name, tosa_shape(output.shape, output.dim_order), output.dtype
+        )
+
+    # Get item nodes just add tensors, no node visitor is needed.
+    if node.target == operator.getitem:
+        return
 
     # Visiting each Node
     # pyre-ignore[16]: Undefined attribute.
