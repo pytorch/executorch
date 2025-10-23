@@ -8,6 +8,8 @@ from typing import Any, List
 
 import torch
 
+import tosa_serializer as ts
+
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -40,10 +42,9 @@ class ToDimOrderCopyVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 1)
-
+        attr = ts.TosaSerializerAttribute()
+        attr.CastAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.TosaOp.Op().CAST, [inputs[0].name], [output.name]
+            node, tosa_graph, ts.Op.CAST, [inputs[0].name], [output.name], attr
         )

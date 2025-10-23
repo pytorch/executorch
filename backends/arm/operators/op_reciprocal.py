@@ -8,6 +8,8 @@ from typing import Any, List
 
 import torch
 
+import tosa_serializer as ts
+
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -38,14 +40,13 @@ class ReciprocalVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
             self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
         )
-
+        attr = ts.TosaSerializerAttribute()
+        attr.ReciprocalAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.TosaOp.Op().RECIPROCAL, [inputs[0].name], [output.name]
+            node, tosa_graph, ts.Op.RECIPROCAL, [inputs[0].name], [output.name], attr
         )

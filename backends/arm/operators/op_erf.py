@@ -6,6 +6,8 @@
 from typing import Any, List
 
 import torch.fx
+
+import tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -36,8 +38,6 @@ class ERFVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
@@ -48,6 +48,8 @@ class ERFVisitor(NodeVisitor):
         )
 
         # MI lowering
+        attr = ts.TosaSerializerAttribute()
+        attr.ErfAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.TosaOp.Op().ERF, [inputs[0].name], [output.name]
+            node, tosa_graph, ts.Op.ERF, [inputs[0].name], [output.name], attr
         )

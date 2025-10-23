@@ -9,6 +9,7 @@ from typing import Any, List
 
 import executorch.backends.arm.tosa.quant_utils as tqutils
 import executorch.backends.arm.tosa.utils as tutils
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -42,9 +43,6 @@ class AddVisitor_INT(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
         valid_dtypes = []
@@ -83,15 +81,16 @@ class AddVisitor_INT(NodeVisitor):
             add_output = output
 
         input1, input2 = rescaled_inputs
-
+        attr = ts.TosaSerializerAttribute()
+        attr.AddAttribute()
         # Do the INT32 Add
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().ADD,
+            ts.Op.ADD,
             [input1.name, input2.name],
             [add_output.name],
-            None,
+            attr,
         )
 
         if output.dtype == ts.DType.INT8:
@@ -132,9 +131,6 @@ class AddVisitor_FP(AddVisitor_INT):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
 
@@ -148,13 +144,14 @@ class AddVisitor_FP(AddVisitor_INT):
             )
 
             input1, input2 = inputs
-
+            attr = ts.TosaSerializerAttribute()
+            attr.AddAttribute()
             # FP lowering
             self._serialize_operator(
                 node,
                 tosa_graph,
-                ts.TosaOp.Op().ADD,
+                ts.Op.ADD,
                 [input1.name, input2.name],
                 [output.name],
-                None,
+                attr,
             )

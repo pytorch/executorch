@@ -8,6 +8,8 @@
 from typing import Any, List
 
 import torch
+
+import tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -34,8 +36,6 @@ class TableVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 2)
         validate_valid_dtype(
             self.target, inputs, [ts.DType.INT8, ts.DType.INT16], output.tosa_spec
@@ -59,12 +59,13 @@ class TableVisitor(NodeVisitor):
             table.detach().numpy(),
             name=table_tensor_name,
         )
-
+        attr = ts.TosaSerializerAttribute()
+        attr.TableAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().TABLE,
+            ts.Op.TABLE,
             [inputs[0].name, table_tensor_name],
             [output.name],
-            None,
+            attr,
         )

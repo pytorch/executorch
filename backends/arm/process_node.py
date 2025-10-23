@@ -8,9 +8,9 @@
 from typing import Any, cast, Dict
 
 import numpy as np
-import serializer.tosa_serializer as ts
 import torch
 import torch.fx
+import tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa.mapping import TosaArg, TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import TosaSpecification
@@ -85,7 +85,6 @@ def process_inputs(
         tosa_shape(input_shape, input_dim_order),
         tosa_arg.dtype,
         data=None,
-        placeholderFilename=tosa_arg.name + ".npy",
     )
     tosa_graph.addInputTensor(tensor)
 
