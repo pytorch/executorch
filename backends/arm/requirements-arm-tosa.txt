@@ -7,5 +7,3 @@ ml_dtypes == 0.5.1
 flatbuffers == 24.3.25
 tosa-adapter-model-explorer == 0.0.1
 ai-edge-model-explorer >= 0.1.16
-
-tosa-tools @ git+https://git.gitlab.arm.com/tosa/tosa-reference-model.git@v2025.07.1
