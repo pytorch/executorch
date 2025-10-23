@@ -6,9 +6,9 @@
 # pyre-unsafe
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
-
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -21,8 +21,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.utils import get_resize_parameters
-
-from tosa.ResizeMode import ResizeMode  # type: ignore
 
 
 @register_node_visitor
@@ -43,10 +41,10 @@ class ResizeVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, [3, 4])
         if node.kwargs.get("resize_mode") == "bilinear":
-            resize_mode = ResizeMode.BILINEAR
+            resize_mode = ts.ResizeMode.BILINEAR
             align_corners = bool(node.args[2])
         else:
-            resize_mode = ResizeMode.NEAREST
+            resize_mode = ts.ResizeMode.NEAREST
             align_corners = False
             validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
@@ -78,27 +76,32 @@ class ResizeVisitor(NodeVisitor):
         if not in_int16_range(border_yx):
             raise ValueError("border_yx is out of the int16 range")
 
-        scales = [scale_n_yx[0], scale_d_yx[0], scale_n_yx[1], scale_d_yx[1]]
+        scale_n_vals = [int(v) for v in scale_n_yx.tolist()]
+        scale_d_vals = [int(v) for v in scale_d_yx.tolist()]
+        scales = [
+            scale_n_vals[0],
+            scale_d_vals[0],
+            scale_n_vals[1],
+            scale_d_vals[1],
+        ]
         scales_tensor = tosa_graph.addConst(
             [len(scales)], ts.DType.SHAPE, scales, node.name + "_scales"
         )
-        offset = offset_yx.tolist()
+        offset = [int(v) for v in offset_yx.tolist()]
         offset_tensor = tosa_graph.addConst(
             [len(offset)], ts.DType.SHAPE, offset, node.name + "_offset"
         )
-        border = border_yx.tolist()
+        border = [int(v) for v in border_yx.tolist()]
         border_tensor = tosa_graph.addConst(
             [len(border)], ts.DType.SHAPE, border, node.name + "_border"
         )
         attr = ts.TosaSerializerAttribute()
-        attr.ResizeAttribute(
-            mode=resize_mode,
-        )
+        attr.ResizeAttribute(resize_mode)
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().RESIZE,
+            ts.Op.RESIZE,
             [
                 inputs[0].name,
                 scales_tensor.name,

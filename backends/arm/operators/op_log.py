@@ -6,7 +6,7 @@
 # pyre-unsafe
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -44,7 +44,8 @@ class LogVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
         )
-
+        attr = ts.TosaSerializerAttribute()
+        attr.LogAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.TosaOp.Op().LOG, [inputs[0].name], [output.name]
+            node, tosa_graph, ts.Op.LOG, [inputs[0].name], [output.name], attr
         )

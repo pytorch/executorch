@@ -6,7 +6,7 @@
 # pyre-unsafe
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -48,11 +48,13 @@ class AbsVisitor(NodeVisitor):
             output.tosa_spec,
         )
 
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().ABS,
-            [
-                inputs[0].name,
-            ],
+        attr = ts.TosaSerializerAttribute()
+        attr.AbsAttribute()
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.Op.ABS,
+            [inputs[0].name],
             [output.name],
-            None,
+            attr,
         )

@@ -8,7 +8,7 @@
 from typing import Any, List
 
 import executorch.backends.arm.tosa.quant_utils as tqutils  # noqa: F401
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -84,13 +84,15 @@ class IndexSelectVisitor(NodeVisitor):
             tosa_graph, indices.name, indices_new_shape, indices_reshaped.name
         )
 
+        attr = ts.TosaSerializerAttribute()
+        attr.GatherAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().GATHER,
+            ts.Op.GATHER,
             [weights_reshaped.name, indices_reshaped.name],
             [output_name],
-            None,
+            attr,
         )
 
         if len(weights.shape) == 2:

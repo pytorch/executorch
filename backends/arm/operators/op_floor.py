@@ -5,9 +5,9 @@
 
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
-
 import torch.fx
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -49,6 +49,8 @@ class FloorVisitor(NodeVisitor):
             output.tosa_spec,
         )
 
+        attr = ts.TosaSerializerAttribute()
+        attr.FloorAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.TosaOp.Op().FLOOR, [inputs[0].name], [output.name]
+            node, tosa_graph, ts.Op.FLOOR, [inputs[0].name], [output.name], attr
         )

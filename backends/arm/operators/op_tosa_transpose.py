@@ -7,9 +7,9 @@
 
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
-
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -65,7 +65,7 @@ class TransposeVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().TRANSPOSE,
+            ts.Op.TRANSPOSE,
             [inputs[0].name],
             [output.name],
             attr,

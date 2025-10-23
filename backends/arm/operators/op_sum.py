@@ -9,7 +9,7 @@ from typing import Any, List
 
 import executorch.backends.arm.tosa.quant_utils as tqutils
 import executorch.backends.arm.tosa.utils as tutils
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -68,7 +68,7 @@ class SumVisitor_INT(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().REDUCE_SUM,
+            ts.Op.REDUCE_SUM,
             [rescaled_inputs[0].name],
             [intermediate.name],
             attr,
@@ -111,7 +111,7 @@ class SumVisitor_FP(SumVisitor_INT):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().REDUCE_SUM,
+            ts.Op.REDUCE_SUM,
             [tensor.name],
             [output.name],
             attr,

@@ -6,9 +6,9 @@
 # pyre-unsafe
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
-
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -43,7 +43,8 @@ class ToDimOrderCopyVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 1)
-
+        attr = ts.TosaSerializerAttribute()
+        attr.CastAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.TosaOp.Op().CAST, [inputs[0].name], [output.name]
+            node, tosa_graph, ts.Op.CAST, [inputs[0].name], [output.name], attr
         )

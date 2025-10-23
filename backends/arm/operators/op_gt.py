@@ -7,7 +7,7 @@
 
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -53,11 +53,13 @@ class GreaterThanVisitor(NodeVisitor):
         )
         validate_valid_dtype(self.target, output, ts.DType.BOOL, output.tosa_spec)
 
+        attr = ts.TosaSerializerAttribute()
+        attr.GreaterAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().GREATER,
+            ts.Op.GREATER,
             [inputs[0].name, inputs[1].name],
             [output.name],
-            None,
+            attr,
         )
