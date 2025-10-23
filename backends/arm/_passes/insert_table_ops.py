@@ -286,7 +286,7 @@ class InsertTableOpsPass(ArmPass):
                     rescale_node = create_node(
                         graph=graph_module.graph,
                         op_target=exir_ops.backend.tosa.RESCALE.default,
-                        args=(table_op_node, output_qparams[0].dtype, scale, 0, 0),
+                        args=(table_op_node, output_qparams[0].dtype, [scale], 0, 0),
                     )
                     output_node = rescale_node
 

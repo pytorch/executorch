@@ -45,8 +45,7 @@ def validate_conv2d_args_dtypes(
                 f"TOSA spec {tosa_spec} only supports {torch.int32} bias for {x.dtype} input but found {bias.dtype}",
                 op=op,
             )
-        # TODO update to int32 for int8 inputs
-        output_dtype = torch.int8 if x.dtype == torch.int8 else torch.int16
+        output_dtype = torch.int32
 
     elif x.dtype in supported_float_types:
         if not tosa_spec.support_float():

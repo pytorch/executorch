@@ -105,14 +105,14 @@ class DecomposeConv2dWithInt16ActivationPass(ExportPass):
 
             conv_output = super().call_operator(
                 exir_ops.backend.tosa.RESCALE.default,
-                (convolution, torch.int32, conv_rescale_factor, 0, 0),
+                (convolution, torch.int32, [conv_rescale_factor], 0, 0),
                 {},
                 new_meta,
             )
 
             bias_rescaled = super().call_operator(
                 exir_ops.backend.tosa.RESCALE.default,
-                (channel_bias, torch.int32, bias_rescale_factor, 0, 0),
+                (channel_bias, torch.int32, [bias_rescale_factor], 0, 0),
                 {},
                 new_meta,
             )
@@ -129,7 +129,7 @@ class DecomposeConv2dWithInt16ActivationPass(ExportPass):
                 (
                     add,
                     output_dtype,
-                    (common_scale / (conv_output_scale * (1 << bits_left_to_shift))),
+                    [(common_scale / (conv_output_scale * (1 << bits_left_to_shift)))],
                     0,
                     0,
                 ),

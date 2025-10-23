@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import itertools
 from typing import Set, Type
 
 import torch
@@ -15,6 +16,10 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_param_tensor,
     is_buffer,
     is_param,
+)
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_input_qparams,
+    get_output_qparams,
 )
 from executorch.backends.arm.constants import HWCM_ORDER, NHWC_INVERSE_ORDER
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
@@ -156,6 +161,40 @@ class RewriteConv2dPass(ArmPass):
         node.update_arg(2, bias_node)
         return bias_node
 
+    def insert_output_rescale(self, graph_module, node):
+        input_qparams = get_input_qparams(node)
+        output_qparams = get_output_qparams(node)[0]
+        weight_qparams = input_qparams[1]
+        input_qparams = input_qparams[0]
+        is_per_channel = weight_qparams.per_channel
+        if is_per_channel:
+            weight_scale = weight_qparams.get_scale_per_channel()
+        else:
+            weight_scale = [weight_qparams.get_scale_per_tensor()]
+        input_scale = input_qparams.get_scale_per_tensor()
+        post_conv2d_scale = [
+            (inp * w) / out
+            for inp, w, out in zip(
+                itertools.cycle([input_scale]),
+                weight_scale,
+                itertools.cycle([output_qparams.get_scale_per_tensor()]),
+            )
+        ]
+        with graph_module.graph.inserting_after(node):
+            rescale_node = create_node(
+                graph=graph_module.graph,
+                op_target=exir_ops.backend.tosa.RESCALE.default,
+                args=(
+                    node,
+                    output_qparams.dtype,
+                    post_conv2d_scale,
+                    0,
+                    output_qparams.get_zp_per_tensor(),
+                ),
+                from_node=node,
+            )
+        return rescale_node
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False
         for node in graph_module.graph.nodes:
@@ -180,20 +219,20 @@ class RewriteConv2dPass(ArmPass):
             ) = node.args
 
             pad = [val for val in pad for _ in (0, 1)]
-            input_shape = get_first_fake_tensor(x).shape
-            weight_shape = get_first_fake_tensor(weight).shape
+            input_fake_tensor = get_first_fake_tensor(x)
+            weight_fake_tensor = get_first_fake_tensor(weight)
             # Adjust the pad value if needed to meet the
             # strict convolution output shape calculation.
             pad[1] = self._adjust_pad_if_needed(
-                input_shape[2],
-                weight_shape[2],
+                input_fake_tensor.shape[2],
+                weight_fake_tensor.shape[2],
                 stride[0],
                 pad[1],
                 dilation[0],
             )
             pad[3] = self._adjust_pad_if_needed(
-                input_shape[3],
-                weight_shape[3],
+                input_fake_tensor.shape[3],
+                weight_fake_tensor.shape[3],
                 stride[1],
                 pad[3],
                 dilation[1],
@@ -204,7 +243,8 @@ class RewriteConv2dPass(ArmPass):
 
             if self._is_depthwise_conv2d(node):
                 target_op = exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
-                self._reshape_weights(weight, input_shape[1])
+                self._reshape_weights(weight, input_fake_tensor.shape[1])
+                weight_fake_tensor = get_first_fake_tensor(weight)
             else:
                 target_op = exir_ops.backend.tosa.CONV2D.default
 
@@ -227,9 +267,29 @@ class RewriteConv2dPass(ArmPass):
                     args=conv2d_args,
                     from_node=node,
                 )
+            bias_fake_tensor = get_first_fake_tensor(bias) if bias else None
+            tosa_node_fake_tensor = target_op(
+                input_fake_tensor,
+                weight_fake_tensor,
+                bias_fake_tensor,
+                *conv2d_args[3:],
+            )
 
+            if (
+                tosa_node_fake_tensor.dtype == torch.int32
+                and input_fake_tensor.dtype == torch.int8
+            ) or (
+                tosa_node_fake_tensor.dtype == torch.int32
+                and input_fake_tensor.dtype == torch.int16
+            ):
+                output_rescale = self.insert_output_rescale(graph_module, tosa_op)
+                node.replace_all_uses_with(output_rescale)
+                if input_fake_tensor.dtype == torch.int16:
+                    tosa_op.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
+            else:
                 node.replace_all_uses_with(tosa_op)
-                graph_module.graph.erase_node(node)
+
+            graph_module.graph.erase_node(node)
 
         if modified:
             graph_module.recompile()

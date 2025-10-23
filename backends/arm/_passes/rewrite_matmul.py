@@ -44,7 +44,7 @@ class RewriteMatmulPass(ArmPass):
             rescale_node.args = (
                 tosa_matmul_node,
                 dtype,
-                scale,
+                [scale],
                 0,
                 output_qparams.get_zp_per_tensor(),
             )
