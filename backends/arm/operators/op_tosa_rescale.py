@@ -41,7 +41,7 @@ class RescaleVisitor(NodeVisitor):
 
         input_dtype = inputs[0].dtype
         output_dtype = cast(torch.dtype, node.args[1])
-        scale = cast(float, node.args[2])
+        scales = cast(list[float], node.args[2])
         input_zp = cast(int, node.args[3])
         output_zp = cast(int, node.args[4])
 
@@ -63,12 +63,12 @@ class RescaleVisitor(NodeVisitor):
 
         build_rescale(
             tosa_graph,
-            scale=[scale],
+            scale=scales,
             input_node=inputs[0],
             output_name=output.name,
             output_type=output.dtype,
             input_zp=[input_zp],
             output_zp=[output_zp],
             rounding_mode=ts.RoundingMode.SINGLE_ROUND,
-            per_channel=False,
+            per_channel=len(scales) > 1,
         )
