@@ -133,7 +133,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
     }
     ET_LOG(
         Info,
-        "\nFinished generation. Generated %" PRIi32 " tokens.",
+        "\nFinished generation. Generated %" PRIi64 " tokens.",
         start_pos + max_new_tokens);
     return pos - start_pos;
   }
