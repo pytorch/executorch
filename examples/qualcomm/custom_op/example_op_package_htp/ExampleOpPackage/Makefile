@@ -45,18 +45,21 @@ HEXAGON_SDK_ROOT_V68 := $(HEXAGON_SDK_BASE)/hexagon-sdk-4.2.0
 HEXAGON_SDK_ROOT_V69 := $(HEXAGON_SDK_BASE)/hexagon-sdk-4.3.0
 HEXAGON_SDK_ROOT_V73 := $(HEXAGON_SDK_BASE)/hexagon-sdk-5.4.0
 HEXAGON_SDK_ROOT_V75 := $(HEXAGON_SDK_BASE)/hexagon-sdk-5.4.0
-HEXAGON_SDK_ROOT_V79 := $(HEXAGON_SDK_BASE)/hexagon-sdk-6.0.0
+# HEXAGON_SDK_ROOT_V79 := $(HEXAGON_SDK_BASE)/hexagon-sdk-6.0.0
+HEXAGON_SDK_ROOT_V79 := $(HEXAGON_SDK_BASE)
 
 #Updated to point to latest sdk to match with libQnnHtp.so
-HEXAGON_SDK_ROOT_X86 := $(HEXAGON_SDK_BASE)/hexagon-sdk-6.0.0
+HEXAGON_SDK_ROOT_X86 := $(HEXAGON_SDK_BASE)
 HEXAGON_TOOLS_VERSION_V68 := 8.4.09
 HEXAGON_TOOLS_VERSION_V69 := 8.5.03
 HEXAGON_TOOLS_VERSION_V73 := 8.6.02
 HEXAGON_TOOLS_VERSION_V75 := 8.7.03
-HEXAGON_TOOLS_VERSION_V79 := 8.8.02
+# HEXAGON_TOOLS_VERSION_V79 := 8.8.02
+HEXAGON_TOOLS_VERSION_V79 := 8.8.05
 
 #Updated to point to latest sdk to match with libQnnHtp.so
-HEXAGON_TOOLS_VERSION_X86 := 8.8.02
+# HEXAGON_TOOLS_VERSION_X86 := 8.8.02
+HEXAGON_TOOLS_VERSION_X86 := 8.8.05
 
 ifndef ANDROID_NDK_ROOT
 ifeq ($(MAKECMDGOALS),htp_aarch64)
@@ -86,6 +89,8 @@ COMMON_CXX_FLAGS += -Werror -Wno-format -Wno-unused-command-line-argument -fvisi
 COMMON_CXX_FLAGS += -DQNN_API="__attribute__((visibility(\"default\")))"  -D__QAIC_HEADER_EXPORT="__attribute__((visibility(\"default\")))"
 
 X86_LIBNATIVE_RELEASE_DIR := $(HEXAGON_SDK_ROOT_X86)/tools/HEXAGON_Tools/$(HEXAGON_TOOLS_VERSION_X86)/Tools
+
+$(info "HEXAGON_SDK_ROOT_X86 is [${HEXAGON_SDK_ROOT_X86}]")
 
 # Ensure hexagon sdk tool version can be retrieved
 ifeq ($(wildcard $(X86_LIBNATIVE_RELEASE_DIR)/.),)
@@ -119,14 +124,14 @@ $(error "ERROR: HEXAGON_SDK_ROOT_V75 is set incorrectly. Cannot retrieve $(HEXAG
 endif
 endif
 
+$(info "HEXAGON_SDK_ROOT_V79 is [${HEXAGON_SDK_ROOT_V79}]")
+
 #Check tools for hexagon_v79 are present.
 ifeq ($(MAKECMDGOALS),htp_v79)
 ifeq ($(wildcard $(HEXAGON_SDK_ROOT_V79)),)
 $(error "ERROR: HEXAGON_SDK_ROOT_V79 is set incorrectly. Cannot retrieve $(HEXAGON_SDK_ROOT_V79)")
 endif
 endif
-
-
 
 endif
 OP_SOURCES = $(wildcard $(OP_SRC_DIR)/*.cpp)
@@ -183,7 +188,6 @@ HEXAGON_CXX_V69 := $(HEXAGON_SDK_ROOT_V69)/tools/HEXAGON_Tools/$(HEXAGON_TOOLS_V
 HEXAGON_CXX_V73 := $(HEXAGON_SDK_ROOT_V73)/tools/HEXAGON_Tools/$(HEXAGON_TOOLS_VERSION_V73)/Tools/bin/hexagon-clang++
 HEXAGON_CXX_V75 := $(HEXAGON_SDK_ROOT_V75)/tools/HEXAGON_Tools/$(HEXAGON_TOOLS_VERSION_V75)/Tools/bin/hexagon-clang++
 HEXAGON_CXX_V79 := $(HEXAGON_SDK_ROOT_V79)/tools/HEXAGON_Tools/$(HEXAGON_TOOLS_VERSION_V79)/Tools/bin/hexagon-clang++
-
 
 HEX_LDFLAGS =
 hexagon_objs =
