@@ -234,6 +234,7 @@ class TestQNN(unittest.TestCase):
         output_encodings: Tuple = (),
         check_io_shape: bool = False,
         op_package_paths: List[str] = None,
+        matching_criteria: str = None,
         extra_cmds: str = "",
         output_callback: Optional[Callable[[str], None]] = None,
         save_inference_speed: bool = False,
@@ -433,7 +434,32 @@ class TestQNN(unittest.TestCase):
                     )
                 adb.execute(method_index=method_index, output_callback=output_callback)
                 adb.pull(output_path=tmp_dir, callback=post_process)
-                self._assert_outputs_equal(outputs, ref_outputs)
+
+                if "sqnr_value" == matching_criteria:
+
+                    def calculate_sqnr(signal, quantized_signal):
+                        signal = np.array(signal)
+                        quantized_signal = np.array(quantized_signal)
+                        signal_power = np.mean(signal**2)
+                        noise_power = np.mean((signal - quantized_signal) ** 2)
+                        # Avoid division by zero; Infinite SQNR if no noise
+                        if noise_power == 0:
+                            return 100  # a big db value
+                        sqnr = 10 * np.log10(signal_power / noise_power)
+                        return sqnr
+
+                    q = np.array(outputs)
+                    p = np.array(ref_outputs)
+                    sqnr_value = calculate_sqnr(p, q)
+
+                    try:
+                        self._assert_outputs_equal(outputs, ref_outputs)
+                    except AssertionError:
+                        self.assertTrue(
+                            sqnr_value > 30, msg=f"SQNR: {sqnr_value: .2f} dB"
+                        )
+                else:
+                    self._assert_outputs_equal(outputs, ref_outputs)
 
                 if expected_profile_events != -1:
                     adb.pull_etdump(etdump_path, callback=validate_profile)
@@ -463,6 +489,7 @@ class TestQNN(unittest.TestCase):
         skip_node_op_set: set = None,
         skip_mutable_buffer: bool = False,
         dynamic_shapes: Dict = None,
+        matching_criteria: str = None,
         extra_cmds: str = "",
         output_callback: Optional[Callable[[str], None]] = None,
         save_inference_speed: bool = False,
@@ -519,6 +546,7 @@ class TestQNN(unittest.TestCase):
                 etrecord_path,
                 expected_profile_events,
                 expected_intermediate_events,
+                matching_criteria=matching_criteria,
                 extra_cmds=extra_cmds,
                 output_callback=output_callback,
                 save_inference_speed=save_inference_speed,
