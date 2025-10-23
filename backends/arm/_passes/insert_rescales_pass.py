@@ -45,7 +45,7 @@ class InsertRescalePass(ArmPass):
                 (
                     node.all_input_nodes[0],
                     q_args.dtype,
-                    new_scale,
+                    [new_scale],
                     dq_args.zp,
                     q_args.zp,
                 ),
@@ -228,10 +228,10 @@ class InsertRescaleInt32Pass(ArmPass):
                     (
                         arg_node,
                         torch.int32,
-                        qp.get_scale_per_tensor()
-                        / rescale_qargs[
-                            i
-                        ].get_scale_per_tensor(),  # Old scale / new scale
+                        [
+                            qp.get_scale_per_tensor()
+                            / rescale_qargs[i].get_scale_per_tensor()
+                        ],  # [Old scale / new scale]
                         qp.get_zp_per_tensor(),  # Old zero point
                         rescale_qargs[i].get_zp_per_tensor(),  # New zero point
                     ),
@@ -264,8 +264,10 @@ class InsertRescaleInt32Pass(ArmPass):
                 (
                     node,
                     qarg.dtype,
-                    rescale_qargs.get_scale_per_tensor()
-                    / qarg.get_scale_per_tensor(),  # Old scale / new scale
+                    [
+                        rescale_qargs.get_scale_per_tensor()
+                        / qarg.get_scale_per_tensor()
+                    ],  # [Old scale / new scale]
                     rescale_qargs.get_zp_per_tensor(),  # Old zero point
                     qarg.get_zp_per_tensor(),  # New zero point
                 ),
