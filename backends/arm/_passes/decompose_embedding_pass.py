@@ -42,7 +42,7 @@ class DecomposeEmbeddingPass(ArmPass):
     def get_decomposition(self, op):
         if op in self.aten_ops:
             return (
-                torch.ops.aten.view_copy.default,
+                torch.ops.aten.reshape.default,
                 torch.ops.aten.index_select.default,
             )
 
