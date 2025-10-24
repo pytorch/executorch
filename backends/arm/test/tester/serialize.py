@@ -31,12 +31,14 @@ class Serialize(tester.Serialize):
         self,
         compile_spec: ArmCompileSpec,
         module: Optional[torch.nn.Module],
+        use_portable_ops: bool = False,
         timeout: int = 120,
     ):
         """
         Args:
             compile_spec: CompileSpecs to be used for serialization.
             module: Original Module to be used for serialization. Optional - can be used for reference output generation.
+            portable_ops: If True tests with compiled in portable ops, default is to test without this to get error if not fully delegated
             timeout: Timeout for fvp. Default is 120 seconds.
         """
         super().__init__()
@@ -44,6 +46,7 @@ class Serialize(tester.Serialize):
         self.timeout = timeout
         self.executorch_program_manager: ExecutorchProgramManager | None
         self.compile_spec = compile_spec
+        self.use_portable_ops = use_portable_ops
 
     def run(self, artifact: ExecutorchProgramManager, inputs=None) -> None:
         super().run(artifact, inputs)
@@ -58,7 +61,7 @@ class Serialize(tester.Serialize):
         inputs_flattened, _ = tree_flatten(inputs)
         intermediate_path = self.compile_spec.get_intermediate_path()
         target_board = get_target_board(self.compile_spec)
-        elf_path = get_elf_path(target_board)
+        elf_path = get_elf_path(target_board, self.use_portable_ops)
 
         if not os.path.exists(elf_path):
             raise FileNotFoundError(
