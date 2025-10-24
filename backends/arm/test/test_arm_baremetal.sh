@@ -254,8 +254,8 @@ test_models_vkml() { # End to End model tests using model_test.py
 
     # VKML
     echo "${TEST_SUITE_NAME}: Test target VKML"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=resnet18 --extra_flags="-DET_BUNDLE_IO_ATOL=0.2 -DET_BUNDLE_IO_RTOL=0.2"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=resnet50 --extra_flags="-DET_BUNDLE_IO_ATOL=0.2 -DET_BUNDLE_IO_RTOL=0.2"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=resnet18 --extra_runtime_flags="--bundleio_atol=0.2 --bundleio_rtol=0.2"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=resnet50 --extra_runtime_flags="--bundleio_atol=0.2 --bundleio_rtol=0.2"
 
     echo "${TEST_SUITE_NAME}: PASS"
 }

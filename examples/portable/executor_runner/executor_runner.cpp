@@ -83,6 +83,11 @@ DEFINE_int32(
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
+#ifdef ET_BUNDLE_IO_ENABLED
+DEFINE_double(bundleio_rtol, 0.01, "Relative tolerance for bundled IO.");
+DEFINE_double(bundleio_atol, 0.01, "Absolute tolerance for bundled IO.");
+#endif
+
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 #ifdef ET_BUNDLE_IO_ENABLED
@@ -107,19 +112,6 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
-
-#ifdef ET_BUNDLE_IO_ENABLED
-#if defined(ET_BUNDLE_IO_ATOL)
-constexpr float bundleio_atol = ET_BUNDLE_IO_ATOL;
-#else
-constexpr float bundleio_atol = 0.01;
-#endif
-#if defined(ET_BUNDLE_IO_RTOL)
-constexpr float bundleio_rtol = ET_BUNDLE_IO_RTOL;
-#else
-constexpr float bundleio_rtol = 0.01;
-#endif
-#endif
 
 /// Helper to manage resources for ETDump generation
 class EventTraceManager {
@@ -604,7 +596,11 @@ int main(int argc, char** argv) {
     }
 
     Error status = verify_method_outputs(
-        *method, model_pte, testset_idx, bundleio_rtol, bundleio_atol);
+        *method,
+        model_pte,
+        testset_idx,
+        FLAGS_bundleio_rtol,
+        FLAGS_bundleio_atol);
     if (status == Error::Ok) {
       ET_LOG(Info, "Model output match expected BundleIO bpte ref data.");
       ET_LOG(Info, "TEST: BundleIO index[%zu] Test_result: PASS", testset_idx);
@@ -613,8 +609,8 @@ int main(int argc, char** argv) {
       ET_LOG(
           Error,
           "Model output don't match expected BundleIO bpte ref data. rtol=%f atol=%f",
-          bundleio_rtol,
-          bundleio_atol);
+          FLAGS_bundleio_rtol,
+          FLAGS_bundleio_atol);
       ET_LOG(Error, "TEST: BundleIO index[%zu] Test_result: FAIL", testset_idx);
       ET_LOG(
           Error,

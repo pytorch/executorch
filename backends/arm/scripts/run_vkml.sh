@@ -19,6 +19,7 @@ _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly ins
 
 
 model=""
+opt_flags=""
 build_path="cmake-out-vkml"
 converter="model-converter"
 
@@ -33,6 +34,7 @@ help() {
 for arg in "$@"; do
     case $arg in
       -h|--help) help ;;
+      --optional_flags=*) opt_flags="${arg#*=}";;
       --model=*) model="${arg#*=}";;
       --build_path=*) build_path="${arg#*=}";;
       *)
@@ -59,7 +61,7 @@ runner=$(find ${build_path} -name executor_runner -type f)
 
 
 echo "--------------------------------------------------------------------------------"
-echo "Running ${model} with ${runner}"
+echo "Running ${model} with ${runner} ${opt_flags}"
 echo "WARNING: The VK_ML layer driver will not provide accurate performance information"
 echo "--------------------------------------------------------------------------------"
 
@@ -75,7 +77,7 @@ fi
 log_file=$(mktemp)
 
 
-${nobuf} ${runner} -model_path ${model} | tee ${log_file}
+${nobuf} ${runner} -model_path ${model} ${opt_flags} | tee ${log_file}
 echo "[${BASH_SOURCE[0]}] execution complete, $?"
 
 # Most of these can happen for bare metal or linx executor_runner runs.

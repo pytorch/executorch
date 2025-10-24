@@ -67,8 +67,14 @@ def get_args():
     parser.add_argument(
         "--extra_flags",
         required=False,
-        default=None,
+        default="",
         help="Extra cmake flags to pass the when building the executor_runner",
+    )
+    parser.add_argument(
+        "--extra_runtime_flags",
+        required=False,
+        default="",
+        help="Extra runtime flags to pass the final runner/executable",
     )
     parser.add_argument(
         "--timeout",
@@ -228,13 +234,14 @@ def build_vkml_runtime(
     return runner
 
 
-def run_vkml(script_path: str, pte_file: str, runner_build_path: str):
+def run_vkml(script_path: str, pte_file: str, runner_build_path: str, extra_flags: str):
     run_external_cmd(
         [
             "bash",
             os.path.join(script_path, "run_vkml.sh"),
             f"--model={pte_file}",
             f"--build_path={runner_build_path}",
+            f"--optional_flags={extra_flags}",
         ]
     )
 
@@ -297,7 +304,7 @@ if __name__ == "__main__":
             )
 
             start_time = time.perf_counter()
-            run_vkml(script_path, pte_file, build_path)
+            run_vkml(script_path, pte_file, build_path, args.extra_runtime_flags)
             end_time = time.perf_counter()
             print(
                 f"[Test model: {end_time - start_time:.2f} s] Tested VKML runner: {vkml_runner}"
