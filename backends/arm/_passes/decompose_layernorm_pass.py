@@ -39,7 +39,7 @@ def get_layer_norm_decomposition(op) -> tuple:
             torch.ops.aten.add.Tensor,
             torch.ops.aten.rsqrt.default,
             torch.ops.aten.mul.Tensor,
-            torch.ops.aten.view_copy.default,
+            torch.ops.aten.reshape.default,
         )
     raise RuntimeError(f"Can't get layer_norm composition for op {op}")
 
