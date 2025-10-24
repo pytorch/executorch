@@ -29,8 +29,13 @@ class SumSupported(SupportedTOSAOperatorCheck):
 
         # U55 case, Vela 4.2.0 (25.02 release)
         input_shape = node.all_input_nodes[0].meta["val"].shape
-        dim_list = cast(list[int], node.args[1])
-        dim_list = [dim % len(input_shape) for dim in dim_list]
+
+        if node.args[1] is None:
+            # Dim is allowed to be None, which means to sum all dimensions
+            dim_list = list(range(len(input_shape)))
+        else:
+            dim_list = cast(list[int], node.args[1])
+            dim_list = [dim % len(input_shape) for dim in dim_list]
 
         for dim in dim_list:
             if not 1 <= input_shape[dim] <= 65536:

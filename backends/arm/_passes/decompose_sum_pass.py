@@ -83,7 +83,7 @@ class DecomposeSumPass(ArmPass):
         if not keepdims:
             shape = list(meta["val"].size())
             input_node = super().call_operator(
-                view_op, (input_node, shape), kwargs, meta, updated=True
+                view_op, (input_node, shape), {}, meta, updated=True
             )
 
         return input_node
