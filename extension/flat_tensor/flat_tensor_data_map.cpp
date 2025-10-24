@@ -135,7 +135,7 @@ ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
   return loader_->load(
       /*offset=*/header_.segment_base_offset + segment_offset,
       segment_size,
-      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Constant));
 }
 
 ET_NODISCARD Error FlatTensorDataMap::load_data_into(
@@ -201,7 +201,7 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   Result<FreeableBuffer> header = loader->load(
       /*offset=*/0,
       FlatTensorHeader::kNumHeadBytes,
-      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   if (!header.ok()) {
     ET_LOG(Error, "Failed to load header.");
     return header.error();
@@ -228,7 +228,7 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   Result<FreeableBuffer> flat_tensor_data = loader->load(
       /*offset=*/0,
       fh->flatbuffer_offset + fh->flatbuffer_size,
-      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   if (!flat_tensor_data.ok()) {
     ET_LOG(Error, "Failed to load flat_tensor data.");
     return flat_tensor_data.error();
