@@ -4,8 +4,8 @@
 #include "../include/dtypes.h"
 #include "common.h"
 
-#define IDMA_BUFF_SIZE \
-  16384 // 16 kb DRAM storage. Assume 4 buffers (2 input and 2 output)
+ // 4 kb x sizeof(float32_t) = 16 kb DRAM storage. Assume 4 buffers (2 input and 2 output)
+#define IDMA_BUFF_SIZE 4096
 
 #ifndef PLACE_IN_DRAM0
 #define PLACE_IN_DRAM0 \
