@@ -182,6 +182,7 @@ def define_common_targets():
         ],
         visibility = [
             "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             "//caffe2:torch",
