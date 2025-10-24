@@ -28,7 +28,7 @@ class MeanDim(torch.nn.Module):
     }
 
     ops_not_after_pass = u55_ops_not_after_pass = [
-        "torch.ops.aten.view_copy.default",
+        "torch.ops.aten.reshape.default",
         "torch.ops.aten.avg_pool2d.default",
         "torch.ops.aten.mean.dim",
     ]
@@ -52,7 +52,7 @@ class MeanDimTensor(torch.nn.Module):
         "torch.ops.aten.sum.dim_IntList": 2,
         "torch.ops.aten.mul.Tensor": 1,
         "torch.ops.aten.avg_pool2d.default": 1,
-        "torch.ops.aten.view_copy.default": 1,
+        "torch.ops.aten.reshape.default": 1,
     }
 
     ops_not_after_pass = [
@@ -62,7 +62,7 @@ class MeanDimTensor(torch.nn.Module):
     u55_ops_after_pass = {
         "torch.ops.aten.sum.dim_IntList": 2,
         "torch.ops.aten.mul.Tensor": 1,
-        "torch.ops.aten.view_copy.default": 1,
+        "torch.ops.aten.reshape.default": 1,
     }
 
     u55_ops_not_after_pass = [
