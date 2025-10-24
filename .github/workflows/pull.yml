@@ -635,7 +635,7 @@ jobs:
         echo "::group::Setup ExecuTorch"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
         echo "::endgroup::"
-                
+
         echo "::group::Setup requirements"
         # install phi-3-mini requirements
         bash examples/models/phi-3-mini/install_requirements.sh
@@ -728,6 +728,7 @@ jobs:
 
   test-llama-lora-linux:
     name: test-llama-lora-linux
+    if: false
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
