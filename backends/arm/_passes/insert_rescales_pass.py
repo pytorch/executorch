@@ -10,6 +10,7 @@ from typing import cast, Dict, Optional, Set, Tuple, Type
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node, set_node_arg
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_output_qparams,
 )
@@ -45,7 +46,7 @@ class InsertRescalePass(ArmPass):
                 (
                     node.all_input_nodes[0],
                     q_args.dtype,
-                    new_scale,
+                    [new_scale],
                     dq_args.zp,
                     q_args.zp,
                 ),
@@ -84,7 +85,11 @@ class InsertRescaleInt32Pass(ArmPass):
     parameters.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    # SUM must be decomposed after this pass to prevent insertion of RESCALE
+    # nodes between each subsequent SUM node after decomposition. RESCALE nodes
+    # should only be inserted before and after the SUM node prior to its
+    # decomposition.
+    _passes_required_after: Set[Type[ExportPass]] = {DecomposeSumPass}
 
     included_targets = [
         exir_ops.edge.aten.abs.default,
@@ -96,6 +101,7 @@ class InsertRescaleInt32Pass(ArmPass):
         exir_ops.edge.aten.maximum.default,
         exir_ops.edge.aten.minimum.default,
         exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.sum.dim_IntList,
     ]
 
     def _int32_qargs(self, s):
@@ -138,6 +144,7 @@ class InsertRescaleInt32Pass(ArmPass):
             }
         elif target in [
             exir_ops.edge.aten.mul.Tensor,
+            exir_ops.edge.aten.sum.dim_IntList,
         ]:
             # The input scales do not need to be adjusted for these ops; they
             # can remain the same.
@@ -160,6 +167,7 @@ class InsertRescaleInt32Pass(ArmPass):
             exir_ops.edge.aten.abs.default,
             exir_ops.edge.aten.maximum.default,
             exir_ops.edge.aten.minimum.default,
+            exir_ops.edge.aten.sum.dim_IntList,
         ]:
             # The op has not altered the scale; the output scale is equal to
             # the operands' scales.
@@ -228,10 +236,10 @@ class InsertRescaleInt32Pass(ArmPass):
                     (
                         arg_node,
                         torch.int32,
-                        qp.get_scale_per_tensor()
-                        / rescale_qargs[
-                            i
-                        ].get_scale_per_tensor(),  # Old scale / new scale
+                        [
+                            qp.get_scale_per_tensor()
+                            / rescale_qargs[i].get_scale_per_tensor()
+                        ],  # [Old scale / new scale]
                         qp.get_zp_per_tensor(),  # Old zero point
                         rescale_qargs[i].get_zp_per_tensor(),  # New zero point
                     ),
@@ -264,8 +272,10 @@ class InsertRescaleInt32Pass(ArmPass):
                 (
                     node,
                     qarg.dtype,
-                    rescale_qargs.get_scale_per_tensor()
-                    / qarg.get_scale_per_tensor(),  # Old scale / new scale
+                    [
+                        rescale_qargs.get_scale_per_tensor()
+                        / qarg.get_scale_per_tensor()
+                    ],  # [Old scale / new scale]
                     rescale_qargs.get_zp_per_tensor(),  # Old zero point
                     qarg.get_zp_per_tensor(),  # New zero point
                 ),
