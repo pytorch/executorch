@@ -1,0 +1,35 @@
+name: Windows MSVC Build
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/trunk/*
+  pull_request:
+    paths:
+      - .ci/docker/ci_commit_pins/pytorch.txt
+      - .ci/scripts/**
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows-msvc:
+    name: build-windows-msvc
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    with:
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
+      script: |
+        conda init powershell
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
+          .ci/scripts/setup-windows-msvc.ps1
+        }"
