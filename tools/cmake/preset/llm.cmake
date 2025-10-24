@@ -28,7 +28,12 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )
-  # Windows or other OS-specific code here
+  # Windows-specific code: disable quantized and custom ops when building with
+  # CUDA
+  if(EXECUTORCH_BUILD_CUDA)
+    set(EXECUTORCH_BUILD_KERNELS_QUANTIZED OFF)
+    set(EXECUTORCH_BUILD_KERNELS_LLM OFF)
+  endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
   # Android-specific code here
 else()
