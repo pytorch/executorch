@@ -374,7 +374,7 @@ class TOSAQuantizer(Quantizer):
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
 
-        return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(  # type: ignore[arg-type]
+        return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(
             graph_module=model
         )
 
