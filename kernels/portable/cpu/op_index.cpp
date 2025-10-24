@@ -1,11 +1,13 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstdint>
 #include <cstring>
@@ -46,6 +48,23 @@ bool check_fast_path_conditions(
       // Fast path only supports a 1-dimensional index tensor
       if (index.dim() != 1) {
         return false;
+      }
+
+      // Fast path only supports non-negative indices.
+      if (ix_type == ScalarType::Int) {
+        const int32_t* const data = index.const_data_ptr<int32_t>();
+        if (std::any_of(data, data + index.numel(), [](const auto x) {
+              return x < 0;
+            })) {
+          return false;
+        }
+      } else { // ScalarType::Long
+        const int64_t* const data = index.const_data_ptr<int64_t>();
+        if (std::any_of(data, data + index.numel(), [](const auto x) {
+              return x < 0;
+            })) {
+          return false;
+        }
       }
     }
   }
