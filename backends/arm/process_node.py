@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-# pyre-unsafe
 from typing import Any, cast, Dict
 
 import numpy as np
