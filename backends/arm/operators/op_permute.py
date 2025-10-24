@@ -9,6 +9,8 @@ from typing import Any, List
 
 import torch
 
+import tosa_serializer as ts
+
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -110,14 +112,12 @@ class PermuteVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.FP32],
             output.tosa_spec,
         )
 
@@ -138,7 +138,7 @@ class PermuteVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().TRANSPOSE,
+            ts.Op.TRANSPOSE,
             [inputs[0].name],
             [output.name],
             attr,

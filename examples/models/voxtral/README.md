@@ -132,7 +132,7 @@ cmake -DCMAKE_INSTALL_PREFIX=cmake-out -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Re
 ### Building for CUDA
 ```
 # Install ExecuTorch with CUDA support
-CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_executorch.sh
+./install_executorch.sh
 
 # Build the multimodal runner with CUDA
 cmake --preset llm \

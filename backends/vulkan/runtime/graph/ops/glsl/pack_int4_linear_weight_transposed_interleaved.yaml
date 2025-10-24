@@ -14,3 +14,6 @@ pack_int4_linear_weight_transposed_interleaved:
       STORAGE: buffer
     - NAME: pack_int4_linear_weight_transposed_interleaved_nobitw8buffer_texture2d
       NO_INT8_BUFFERS: true
+    - NAME: pack_int4_linear_weight_transposed_interleaved_nobitw8buffer_buffer
+      STORAGE: buffer
+      NO_INT8_BUFFERS: true

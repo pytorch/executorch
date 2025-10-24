@@ -8,6 +8,8 @@ from typing import Any, List
 
 import torch
 
+import tosa_serializer as ts
+
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -41,9 +43,6 @@ class MaxPool2dVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, [3, 4, 5, 6])
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
@@ -91,13 +90,16 @@ class MaxPool2dVisitor(NodeVisitor):
 
         attr = ts.TosaSerializerAttribute()
         attr.MaxPool2dAttribute(
-            kernel=kernel_size, stride=stride, pad=pad_size_list, nan_mode=1
+            kernel=kernel_size,
+            stride=stride,
+            pad=pad_size_list,
+            nan_mode=ts.NanPropagationMode.PROPAGATE,
         )
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().MAX_POOL2D,
+            ts.Op.MAX_POOL2D,
             [input_tensor.name],
             [output.name],
             attr,
