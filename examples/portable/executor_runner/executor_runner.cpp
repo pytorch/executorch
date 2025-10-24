@@ -23,6 +23,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <optional>
 
 #include <gflags/gflags.h>
 
@@ -45,8 +46,6 @@
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/extension/threadpool/threadpool_guard.h>
-
-#include <optional>
 #endif
 
 #ifdef ET_BUNDLE_IO_ENABLED
@@ -288,8 +287,8 @@ int main(int argc, char** argv) {
           Info,
           "PTD data map created with %" PRIu64 " keys.",
           static_cast<uint64_t>(ptd_data_map->get_num_keys().get()));
-    } else {
-      ET_LOG(Info, "Load inputs from input file(s).");
+    } else if (!FLAGS_inputs.empty()) {
+      ET_LOG(Info, "Loading inputs from input file(s).");
       std::stringstream list_of_input_files(FLAGS_inputs);
       std::string path;
 
@@ -453,7 +452,7 @@ int main(int argc, char** argv) {
   // Run the model.
   for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
     // Allocate input tensors and set all of their elements to 1 or to the
-    // contents of input_buffers if available. The `inputs`
+    // contents of input_buffers if available. For non bundled IO, the `inputs`
     // variable owns the allocated memory and must live past the last call to
     // `execute()`.
     //
@@ -461,6 +460,8 @@ int main(int argc, char** argv) {
     // because inputs whose space gets reused by memory planning (if
     // any such inputs exist) will not be preserved for the next
     // execution.
+    std::optional<executorch::extension::BufferCleanup> inputs;
+
 #ifdef ET_BUNDLE_IO_ENABLED
     if (bundle_io) {
       ET_LOG(Debug, "Getting inputs from bundled IO");
@@ -474,12 +475,13 @@ int main(int argc, char** argv) {
 #endif
     {
       ET_LOG(Debug, "Preparing inputs.");
-      auto inputs = executorch::extension::prepare_input_tensors(
+      auto res = executorch::extension::prepare_input_tensors(
           *method, {}, input_buffers);
       ET_CHECK_MSG(
-          inputs.ok(),
+          res.ok(),
           "Could not prepare inputs: 0x%" PRIx32,
-          (uint32_t)inputs.error());
+          (uint32_t)res.error());
+      inputs.emplace(std::move(res.get()));
       ET_LOG(Debug, "Inputs prepared.");
     }
 
