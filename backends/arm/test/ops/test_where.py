@@ -6,7 +6,6 @@
 from typing import List, Tuple
 
 import torch
-
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
@@ -183,7 +182,6 @@ def test_where_self_tosa_INT(test_module):
         test_module().get_inputs(),
         aten_op,
         exir_op,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -253,6 +251,5 @@ def test_where_self_vgf_INT(test_module):
         aten_op,
         exir_op,
         tosa_version="TOSA-1.0+INT",
-        symmetric_io_quantization=True,
     )
     pipeline.run()
