@@ -14,6 +14,7 @@ import math
 import torch
 import torch.fx as fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
@@ -137,7 +138,8 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
                 return False
 
             # Usage 1 guard
-            fake_tensor = get_first_fake_tensor(index)  # type: ignore[arg-type]
+            index = ensure_type(torch.fx.Node, index)
+            fake_tensor = get_first_fake_tensor(index)
             if len(fake_tensor.size()) > 3:
                 self.reporter.report_reject(
                     node,
@@ -146,7 +148,8 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
                 return False
 
         # Usage 3 guard
-        total_vals = math.prod(get_first_fake_tensor(node.args[0]).shape)  # type: ignore[arg-type]
+        input_node = ensure_type(torch.fx.Node, node.args[0])
+        total_vals = math.prod(get_first_fake_tensor(input_node).shape)
         if total_vals > torch.iinfo(torch.int32).max:
             self.reporter.report_reject(
                 node,

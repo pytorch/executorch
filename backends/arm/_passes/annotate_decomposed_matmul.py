@@ -51,7 +51,7 @@ class AnnotateDecomposedMatmulPass(ArmPass):
         raise RuntimeError(f"Cannot find an input node which matches, {node}.")
 
     def call(self, graph_module: GraphModule) -> PassResult:
-        matmul_partitions = get_source_partitions(
+        matmul_partitions_map = get_source_partitions(
             graph_module.graph,
             [
                 torch.matmul,
@@ -60,7 +60,7 @@ class AnnotateDecomposedMatmulPass(ArmPass):
             None,
         )
         matmul_partitions = list(
-            itertools.chain.from_iterable(matmul_partitions.values())
+            itertools.chain.from_iterable(matmul_partitions_map.values())
         )
         matmul_targets = {
             exir_ops.edge.aten.bmm.default,
@@ -88,7 +88,7 @@ class AnnotateDecomposedMatmulPass(ArmPass):
                         # Create new dq-node before matmul
                         dq_node = create_node(
                             graph=graph_module.graph,
-                            op_target=cast(EdgeOpOverload, input_node.target),  # type: ignore[arg-type]
+                            op_target=cast(EdgeOpOverload, input_node.target),
                         )
                         dq_node.args = (node, *input_node.args[1:])
                         matmul_node.replace_input_with(node, dq_node)
@@ -109,7 +109,7 @@ class AnnotateDecomposedMatmulPass(ArmPass):
                     # Create q-node after matmul
                     q_node = create_node(
                         graph=graph_module.graph,
-                        op_target=cast(EdgeOpOverload, partition_output.target),  # type: ignore[arg-type]
+                        op_target=cast(EdgeOpOverload, partition_output.target),
                     )
                     matmul_node.replace_all_uses_with(q_node)
                     q_node.args = (matmul_node, *partition_output.args[1:])
