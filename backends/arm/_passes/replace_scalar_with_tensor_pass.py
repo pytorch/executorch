@@ -7,6 +7,8 @@
 from typing import Dict, Set, Type, Union
 
 import torch
+
+from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
@@ -14,6 +16,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass
+
+from .arm_pass import ArmPass
 
 
 # Operators that are included for both TOSA profiles
@@ -53,23 +57,51 @@ _common_ops: Dict[
     torch.ops.aten.bitwise_xor.Scalar: torch.ops.aten.bitwise_xor.Tensor,
 }
 
+_fp_profile_ops: Dict[
+    Union[EdgeOpOverload, torch._ops.OpOverload],
+    Union[EdgeOpOverload, torch._ops.OpOverload],
+] = _common_ops | {
+    exir_ops.edge.aten.pow.Tensor_Scalar: exir_ops.edge.aten.pow.Tensor_Tensor,
+    torch.ops.aten.pow.Tensor_Scalar: torch.ops.aten.pow.Tensor_Tensor,
+}
 
-class ReplaceScalarWithTensorArgPassTOSAMI(ReplaceScalarWithTensorArgPass):
+_int_profile_ops: Dict[
+    Union[EdgeOpOverload, torch._ops.OpOverload],
+    Union[EdgeOpOverload, torch._ops.OpOverload],
+] = _common_ops
+
+_all_ops: Dict[
+    Union[EdgeOpOverload, torch._ops.OpOverload],
+    Union[EdgeOpOverload, torch._ops.OpOverload],
+] = (
+    _fp_profile_ops | _int_profile_ops
+)
+
+
+class ReplaceScalarWithTensorByProfilePass(ReplaceScalarWithTensorArgPass, ArmPass):
+    """Profile-aware scalar-to-tensor replacement pass for binary ops."""
+
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    scalar_to_tensor_ops = _common_ops | {
-        exir_ops.edge.aten.pow.Tensor_Scalar: exir_ops.edge.aten.pow.Tensor_Tensor,
-        torch.ops.aten.pow.Tensor_Scalar: torch.ops.aten.pow.Tensor_Tensor,
-    }
-
     def __init__(self):
-        super().__init__(self.scalar_to_tensor_ops)
+        # Initialize base (ReplaceScalarWithTensorArgPass) with the full
+        # superset which will make the superclass handle ops in _all_ops.
+        # Actual selection is done per-call in call_operator.
+        super().__init__(_all_ops)
 
+    def call_operator(self, op, args, kwargs, meta):
+        tosa_spec = get_context_spec()
 
-class ReplaceScalarWithTensorArgPassTOSABI(ReplaceScalarWithTensorArgPass):
-    _passes_required_after: Set[Type[ExportPass]] = set()
+        if tosa_spec.support_integer():
+            included_ops = _int_profile_ops
+        elif tosa_spec.support_float():
+            included_ops = _fp_profile_ops
+        else:
+            raise ValueError("Profile must support either INT or FP")
 
-    scalar_to_tensor_ops = _common_ops
-
-    def __init__(self):
-        super().__init__(self.scalar_to_tensor_ops)
+        if op in included_ops:
+            # Include this op based on the current profile.
+            return super().call_operator(op, args, kwargs, meta)
+        else:
+            # Do not handle; forward unchanged.
+            return ExportPass.call_operator(self, op, args, kwargs, meta)
