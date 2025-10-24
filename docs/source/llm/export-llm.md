@@ -26,7 +26,7 @@ The up-to-date list of supported LLMs can be found in the code [here](https://gi
 `export_llm` is ExecuTorch's high-level export API for LLMs. In this tutorial, we will focus on exporting Llama 3.2 1B using this API. `export_llm`'s arguments are specified either through CLI args or through a yaml configuration whose fields are defined in [`LlmConfig`](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py). To call `export_llm`:
 
 ```
-python -m executorch.examples.extension.llm.export.export_llm
+python -m executorch.extension.llm.export.export_llm
   --config <path-to-config-yaml>
   +base.<additional-CLI-overrides>
 ```
