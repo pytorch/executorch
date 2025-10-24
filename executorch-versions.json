@@ -1,6 +1,6 @@
 [
   {
-    "name": "latest (unstable)",
+    "name": "main (unstable)",
     "version": "main",
     "url": "https://docs.pytorch.org/executorch/main/"
   },
