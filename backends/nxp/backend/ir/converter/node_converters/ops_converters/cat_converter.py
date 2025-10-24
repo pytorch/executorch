@@ -9,6 +9,9 @@ from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
+from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
+    create_channels_first_to_channels_last_permutation,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     _is_dequant_node,
     _is_quant_node,
@@ -18,6 +21,7 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.concate
     Concatenation,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -85,39 +89,48 @@ class CatConverter(NodeConverter):
         if dim == 0:
             return False
 
-        # If all input shapes are equal, the neutron is able to pad the last dimension of inputs and outputs.
-        input_shapes = [_get_shape(input_) for input_ in node.all_input_nodes]
-        if input_shapes.count(input_shapes[0]) == len(input_shapes):
-            if dim == len(input_shapes[0]) - 1:
-                return True
+        # Neutron requires the channels to be a multiple of `num_macs`. The channels could either be the second or the
+        #  last dimension, depending on the formats of the node.
+        if node.meta[NXP_NODE_FORMAT].is_channels_first():
+            # During conversion to IR, the shape will be permuted to channels last, and the dimension on index
+            #  `1` will end up being the channels (last dim in NHWC).
+            channels_index = 1
+            to_nhwc_perm = create_channels_first_to_channels_last_permutation(
+                len(node.meta["val"].shape), True
+            )
+            dim = to_nhwc_perm.index(
+                dim
+            )  # Make sure the dim points to the NHWC dimension.
+        else:
+            # The shape will not be permuted during conversion, so the channels will remain the last dimension.
+            channels_index = -1
 
-        # Neutron requires the channels to be a multiple of numMacs. The channels could either be the second or the
-        #  last dimension, depending on the formats of the node. The format, however, cannot be determined
-        #  during conversion, as it depends on what other nodes are delegated.
         input_channels = [
-            # The second dimension is the channels in PyTorch. If the inputs/output are not channels first, it
-            #  will still be the channels in the IR.
-            _get_shape(input_)[1]
-            for input_ in node.all_input_nodes
-        ] + [
-            # If the inputs/outputs are channels first, the last dimension will be the channels.
-            _get_shape(input_)[-1]
-            for input_ in node.all_input_nodes
+            _get_shape(input_)[channels_index] for input_ in node.all_input_nodes
         ]
-        if any(
-            (input_channel % neutron_target_spec.get_num_macs()) != 0
-            for input_channel in input_channels
-        ):
-            # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1492
-            return False
+        output_channels = _get_shape(node)[channels_index]
 
-        output_channels = [_get_shape(node)[1], _get_shape(node)[-1]]
-        # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1493
-        if any(
-            (out_c % neutron_target_spec.get_num_macs()) != 0
-            for out_c in output_channels
-        ):
-            return False
+        num_macs = neutron_target_spec.get_num_macs()
+        input_shapes = [_get_shape(input_) for input_ in node.all_input_nodes]
+        if any((input_channel % num_macs) != 0 for input_channel in input_channels):
+            # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1492
+
+            # If all input shapes are equal, the neutron is able to pad the last dimension of the inputs.
+            if not (
+                input_shapes.count(input_shapes[0]) == len(input_shapes)
+                and dim == len(input_shapes[0]) - 1
+            ):
+                return False
+
+        if (output_channels % num_macs) != 0:
+            # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1493
+
+            # If all input shapes are equal, the neutron is able to pad the last dimension of the output.
+            if not (
+                input_shapes.count(input_shapes[0]) == len(input_shapes)
+                and dim == len(input_shapes[0]) - 1
+            ):
+                return False
 
         if len(node.all_input_nodes) < 2:  # Not supported on Neutron
             # TODO Try to skip the operator if this case is realistic.
