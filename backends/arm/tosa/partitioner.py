@@ -22,6 +22,7 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
+from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
@@ -88,7 +89,8 @@ def is_noop_to_dim_order_copy(node: torch.fx.node.Node) -> bool:
     if node.target != exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
         return False
     else:
-        return node.meta.get("dtype") == get_first_fake_tensor(node.args[0]).dtype  # type: ignore[arg-type]
+        input_node = ensure_type(torch.fx.Node, node.args[0])
+        return node.meta.get("dtype") == get_first_fake_tensor(input_node).dtype
 
 
 def is_noop_expand(node: torch.fx.node.Node) -> bool:

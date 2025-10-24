@@ -259,13 +259,19 @@ class ToTosaMemoryFormatPass(ArmPass):
 
         # Transpose outputs if they are in (N)NCHW format
         outputs = output_node.args[0]
+        if not isinstance(outputs, (list, tuple)):
+            raise TypeError(
+                f"Expected output node args to be a list or tuple, got {type(outputs)}"
+            )
         output_dim_orders = output_node.meta.get("original_dim_orders")
         if output_dim_orders is None:
             raise RuntimeError(
                 f"{AnnotateDecomposedMatmulPass.__name__} is required to run at the beginning of the pass pipeline when using {ToTosaMemoryFormatPass.__name__}."
             )
 
-        for output_node_input, output_dim_order in zip(outputs, output_dim_orders):  # type: ignore[arg-type]
+        for output_node_input, output_dim_order in zip(
+            outputs, output_dim_orders, strict=True
+        ):
             if output_dim_order in (
                 NCHW_ORDER,
                 NNCHW_ORDER,

@@ -219,7 +219,7 @@ class CheckProperQuantization(OperatorSupportBase):
         """
         for graph_module in submodules.values():
             graph_module = typing.cast(fx.GraphModule, graph_module)
-            matmul_partitions = get_source_partitions(
+            matmul_partitions_map = get_source_partitions(
                 graph_module.graph,
                 [
                     torch.matmul,
@@ -228,7 +228,7 @@ class CheckProperQuantization(OperatorSupportBase):
                 None,
             )
             matmul_partitions = list(
-                itertools.chain.from_iterable(matmul_partitions.values())
+                itertools.chain.from_iterable(matmul_partitions_map.values())
             )
             matched_partition = None
             for partition in matmul_partitions:
@@ -406,9 +406,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
                 if input_node.target in ComputeConstantOpsAOT.targeted_ops:
                     # This is not perfect since the input_node can still be rejected by other checks but
                     # this should cover the majority of cases.
-                    if self.is_node_supported(
-                        None, input_node  # type: ignore[arg-type] #(we don't use 'submodules')
-                    ):
+                    if self.is_node_supported({}, input_node):
                         continue
             self.reporter.report_reject(
                 node, f"Non-constant int64 input {input_node.name}"

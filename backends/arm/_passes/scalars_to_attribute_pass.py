@@ -49,7 +49,7 @@ class ScalarsToAttributePass(ArmPass):
                     shape = get_first_fake_tensor(arg).shape
                     biggest_rank = max(biggest_rank, len(shape))
 
-            new_args = []
+            new_args: list[Node | int] = []
             for arg in n.args:
                 if isinstance(arg, Node):
                     new_args.append(arg)
@@ -57,7 +57,7 @@ class ScalarsToAttributePass(ArmPass):
                 if isinstance(arg, int) and not torch.is_floating_point(
                     get_first_fake_tensor(n)
                 ):
-                    new_args.append(arg)  # type: ignore[arg-type]
+                    new_args.append(arg)
                     continue
 
                 prefix = "_tensor_constant_"
