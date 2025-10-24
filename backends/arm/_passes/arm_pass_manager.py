@@ -194,7 +194,6 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
-        self.add_pass(DecomposeSumPass())
         self.add_pass(DecomposeCumsumPass(exported_program))
         self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeMaxPool2DPass())
@@ -215,10 +214,11 @@ class ArmPassManager(PassManager):
         self.add_pass(RewriteMatmulPass())
         self.add_pass(RewriteUpsamplePass())
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
+        self.add_pass(InsertRescaleInt32Pass())
+        self.add_pass(DecomposeSumPass())
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(RemoveNoopPass())
         self.add_pass(InsertRescalePass())
-        self.add_pass(InsertRescaleInt32Pass())
 
         self.validate_constraints_mandatory()
         return self._transform(exported_program.graph_module)
@@ -361,7 +361,6 @@ class ArmPassManager(PassManager):
 
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ReplaceInfValues())
-        self.add_pass(DecomposeSumPass())
 
         if not self.tosa_spec.is_U55_subset:
             # Uses where which is not supported on Ethos-U55
