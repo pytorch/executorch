@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 """Provide PyTorch-to-TOSA mapping helpers.
 
 Use these utilities to translate PyTorch dtypes and FX node metadata into
