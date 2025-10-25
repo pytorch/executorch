@@ -110,6 +110,10 @@ test_cases = {
         CortexMScalarAdd(),
         (1000.0, torch.ones(2, 2)),
     ),
+    "tensor_tensor": McuTestCase(
+        CortexMTensorAdd(),
+        (torch.rand(2, 2) * 10, torch.rand(2, 2)),
+    ),
     "broadcast_1": McuTestCase(
         CortexMTensorAdd(),
         (torch.ones(1), torch.ones(2, 2, 2, 2)),
@@ -136,15 +140,38 @@ test_cases = {
 
 
 dialect_xfails = {
-    "self_scalar": ("'float' object has no attribute 'fake_mode'", AttributeError),
-    "self_rank_1": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_2_pos": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_3_neg": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_4_small": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_5": ("Output 0 does not match reference output", AssertionError),
-    "scalar_scalar": ("'float' object has no attribute 'fake_mode'", AttributeError),
-    "broadcast_3": ("Output 0 does not match reference output", AssertionError),
-    "alpha": ("Expecting kwargs for aten op IR to be empty", AssertionError),
+    "self_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "scalar_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "tensor_scalar": (
+        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
+        RuntimeError,
+    ),
+    "scalar_tensor": (
+        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
+        RuntimeError,
+    ),
+    "broadcast_1": (
+        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
+        RuntimeError,
+    ),
+    "broadcast_2": (
+        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
+        RuntimeError,
+    ),
+    "broadcast_3": (
+        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
+        RuntimeError,
+    ),
+    "alpha": (
+        "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
+        AssertionError,
+    ),
 }
 
 
@@ -157,19 +184,38 @@ def test_dialect_add(test_case):
 
 
 implementation_xfails = {
-    "self_scalar": ("'float' object has no attribute 'fake_mode'", AttributeError),
-    "self_rank_1": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_2_pos": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_3_neg": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_4_small": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_5": ("Output 0 does not match reference output", AssertionError),
-    "scalar_scalar": ("'float' object has no attribute 'fake_mode'", AttributeError),
-    "tensor_scalar": ("Output 0 does not match reference output", AssertionError),
-    "scalar_tensor": ("Output 0 does not match reference output", AssertionError),
-    "broadcast_1": ("Output 0 does not match reference output", AssertionError),
-    "broadcast_2": ("Output 0 does not match reference output", AssertionError),
-    "broadcast_3": ("Output 0 does not match reference output", AssertionError),
-    "alpha": ("Expecting kwargs for aten op IR to be empty", AssertionError),
+    "self_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "scalar_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "tensor_scalar": (
+        "Missing operator: [2] aten::add.out - broadcasting not supported.",
+        RuntimeError,
+    ),
+    "scalar_tensor": (
+        "Missing operator: [2] aten::add.out - broadcasting not supported.",
+        RuntimeError,
+    ),
+    "broadcast_1": (
+        "Missing operator: [2] aten::add.out - broadcasting not supported.",
+        RuntimeError,
+    ),
+    "broadcast_2": (
+        "Missing operator: [2] aten::add.out - broadcasting not supported.",
+        RuntimeError,
+    ),
+    "broadcast_3": (
+        "Missing operator: [2] aten::add.out - broadcasting not supported.",
+        RuntimeError,
+    ),
+    "alpha": (
+        "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
+        AssertionError,
+    ),
 }
 
 

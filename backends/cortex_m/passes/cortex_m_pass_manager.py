@@ -9,6 +9,9 @@ from executorch.backends.cortex_m.passes import (
     QuantizedOpFusionPass,
     ReplaceQuantNodesPass,
 )
+from executorch.backends.transforms.replace_scalar_with_tensor import (
+    ReplaceScalarWithTensorArgPass,
+)
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.exir.pass_base import ExportPass
 
@@ -16,6 +19,7 @@ from executorch.exir.pass_base import ExportPass
 class CortexMPassManager(XNNPACKPassManager):
 
     pass_list: list[ExportPass] = [
+        ReplaceScalarWithTensorArgPass,
         ReplaceQuantNodesPass,
         QuantizedOpFusionPass,
         QuantizedLinearFusionPass,
