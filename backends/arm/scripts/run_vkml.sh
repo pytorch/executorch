@@ -55,8 +55,8 @@ hash ${converter} \
     || { echo "Could not find ${converter} on PATH, ${_setup_msg}"; exit 1; }
 
 
+runner=$(find ${build_path} -name executor_runner -type f)
 
-runner="${build_path}/executor_runner"
 
 echo "--------------------------------------------------------------------------------"
 echo "Running ${model} with ${runner}"

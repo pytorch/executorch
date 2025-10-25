@@ -129,20 +129,18 @@ def build_pte(
     no_intermediate: bool,
     no_quantize: bool,
 ):
-    pte_file_ending = "pte"
     command_list = [
         "python3",
         "-m",
         "examples.arm.aot_arm_compiler",
         "--delegate",
+        "--bundleio",
         f"--model_name={model_name}",
         f"--target={target}",
         f"--output={build_output}",
     ]
 
     if "vgf" != target:
-        pte_file_ending = "bpte"
-        command_list.append("--bundleio")
         command_list.append(f"--system_config={system_config}")
         command_list.append(f"--memory_mode={memory_mode}")
 
@@ -154,6 +152,7 @@ def build_pte(
 
     run_external_cmd(command_list)
 
+    pte_file_ending = "bpte"
     pte_file = os.path.join(
         output, f"{model_name}_arm_delegate_{args.target}.{pte_file_ending}"
     )
@@ -217,6 +216,7 @@ def build_vkml_runtime(
             os.path.join(script_path, "build_executor_runner_vkml.sh"),
             f"--et_build_root={et_build_root}",
             "--etdump",
+            "--bundleio",
             "--build_type=Release",
             f"--extra_build_flags=-DET_DUMP_OUTPUT=OFF {extra_flags}",
             f"--output={build_path}",
