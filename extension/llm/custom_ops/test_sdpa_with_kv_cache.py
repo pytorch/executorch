@@ -282,7 +282,7 @@ class SDPAWithCausalTest(SDPATest):
         self.is_causal = True
 
 
-class SDPAWithDynamicShape(unittest.TestCase):
+class SDPAWithDynamicShapeTest(unittest.TestCase):
 
     def setUp(self):
         torch.manual_seed(42)
