@@ -284,6 +284,7 @@ _one_to_one = [
     torch.ops.aten.sin.default,
     torch.ops.aten.tanh.default,
     torch.ops.aten.sum.dim_IntList,
+    torch.ops.aten.sum.default,
     torch.ops.aten.hardsigmoid.default,
     torch.ops.aten.hardswish.default,
     torch.ops.aten.hardswish_.default,
