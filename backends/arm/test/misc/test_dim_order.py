@@ -96,28 +96,32 @@ test_modules = {
 
 
 @common.parametrize("module", test_modules)
-def test_dim_order_tosa_FP(module):
-    pipeline = TosaPipelineFP[input_t1](module(), module.inputs, [])
+def test_dim_order_tosa_FP(module) -> None:
+    aten_ops: list[str] = []
+    pipeline = TosaPipelineFP[input_t1](module(), module.inputs, aten_ops)
     pipeline.run()
 
 
 @common.parametrize("module", test_modules)
-def test_dim_order_tosa_INT(module):
+def test_dim_order_tosa_INT(module) -> None:
+    aten_ops: list[str] = []
     pipeline = TosaPipelineINT[input_t1](
-        module(), module.inputs, [], symmetric_io_quantization=True
+        module(), module.inputs, aten_ops, symmetric_io_quantization=True
     )
     pipeline.run()
 
 
 @common.XfailIfNoCorstone300
 @common.parametrize("module", test_modules)
-def test_dim_order_u55_INT(module):
-    pipeline = EthosU55PipelineINT[input_t1](module(), module.inputs, [])
+def test_dim_order_u55_INT(module) -> None:
+    aten_ops: list[str] = []
+    pipeline = EthosU55PipelineINT[input_t1](module(), module.inputs, aten_ops)
     pipeline.run()
 
 
 @common.XfailIfNoCorstone320
 @common.parametrize("module", test_modules)
-def test_dim_order_u85_INT(module):
-    pipeline = EthosU85PipelineINT[input_t1](module(), module.inputs, [])
+def test_dim_order_u85_INT(module) -> None:
+    aten_ops: list[str] = []
+    pipeline = EthosU85PipelineINT[input_t1](module(), module.inputs, aten_ops)
     pipeline.run()
