@@ -168,18 +168,29 @@ inline std::vector<float> load_wav_audio_data(const std::string& fp) {
   size_t data_offset = header->dataOffset;
   size_t data_size = header->Subchunk2Size;
   int bits_per_sample = header->bitsPerSample;
+  int audio_format = header->AudioFormat;
 
   std::vector<float> audio_data;
 
   if (bits_per_sample == 32) {
     size_t num_samples = data_size / 4;
     audio_data.resize(num_samples);
-    const int32_t* input_buffer =
-        reinterpret_cast<const int32_t*>(data + data_offset);
 
-    for (size_t i = 0; i < num_samples; ++i) {
-      audio_data[i] = static_cast<float>(
-          static_cast<double>(input_buffer[i]) * kOneOverIntMax);
+    if (audio_format == 3) {
+      // IEEE float format - read directly as floats
+      const float* input_buffer =
+          reinterpret_cast<const float*>(data + data_offset);
+      for (size_t i = 0; i < num_samples; ++i) {
+        audio_data[i] = input_buffer[i];
+      }
+    } else {
+      // PCM integer format - normalize from int32
+      const int32_t* input_buffer =
+          reinterpret_cast<const int32_t*>(data + data_offset);
+      for (size_t i = 0; i < num_samples; ++i) {
+        audio_data[i] = static_cast<float>(
+            static_cast<double>(input_buffer[i]) * kOneOverIntMax);
+      }
     }
   } else if (bits_per_sample == 16) {
     size_t num_samples = data_size / 2;
