@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <title>ExecuTorch - On-Device AI Inference Powered by PyTorch</title>
     <meta name="description" content="ExecuTorch is PyTorch's unified solution for deploying AI models on-device—from smartphones to microcontrollers. Deploy LLMs, vision, speech, and multimodal models with the same PyTorch APIs.">
     <link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/dbort/executorch-logos/main/img/executorch-chip-logo.svg">
@@ -29,17 +29,18 @@
                 <img src="https://raw.githubusercontent.com/dbort/executorch-logos/main/img/executorch-chip-logo.svg" alt="ExecuTorch Logo" height="40">
                 <span style="color:#e0f2fe;">ExecuTorch</span>
             </div>
-            <ul class="nav-links">
+            <ul class="nav-links" id="navLinks">
                 <li><a href="#why-ondevice">Why On-Device</a></li>
                 <li><a href="#challenges">Challenges</a></li>
                 <li><a href="#features">Solution</a></li>
-                <li><a href="#performance">Performance</a></li>
+                <li><a href="#performance">Backends</a></li>
                 <li><a href="#partners">Partners</a></li>
                 <li><a href="https://github.com/pytorch/executorch" target="_blank">GitHub</a></li>
             </ul>
             <form class="nav-search" action="https://docs.pytorch.org/executorch/1.0/search.html" method="get">
                 <input type="text" placeholder="Search docs…" name="q" style="padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid #e2e8f0;">
             </form>
+            <button class="nav-toggle" onclick="toggleNav()" aria-label="Toggle navigation">☰</button>
             </div>
         </div>
     </nav>
@@ -1055,13 +1056,19 @@ result.tokens.forEach { token ->
             navLinks.classList.toggle('open');
         }
 
-        // Highlight active nav link on click
+        // Highlight active nav link on click and close menu on mobile
         document.querySelectorAll('.nav-links a').forEach(function(link) {
             link.addEventListener('click', function() {
                 document.querySelectorAll('.nav-links a').forEach(function(l) {
                     l.classList.remove('active');
                 });
                 this.classList.add('active');
+
+                // Close mobile menu when clicking a link
+                var navLinks = document.getElementById('navLinks');
+                if (navLinks.classList.contains('open')) {
+                    navLinks.classList.remove('open');
+                }
             });
         });
     </script>
