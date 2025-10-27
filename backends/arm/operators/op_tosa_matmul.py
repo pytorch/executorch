@@ -10,7 +10,6 @@
 from typing import Any, List
 
 import torch
-import tosa_serializer as ts
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -50,6 +49,8 @@ class MatmulVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         """Define the TOSA ``MATMUL`` operator."""
+        import serializer.tosa_serializer as ts  # type: ignore
+
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs], ts)
         validate_valid_dtype(
@@ -79,13 +80,10 @@ class MatmulVisitor(NodeVisitor):
         tosa_graph.addConst([1], inputs[1].dtype, [input1_zp], name=input_B_ZP_name)
 
         # Add the MATMUL to the TOSA graph.
-        attr = ts.TosaSerializerAttribute()
-        attr.MatMulAttribute()
-
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.MATMUL,
+            ts.TosaOp.Op().MATMUL,
             [
                 inputs[0].name,
                 inputs[1].name,
@@ -93,5 +91,4 @@ class MatmulVisitor(NodeVisitor):
                 input_B_ZP_name,
             ],
             [output.name],
-            attr,
         )

@@ -9,7 +9,7 @@ from typing import Any, List
 
 import executorch.backends.arm.tosa.quant_utils as tqutils
 import executorch.backends.arm.tosa.utils as tutils
-import tosa_serializer as ts
+import serializer.tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -76,18 +76,16 @@ class SubVisitor_INT(NodeVisitor):
             sub_output = output
 
         # Do the INT32 Sub
-        attr = ts.TosaSerializerAttribute()
-        attr.SubAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.SUB,
+            ts.TosaOp.Op().SUB,
             [
                 rescaled_inputs[0].name,
                 rescaled_inputs[1].name,
             ],
             [sub_output.name],
-            attr,
+            None,
         )
 
         if output.dtype == ts.DType.INT8:
@@ -141,13 +139,11 @@ class SubVisitor_FP(SubVisitor_INT):
             )
 
             # MI lowering
-            attr = ts.TosaSerializerAttribute()
-            attr.SubAttribute()
             self._serialize_operator(
                 node,
                 tosa_graph,
-                ts.Op.SUB,
+                ts.TosaOp.Op().SUB,
                 [inputs[0].name, inputs[1].name],
                 [output.name],
-                attr,
+                None,
             )

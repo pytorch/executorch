@@ -7,9 +7,9 @@
 
 from typing import Any, cast, List
 
-import torch
+import serializer.tosa_serializer as ts
 
-import tosa_serializer as ts
+import torch
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -37,6 +37,8 @@ class RescaleVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        from tosa.RoundingMode import RoundingMode  # type: ignore
+
         validate_num_inputs(self.target, inputs, 5)
 
         input_dtype = inputs[0].dtype
@@ -69,6 +71,6 @@ class RescaleVisitor(NodeVisitor):
             output_type=output.dtype,
             input_zp=[input_zp],
             output_zp=[output_zp],
-            rounding_mode=ts.RoundingMode.SINGLE_ROUND,
+            rounding_mode=RoundingMode.SINGLE_ROUND,
             per_channel=False,
         )

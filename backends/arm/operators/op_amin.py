@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Any, List
 
-import tosa_serializer as ts
+import serializer.tosa_serializer as ts
 
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.operators.node_visitor import (
@@ -60,13 +60,11 @@ class MinVisitor(NodeVisitor):
             )
 
         attr = ts.TosaSerializerAttribute()
-        attr.ReduceMinAttribute(
-            axis=input.dim_order.index(dim), nan_mode=ts.NanPropagationMode.PROPAGATE
-        )
+        attr.ReduceMinAttribute(axis=input.dim_order.index(dim), nan_mode=1)
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.REDUCE_MIN,
+            ts.TosaOp.Op().REDUCE_MIN,
             [input.name],
             [output.name],
             attr,

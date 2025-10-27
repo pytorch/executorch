@@ -6,7 +6,7 @@
 # pyre-unsafe
 from typing import Any, List
 
-import tosa_serializer as ts
+import serializer.tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -48,8 +48,6 @@ class ExpVisitor(NodeVisitor):
             output.tosa_spec,
         )
 
-        attr = ts.TosaSerializerAttribute()
-        attr.ExpAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.Op.EXP, [inputs[0].name], [output.name], attr
+            node, tosa_graph, ts.TosaOp.Op().EXP, [inputs[0].name], [output.name]
         )

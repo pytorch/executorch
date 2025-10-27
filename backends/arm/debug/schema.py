@@ -10,8 +10,8 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any, Optional
 
+import serializer.tosa_serializer as ts
 import torch
-import tosa_serializer as ts
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 
@@ -114,9 +114,14 @@ class DebugSchema:
 class DebugHook:
     def __init__(self, debug_mode: ArmCompileSpec.DebugMode) -> None:
         self._debug_events: list[DebugSchema] = []
+        self.__op_id_to_name = {}
         self.mode = debug_mode
 
-    def add(self, node: torch.fx.Node, tosa_op: Any, tosa_op_id: ts.Op) -> DebugSchema:
+        # Build up a mapping from TOSA 1.0 operator IDs to their names
+        for name, val in vars(ts.Op).items():
+            self.__op_id_to_name[val] = name
+
+    def add(self, node: torch.fx.Node, tosa_op: Any, tosa_op_id: int) -> DebugSchema:
         tosa_debug_info = None
 
         # If the debug data is being embedded into the TOSA flatbuffer
@@ -124,8 +129,8 @@ class DebugHook:
         if self.mode != ArmCompileSpec.DebugMode.TOSA:
             tosa_debug_info = TosaDebugSchema(
                 node_name=str(tosa_op),
-                operator_name=str(tosa_op_id),
-                operator_id=int(tosa_op_id),
+                operator_name=self.__op_id_to_name[tosa_op_id],
+                operator_id=tosa_op_id,
             )
 
         aten_debug_info = ATenDebugSchema.from_node(node)

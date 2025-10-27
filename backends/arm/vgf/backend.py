@@ -112,7 +112,7 @@ def vgf_compile(
                 Stdout:\n{process_error.stdout.decode()}"
             )
 
-        if artifact_path:
+        if artifact_path is not None:
             logger.info(f"Emitting debug output to: {vgf_path=}")
             os.makedirs(artifact_path, exist_ok=True)
             cp = f"cp {vgf_path} {artifact_path}"

@@ -9,8 +9,8 @@
 from typing import Any, List, Tuple
 
 import numpy as np
+import serializer.tosa_serializer as ts
 import torch
-import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -83,15 +83,16 @@ class ClampVisitor_INT(NodeVisitor):
 
         attr = ts.TosaSerializerAttribute()
         attr.ClampAttribute(
-            np.frombuffer(np.int8(min_int8).tobytes(), dtype=np.uint8).tolist(),
-            np.frombuffer(np.int8(max_int8).tobytes(), dtype=np.uint8).tolist(),
-            ts.NanPropagationMode.PROPAGATE,
+            tosa_graph.builder,
+            np.int8(min_int8).tobytes(),
+            np.int8(max_int8).tobytes(),
+            nan_mode=1,
         )
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.CLAMP,
+            ts.TosaOp.Op().CLAMP,
             [inputs[0].name],
             [output.name],
             attr,
@@ -125,43 +126,24 @@ class ClampVisitor_FP(ClampVisitor_INT):
             output.tosa_spec,
         )
 
-        attr = ts.TosaSerializerAttribute()
-        match inputs[0].dtype:
-            case ts.DType.FP16:
-                min_f, max_f = self._get_min_max_arguments(
-                    node,
-                    torch.finfo(torch.float16).min,
-                    torch.finfo(torch.float16).max,
-                )
-                min_bytes = np.frombuffer(
-                    np.float16(min_f).tobytes(), dtype=np.uint8
-                ).tolist()
-                max_bytes = np.frombuffer(
-                    np.float16(max_f).tobytes(), dtype=np.uint8
-                ).tolist()
-            case ts.DType.FP32:
-                min_f, max_f = self._get_min_max_arguments(
-                    node,
-                    torch.finfo(torch.float32).min,
-                    torch.finfo(torch.float32).max,
-                )
-                min_bytes = np.frombuffer(
-                    np.float32(min_f).tobytes(), dtype=np.uint8
-                ).tolist()
-                max_bytes = np.frombuffer(
-                    np.float32(max_f).tobytes(), dtype=np.uint8
-                ).tolist()
-            case _:
-                raise RuntimeError(
-                    f"Internal error: Unsupported dtype {inputs[0].dtype} in {self.target}"
-                )
+        min_fp32, max_fp32 = self._get_min_max_arguments(
+            node,
+            torch.finfo(torch.float32).min,
+            torch.finfo(torch.float32).max,
+        )
 
-        attr.ClampAttribute(min_bytes, max_bytes, ts.NanPropagationMode.PROPAGATE)
+        attr = ts.TosaSerializerAttribute()
+        attr.ClampAttribute(
+            tosa_graph.builder,
+            np.float32(min_fp32).tobytes(),
+            np.float32(max_fp32).tobytes(),
+            nan_mode=1,
+        )
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.CLAMP,
+            ts.TosaOp.Op().CLAMP,
             [inputs[0].name],
             [output.name],
             attr,

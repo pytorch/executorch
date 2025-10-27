@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Any, List
 
-import tosa_serializer as ts
+import serializer.tosa_serializer as ts
 
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.operators.node_visitor import (
@@ -60,12 +60,11 @@ class MaxVisitor(NodeVisitor):
             )
 
         attr = ts.TosaSerializerAttribute()
-        nan_mode = ts.NanPropagationMode.PROPAGATE
-        attr.ReduceMaxAttribute(axis=input.dim_order.index(dim), nan_mode=nan_mode)
+        attr.ReduceMaxAttribute(axis=input.dim_order.index(dim), nan_mode=1)
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.REDUCE_MAX,
+            ts.TosaOp.Op().REDUCE_MAX,
             [input.name],
             [output.name],
             attr,

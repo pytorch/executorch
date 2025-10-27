@@ -7,10 +7,10 @@
 
 from typing import Any, List
 
+import serializer.tosa_serializer as ts
+
 import torch
 import torch.fx
-
-import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -45,15 +45,12 @@ def identity_operator_factory(identity_target: str):
             validate_same_dtype(self.target, [*inputs, output], ts)
 
             # Simply add an identityOp
-            attr = ts.TosaSerializerAttribute()
-            attr.IdentityAttribute()
             self._serialize_operator(
                 node,
                 tosa_graph,
-                ts.Op.IDENTITY,
+                ts.TosaOp.Op().IDENTITY,
                 [inputs[0].name],
                 [output.name],
-                attr,
             )
 
     register_node_visitor(IdentityOperatorVisitor)

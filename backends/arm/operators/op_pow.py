@@ -7,7 +7,7 @@
 
 from typing import Any, List
 
-import tosa_serializer as ts
+import serializer.tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -49,16 +49,15 @@ class PowVisitor(NodeVisitor):
             [ts.DType.FP16, ts.DType.FP32],
             output.tosa_spec,
         )
-        attr = ts.TosaSerializerAttribute()
-        attr.PowAttribute()
+
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.POW,
+            ts.TosaOp.Op().POW,
             [
                 inputs[0].name,
                 inputs[1].name,
             ],
             [output.name],
-            attr,
+            None,
         )

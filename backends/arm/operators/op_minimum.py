@@ -7,7 +7,7 @@
 
 from typing import Any, List
 
-import tosa_serializer as ts
+import serializer.tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -42,6 +42,7 @@ class MinVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        from tosa.NanPropagationMode import NanPropagationMode  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
@@ -53,12 +54,13 @@ class MinVisitor(NodeVisitor):
         )
 
         attr_minimum = ts.TosaSerializerAttribute()
-        attr_minimum.MinimumAttribute(nan_mode=ts.NanPropagationMode.PROPAGATE)
+        # Set to PROPAGATE as default
+        attr_minimum.MinimumAttribute(nan_mode=NanPropagationMode.PROPAGATE)
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.MINIMUM,
+            ts.TosaOp.Op().MINIMUM,
             [
                 inputs[0].name,
                 inputs[1].name,

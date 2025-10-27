@@ -7,9 +7,9 @@
 
 from typing import Any
 
-import torch
+import serializer.tosa_serializer as ts
 
-import tosa_serializer as ts
+import torch
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -60,13 +60,11 @@ class RepeatVisitor(NodeVisitor):
             name=node.name + "_multiples",
         )
 
-        attr = ts.TosaSerializerAttribute()
-        attr.TileAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.TILE,
+            ts.TosaOp.Op().TILE,
             [inputs[0].name, multiple_shapes.name],
             [output.name],
-            attr,
+            None,
         )

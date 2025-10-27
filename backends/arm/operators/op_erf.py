@@ -5,9 +5,9 @@
 # pyre-unsafe
 from typing import Any, List
 
-import torch.fx
+import serializer.tosa_serializer as ts
 
-import tosa_serializer as ts
+import torch.fx
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -48,8 +48,6 @@ class ERFVisitor(NodeVisitor):
         )
 
         # MI lowering
-        attr = ts.TosaSerializerAttribute()
-        attr.ErfAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.Op.ERF, [inputs[0].name], [output.name], attr
+            node, tosa_graph, ts.TosaOp.Op().ERF, [inputs[0].name], [output.name]
         )

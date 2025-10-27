@@ -7,9 +7,8 @@
 
 from typing import Any, List
 
+import serializer.tosa_serializer as ts
 import torch
-
-import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -50,13 +49,8 @@ class MulVisitor(NodeVisitor):
         )
 
         tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{node.name}_shift")
-        attr = ts.TosaSerializerAttribute()
-        attr.MulAttribute()
-        self._serialize_operator(
-            node,
-            tosa_graph,
-            ts.Op.MUL,
+        tosa_graph.addOperator(
+            ts.TosaOp.Op().MUL,
             [inputs[0].name, inputs[1].name, f"{node.name}_shift"],
             [output.name],
-            attr,
         )

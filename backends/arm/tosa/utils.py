@@ -9,11 +9,11 @@ import logging
 from typing import Any
 
 import numpy as np
+import serializer.tosa_serializer as ts
 
 import sympy  # type: ignore
 
 import torch
-import tosa_serializer as ts
 
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta
 from executorch.backends.arm.tosa.specification import TosaSpecification
@@ -121,13 +121,11 @@ def broadcast_tensors(
             name=f"{node.name}_multiples",
         )
 
-        attr = ts.TosaSerializerAttribute()
-        attr.TileAttribute()
         tosa_fb.addOperator(
-            ts.Op.TILE,
+            ts.TosaOp.Op().TILE,
             [reshaped.name, multiple_shapes.name],
             [tiled.name],
-            attr,
+            None,
         )
 
         broadcast_tensors.append(tiled)
@@ -148,7 +146,7 @@ def build_reshape_tosa_1_0(
     attr = ts.TosaSerializerAttribute()
     attr.ReshapeAttribute()
     tosa_graph.addOperator(
-        ts.Op.RESHAPE,
+        ts.TosaOp.Op().RESHAPE,
         [input_name, shape.name],
         [output_name],
         attr,
@@ -162,7 +160,7 @@ def tosa_shape(shape, dim_order):
     removed_symints = tuple(
         [-1 if isinstance(d, torch.SymInt) else d for d in reordered]
     )
-    return list(removed_symints)
+    return removed_symints
 
 
 def get_resize_parameters_1d(

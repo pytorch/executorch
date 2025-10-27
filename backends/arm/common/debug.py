@@ -7,9 +7,8 @@ import logging
 import os
 from typing import Optional
 
+import serializer.tosa_serializer as ts
 import torch
-
-import tosa_serializer as ts
 from executorch.exir.print_program import inspect_node
 
 logger = logging.getLogger(__name__)
@@ -51,19 +50,28 @@ def get_node_debug_info(
     return output
 
 
-# Output TOSA flatbuffer for debugging
-def debug_tosa_dump(tosa_graph: bytes, path: str, suffix: str = ""):
+# Output TOSA flatbuffer and test harness file
+def debug_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
     filename = f"output{suffix}.tosa"
 
     logger.info(f"Emitting debug output to: {path=}, {suffix=}")
 
     os.makedirs(path, exist_ok=True)
 
+    fb = tosa_graph.serialize()
+    js = tosa_graph.writeJson(filename)
+
     filepath_tosa_fb = os.path.join(path, filename)
     with open(filepath_tosa_fb, "wb") as f:
-        f.write(tosa_graph)
+        f.write(fb)
     if not os.path.exists(filepath_tosa_fb):
         raise IOError("Failed to write TOSA flatbuffer")
+
+    filepath_desc_json = os.path.join(path, f"desc{suffix}.json")
+    with open(filepath_desc_json, "w") as f:
+        f.write(js)
+    if not os.path.exists(filepath_desc_json):
+        raise IOError("Failed to write TOSA JSON")
 
 
 def debug_fail(
@@ -73,7 +81,7 @@ def debug_fail(
     path: Optional[str] = None,
 ):
     logger.warning("Internal error due to poorly handled node:")
-    if tosa_graph is not None and path:
-        debug_tosa_dump(tosa_graph.serialize(), path)
+    if tosa_graph is not None and path is not None:
+        debug_tosa_dump(tosa_graph, path)
         logger.warning(f"Debug output captured in '{path}'.")
     debug_node(node, graph_module)
