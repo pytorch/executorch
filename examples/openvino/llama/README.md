@@ -28,13 +28,19 @@ python -m executorch.extension.llm.export.export_llm \
 OpenVINO backend also offers Quantization support for llama models when exporting the model. The different quantization modes that are offered are INT4 groupwise & per-channel weights compression and INT8 per-channel weights compression. It can be achieved by setting `pt2e_quantize` option in `llama3_2_ov_4wo.yaml` file under `quantization`. Set this parameter to `openvino_4wo` for INT4 or `openvino_8wo` for INT8 weight compression. It is set to `openvino_4wo` in `llama3_2_ov_4wo.yaml` file by default. For modifying the group size, set `group_size` option in `llama3_2_ov_4wo.yaml` file under `quantization`. By default group size 128 is used to achieve optimal performance with the NPU.
 
 ## Build OpenVINO C++ Runtime with Llama Runner:
-First, build the backend libraries by executing the script below in `<executorch_root>/backends/openvino/scripts` folder:
+First, build the backend libraries with llm extension by executing the script below in `<executorch_root>/backends/openvino/scripts` folder:
 ```bash
-./openvino_build.sh --cpp_runtime
+./openvino_build.sh --cpp_runtime_llm
 ```
-Then, build the llama runner by executing the script below (with `--llama_runner` argument) also in `<executorch_root>/backends/openvino/scripts` folder:
+Then, build the llama runner by executing commands below in `<executorch_root>` folder:
 ```bash
-./openvino_build.sh --llama_runner
+# Configure the project with CMake
+cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
+      -DCMAKE_BUILD_TYPE=Release \
+      -Bcmake-out/examples/models/llama \
+      examples/models/llama
+# Build the llama runner
+cmake --build cmake-out/examples/models/llama -j$(nproc) --config Release
 ```
 The executable is saved in `<executorch_root>/cmake-out/examples/models/llama/llama_main`
 
