@@ -10,6 +10,7 @@ profile (integer and/or float).
 
 """
 
+# pyre-unsafe
 import copy
 import logging
 
