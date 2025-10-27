@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,6 +14,8 @@ set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT ON)
 set_overridable_option(EXECUTORCH_ENABLE_LOGGING ON)
 set_overridable_option(EXECUTORCH_LOG_LEVEL Info)
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
+set_overridable_option(EXECUTORCH_BUILD_VULKAN ON)
+set_overridable_option(EXECUTORCH_BUILD_VGF ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM ON)
