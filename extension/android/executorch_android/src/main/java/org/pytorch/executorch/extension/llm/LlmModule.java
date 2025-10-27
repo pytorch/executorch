@@ -26,6 +26,7 @@ public class LlmModule {
 
   public static final int MODEL_TYPE_TEXT = 1;
   public static final int MODEL_TYPE_TEXT_VISION = 2;
+  public static final int MODEL_TYPE_MULTIMODAL = 2;
 
   private final HybridData mHybridData;
   private static final int DEFAULT_SEQ_LEN = 128;
@@ -69,7 +70,12 @@ public class LlmModule {
    */
   public LlmModule(
       int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath) {
-    this(modelType, modulePath, tokenizerPath, temperature, List.of(dataPath));
+    this(
+        modelType,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        dataPath != null ? List.of(dataPath) : List.of());
   }
 
   /** Constructs a LLM Module for a model with given model path, tokenizer, temperature. */
@@ -181,8 +187,10 @@ public class LlmModule {
       LlmCallback llmCallback,
       boolean echo) {
     prefillPrompt(prompt);
-    prefillImages(image, width, height, channels);
-    return generate("", llmCallback, echo);
+    if (image != null) {
+      prefillImages(image, width, height, channels);
+    }
+    return generate(prompt, seqLen, llmCallback, echo);
   }
 
   /**
@@ -251,6 +259,28 @@ public class LlmModule {
   }
 
   private native int appendAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
+
+  /**
+   * Prefill a multimodal Module with the given audio input.
+   *
+   * @param audio Input preprocessed audio as a float array
+   * @param batch_size Input batch size
+   * @param n_bins Input number of bins
+   * @param n_frames Input number of frames
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public long prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
+    int nativeResult = appendAudioInputFloat(audio, batch_size, n_bins, n_frames);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendAudioInputFloat(float[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
    * Prefill a multimodal Module with the given raw audio input.

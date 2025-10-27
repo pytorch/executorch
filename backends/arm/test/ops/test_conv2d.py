@@ -117,26 +117,26 @@ class Conv2d(torch.nn.Module):
         return x
 
 
-conv2d_2x2_3x2x40x40_nobias = Conv2d(
+conv2d_2x2_3x2x14x14_nobias = Conv2d(
     in_channels=2,
     out_channels=3,
     kernel_size=(2, 2),
     stride=1,
     bias=False,
     padding=0,
-    width=40,
-    height=40,
-    batches=3,
+    width=14,
+    height=14,
+    batches=2,
 )
 
-conv2d_3x3_1x3x256x256_st1 = Conv2d(
+conv2d_3x3_1x3x24x24_st1 = Conv2d(
     in_channels=3,
     out_channels=10,
     kernel_size=(3, 3),
     stride=1,
     padding=0,
-    width=256,
-    height=256,
+    width=24,
+    height=24,
     batches=1,
 )
 
@@ -151,14 +151,14 @@ conv2d_3x3_1x3x12x12_st2_pd1 = Conv2d(
     batches=1,
 )
 
-conv2d_1x1_1x2x128x128_st1 = Conv2d(
+conv2d_1x1_1x2x16x16_st1 = Conv2d(
     in_channels=2,
     out_channels=1,
     kernel_size=(1, 1),
     stride=1,
     padding=0,
-    width=128,
-    height=128,
+    width=16,
+    height=16,
     batches=1,
 )
 
@@ -173,25 +173,25 @@ conv2d_2x2_1x1x14x13_st2 = Conv2d(
     batches=1,
 )
 
-conv2d_5x5_3x2x128x128_st1 = Conv2d(
+conv2d_5x5_3x2x24x24_st1 = Conv2d(
     in_channels=2,
     out_channels=3,
     kernel_size=(5, 5),
     stride=1,
     padding=0,
-    width=128,
-    height=128,
-    batches=3,
+    width=24,
+    height=24,
+    batches=2,
 )
 
-conv2d_3x3_1x3x224x224_st2_pd1 = Conv2d(
+conv2d_3x3_1x3x28x28_st2_pd1 = Conv2d(
     in_channels=3,
     out_channels=16,
     kernel_size=(3, 3),
     stride=2,
     padding=1,
-    width=224,
-    height=224,
+    width=28,
+    height=28,
     batches=1,
 )
 
@@ -304,8 +304,8 @@ conv2d_4x3_1x3x7x7_st3_pd0_dl1 = Conv2d(
 
 two_conv2d_nobias = Conv2d(
     nbr_conv=2,
-    width=256,
-    height=256,
+    width=32,
+    height=32,
     in_channels=[3, 10],
     out_channels=[10, 15],
     kernel_size=[(5, 5), (5, 5)],
@@ -317,8 +317,8 @@ two_conv2d_nobias = Conv2d(
 
 two_conv2d = Conv2d(
     nbr_conv=2,
-    width=256,
-    height=256,
+    width=32,
+    height=32,
     in_channels=[3, 10],
     out_channels=[10, 15],
     kernel_size=[(5, 5), (5, 5)],
@@ -359,10 +359,10 @@ conv2d_groups_bias = Conv2d(
 # Shenanigan to get a nicer output when test fails. With unittest it looks like:
 # FAIL: test_convolution_2d_tosa_INT_2_3x3_1x3x12x12_st2_pd1
 test_data_FP = {
-    "2x2_3x2x40x40_nobias": lambda: conv2d_2x2_3x2x40x40_nobias,
-    "3x3_1x3x256x256_st1": lambda: conv2d_3x3_1x3x256x256_st1,
+    "2x2_3x2x14x14_nobias": lambda: conv2d_2x2_3x2x14x14_nobias,
+    "3x3_1x3x24x24_st1": lambda: conv2d_3x3_1x3x24x24_st1,
     "3x3_1x3x12x12_st2_pd1": lambda: conv2d_3x3_1x3x12x12_st2_pd1,
-    "1x1_1x2x128x128_st1": lambda: conv2d_1x1_1x2x128x128_st1,
+    "1x1_1x2x16x16_st1": lambda: conv2d_1x1_1x2x16x16_st1,
     "2x2_1x1x14x13_st2_needs_adjust_pass": lambda: conv2d_2x2_1x1x14x13_st2,
     "5x5_1x3x14x15_st3_pd1_needs_adjust_pass": lambda: conv2d_5x5_1x3x14x15_st3_pd1,
     "7x7_1x3x16x16_st2_pd1_dl2_needs_adjust_pass": lambda: conv2d_7x7_1x3x16x16_st2_pd1_dl2,
@@ -373,8 +373,8 @@ test_data_FP = {
     "3x3_1x3x8x9_st3_pd0_dl1_needs_adjust_pass": lambda: conv2d_3x3_1x3x8x9_st3_pd0_dl1,
     "3x4_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": lambda: conv2d_3x4_1x3x7x7_st3_pd0_dl1,
     "4x3_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": lambda: conv2d_4x3_1x3x7x7_st3_pd0_dl1,
-    "5x5_3x2x128x128_st1": lambda: conv2d_5x5_3x2x128x128_st1,
-    "3x3_1x3x224x224_st2_pd1": lambda: conv2d_3x3_1x3x224x224_st2_pd1,
+    "5x5_3x2x24x24_st1": lambda: conv2d_5x5_3x2x24x24_st1,
+    "3x3_1x3x28x28_st2_pd1": lambda: conv2d_3x3_1x3x28x28_st2_pd1,
     "two_conv2d_nobias": lambda: two_conv2d_nobias,
     "two_conv2d": lambda: two_conv2d,
     "groups": lambda: conv2d_groups,
