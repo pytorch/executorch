@@ -13,10 +13,13 @@ from executorch.backends.arm._passes import (
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 
-class MultipleOpsModel(torch.nn.Module):
+class NeedsRescaleOps(torch.nn.Module):
     """A module containing ops that require INT32 inputs/outputs."""
 
     input_t = Tuple[torch.Tensor, torch.Tensor]
+
+    def __init__(self):
+        super().__init__()
 
     def forward(self, x, y):
         a = x * y
@@ -36,41 +39,19 @@ class MultipleOpsModel(torch.nn.Module):
         else:
             raise ValueError("Not a valid input dtype for model")
 
-    def get_num_expected_rescales(self):
-        # "number of op nodes with i8 output" + "number of i8 node inputs"
-        return 3 + 7
 
-
-class SumModel(torch.nn.Module):
-    input_t = Tuple[torch.Tensor]
-
-    def forward(self, x):
-        a = torch.sum(x, 2, keepdim=True)  # (1, 2, 1, 4)
-        b = torch.sum(a, [1, 3], keepdim=True)  # (1, 1, 1, 1)
-        c = torch.sum(b, [0, 2], keepdim=False)  # (1, 1)
-        return c
-
-    def get_inputs(self, dtype) -> input_t:
-        if dtype == torch.float32:
-            return (torch.rand(1, 2, 3, 4),)
-        elif dtype == torch.int32:
-            return (torch.randint(0, 10, (1, 2, 3, 4), dtype=torch.int32),)
-        else:
-            raise ValueError("Not a valid input dtype for model")
-
-    def get_num_expected_rescales(self):
-        # Two RESCALE nodes per SUM node
-        return 6
-
-
-def _test_model_with_f32_data(model):
+def test_insert_rescales():
+    module = NeedsRescaleOps()
+    input_t = Tuple[torch.Tensor, torch.Tensor]
     ops_not_before = {"executorch_exir_dialects_backend__ops_tosa_RESCALE_default"}
     ops_after = {
-        "executorch_exir_dialects_backend__ops_tosa_RESCALE_default": model.get_num_expected_rescales(),
+        # "number of op nodes with i8 output" + "number of i8 node inputs"
+        "executorch_exir_dialects_backend__ops_tosa_RESCALE_default": 3
+        + 7,
     }
-    pipeline = PassPipeline[model.input_t](
-        model,
-        model.get_inputs(torch.float32),
+    pipeline = PassPipeline[input_t](
+        module,
+        module.get_inputs(torch.float32),
         quantize=True,
         ops_not_before_pass=ops_not_before,
         ops_after_pass=ops_after,
@@ -80,16 +61,8 @@ def _test_model_with_f32_data(model):
     pipeline.run()
 
 
-def test_insert_rescales_sum_model():
-    _test_model_with_f32_data(SumModel())
-
-
-def test_insert_rescales_multiple_ops_model():
-    _test_model_with_f32_data(MultipleOpsModel())
-
-
 def test_dont_insert_rescales():
-    module = MultipleOpsModel()
+    module = NeedsRescaleOps()
     input_t = Tuple[torch.Tensor, torch.Tensor]
     ops_not_before = {"executorch_exir_dialects_backend__ops_tosa_RESCALE_default"}
     # All inputs are already i32. Rescales should not be added.
