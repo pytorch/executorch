@@ -158,7 +158,7 @@ def process_inputs_to_buffers(
     buffer_values = np.transpose(buffer_values, tosa_arg.dim_order)
 
     tosa_graph.addConst(
-        buffer_values.shape, tosa_arg.dtype, buffer_values, name=tosa_arg.name
+        buffer_values.shape, tosa_arg.dtype, buffer_values, name=node.name
     )
 
 
@@ -215,9 +215,11 @@ def process_placeholder(
         raise RuntimeError(f"Placeholder '{node.name}' is of unknown type.")
 
 
-def process_output(node: torch.fx.Node, tosa_graph: Any, tosa_spec: TosaSpecification):
+def process_output(
+    node: torch.fx.Node,
+    tosa_graph: Any,
+):
     for output in cast(tuple[torch.fx.Node, ...], node.args[0]):
-        output_arg = TosaArg(output, tosa_spec)
         tosa_graph.addOutputTensor(
-            tosa_graph.currRegion.currBasicBlock.tensors[output_arg.name]
+            tosa_graph.currRegion.currBasicBlock.tensors[output.name]
         )

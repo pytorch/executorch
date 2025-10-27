@@ -17,8 +17,6 @@ import torch
 import tosa_serializer as ts
 from executorch.backends.arm.tosa.specification import TosaSpecification
 
-TOSA_TENSOR_NAME_META = "tosa_tensor_name"
-
 UNSUPPORTED_DTYPES = (
     torch.float64,
     torch.double,
@@ -146,7 +144,7 @@ class TosaArg:
             argument (torch.fx.Node): FX node to inspect.
 
         """
-        self.name = argument.name + argument.meta.get(TOSA_TENSOR_NAME_META, "")
+        self.name: str = argument.name
         output_dtype, self.shape, self.dim_order = extract_tensor_meta(
             argument.meta, self.tosa_spec
         )
