@@ -315,7 +315,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
-        pip install -U "huggingface_hub[cli]" accelerate
+        pip install -U "huggingface_hub[cli]<1.0" accelerate
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
@@ -636,7 +636,7 @@ jobs:
         echo "::group::Setup ExecuTorch"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
         echo "::endgroup::"
-                
+
         echo "::group::Setup requirements"
         # install phi-3-mini requirements
         bash examples/models/phi-3-mini/install_requirements.sh
