@@ -198,7 +198,7 @@ class ArmPassManager(PassManager):
 
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
-        self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(InsertTableOpsPass(exported_program, self.tosa_spec))
         # If we have a conv2d with int16 activation split up into a convolution
         # and an addition, to work-around the lack of support for int48 in torch
         # needs to happen before RewriteConv2dPass, but after the table ops are inserted
@@ -294,7 +294,7 @@ class ArmPassManager(PassManager):
         self.add_pass(RewriteConv2dPass(exported_program))
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(RewriteUpsamplePass())
-        self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(InsertTableOpsPass(exported_program, self.tosa_spec))
         self.add_pass(RewriteMatmulPass())
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
