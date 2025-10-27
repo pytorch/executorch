@@ -91,6 +91,11 @@ def _load_internal_model(
     model_name: str, example_inputs: Any
 ) -> Optional[Tuple[torch.nn.Module, Any]]:
     """Load a bundled example model from the internal `MODELS` mapping."""
+    logging.info(
+        "Loading internal models is deprecated. Use --model_name <FILE>.py/.pt "
+        "or a model from examples/models."
+    )
+
     if model_name not in MODELS:
         return None
 
@@ -442,7 +447,7 @@ def get_args():
         "-m",
         "--model_name",
         required=True,
-        help=f"Model file .py/.pth/.pt, builtin model or a model from examples/models. Valid names: {set(list(MODELS.keys()) + list(MODEL_NAME_TO_MODEL.keys()))}",
+        help=f"Model file .py/.pth/.pt or a model from examples/models. Valid names: {set(MODEL_NAME_TO_MODEL.keys())}",
     )
     parser.add_argument(
         "--model_input",
