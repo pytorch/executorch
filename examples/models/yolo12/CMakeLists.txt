@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 
 project(Yolo12DetectionDemo VERSION 0.1)
 
-option(USE_OPENVINO_BACKEND "Build the tutorial with the OPENVINO backend" ON)
+option(USE_OPENVINO_BACKEND "Build the tutorial with the OPENVINO backend" OFF)
 option(USE_XNNPACK_BACKEND "Build the tutorial with the XNNPACK backend" OFF)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -38,21 +38,13 @@ list(APPEND link_libraries portable_ops_lib portable_kernels)
 executorch_target_link_options_shared_lib(portable_ops_lib)
 
 if(USE_XNNPACK_BACKEND)
-  set(xnnpack_backend_libs xnnpack_backend XNNPACK microkernels-prod)
+  set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   list(APPEND link_libraries ${xnnpack_backend_libs})
   executorch_target_link_options_shared_lib(xnnpack_backend)
 endif()
 
 if(USE_OPENVINO_BACKEND)
-  add_subdirectory(${EXECUTORCH_ROOT}/backends/openvino openvino_backend)
-
-  target_include_directories(
-    openvino_backend
-    INTERFACE
-      ${CMAKE_CURRENT_BINARY_DIR}/../../include
-      ${CMAKE_CURRENT_BINARY_DIR}/../../include/executorch/runtime/core/portable_type/c10
-      ${CMAKE_CURRENT_BINARY_DIR}/../../lib
-  )
+  find_package(OpenVINO REQUIRED)
   list(APPEND link_libraries openvino_backend)
   executorch_target_link_options_shared_lib(openvino_backend)
 endif()
