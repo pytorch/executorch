@@ -19,7 +19,7 @@ def _get_sum_decomp(op):
                 exir_ops.edge.aten.sum.dim_IntList,
             )
         case torch.ops.aten.sum.dim_IntList:
-            return (torch.ops.aten.view_copy.default, torch.ops.aten.sum.dim_IntList)
+            return (torch.ops.aten.reshape.default, torch.ops.aten.sum.dim_IntList)
         case _:
             raise RuntimeError("Unvalid op in DecomposeSumPass")
 
@@ -83,7 +83,7 @@ class DecomposeSumPass(ArmPass):
         if not keepdims:
             shape = list(meta["val"].size())
             input_node = super().call_operator(
-                view_op, (input_node, shape), kwargs, meta, updated=True
+                view_op, (input_node, shape), {}, meta, updated=True
             )
 
         return input_node

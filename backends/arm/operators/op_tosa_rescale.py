@@ -3,11 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Any, cast, List
 
 import torch
+
+import tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -35,14 +36,11 @@ class RescaleVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-        from tosa.RoundingMode import RoundingMode  # type: ignore
-
         validate_num_inputs(self.target, inputs, 5)
 
         input_dtype = inputs[0].dtype
         output_dtype = cast(torch.dtype, node.args[1])
-        scale = cast(float, node.args[2])
+        scales = cast(list[float], node.args[2])
         input_zp = cast(int, node.args[3])
         output_zp = cast(int, node.args[4])
 
@@ -64,12 +62,12 @@ class RescaleVisitor(NodeVisitor):
 
         build_rescale(
             tosa_graph,
-            scale=[scale],
+            scale=scales,
             input_node=inputs[0],
             output_name=output.name,
             output_type=output.dtype,
             input_zp=[input_zp],
             output_zp=[output_zp],
-            rounding_mode=RoundingMode.SINGLE_ROUND,
-            per_channel=False,
+            rounding_mode=ts.RoundingMode.SINGLE_ROUND,
+            per_channel=len(scales) > 1,
         )

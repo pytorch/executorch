@@ -32,7 +32,7 @@ def test_depthwise_conv2d_tosa_INT():
                 8,
             ),
             (1, 16, 20, 20),
-            torch.int8,
+            torch.int32,
         ),
         (
             (
@@ -48,7 +48,7 @@ def test_depthwise_conv2d_tosa_INT():
                 8,
             ),
             (1, 32, 10, 10),
-            torch.int8,
+            torch.int32,
         ),
     ]
 

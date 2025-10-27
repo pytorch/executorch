@@ -86,6 +86,21 @@ void* metal_allocate_buffer(long bytes) {
     }
 }
 
+void metal_deallocate_buffer(void* ptr) {
+    @autoreleasepool {
+        auto it = ptr_to_mtl_buffer.find(ptr);
+        if (it != ptr_to_mtl_buffer.end()) {
+            id<MTLBuffer> buffer = it->second;
+            [buffer release];
+            ptr_to_mtl_buffer.erase(it);
+            ET_LOG(Debug, "Deallocated Metal buffer for pointer %p", ptr);
+            ptr = nullptr;
+        } else {
+            ET_LOG(Error, "Failed to find Metal buffer for pointer %p", ptr);
+        }
+    }
+}
+
 void metal_cleanup_resources() {
     if (!ptr_to_mtl_buffer.empty()) {
         @autoreleasepool {
@@ -665,12 +680,16 @@ void ETMetalStream::endKernelCoalescing() {
 
 // Commit methods
 void ETMetalStream::commit() {
-    if (enableCommitAndContinue_ && commandBuffer_) {
-        // Use commit-and-continue for better performance
-        commitAndContinue();
-    } else {
-        flush();
+    if (!commandBuffer_) {
+        ET_LOG(Error, "ETMetalStream::commit: No command buffer to commit");
+        return;
     }
+
+    [commandBuffer_ commit];
+    ET_LOG(Debug, "ETMetalStream::commit: Committed buffer %p", commandBuffer_);
+
+    [commandBuffer_ release];
+    commandBuffer_ = nil;
 }
 
 void ETMetalStream::commitAndWait() {

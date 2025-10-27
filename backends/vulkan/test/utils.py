@@ -50,11 +50,16 @@ class QuantizationMode(Enum):
 def get_exported_graph(
     model,
     sample_inputs,
+    sample_kwargs=None,
     dynamic_shapes=None,
     qmode=QuantizationMode.NONE,
 ) -> torch.fx.GraphModule:
     export_training_graph = export(
-        model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
+        model,
+        sample_inputs,
+        kwargs=sample_kwargs,
+        dynamic_shapes=dynamic_shapes,
+        strict=True,
     ).module()
 
     if qmode == QuantizationMode.NONE:
@@ -82,6 +87,7 @@ def random_uniform_tensor(shape, low=0.0, high=1.0, device=None, dtype=None):
 def export_model_to_vulkan(
     model,
     sample_inputs,
+    sample_kwargs=None,
     dynamic_shapes=None,
     operator_blocklist=None,
     operator_allowlist=None,
@@ -91,11 +97,16 @@ def export_model_to_vulkan(
 ):
     compile_options = {}
     exported_graph = get_exported_graph(
-        model, sample_inputs, dynamic_shapes=dynamic_shapes, qmode=qmode
+        model,
+        sample_inputs,
+        sample_kwargs=sample_kwargs,
+        dynamic_shapes=dynamic_shapes,
+        qmode=qmode,
     )
     program = export(
         exported_graph,
         sample_inputs,
+        kwargs=sample_kwargs,
         dynamic_shapes=dynamic_shapes,
         strict=True,
     )
@@ -422,6 +433,7 @@ def save_bundled_program(
     sample_inputs: Tuple[torch.Tensor],
     output_path: str,
     method_name: str = "forward",
+    sample_kwargs=None,
     et_program: Optional[ExecutorchProgramManager] = None,
     dynamic_shapes=None,
 ) -> str:
@@ -441,13 +453,21 @@ def save_bundled_program(
     """
     # If no ExecutorchProgramManager provided, export to Vulkan
     if et_program is None:
-        et_program = export_model_to_vulkan(model, sample_inputs, dynamic_shapes)
+        et_program = export_model_to_vulkan(
+            model,
+            sample_inputs,
+            sample_kwargs=sample_kwargs,
+            dynamic_shapes=dynamic_shapes,
+        )
+
+    if sample_kwargs is None:
+        sample_kwargs = {}
 
     # Generate expected outputs by running the model
-    expected_outputs = [getattr(model, method_name)(*sample_inputs)]
+    expected_outputs = [getattr(model, method_name)(*sample_inputs, **sample_kwargs)]
 
     # Flatten sample inputs to match expected format
-    inputs_flattened, _ = tree_flatten(sample_inputs)
+    inputs_flattened, _ = tree_flatten((sample_inputs, sample_kwargs))
 
     # Create test suite with the sample inputs and expected outputs
     test_suites = [

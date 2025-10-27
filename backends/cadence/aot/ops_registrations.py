@@ -53,17 +53,8 @@ def _validate_ref_impl_exists() -> None:
     # 1. be removed
     # 2. have a reference implementation added to ref_implementations.py
     _WARN_ONLY = {
-        "cadence::quantized_w8a32_linear",
-        "cadence::quantized_add",  # We should only support per_tensor variant, should remove
-        "cadence::_softmax_f32_f32",
-        "cadence::requantize",  # We should only support per_tensor variant, should remove
         "cadence::quantized_softmax.per_tensor",
-        "cadence::quantized_conv2d_nchw",  # We should only support per_tensor variant, should remove
-        "cadence::quantized_relu",  # We should only support per_tensor variant, should remove
-        "cadence::quantized_conv2d_nhwc",  # We should only support per_tensor variant, should remove
         "cadence::quantized_softmax",
-        "cadence::quantized_w8a32_gru",
-        "cadence::quantized_layer_norm",  # We should only support per_tensor variant, should remove
     }
 
     ref_impls = get_registered_ref_implementations()
@@ -647,10 +638,10 @@ lib.define(
     "int sampling_ratio, bool aligned) -> (Tensor out)"
 )
 lib.define(
-    "_softmax_f32_f32(Tensor self, int dim, bool? half_to_float) -> (Tensor out)"
+    "_softmax_f32_f32(Tensor self, int dim, bool? half_to_float = None) -> (Tensor out)"
 )
 lib.define(
-    "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float, *, Tensor(a!) out) -> Tensor(a!)"
+    "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float = None, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -2659,12 +2650,13 @@ def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_meta(
 
 @register_fake("cadence::_softmax_f32_f32")
 def softmax_f32_f32_meta(
-    self: torch.Tensor,
+    input_tensor: torch.Tensor,
     dim: int,
-    dtype: torch.dtype,
     half_to_float: Optional[bool] = None,
 ) -> torch.Tensor:
-    return self.new_empty(self.size(), dtype=self.dtype)
+    assert input_tensor.dtype == torch.float32, "input_tensor must be float32"
+    assert not half_to_float, "half_to_float is not supported"
+    return input_tensor.new_empty(input_tensor.size(), dtype=torch.float32)
 
 
 @register_fake("cadence::quantized_softmax")
@@ -2706,6 +2698,9 @@ def quantized_w8a32_linear_meta(
     # output comes in empty with shape [leading_dims, out_dim]
     src_shape = list(src.shape)
     weight_shape = weight.shape
+    assert (src_shape[-1] % 4) == 0
+    if len(src_shape) >= 2:
+        assert src_shape[-2] == 1
     assert len(weight_shape) == 2
     assert src_shape[-1] == weight_shape[-1]
     src_shape[-1] = weight_shape[0]
@@ -2720,12 +2715,12 @@ def quantized_w8a32_conv_meta(
     bias: torch.Tensor,
     b_scale: float,
 ) -> torch.Tensor:
-    # src comes in shape [batch, in_channel, in_length]
-    # weight comes in shape [out_ch, in_ch, kernel_dim]
+    # src comes in shape [batch, in_length, in_channels]
+    # weight comes in shape [kernel_dim, out_ch, in_ch]
     # output comes in empty with shape [batch, out_ch, in_length - kernel_dim + 1]
     assert len(src.shape) == 3
 
-    out_channels, in_channels, kernel_size = weight.shape
+    kernel_size, out_channels, in_channels = weight.shape
     assert kernel_size == 3
     assert (out_channels % 4) == 0
     assert (in_channels % 4) == 0
@@ -2757,7 +2752,7 @@ def quantized_w8a32_gru_meta(
     bias_hidden: torch.Tensor,
     b_h_scale: float,
 ) -> torch.Tensor:
-    return inputs.new_empty((2, hidden.shape[-1]), dtype=inputs.dtype)
+    return hidden.new_empty((2, hidden.shape[-1]), dtype=torch.float32)
 
 
 # Validate that all meta kernels have reference implementations
