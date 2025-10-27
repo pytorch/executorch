@@ -9,7 +9,7 @@ set -euo pipefail
 # URL and tag of the MLSDK manifest repository. Can be overridden by environment variables.
 # eg. export MLSDK_MANIFEST_URL=...; export MLSDK_MANIFEST_TAG=...
 mlsdk_manifest_url="${MLSDK_MANIFEST_URL:-https://github.com/arm/ai-ml-sdk-manifest.git}"
-mlsdk_manifest_tag="${MLSDK_MANIFEST_TAG:-refs/tags/dev-snapshot-2025-09-12}"
+mlsdk_manifest_tag="${MLSDK_MANIFEST_TAG:-refs/tags/v2025.10.0}"
 
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 
@@ -36,33 +36,14 @@ function mlsdk_sync_manifest() {
            -g model-converter,emulation-layer,vgf-library
 
     local default_manifest=".repo/manifests/default.xml"
-    local local_manifest_path=".repo/local_manifests/tosa_gitlab.xml"
 
-    # TODO: Remove this workaround once MLSDK switches to GitLab for tosa-mlir-translator
-    if [[ -f "${default_manifest}" ]] && grep -q '<remote name="mlplatform" fetch="https://git.mlplatform.org/" alias="origin"/>' "${default_manifest}"; then
-        log_step "mlsdk" "Patching MLSDK manifest to use GitLab tosa-mlir-translator mirror"
-        # Update dependencies to use gitlab tosa-mlir-translator
-        # Do not indent the xml. Heredoc indentation is significant.
-        mkdir -p .repo/local_manifests/
-        cat > "${local_manifest_path}" <<'XML'
-<manifest>
-  <remote name="gitlab" fetch="https://git.gitlab.arm.com/"/>
-
-  <!-- remove the mlplatform entry -->
-  <remove-project name="tosa/tosa_mlir_translator"/>
-
-  <!-- re-add with GitLab repo and pin the SHA -->
-  <project
-      name="tosa/tosa-mlir-translator"
-      path="dependencies/tosa_mlir_translator"
-      remote="gitlab"
-      revision="refs/tags/v2025.07.1"
-      groups="all model-converter"
-      sync-s="true"/>
-</manifest>
-XML
+    # TODO: Remove this workaround once 2GB capable mlir translator is available
+    # in the official MLSDK repository.
+    if [[ "${OSTYPE:-}" == darwin* ]]; then
+        sed -i '' 's|revision="refs/tags/v2025.07.1"|revision="c3b324e643b4b4e592de8a9123a58c4179649d8c"|' "${default_manifest}"
+    else
+        sed -i 's|revision="refs/tags/v2025.07.1"|revision="c3b324e643b4b4e592de8a9123a58c4179649d8c"|' "${default_manifest}"
     fi
-
     ./repo sync --force-sync -j"${parallel_jobs}"
 
     popd
@@ -119,12 +100,12 @@ function download_ai_mlsdk_manifest() {
         log_step "mlsdk" "Manifest changed (url=${cached_url:-<unknown>} -> ${mlsdk_manifest_url}, tag=${cached_tag:-<unknown>} -> ${mlsdk_manifest_tag}); refreshing checkout"
     fi
 
-    # Clean up any local changes to avoid repo sync errors.
-    # Note: This does not delete untracked files outside of .repo.
-    # Users should manually delete the checkout if they want a full clean.
-    # TODO: Remove this workaround once MLSDK switches to GitLab for tosa-mlir-translator
+    # Clean up any local manifest changes to avoid repo sync errors.
+    # Since we patched in a local manifest for tosa_gitlab.xml,
+    # remove any existing local manifests to avoid conflicts.
+    # TODO: we should remove this at some point in the future, but its not hurting anything for now.
     if [[ -d "${_manifest_dir}/.repo/local_manifests" ]]; then
-        rm -f "${_manifest_dir}/.repo/local_manifests/tosa_gitlab.xml"
+        rm -rf "${_manifest_dir}/.repo/local_manifests/"
     fi
 
     # Clean up any local changes in the manifests repository.

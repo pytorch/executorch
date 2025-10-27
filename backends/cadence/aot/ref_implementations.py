@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from typing import Callable
+from typing import Callable, Protocol, TypeVar
 
 import torch
 import torch.nn as nn
@@ -21,13 +21,15 @@ torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib"
 # Registry to track all ops with reference implementations
 _REGISTERED_REF_IMPLEMENTATIONS: set[str] = set()
 
-_OUTPUTS_TYPE = torch.Tensor | tuple[torch.Tensor, ...]
+T = TypeVar("T", bound=Callable[..., torch.Tensor | tuple[torch.Tensor, ...]])
+
+
+class MyDecorator(Protocol):
+    def __call__(self, __f: T) -> T: ...
 
 
 # Custom impl wrapper that tracks registrations
-def impl_tracked(
-    lib: Library, op_name: str
-) -> Callable[[Callable[..., _OUTPUTS_TYPE]], Callable[..., _OUTPUTS_TYPE]]:
+def impl_tracked(lib: Library, op_name: str) -> MyDecorator:
     """Wrapper around impl that tracks registered ops."""
     _REGISTERED_REF_IMPLEMENTATIONS.add(op_name)
     return impl(lib, op_name)
@@ -314,7 +316,7 @@ def quantized_add_per_tensor(
     dequant_Y = Y_scale * (Y - Y_zero_point)
 
     # q_min/q_max are unused args
-    out = quantize_per_tensor(
+    return quantize_per_tensor(
         dequant_X + dequant_Y,
         out_scale,
         out_zero_point,
@@ -323,8 +325,28 @@ def quantized_add_per_tensor(
         dtype,
     )
 
-    assert isinstance(out, torch.Tensor)
-    return out
+
+@impl_tracked(m, "quantized_add")
+def quantized_add(
+    X: torch.Tensor,
+    X_scale: torch.Tensor,
+    X_zero_point: torch.Tensor,
+    Y: torch.Tensor,
+    Y_scale: torch.Tensor,
+    Y_zero_point: torch.Tensor,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    return quantized_add_per_tensor(
+        X,
+        float(X_scale.item()),
+        int(X_zero_point.item()),
+        Y,
+        float(Y_scale.item()),
+        int(Y_zero_point.item()),
+        out_scale,
+        out_zero_point,
+    )
 
 
 @impl_tracked(m, "quantized_add_asym8sxasym8s_asym8s.per_tensor")
@@ -343,11 +365,9 @@ def quantized_add_asym8sxasym8s_asym8s_per_tensor(
     if Y.dtype != torch.int8:
         raise ValueError("Y dtype must be torch.int8")
 
-    out = quantized_add_per_tensor(
+    return quantized_add_per_tensor(
         X, X_scale, X_zero_point, Y, Y_scale, Y_zero_point, out_scale, out_zero_point
     )
-    assert isinstance(out, torch.Tensor)
-    return out
 
 
 @impl_tracked(m, "quantized_add_asym8uxasym8u_asym8u.per_tensor")
@@ -366,11 +386,9 @@ def quantized_add_asym8uxasym8u_asym8u_per_tensor(
     if Y.dtype != torch.uint8:
         raise ValueError("Y dtype must be torch.int8")
 
-    out = quantized_add_per_tensor(
+    return quantized_add_per_tensor(
         X, X_scale, X_zero_point, Y, Y_scale, Y_zero_point, out_scale, out_zero_point
     )
-    assert isinstance(out, torch.Tensor)
-    return out
 
 
 def quantized_linear_common(
@@ -416,16 +434,14 @@ def quantized_linear_common(
         (weight - weight_zero_point).float(),
         bias.float(),
     )
-    out = quantize_per_tensor(
+    return quantize_per_tensor(
         out,
         out_scale,
         out_zero_point,
         torch.iinfo(dtype).min,
         torch.iinfo(dtype).max,
         dtype,
-    )
-    assert isinstance(out, torch.Tensor)
-    return out.reshape(*leading_dims, N)
+    ).reshape(*leading_dims, N)
 
 
 def quantized_linear_variant(
@@ -587,7 +603,7 @@ def quantized_matmul(
         (X - X_zero_point).float(),
         (Y - Y_zero_point).float(),
     )
-    out = quantize_per_tensor(
+    return quantize_per_tensor(
         out,
         out_scale,
         out_zero_point,
@@ -595,8 +611,6 @@ def quantized_matmul(
         torch.iinfo(X.dtype).max,
         X.dtype,
     )
-    assert isinstance(out, torch.Tensor)
-    return out
 
 
 @impl_tracked(m, "quantized_matmul_asym8sxasym8s_asym8s")
@@ -616,7 +630,7 @@ def quantized_matmul_asym8sxasym8s_asym8s(
     if Y.dtype != torch.int8:
         raise ValueError("Y dtype must be torch.int8")
 
-    out = quantized_matmul(
+    return quantized_matmul(
         X,
         X_zero_point,
         Y,
@@ -627,8 +641,6 @@ def quantized_matmul_asym8sxasym8s_asym8s(
         out_zero_point,
         transposed,
     )
-    assert isinstance(out, torch.Tensor)
-    return out
 
 
 @impl_tracked(m, "quantized_matmul_asym8uxasym8u_asym8u")
@@ -648,7 +660,7 @@ def quantized_matmul_asym8uxasym8u_asym8u(
     if Y.dtype != torch.uint8:
         raise ValueError("Y dtype must be torch.uint8")
 
-    out = quantized_matmul(
+    return quantized_matmul(
         X,
         X_zero_point,
         Y,
@@ -659,8 +671,6 @@ def quantized_matmul_asym8uxasym8u_asym8u(
         out_zero_point,
         transposed,
     )
-    assert isinstance(out, torch.Tensor)
-    return out
 
 
 @impl_tracked(m, "quantized_layer_norm.per_tensor")
@@ -703,7 +713,7 @@ def quantized_layer_norm_per_tensor(
         float_input_tensor, normalized_shape, weight, bias, eps=eps
     )
 
-    out = quantize_per_tensor(
+    return quantize_per_tensor(
         out,
         output_scale,
         output_zero_point,
@@ -711,8 +721,31 @@ def quantized_layer_norm_per_tensor(
         torch.iinfo(input_tensor.dtype).max,
         input_tensor.dtype,
     )
-    assert isinstance(out, torch.Tensor)
-    return out
+
+
+@impl_tracked(m, "quantized_layer_norm")
+def quantized_layer_norm(
+    input_tensor: torch.Tensor,
+    X_scale: torch.Tensor,
+    X_zero_point: torch.Tensor,
+    normalized_shape: list[int],
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    eps: float,
+    output_scale: float,
+    output_zero_point: int,
+) -> torch.Tensor:
+    return quantized_layer_norm_per_tensor(
+        input_tensor,
+        float(X_scale.item()),
+        int(X_zero_point.item()),
+        normalized_shape,
+        weight,
+        bias,
+        eps,
+        output_scale,
+        output_zero_point,
+    )
 
 
 def quantized_conv_per_tensor(
@@ -774,7 +807,7 @@ def quantized_conv_per_tensor(
     else:
         raise ValueError("Input tensor must be 3D or 4D")
 
-    out = quantize_per_tensor(
+    return quantize_per_tensor(
         float_out,
         output_scale,
         output_zero_point,
@@ -782,8 +815,6 @@ def quantized_conv_per_tensor(
         torch.iinfo(input_tensor.dtype).max,
         input_tensor.dtype,
     )
-    assert isinstance(out, torch.Tensor)
-    return out
 
 
 @impl_tracked(m, "quantized_conv2d_nchw.per_tensor")
@@ -842,6 +873,41 @@ def quantized_conv2d_nchw_per_tensor(
     )
 
 
+@impl_tracked(m, "quantized_conv2d_nchw")
+def quantized_conv2d_nchw(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    bias_scale: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    return quantized_conv2d_nchw_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        int(weight_zero_point.item()),
+        float(bias_scale.item()),
+        output_scale,
+        output_zero_point,
+        int(out_multiplier.item()),
+        int(out_shift.item()),
+    )
+
+
 @impl_tracked(m, "quantized_w8a32_conv")
 def quantized_w8a32_conv(
     src: torch.Tensor,
@@ -854,7 +920,7 @@ def quantized_w8a32_conv(
     if len(weight.shape) != 3:
         raise ValueError("Weight tensor must be 3D")
 
-    out_channels, in_channels, kernel_size = weight.shape
+    kernel_size, out_channels, in_channels = weight.shape
     if kernel_size != 3:
         raise ValueError("Kernel size must be 3")
     if (out_channels % 4) != 0:
@@ -862,10 +928,15 @@ def quantized_w8a32_conv(
     if (in_channels % 4) != 0:
         raise ValueError("In channels must be a multiple of 4")
 
-    # src comes in shape [batch, in_channel, in_length]
-    # weight comes in shape [out_ch, in_ch, kernel_dim]
-    # output comes in empty with shape [batch, out_ch, in_length - kernel_dim + 1]
-    # Dequantize weight using scale
+    assert weight.dtype == torch.int8
+    assert bias.dtype == torch.int8
+
+    # To make compliant with torch (LCN -> NCL format)
+    weight = weight.permute(1, 2, 0).contiguous()
+
+    # channels last to channels first
+    src = src.permute(0, 2, 1).contiguous()
+
     dequant_weight = weight.float() * w_scale
 
     # Dequantize bias using scale
@@ -882,6 +953,100 @@ def quantized_w8a32_conv(
     )
 
     return output
+
+
+@impl_tracked(m, "quantized_w8a32_linear")
+def quantized_w8a32_linear(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [in_dim, out_dim]
+    # output comes in empty with shape [leading_dims, out_dim]
+    assert weight.dtype == torch.int8
+    assert bias.dtype == torch.int8
+    if len(src.shape) >= 2:
+        assert src.shape[-2] == 1, "Only supporting vector-matrix multiplication"
+
+    # need to transpose to make compliant with torch linear (in, out -> out, in)
+    weight = weight.transpose(1, 0).contiguous()
+    dequant_weight = weight.float() * w_scale
+    dequant_bias = bias.float() * b_scale
+
+    output = torch.nn.functional.linear(
+        src.float(),
+        dequant_weight,
+        dequant_bias,
+    )
+
+    return output
+
+
+@impl_tracked(m, "quantized_w8a32_gru")
+def quantized_w8a32_gru(
+    inputs: torch.Tensor,
+    hidden: torch.Tensor,
+    weights_inputs: torch.Tensor,
+    w_i_scale: float,
+    weights_hidden: torch.Tensor,
+    w_h_scale: float,
+    bias_inputs: torch.Tensor,
+    b_i_scale: float,
+    bias_hidden: torch.Tensor,
+    b_h_scale: float,
+) -> torch.Tensor:
+    assert weights_inputs.dtype == torch.int8
+    assert weights_hidden.dtype == torch.int8
+    assert bias_inputs.dtype == torch.int8
+    assert bias_hidden.dtype == torch.int8
+    assert inputs.dtype == torch.float32
+    assert hidden.dtype == torch.float32
+
+    if len(hidden.shape) > 2:
+        raise ValueError("Hidden state must be 2D or 1D")
+
+    if len(hidden.shape) == 2 and hidden.shape[0] != 1:
+        raise ValueError("Leading dimension of hidden state must be 1")
+
+    original_hidden_shape = hidden.shape
+    hidden = hidden.view(-1)
+
+    hidden_dim = hidden.shape[0]
+    if (hidden_dim % 4) != 0:
+        raise ValueError(
+            "Hidden dimension must be a multiple of 4 for HiFi SIMD operations"
+        )
+
+    dequant_weights_inputs = weights_inputs.float() * w_i_scale
+    dequant_weights_hidden = weights_hidden.float() * w_h_scale
+
+    # C++ implementation averages the two bias scales
+    avg_bias_scale = (b_i_scale + b_h_scale) / 2
+    dequant_bias_inputs = bias_inputs.float() * avg_bias_scale
+    dequant_bias_hidden = bias_hidden.float() * avg_bias_scale
+
+    gi = F.linear(inputs, dequant_weights_inputs, dequant_bias_inputs)
+    gh = F.linear(hidden, dequant_weights_hidden, dequant_bias_hidden)
+
+    i_r, i_z, i_n = gi.chunk(3, -1)
+    h_r, h_z, h_n = gh.chunk(3, -1)
+
+    reset_gate = torch.sigmoid(i_r + h_r)
+    update_gate = torch.sigmoid(i_z + h_z)
+    new_gate = torch.tanh(i_n + reset_gate * h_n)
+
+    new_hidden = (1 - update_gate) * new_gate + update_gate * hidden
+
+    if new_hidden.shape[0] != 1:
+        raise ValueError("Leading dimension of hidden state must be 1")
+
+    assert new_hidden.shape == original_hidden_shape
+
+    new_hidden = new_hidden.view(-1)
+    return torch.stack([new_hidden, new_hidden], dim=0)
 
 
 @impl_tracked(m, "quantized_conv2d_nhwc.per_tensor")
@@ -958,6 +1123,41 @@ def quantized_conv2d_nhwc_per_tensor(
         return nchw_out.movedim(-3, -1).contiguous()
 
 
+@impl_tracked(m, "quantized_conv2d_nhwc")
+def quantized_conv2d_nhwc(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    bias_scale: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    return quantized_conv2d_nhwc_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        int(weight_zero_point.item()),
+        float(bias_scale.item()),
+        output_scale,
+        output_zero_point,
+        int(out_multiplier.item()),
+        int(out_shift.item()),
+    )
+
+
 def quantized_conv_variant(
     layout: str,
     input_dtype: torch.dtype,
@@ -1005,7 +1205,7 @@ def quantized_conv_variant(
             # Call the appropriate base function
             match layout:
                 case "nchw":
-                    out = quantized_conv2d_nchw_per_tensor(
+                    return quantized_conv2d_nchw_per_tensor(
                         input_tensor,
                         weight,
                         bias,
@@ -1022,7 +1222,7 @@ def quantized_conv_variant(
                         out_shift,
                     )
                 case "nhwc":
-                    out = quantized_conv2d_nhwc_per_tensor(
+                    return quantized_conv2d_nhwc_per_tensor(
                         input_tensor,
                         weight,
                         bias,
@@ -1040,9 +1240,6 @@ def quantized_conv_variant(
                     )
                 case _:
                     raise ValueError(f"Unknown layout {layout}")
-
-            assert isinstance(out, torch.Tensor)
-            return out
 
         return variant
 
@@ -1374,6 +1571,19 @@ def quantized_relu_asym8s_asym8s_per_tensor() -> torch.Tensor: ...
 def quantized_relu_asym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
+@impl_tracked(m, "quantized_relu")
+def quantized_relu(
+    X: torch.Tensor,
+    X_zero_point: torch.Tensor,
+    out_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    return quantized_relu_per_tensor(
+        X, X_zero_point.item(), out_zero_point, out_multiplier.item(), out_shift.item()
+    )
+
+
 @impl_tracked(m, "requantize.per_tensor")
 def requantize_per_tensor(
     input: torch.Tensor,
@@ -1408,6 +1618,25 @@ def requantize_per_tensor(
         out_zero_point,
         out_quant_min,
         out_quant_max,
+        dtype,
+    )
+
+
+@impl_tracked(m, "requantize")
+def requantize(
+    input_tensor: torch.Tensor,
+    in_scale: torch.Tensor,
+    in_zero_point: torch.Tensor,
+    out_scale: torch.Tensor,
+    out_zero_point: torch.Tensor,
+    dtype: ScalarType,
+) -> torch.Tensor:
+    return requantize_per_tensor(
+        input_tensor,
+        float(in_scale.item()),
+        int(in_zero_point.item()),
+        float(out_scale.item()),
+        int(out_zero_point.item()),
         dtype,
     )
 
@@ -1814,3 +2043,14 @@ def linalg_svd(
     assert compute_uv
     U, S, Vh = torch.linalg.svd(A, full_matrices=full_matrices, driver=driver)
     return U.contiguous(), S.contiguous(), Vh.contiguous()
+
+
+@impl_tracked(m, "_softmax_f32_f32")
+def softmax_f32_f32(
+    input_tensor: torch.Tensor,
+    dim: int,
+    half_to_float: bool | None = None,
+) -> torch.Tensor:
+    assert input_tensor.dtype == torch.float32, "input_tensor must be float32"
+    assert not half_to_float, "half_to_float is not supported"
+    return torch.nn.functional.softmax(input_tensor, dim=dim, dtype=torch.float32)

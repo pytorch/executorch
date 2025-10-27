@@ -17,6 +17,7 @@ Below are the minimum OS requirements on various hardware for running a Core ML-
 - [tvOS](https://developer.apple.com/tvos/) >= 16.0
 
 ## Development Requirements
+
 To develop you need:
 
 - [macOS](https://developer.apple.com/macos) >= 13.0

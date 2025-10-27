@@ -1,0 +1,56 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef BINARY_OP_DEFS_GLSLH
+#define BINARY_OP_DEFS_GLSLH
+
+//
+// Power operation that handles negative and zero bases
+//
+// In GLSL, pow(x, y) is undefined for x < 0. This function provides
+// a safe implementation that:
+// - Handles x == 0 (returns 0 for y > 0, returns 1 for y == 0)
+// - Handles x < 0 by using absolute value and preserving sign for odd integer exponents
+// - Uses standard pow() for x > 0
+//
+
+// Scalar overload
+T power_of(T x, T y) {
+  if (x == 0.0) {
+    // Handle 0^y: 0^0 = 1, 0^y = 0 for y > 0
+    return (y == 0.0) ? T(1.0) : T(0.0);
+  }
+
+  // Use absolute value to avoid undefined behavior
+  float result = pow(abs(x), y);
+
+  // For negative bases with odd integer exponents, preserve the negative sign
+  if (x < 0.0) {
+    float int_y = round(y);
+    if (abs(y - int_y) < 1e-5 && int(int_y) % 2 == 1) {
+      result = -result;
+    }
+  }
+
+  return T(result);
+}
+
+#ifdef VEC4_T
+
+// Vector overload
+VEC4_T power_of(VEC4_T x, VEC4_T y) {
+  VEC4_T result;
+  for (int i = 0; i < 4; i++) {
+    result[i] = power_of(x[i], y[i]);
+  }
+  return result;
+}
+
+#endif // VEC4_T
+
+#endif // BINARY_OP_DEFS_GLSLH
