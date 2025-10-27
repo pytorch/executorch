@@ -24,10 +24,11 @@ from typing import (
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
-import serializer.tosa_serializer as ts  # type: ignore[import-untyped]
-
 import torch.fx
 import torch.utils._pytree as pytree
+
+import tosa_serializer as ts
+
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
@@ -603,9 +604,9 @@ class ArmTester(Tester):
         # We need to clone the artifact in order to ensure that the state_dict is preserved after passes are run.
         artifact = self.get_artifact(stage)
         if self.cur == StageType.EXPORT:
-            new_gm = ArmPassManager(self.compile_spec.tosa_spec).transform_for_annotation_pipeline(  # type: ignore[arg-type]
-                graph_module=artifact.graph_module
-            )
+            new_gm = ArmPassManager(
+                self.compile_spec.tosa_spec
+            ).transform_for_annotation_pipeline(graph_module=artifact.graph_module)
         else:
             raise RuntimeError("Can only run passes on Export stage.")
         _copy_module(artifact.graph_module, new_gm)

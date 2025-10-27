@@ -35,6 +35,7 @@ class Sum(torch.nn.Module):
         "4d_dim_3_keep": lambda: (torch.rand(1, 2, 3, 4), 3, True),
         "4d_dims_keep": lambda: (torch.rand(1, 2, 8, 8), [2, 3, 0], True),
         "dim_None": lambda: (torch.rand(10), None, True),
+        "dim_None_4d_tensor": lambda: (torch.rand(10, 3, 2, 1), None, True),
     }
 
     def forward(self, x: torch.Tensor, dim: int, keepdim: bool):

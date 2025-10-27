@@ -5,8 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
 
 from collections import defaultdict
 
@@ -89,8 +87,7 @@ from executorch.backends.arm._passes import (
     QuantizeOperatorArguments,
     RemoveNoopPass,
     ReplaceInfValues,
-    ReplaceScalarWithTensorArgPassTOSABI,
-    ReplaceScalarWithTensorArgPassTOSAMI,
+    ReplaceScalarWithTensorByProfilePass,
     RetraceFoldedDtypesPass,
     RewriteConv2dPass,
     RewriteMatmulPass,
@@ -174,7 +171,7 @@ class ArmPassManager(PassManager):
             self.add_pass(CastToInt32Pass())
 
         self.add_pass(CastBoolToInt8Pass())
-        self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
+        self.add_pass(ReplaceScalarWithTensorByProfilePass())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(ConvertELUParamsPass())
@@ -194,7 +191,6 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
-        self.add_pass(DecomposeSumPass())
         self.add_pass(DecomposeCumsumPass(exported_program))
         self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeMaxPool2DPass())
@@ -215,10 +211,11 @@ class ArmPassManager(PassManager):
         self.add_pass(RewriteMatmulPass())
         self.add_pass(RewriteUpsamplePass())
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
+        self.add_pass(InsertRescaleInt32Pass())
+        self.add_pass(DecomposeSumPass())
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(RemoveNoopPass())
         self.add_pass(InsertRescalePass())
-        self.add_pass(InsertRescaleInt32Pass())
 
         self.validate_constraints_mandatory()
         return self._transform(exported_program.graph_module)
@@ -244,7 +241,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSinhPass())
         self.add_pass(DecomposeSignPass())
         self.add_pass(DecomposeDivTensorModePass())
-        self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
+        self.add_pass(ReplaceScalarWithTensorByProfilePass())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
@@ -337,7 +334,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeAddmmPass())
         self.add_pass(DecomposeDivTensorModePass())
         self.add_pass(DecomposeAddSubAlphaPass())
-        self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
+        self.add_pass(ReplaceScalarWithTensorByProfilePass())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeGroupNormPass())
         self.add_pass(DecomposeLayerNormPass())
@@ -361,7 +358,6 @@ class ArmPassManager(PassManager):
 
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ReplaceInfValues())
-        self.add_pass(DecomposeSumPass())
 
         if not self.tosa_spec.is_U55_subset:
             # Uses where which is not supported on Ethos-U55
