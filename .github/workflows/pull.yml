@@ -566,6 +566,8 @@ jobs:
       id-token: write
       contents: read
     strategy:
+      matrix:
+        task: [stories_110m, stories_260k_bc]
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -589,8 +591,7 @@ jobs:
         # Setup install_requirements for llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
 
-        # Test static llama weight sharing and accuracy
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }}
 
   test-qnn-models-linux:
     name: test-qnn-models-linux

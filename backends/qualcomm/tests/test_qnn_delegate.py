@@ -6304,8 +6304,6 @@ class TestExampleLLMScript(TestQNN):
             "kv",
             "--temperature",
             "0",
-            "--prefill_ar_len",
-            "128",
             "--max_seq_len",
             "1024",
             "--eval_perplexity",
@@ -6333,8 +6331,10 @@ class TestExampleLLMScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
+                print("Perplexity score: ", msg["wiki_ppl"])
                 self.assertLessEqual(msg["wiki_ppl"], 25)
-                self.assertGreaterEqual(msg["inference_speed"], 200)
+                if not self.enable_x86_64:
+                    self.assertGreaterEqual(msg["inference_speed"], 200)
 
     def test_static_smollm3(self):
         if not self.required_envs():
