@@ -87,7 +87,8 @@ from executorch.backends.arm._passes import (
     QuantizeOperatorArguments,
     RemoveNoopPass,
     ReplaceInfValues,
-    ReplaceScalarWithTensorByProfilePass,
+    ReplaceScalarWithTensorArgPassTOSABI,
+    ReplaceScalarWithTensorArgPassTOSAMI,
     RetraceFoldedDtypesPass,
     RewriteConv2dPass,
     RewriteMatmulPass,
@@ -171,7 +172,7 @@ class ArmPassManager(PassManager):
             self.add_pass(CastToInt32Pass())
 
         self.add_pass(CastBoolToInt8Pass())
-        self.add_pass(ReplaceScalarWithTensorByProfilePass())
+        self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(ConvertELUParamsPass())
@@ -241,7 +242,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSinhPass())
         self.add_pass(DecomposeSignPass())
         self.add_pass(DecomposeDivTensorModePass())
-        self.add_pass(ReplaceScalarWithTensorByProfilePass())
+        self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
@@ -334,7 +335,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeAddmmPass())
         self.add_pass(DecomposeDivTensorModePass())
         self.add_pass(DecomposeAddSubAlphaPass())
-        self.add_pass(ReplaceScalarWithTensorByProfilePass())
+        self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeGroupNormPass())
         self.add_pass(DecomposeLayerNormPass())

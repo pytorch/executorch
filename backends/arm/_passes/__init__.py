@@ -88,7 +88,8 @@ from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
 from .remove_noop_pass import RemoveNoopPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
-    ReplaceScalarWithTensorByProfilePass,
+    ReplaceScalarWithTensorArgPassTOSABI,
+    ReplaceScalarWithTensorArgPassTOSAMI,
 )
 from .rewrite_conv2d_pass import RewriteConv2dPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
