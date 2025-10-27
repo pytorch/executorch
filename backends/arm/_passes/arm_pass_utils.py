@@ -13,10 +13,8 @@ from typing import Optional, Sequence
 import torch
 import torch.fx
 from executorch.backends.arm.common.debug import get_node_debug_info
-from executorch.backends.arm.common.type import ensure_type
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from torch._export.utils import (
     get_buffer,
@@ -83,18 +81,17 @@ def get_param_tensor(
     elif is_lifted_tensor_constant(exp_prog, node):
         return get_lifted_tensor_constant(exp_prog, node)
     elif is_get_attr_node(node):
-        target_node = ensure_type(str, node.target)
         # This is a hack to support both lifted and unlifted graph
         try:
-            return getattr(node.graph.owning_module, target_node)
+            return getattr(node.graph.owning_module, node.target)  # type: ignore[arg-type]
         except AttributeError:
-            return getattr(exp_prog.graph_module, target_node)
+            return getattr(exp_prog.graph_module, node.target)  # type: ignore[arg-type]
     raise RuntimeError(f"unsupported param type, {node.op}.")
 
 
 def create_node(
     graph: torch.fx.Graph,
-    op_target: OpOverload | EdgeOpOverload,
+    op_target: OpOverload,
     args: tuple = (),
     kwargs: Optional[dict] = None,
     quantize: bool = False,
