@@ -76,13 +76,12 @@ class InsertRescalePass(ArmPass):
 
 
 class InsertRescaleInt32Pass(ArmPass):
-    """
-    Numerous TOSA ops require inputs and outputs to be 32-bit integers in their
+    """Numerous TOSA ops require inputs and outputs to be 32-bit integers in their
     quantized implementations. This pass treats such operator nodes by
-    inserting rescale ops before and after them if needed. Note that extra logic
-    that handles the scales and zero points must be in place because the affected
-    TOSA have naive implementations that do not account for the quantization
-    parameters.
+    inserting rescale ops before and after them if needed. Note that extra
+    logic that handles the scales and zero points are in place here because the
+    affected TOSA ops have naive implementations that do not account for the
+    quantization parameters.
     """
 
     # SUM must be decomposed after this pass to prevent insertion of RESCALE
@@ -93,6 +92,7 @@ class InsertRescaleInt32Pass(ArmPass):
 
     included_targets = [
         exir_ops.edge.aten.abs.default,
+        exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.ge.Tensor,
         exir_ops.edge.aten.gt.Tensor,
@@ -101,6 +101,7 @@ class InsertRescaleInt32Pass(ArmPass):
         exir_ops.edge.aten.maximum.default,
         exir_ops.edge.aten.minimum.default,
         exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.sum.dim_IntList,
     ]
 
@@ -143,6 +144,34 @@ class InsertRescaleInt32Pass(ArmPass):
                 i: self._int32_qargs(min_scale) for i in range(len(input_qparams))
             }
         elif target in [
+            exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.sub.Tensor,
+        ]:
+            if input_qparams[0].dtype != input_qparams[1].dtype:
+                raise ValueError(
+                    "Mismatch in dtype args: {input_qparams[0].dtype} != {input_qparams[1].dtype}"
+                )
+
+            # We are handling two INT8 or two INT16 numbers. For INT8, if the
+            # zero point is non-null, the result will be in the range [-255;
+            # 255], therefore we need 9 bits for the result. We have a 32-bit
+            # accumulator, so we can divide the scale by (1 << 20) which is
+            # equivalent to shifting the INT8 operands 20 bits to the left
+            # before rescaling them both to 2 * max(lhs, rhs).
+            #
+            # For INT16, similary logic can be applied, but we instead end up
+            # with a left shift of 12.
+            lhs_scale, rhs_scale = (
+                qp.get_scale_per_tensor() for qp in input_qparams.values()
+            )
+            max_scale_2x = 2 * max(lhs_scale, rhs_scale)
+
+            # Select shift based on input dtype.
+            shift_bits = 12 if input_qparams[0].dtype == torch.int16 else 20
+
+            scale = max_scale_2x / (1 << shift_bits)
+            qparams = {i: self._int32_qargs(scale) for i in range(len(input_qparams))}
+        elif target in [
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.sum.dim_IntList,
         ]:
@@ -168,6 +197,8 @@ class InsertRescaleInt32Pass(ArmPass):
             exir_ops.edge.aten.maximum.default,
             exir_ops.edge.aten.minimum.default,
             exir_ops.edge.aten.sum.dim_IntList,
+            exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.sub.Tensor,
         ]:
             # The op has not altered the scale; the output scale is equal to
             # the operands' scales.
