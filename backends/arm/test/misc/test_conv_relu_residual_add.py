@@ -76,6 +76,13 @@ def test_tosa_INT(per_channel_quantization):
     pipeline.run()
 
 
+# TODO: Xfail until the Ethos-U Vela compiler ships commit
+# 642f7517d3a6bd053032e1942822f6e38ccd546f. That patch fixes the bug that
+# causes this test to fail.
+@pytest.mark.xfail(
+    reason=("Blocked by Vela commit 642f7517d3a6bd053032e1942822f6e38ccd546f"),
+    strict=True,
+)
 @pytest.mark.slow
 @common.XfailIfNoCorstone300
 @common.parametrize("per_channel_quantization", quant_test_data)

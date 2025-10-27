@@ -23,7 +23,7 @@
 
 #extension GL_EXT_debug_printf : require
 
-#include "common.glslh"
+#include "indexing.glslh"
 #include "conv2d_common.glslh"
 #include "conv2d_fp_im2col_block.glslh"
 #include "linear_fp_input_tile.glslh"

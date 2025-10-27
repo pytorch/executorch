@@ -178,6 +178,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.native_group_norm.default,
     exir_ops.edge.aten.sigmoid.default,
     exir_ops.edge.aten.mean.dim,
+    exir_ops.edge.aten.mean.default,
     exir_ops.edge.aten.mm.default,
     exir_ops.edge.aten.minimum.default,
     exir_ops.edge.aten.maximum.default,
