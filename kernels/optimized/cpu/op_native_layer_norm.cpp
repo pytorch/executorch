@@ -92,7 +92,7 @@ void layer_norm(
       }
     } else {
       at::vec::map3<CTYPE>(
-          [scale, offset](auto x, auto gamma, auto beta) {
+          [scale, offset](auto& x, auto& gamma, auto& beta) {
             using Vec = decltype(x);
             return (x * Vec(scale) + Vec(offset)) * gamma + beta;
           },

@@ -68,7 +68,7 @@ Tensor& opt_add_out(
 
         using Vec = at::vec::Vectorized<CTYPE>;
         at::vec::map<CTYPE>(
-            [alpha_val, b_val](Vec x) { return x + Vec(alpha_val * b_val); },
+            [alpha_val, b_val](Vec& x) { return x + Vec(alpha_val * b_val); },
             out.mutable_data_ptr<CTYPE>(),
             a.const_data_ptr<CTYPE>(),
             out.numel());

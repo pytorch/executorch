@@ -56,7 +56,7 @@ Tensor& opt_mul_out(
 
           using Vec = at::vec::Vectorized<CTYPE>;
           at::vec::map<CTYPE>(
-              [b_casted](Vec x) { return x * Vec(b_casted); },
+              [b_casted](Vec& x) { return x * Vec(b_casted); },
               out.mutable_data_ptr<CTYPE>(),
               a.const_data_ptr<CTYPE>(),
               out.numel());

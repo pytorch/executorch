@@ -36,7 +36,7 @@ void exp_data(
     CTYPE_OUT* out_data) {
   using Vec = at::vec::Vectorized<CTYPE_IN>;
   at::vec::map<CTYPE_IN>(
-      [](Vec x) { return x.exp(); }, out_data, in_data, numel);
+      [](Vec& x) { return x.exp(); }, out_data, in_data, numel);
 }
 
 /**

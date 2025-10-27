@@ -48,7 +48,7 @@ Tensor& opt_le_tensor_out(
     ET_SWITCH_REALB_TYPES(a_type, ctx, op_name, CTYPE, [&]() {
       using Vec = at::vec::Vectorized<CTYPE>;
       at::vec::map2<CTYPE>(
-          [](Vec x, Vec y) { return x.le(y); },
+          [](Vec& x, Vec& y) { return x.le(y); },
           out.mutable_data_ptr<CTYPE>(),
           a.const_data_ptr<CTYPE>(),
           b.const_data_ptr<CTYPE>(),
