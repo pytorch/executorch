@@ -44,7 +44,7 @@ jobs:
         set -eux
 
         echo "::group::Setup Huggingface"
-        ${CONDA_RUN} pip install -U "huggingface_hub[cli]" accelerate
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0" accelerate
         ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         echo "::endgroup::"
 
