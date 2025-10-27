@@ -211,12 +211,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated Qwen in the given directory.",
-        type=str,
-    )
-
-    parser.add_argument(
         "--prompt",
         help="User prompts for Qwen.",
         required=True,

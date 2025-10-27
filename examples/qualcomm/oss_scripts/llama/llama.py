@@ -1155,12 +1155,6 @@ def _build_parser():
     )
 
     parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated llama in the given directory.",
-        type=str,
-    )
-
-    parser.add_argument(
         "--model_mode",
         help="Export and inference kv mode, hybrid mode, or lookahead decoding mode",
         default="hybrid",

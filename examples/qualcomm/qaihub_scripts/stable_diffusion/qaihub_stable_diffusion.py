@@ -173,13 +173,6 @@ def build_args_parser():
     )
 
     parser.add_argument(
-        "--pre_gen_pte",
-        help="folder path to pre-compiled ptes",
-        default=None,
-        type=str,
-    )
-
-    parser.add_argument(
         "--fix_latents",
         help="Enable this option to fix the latents in the unet diffuse step.",
         action="store_true",

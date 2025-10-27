@@ -20,7 +20,7 @@ usage() {
   echo ", and if you want to build the android version of executor runner"
   echo ", you need to export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
   echo "(or export TOOLCHAIN_ROOT_HOST=/path/to/sysroots/xx_host, "
-  echo "TOOLCHAIN_ROOT_TARGET=/path/to/sysroots/xx_target for linux embedded with --enable_linux_embedding)"
+  echo "TOOLCHAIN_ROOT_TARGET=/path/to/sysroots/xx_target for linux embedded with --enable_linux_embedded)"
   echo "e.g.: executorch$ ./backends/qualcomm/scripts/build.sh --skip_x86_64"
   exit 1
 }
@@ -46,7 +46,7 @@ if [ -z BUCK2 ]; then
   BUCK2="buck2"
 fi
 
-long_options=skip_x86_64,skip_linux_android,skip_linux_embedding,enable_linux_embedding,no_clean,release,job_number:
+long_options=skip_x86_64,skip_linux_android,skip_linux_embedded,enable_linux_embedded,no_clean,release,job_number:
 
 parsed_args=$(getopt -a --options '' --longoptions $long_options --name "$0" -- "$@")
 eval set -- "$parsed_args"
@@ -56,8 +56,8 @@ while true ; do
     case "$1" in
         --skip_x86_64) BUILD_X86_64="false"; shift;;
         --skip_linux_android) BUILD_ANDROID="false"; shift;;
-        --skip_linux_embedding) BUILD_OE_LINUX="false"; shift;;
-        --enable_linux_embedding) BUILD_ANDROID="false"; BUILD_OE_LINUX="true"; shift;;
+        --skip_linux_embedded) BUILD_OE_LINUX="false"; shift;;
+        --enable_linux_embedded) BUILD_ANDROID="false"; BUILD_OE_LINUX="true"; shift;;
         --no_clean) CLEAN="false"; shift;;
         --release) BUILD_TYPE="Release"; shift;;
         --job_number) BUILD_JOB_NUMBER="$2"; shift 2;;

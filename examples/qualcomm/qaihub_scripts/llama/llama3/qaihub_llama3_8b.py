@@ -240,13 +240,6 @@ if __name__ == "__main__":
         type=str,
     )
 
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="folder path to pre-compiled ptes",
-        default=None,
-        type=str,
-    )
-
     args = parser.parse_args()
 
     try:

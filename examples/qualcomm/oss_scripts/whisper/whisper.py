@@ -471,12 +471,6 @@ if __name__ == "__main__":
         type=int,
     )
 
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated llama in the given directory.",
-        type=str,
-    )
-
     args = parser.parse_args()
     args.validate(args)
 

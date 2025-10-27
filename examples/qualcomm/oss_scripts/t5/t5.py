@@ -328,11 +328,6 @@ if __name__ == "__main__":
         type=str,
     )
     parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated t5 in the given directory.",
-        type=str,
-    )
-    parser.add_argument(
         "-d",
         "--dataset",
         help=(

@@ -134,7 +134,7 @@ cd $EXECUTORCH_ROOT
 # android target
 ./backends/qualcomm/scripts/build.sh
 # (optional) linux embedded target
-./backends/qualcomm/scripts/build.sh --enable_linux_embedding
+./backends/qualcomm/scripts/build.sh --enable_linux_embedded
 # for release build
 ./backends/qualcomm/scripts/build.sh --release
 ```

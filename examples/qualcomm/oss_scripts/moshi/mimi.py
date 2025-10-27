@@ -525,12 +525,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated mimi encoder/decoder in the given directory.",
-        type=str,
-    )
-
-    parser.add_argument(
         "--use_cpu_encoder",
         help="Enable this flag to perform encoder with cpu.",
         action="store_true",

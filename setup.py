@@ -497,7 +497,7 @@ class InstallerBuildExt(build_ext):
                         [
                             str(build_sh),
                             "--skip_linux_android",
-                            "--skip_linux_embedding",
+                            "--skip_linux_embedded",
                         ],
                         env=env,
                     )
