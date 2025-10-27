@@ -101,7 +101,7 @@ class SliceTensorConverter(NodeConverter):
         self.assert_convertible(node)
         t_op = self._create_tflite_op_with_io_tensors(node)
         
-        dims, starts, ends, steps = self._get_slice_arguments(node)
+        # dims, starts, ends, steps = self._get_slice_arguments(node)
         # if all(step == 1 for step in steps):
         #     # self._convert_to_slice(t_op, dims, starts, ends, steps)
         # else:

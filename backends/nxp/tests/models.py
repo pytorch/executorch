@@ -180,7 +180,10 @@ class SliceTensorModule(torch.nn.Module):
         super().__init__()
 
     def forward(self, x):
-        return torch.slice_copy(x, dim, start, end, step)
+        
+        slices = [slice(None)] * x.dim()
+        slices[self.dim] = slice(self.start, self.end, self.step)
+        return x[tuple(slices)]
 
 
 class AddmmModule(torch.nn.Module):

@@ -30,26 +30,37 @@ def reseed_model_per_test_run():
 
 
 @pytest.mark.parametrize(
-    "input_shape",
+    "slice_params, x_input_shape",
     [
-        pytest.param((32), id="1D.")
+        pytest.param({
+            "dim": 0,
+            "start": 0,
+            "end": 32,
+            "step": 8
+        }, (32,), id="1D.")
     ],
 )
-def test_slice_tensor_quant_conversion(mocker, input_shape):
-    model = SliceTensorModule(0, 0, 32, 2)
+def test_slice_tensor_quant_conversion(mocker, slice_params, x_input_shape):
+    model = SliceTensorModule(
+        dim=slice_params["dim"],
+        start=slice_params["start"],
+        end=slice_params["end"],
+        step=slice_params["step"]
+    )
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    _ = to_quantized_edge_program(model, x_input_shape).exported_program()
 
     # Capture generated model
+    x = converter_spy.spy_return
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
+    input_data = (np.random.random(x_input_shape).astype(np.float32) * 50).astype(np.int8)
     input_data = {0: input_data, 1: input_data}
 
     convert_run_compare(
