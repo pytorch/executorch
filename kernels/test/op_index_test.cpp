@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -478,6 +479,36 @@ TEST_F(OpIndexTensorOutTest, AllDtypesSupportedForInput) {
 TEST_F(OpIndexTensorOutTest, AllDtypesSupportedForIndex) {
   test_dtype<ScalarType::Double, ScalarType::Long, ScalarType::Double>();
   test_dtype<ScalarType::Double, ScalarType::Int, ScalarType::Double>();
+}
+
+TEST_F(OpIndexTensorOutTest, NegativeIndexSupportedForLong) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  Tensor x = tf.make({3}, {1., 2., 3.});
+  Tensor out = tf.zeros({1});
+  Tensor expected = tf.make({1}, {3.});
+
+  std::array<optional<Tensor>, 1> indices = {
+      optional<Tensor>(tfl.make({1}, {-1}))};
+
+  Tensor ret = op_index_tensor_out(x, indices, out);
+  EXPECT_TENSOR_EQ(ret, expected);
+}
+
+TEST_F(OpIndexTensorOutTest, NegativeIndexSupportedForInt) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Int> tfi;
+
+  Tensor x = tf.make({3}, {1., 2., 3.});
+  Tensor out = tf.zeros({1});
+  Tensor expected = tf.make({1}, {3.});
+
+  std::array<optional<Tensor>, 1> indices = {
+      optional<Tensor>(tfi.make({1}, {-1}))};
+
+  Tensor ret = op_index_tensor_out(x, indices, out);
+  EXPECT_TENSOR_EQ(ret, expected);
 }
 
 //

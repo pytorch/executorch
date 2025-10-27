@@ -89,6 +89,8 @@ jobs:
 
   export-voxtral-cuda-artifact:
     name: export-voxtral-cuda-${{ matrix.quant.name }}
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -166,6 +168,8 @@ jobs:
 
   export-gemma3-cuda-artifact:
     name: export-gemma3-cuda-${{ matrix.quant.name }}
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
