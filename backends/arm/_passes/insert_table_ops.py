@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from itertools import chain
 from typing import Callable, cast, Dict, Iterator, Set, Type
@@ -286,7 +285,7 @@ class InsertTableOpsPass(ArmPass):
                     rescale_node = create_node(
                         graph=graph_module.graph,
                         op_target=exir_ops.backend.tosa.RESCALE.default,
-                        args=(table_op_node, output_qparams[0].dtype, scale, 0, 0),
+                        args=(table_op_node, output_qparams[0].dtype, [scale], 0, 0),
                     )
                     output_node = rescale_node
 

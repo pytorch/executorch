@@ -124,7 +124,7 @@ max_unary_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_KERNEL_CHECK(ctx, canCast(in_type, out_type), InvalidArgument, out);
 
-  constexpr auto name = "max.unary_out";
+  static constexpr auto name = "max.unary_out";
 
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {

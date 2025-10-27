@@ -31,21 +31,21 @@ def test_rescale_op():
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int8),
             torch.int32,
-            0.2,
+            [0.2],
             2,
             0,
         ),
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int32),
             torch.int8,
-            0.2,
+            [0.2],
             0,
             -128,
         ),
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int8),
             torch.int8,
-            0.8,
+            [0.8],
             10,
             127,
         ),
@@ -71,14 +71,14 @@ def test_nonzero_zp_for_int32():
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int8),
             torch.int32,
-            0.2,
+            [0.2],
             2,  # Should be 0, expect error
             1,
         ),
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int32),
             torch.int8,
-            0.2,
+            [0.2],
             1,
             1,  # Should be 0, expect error
         ),
@@ -107,14 +107,14 @@ def test_zp_outside_range():
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int8),
             torch.int32,
-            0.2,
+            [0.2],
             128,  # Should be <128, expect error
             0,
         ),
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int32),
             torch.int8,
-            0.2,
+            [0.2],
             0,
             -129,  # Should be >-129m expect error
         ),

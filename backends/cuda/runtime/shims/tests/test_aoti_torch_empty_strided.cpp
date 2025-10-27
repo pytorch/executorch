@@ -278,30 +278,6 @@ TEST_F(AOTITorchEmptyStridedTest, LargeTensor) {
   EXPECT_EQ(tensor->size(2), 50);
 }
 
-// Test error handling with memory allocation failures
-TEST_F(AOTITorchEmptyStridedTest, MemoryAllocationStress) {
-  // Try to create a very large tensor that might cause allocation failure
-  // (This test may pass or fail depending on available memory)
-  std::vector<int64_t> huge_sizes = {10000, 10000, 100}; // ~38GB for float32
-  Tensor* tensor;
-
-  AOTITorchError error = aoti_torch_empty_strided(
-      huge_sizes.size(),
-      huge_sizes.data(),
-      nullptr,
-      6, // float32
-      1, // CUDA device
-      0, // device index
-      &tensor);
-
-  // Either succeed or fail with memory allocation error
-  if (error == Error::Ok) {
-    EXPECT_NE(tensor, nullptr);
-  } else {
-    EXPECT_EQ(error, Error::MemoryAllocationFailed);
-  }
-}
-
 // Test aoti_torch_empty_strided with bfloat16 dtype
 TEST_F(AOTITorchEmptyStridedTest, BFloat16Tensor) {
   // Test creating bfloat16 tensor on CUDA
@@ -509,11 +485,11 @@ TEST_F(AOTITorchEmptyStridedTest, ZeroElementTensor) {
   EXPECT_EQ(sizes_ptr[2], 3);
 }
 
-// Test different data types (only float32 is currently supported)
+// Test different data types (currently we support bf16, fp32 and int32)
 TEST_F(AOTITorchEmptyStridedTest, DifferentDataTypes) {
   std::vector<int64_t> sizes = {2, 3};
 
-  // Test float32 (dtype 6) - currently the only supported type
+  // Test float32 (dtype 6) - one of the supported types
   Tensor* tensor_float32;
   AOTITorchError error = aoti_torch_empty_strided(
       sizes.size(),
@@ -527,7 +503,7 @@ TEST_F(AOTITorchEmptyStridedTest, DifferentDataTypes) {
   EXPECT_EQ(error, Error::Ok);
   EXPECT_NE(tensor_float32, nullptr);
 
-  // Test unsupported data types should return error
+  // Test int32 (dtype 3) - one of the supported types
   Tensor* tensor_int32;
   error = aoti_torch_empty_strided(
       sizes.size(),
@@ -538,7 +514,8 @@ TEST_F(AOTITorchEmptyStridedTest, DifferentDataTypes) {
       0, // device index
       &tensor_int32);
 
-  EXPECT_EQ(error, Error::InvalidArgument); // Should fail for unsupported dtype
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_NE(tensor_int32, nullptr);
 
   // Test another unsupported data type
   Tensor* tensor_float64;
@@ -585,4 +562,106 @@ TEST_F(AOTITorchEmptyStridedTest, MultiDimensionalTensors) {
   EXPECT_EQ(tensor_5d->size(2), 3);
   EXPECT_EQ(tensor_5d->size(3), 4);
   EXPECT_EQ(tensor_5d->size(4), 5);
+}
+
+// Test incontiguous tensor creation - transpose-like layout
+TEST_F(AOTITorchEmptyStridedTest, IncontiguousTransposeLayout) {
+  // Create a tensor with transpose-like strides (column-major)
+  // For a 3x4 tensor in column-major order, strides should be [1, 3]
+  // This means each row step is 1, and each column step is 3
+  std::vector<int64_t> sizes = {3, 4};
+  std::vector<int64_t> strides = {1, 3}; // Column-major (incontiguous)
+
+  Tensor* tensor;
+  AOTITorchError error = aoti_torch_empty_strided(
+      sizes.size(),
+      sizes.data(),
+      strides.data(),
+      static_cast<int32_t>(SupportedDTypes::FLOAT32),
+      static_cast<int32_t>(SupportedDevices::CUDA),
+      0, // device index
+      &tensor);
+
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_NE(tensor, nullptr);
+
+  // Verify tensor properties
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 3);
+  EXPECT_EQ(tensor->size(1), 4);
+
+  // Verify the strides are what we specified
+  int64_t* strides_ptr;
+  EXPECT_EQ(aoti_torch_get_strides(tensor, &strides_ptr), Error::Ok);
+  EXPECT_EQ(strides_ptr[0], 1); // Column-major stride for dimension 0
+  EXPECT_EQ(strides_ptr[1], 3); // Column-major stride for dimension 1
+
+  // Verify that memory was allocated correctly for incontiguous layout
+  // Storage size should be: stride[0] * (size[0] - 1) + stride[1] * (size[1] -
+  // 1) + 1 = 1 * (3 - 1) + 3 * (4 - 1) + 1 = 1 * 2 + 3 * 3 + 1 = 2 + 9 + 1 = 12
+  // elements Total bytes = 12 * 4 = 48 bytes (for float32)
+  EXPECT_EQ(tensor->numel(), 12); // numel is still 3*4=12 for logical shape
+
+  // The tensor should be accessible and writable
+  void* data_ptr = tensor->mutable_data_ptr();
+  EXPECT_NE(data_ptr, nullptr);
+
+  // Verify we can use CUDA to write to the memory
+  std::vector<float> test_data(12, 1.0f);
+  cudaError_t cuda_err = cudaMemcpy(
+      data_ptr, test_data.data(), 12 * sizeof(float), cudaMemcpyHostToDevice);
+  EXPECT_EQ(cuda_err, cudaSuccess);
+}
+
+// Test incontiguous tensor creation - expanded/broadcasted stride pattern
+TEST_F(AOTITorchEmptyStridedTest, IncontiguousExpandedStrides) {
+  // Create a tensor with expanded strides (simulating broadcasting)
+  // A 2x3x4 tensor where the first dimension has stride 0 (expanded)
+  // This creates a tensor where the first dimension is "broadcasted"
+  std::vector<int64_t> sizes = {2, 3, 4};
+  std::vector<int64_t> strides = {0, 4, 1}; // First dimension has stride 0
+
+  Tensor* tensor;
+  AOTITorchError error = aoti_torch_empty_strided(
+      sizes.size(),
+      sizes.data(),
+      strides.data(),
+      static_cast<int32_t>(SupportedDTypes::FLOAT32),
+      static_cast<int32_t>(SupportedDevices::CUDA),
+      0, // device index
+      &tensor);
+
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_NE(tensor, nullptr);
+
+  // Verify tensor properties
+  EXPECT_EQ(tensor->dim(), 3);
+  EXPECT_EQ(tensor->size(0), 2);
+  EXPECT_EQ(tensor->size(1), 3);
+  EXPECT_EQ(tensor->size(2), 4);
+
+  // Verify the strides are what we specified
+  int64_t* strides_ptr;
+  EXPECT_EQ(aoti_torch_get_strides(tensor, &strides_ptr), Error::Ok);
+  EXPECT_EQ(strides_ptr[0], 0); // Expanded dimension stride
+  EXPECT_EQ(strides_ptr[1], 4);
+  EXPECT_EQ(strides_ptr[2], 1);
+
+  // Verify that memory was allocated correctly for this incontiguous layout
+  // Storage size should be: stride[0] * (size[0] - 1) + stride[1] * (size[1] -
+  // 1) + stride[2] * (size[2] - 1) + 1 = 0 * (2 - 1) + 4 * (3 - 1) + 1 * (4 -
+  // 1) + 1 = 0 + 8 + 3 + 1 = 12 elements Note: numel() returns logical number
+  // of elements (2*3*4=24), not storage size
+  EXPECT_EQ(tensor->numel(), 24); // Logical numel is 2*3*4=24
+
+  // The tensor should be accessible and writable
+  void* data_ptr = tensor->mutable_data_ptr();
+  EXPECT_NE(data_ptr, nullptr);
+
+  // Verify we can use CUDA to write to the allocated memory
+  // We only need to allocate 12 elements (storage size), not 24
+  std::vector<float> test_data(12, 2.0f);
+  cudaError_t cuda_err = cudaMemcpy(
+      data_ptr, test_data.data(), 12 * sizeof(float), cudaMemcpyHostToDevice);
+  EXPECT_EQ(cuda_err, cudaSuccess);
 }
