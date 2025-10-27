@@ -88,6 +88,7 @@ from executorch.backends.arm._passes import (
     RemoveNoopPass,
     ReplaceInfValues,
     ReplaceScalarWithTensorByProfilePass,
+    RetraceFoldedDtypesPass,
     RewriteConv2dPass,
     RewriteMatmulPass,
     RewriteUpsamplePass,
@@ -175,6 +176,7 @@ class ArmPassManager(PassManager):
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(ConvertELUParamsPass())
         self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
+        self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
         if self.tosa_spec.is_U55_subset:
@@ -269,6 +271,7 @@ class ArmPassManager(PassManager):
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
+        self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
         self.add_pass(DecomposeAdaptiveAvgPool2dPass())
