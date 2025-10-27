@@ -9,8 +9,6 @@ targets across integer and float TOSA profiles.
 
 """
 
-# pyre-unsafe
-
 
 import logging
 

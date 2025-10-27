@@ -10,7 +10,6 @@ Ethos-U55 subset of TOSA.
 
 """
 
-# pyre-unsafe
 
 import typing
 from typing import cast
