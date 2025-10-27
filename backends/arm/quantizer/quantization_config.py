@@ -11,6 +11,7 @@ quantization specs consumed by the annotator.
 
 """
 
+# pyre-unsafe
 
 from dataclasses import dataclass
 
