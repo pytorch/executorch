@@ -47,8 +47,8 @@ Tensor& opt_le_tensor_out(
   if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
     ET_SWITCH_REALB_TYPES(a_type, ctx, op_name, CTYPE, [&]() {
       using Vec = at::vec::Vectorized<CTYPE>;
-      at::vec::map2<CTYPE>(
-          [](Vec& x, Vec& y) { return x.le(y); },
+      at::vec::map2(
+          [](Vec x, Vec y) { return x.le(y); },
           out.mutable_data_ptr<CTYPE>(),
           a.const_data_ptr<CTYPE>(),
           b.const_data_ptr<CTYPE>(),
@@ -95,7 +95,7 @@ Tensor& opt_le_scalar_out(
         ET_EXTRACT_SCALAR(b, b_val);
         CTYPE b_casted = static_cast<CTYPE>(b_val);
         using Vec = at::vec::Vectorized<CTYPE>;
-        at::vec::map<CTYPE>(
+        at::vec::map(
             [b_casted](Vec x) { return x.le(Vec(b_casted)); },
             out.mutable_data_ptr<CTYPE>(),
             a.const_data_ptr<CTYPE>(),

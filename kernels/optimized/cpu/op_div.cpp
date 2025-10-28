@@ -86,15 +86,15 @@ Tensor& opt_div_out(
 
           using Vec = at::vec::Vectorized<CTYPE>;
           if (a.numel() == 1) {
-            at::vec::map<CTYPE>(
-                [scalar_casted](Vec& x) { return Vec(scalar_casted) / x; },
+            at::vec::map(
+                [scalar_casted](Vec x) { return Vec(scalar_casted) / x; },
                 out.mutable_data_ptr<CTYPE>(),
                 tensor->const_data_ptr<CTYPE>(),
                 out.numel());
           } else {
             Vec inv_scalar_casted_vec(CTYPE(1) / scalar_casted);
-            at::vec::map<CTYPE>(
-                [inv_scalar_casted_vec](Vec& x) {
+            at::vec::map(
+                [inv_scalar_casted_vec](Vec x) {
                   return x * inv_scalar_casted_vec;
                 },
                 out.mutable_data_ptr<CTYPE>(),
@@ -111,7 +111,7 @@ Tensor& opt_div_out(
   if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
     ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
       using Vec = at::vec::Vectorized<CTYPE>;
-      at::vec::map2<CTYPE>(
+      at::vec::map2(
           [](Vec x, Vec y) { return x / y; },
           out.mutable_data_ptr<CTYPE>(),
           a.const_data_ptr<CTYPE>(),
@@ -193,7 +193,7 @@ Tensor& opt_div_scalar_out(
 
         using Vec = at::vec::Vectorized<CTYPE>;
         Vec inv_b_casted_vec(CTYPE(1) / b_casted);
-        at::vec::map<CTYPE>(
+        at::vec::map(
             [inv_b_casted_vec](Vec x) { return x * inv_b_casted_vec; },
             out.mutable_data_ptr<CTYPE>(),
             a.const_data_ptr<CTYPE>(),

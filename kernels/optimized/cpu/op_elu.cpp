@@ -6,11 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <ATen/native/cpu/Elu.h>
+#include <cmath>
 
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <executorch/runtime/kernel/thread_parallel_interface.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace torch::executor::native {
@@ -31,38 +32,24 @@ void elu(
   const auto math_alpha = utils::scalar_to<MathT>(alpha);
   const auto math_scale = utils::scalar_to<MathT>(scale);
   const auto math_input_scale = utils::scalar_to<MathT>(input_scale);
-  const auto scalar_func =
-      at::native::get_scalar_elu_elementwise_func<CTYPE, MathT>(
-          math_alpha, math_scale, math_input_scale);
-  const auto vec_func = at::native::get_vectorized_elu_elementwise_func<CTYPE>(
-      math_alpha, math_scale, math_input_scale);
 
-  ::executorch::extension::parallel_for(
-      0,
-      out.numel(),
-      ::executorch::extension::internal::GRAIN_SIZE,
-      [&](const auto begin, const auto end) {
-        using Vec = at::vec::Vectorized<CTYPE>;
-        const auto vectorized_begin =
-            begin + (Vec::size() - begin % Vec::size()) % Vec::size();
-        const auto vectorized_end = end - (end % Vec::size());
-        // Scalar prologue.
-        for (const auto idx : c10::irange(begin, vectorized_begin)) {
-          out_data[idx] = scalar_func(in_data[idx]);
-        }
+  using Vec = at::vec::Vectorized<CTYPE>;
+  at::vec::map(
+      [math_alpha, math_scale, math_input_scale](Vec x) {
+        auto scaled_input = x * Vec(static_cast<CTYPE>(math_input_scale));
+        auto zero = Vec(static_cast<CTYPE>(0));
+        auto one = Vec(static_cast<CTYPE>(1));
+        auto alpha_vec = Vec(static_cast<CTYPE>(math_alpha));
+        auto scale_vec = Vec(static_cast<CTYPE>(math_scale));
 
-        // Main vectorized loop.
-        for (auto idx = vectorized_begin; idx < vectorized_end;
-             idx += Vec::size()) {
-          auto result_vec = vec_func(Vec::loadu(&in_data[idx]));
-          result_vec.store(&out_data[idx]);
-        }
-
-        // Scalar epilogue.
-        for (const auto idx : c10::irange(vectorized_end, end)) {
-          out_data[idx] = scalar_func(in_data[idx]);
-        }
-      });
+        auto pos_mask = scaled_input > zero;
+        auto neg_result = alpha_vec * ((scaled_input.exp()) - one);
+        auto result = Vec::blendv(neg_result, scaled_input, pos_mask);
+        return result * scale_vec;
+      },
+      out_data,
+      in_data,
+      out.numel());
 }
 } // namespace
 
