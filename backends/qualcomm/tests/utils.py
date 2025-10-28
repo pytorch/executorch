@@ -163,10 +163,13 @@ class TestQNN(unittest.TestCase):
     pretrained_weight: str = ""
     enable_profile: bool = False
     op_package_dir: str = ""
+    target: str = ""
+    model_name: str = ""
     online_prepare: bool = False
     use_8a8w: str = "8a8w"
     use_16a16w: str = "16a16w"
     use_16a4w: str = "16a4w"
+    oss_repo: str = ""
     shared_buffer: bool = False
     enable_x86_64: bool = False
     compile_only: bool = False
@@ -421,6 +424,7 @@ class TestQNN(unittest.TestCase):
                         if check_io_shape
                         else None
                     ),
+                    target=self.target,
                 )
                 adb.push(
                     inputs=[processed_inputs],
@@ -618,6 +622,7 @@ class TestQNN(unittest.TestCase):
             host_id=self.host,
             soc_model=self.model,
             error_only=self.error_only,
+            target=self.target,
         )
         return adb
 
