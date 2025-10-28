@@ -15,6 +15,7 @@ from . import (  # noqa
     op_ceiling,
     op_clamp,
     op_conv2d,
+    op_cos,
     op_div,
     op_dynamic_dequantize_ops,
     op_dynamic_quantize_ops,
