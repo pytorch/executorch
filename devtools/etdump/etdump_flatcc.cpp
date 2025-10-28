@@ -714,6 +714,10 @@ Result<long> ETDumpGen::write_tensor_or_return_error(Tensor tensor) {
     return static_cast<size_t>(-1);
   }
 
+  if (tensor.const_data_ptr() == nullptr) {
+    return Error::InvalidArgument;
+  }
+
   if (!data_sink_) {
     return Error::InvalidArgument;
   }
