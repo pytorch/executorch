@@ -1,6 +1,38 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
+    runtime.python_library(
+        name = "aoti_partitioner",
+        srcs = [
+            "aoti_partitioner.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/backend:partitioner",
+            "//executorch/exir/backend:utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "aoti_backend",
+        srcs = [
+            "aoti_backend.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/aoti/passes:passes",
+            "//executorch/exir/_serialize:lib",
+            "//executorch/exir/backend:backend_details",
+            "//executorch/exir/backend:compile_spec_schema",
+        ],
+    )
+
     # AOTI common shims functionality
     runtime.cxx_library(
         name = "common_shims",
