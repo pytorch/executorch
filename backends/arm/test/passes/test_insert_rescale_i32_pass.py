@@ -19,11 +19,13 @@ class MultipleOpsModel(torch.nn.Module):
     input_t = Tuple[torch.Tensor, torch.Tensor]
 
     def forward(self, x, y):
-        a = x * y
-        b = torch.maximum(a, y)
-        c = torch.abs(b)
-        d = c > b
-        return d
+        a = x - y
+        b = x * a
+        c = torch.maximum(a, b)
+        d = torch.abs(b)
+        e = c + d
+        f = e > a
+        return f
 
     def get_inputs(self, dtype) -> input_t:
         if dtype == torch.float32:
@@ -38,7 +40,7 @@ class MultipleOpsModel(torch.nn.Module):
 
     def get_num_expected_rescales(self):
         # "number of op nodes with i8 output" + "number of i8 node inputs"
-        return 3 + 7
+        return 5 + 11
 
 
 class SumModel(torch.nn.Module):
