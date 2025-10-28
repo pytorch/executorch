@@ -70,20 +70,27 @@ class ClampVisitor_INT(NodeVisitor):
         validate_num_inputs(self.target, inputs, [2, 3])
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
-            self.target, [inputs[0], output], [ts.DType.INT8], output.tosa_spec
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.INT16],
+            output.tosa_spec,
         )
+
+        is_int16 = output.dtype == ts.DType.INT16
+        torch_dtype = torch.int16 if is_int16 else torch.int8
 
         # NOTE: Quantization of the min/max arguments is handled by QuantizeOperatorArguments
-        min_int8, max_int8 = self._get_min_max_arguments(
+        min_quant, max_quant = self._get_min_max_arguments(
             node,
-            torch.iinfo(torch.int8).min,
-            torch.iinfo(torch.int8).max,
+            torch.iinfo(torch_dtype).min,
+            torch.iinfo(torch_dtype).max,
         )
 
+        np_dtype = np.int16 if is_int16 else np.int8
         attr = ts.TosaSerializerAttribute()
         attr.ClampAttribute(
-            np.frombuffer(np.int8(min_int8).tobytes(), dtype=np.uint8).tolist(),
-            np.frombuffer(np.int8(max_int8).tobytes(), dtype=np.uint8).tolist(),
+            np.frombuffer(np_dtype(min_quant).tobytes(), dtype=np.uint8).tolist(),
+            np.frombuffer(np_dtype(max_quant).tobytes(), dtype=np.uint8).tolist(),
             ts.NanPropagationMode.PROPAGATE,
         )
 

@@ -115,7 +115,10 @@ class AvgPool2dVisitor(NodeVisitor):
         validate_num_inputs(self.target, inputs, [3, 4, 5, 6, 7])
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
-            self.target, [inputs[0], output], ts.DType.INT8, output.tosa_spec
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.INT16],
+            output.tosa_spec,
         )
 
         accumulator_type = ts.DType.INT32
