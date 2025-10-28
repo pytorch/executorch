@@ -321,8 +321,6 @@ class CheckArmQuantized(OperatorSupportBase):
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        if node.op != "call_function":
-            return False
 
         if node.target in (*DQ_OPS, *Q_OPS):
             return True

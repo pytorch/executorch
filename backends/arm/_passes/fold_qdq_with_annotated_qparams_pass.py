@@ -9,6 +9,7 @@ import copy
 
 from typing import cast, Optional, Set, Type
 
+import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_param_tensor,
@@ -152,6 +153,57 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 if len(n.users) == 0:
                     graph_module.graph.erase_node(n)
 
+    def _handle_cond_node(self, node: Node, graph_module: GraphModule):
+        """Fold outmost quant nodes inside submodule.
+        placeholders => qs => dqs => ... => qs => dqs => output
+        becomes
+        placeholders => dqs => ... => qs => output,
+        With output_qparams meta in the placeholders, and input_qparams meta in the output node.
+        """
+        submodule_nodes = cast(list[Node], node.args[1:3])
+        submodules = (
+            graph_module.get_submodule(str(submodule_node.target))
+            for submodule_node in submodule_nodes
+        )
+        for submodule in submodules:
+            submodule = cast(GraphModule, submodule)
+            output_node = submodule.graph.output_node()
+            output_node.meta["input_qparams"] = {}
+            nodes_to_remove = []
+            for submodule_node in submodule.graph.nodes:
+                submodule_node = cast(Node, submodule_node)
+                if (
+                    submodule_node.target in Q_OPS
+                    and list(submodule_node.all_input_nodes)[0].op == "placeholder"
+                ):
+                    input_node = cast(Node, submodule_node.args[0])
+                    input_node.meta["val"] = submodule_node.meta["val"]
+                    quant_args = QuantArgs.from_operator(
+                        submodule_node.target, submodule_node.args
+                    )
+                    input_node.meta["output_qparams"] = {0: quant_args}
+
+                    submodule_node.replace_all_uses_with(input_node)
+                    nodes_to_remove.append(submodule_node)
+                if (
+                    submodule_node.target in DQ_OPS
+                    and list(submodule_node.users)[0].op == "output"
+                ):
+                    input_node = cast(Node, submodule_node.args[0])
+                    arg_index = cast(list[Node], output_node.args[0]).index(
+                        submodule_node
+                    )
+                    quant_args = QuantArgs.from_operator(
+                        submodule_node.target, submodule_node.args
+                    )
+                    output_node.meta["input_qparams"][arg_index] = quant_args
+
+                    submodule_node.replace_all_uses_with(input_node)
+                    nodes_to_remove.append(submodule_node)
+            for node_to_remove in nodes_to_remove:
+                submodule.graph.erase_node(node_to_remove)
+        return
+
     def call(self, graph_module: GraphModule) -> PassResult:  # noqa: C901
 
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
@@ -210,6 +262,9 @@ class FoldAndAnnotateQParamsPass(ArmPass):
             ):
                 output_dtype = output_qparams[0].dtype
                 set_node_arg(n, "dtype", output_dtype)
+
+            if n.target == torch.ops.higher_order.cond:
+                self._handle_cond_node(n, graph_module)
 
         # retrace the graph to update the fake tensor types
         graph_module = super().call(graph_module).graph_module
