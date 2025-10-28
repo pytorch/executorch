@@ -333,6 +333,7 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             host_id=args.host,
             soc_model=args.model,
             runner="examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+            target=args.target,
         )
 
         # collect output data
