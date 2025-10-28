@@ -75,7 +75,7 @@ def main(args):
         dtype=torch.uint8,
         qscheme=torch.per_tensor_affine,
         observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(
-            **{"averaging_constant": 0.02}
+            **{"averaging_constant": 0.01}
         ),
     )
     weight_qspec = QuantizationSpec(
@@ -85,7 +85,7 @@ def main(args):
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
         observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(
-            **{"steps": 200, "use_mse": True}
+            **{"steps": 100, "use_mse": True}
         ),
     )
     # rewrite default per-channel ptq config
@@ -114,7 +114,6 @@ def main(args):
         dataset=inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        quant_dtype=QuantDtype.use_8a8w,
         custom_quantizer=quantizer,
         shared_buffer=args.shared_buffer,
     )
