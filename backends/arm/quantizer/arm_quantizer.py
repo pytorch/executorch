@@ -333,16 +333,26 @@ class TOSAQuantizer(Quantizer):
         self.module_name_config: Dict[str, Optional[QuantizationConfig]] = {}
 
     def set_global(self, quantization_config: QuantizationConfig) -> TOSAQuantizer:
-        """Set quantization_config for submodules that are not already annotated by name or type filters."""
+        """
+        Set quantization_config for submodules that are not already annotated by name or type filters.
+
+        Args:
+            quantization_config: The QuantizationConfig to set as global configuration.
+        """
         self.global_config = quantization_config
         return self
 
     def set_module_type(
         self, module_type: Callable, quantization_config: QuantizationConfig
     ) -> TOSAQuantizer:
-        """Set quantization_config for a submodule with type: `module_type`, for example:
+        """
+        Set quantization_config for a submodule with type: `module_type`, for example:
         quantizer.set_module_name(Sub) or quantizer.set_module_name(nn.Linear), it will quantize all supported operator/operator
-        patterns in the submodule with this module type with the given `quantization_config`
+        patterns in the submodule with this module type with the given `quantization_config`.
+
+        Args:
+            module_type: The type of the submodule to set the quantization config for.
+            quantization_config: The QuantizationConfig to set for the submodule.
         """
         self.module_type_config[module_type] = quantization_config
         return self
@@ -350,9 +360,14 @@ class TOSAQuantizer(Quantizer):
     def set_module_name(
         self, module_name: str, quantization_config: Optional[QuantizationConfig]
     ) -> TOSAQuantizer:
-        """Set quantization_config for a submodule with name: `module_name`, for example:
+        """
+        Set quantization_config for a submodule with name: `module_name`, for example:
         quantizer.set_module_name("blocks.sub"), it will quantize all supported operator/operator
         patterns in the submodule with this module name with the given `quantization_config`
+
+        Args:
+            module_name: The name of the submodule to set the quantization config for.
+            quantization_config: The QuantizationConfig to set for the submodule.
         """
         # Validate that quantization_config is provided
         if quantization_config is None:
@@ -360,14 +375,25 @@ class TOSAQuantizer(Quantizer):
         self.module_name_config[module_name] = quantization_config
         return self
 
-    def set_io(self, quantization_config):
-        """Set quantization_config for input and output nodes."""
+    def set_io(self, quantization_config: QuantizationConfig) -> TOSAQuantizer:
+        """
+        Set quantization_config for input and output nodes.
+
+        Args:
+            quantization_config: The QuantizationConfig to set for input and output nodes.
+        """
         self.io_config = quantization_config
         return self
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
-        """An initial pass for transforming the graph to prepare it for annotation.
+        """
+        An initial pass for transforming the graph to prepare it for annotation.
         Currently transforms scalar values to tensor attributes.
+
+        Args:
+            model: The model to transform.
+        Returns:
+            The transformed model.
         """
 
         # TODO: Fix the need to lazily import this.
@@ -465,10 +491,24 @@ class TOSAQuantizer(Quantizer):
 
 
 class EthosUQuantizer(TOSAQuantizer):
+    """
+    Quantizer supported by the Arm Ethos-U backend.
+
+    Args:
+        compile_spec: A EthosUCompileSpec instance.
+    """
+
     def __init__(self, compile_spec: EthosUCompileSpec) -> None:
         super().__init__(compile_spec)
 
 
 class VgfQuantizer(TOSAQuantizer):
+    """
+    Quantizer supported by the Arm Vgf backend.
+
+    Args:
+        compile_spec: A VgfCompileSpec instance.
+    """
+
     def __init__(self, compile_spec: VgfCompileSpec) -> None:
         super().__init__(compile_spec)
