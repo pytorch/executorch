@@ -909,6 +909,8 @@ jobs:
 
   test-samsung-models-linux:
     name: test-samsung-models-linux
+    # Skip this job if the pull request is from a fork (secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
