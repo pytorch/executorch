@@ -427,6 +427,7 @@ def inference_whisper(args, inputs, target):
             host_id=args.host,
             soc_model=args.model,
             shared_buffer=args.shared_buffer,
+            target=args.target,
             runner="examples/qualcomm/oss_scripts/whisper/qnn_whisper_runner",
         )
         # No pregen inputs, input_list is not required
@@ -468,12 +469,6 @@ if __name__ == "__main__":
         help="Maximum sequence length for the generated output.  Defaults to use the model's `max_cache_size` attribute. Will be truncated to maximal cache size if larger than `max_cache_size`.",
         default=1024,
         type=int,
-    )
-
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated llama in the given directory.",
-        type=str,
     )
 
     args = parser.parse_args()

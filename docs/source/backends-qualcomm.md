@@ -53,7 +53,7 @@ For more details and troubleshooting, refer to the official Microsoft WSL instal
 👉 [Install WSL | Microsoft Learn](https://learn.microsoft.com/en-us/windows/wsl/install)
 
 ### Hardware:
-You will need an Android smartphone with adb-connected running on one of below Qualcomm SoCs:
+You will need an Android / Linux device with adb-connected running on one of below Qualcomm SoCs:
  - SA8295
  - SM8450 (Snapdragon 8 Gen 1)
  - SM8475 (Snapdragon 8 Gen 1+)
@@ -62,7 +62,7 @@ You will need an Android smartphone with adb-connected running on one of below Q
  - SM8750 (Snapdragon 8 Elite)
  - SSG2115P
  - SSG2125P
- - SXR1230P
+ - SXR1230P (Linux Embedded)
  - SXR2230P
  - SXR2330P
 
@@ -73,6 +73,7 @@ This example is verified with SM8550 and SM8450.
  - Follow ExecuTorch recommended Python version.
  - A compiler to compile AOT parts, e.g., the GCC compiler comes with Ubuntu LTS.
  - [Android NDK](https://developer.android.com/ndk). This example is verified with NDK 26c.
+ - (Optional) Target toolchain for linux embedded platform.
  - [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
    - Click the "Get Software" button to download the latest version of the QNN SDK.
    - Although newer versions are available, we have verified and recommend using QNN 2.37.0 for stability.
@@ -130,8 +131,11 @@ The above script is actively used. It is updated more frequently than this tutor
 An example usage is
 ```bash
 cd $EXECUTORCH_ROOT
+# android target
 ./backends/qualcomm/scripts/build.sh
-# or
+# (optional) linux embedded target
+./backends/qualcomm/scripts/build.sh --enable_linux_embedded
+# for release build
 ./backends/qualcomm/scripts/build.sh --release
 ```
 
@@ -272,7 +276,10 @@ I 00:00:00.364875 executorch:qnn_executor_runner.cpp:425] Write etdump to etdump
 The model is merely executed. If we want to feed real inputs and get model outputs, we can use
 ```bash
 cd $EXECUTORCH_ROOT
+# android
 python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8550 --download -s <device_serial>
+# (optional) linux embedded
+python -m examples.qualcomm.scripts.deeplab_v3 -b build-oe-linux -m SXR1230P --download -s <device_serial> -t aarch64-oe-linux-gcc-9.3
 ```
 The `<device_serial>` can be found by `adb devices` command.
 
