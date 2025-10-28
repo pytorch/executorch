@@ -60,60 +60,17 @@ class ClampVisitor_INT(NodeVisitor):
 
         return min_arg, max_arg
 
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        validate_num_inputs(self.target, inputs, [2, 3])
-        validate_same_dtype(self.target, [inputs[0], output], ts)
-        validate_valid_dtype(
-            self.target,
-            [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT16],
-            output.tosa_spec,
-        )
-
-        is_int16 = output.dtype == ts.DType.INT16
-        torch_dtype = torch.int16 if is_int16 else torch.int8
-
-        # NOTE: Quantization of the min/max arguments is handled by QuantizeOperatorArguments
-        min_quant, max_quant = self._get_min_max_arguments(
-            node,
-            torch.iinfo(torch_dtype).min,
-            torch.iinfo(torch_dtype).max,
-        )
-
-        np_dtype = np.int16 if is_int16 else np.int8
-        attr = ts.TosaSerializerAttribute()
-        attr.ClampAttribute(
-            np.frombuffer(np_dtype(min_quant).tobytes(), dtype=np.uint8).tolist(),
-            np.frombuffer(np_dtype(max_quant).tobytes(), dtype=np.uint8).tolist(),
-            ts.NanPropagationMode.PROPAGATE,
-        )
-
-        self._serialize_operator(
-            node,
-            tosa_graph,
-            ts.Op.CLAMP,
-            [inputs[0].name],
-            [output.name],
-            attr,
-        )
-
-
-@register_node_visitor
-class ClampVisitor_FP(ClampVisitor_INT):
-    # inheriting 'target' from INT class
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
-
-    def __init__(self, *args):
-        super().__init__(*args)
+    def _to_bytes(self, value: int | float, dtype: torch.dtype) -> bytes:
+        if dtype == torch.float32:
+            return np.frombuffer(np.float32(value).tobytes(), dtype=np.uint8).tolist()
+        elif dtype == torch.float16:
+            return np.frombuffer(np.float16(value).tobytes(), dtype=np.uint8).tolist()
+        elif dtype == torch.int8:
+            return np.frombuffer(np.int8(value).tobytes(), dtype=np.uint8).tolist()
+        elif dtype == torch.int16:
+            return np.frombuffer(np.int16(value).tobytes(), dtype=np.uint8).tolist()
+        else:
+            raise ValueError(f"Unsupported dtype for to_bytes: {dtype}")
 
     def define_node(
         self,
@@ -127,7 +84,7 @@ class ClampVisitor_FP(ClampVisitor_INT):
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.FP16, ts.DType.FP32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.FP16, ts.DType.FP32],
             output.tosa_spec,
         )
 
