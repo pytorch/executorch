@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,6 +14,7 @@ import torch
 from executorch.backends.cortex_m.passes.passes_utils import (
     extract_scalar_value,
     quantize_multiplier_aot,
+    SHIFT_INT8,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -58,7 +60,16 @@ class QuantizedOpFusionPass(ExportPass):
 
     def _is_supported_binary_op(self, node: torch.fx.Node) -> bool:
         """Check if node is a supported binary operation."""
-        return node.op == "call_function" and node.target in self.SUPPORTED_OPS_MAPPING
+        is_supported = (
+            node.op == "call_function" and node.target in self.SUPPORTED_OPS_MAPPING
+        )
+        if not is_supported:
+            return False
+
+        shape1 = node.args[0].meta["val"].shape
+        shape2 = node.args[1].meta["val"].shape
+        is_broadcast = shape1 != shape2
+        return not is_broadcast
 
     def _is_dequant_node(self, node: torch.fx.Node) -> bool:
         """Check if node is a dequantize operation."""
@@ -163,16 +174,18 @@ class QuantizedOpFusionPass(ExportPass):
                 zp2_val = int(extract_scalar_value(zero_point2))
                 output_zp_val = int(extract_scalar_value(output_zero_point))
 
+                max_scale_2x = 2 * max(scale1_val, scale2_val)
                 # AoT COMPUTATION: Calculate multipliers and shifts
+
                 input1_mult, input1_shift = quantize_multiplier_aot(
-                    scale1_val / output_scale_val
+                    scale1_val / max_scale_2x
                 )
                 input2_mult, input2_shift = quantize_multiplier_aot(
-                    scale2_val / output_scale_val
+                    scale2_val / max_scale_2x
                 )
                 output_mult, output_shift = quantize_multiplier_aot(
-                    1.0
-                )  # Output multiplier is 1
+                    max_scale_2x / (output_scale_val * (1 << SHIFT_INT8))
+                )
 
                 logger.info("AoT computed parameters:")
                 logger.info(f"   Input1: mult={input1_mult}, shift={input1_shift}")

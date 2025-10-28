@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,6 +12,9 @@ import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.fx import Node
+
+# L-shift value used in CMSIS-NN for int8 operations
+SHIFT_INT8 = 20
 
 
 def dequantize_per_tensor_cmsis(
@@ -39,6 +43,21 @@ def quantize_per_tensor_cmsis(
     scale = multiplier * (2**shift) / (1 << 31)
     quantized = torch.round(tensor / scale) + zero_point
     return quantized.clamp(qmin, qmax).to(torch.int8)
+
+
+def requantize_cmsis(
+    tensor: torch.Tensor,
+    multiplier: int,
+    shift: int,
+) -> torch.Tensor:
+    """
+    Simulate CMSIS-NN fixed-point requantization:
+    result = round(tensor * multiplier / (2 ^ shift))
+    with double rounding
+    """
+    multiplied = torch.round(tensor.to(torch.int64) * multiplier)
+    shifted = torch.round(multiplied / (2 ** (31 - shift)))
+    return shifted.to(torch.int32)
 
 
 def extract_scalar_value(node_arg) -> float:
@@ -83,13 +102,14 @@ def is_qualified_int8_node(args) -> bool:
 def quantize_multiplier_aot(scale: float) -> tuple[int, int]:
     if scale == 0.0:
         return 0, 0
-    mantissa, exponent = math.frexp(scale)
-    shift = -exponent
+    mantissa, shift = math.frexp(scale)
     q_fixed = int(round(mantissa * (1 << 31)))
     if q_fixed == (1 << 31):
         q_fixed //= 2
-        shift -= 1
-    multiplier = max(-2147483648, min(2147483647, q_fixed))
+        shift += 1
+    multiplier = max(
+        torch.iinfo(torch.int32).min, min(torch.iinfo(torch.int32).max, q_fixed)
+    )
     return multiplier, shift
 
 
