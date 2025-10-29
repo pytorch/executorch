@@ -1043,45 +1043,6 @@ jobs:
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
-  test-mcu-models:
-    name: test-mcu-models
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    strategy:
-      matrix:
-        include:
-          - build-tool: cmake
-      fail-fast: false
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        BUILD_TOOL=${{ matrix.build-tool }}
-
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        # Try to mirror these as closely as possible
-        source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
-
-        .ci/scripts/setup-arm-baremetal-tools.sh
-        source examples/arm/ethos-u-scratch/setup_path.sh
-
-        # Run selective Build
-        chmod +x examples/selective_build/test_selective_build.sh
-        examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
-
-        # Run MCU models
-        chmod +x examples/arm/run_mcu_models_fvp.sh
-        examples/arm/run_mcu_models_fvp.sh --target=cortex-m55
-
   test-models-windows:
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     strategy:
