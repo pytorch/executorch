@@ -16,6 +16,7 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
+from torch.export.exported_program import ExportedProgram
 
 
 @experimental(
