@@ -43,6 +43,7 @@ enum QcomChipset: int {
   SXR1230P = 45,
   SXR2230P = 53,
   SXR2330P = 75,
+  QCS9100 = 77,
 }
 
 /// Indicate the information of the specified SoC.

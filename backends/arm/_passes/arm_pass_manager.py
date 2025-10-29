@@ -88,7 +88,6 @@ from executorch.backends.arm._passes import (
     RemoveNoopPass,
     ReplaceInfValues,
     ReplaceScalarWithTensorByProfilePass,
-    RetraceFoldedDtypesPass,
     RewriteConv2dPass,
     RewriteMatmulPass,
     RewriteUpsamplePass,
@@ -153,15 +152,15 @@ class ArmPassManager(PassManager):
         with TosaLoweringContext(self.tosa_spec):
             return self(graph_module).graph_module
 
-    def _tosa_INT_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+    def _tosa_INT_pipeline(
+        self, exported_program: ExportedProgram, graph_module: GraphModule
+    ) -> GraphModule:
         self.add_pass(AnnotateOutputDimOrderPass())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(ConvertMmToBmmPass())
-        self.add_pass(
-            DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)
-        )
+        self.add_pass(DecomposeMeanDimPass(graph_module, self.tosa_spec))
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
@@ -176,7 +175,6 @@ class ArmPassManager(PassManager):
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(ConvertELUParamsPass())
         self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
-        self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
         if self.tosa_spec.is_U55_subset:
@@ -218,9 +216,11 @@ class ArmPassManager(PassManager):
         self.add_pass(InsertRescalePass())
 
         self.validate_constraints_mandatory()
-        return self._transform(exported_program.graph_module)
+        return self._transform(graph_module)
 
-    def _tosa_FP_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+    def _tosa_FP_pipeline(
+        self, exported_program: ExportedProgram, graph_module: GraphModule
+    ) -> GraphModule:
         self.add_pass(AnnotateOutputDimOrderPass())
         self.add_pass(DecomposeExpm1Pass())
         self.add_pass(DecomposeLogitPass())
@@ -255,9 +255,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeBatchNormNoStatsPass())
         self.add_pass(DecomposeVarPass())
-        self.add_pass(
-            DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)
-        )
+        self.add_pass(DecomposeMeanDimPass(graph_module, self.tosa_spec))
         self.add_pass(DecomposeNotEqualPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeAddSubAlphaPass())
@@ -271,7 +269,6 @@ class ArmPassManager(PassManager):
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
-        self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
         self.add_pass(DecomposeAdaptiveAvgPool2dPass())
@@ -305,14 +302,16 @@ class ArmPassManager(PassManager):
         self.add_pass(InsertRescalePass())
 
         self.validate_constraints_mandatory()
-        return self._transform(exported_program.graph_module)
+        return self._transform(graph_module)
 
-    def transform_to_backend_pipeline(self, exported_program: ExportedProgram):
+    def transform_to_backend_pipeline(
+        self, exported_program: ExportedProgram, graph_module: GraphModule
+    ):
         """Apply passes before transforming program to backend"""
         if self.tosa_spec == TosaSpecification.create_from_string("TOSA-1.0+FP"):
-            return self._tosa_FP_pipeline(exported_program)
+            return self._tosa_FP_pipeline(exported_program, graph_module)
         elif self.tosa_spec == TosaSpecification.create_from_string("TOSA-1.0+INT"):
-            return self._tosa_INT_pipeline(exported_program)
+            return self._tosa_INT_pipeline(exported_program, graph_module)
         else:
             raise NotImplementedError(
                 f"No pass pipeline implemented for {self.tosa_spec=}"
