@@ -339,6 +339,10 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.hardsigmoid.default,
             torch.ops.aten.hardswish.default,
         ]
+        constant_ops_to_not_decompose = [
+            torch.ops.aten.eye.default,
+            torch.ops.aten.linspace.default,
+        ]
 
         def filter_fn(node: torch.fx.Node) -> bool:
             """Return True to keep selected ops intact inside quantized regions.
@@ -355,35 +359,62 @@ class TOSAPartitioner(Partitioner):
                 bool: True to keep the op intact; otherwise, False.
 
             """
+
             dq = torch.ops.quantized_decomposed.dequantize_per_tensor.default
             q = torch.ops.quantized_decomposed.quantize_per_tensor.default
 
             if node.target in ops_to_not_decompose_if_quant_op:
-                # Assume we should not decompose the operator (it is quantized)
-                should_not_decompose = True
-
                 input_nodes = node.all_input_nodes
-                ouput_nodes = node.users
+                output_nodes = node.users
 
-                for inp in input_nodes:
-                    if inp.target != dq:
-                        should_not_decompose = False
+                should_not_decompose = all(inp.target == dq for inp in input_nodes)
 
-                for out in ouput_nodes:
-                    if out.target != q:
-                        should_not_decompose = False
+                should_not_decompose = should_not_decompose and all(
+                    out.target == q for out in output_nodes
+                )
 
                 return should_not_decompose
+            elif node.target in constant_ops_to_not_decompose:
+                # We only want to tag nodes as do_not_decompose if we are sure that
+                # we can partition them. We partition them if one or more of the
+                # following is true:
+                # 1. The TOSA spec supports floating point.
+                # 2. The node outputs an integer type.
+                # 3. All the node outputs are quantized.
+                # 4. All users cast the output to an integer type.
+                # If none of the above is true we will not tag the node and
+                # it will be decomposed.
+                if self.tosa_spec.support_float():
+                    return True
+
+                dtype = get_first_fake_tensor(node).dtype
+                if not dtype.is_floating_point and not dtype.is_complex:
+                    return True
+
+                output_nodes = node.users
+                if all(out.target == q for out in output_nodes):
+                    return True
+
+                for user in output_nodes:
+                    if user.target == torch.ops.aten.to.dtype:
+                        cast_dtype = get_first_fake_tensor(user).dtype
+                        if cast_dtype.is_complex or cast_dtype.is_floating_point:
+                            return False
+                    else:
+                        return False
+                return False
 
             # By default, do not decompose the operator
             return True
 
-        ops_to_not_decompose = [
-            torch.ops.aten.linear.default,
-            torch.ops.aten.eye.default,
-            torch.ops.aten.linspace.default,
-            torch.ops.aten.logit.default,
-        ] + ops_to_not_decompose_if_quant_op
+        ops_to_not_decompose = (
+            [
+                torch.ops.aten.linear.default,
+                torch.ops.aten.logit.default,
+            ]
+            + ops_to_not_decompose_if_quant_op
+            + constant_ops_to_not_decompose
+        )
 
         if not self.tosa_spec.is_U55_subset:
             # Tosa operator "RESIZE" is not supported on U55. Since upsample_bilinear2d
