@@ -45,6 +45,8 @@ inline executorch::aten::ScalarType dtype_to_scalar_type(int32_t dtype) {
       return executorch::aten::ScalarType::Long;
     case 6: // PyTorch's float32 dtype code
       return executorch::aten::ScalarType::Float;
+    case 11: // PyTorch's bool dtype code
+      return executorch::aten::ScalarType::Bool;
     case 15: // PyTorch's bfloat16 dtype code
       return executorch::aten::ScalarType::BFloat16;
     // Future support for additional dtypes can be added here
