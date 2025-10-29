@@ -3079,3 +3079,135 @@ class TestRefImplementations(unittest.TestCase):
         self.assertIn(
             "Hidden dimension must be a multiple of 4", str(context.exception)
         )
+
+    @expand(
+        [
+            (
+                "basic_int8_dim_1",
+                torch.tensor([[10, 20, 30]], dtype=torch.int8),
+                None,
+                1,
+                0.1,
+                0,
+                0.004,
+                0,
+                torch.int8,
+                torch.tensor([[23, 61, 127]], dtype=torch.int8),
+            ),
+            (
+                "uint8_with_zero_points",
+                torch.tensor([[128, 130, 132]], dtype=torch.uint8),
+                None,
+                1,
+                0.1,
+                128,
+                0.004,
+                128,
+                torch.uint8,
+                torch.tensor([[195, 210, 228]], dtype=torch.uint8),
+            ),
+            (
+                "basic_int16",
+                torch.tensor([[100, 200, 300]], dtype=torch.int16),
+                None,
+                1,
+                0.01,
+                0,
+                0.004,
+                0,
+                torch.int16,
+                torch.tensor([[23, 61, 166]], dtype=torch.int16),
+            ),
+            (
+                "multi_row_int8",
+                torch.tensor([[10, 20, 30], [5, 10, 15]], dtype=torch.int8),
+                None,
+                1,
+                0.1,
+                0,
+                0.004,
+                0,
+                torch.int8,
+                torch.tensor([[23, 61, 127], [47, 77, 127]], dtype=torch.int8),
+            ),
+            (
+                "softmax_dim_0",
+                torch.tensor([[10, 20], [30, 40]], dtype=torch.int8),
+                None,
+                0,
+                0.1,
+                0,
+                0.004,
+                0,
+                torch.int8,
+                torch.tensor([[30, 30], [127, 127]], dtype=torch.int8),
+            ),
+        ]
+    )
+    def test_quantized_softmax_per_tensor(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        mask: torch.Tensor | None,
+        dim: int,
+        in_scale: float,
+        in_zero_point: int,
+        out_scale: float,
+        out_zero_point: int,
+        dtype: torch.dtype,
+        expected_output: torch.Tensor,
+    ) -> None:
+        output = torch.ops.cadence.quantized_softmax.per_tensor(
+            input_tensor,
+            mask,
+            dim,
+            in_scale,
+            in_zero_point,
+            out_scale,
+            out_zero_point,
+        )
+
+        # Verify output properties
+        self.assertEqual(
+            output.dtype, dtype, f"Output dtype should be {dtype} in {name}"
+        )
+        self.assertEqual(
+            output.shape,
+            input_tensor.shape,
+            f"Output shape should match input shape in {name}",
+        )
+
+        # Verify output matches expected values (allowing for small quantization errors)
+        # For softmax, we expect outputs to be in [0, 1] range when dequantized
+        self.assertTrue(
+            torch.allclose(
+                output.to(torch.float32),
+                expected_output.to(torch.float32),
+                rtol=0.05,
+                atol=5.0,
+            ),
+            f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+        )
+
+    def test_quantized_softmax(self) -> None:
+        # Test quantized_softmax (default variant with tensor scale/zero_point)
+        input_tensor = torch.tensor([[10, 20, 30]], dtype=torch.int8)
+        in_scale = torch.tensor([0.1])
+        in_zero_point = torch.tensor([0])
+        output = torch.ops.cadence.quantized_softmax(
+            input_tensor,
+            None,  # mask
+            1,  # dim
+            in_scale,
+            in_zero_point,
+            0.004,  # out_scale
+            0,  # out_zero_point
+        )
+
+        # Verify output properties
+        self.assertEqual(output.dtype, torch.int8, "Output dtype should be int8")
+        self.assertEqual(
+            output.shape,
+            input_tensor.shape,
+            "Output shape should match input shape",
+        )

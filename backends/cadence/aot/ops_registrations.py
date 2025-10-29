@@ -6,7 +6,6 @@
 
 # pyre-strict
 
-import logging
 from math import prod
 from typing import Callable, Optional, Tuple
 
@@ -49,35 +48,15 @@ def _validate_ref_impl_exists() -> None:
         "cadence::roi_align_box_processor",
     }
 
-    # All of these should either
-    # 1. be removed
-    # 2. have a reference implementation added to ref_implementations.py
-    _WARN_ONLY = {
-        "cadence::quantized_softmax.per_tensor",
-        "cadence::quantized_softmax",
-    }
-
     ref_impls = get_registered_ref_implementations()
-    warn_impls = []
     error_impls = []
     for op_name in _REGISTERED_META_KERNELS:
         # Strip the namespace prefix if present (e.g., "cadence::" -> "")
         op_name_clean = op_name.split("::")[-1] if "::" in op_name else op_name
 
         if op_name_clean not in ref_impls:
-            if op_name in _WARN_ONLY:
-                warn_impls.append(op_name)
-            elif op_name not in _SKIP_OPS:
+            if op_name not in _SKIP_OPS:
                 error_impls.append(op_name)
-
-    if warn_impls:
-        warn_msg = (
-            f"The following {len(warn_impls)} meta kernel registrations are missing reference implementations:\n"
-            + "\n".join(f"  - {op}" for op in warn_impls)
-            + "\n\nPlease add reference implementations in ref_implementations.py using "
-            + "@impl_tracked(m, '<op_name>')."
-        )
-        logging.warning(warn_msg)
 
     if error_impls:
         error_msg = (

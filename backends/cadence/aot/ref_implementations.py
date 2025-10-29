@@ -2054,3 +2054,95 @@ def softmax_f32_f32(
     assert input_tensor.dtype == torch.float32, "input_tensor must be float32"
     assert not half_to_float, "half_to_float is not supported"
     return torch.nn.functional.softmax(input_tensor, dim=dim, dtype=torch.float32)
+
+
+def quantized_softmax_per_tensor_common(
+    input_tensor: torch.Tensor,
+    mask: torch.Tensor | None,
+    dim: int,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    """
+    Quantized softmax operation.
+
+    Args:
+        - input_tensor (Tensor): The quantized input tensor
+        - mask (Tensor): Mask tensor
+        - dim (int): The dimension along which softmax is computed
+        - in_scale (float): The scale of the input quantization
+        - in_zero_point (int): The zero point of the input quantization
+        - out_scale (float): The scale of the output quantization
+        - out_zero_point (int): The zero point of the output quantization
+    """
+    # TODO: T228751479 - Add support for mask parameter in softmax
+    assert mask is None
+    supported_dtypes = [torch.int8, torch.uint8, torch.int16]
+    if input_tensor.dtype not in supported_dtypes:
+        raise ValueError(
+            f"Input dtype must be one of {supported_dtypes}. Got {input_tensor.dtype}"
+        )
+
+    float_input_tensor = dequantize_per_tensor(
+        input_tensor,
+        in_scale,
+        in_zero_point,
+        torch.iinfo(input_tensor.dtype).min,
+        torch.iinfo(input_tensor.dtype).max,
+        input_tensor.dtype,
+    )
+
+    softmax_output = torch.nn.functional.softmax(float_input_tensor, dim=dim)
+
+    return quantize_per_tensor(
+        softmax_output,
+        out_scale,
+        out_zero_point,
+        torch.iinfo(input_tensor.dtype).min,
+        torch.iinfo(input_tensor.dtype).max,
+        input_tensor.dtype,
+    )
+
+
+@impl_tracked(m, "quantized_softmax.per_tensor")
+def quantized_softmax_per_tensor(
+    input_tensor: torch.Tensor,
+    mask: torch.Tensor | None,
+    dim: int,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    return quantized_softmax_per_tensor_common(
+        input_tensor,
+        mask,
+        dim,
+        in_scale,
+        in_zero_point,
+        out_scale,
+        out_zero_point,
+    )
+
+
+@impl_tracked(m, "quantized_softmax")
+def quantized_softmax(
+    input_tensor: torch.Tensor,
+    mask: torch.Tensor | None,
+    dim: int,
+    in_scale: torch.Tensor,
+    in_zero_point: torch.Tensor,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    return quantized_softmax_per_tensor_common(
+        input_tensor,
+        mask,
+        dim,
+        float(in_scale.item()),
+        int(in_zero_point.item()),
+        out_scale,
+        out_zero_point,
+    )
