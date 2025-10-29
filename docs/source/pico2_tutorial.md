@@ -41,12 +41,12 @@ python export_mlp_mnist.py # Creates balanced_tiny_mlp_mnist.pte
 
 # Build Pico2 firmware (one command!)
 
-./executorch/examples/rpi/build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte   # This creates executorch_pico.uf2, a firmware image for Pico2
+./examples/raspberry_pi/pico2/build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte   # This creates executorch_pico.uf2, a firmware image for Pico2
 ```
 
 Output: **executorch_pico.uf2** firmware file (examples/raspberry_pi/pico2/build/)
 
-**Note:** 'build_firmware_pico.sh' script converts given model pte to hex array and generates C code for the same via this helper [script](https://github.com/pytorch/executorch/blob/main/examples/raspberry_pi/pico2/pte_to_array.py). This C code is then compiled to generate final .uf2 binary which is then flashed to Pico2.
+**Note:** '[build_firmware_pico.sh](https://github.com/pytorch/executorch/blob/main/examples/raspberry_pi/pico2/build_firmware_pico.sh)' script converts given model pte to hex array and generates C code for the same via this helper [script](https://github.com/pytorch/executorch/blob/main/examples/raspberry_pi/pico2/pte_to_array.py). This C code is then compiled to generate final .uf2 binary which is then flashed to Pico2.
 
 ## Step 3: Flash to Pico2
 
