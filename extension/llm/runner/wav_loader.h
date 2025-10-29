@@ -188,7 +188,7 @@ inline std::vector<float> load_wav_audio_data(const std::string& fp) {
     size_t num_samples = data_size / 4;
     audio_data.resize(num_samples);
 
-    if (audio_format == 3) {
+    if (audio_format == kWavFormatIeeeFloat) {
       // IEEE float format - read directly as floats
       const float* input_buffer =
           reinterpret_cast<const float*>(data + data_offset);

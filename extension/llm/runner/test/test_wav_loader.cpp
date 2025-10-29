@@ -19,12 +19,17 @@
 
 using executorch::extension::llm::kOneOverIntMax;
 using executorch::extension::llm::kOneOverShortMax;
+using executorch::extension::llm::kWavFormatIeeeFloat;
 using executorch::extension::llm::load_wav_audio_data;
 using executorch::extension::llm::load_wav_header;
 using executorch::extension::llm::WavHeader;
 using executorch::extension::testing::TempFile;
 
 namespace {
+
+// WAV file format constants
+constexpr uint32_t kWavHeaderSizeBeforeData = 36;
+constexpr uint32_t kWavHeaderSizeWithData = 44;
 
 // Test fixture to ensure PAL initialization
 class WavLoaderTest : public ::testing::Test {
@@ -52,7 +57,7 @@ void append_le32(std::vector<uint8_t>& out, uint32_t value) {
 }
 
 void append_float(std::vector<uint8_t>& out, float value) {
-  const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&value);
+  const auto* bytes = reinterpret_cast<const uint8_t*>(&value);
   for (size_t i = 0; i < sizeof(float); ++i) {
     out.push_back(bytes[i]);
   }
@@ -63,15 +68,15 @@ std::vector<uint8_t> make_pcm_wav_bytes(
     const std::vector<int32_t>& samples,
     uint16_t num_channels = 1,
     uint32_t sample_rate = 16000) {
-  const size_t bytes_per_sample = static_cast<size_t>(bits_per_sample / 8);
-  const uint32_t subchunk2_size =
+  const auto bytes_per_sample = static_cast<size_t>(bits_per_sample / 8);
+  const auto subchunk2_size =
       static_cast<uint32_t>(samples.size() * bytes_per_sample);
   const uint32_t byte_rate = sample_rate * num_channels * bytes_per_sample;
   const uint16_t block_align = num_channels * bytes_per_sample;
-  const uint32_t chunk_size = 36 + subchunk2_size;
+  const auto chunk_size = kWavHeaderSizeBeforeData + subchunk2_size;
 
   std::vector<uint8_t> bytes;
-  bytes.reserve(44 + subchunk2_size);
+  bytes.reserve(kWavHeaderSizeWithData + subchunk2_size);
 
   append_bytes(bytes, "RIFF");
   append_le32(bytes, chunk_size);
@@ -102,15 +107,15 @@ std::vector<uint8_t> make_float_wav_bytes(
     const std::vector<float>& samples,
     uint16_t num_channels = 1,
     uint32_t sample_rate = 16000) {
-  const size_t bytes_per_sample = sizeof(float);
-  const uint32_t subchunk2_size =
+  const auto bytes_per_sample = sizeof(float);
+  const auto subchunk2_size =
       static_cast<uint32_t>(samples.size() * bytes_per_sample);
   const uint32_t byte_rate = sample_rate * num_channels * bytes_per_sample;
   const uint16_t block_align = num_channels * bytes_per_sample;
-  const uint32_t chunk_size = 36 + subchunk2_size;
+  const auto chunk_size = kWavHeaderSizeBeforeData + subchunk2_size;
 
   std::vector<uint8_t> bytes;
-  bytes.reserve(44 + subchunk2_size);
+  bytes.reserve(kWavHeaderSizeWithData + subchunk2_size);
 
   append_bytes(bytes, "RIFF");
   append_le32(bytes, chunk_size);
@@ -139,14 +144,14 @@ std::vector<uint8_t> make_wav_bytes_with_format(
     const std::vector<uint8_t>& sample_data,
     uint16_t num_channels = 1,
     uint32_t sample_rate = 16000) {
-  const size_t bytes_per_sample = static_cast<size_t>(bits_per_sample / 8);
-  const uint32_t subchunk2_size = static_cast<uint32_t>(sample_data.size());
+  const auto bytes_per_sample = static_cast<size_t>(bits_per_sample / 8);
+  const auto subchunk2_size = static_cast<uint32_t>(sample_data.size());
   const uint32_t byte_rate = sample_rate * num_channels * bytes_per_sample;
   const uint16_t block_align = num_channels * bytes_per_sample;
-  const uint32_t chunk_size = 36 + subchunk2_size;
+  const auto chunk_size = kWavHeaderSizeBeforeData + subchunk2_size;
 
   std::vector<uint8_t> bytes;
-  bytes.reserve(44 + subchunk2_size);
+  bytes.reserve(kWavHeaderSizeWithData + subchunk2_size);
 
   append_bytes(bytes, "RIFF");
   append_le32(bytes, chunk_size);
