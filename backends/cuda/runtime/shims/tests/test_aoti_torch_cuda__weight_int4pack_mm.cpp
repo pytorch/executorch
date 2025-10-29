@@ -7,8 +7,8 @@
  */
 
 #include <cuda_runtime.h>
-#include <executorch/backends/aoti/common_shims.h>
-#include <executorch/backends/aoti/utils.h>
+#include <executorch/backends/cuda/runtime/common_shims.h>
+#include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/backends/cuda/runtime/shims/int4mm.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
@@ -19,7 +19,7 @@
 #include <vector>
 
 using namespace executorch::backends::cuda;
-using namespace executorch::backends::aoti;
+using namespace executorch::backends::cuda;
 using namespace executorch::runtime;
 
 // Test fixture for aoti_torch_cuda__weight_int4pack_mm tests

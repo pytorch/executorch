@@ -7,13 +7,13 @@
  */
 
 #include <cuda_runtime.h>
-#include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/cuda/runtime/common_shims.h>
 #include <executorch/backends/cuda/runtime/shims/cuda_guard.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/platform.h>
 #include <gtest/gtest.h>
 
-using namespace executorch::backends::aoti;
+using namespace executorch::backends::cuda;
 using namespace executorch::backends::cuda;
 using namespace executorch::runtime;
 

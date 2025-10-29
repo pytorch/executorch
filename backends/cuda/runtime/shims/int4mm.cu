@@ -9,10 +9,10 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-#include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/shims/int4mm.h>
-#include <executorch/backends/cuda/runtime/shims/int4mm.cuh>
+#include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/platform/log.h>
+#include <executorch/backends/cuda/runtime/shims/int4mm.cuh>
 
 namespace executorch::backends::cuda {
 #ifdef __cplusplus

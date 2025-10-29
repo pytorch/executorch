@@ -9,12 +9,12 @@
 #pragma once
 
 #include <cuda_runtime.h>
-#include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/cuda/runtime/common_shims.h>
 
 namespace executorch::backends::cuda {
 
-using executorch::backends::aoti::AOTITorchError;
-using executorch::backends::aoti::Tensor;
+using executorch::backends::cuda::AOTITorchError;
+using executorch::backends::cuda::Tensor;
 
 #ifdef __cplusplus
 extern "C" {

@@ -19,8 +19,8 @@
 #include <vector>
 
 // Include our shim layer headers
-#include <executorch/backends/aoti/aoti_delegate_handle.h>
-#include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/cuda/runtime/aoti_delegate_handle.h>
+#include <executorch/backends/cuda/runtime/common_shims.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
@@ -28,7 +28,7 @@
 namespace executorch::backends::cuda {
 
 using namespace std;
-using namespace aoti;
+using namespace cuda;
 
 using executorch::aten::ScalarType;
 using executorch::runtime::ArrayRef;

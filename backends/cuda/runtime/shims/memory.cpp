@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/aoti/common_shims.h>
-#include <executorch/backends/aoti/utils.h>
+#include <executorch/backends/cuda/runtime/common_shims.h>
+#include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
@@ -24,15 +24,15 @@ namespace executorch::backends::cuda {
 
 using executorch::aten::SizesType;
 using executorch::aten::StridesType;
-using executorch::backends::aoti::aoti_torch_get_device_index;
-using executorch::backends::aoti::aoti_torch_get_dtype;
-using executorch::backends::aoti::aoti_torch_get_sizes;
-using executorch::backends::aoti::aoti_torch_get_strides;
-using executorch::backends::aoti::convert_sizes_to_vector;
-using executorch::backends::aoti::convert_strides_to_vector;
-using executorch::backends::aoti::dtype_to_element_size;
-using executorch::backends::aoti::dtype_to_scalar_type;
-using executorch::backends::aoti::validate_storage_offset;
+using executorch::backends::cuda::aoti_torch_get_device_index;
+using executorch::backends::cuda::aoti_torch_get_dtype;
+using executorch::backends::cuda::aoti_torch_get_sizes;
+using executorch::backends::cuda::aoti_torch_get_strides;
+using executorch::backends::cuda::convert_sizes_to_vector;
+using executorch::backends::cuda::convert_strides_to_vector;
+using executorch::backends::cuda::dtype_to_element_size;
+using executorch::backends::cuda::dtype_to_scalar_type;
+using executorch::backends::cuda::validate_storage_offset;
 
 // Global storage for tensors and their metadata
 std::unordered_set<std::shared_ptr<Tensor>> tensors;

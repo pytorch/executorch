@@ -6,8 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-
- // This file is a port of PyTorch's int4mm.cu kernel implementation
+// This file is a port of PyTorch's int4mm.cu kernel implementation
 // (aten/src/ATen/native/cuda/int4mm.cu) adapted for the ExecuTorch runtime.
 //
 // In the future, we should consider making the PyTorch code generic enough
@@ -17,12 +16,13 @@
 // --------------
 // 1. KERNEL CODE (lines 36-1067): Identical to PyTorch - preserved 100%
 //    - All utility templates, vector types, and conversion logic unchanged
-//    - Tensor core kernels (tinygemm_m16n8k16_chunk_kernel) byte-for-byte identical
+//    - Tensor core kernels (tinygemm_m16n8k16_chunk_kernel) byte-for-byte
+//    identical
 //    - Same inline PTX assembly for mma.sync.aligned instructions
 //    - Identical performance characteristics and register allocation
 //
 // 2. API ADAPTATIONS:
-//    - Replaced at::Tensor with executorch::backends::aoti::Tensor
+//    - Replaced at::Tensor with executorch::backends::cuda::Tensor
 //    - Output returned via pointer-to-pointer instead of by-value
 //
 // 3. REMOVED FEATURES:
@@ -40,13 +40,14 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <executorch/backends/cuda/runtime/common_shims.h>
 #include <executorch/backends/cuda/runtime/guard.h>
-#include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
-#include <executorch/backends/aoti/common_shims.h>
-#include <executorch/backends/aoti/utils.h>
+#include <executorch/backends/cuda/runtime/utils.h>
 
-#if (defined(USE_ROCM) && ROCM_VERSION >= 50700) || ((defined(CUDA_VERSION) && CUDA_VERSION >= 12000) && (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 800)))
+#if (defined(USE_ROCM) && ROCM_VERSION >= 50700) ||      \
+    ((defined(CUDA_VERSION) && CUDA_VERSION >= 12000) && \
+     (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 800)))
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -56,7 +57,7 @@
 #endif
 
 namespace executorch::backends::cuda {
-using executorch::backends::aoti::Tensor;
+using executorch::backends::cuda::Tensor;
 
 template <typename U, typename V>
 constexpr __host__ __device__ auto divDown(U a, V b) -> decltype(a + b) {
@@ -170,19 +171,21 @@ inline __host__ __device__ uint32_t getAlignmentRoundUp(const void* p) {
   return diff == 0 ? 0 : uint32_t(Align) - diff;
 }
 
-#if defined (__gfx90a__) || defined(__gfx942__)
+#if defined(__gfx90a__) || defined(__gfx942__)
 #define CDNA2_OR_LATER 1
 #else
 #define CDNA2_OR_LATER 0
 #endif
 
-#if (defined(USE_ROCM) && ROCM_VERSION >= 50700) || ((defined(CUDA_VERSION) && CUDA_VERSION >= 12000) && (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 800)))
+#if (defined(USE_ROCM) && ROCM_VERSION >= 50700) ||      \
+    ((defined(CUDA_VERSION) && CUDA_VERSION >= 12000) && \
+     (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 800)))
 
 #if defined(USE_ROCM)
 // TODO: Support RDNA
 constexpr int32_t kWarpSize = 64;
 
-template<typename T, uint32_t Rank>
+template <typename T, uint32_t Rank>
 using VecT = T __attribute__((ext_vector_type(Rank)));
 
 /*
@@ -304,8 +307,8 @@ inline __device__ bf16x2x4 convert_i4x8_to_bf16x2x4(uint32_t source) {
     // (i4s & 0x000f000f) | 0x43004300
 #if defined(USE_ROCM)
     asm volatile("v_and_or_b32 %0, %1, %2, %3"
-        : "=v"(h[ii])
-        : "v"(i4s), "v"(MASK), "v"(I4s_TO_BF16s_MAGIC_NUM));
+                 : "=v"(h[ii])
+                 : "v"(i4s), "v"(MASK), "v"(I4s_TO_BF16s_MAGIC_NUM));
 #else
     asm volatile(
         "lop3.b32 %0, %1, %2, %3, %4;\n"
@@ -317,8 +320,10 @@ inline __device__ bf16x2x4 convert_i4x8_to_bf16x2x4(uint32_t source) {
   // This is the BF16 {-136, -136} represented as an integer.
 #if defined(USE_ROCM)
 #if ROCM_VERSION >= 60200
-  auto BF16_BIAS = __bfloat162bfloat162(__hip_bfloat16(__hip_bfloat16_raw{0xC308}));
-  auto BF16_ONE = __bfloat162bfloat162(__hip_bfloat16(__hip_bfloat16_raw{0x3F80}));
+  auto BF16_BIAS =
+      __bfloat162bfloat162(__hip_bfloat16(__hip_bfloat16_raw{0xC308}));
+  auto BF16_ONE =
+      __bfloat162bfloat162(__hip_bfloat16(__hip_bfloat16_raw{0x3F80}));
 #else
   auto BF16_BIAS = __bfloat162bfloat162(__hip_bfloat16{0xC308});
   auto BF16_ONE = __bfloat162bfloat162(__hip_bfloat16{0x3F80});
@@ -334,7 +339,7 @@ inline __device__ bf16x2x4 convert_i4x8_to_bf16x2x4(uint32_t source) {
     // Since this section is for Ampere+, we use bf16 fma to do the bias
     // subtraction
 #if defined(USE_ROCM)
-     result.vals[ii] = __hfma2(result.vals[ii], BF16_ONE, BF16_BIAS);
+    result.vals[ii] = __hfma2(result.vals[ii], BF16_ONE, BF16_BIAS);
 #else
     asm("fma.rn.bf16x2 %0, %1, %2, %3;\n"
         : "=r"(h[ii])
@@ -344,8 +349,6 @@ inline __device__ bf16x2x4 convert_i4x8_to_bf16x2x4(uint32_t source) {
 
   return result;
 }
-
-
 
 enum class KReductionType {
   // No k-reduction is needed between blocks as the number of k-tiles processed
@@ -406,7 +409,8 @@ struct ALayout_RM {
 #pragma unroll
     for (int i = 0; i < KTilesToLoad; ++i) {
 #if defined(USE_ROCM)
-      out[i].val = m0InBounds ? *((VecT<short, 4> *)(aPtr + i * kKTileSize)) : VecT<short, 4>{0, 0, 0, 0};
+      out[i].val = m0InBounds ? *((VecT<short, 4>*)(aPtr + i * kKTileSize))
+                              : VecT<short, 4>{0, 0, 0, 0};
 #else
       out[i].vals[0] = m0InBounds
           ? *reinterpret_cast<const uint32_t*>(aPtr + i * kKTileSize)
@@ -460,9 +464,9 @@ struct ALayout_RM {
       if ((outRow + 1) < m)
         cPtr[n] = __float2bfloat16(out.y);
       if ((outRow + 2) < m)
-        cPtr[2*n] = __float2bfloat16(out.z);
+        cPtr[2 * n] = __float2bfloat16(out.z);
       if ((outRow + 3) < m)
-        cPtr[3*n] = __float2bfloat16(out.w);
+        cPtr[3 * n] = __float2bfloat16(out.w);
 #else
       auto v01 = __float22bfloat162_rn(float2{out.x, out.y});
       auto v23 = __float22bfloat162_rn(float2{out.z, out.w});
@@ -495,8 +499,8 @@ struct BLayout_TC_int4 {
   static __device__ void load(
       // type uint32, size [n / 8][k / (InnerKTiles * 16)][32][InnerKTiles / 2]
       // n-tiles: n / 8 for NV, n /16 for AMD
-      // k / (InnerKTiles * 16): TC size per k-tile is 16 (m16n8k16 for NV, m16n16k16 for AMD)
-      // value per warp lane: 32 for NV, 64 for AMD
+      // k / (InnerKTiles * 16): TC size per k-tile is 16 (m16n8k16 for NV,
+      // m16n16k16 for AMD) value per warp lane: 32 for NV, 64 for AMD
       // (InnerKTiles / 2): B layout has 4 values per lane (16 bits) per k-tile.
       // 2 k-tiles packed is a uint32 (hence InnerKTiles == 2 is our smallest
       // value) 4 k-tiles packed is a uint32x2 (64 bits) 8 k-tiles packed is a
@@ -781,7 +785,10 @@ __launch_bounds__(Warps* kWarpSize) void tinygemm_m16n8k16_chunk_kernel(
           cTmp[k] = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(
               a[i * kInnerKTiles + j * 2 + k].val,
               b[i][(j * 2 + k) / 2].val[((j * 2 + k) % 2)],
-              cTmp[k], 0, 0, 0);
+              cTmp[k],
+              0,
+              0,
+              0);
 #else
           asm volatile(
               "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 "
@@ -877,9 +884,12 @@ __launch_bounds__(Warps* kWarpSize) void tinygemm_m16n8k16_chunk_kernel(
       for (int k = 0; k < 2; ++k) {
 #if defined(USE_ROCM)
         cTmp[k] = __builtin_amdgcn_mfma_f32_16x16x16bf16_1k(
-          a[j * 2 + k].val,
-          b[0][(j * 2 + k) / 2].val[((j * 2 + k) % 2)],
-          cTmp[k], 0, 0, 0);
+            a[j * 2 + k].val,
+            b[0][(j * 2 + k) / 2].val[((j * 2 + k) % 2)],
+            cTmp[k],
+            0,
+            0,
+            0);
 #else
         asm volatile(
             "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 "
@@ -961,7 +971,8 @@ __launch_bounds__(Warps* kWarpSize) void tinygemm_m16n8k16_chunk_kernel(
         sum_f32);
   }
 #else
-    printf("__builtin_amdgcn_mfma_f32_16x16x16bf16_1k is only supported on AMD gpu arch greater than or equal to CDNA2\n");
+  printf(
+      "__builtin_amdgcn_mfma_f32_16x16x16bf16_1k is only supported on AMD gpu arch greater than or equal to CDNA2\n");
 #endif
 }
 
@@ -1000,8 +1011,12 @@ void launch_tinygemm_kernel(
   auto grid = dim3(postKernelKTiles, nTiles, mTiles);
   auto block = dim3(kWarpSize, Warps);
 
-  auto func =
-      tinygemm_m16n8k16_chunk_kernel<ALayout, BLayout, CLayout, Warps, KTilesPerWarp>;
+  auto func = tinygemm_m16n8k16_chunk_kernel<
+      ALayout,
+      BLayout,
+      CLayout,
+      Warps,
+      KTilesPerWarp>;
 
   func<<<grid, block, 0, stream>>>(
       A.data_ptr(),
@@ -1019,7 +1034,7 @@ void launch_tinygemm_kernel(
 
   cudaFuncAttributes funcAttr;
 #if defined(USE_ROCM)
-  ET_CUDA_CHECK(cudaFuncGetAttributes(&funcAttr, (void *)func));
+  ET_CUDA_CHECK(cudaFuncGetAttributes(&funcAttr, (void*)func));
 #else
   ET_CUDA_CHECK(cudaFuncGetAttributes(&funcAttr, func));
 #endif
@@ -1109,8 +1124,10 @@ __global__ void matrix_to_m16n8k16_Bint4_layout(
 
     // inner k-tiles pack two at a time
 #if defined(USE_ROCM)
-    // The output tensor shape is [ceil(n / 8)][ceil(k / (InnerKTiles * 16))][32][InnerKTiles / 2], which is specific to Nvidia
-    // But AMD needs [ceil(n / 16)][ceil(k / (InnerKTiles * 16))][64][InnerKTiles / 2]
+    // The output tensor shape is [ceil(n / 8)][ceil(k / (InnerKTiles *
+16))][32][InnerKTiles / 2], which is specific to Nvidia
+    // But AMD needs [ceil(n / 16)][ceil(k / (InnerKTiles *
+16))][64][InnerKTiles / 2]
     // So construct the pointer accordingly
     auto bPtr = out.data() +
       ((nTile * out.size(1) * kWarpSize * (InnerKTiles / 2)) +
@@ -1127,7 +1144,6 @@ __global__ void matrix_to_m16n8k16_Bint4_layout(
 
 #endif // defined(USE_ROCM) || CUDA_VERSION >= 12000
 
-
 Tensor* _weight_int4pack_mm_cuda(
     const Tensor& A,
     const Tensor& B,
@@ -1142,7 +1158,9 @@ Tensor* _weight_int4pack_mm_cuda(
 
 #if defined(USE_ROCM)
   if (!isCDNA2orLater(A.device().index())) {
-    ET_CHECK(false, "_weight_int4pack_mm_cuda is only supported on AMD gpu arch greater than or equal to CDNA2");
+    ET_CHECK(
+        false,
+        "_weight_int4pack_mm_cuda is only supported on AMD gpu arch greater than or equal to CDNA2");
   }
 #endif
 
@@ -1158,7 +1176,8 @@ Tensor* _weight_int4pack_mm_cuda(
   auto m = A.size(0);
   auto mTiles = divUp(m, kMTileSize);
 
-  // To convert the nTiles from tensor storage layout to the actual matrix core layout
+  // To convert the nTiles from tensor storage layout to the actual matrix core
+  // layout
   constexpr int32_t kNTileSizeTensor = 8;
   auto nTileScaleFactor = (kNTileSize / kNTileSizeTensor);
 
@@ -1209,16 +1228,17 @@ Tensor* _weight_int4pack_mm_cuda(
   std::array<int64_t, 2> shape = {m, n};
   std::array<int64_t, 2> stride = {n, 1};
   aoti_torch_empty_strided(
-    2,
-    shape.data(),
-    stride.data(),
-    static_cast<int32_t>(SupportedDTypes::BFLOAT16),
-    static_cast<int32_t>(SupportedDevices::CUDA),
-    0,
-    &C_final
-  );
+      2,
+      shape.data(),
+      stride.data(),
+      static_cast<int32_t>(SupportedDTypes::BFLOAT16),
+      static_cast<int32_t>(SupportedDevices::CUDA),
+      0,
+      &C_final);
 
-#if (defined(USE_ROCM) && ROCM_VERSION >= 50700) || ((defined(CUDA_VERSION) && CUDA_VERSION >= 12000) && (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 800)))
+#if (defined(USE_ROCM) && ROCM_VERSION >= 50700) ||      \
+    ((defined(CUDA_VERSION) && CUDA_VERSION >= 12000) && \
+     (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 800)))
   auto stream_result = getCurrentCUDAStream(0);
   ET_CHECK_MSG(stream_result.ok(), "Failed to get CUDA stream");
   cudaStream_t stream = stream_result.get();
@@ -1226,7 +1246,7 @@ Tensor* _weight_int4pack_mm_cuda(
   do {                                                               \
     using ACLayout = ALayout_RM<REDUCE_TYPE>;                        \
                                                                      \
-    ET_CHECK(                                                     \
+    ET_CHECK(                                                        \
         K_TILES_PER_WARP >= B_innerKTiles &&                         \
         isEvenDivisor(K_TILES_PER_WARP, B_innerKTiles));             \
                                                                      \
