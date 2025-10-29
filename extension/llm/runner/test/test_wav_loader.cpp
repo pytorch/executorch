@@ -51,6 +51,13 @@ void append_le32(std::vector<uint8_t>& out, uint32_t value) {
   out.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
 }
 
+void append_float(std::vector<uint8_t>& out, float value) {
+  const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&value);
+  for (size_t i = 0; i < sizeof(float); ++i) {
+    out.push_back(bytes[i]);
+  }
+}
+
 std::vector<uint8_t> make_pcm_wav_bytes(
     int bits_per_sample,
     const std::vector<int32_t>& samples,
@@ -86,6 +93,41 @@ std::vector<uint8_t> make_pcm_wav_bytes(
     for (size_t byte_idx = 0; byte_idx < bytes_per_sample; ++byte_idx) {
       bytes.push_back(static_cast<uint8_t>((encoded >> (8 * byte_idx)) & 0xFF));
     }
+  }
+
+  return bytes;
+}
+
+std::vector<uint8_t> make_float_wav_bytes(
+    const std::vector<float>& samples,
+    uint16_t num_channels = 1,
+    uint32_t sample_rate = 16000) {
+  const size_t bytes_per_sample = sizeof(float);
+  const uint32_t subchunk2_size =
+      static_cast<uint32_t>(samples.size() * bytes_per_sample);
+  const uint32_t byte_rate = sample_rate * num_channels * bytes_per_sample;
+  const uint16_t block_align = num_channels * bytes_per_sample;
+  const uint32_t chunk_size = 36 + subchunk2_size;
+
+  std::vector<uint8_t> bytes;
+  bytes.reserve(44 + subchunk2_size);
+
+  append_bytes(bytes, "RIFF");
+  append_le32(bytes, chunk_size);
+  append_bytes(bytes, "WAVE");
+  append_bytes(bytes, "fmt ");
+  append_le32(bytes, 16);
+  append_le16(bytes, 3); // AudioFormat IEEE Float
+  append_le16(bytes, num_channels);
+  append_le32(bytes, sample_rate);
+  append_le32(bytes, byte_rate);
+  append_le16(bytes, block_align);
+  append_le16(bytes, 32); // bits per sample
+  append_bytes(bytes, "data");
+  append_le32(bytes, subchunk2_size);
+
+  for (float sample : samples) {
+    append_float(bytes, sample);
   }
 
   return bytes;
@@ -152,4 +194,22 @@ TEST_F(WavLoaderTest, LoadHeaderReturnsNullWhenMagicMissing) {
 
   std::unique_ptr<WavHeader> header = load_wav_header(file.path());
   EXPECT_EQ(header, nullptr);
+}
+
+TEST_F(WavLoaderTest, LoadAudioDataFloatFormatReadsDirectly) {
+  const std::vector<float> samples = {0.0f, 0.5f, -0.5f, 1.0f, -1.0f};
+  const std::vector<uint8_t> wav_bytes = make_float_wav_bytes(samples);
+  TempFile file(wav_bytes.data(), wav_bytes.size());
+
+  std::unique_ptr<WavHeader> header = load_wav_header(file.path());
+  ASSERT_NE(header, nullptr);
+  EXPECT_EQ(header->AudioFormat, 3);
+  EXPECT_EQ(header->bitsPerSample, 32);
+
+  std::vector<float> audio = load_wav_audio_data(file.path());
+  ASSERT_EQ(audio.size(), samples.size());
+
+  for (size_t i = 0; i < samples.size(); ++i) {
+    EXPECT_FLOAT_EQ(audio[i], samples[i]);
+  }
 }
