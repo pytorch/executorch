@@ -583,12 +583,12 @@ def lower_all_submodules_to_backend(
 
     def _get_all_final_backend_details_subclasses(cls) -> Set[type]:
         subclasses = set()
-        for subclass in cls.__subclasses__():
-            # Check if subclass is a final class (marked as @final)
-            if getattr(subclass, "__final__", False):
-                subclasses.add(subclass)
-            # Recursively check subclasses
-            subclasses.update(_get_all_final_backend_details_subclasses(subclass))
+        if len(cls.__subclasses__()) == 0:
+            return {cls}
+        else:
+            for subclass in cls.__subclasses__():
+                # Recursively check subclasses
+                subclasses.update(_get_all_final_backend_details_subclasses(subclass))
         return subclasses
 
     backend_name_to_subclass = {
