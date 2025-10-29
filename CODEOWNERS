@@ -49,31 +49,31 @@
 /extension/export_util @kimishpatel
 /extension/flat_tensor @lucylq
 /extension/gguf_util @larryliu0820
-/extension/kernel_util @kimishpatel @manuelcandales @swolchok
-/extension/llm @jackzhxng @larryliu0820 @swolchok @mergennachin
-/extension/memory_allocator @JacobSzwejbka @swolchok
+/extension/kernel_util @kimishpatel @manuelcandales
+/extension/llm @jackzhxng @larryliu0820 @mergennachin
+/extension/memory_allocator @JacobSzwejbka
 /extension/module @shoumikhin
-/extension/parallel @kimishpatel @swolchok
+/extension/parallel @kimishpatel
 /extension/pybindings @JacobSzwejbka @larryliu0820
-/extension/pytree @JacobSzwejbka @swolchok
-/extension/runner_util @swolchok
+/extension/pytree @JacobSzwejbka
+/extension/runner_util
 /extension/tensor @shoumikhin
-/extension/testing_util @swolchok
-/extension/threadpool @kimishpatel @swolchok
+/extension/testing_util
+/extension/threadpool @kimishpatel
 /extension/training @JacobSzwejbka
 
-/kernels @manuelcandales @swolchok
+/kernels @manuelcandales
 
 /profiler @Gasoonjia
 
-/runtime @JacobSzwejbka @lucylq @swolchok
+/runtime @JacobSzwejbka @lucylq
 /runtime/backend @cccclai
 
 /schema @JacobSzwejbka @lucylq
 
-/scripts @GregoryComer @swolchok
+/scripts @GregoryComer
 
-/shim @larryliu0820 @GregoryComer @swolchok
+/shim @larryliu0820 @GregoryComer
 
 /third-party @GregoryComer
 
