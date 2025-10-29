@@ -55,7 +55,7 @@ void log_softmax_kernel(const Tensor& input, int64_t dim, Tensor& out) {
         0,
         outer_size,
         ::executorch::extension::internal::GRAIN_SIZE,
-        [&](const auto begin, const auto end) {
+        [&](const auto& begin, const auto& end) {
           at::native::serial_vec_log_softmax_lastdim_range(
               input_data_base,
               output_data_base,

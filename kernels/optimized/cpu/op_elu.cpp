@@ -41,7 +41,7 @@ void elu(
       0,
       out.numel(),
       ::executorch::extension::internal::GRAIN_SIZE,
-      [&](const auto begin, const auto end) {
+      [&](const auto& begin, const auto& end) {
         using Vec = at::vec::Vectorized<CTYPE>;
         const auto vectorized_begin =
             begin + (Vec::size() - begin % Vec::size()) % Vec::size();
