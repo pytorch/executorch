@@ -3,13 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import itertools
 import operator
 from typing import cast, List, Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     FoldAndAnnotateQParamsPass,
@@ -23,7 +23,7 @@ from torch.fx import GraphModule
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
-class AnnotateDecomposedMatmulPass(ExportPass):
+class AnnotateDecomposedMatmulPass(ArmPass):
     """
     torch.matmul and it's equivalent operator @ can be decomposed in many ways, for instance:
     dq -> matmul -> q can become
@@ -51,7 +51,7 @@ class AnnotateDecomposedMatmulPass(ExportPass):
         raise RuntimeError(f"Cannot find an input node which matches, {node}.")
 
     def call(self, graph_module: GraphModule) -> PassResult:
-        matmul_partitions = get_source_partitions(
+        matmul_partitions_map = get_source_partitions(
             graph_module.graph,
             [
                 torch.matmul,
@@ -60,7 +60,7 @@ class AnnotateDecomposedMatmulPass(ExportPass):
             None,
         )
         matmul_partitions = list(
-            itertools.chain.from_iterable(matmul_partitions.values())
+            itertools.chain.from_iterable(matmul_partitions_map.values())
         )
         matmul_targets = {
             exir_ops.edge.aten.bmm.default,
@@ -88,7 +88,7 @@ class AnnotateDecomposedMatmulPass(ExportPass):
                         # Create new dq-node before matmul
                         dq_node = create_node(
                             graph=graph_module.graph,
-                            op_target=cast(EdgeOpOverload, input_node.target),  # type: ignore[arg-type]
+                            op_target=cast(EdgeOpOverload, input_node.target),
                         )
                         dq_node.args = (node, *input_node.args[1:])
                         matmul_node.replace_input_with(node, dq_node)
@@ -109,7 +109,7 @@ class AnnotateDecomposedMatmulPass(ExportPass):
                     # Create q-node after matmul
                     q_node = create_node(
                         graph=graph_module.graph,
-                        op_target=cast(EdgeOpOverload, partition_output.target),  # type: ignore[arg-type]
+                        op_target=cast(EdgeOpOverload, partition_output.target),
                     )
                     matmul_node.replace_all_uses_with(q_node)
                     q_node.args = (matmul_node, *partition_output.args[1:])

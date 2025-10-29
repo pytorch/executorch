@@ -4,10 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import logging
 from typing import Set, Type
+
+from executorch.backends.arm._passes import ArmPass
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -15,7 +16,7 @@ from executorch.exir.pass_base import ExportPass
 logger = logging.getLogger(__name__)
 
 
-class RemoveNoopPass(ExportPass):
+class RemoveNoopPass(ArmPass):
     """Remove no-ops from graph_module"""
 
     _passes_required_after: Set[Type[ExportPass]] = set()

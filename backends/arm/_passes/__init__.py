@@ -6,7 +6,6 @@
 
 from . import arm_pass_utils  # noqa
 from .arm_pass import ArmPass  # noqa  # usort: skip
-from .add_bias_pass import AddBiasPass  # noqa
 from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
 from .annotate_output_dim_order_pass import AnnotateOutputDimOrderPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
@@ -73,7 +72,6 @@ from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass 
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
     QuantizeOperatorArguments,
-    RetraceFoldedDtypesPass,
 )
 from .fuse_batchnorm2d_pass import FuseBatchnorm2DPass  # noqa
 from .fuse_constant_ops_pass import ComputeConstantOpsAOT, FuseConstantArgsPass  # noqa
@@ -89,9 +87,9 @@ from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
 from .remove_noop_pass import RemoveNoopPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
-    ReplaceScalarWithTensorArgPassTOSABI,
-    ReplaceScalarWithTensorArgPassTOSAMI,
+    ReplaceScalarWithTensorByProfilePass,
 )
+from .rewrite_conv2d_pass import RewriteConv2dPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa

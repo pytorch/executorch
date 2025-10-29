@@ -3,13 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import logging
 from typing import cast, Set, Type
 
 import torch
 
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
     UnsqueezeBeforeRepeatPass,
 )
@@ -48,7 +48,7 @@ def calculate_multiples(args):
     return multiples
 
 
-class ConvertExpandCopyToRepeatPass(ExportPass):
+class ConvertExpandCopyToRepeatPass(ArmPass):
     """
     Replace expand copy with repeat since it is a repeat that can only repeat singleton dimensions.
     """
