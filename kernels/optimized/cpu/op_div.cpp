@@ -86,14 +86,14 @@ Tensor& opt_div_out(
 
           using Vec = at::vec::Vectorized<CTYPE>;
           if (a.numel() == 1) {
-            at::vec::map(
+            at::vec::map<CTYPE>(
                 [scalar_casted](Vec x) { return Vec(scalar_casted) / x; },
                 out.mutable_data_ptr<CTYPE>(),
                 tensor->const_data_ptr<CTYPE>(),
                 out.numel());
           } else {
             Vec inv_scalar_casted_vec(CTYPE(1) / scalar_casted);
-            at::vec::map(
+            at::vec::map<CTYPE>(
                 [inv_scalar_casted_vec](Vec x) {
                   return x * inv_scalar_casted_vec;
                 },
@@ -193,7 +193,7 @@ Tensor& opt_div_scalar_out(
 
         using Vec = at::vec::Vectorized<CTYPE>;
         Vec inv_b_casted_vec(CTYPE(1) / b_casted);
-        at::vec::map(
+        at::vec::map<CTYPE>(
             [inv_b_casted_vec](Vec x) { return x * inv_b_casted_vec; },
             out.mutable_data_ptr<CTYPE>(),
             a.const_data_ptr<CTYPE>(),

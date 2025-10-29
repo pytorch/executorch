@@ -85,7 +85,7 @@ Tensor& opt_sub_out(
 
           using Vec = at::vec::Vectorized<CTYPE>;
           if (a.numel() == 1) {
-            at::vec::map(
+            at::vec::map<CTYPE>(
                 [alpha_val, scalar_casted](Vec x) {
                   return Vec(scalar_casted) - Vec(alpha_val) * x;
                 },
@@ -93,7 +93,7 @@ Tensor& opt_sub_out(
                 tensor->const_data_ptr<CTYPE>(),
                 out.numel());
           } else {
-            at::vec::map(
+            at::vec::map<CTYPE>(
                 [alpha_val, scalar_casted](Vec x) {
                   return x - Vec(alpha_val * scalar_casted);
                 },
@@ -148,7 +148,7 @@ Tensor& opt_sub_scalar_out(
           ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
 
       using Vec = at::vec::Vectorized<CTYPE>;
-      at::vec::map(
+      at::vec::map<CTYPE>(
           [alpha_val, b_casted](Vec x) {
             return x - Vec(alpha_val * b_casted);
           },
