@@ -70,6 +70,7 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
     )
     adb.push(inputs=inputs)
     adb.execute()

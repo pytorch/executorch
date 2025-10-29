@@ -32,7 +32,7 @@ jobs:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge
+      runner: linux.2xlarge.memory
       docker-image: ${{ inputs.docker-image }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

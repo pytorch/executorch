@@ -30,6 +30,8 @@ jobs:
 
   export-voxtral-metal-artifact:
     name: export-voxtral-metal-artifact
+      # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
@@ -44,7 +46,7 @@ jobs:
         set -eux
 
         echo "::group::Setup Huggingface"
-        ${CONDA_RUN} pip install -U "huggingface_hub[cli]" accelerate
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0" accelerate
         ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         echo "::endgroup::"
 
