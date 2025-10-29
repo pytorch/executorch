@@ -15,6 +15,7 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export.exported_program import ExportedProgram
 
 
@@ -60,6 +61,18 @@ class AotiPartitioner(Partitioner):
 
         tag_constant_data(exported_program)
         tag_mutated_buffer(exported_program)
+
+        # Tag constant placeholders that have no users
+        # tag_constant_data only tags constants that have users with delegation_tag
+        # but we need to tag all constants for this partition
+        for node in exported_program.graph.nodes:
+            if node.op == "placeholder" and (
+                is_param(exported_program, node)
+                or is_buffer(exported_program, node)
+                or is_lifted_tensor_constant(exported_program, node)
+            ):
+                if "delegation_tag" not in node.meta:
+                    node.meta["delegation_tag"] = tag
 
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
