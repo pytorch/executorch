@@ -91,7 +91,7 @@ void layer_norm(
         dst_ptr[j] = (src_ptr[j] * scale + offset) * gamma_v + beta_v;
       }
     } else {
-      at::vec::map3(
+      at::vec::map3<CTYPE>(
           [scale, offset](auto x, auto gamma, auto beta) {
             using Vec = decltype(x);
             return (x * Vec(scale) + Vec(offset)) * gamma + beta;

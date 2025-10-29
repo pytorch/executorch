@@ -111,7 +111,7 @@ Tensor& opt_div_out(
   if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
     ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
       using Vec = at::vec::Vectorized<CTYPE>;
-      at::vec::map2(
+      at::vec::map2<CTYPE>(
           [](Vec x, Vec y) { return x / y; },
           out.mutable_data_ptr<CTYPE>(),
           a.const_data_ptr<CTYPE>(),

@@ -76,7 +76,7 @@ Tensor& opt_mul_out(
 
       ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
         using Vec = at::vec::Vectorized<CTYPE>;
-        at::vec::map2(
+        at::vec::map2<CTYPE>(
             [](Vec x, Vec y) { return x * y; },
             out.mutable_data_ptr<CTYPE>(),
             a.const_data_ptr<CTYPE>(),
@@ -86,7 +86,7 @@ Tensor& opt_mul_out(
     } else {
       ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
         using Vec = at::vec::Vectorized<CTYPE>;
-        at::vec::map2(
+        at::vec::map2<CTYPE>(
             [](Vec x, Vec y) { return x * y; },
             out.mutable_data_ptr<CTYPE>(),
             a.const_data_ptr<CTYPE>(),
