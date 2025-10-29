@@ -29,7 +29,6 @@ runtime.python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/exir/backend:partitioner",
-        "//executorch/exir/backend:utils",
+        "//executorch/backends/aoti:aoti_partitioner",
     ],
 )
