@@ -10,7 +10,7 @@ import logging
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Dict, Generator, List, Mapping
+from typing import Dict, Generator, List, Mapping, Set
 
 import torch
 
@@ -581,9 +581,21 @@ def lower_all_submodules_to_backend(
         for method_name, call_submodule_nodes in method_to_submodules_nodes.items()
     }
 
+    def _get_all_final_backend_details_subclasses(cls) -> Set[type]:
+        subclasses = set()
+        if len(cls.__subclasses__()) == 0:
+            return {cls}
+        else:
+            for subclass in cls.__subclasses__():
+                # Recursively check subclasses
+                subclasses.update(_get_all_final_backend_details_subclasses(subclass))
+        return subclasses
+
     backend_name_to_subclass = {
-        subclass.__name__: subclass for subclass in BackendDetails.__subclasses__()
+        subclass.__name__: subclass
+        for subclass in _get_all_final_backend_details_subclasses(BackendDetails)
     }
+
     if backend_id not in backend_name_to_subclass:
         raise NotImplementedError(f"Backend {backend_id} was not found.")
 
