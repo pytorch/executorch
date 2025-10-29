@@ -18,7 +18,7 @@ build_qnn_backend() {
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
   parallelism=$(( $(nproc) - 1 ))
-  bash backends/qualcomm/scripts/build.sh --skip_aarch64 --job_number ${parallelism} --release
+  bash backends/qualcomm/scripts/build.sh --skip_linux_android --skip_linux_embedded --job_number ${parallelism} --release
 }
 
 set_up_aot() {
