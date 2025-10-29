@@ -35,9 +35,10 @@ python export_mlp_mnist.py # Creates balanced_tiny_mlp_mnist.pte
 ## Step 2: Build Firmware for Pico2
 
 ```bash
-# Generate model
-
-python export_mlp_mnist.py # Creates balanced_tiny_mlp_mnist.pte
+# Generate model (Creates balanced_tiny_mlp_mnist.pte)
+cd ./examples/raspberry_pi/pico2
+python export_mlp_mnist.py
+cd -
 
 # Build Pico2 firmware (one command!)
 
