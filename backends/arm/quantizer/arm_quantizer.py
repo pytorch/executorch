@@ -5,7 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 #
 # Quantizer for Arm backend
@@ -161,6 +160,7 @@ def get_symmetric_a16w8_quantization_config(
     is_dynamic: bool = False,
     weight_qmin: int = -127,
     weight_qmax: int = 127,
+    epsilon: float = 2**-12,
 ):
     """
     16A8W quantization config: 16-bit activations, 8-bit weights.
@@ -174,11 +174,12 @@ def get_symmetric_a16w8_quantization_config(
         is_dynamic: Whether to use dynamic quantization
         weight_qmin: Minimum quantization value for weights
         weight_qmax: Maximum quantization value for weights
+        epsilon: Value used to pad observed [qmin, qmax] before initial zero point and scale calculation
 
     Returns:
         QuantizationConfig with 16-bit activations and 8-bit weights
     """
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    extra_args: Dict[str, Any] = {"eps": epsilon}
 
     # Setup observer/fake-quant for 16-bit activations
     if is_qat:
@@ -372,7 +373,7 @@ class TOSAQuantizer(Quantizer):
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
 
-        return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(  # type: ignore[arg-type]
+        return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(
             graph_module=model
         )
 

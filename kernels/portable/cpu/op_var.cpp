@@ -91,7 +91,7 @@ Tensor& var_out(
   const size_t num = get_reduced_dim_product(in, dim_list);
   const size_t denom = unbiased ? num - 1 : num;
 
-  constexpr auto name = "var.out";
+  static constexpr auto name = "var.out";
 
   ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, name, CTYPE_OUT, [&] {
@@ -123,7 +123,7 @@ Tensor& var_correction_out(
       InvalidArgument,
       out);
 
-  constexpr auto name = "var.correction_out";
+  static constexpr auto name = "var.correction_out";
 
   double correction_val = 1;
   if (correction.has_value()) {

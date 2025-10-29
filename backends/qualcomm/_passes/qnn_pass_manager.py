@@ -92,7 +92,7 @@ def get_capture_program_passes():
         (DecomposeAny, True),
         (DecomposeColIm, True),
         (DecomposeMinMaxDim, True),
-        (ExpandBroadcastTensorShape, False),
+        (ExpandBroadcastTensorShape, True),
         (FixedLinearKeepDim, True),
         (FoldQDQ, True),
         (I64toI32, True),

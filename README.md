@@ -104,14 +104,16 @@ outputs = method.execute([torch.randn(1, 3, 224, 224)])
 
 Module module("model.pte");
 auto tensor = make_tensor_ptr({2, 2}, {1.0f, 2.0f, 3.0f, 4.0f});
-auto outputs = module.forward({tensor});
+auto outputs = module.forward(tensor);
 ```
 
 **[Swift (iOS)](https://docs.pytorch.org/executorch/main/ios-section.html)**
 ```swift
+import ExecuTorch
+
 let module = Module(filePath: "model.pte")
-let input = Tensor<Float>([1.0, 2.0, 3.0, 4.0])
-let outputs: [Value] = try module.forward([input])
+let input = Tensor<Float>([1.0, 2.0, 3.0, 4.0], shape: [2, 2])
+let outputs = try module.forward(input)
 ```
 
 **[Kotlin (Android)](https://docs.pytorch.org/executorch/main/android-section.html)**
@@ -151,6 +153,8 @@ runner->generate("Hello, how are you?", config);
 
 **[Swift (iOS)](https://docs.pytorch.org/executorch/main/llm/run-on-ios.html)**
 ```swift
+import ExecuTorchLLM
+
 let runner = TextRunner(modelPath: "llama.pte", tokenizerPath: "tiktoken.bin")
 try runner.generate("Hello, how are you?", Config {
     $0.sequenceLength = 128
@@ -198,7 +202,7 @@ ExecuTorch powers on-device AI at scale across Meta's family of apps, VR/AR devi
 
 **LLMs:** [Llama 3.2/3.1/3](examples/models/llama/README.md), [Qwen 3](examples/models/qwen3/README.md), [Phi-4-mini](examples/models/phi_4_mini/README.md), [LiquidAI LFM2](examples/models/lfm2/README.md)
 
-**Multimodal:** [Llava](examples/models/llava/README.md) (vision-language), [Voxtral](examples/models/voxtral/README.md) (audio-language)
+**Multimodal:** [Llava](examples/models/llava/README.md) (vision-language), [Voxtral](examples/models/voxtral/README.md) (audio-language), [Gemma](examples/models/gemma3) (vision-language)
 
 **Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3), [Whisper](https://github.com/meta-pytorch/executorch-examples/tree/main/whisper/android/WhisperApp)
 
