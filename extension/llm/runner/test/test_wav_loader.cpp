@@ -133,6 +133,40 @@ std::vector<uint8_t> make_float_wav_bytes(
   return bytes;
 }
 
+std::vector<uint8_t> make_wav_bytes_with_format(
+    uint16_t audio_format,
+    int bits_per_sample,
+    const std::vector<uint8_t>& sample_data,
+    uint16_t num_channels = 1,
+    uint32_t sample_rate = 16000) {
+  const size_t bytes_per_sample = static_cast<size_t>(bits_per_sample / 8);
+  const uint32_t subchunk2_size = static_cast<uint32_t>(sample_data.size());
+  const uint32_t byte_rate = sample_rate * num_channels * bytes_per_sample;
+  const uint16_t block_align = num_channels * bytes_per_sample;
+  const uint32_t chunk_size = 36 + subchunk2_size;
+
+  std::vector<uint8_t> bytes;
+  bytes.reserve(44 + subchunk2_size);
+
+  append_bytes(bytes, "RIFF");
+  append_le32(bytes, chunk_size);
+  append_bytes(bytes, "WAVE");
+  append_bytes(bytes, "fmt ");
+  append_le32(bytes, 16);
+  append_le16(bytes, audio_format);
+  append_le16(bytes, num_channels);
+  append_le32(bytes, sample_rate);
+  append_le32(bytes, byte_rate);
+  append_le16(bytes, block_align);
+  append_le16(bytes, static_cast<uint16_t>(bits_per_sample));
+  append_bytes(bytes, "data");
+  append_le32(bytes, subchunk2_size);
+
+  bytes.insert(bytes.end(), sample_data.begin(), sample_data.end());
+
+  return bytes;
+}
+
 } // namespace
 
 TEST_F(WavLoaderTest, LoadHeaderParsesPcmMetadata) {
@@ -203,7 +237,7 @@ TEST_F(WavLoaderTest, LoadAudioDataFloatFormatReadsDirectly) {
 
   std::unique_ptr<WavHeader> header = load_wav_header(file.path());
   ASSERT_NE(header, nullptr);
-  EXPECT_EQ(header->AudioFormat, 3);
+  EXPECT_EQ(header->AudioFormat, kWavFormatIeeeFloat);
   EXPECT_EQ(header->bitsPerSample, 32);
 
   std::vector<float> audio = load_wav_audio_data(file.path());
@@ -212,4 +246,14 @@ TEST_F(WavLoaderTest, LoadAudioDataFloatFormatReadsDirectly) {
   for (size_t i = 0; i < samples.size(); ++i) {
     EXPECT_FLOAT_EQ(audio[i], samples[i]);
   }
+}
+
+TEST_F(WavLoaderTest, LoadAudioDataRejectsUnsupportedFormat) {
+  const std::vector<uint8_t> sample_data = {0, 0, 0, 0};
+  const std::vector<uint8_t> wav_bytes =
+      make_wav_bytes_with_format(0x0006, 16, sample_data);
+  TempFile file(wav_bytes.data(), wav_bytes.size());
+
+  EXPECT_DEATH(
+      { load_wav_audio_data(file.path()); }, "Unsupported audio format");
 }

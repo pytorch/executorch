@@ -22,6 +22,9 @@
 #include <executorch/runtime/platform/log.h>
 
 namespace executorch::extension::llm {
+// See https://www.mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html
+constexpr uint16_t kWavFormatPcm = 0x0001;
+constexpr uint16_t kWavFormatIeeeFloat = 0x0003;
 
 constexpr float kOneOverIntMax = 1 / static_cast<float>(INT32_MAX);
 constexpr float kOneOverShortMax = 1 / static_cast<float>(INT16_MAX);
@@ -169,6 +172,15 @@ inline std::vector<float> load_wav_audio_data(const std::string& fp) {
   size_t data_size = header->Subchunk2Size;
   int bits_per_sample = header->bitsPerSample;
   int audio_format = header->AudioFormat;
+
+  if (audio_format != kWavFormatPcm && audio_format != kWavFormatIeeeFloat) {
+    ET_CHECK_MSG(
+        false,
+        "Unsupported audio format: 0x%04X. Only PCM (0x%04X) and IEEE Float (0x%04X) are supported.",
+        audio_format,
+        kWavFormatPcm,
+        kWavFormatIeeeFloat);
+  }
 
   std::vector<float> audio_data;
 
