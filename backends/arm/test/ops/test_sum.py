@@ -35,6 +35,7 @@ class Sum(torch.nn.Module):
         "4d_dim_3_keep": lambda: (torch.rand(1, 2, 3, 4), 3, True),
         "4d_dims_keep": lambda: (torch.rand(1, 2, 8, 8), [2, 3, 0], True),
         "dim_None": lambda: (torch.rand(10), None, True),
+        "dim_None_4d_tensor": lambda: (torch.rand(10, 3, 2, 1), None, True),
     }
 
     def forward(self, x: torch.Tensor, dim: int, keepdim: bool):
@@ -72,7 +73,6 @@ def test_view_u55_INT_1_0(test_data: Tuple):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -85,7 +85,6 @@ def test_view_u85_INT_1_0(test_data: Tuple):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -94,7 +93,11 @@ def test_view_u85_INT_1_0(test_data: Tuple):
 @common.SkipIfNoModelConverter
 def test_sum_dim_intlist_vgf_FP(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
-        Sum(), test_data(), aten_op, tosa_version="TOSA-1.0+FP"
+        Sum(),
+        test_data(),
+        aten_op,
+        tosa_version="TOSA-1.0+FP",
+        run_on_vulkan_runtime=True,
     )
     pipeline.run()
 
@@ -107,6 +110,7 @@ def test_sum_dim_intlist_vgf_INT(test_data: input_t1):
         test_data(),
         aten_op,
         tosa_version="TOSA-1.0+INT",
+        run_on_vulkan_runtime=True,
     )
     pipeline.run()
 
@@ -119,7 +123,7 @@ reject_inputs = {
 
 
 @common.parametrize("test_data", reject_inputs)
-def test_view_u55_INT_not_delegated(test_data: Tuple):
+def test_view_u55_INT_failure_set(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Sum(),
         test_data(),

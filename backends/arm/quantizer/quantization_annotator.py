@@ -6,12 +6,13 @@
 import logging
 import operator
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, cast, List, Optional, Sequence
 
 import torch
 import torch.fx
 import torch.nn.functional as F
 from executorch.backends.arm.common.debug import get_node_debug_info
+from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.quantizer import QuantizationConfig
 from torch._subclasses import FakeTensor
 
@@ -37,7 +38,7 @@ class _QuantProperty:
     """Specify how the input/output at 'index' must be quantized."""
 
     index: int
-    qspec: type[QuantizationSpecBase] | List[type[QuantizationSpecBase]]
+    qspec: QuantizationSpecBase | List[QuantizationSpecBase]
     optional: bool = False
     mark_annotated: bool = False
 
@@ -137,11 +138,18 @@ def _is_large_scalar(node: Node, gm: torch.fx.GraphModule):
     node since histc op (in HistogramObserver) only works for values up to certain upper
     bound.
     """
+    HISTC_UPPER_BOUND = 3.4028235e15
     if node.op == "get_attr" and isinstance(node.target, str):
         tensor = _get_node_target(gm, node.target)
         # torch.histc works until this upper bound
-        HISTC_UPPER_BOUND = 3.4028235e15
         return tensor.numel() == 1 and abs(tensor.item()) > HISTC_UPPER_BOUND
+    if node.op == "call_function" and node.target in (
+        torch.ops.aten.full.default,
+        torch.ops.aten.full,
+        torch.ops.aten.fill_.Scalar,
+    ):
+        fill_value = cast(float, node.args[1])
+        return abs(fill_value) > HISTC_UPPER_BOUND
     return False
 
 
@@ -323,9 +331,11 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.slice_copy.Tensor,
     torch.ops.aten.split.Tensor,
     torch.ops.aten.split_with_sizes.default,
+    torch.ops.aten.split_copy.Tensor,
     torch.ops.aten.transpose.Dimname,
     torch.ops.aten.transpose.int,
     torch.ops.aten.transpose_copy.int,
+    torch.ops.aten.t_copy.default,
     torch.ops.aten.tile.default,
     torch.ops.aten.flip.default,
     torch.ops.aten.chunk.default,
@@ -358,13 +368,13 @@ _one_to_one_shared_input_or_input_act_qspec = [
     torch.ops.aten.permute_copy.default,
     torch.ops.aten.avg_pool2d.default,
     torch.ops.aten.max_pool2d.default,
-    torch.ops.aten.full.default,
-    torch.ops.aten.full,
     torch.ops.aten.flatten.using_ints,
     torch.ops.aten.dropout.default,
     torch.ops.aten.dropout_.default,
     torch.ops.aten.adaptive_avg_pool2d.default,
     torch.ops.aten.alias_copy.default,
+    torch.ops.aten.pixel_shuffle.default,
+    torch.ops.aten.pixel_unshuffle.default,
 ]
 
 
@@ -391,7 +401,11 @@ def get_quant_properties(  # noqa: C901
                 torch.ops.aten.conv2d.padding,
             ],
             [torch.ops.aten.batch_norm.default, F.batch_norm],
-            [torch.ops.aten.relu.default, torch.ops.aten.hardtanh.default],
+            [
+                torch.ops.aten.relu.default,
+                torch.ops.aten.relu_.default,
+                torch.ops.aten.hardtanh.default,
+            ],
         ],
         filter_fn=any_or_hardtanh_min_zero,
     ):
@@ -407,6 +421,7 @@ def get_quant_properties(  # noqa: C901
             ]
         elif node.target in (
             torch.ops.aten.relu.default,
+            torch.ops.aten.relu_.default,
             torch.ops.aten.hardtanh.default,
         ):
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
@@ -443,7 +458,11 @@ def get_quant_properties(  # noqa: C901
                 torch.ops.aten.linear.default,
                 torch.ops.aten.conv2d.padding,
             ],
-            [torch.ops.aten.relu.default, torch.ops.aten.hardtanh.default],
+            [
+                torch.ops.aten.relu.default,
+                torch.ops.aten.relu_.default,
+                torch.ops.aten.hardtanh.default,
+            ],
         ],
         any_or_hardtanh_min_zero,
     ):
@@ -492,33 +511,35 @@ def get_quant_properties(  # noqa: C901
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
     ):
-        shared_qspec = SharedQuantizationSpec((node.args[0], node))  # type: ignore[arg-type]
+        lhs_node = ensure_type(Node, node.args[0])
+        shared_qspec = SharedQuantizationSpec((lhs_node, node))
         quant_properties.quant_inputs = [
             _QuantProperty(0, input_act_qspec),
             _QuantProperty(
-                1, input_act_qspec if node.args[0] == node.args[1] else shared_qspec  # type: ignore[arg-type]
+                1,
+                input_act_qspec if node.args[0] == node.args[1] else shared_qspec,
             ),
         ]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
     elif node.target in (torch.ops.aten.where.self,):
-        shared_qspec = SharedQuantizationSpec(node.args[1])  # type: ignore[arg-type]
+        true_node = ensure_type(Node, node.args[1])
+        shared_qspec = SharedQuantizationSpec(true_node)
         quant_properties.quant_inputs = [
-            _QuantProperty(1, shared_qspec),  # type: ignore[arg-type]
-            _QuantProperty(2, shared_qspec),  # type: ignore[arg-type]
+            _QuantProperty(1, shared_qspec),
+            _QuantProperty(2, shared_qspec),
         ]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
     elif node.target in _one_to_one_shared_input_or_input_act_qspec:
-        if not isinstance(node.args[0], Node):
-            return None
-
+        input_node = ensure_type(Node, node.args[0])
         input_qspec = (
-            SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
-            if is_output_annotated(node.args[0])  # type: ignore
+            SharedQuantizationSpec(input_node)
+            if is_output_annotated(input_node)
             else input_act_qspec
         )
-        quant_properties.quant_inputs = [_QuantProperty(0, input_qspec)]  # type: ignore[arg-type]
+        quant_properties.quant_inputs = [_QuantProperty(0, input_qspec)]
         quant_properties.quant_output = _QuantProperty(
-            0, SharedQuantizationSpec((node.args[0], node))  # type: ignore[arg-type]
+            0,
+            SharedQuantizationSpec((input_node, node)),
         )
     elif node.target in (
         torch.ops.aten.cat.default,
@@ -533,25 +554,24 @@ def get_quant_properties(  # noqa: C901
             )
         if len(node.args[0]) == 0:
             raise ValueError("Expected non-empty list for node.args[0]")
-
-        shared_qspec = SharedQuantizationSpec((node.args[0][0], node))
+        inputs = [ensure_type(Node, element) for element in node.args[0]]
+        shared_qspec = SharedQuantizationSpec((inputs[0], node))
         quant_properties.quant_inputs = [
             _QuantProperty(
                 0,
-                [
-                    input_act_qspec if n == node.args[0][0] else shared_qspec  # type: ignore[misc]
-                    for n in node.args[0]
-                ],
+                [input_act_qspec if n == inputs[0] else shared_qspec for n in inputs],
             )
         ]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
     elif node.target in _one_to_one:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in _one_to_one_shared_input_qspec:
+        input_node = ensure_type(Node, node.args[0])
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(
-            0, SharedQuantizationSpec((node.args[0], node))  # type: ignore[arg-type]
+            0,
+            SharedQuantizationSpec((input_node, node)),
         )
     elif node.target in [
         torch.ops.aten.eq.Tensor,
@@ -560,23 +580,31 @@ def get_quant_properties(  # noqa: C901
         torch.ops.aten.le.Tensor,
         torch.ops.aten.lt.Tensor,
     ]:
-        shared_qspec = SharedQuantizationSpec((node.args[0], node))  # type: ignore[arg-type]
+        input_node = ensure_type(Node, node.args[0])
+        shared_qspec = SharedQuantizationSpec((input_node, node))
         quant_properties.quant_inputs = [
             _QuantProperty(0, input_act_qspec),
             _QuantProperty(
-                1, input_act_qspec if node.args[0] == node.args[1] else shared_qspec  # type: ignore[arg-type]
+                1,
+                input_act_qspec if node.args[0] == node.args[1] else shared_qspec,
             ),
         ]
         quant_properties.quant_output = None
-    elif node.target in [torch.ops.aten.scalar_tensor.default]:
+    elif node.target in [
+        torch.ops.aten.scalar_tensor.default,
+        torch.ops.aten.full.default,
+        torch.ops.aten.full,
+        torch.ops.aten.fill_.Scalar,
+    ]:
         quant_properties.quant_inputs = []
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in [operator.getitem]:
-        if not is_output_annotated(node.args[0]):  # type: ignore[attr-defined, arg-type]
+        input_node = ensure_type(Node, node.args[0])
+        if not is_output_annotated(input_node):
             return None
-        shared_qspec = SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
-        quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]  # type: ignore[arg-type]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+        shared_qspec = SharedQuantizationSpec(input_node)
+        quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
     else:
         return None
 
@@ -625,6 +653,7 @@ def annotate_graph(  # type: ignore[return]
             torch.ops.aten.full_like.default,
             torch.ops.aten.full.default,
             torch.ops.aten.full,
+            torch.ops.aten.fill_.Scalar,
             torch.ops.aten.scalar_tensor.default,
         ]:
             node.kwargs = {}

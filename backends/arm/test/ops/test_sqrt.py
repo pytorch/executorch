@@ -70,7 +70,6 @@ def test_sqrt_u55_INT(test_data: Sqrt.input_t):
         test_data(),
         Sqrt.aten_op_INT,
         Sqrt.exir_op_INT,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -83,7 +82,6 @@ def test_sqrt_u85_INT(test_data: Sqrt.input_t):
         test_data(),
         Sqrt.aten_op_INT,
         Sqrt.exir_op_INT,
-        run_on_fvp=True,
     )
     pipeline.run()
 

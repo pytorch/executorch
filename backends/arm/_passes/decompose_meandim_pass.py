@@ -5,22 +5,27 @@
 
 from copy import copy
 from math import prod
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 
 def get_meandim_decomposition(op) -> tuple:
-    if op == exir_ops.edge.aten.mean.dim:
+    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
         return (
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.mul.Tensor,
         )
-    if op == torch.ops.aten.mean.dim:
+    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
         return (
             torch.ops.aten.sum.dim_IntList,
             torch.ops.aten.full.default,
@@ -30,18 +35,18 @@ def get_meandim_decomposition(op) -> tuple:
 
 
 def get_avgpool(op):
-    if op == exir_ops.edge.aten.mean.dim:
+    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
         return exir_ops.edge.aten.avg_pool2d.default
-    if op == torch.ops.aten.mean.dim:
+    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
         return torch.ops.aten.avg_pool2d.default
     raise RuntimeError(f"Can't get meandim decomposition for op {op}")
 
 
 def get_view(op):
-    if op == exir_ops.edge.aten.mean.dim:
+    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
         return exir_ops.edge.aten.view_copy.default
-    if op == torch.ops.aten.mean.dim:
-        return torch.ops.aten.view_copy.default
+    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
+        return torch.ops.aten.reshape.default
     raise RuntimeError(f"Can't get meandim decomposition for op {op}")
 
 
@@ -62,6 +67,12 @@ class DecomposeMeanDimPass(ArmPass):
         x = view_copy.default(x, new_shape=(h)) # Squeeze dims since keepdims = False
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ComputeConstantOpsAOT,
+        DecomposeSumPass,
+        SizeAdjustInputPass,
+    }
+
     def __init__(self, graph_module, tosa_spec):
         super().__init__()
         self._graph_module = graph_module
@@ -76,13 +87,20 @@ class DecomposeMeanDimPass(ArmPass):
         )
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (exir_ops.edge.aten.mean.dim, torch.ops.aten.mean.dim):
+        if op not in (
+            exir_ops.edge.aten.mean.dim,
+            torch.ops.aten.mean.dim,
+            exir_ops.edge.aten.mean.default,
+            torch.ops.aten.mean.default,
+        ):
             return super().call_operator(op, args, kwargs, meta)
 
         x = get_node_arg(args, 0)
         input_shape = list(x.data.shape)
         output_shape = list(meta["val"].shape)
-        dims_to_reduce = get_node_arg(args, 1)
+        dims_to_reduce = get_node_arg(args, 1, range(len(input_shape)))
+        if dims_to_reduce is None:
+            dims_to_reduce = range(len(input_shape))
         dims_to_reduce = [dim % len(input_shape) for dim in dims_to_reduce]
         dims_to_reduce = [dim for dim in dims_to_reduce if input_shape[dim] != 1]
 

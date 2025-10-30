@@ -342,6 +342,12 @@ function(merge_yaml)
     DEPENDS ${GEN_FUNCTIONS_YAML} ${GEN_FALLBACK_YAML}
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   )
+
+  # Mark the file as generated to allow it to be referenced from other
+  # CMakeLists in the project.
+  set_source_files_properties(
+    ${GEN_OUTPUT_DIR}/merged.yaml PROPERTIES GENERATED TRUE
+  )
 endfunction()
 
 # Append the file list in the variable named `name` in build/build_variables.bzl
@@ -393,6 +399,7 @@ function(executorch_load_build_variables)
       EXTENSION_EVALUE_UTIL_SRCS
       EXTENSION_FLAT_TENSOR_SRCS
       EXTENSION_MODULE_SRCS
+      EXTENSION_NAMED_DATA_MAP_SRCS
       EXTENSION_RUNNER_UTIL_SRCS
       EXTENSION_LLM_RUNNER_SRCS
       EXTENSION_TENSOR_SRCS
@@ -425,6 +432,7 @@ function(executorch_load_build_variables)
       _extension_evalue_util__srcs
       _extension_flat_tensor__srcs
       _extension_module__srcs
+      _extension_named_data_map__srcs
       _extension_runner_util__srcs
       _extension_llm_runner__srcs
       _extension_tensor__srcs

@@ -115,7 +115,7 @@ if(APPLE)
 endif()
 target_compile_options(coreml_util PUBLIC -fPIC)
 
-install(TARGETS coreml_util DESTINATION lib)
+install(TARGETS coreml_util DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
@@ -154,7 +154,7 @@ target_compile_options(coreml_inmemoryfs PUBLIC -fPIC)
 
 install(
   TARGETS coreml_inmemoryfs
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
@@ -251,7 +251,7 @@ if(APPLE)
   install(
     TARGETS coremldelegate coreml_util coreml_inmemoryfs
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )

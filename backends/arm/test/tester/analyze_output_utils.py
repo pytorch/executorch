@@ -7,7 +7,6 @@ import logging
 import tempfile
 
 import torch
-from executorch.backends.arm.arm_backend import get_intermediate_path
 from executorch.backends.arm.test.runner_utils import (
     get_input_quantization_params,
     get_output_quantization_params,
@@ -245,7 +244,7 @@ def dump_error_output(
     # Capture assertion error and print more info
     banner = "=" * 40 + "TOSA debug info" + "=" * 40
     logger.error(banner)
-    path_to_tosa_files = get_intermediate_path(tester.compile_spec)
+    path_to_tosa_files = tester.compile_spec.get_intermediate_path()
 
     if path_to_tosa_files is None:
         path_to_tosa_files = tempfile.mkdtemp(prefix="executorch_result_dump_")

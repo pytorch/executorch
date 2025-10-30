@@ -23,7 +23,7 @@ from executorch.backends.cortex_m.test.test_helpers_passes_utils import (
     get_node_args,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.export import export, export_for_training
+from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -42,9 +42,7 @@ class TestQuantizedOpFusionPass(unittest.TestCase):
         model = model_class()
 
         # Export and quantize
-        exported_model = export_for_training(
-            model.eval(), self.example_inputs, strict=True
-        ).module()
+        exported_model = export(model.eval(), self.example_inputs, strict=True).module()
         prepared_model = prepare_pt2e(exported_model, AddQuantizer())
         quantized_model = convert_pt2e(prepared_model)
 
@@ -242,9 +240,7 @@ class TestQuantizedOpFusionPass(unittest.TestCase):
                 inputs = (torch.randn(shape), torch.randn(shape))
 
                 model = SingleAddModel()
-                exported_model = export_for_training(
-                    model.eval(), inputs, strict=True
-                ).module()
+                exported_model = export(model.eval(), inputs, strict=True).module()
                 prepared_model = prepare_pt2e(exported_model, AddQuantizer())
                 quantized_model = convert_pt2e(prepared_model)
 
@@ -317,7 +313,7 @@ class TestQuantizedOpFusionPass(unittest.TestCase):
         # Apply passes
         transformed_program = self._apply_passes(edge_program)
 
-        # Generate ExecutorTorch program
+        # Generate ExecuTorch program
         executorch_program = transformed_program.to_executorch()
 
         # Verify the program contains the expected fused operator

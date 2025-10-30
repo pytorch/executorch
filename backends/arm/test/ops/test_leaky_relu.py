@@ -73,7 +73,6 @@ def test_leaky_relu_u55_INT(test_data):
         LeakyReLU(slope),
         data,
         [],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
@@ -88,7 +87,6 @@ def test_leaky_relu_u85_INT(test_data):
         LeakyReLU(slope),
         data,
         [],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])

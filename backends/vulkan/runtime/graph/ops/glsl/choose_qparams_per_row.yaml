@@ -14,5 +14,6 @@ choose_qparams_per_row:
       - VALUE: buffer
     DTYPE:
       - VALUE: float
+      - VALUE: half
   shader_variants:
     - NAME: choose_qparams_per_row

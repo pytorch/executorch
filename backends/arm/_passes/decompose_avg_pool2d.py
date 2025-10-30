@@ -4,7 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from typing import Set, Type
+
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
 from executorch.backends.arm.operators.operator_validation_utils import (
     adjust_pooling_pad_if_needed,
 )
@@ -30,11 +34,11 @@ def get_decomposition(op) -> tuple:
             torch.ops.aten.avg_pool2d.default,
             torch.ops.aten.mul.Tensor,
         )
-    raise RuntimeError(f"Can't get div decomposition for op {op}")
+    raise RuntimeError(f"Can't get avg_pool2d decomposition for op {op}")
 
 
-class DecomposeAvgPool2d(ExportPass):
-    """ """
+class DecomposeAvgPool2d(ArmPass):
+    _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOT}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_div_ops + aten_div_ops):
@@ -66,7 +70,9 @@ class DecomposeAvgPool2d(ExportPass):
         # Add width padding manually if count_include_pad
         if count_include_pad and pad_w > 0:
             pre_pad_shape = [n, c, h, pad_w]
-            pre_pad = super().call_operator(full_op, (pre_pad_shape, 0.0), kwargs, meta)
+            pre_pad = super().call_operator(
+                full_op, (pre_pad_shape, 0.0), kwargs, meta, updated=True
+            )
 
             if ceil_mode and divisor_override is None:
                 post_pad_w = pad_w
@@ -78,19 +84,23 @@ class DecomposeAvgPool2d(ExportPass):
             if post_pad_w > 0:
                 post_pad_shape = [n, c, h, post_pad_w]
                 post_pad = super().call_operator(
-                    full_op, (post_pad_shape, 0.0), kwargs, meta
+                    full_op, (post_pad_shape, 0.0), kwargs, meta, updated=True
                 )
                 cat_nodes = [pre_pad, x, post_pad]
             else:
                 cat_nodes = [pre_pad, x]
 
-            x = super().call_operator(cat_op, (cat_nodes, 3), kwargs, meta)
+            x = super().call_operator(
+                cat_op, (cat_nodes, 3), kwargs, meta, updated=True
+            )
             new_pad_w = 0
 
         # Add height padding manually if count_include_pad
         if count_include_pad and pad_h > 0:
             pre_pad_shape = [n, c, pad_h, w + pad_w + post_pad_w]
-            pre_pad = super().call_operator(full_op, (pre_pad_shape, 0.0), kwargs, meta)
+            pre_pad = super().call_operator(
+                full_op, (pre_pad_shape, 0.0), kwargs, meta, updated=True
+            )
 
             if ceil_mode and divisor_override is None:
                 post_pad_h = pad_h
@@ -102,13 +112,15 @@ class DecomposeAvgPool2d(ExportPass):
             if post_pad_h > 0:
                 post_pad_shape = [n, c, post_pad_h, w + pad_w + post_pad_w]
                 post_pad = super().call_operator(
-                    full_op, (post_pad_shape, 0.0), kwargs, meta
+                    full_op, (post_pad_shape, 0.0), kwargs, meta, updated=True
                 )
                 cat_nodes = [pre_pad, x, post_pad]
             else:
                 cat_nodes = [pre_pad, x]
 
-            x = super().call_operator(cat_op, (cat_nodes, 2), kwargs, meta)
+            x = super().call_operator(
+                cat_op, (cat_nodes, 2), kwargs, meta, updated=True
+            )
             new_pad_h = 0
 
         avgpool_args = (
@@ -119,13 +131,19 @@ class DecomposeAvgPool2d(ExportPass):
             ceil_mode,
             False,
         )
-        x = super().call_operator(avgpool_op, avgpool_args, kwargs, meta)
+        x = super().call_operator(avgpool_op, avgpool_args, kwargs, meta, updated=True)
 
         # Multiply by factor (kernel_size / divisor_override) if divisor_override
         if divisor_override is not None and divisor_override != kernel_size:
             override_multiplier = super().call_operator(
-                full_op, ([1, 1, 1, 1], kernel_size / divisor_override), kwargs, meta
+                full_op,
+                ([1, 1, 1, 1], kernel_size / divisor_override),
+                kwargs,
+                meta,
+                updated=True,
             )
-            x = super().call_operator(mul_op, (x, override_multiplier), kwargs, meta)
+            x = super().call_operator(
+                mul_op, (x, override_multiplier), kwargs, meta, updated=True
+            )
 
         return x

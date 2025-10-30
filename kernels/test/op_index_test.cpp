@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -106,6 +107,36 @@ class OpIndexTensorOutTest : public OperatorTest {
   void test_dtype_enumerate_in_types() {
 #define TEST_ENTRY(ctype, dtype) \
   test_dtype<ScalarType::dtype, ScalarType::Long, ScalarType::dtype>();
+
+    ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+
+#undef TEST_ENTRY
+  }
+
+  template <executorch::aten::ScalarType INPUT_DTYPE>
+  void test_indices_with_only_null_tensors_supported() {
+    TensorFactory<INPUT_DTYPE> tf;
+
+    Tensor x = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
+    Tensor out = tf.zeros({2, 3});
+
+    std::array<optional<Tensor>, 1> indices1 = {optional<Tensor>()};
+    op_index_tensor_out(x, indices1, out);
+    EXPECT_TENSOR_EQ(out, x);
+
+    out = tf.zeros({2, 3});
+    std::array<optional<Tensor>, 2> indices2 = {
+        optional<Tensor>(), std::optional<Tensor>()};
+    op_index_tensor_out(x, indices2, out);
+    EXPECT_TENSOR_EQ(out, x);
+  }
+
+  /**
+   * Test indices with only null tensors for all input data types
+   */
+  void test_indices_with_only_null_tensors_enumerate_in_types() {
+#define TEST_ENTRY(ctype, dtype) \
+  test_indices_with_only_null_tensors_supported<ScalarType::dtype>();
 
     ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 
@@ -405,21 +436,19 @@ TEST_F(OpIndexTensorOutTest, IndicesWithOnlyNullTensorsSupported) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel test fails";
   }
+  test_indices_with_only_null_tensors_enumerate_in_types();
+}
+
+TEST_F(OpIndexTensorOutTest, TooManyNullIndices) {
   TensorFactory<ScalarType::Double> tf;
-
   Tensor x = tf.make({2, 3}, {1., 2., 3., 4., 5., 6.});
-  std::array<optional<Tensor>, 1> indices0 = {optional<Tensor>()};
-  run_test_cases(x, indices0, x);
-
-  std::array<optional<Tensor>, 2> indices1 = {
-      optional<Tensor>(), std::optional<Tensor>()};
-  run_test_cases(x, indices1, x);
-
-  std::array<optional<Tensor>, 3> indices2 = {
+  std::array<optional<Tensor>, 3> indices = {
       optional<Tensor>(), std::optional<Tensor>(), std::optional<Tensor>()};
   Tensor out = tf.ones({2, 3});
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_, op_index_tensor_out(x, indices2, out), "");
+      context_,
+      op_index_tensor_out(x, indices, out),
+      "Indexing too many dimensions");
 }
 
 TEST_F(OpIndexTensorOutTest, EmptyIndicesSupported) {
@@ -450,6 +479,36 @@ TEST_F(OpIndexTensorOutTest, AllDtypesSupportedForInput) {
 TEST_F(OpIndexTensorOutTest, AllDtypesSupportedForIndex) {
   test_dtype<ScalarType::Double, ScalarType::Long, ScalarType::Double>();
   test_dtype<ScalarType::Double, ScalarType::Int, ScalarType::Double>();
+}
+
+TEST_F(OpIndexTensorOutTest, NegativeIndexSupportedForLong) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  Tensor x = tf.make({3}, {1., 2., 3.});
+  Tensor out = tf.zeros({1});
+  Tensor expected = tf.make({1}, {3.});
+
+  std::array<optional<Tensor>, 1> indices = {
+      optional<Tensor>(tfl.make({1}, {-1}))};
+
+  Tensor ret = op_index_tensor_out(x, indices, out);
+  EXPECT_TENSOR_EQ(ret, expected);
+}
+
+TEST_F(OpIndexTensorOutTest, NegativeIndexSupportedForInt) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Int> tfi;
+
+  Tensor x = tf.make({3}, {1., 2., 3.});
+  Tensor out = tf.zeros({1});
+  Tensor expected = tf.make({1}, {3.});
+
+  std::array<optional<Tensor>, 1> indices = {
+      optional<Tensor>(tfi.make({1}, {-1}))};
+
+  Tensor ret = op_index_tensor_out(x, indices, out);
+  EXPECT_TENSOR_EQ(ret, expected);
 }
 
 //

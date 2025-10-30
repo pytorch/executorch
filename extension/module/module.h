@@ -70,13 +70,28 @@ class Module {
    * memory locking behavior.
    *
    * @param[in] file_path The path to the ExecuTorch program file to load.
-   * @param[in] data_map_path The path to a .ptd file
+   * @param[in] data_map_path The path to a .ptd file.
    * @param[in] load_mode The loading mode to use.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    */
   explicit Module(
       const std::string& file_path,
       const std::string& data_map_path,
+      const LoadMode load_mode = LoadMode::File,
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
+
+  /**
+   * Constructs an instance by loading a program from a file with specified
+   * memory locking behavior.
+   *
+   * @param[in] file_path The path to the ExecuTorch program file to load.
+   * @param[in] data_files The path to one or more .ptd file/s.
+   * @param[in] load_mode The loading mode to use.
+   * @param[in] event_tracer A EventTracer used for tracking and logging events.
+   */
+  explicit Module(
+      const std::string& file_path,
+      std::vector<std::string> data_files,
       const LoadMode load_mode = LoadMode::File,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
@@ -333,7 +348,11 @@ class Module {
   ET_NODISCARD inline runtime::Result<runtime::EValue> get(
       const std::string& method_name,
       const std::vector<runtime::EValue>& input_values) {
-    auto result = ET_UNWRAP(execute(method_name, input_values));
+    auto execute_result = execute(method_name, input_values);
+    if (!execute_result.ok()) {
+      return execute_result.error();
+    }
+    auto result = std::move(*execute_result);
     if (result.empty()) {
       return runtime::Error::InvalidArgument;
     }
@@ -598,8 +617,9 @@ class Module {
     return event_tracer_.get();
   }
 
-  ET_NODISCARD
-  runtime::Span<uint8_t> debug_buffer() {
+  // Note: this debug_buffer will always be empty. The one being used is in
+  // the event_tracer attached to module. Please use that one.
+  ET_DEPRECATED ET_NODISCARD runtime::Span<uint8_t> debug_buffer() {
     return runtime::Span<uint8_t>(debug_buffer_.data(), debug_buffer_.size());
   }
 
@@ -613,16 +633,17 @@ class Module {
   };
 
   std::string file_path_;
-  std::string data_map_path_;
+  std::vector<std::string> data_files_;
   LoadMode load_mode_{LoadMode::File};
   std::shared_ptr<Program> program_;
   std::unique_ptr<runtime::DataLoader> data_loader_;
   std::unique_ptr<runtime::MemoryAllocator> memory_allocator_;
   std::unique_ptr<runtime::MemoryAllocator> temp_allocator_;
   std::unique_ptr<runtime::EventTracer> event_tracer_;
-  std::unique_ptr<runtime::DataLoader> data_map_loader_;
-  std::unique_ptr<NamedDataMap> data_map_;
-  std::vector<uint8_t> debug_buffer_;
+  std::vector<std::unique_ptr<runtime::DataLoader>> data_map_loaders_;
+  std::vector<std::unique_ptr<NamedDataMap>> named_data_maps_;
+  std::unique_ptr<NamedDataMap> merged_data_map_;
+  ET_DEPRECATED std::vector<uint8_t> debug_buffer_;
 
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;

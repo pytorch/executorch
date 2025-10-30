@@ -86,9 +86,6 @@ class Not(torch.nn.Module):
 #################
 
 
-xfails = {"rand_rank4": "MLBEDSW-11031: Output diff on u85 bool transpose."}
-
-
 @common.parametrize("test_data", And().test_data)
 def test_logical_and_tosa_FP(test_data: input_t2):
     pipeline = TosaPipelineFP[input_t2](
@@ -132,7 +129,7 @@ def test_logical_and_u55_INT_not_delegated(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", And().test_data, xfails=xfails)
+@common.parametrize("test_data", And().test_data)
 @common.XfailIfNoCorstone320
 def test_logical_and_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -140,7 +137,6 @@ def test_logical_and_u85_INT(test_data: input_t2):
         test_data(),
         And().aten_op,
         And().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
@@ -226,7 +222,7 @@ def test_logical_xor_u55_INT_not_delegated(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Xor().test_data, xfails=xfails)
+@common.parametrize("test_data", Xor().test_data)
 @common.XfailIfNoCorstone320
 def test_logical_xor_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -234,7 +230,6 @@ def test_logical_xor_u85_INT(test_data: input_t2):
         test_data(),
         Xor().aten_op,
         Xor().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
@@ -320,7 +315,7 @@ def test_logical_or_u55_INT_not_delegated(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Or().test_data, xfails=xfails)
+@common.parametrize("test_data", Or().test_data)
 @common.XfailIfNoCorstone320
 def test_logical_or_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -328,7 +323,6 @@ def test_logical_or_u85_INT(test_data: input_t2):
         test_data(),
         Or().aten_op,
         Or().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
@@ -414,7 +408,7 @@ def test_logical_not_u55_INT_not_delegated(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Not().test_data, xfails=xfails)
+@common.parametrize("test_data", Not().test_data)
 @common.XfailIfNoCorstone320
 def test_logical_not_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -422,7 +416,6 @@ def test_logical_not_u85_INT(test_data: input_t2):
         test_data(),
         Not().aten_op,
         Not().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,

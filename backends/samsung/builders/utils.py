@@ -9,7 +9,6 @@ from enum import Enum
 import torch
 from executorch.backends.samsung.utils.utils import is_graph_input, is_graph_output
 from executorch.backends.transforms.utils import get_param_tensor, is_param_node
-
 from torch.export import ExportedProgram
 
 DATA_TYPE_STR_MAPPING = {

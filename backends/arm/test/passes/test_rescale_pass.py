@@ -31,21 +31,21 @@ def test_rescale_op():
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int8),
             torch.int32,
-            0.2,
+            [0.2],
             2,
             0,
         ),
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int32),
             torch.int8,
-            0.2,
+            [0.2],
             0,
             -128,
         ),
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int8),
             torch.int8,
-            0.8,
+            [0.8],
             10,
             127,
         ),
@@ -71,14 +71,14 @@ def test_nonzero_zp_for_int32():
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int8),
             torch.int32,
-            0.2,
+            [0.2],
             2,  # Should be 0, expect error
             1,
         ),
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int32),
             torch.int8,
-            0.2,
+            [0.2],
             1,
             1,  # Should be 0, expect error
         ),
@@ -107,14 +107,14 @@ def test_zp_outside_range():
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int8),
             torch.int32,
-            0.2,
+            [0.2],
             128,  # Should be <128, expect error
             0,
         ),
         (
             torch.randint(low=0, high=100, size=(4, 4, 4), dtype=torch.int32),
             torch.int8,
-            0.2,
+            [0.2],
             0,
             -129,  # Should be >-129m expect error
         ),
@@ -172,14 +172,7 @@ def test_quantized_rescale_tosa_bi(test_data: tuple[torch.Tensor, torch.Tensor])
     pipeline.run()
 
 
-u55_xfails = {
-    "ones": "MLBEDSW-11032: ILLEGAL_OFM_BASE error: Base addresses must be aligned to brick depth on u55.",
-    "randn_ones": "MLBEDSW-11032: ILLEGAL_OFM_BASE error: Base addresses must be aligned to brick depth on u55.",
-    "randn_large": "MLBEDSW-11032: ILLEGAL_OFM_BASE error: Base addresses must be aligned to brick depth on u55.",
-}
-
-
-@common.parametrize("test_data", RescaleNetwork.test_data, xfails=u55_xfails)
+@common.parametrize("test_data", RescaleNetwork.test_data)
 @common.XfailIfNoCorstone300
 def test_quantized_rescale_u55(test_data: tuple[torch.Tensor, torch.Tensor]):
     """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
@@ -190,7 +183,6 @@ def test_quantized_rescale_u55(test_data: tuple[torch.Tensor, torch.Tensor]):
         test_data=test_data,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -206,6 +198,5 @@ def test_quantized_rescale_u85(test_data: tuple[torch.Tensor, torch.Tensor]):
         test_data=test_data,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()

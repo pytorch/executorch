@@ -4,13 +4,21 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
+
+from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
     insert_q_dq_pair,
+)
+from executorch.backends.arm._passes.convert_squeezes_to_view import (
+    ConvertSqueezesToViewPass,
+)
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    FoldAndAnnotateQParamsPass,
 )
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -18,7 +26,7 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import Node
 
 
-class ConvertMmToBmmPass(ExportPass):
+class ConvertMmToBmmPass(ArmPass):
     """
     This pass converts a MM node to a BMM one and turns input and output tensors
     from rank 2 to rank 3. The TOSA specification requires rank 3. The graph is
@@ -27,6 +35,11 @@ class ConvertMmToBmmPass(ExportPass):
     2) Convert MM node to BMM.
     3) Squeeze output tensor to rank 2.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ConvertSqueezesToViewPass,
+        FoldAndAnnotateQParamsPass,
+    }
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified_graph = False

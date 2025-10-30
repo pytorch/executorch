@@ -4,15 +4,18 @@
 # LICENSE file in the root directory of this source tree.
 
 from math import prod
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.rewrite_conv2d_pass import RewriteConv2dPass
 
 from executorch.backends.transforms.utils import create_constant_placeholder
+from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 from torch.export.graph_signature import InputKind
 
 
@@ -38,6 +41,12 @@ class DecomposeCumsumPass(ArmPass):
        W = <dims after cumsum dim>
     And the convolution is applied over dimension H.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {RewriteConv2dPass}
+
+    def __init__(self, exported_program: ExportedProgram) -> None:
+        super().__init__()
+        self.exported_program = exported_program
 
     def call(self, graph_module):
         graph = graph_module.graph

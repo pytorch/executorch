@@ -47,7 +47,7 @@ find_library(LIB_C10 c10 HINTS ${TORCH_INSTALL_PREFIX}/lib)
 
 # Third party include paths
 
-set(VULKAN_THIRD_PARTY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party)
+set(VULKAN_THIRD_PARTY_PATH ${EXECUTORCH_ROOT}/backends/vulkan/third-party)
 
 set(GTEST_INCLUDE_PATH
     ${EXECUTORCH_ROOT}/third-party/googletest/googletest/include

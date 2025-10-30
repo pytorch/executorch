@@ -41,6 +41,7 @@ scratch_dir_set=false
 toolchain=arm-none-eabi-gcc
 select_ops_list="aten::_softmax.out"
 qdq_fusion_op=false
+model_explorer=false
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -53,7 +54,7 @@ function help() {
     echo "  --no_quantize                          Do not quantize the model (can't override builtin models)"
     echo "  --portable_kernels=<OPS>               TO BE DEPRECATED: Alias to select_ops_list."
     echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"
-    echo "                                           NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
+    echo "                                           NOTE: This is only used when building for semihosting."
     echo "                                           See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
     echo "  --output=<FOLDER>                      Target build output folder Default: ${output_folder}"
@@ -71,6 +72,7 @@ function help() {
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
     echo "  --qdq_fusion_op                        Enable QDQ fusion op"
+    echo "  --model_explorer                       Generate and open a visual graph of the compiled model."
     exit 0
 }
 
@@ -99,6 +101,7 @@ for arg in "$@"; do
       --et_build_root=*) et_build_root="${arg#*=}";;
       --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
       --qdq_fusion_op) qdq_fusion_op=true;;
+      --model_explorer) model_explorer=true ;;
       *)
       ;;
     esac
@@ -222,7 +225,6 @@ if [[ -z "$model_name" ]]; then
     test_model=(
         "softmax"   # 0
         "add"       # 1
-        "add3"      # 2
         "qadd"      # 3
         "qadd2"     # 4
         "qops"      # 5
@@ -231,7 +233,6 @@ if [[ -z "$model_name" ]]; then
     model_compiler_flags=(
         ""                      # 0 softmax
         "--delegate"            # 1 add
-        "--delegate"            # 2 add3
         "--delegate --quantize" # 3 qadd
         "--delegate --quantize" # 4 qadd2
         "--delegate --quantize" # 5 qops
@@ -289,6 +290,12 @@ for i in "${!test_model[@]}"; do
 
     pte_file=$(realpath ${pte_file})
 
+    if [ "${etrecord_flag}" != "" ] ; then
+        etrecord_filename="${output_folder}/${model_filename}_etrecord.bin"
+        etrecord_filename=$(realpath ${etrecord_filename})
+        etrecord_flag="--etrecord=${etrecord_filename}"
+    fi
+
     [[ -f ${pte_file} ]] || { >&2 echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "pte_data_size: $(wc -c ${pte_file})"
     echo "pte_file: ${pte_file}"
@@ -322,9 +329,15 @@ for i in "${!test_model[@]}"; do
         backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file_or_mem}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
-            backends/arm/scripts/run_fvp.sh --elf=${elf_file} ${model_data} --target=$target
+
+            backends/arm/scripts/run_fvp.sh --elf=${elf_file} ${model_data} --target=$target ${etrecord_flag}
         fi
         set +x
+    fi
+
+    if [ "$model_explorer" = true ]; then
+        tosa_flatbuffer_path=$(find ${output_folder} -name "*TOSA*.tosa" | head -n 1)
+        python3 ${script_dir}/visualize.py ${tosa_flatbuffer_path}
     fi
 done
 

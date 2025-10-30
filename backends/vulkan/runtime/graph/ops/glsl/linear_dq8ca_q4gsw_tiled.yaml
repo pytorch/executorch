@@ -16,6 +16,7 @@ linear_dq8ca_q4gsw_tiled:
   generate_variant_forall:
     DTYPE:
       - VALUE: float
+      - VALUE: half
   shader_variants:
     - NAME: linear_dq8ca_q4gsw_tiled_texture3d_texture2d
     - NAME: linear_dq8ca_q4gsw_tiled_texture3d_buffer

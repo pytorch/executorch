@@ -10,8 +10,12 @@ import math
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+    TOSAQuantizer,
+)
 
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -19,6 +23,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.xnnpack.test.tester import Quantize
 
 aten_op = "torch.ops.aten.sub.Tensor"
 exir_op = "executorch_exir_dialects_edge__ops_aten_sub_Tensor"
@@ -73,6 +79,11 @@ class Sub2(torch.nn.Module):
         return x - y
 
 
+class SubAlpha(torch.nn.Module):
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return torch.sub(x, y, alpha=5)
+
+
 class SubTan(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
@@ -109,6 +120,18 @@ def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
+@common.parametrize("test_data", sub_tan_test_data)
+def test_sub_tensor_tosa_FP_alpha(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction with alpha (TOSA FP)"""
+    pipeline = TosaPipelineFP[input_t2](
+        SubAlpha(),
+        test_data(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", sub_test_data)
 def test_sub_tensor_tosa_INT(test_data):
     """Test Subtraction (TOSA INT)"""
@@ -126,8 +149,18 @@ def test_sub_tensor_tosa_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
 @common.parametrize("test_data", sub_tan_test_data)
 def test_sub_tensor_tosa_INT_3(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA INT)"""
+    # This test has only been added to the tosa INT profile in order to catch quantization-induced errors.
     pipeline = TosaPipelineINT[input_t2](
         SubTan(), test_data(), aten_op, exir_op, qtol=0
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_tan_test_data)
+def test_sub_tensor_tosa_INT_alpha(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction with alpha (TOSA INT)"""
+    pipeline = TosaPipelineINT[input_t2](
+        SubAlpha(), test_data(), aten_op, exir_op, qtol=0
     )
     pipeline.run()
 
@@ -141,7 +174,6 @@ def test_sub_tensor_u55_INT(test_data):
         test_data(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -155,7 +187,6 @@ def test_sub_tensor_u55_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
         test_data(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -169,7 +200,6 @@ def test_sub_tensor_u85_INT_2(test_data):
         test_data(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -183,7 +213,6 @@ def test_sub_tensor_u85_INT(test_data: Tuple[torch.Tensor, torch.Tensor]):
         test_data(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -240,5 +269,98 @@ def test_sub_tensor_vgf_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
         aten_op,
         exir_op,
         tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+def get_symmetric_a16w8_sub_quantizer(per_channel_quantization=False):
+    tosa_version = conftest.get_option("tosa_version")
+    tosa_profiles = {
+        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
+    }
+
+    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+    quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
+    )
+
+    return Quantize(
+        quantizer,
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization
+        ),
+    )
+
+
+@common.parametrize("test_data", sub_test_data)
+def test_sub_tensor_16a8w_tosa_INT(test_data: input_t1):
+    """Test sub operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = TosaPipelineINT[input_t1](
+        Sub(),
+        test_data(),
+        aten_op,
+        exir_op=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        tosa_extensions=["int16"],
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_sub_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_test_data)
+@common.XfailIfNoCorstone300
+def test_sub_tensor_16a8w_u55_INT16(test_data: input_t1):
+    """Test sub operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = EthosU55PipelineINT[input_t1](
+        Sub(),
+        test_data(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_sub_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_test_data)
+@common.XfailIfNoCorstone320
+def test_sub_tensor_16a8w_u85_INT16(test_data: input_t1):
+    """Test sub operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = EthosU85PipelineINT[input_t1](
+        Sub(),
+        test_data(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_sub_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
     )
     pipeline.run()

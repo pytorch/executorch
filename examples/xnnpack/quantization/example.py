@@ -60,9 +60,7 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
     m = model
 
     # 1. pytorch 2.0 export quantization flow (recommended/default flow)
-    m = torch.export.export_for_training(
-        m, copy.deepcopy(example_inputs), strict=True
-    ).module()
+    m = torch.export.export(m, copy.deepcopy(example_inputs), strict=True).module()
     quantizer = XNNPACKQuantizer()
     quantization_config = get_symmetric_quantization_config(is_per_channel=True)
     quantizer.set_global(quantization_config)
@@ -179,9 +177,7 @@ def main() -> None:
 
     model = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    model = torch.export.export_for_training(
-        model, example_inputs, strict=True
-    ).module()
+    model = torch.export.export(model, example_inputs, strict=True).module()
     start = time.perf_counter()
     quantized_model = quantize(model, example_inputs)
     end = time.perf_counter()

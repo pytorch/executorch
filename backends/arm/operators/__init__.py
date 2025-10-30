@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from . import (  # noqa
     node_visitor,
@@ -13,12 +12,11 @@ from . import (  # noqa
     op_amin,
     op_any,
     op_avg_pool2d,
-    op_bmm,
+    op_bitwise_not,
     op_cat,
     op_ceil,
     op_clamp,
     op_constant_pad_nd,
-    op_conv2d,
     op_cos,
     op_eq,
     op_erf,
@@ -41,7 +39,6 @@ from . import (  # noqa
     op_pow,
     op_reciprocal,
     op_repeat,
-    op_rescale,
     op_rshift_tensor,
     op_rsqrt,
     op_sigmoid,
@@ -49,13 +46,15 @@ from . import (  # noqa
     op_slice,
     op_sub,
     op_sum,
-    op_table,
     op_tanh,
-    op_to_copy,
     op_to_dim_order_copy,
-    op_transpose,
-    op_upsample_bilinear2d,
-    op_upsample_nearest2d,
+    op_tosa_conv2d,
+    op_tosa_depthwise_conv2d,
+    op_tosa_matmul,
+    op_tosa_rescale,
+    op_tosa_resize,
+    op_tosa_table,
+    op_tosa_transpose,
     op_view,
     op_where,
     ops_binary,

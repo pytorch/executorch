@@ -32,6 +32,13 @@ class MinMaxSupported(SupportedTOSAOperatorCheck):
             )
 
             if not (no_argmax or no_argmax_users):
+                self.reporter.report_reject(
+                    node,
+                    (
+                        "Using the indices output is not supported; only usage of the "
+                        "values output is supported."
+                    ),
+                )
                 return False
 
         return True

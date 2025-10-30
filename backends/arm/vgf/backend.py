@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 #
 # Main implementation of AoT flow to partition and preprocess for VGF target
@@ -22,6 +21,7 @@ from executorch.backends.arm.tosa.backend import (
     arm_get_first_delegation_tag,
     TOSABackend,
 )
+from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
@@ -40,21 +40,15 @@ class VgfBackend(BackendDetails):
     @staticmethod
     def _compile_tosa_flatbuffer(
         tosa_flatbuffer: bytes,
-        compile_spec: List[CompileSpec],
+        compile_spec: VgfCompileSpec,
         tag_name: str = "",
     ) -> bytes:
         """
         Static helper method to do the compilation of the TOSA flatbuffer
         representation to a target specific binary stream.
         """
-        compile_flags = []
-        artifact_path = None
-        for spec in compile_spec:
-            if spec.key == "compile_flags":
-                compile_flags.append(spec.value.decode())
-            if spec.key == "debug_artifact_path":
-                artifact_path = spec.value.decode()
-
+        compile_flags = compile_spec.compiler_flags
+        artifact_path = compile_spec.get_intermediate_path()
         # Pass on the TOSA flatbuffer to the vgf compiler.
         binary = vgf_compile(tosa_flatbuffer, compile_flags, artifact_path, tag_name)
         return binary
@@ -62,10 +56,11 @@ class VgfBackend(BackendDetails):
     @staticmethod
     def preprocess(
         edge_program: ExportedProgram,
-        compile_spec: List[CompileSpec],
+        compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
         logger.info(f"{VgfBackend.__name__} preprocess")
 
+        compile_spec = VgfCompileSpec.from_list(compile_specs)
         # deduce TOSA compile_spec from VGF compile spec. We get a new
         # compile spec list, containing only elements relevant for the
         # TOSABackend.
@@ -75,7 +70,7 @@ class VgfBackend(BackendDetails):
         # ('All backend implementation are final...'), so use composition instead.
         # preprocess returns the serialized TOSA flatbuffer in .processed_bytes,
         # which can be passed on to next compilation step.
-        tosa_preprocess = TOSABackend.preprocess(edge_program, tosa_compile_spec)
+        tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
 
         tag_name = arm_get_first_delegation_tag(edge_program.graph_module)
 
@@ -116,7 +111,7 @@ def vgf_compile(
                 Stdout:\n{process_error.stdout.decode()}"
             )
 
-        if artifact_path is not None:
+        if artifact_path:
             logger.info(f"Emitting debug output to: {vgf_path=}")
             os.makedirs(artifact_path, exist_ok=True)
             cp = f"cp {vgf_path} {artifact_path}"

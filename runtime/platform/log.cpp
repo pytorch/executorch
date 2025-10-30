@@ -59,6 +59,38 @@ static_assert(
     kLevelToPal[size_t(LogLevel::Fatal)] == et_pal_log_level_t::kFatal,
     "");
 
+#if ET_LOG_ENABLED
+static size_t get_valid_utf8_prefix_length(const char* bytes, size_t length) {
+  if (!bytes || length == 0) {
+    return 0;
+  }
+  const auto* data = reinterpret_cast<const unsigned char*>(bytes);
+  size_t i = length;
+  while (i > 0 && (data[i - 1] & 0xC0) == 0x80) {
+    --i;
+  }
+  if (i == 0) {
+    return 0;
+  }
+  const size_t lead_pos = i - 1;
+  const unsigned char lead = data[lead_pos];
+  size_t need = 0;
+
+  if (lead < 0x80) {
+    need = 1;
+  } else if ((lead & 0xE0) == 0xC0) {
+    need = 2;
+  } else if ((lead & 0xF0) == 0xE0) {
+    need = 3;
+  } else if ((lead & 0xF8) == 0xF0) {
+    need = 4;
+  } else {
+    return lead_pos;
+  }
+  return length - lead_pos == need ? length : lead_pos;
+}
+#endif // ET_LOG_ENABLED
+
 /**
  * Log a string message.
  *
@@ -84,20 +116,24 @@ void vlogf(
 
   // Maximum length of a log message.
   static constexpr size_t kMaxLogMessageLength = 256;
-  char buf[kMaxLogMessageLength];
-  size_t len = vsnprintf(buf, kMaxLogMessageLength, format, args);
-  if (len >= kMaxLogMessageLength - 1) {
-    buf[kMaxLogMessageLength - 2] = '$';
-    len = kMaxLogMessageLength - 1;
-  }
-  buf[kMaxLogMessageLength - 1] = 0;
+  char buffer[kMaxLogMessageLength];
 
-  et_pal_log_level_t pal_level = (level < LogLevel::NumLevels)
+  const auto write_count =
+      vsnprintf(buffer, kMaxLogMessageLength, format, args);
+  const size_t used_length = (write_count < 0)
+      ? 0
+      : (write_count >= static_cast<int>(kMaxLogMessageLength)
+             ? kMaxLogMessageLength - 1
+             : static_cast<size_t>(write_count));
+  const auto valid_length = get_valid_utf8_prefix_length(buffer, used_length);
+  buffer[valid_length] = '\0';
+
+  const auto pal_level = (level < LogLevel::NumLevels)
       ? kLevelToPal[size_t(level)]
       : et_pal_log_level_t::kUnknown;
 
   pal_emit_log_message(
-      timestamp, pal_level, filename, function, line, buf, len);
+      timestamp, pal_level, filename, function, line, buffer, valid_length);
 
 #endif // ET_LOG_ENABLED
 }

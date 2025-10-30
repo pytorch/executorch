@@ -365,7 +365,7 @@ Please help update following table if you are contributing new operators:
 + &#128683; = Deprecated, supported with other QNN Ops
 
 
-| Operators | HTP - 90/116 Enabled |
+| Operators | HTP - 92/116 Enabled |
 |-----------|---------|
 | Argmax | &check; |
 | Argmin | &check; |
@@ -375,7 +375,7 @@ Please help update following table if you are contributing new operators:
 | ChannelShuffle | &cross; |
 | Concat | &check; |
 | Conv2d | &check; |
-| Conv3d | &cross; |
+| Conv3d | &check; |
 | Convert | &check; |
 | CreateSparse | &cross; |
 | CumulativeSum | &check; |
@@ -481,7 +481,7 @@ Please help update following table if you are contributing new operators:
 | TopK | &check; |
 | TransPose | &check; |
 | TransPoseConv2d | &check; |
-| TransPoseConv3d | &cross; |
+| TransPoseConv3d | &check; |
 | Unpack | &check; |
 
 ## Issues

@@ -14,13 +14,14 @@ from typing import Tuple
 import pytest
 
 import torch
-from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
 )
+from executorch.backends.test.harness.stages import StageType
 
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -104,7 +105,7 @@ def test_INT_artifact(test_data: input_t1):
 
 @common.parametrize("test_data", Linear.inputs)
 def test_numerical_diff_print(test_data: input_t1):
-    pipeline = TosaPipelineFP[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         Linear(),
         test_data,
         [],
@@ -119,7 +120,9 @@ def test_numerical_diff_print(test_data: input_t1):
     # not present.
     try:
         # Tolerate 0 difference => we want to trigger a numerical diff
-        tester.run_method_and_compare_outputs(atol=0, rtol=0, qtol=0)
+        tester.run_method_and_compare_outputs(
+            stage=StageType.INITIAL_MODEL, atol=0, rtol=0, qtol=0
+        )
     except AssertionError:
         pass  # Implicit pass test
     else:
@@ -200,7 +203,7 @@ def test_dump_tosa_debug_json(test_data: input_t1):
             aten_op=[],
             exir_op=[],
             custom_path=tmpdir,
-            tosa_debug_mode=ArmCompileSpecBuilder.DebugMode.JSON,
+            tosa_debug_mode=ArmCompileSpec.DebugMode.JSON,
         )
 
         pipeline.pop_stage("run_method_and_compare_outputs")
@@ -231,7 +234,7 @@ def test_dump_tosa_debug_tosa(test_data: input_t1):
             aten_op=[],
             exir_op=[],
             custom_path=tmpdir,
-            tosa_debug_mode=ArmCompileSpecBuilder.DebugMode.TOSA,
+            tosa_debug_mode=ArmCompileSpec.DebugMode.TOSA,
         )
 
         pipeline.pop_stage("run_method_and_compare_outputs")
@@ -262,9 +265,10 @@ class Add(torch.nn.Module):
 
 
 @common.parametrize("test_data", Add.inputs)
+@common.XfailIfNoCorstone300
 def test_fail_dump_tosa_ops(caplog, test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
-        Add(), test_data, [], [], use_to_edge_transform_and_lower=True, run_on_fvp=False
+        Add(), test_data, [], [], use_to_edge_transform_and_lower=True
     )
     pipeline.dump_operator_distribution("to_edge_transform_and_lower")
     pipeline.run()

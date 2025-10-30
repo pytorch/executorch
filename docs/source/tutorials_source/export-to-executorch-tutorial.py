@@ -173,8 +173,8 @@ except Exception:
 # -----------------------
 #
 # To quantize a model, we first need to capture the graph with
-# ``torch.export.export_for_training``, perform quantization, and then
-# call ``torch.export``. ``torch.export.export_for_training`` returns a
+# ``torch.export.export``, perform quantization, and then
+# call ``torch.export``. ``torch.export.export`` returns a
 # graph which contains ATen operators which are Autograd safe, meaning they are
 # safe for eager-mode training, which is needed for quantization. We will call
 # the graph at this level, the ``Pre-Autograd ATen Dialect`` graph.
@@ -187,12 +187,10 @@ except Exception:
 # will annotate the nodes in the graph with information needed to quantize the
 # model properly for a specific backend.
 
-from torch.export import export_for_training
+from torch.export import export
 
 example_args = (torch.randn(1, 3, 256, 256),)
-pre_autograd_aten_dialect = export_for_training(
-    SimpleConv(), example_args, strict=True
-).module()
+pre_autograd_aten_dialect = export(SimpleConv(), example_args, strict=True).module()
 print("Pre-Autograd ATen Dialect Graph")
 print(pre_autograd_aten_dialect)
 
@@ -543,7 +541,7 @@ print(executorch_program.exported_program())
 # Here is an example for an entire end-to-end workflow:
 
 import torch
-from torch.export import export, export_for_training, ExportedProgram
+from torch.export import export, export, ExportedProgram
 
 
 class M(torch.nn.Module):
@@ -557,7 +555,7 @@ class M(torch.nn.Module):
 
 
 example_args = (torch.randn(3, 4),)
-pre_autograd_aten_dialect = export_for_training(M(), example_args, strict=True).module()
+pre_autograd_aten_dialect = export(M(), example_args, strict=True).module()
 # Optionally do quantization:
 # pre_autograd_aten_dialect = convert_pt2e(prepare_pt2e(pre_autograd_aten_dialect, CustomBackendQuantizer))
 aten_dialect = export(pre_autograd_aten_dialect, example_args, strict=True)

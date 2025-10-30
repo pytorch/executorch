@@ -36,7 +36,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data
+from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.export.exported_program import ExportedProgram
@@ -59,6 +59,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         texture_limits: utils.ImageExtents,
         buffer_limit: int,
         require_dynamic_shape: bool = False,
+        skip_bool_tensors: bool = False,
         operator_blocklist: Optional[Set[OpKey]] = None,
         operator_allowlist: Optional[Set[OpKey]] = None,
         fusable_subgraphs: Optional[List[PatternMatch]] = None,
@@ -69,6 +70,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         self.texture_limits: utils.ImageExtents = texture_limits
         self.buffer_limit = buffer_limit
         self.require_dynamic_shapes = require_dynamic_shape
+        self.skip_bool_tensors = skip_bool_tensors
         self.operator_blocklist: Set[OpKey] = (
             operator_blocklist if operator_blocklist is not None else set()
         )
@@ -116,6 +118,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
             if not has_impl(target):
                 return False, "no operator implementation"
             features = get_op_features(target)
+
+        # bool tensors are internally represented with int8 buffers, which may not be
+        # supported by some GPUs. Therefore, provide the option to skip these tensors.
+        if self.skip_bool_tensors and utils.op_contains_bool_tensor(node):
+            return False, f"op {utils.node_io_str(node)} contains bool tensor"
 
         # Get the possible tensor representations for each tensor participating in the
         # this operator. Then check that all tensors are representable as either a
@@ -254,9 +261,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, "permute node of non compatible linear node")
             return False
 
-        is_in_local_scalar_dense_chain, dst_node_is_compatible = (
-            self.is_in_local_scalar_dense_chain(node)
-        )
+        (
+            is_in_local_scalar_dense_chain,
+            dst_node_is_compatible,
+        ) = self.is_in_local_scalar_dense_chain(node)
         if is_in_local_scalar_dense_chain and dst_node_is_compatible:
             return True
         elif is_in_local_scalar_dense_chain:
@@ -397,6 +405,7 @@ class VulkanPartitioner(Partitioner):
                 texture_limits,
                 buffer_limit,
                 require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
+                skip_bool_tensors=self.options.get("skip_bool_tensors", False),
                 operator_blocklist=self.operator_blocklist,
                 operator_allowlist=self.operator_allowlist,
                 fusable_subgraphs=fusable_subgraphs,
@@ -419,6 +428,7 @@ class VulkanPartitioner(Partitioner):
             logger.info(f"Found {pl} Vulkan subgraphs to be partitioned.")
 
         tag_constant_data(exported_program)
+        tag_mutated_buffer(exported_program)
 
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags

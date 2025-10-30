@@ -12,7 +12,7 @@ import math
 import re
 
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Literal, Optional, Tuple
+from typing import ClassVar, Dict, List, Literal, Optional, Sequence, Tuple
 
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
@@ -21,10 +21,9 @@ from executorch.exir._serialize._flatbuffer import (
     _program_flatbuffer_to_json,
     _program_json_to_flatbuffer,
 )
-from executorch.exir._serialize._named_data_store import (
-    BufferEntry,
-    NamedDataStoreOutput,
-)
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+
+from executorch.exir._serialize.data_serializer import DataEntry
 
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
 
@@ -136,8 +135,7 @@ class _ExtendedHeader:
 
     # The magic bytes that should be at the beginning of the header.
     EXPECTED_MAGIC: ClassVar[bytes] = b"eh00"
-    # The length of the header in bytes.
-    EXPECTED_LENGTH: ClassVar[int] = (
+    MINIMUM_LENGTH: ClassVar[int] = (
         # Header magic
         4
         # Header length
@@ -147,6 +145,17 @@ class _ExtendedHeader:
         # Segment base offset
         + 8
     )
+    # The length of the header in bytes.
+    EXPECTED_LENGTH: ClassVar[int] = (
+        MINIMUM_LENGTH
+        # Segment data size
+        + 8
+    )
+
+    # To find the header, callers should provide at least this many bytes of
+    # the head of the serialized Program data. Keep this in sync with
+    # kNumHeadBytes in //executorch/schema/extended_header.cpp
+    NUM_HEAD_BYTES: ClassVar[int] = 64
 
     # Instance attributes. @dataclass will turn these into ctor args.
 
@@ -155,6 +164,9 @@ class _ExtendedHeader:
     # Offset to the start of the first segment, or zero if there
     # are no segments.
     segment_base_offset: int
+    # Size of the segment data, in bytes, or zero if there are no segments, or
+    # if the this field isn't populated in the PTE file.
+    segment_data_size: int
 
     # The magic bytes read from or to be written to the binary header.
     magic: bytes = EXPECTED_MAGIC
@@ -182,20 +194,29 @@ class _ExtendedHeader:
                 + f"< {_ExtendedHeader.EXPECTED_LENGTH}"
             )
 
+        magic = data[0:4]
+        length = int.from_bytes(data[4:8], byteorder=_HEADER_BYTEORDER)
+        program_size = int.from_bytes(data[8:16], byteorder=_HEADER_BYTEORDER)
+        segment_base_offset = int.from_bytes(data[16:24], byteorder=_HEADER_BYTEORDER)
+        segment_data_size = (
+            int.from_bytes(data[24:32], byteorder=_HEADER_BYTEORDER)
+            if length > _ExtendedHeader.MINIMUM_LENGTH
+            else 0
+        )
+
         return _ExtendedHeader(
-            magic=data[0:4],
-            length=int.from_bytes(data[4:8], byteorder=_HEADER_BYTEORDER),
-            program_size=int.from_bytes(data[8:16], byteorder=_HEADER_BYTEORDER),
-            segment_base_offset=int.from_bytes(
-                data[16:24], byteorder=_HEADER_BYTEORDER
-            ),
+            magic=magic,
+            length=length,
+            program_size=program_size,
+            segment_base_offset=segment_base_offset,
+            segment_data_size=segment_data_size,
         )
 
     def is_valid(self) -> bool:
         """Returns true if the extended header appears to be well-formed."""
         return (
             self.magic == _ExtendedHeader.EXPECTED_MAGIC
-            and self.length >= _ExtendedHeader.EXPECTED_LENGTH
+            and self.length >= _ExtendedHeader.MINIMUM_LENGTH
         )
 
     def to_bytes(self) -> bytes:
@@ -220,6 +241,9 @@ class _ExtendedHeader:
             # uint64_t: Offset to the start of the first segment, or zero if
             # there are no segments.
             + self.segment_base_offset.to_bytes(8, byteorder=_HEADER_BYTEORDER)
+            # uint64_t: size of the segment data, or zero if there are no
+            # segments.
+            + self.segment_data_size.to_bytes(8, byteorder=_HEADER_BYTEORDER)
         )
         return data
 
@@ -343,8 +367,8 @@ def _extract_constant_segment(
 def _extract_named_data(
     program: Program,
     segments: List[AlignedData],
-    buffers: List[BufferEntry],
-    name_to_buffer_idx: Dict[str, int],
+    buffers: Sequence[bytes],
+    name_to_data_entry: Dict[str, DataEntry],
 ) -> None:
     """Modifies the program in-place to add references to the named data
         segments.
@@ -354,7 +378,7 @@ def _extract_named_data(
         segments: A list of buffers to append extracted segments to. Modified in-place.
         buffers: A list of unique buffers and the information required to
             serialize them. Not modified.
-        name_to_buffer_idx: A map from the name of a blob to the index in buffers.
+        name_to_data_entry: A map from the blob name to DataEntry.
             Not modified.
     """
     if program.named_data is not None and len(program.named_data) > 0:
@@ -364,14 +388,14 @@ def _extract_named_data(
     segment_index_map: Dict[int, int] = {}
 
     named_data: List[NamedData] = []
-    for name, buffer_idx in name_to_buffer_idx.items():
-        segment_index = segment_index_map.get(buffer_idx, None)
+    for name, data_entry in name_to_data_entry.items():
+        segment_index = segment_index_map.get(data_entry.buffer_index, None)
         if segment_index is None:
             segment_index = len(segments)
-            segment_index_map[buffer_idx] = segment_index
+            segment_index_map[data_entry.buffer_index] = segment_index
             segments.append(
                 AlignedData(
-                    Cord(buffers[buffer_idx].buffer), buffers[buffer_idx].alignment
+                    Cord(buffers[data_entry.buffer_index]), data_entry.alignment
                 )
             )
         named_data.append(NamedData(key=name, segment_index=segment_index))
@@ -512,7 +536,9 @@ def serialize_pte_binary(
 
     # Construct and pad the extended header.
     header_data: bytes = _ExtendedHeader(
-        program_size=program_size, segment_base_offset=segment_base_offset
+        program_size=program_size,
+        segment_base_offset=segment_base_offset,
+        segment_data_size=len(segments_data),
     ).to_bytes()
     header_data = pad_to(header_data, padded_header_length)
 

@@ -129,9 +129,13 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 - (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor {
   ET_CHECK(otherTensor);
   auto tensor = make_tensor_ptr(
-    **reinterpret_cast<TensorPtr *>(otherTensor.nativeInstance)
+    *reinterpret_cast<TensorPtr *>(otherTensor.nativeInstance)
   );
-  return [self initWithNativeInstance:&tensor];
+  self = [self initWithNativeInstance:&tensor];
+  if (self) {
+    _data = otherTensor->_data;
+  }
+  return self;
 }
 
 - (instancetype)copy {
@@ -271,7 +275,7 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
       ET_CHECK_MSG(false, "Unsupported dtype in description");
     }
   } ctx;
-  ET_SWITCH_REALHBBF16_TYPES(
+  ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
     static_cast<ScalarType>(_tensor->scalar_type()),
     ctx,
     "description",

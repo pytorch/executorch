@@ -14,6 +14,7 @@ class Model(str, Enum):
     Add = "add"
     AddMul = "add_mul"
     Softmax = "softmax"
+    Conv1d = "conv1d"
     Dl3 = "dl3"
     Edsr = "edsr"
     EmformerTranscribe = "emformer_transcribe"
@@ -44,6 +45,7 @@ class Model(str, Enum):
 
 
 class Backend(str, Enum):
+    Xnnpack = "xnnpack"
     XnnpackQuantizationDelegation = "xnnpack-quantization-delegation"
     CoreMlExportOnly = "coreml"
     CoreMlExportAndTest = "coreml-test"  # AOT export + test with runner
@@ -58,6 +60,7 @@ MODEL_NAME_TO_MODEL = {
     str(Model.Add): ("toy_model", "AddModule"),
     str(Model.AddMul): ("toy_model", "AddMulModule"),
     str(Model.Softmax): ("toy_model", "SoftmaxModule"),
+    str(Model.Conv1d): ("toy_model", "Conv1dModule"),
     str(Model.Dl3): ("deeplab_v3", "DeepLabV3ResNet50Model"),
     str(Model.Edsr): ("edsr", "EdsrModel"),
     str(Model.EmformerTranscribe): ("emformer_rnnt", "EmformerRnntTranscriberModel"),

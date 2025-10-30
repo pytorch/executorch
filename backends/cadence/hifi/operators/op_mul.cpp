@@ -23,7 +23,6 @@ using executorch::runtime::can_cast;
 using executorch::runtime::CppTypeToScalarType;
 using torch::executor::Error;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -187,4 +186,3 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

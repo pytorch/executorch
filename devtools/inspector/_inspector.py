@@ -1036,10 +1036,8 @@ class Inspector:
             source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.
             target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.
             debug_buffer_path: Debug buffer file path that contains the debug data referenced by ETDump for intermediate and program outputs.
-            delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is:
-                    (delegate_metadata_list: List[bytes]) -> Union[List[str], Dict[str, Any]]
-            delegate_time_scale_converter: Optional function to convert the time scale of delegate profiling data. If not given, use the conversion ratio of
-                    target_time_scale/source_time_scale.
+            delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is (delegate_metadata_list: List[bytes]) -> Union[List[str], Dict[str, Any]].
+            delegate_time_scale_converter: Optional function to convert the time scale of delegate profiling data. If not given, use the conversion ratio of target_time_scale/source_time_scale.
             enable_module_hierarchy: Enable submodules in the operator graph. Defaults to False.
 
         Returns:
@@ -1169,6 +1167,7 @@ class Inspector:
 
     def _get_aot_intermediate_outputs_and_op_names(
         self,
+        disable_debug_handle_valdiation: bool = False,
     ) -> Tuple[Dict[DebugHandle, Any], Dict[DebugHandle, List[str]]]:
         """
         Capture intermediate outputs only if _representative_inputs are provided
@@ -1184,6 +1183,7 @@ class Inspector:
             self._etrecord.exported_program,
             self._etrecord.export_graph_id,
             self._etrecord.edge_dialect_program,
+            disable_debug_handle_valdiation,
         ):
             export_program = self._etrecord.exported_program
         else:
@@ -1304,10 +1304,9 @@ class Inspector:
         Displays the underlying EventBlocks in a structured tabular format, with each row representing an Event.
 
         Args:
-            file: Which IO stream to print to. Defaults to stdout.
-                Not used if this is in an IPython environment such as a Jupyter notebook.
-            include_units: Whether headers should include units (default true)
-            include_delegate_debug_data: Whether to include delegate debug metadata (default false)
+            file: Which IO stream to print to. Defaults to stdout. Not used if this is in an IPython environment such as a Jupyter notebook.
+            include_units: Whether headers should include units (default true).
+            include_delegate_debug_data: Whether to include delegate debug metadata (default false).
 
         Returns:
             None
@@ -1404,7 +1403,9 @@ class Inspector:
             else self._etrecord.graph_map.get(graph)
         )
 
-    def calculate_numeric_gap(self, distance: str = "MSE"):
+    def calculate_numeric_gap(
+        self, distance: str = "MSE", disable_debug_handle_valdiation: bool = False
+    ):
         """
         Compares logged intermediate outputs from the exported graph (in ETRecord)
         with runtime outputs (in ETDump) using a user-specific numerical comparator.
@@ -1415,13 +1416,20 @@ class Inspector:
         compare the intermediate outputs from the AOT and the runtime.
 
         Args:
-            distance: the metrics the inspector will use for gap calculation. Should be one of "MSE", "L1" and "SNR".
+            distance: The metrics the inspector will use for gap calculation. Should be one of "MSE", "L1" and "SNR".
+            disable_debug_handle_validation: Often when aten graph has symbolic shape nodes and inbuilt ops like gt/lt etc.,
+                during re-export of such a graph 'from_node' information is lost from node.meta. As a result we loose
+                connection between edge IR nodes and aten nodes for such ops. By default we validate that every edge IR
+                node has corresponding node in aten IR, and when such validation fails numeric debugger falls back to edge
+                IR as reference graph. This flag allows one to override such behavior and make best effort comparison.
 
         Returns:
             pd.DataFrame: A DataFrame listing corresponding operator intermediate outputs from both stages and their computed numerical gaps.
         """
         aot_intermediate_outputs, aot_debug_handle_to_op_names = (
-            self._get_aot_intermediate_outputs_and_op_names()
+            self._get_aot_intermediate_outputs_and_op_names(
+                disable_debug_handle_valdiation
+            )
         )
         if len(aot_intermediate_outputs) == 0 or len(aot_debug_handle_to_op_names) == 0:
             raise ValueError(
@@ -1450,6 +1458,15 @@ class Inspector:
             runtime_intermediate_output,
         ) in mapping.items():
             if aot_intermediate_output is None or runtime_intermediate_output is None:
+                continue
+            # If aot outputs length is > 1 then comparison fails since we dont really have
+            # any instances where runtime intermediate output is a tuple or list
+            # This does not happen when edge dialect program is reference for comparison
+            # but happens in aten graph where ops like unbind remain undecomposed
+            if (
+                isinstance(aot_intermediate_output, Sequence)
+                and len(aot_intermediate_output) > 1
+            ):
                 continue
             rows.append(
                 {

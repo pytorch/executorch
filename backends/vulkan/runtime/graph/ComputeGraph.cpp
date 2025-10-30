@@ -310,6 +310,8 @@ vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
     return val.toConstTensor().dtype();
   } else if (val.isTensorRef()) {
     return val.toConstTensorRef().dtype;
+  } else if (val.isStaging()) {
+    return val.toConstStaging().dtype();
   } else if (val.isBool()) {
     return vkapi::ScalarType::Bool;
   } else if (val.isDouble()) {
@@ -587,19 +589,43 @@ ValueRef ComputeGraph::get_or_add_value_for_int(const int64_t val) {
 
 ValueRef ComputeGraph::set_input_tensor(
     const ValueRef idx,
+    vkapi::ScalarType staging_dtype) {
+  // For texture storage, the buffer size needs to account for the zero
+  // padding applied by unused texel elements.
+  size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+  ValueRef staging_idx = add_staging(staging_dtype, buf_numel);
+  add_staging_to_tensor_node(*this, staging_idx, idx);
+  inputs_.push_back({idx, staging_idx});
+  return staging_idx;
+}
+
+ValueRef ComputeGraph::set_input_tensor(
+    const ValueRef idx,
     const bool use_staging) {
   if (use_staging) {
     vkapi::ScalarType dtype = get_tensor(idx)->dtype();
-    // For texture storage, the buffer size needs to account for the zero
-    // padding applied by unused texel elements.
-    size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
-    ValueRef staging_idx = add_staging(dtype, buf_numel);
-    add_staging_to_tensor_node(*this, staging_idx, idx);
-    inputs_.push_back({idx, staging_idx});
-    return staging_idx;
+    return set_input_tensor(idx, dtype);
+  } else {
+    inputs_.push_back({idx, kDummyValueRef});
+    return idx;
   }
-  inputs_.push_back({idx, kDummyValueRef});
-  return idx;
+}
+
+ValueRef ComputeGraph::set_output_tensor(
+    const ValueRef idx,
+    vkapi::ScalarType staging_dtype) {
+  // For texture storage, the buffer size needs to account for the zero
+  // padding applied by unused texel elements.
+  size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+  ValueRef staging_idx = add_staging(staging_dtype, buf_numel);
+  // We only run this when the tensor is non-empty.  When the underlying
+  // tensor is empty (e.g. padded_numel == 0), we do not allocate a VkImage to
+  // tensor, we will not be able to bind the node for execution.
+  if (buf_numel > 0) {
+    add_tensor_to_staging_node(*this, idx, staging_idx);
+  }
+  outputs_.push_back({idx, staging_idx});
+  return staging_idx;
 }
 
 ValueRef ComputeGraph::set_output_tensor(
@@ -607,21 +633,11 @@ ValueRef ComputeGraph::set_output_tensor(
     const bool use_staging) {
   if (use_staging) {
     vkapi::ScalarType dtype = get_tensor(idx)->dtype();
-    // For texture storage, the buffer size needs to account for the zero
-    // padding applied by unused texel elements.
-    size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
-    ValueRef staging_idx = add_staging(dtype, buf_numel);
-    // We only run this when the tensor is non-empty.  When the underlying
-    // tensor is empty (e.g. padded_numel == 0), we do not allocate a VkImage to
-    // tensor, we will not be able to bind the node for execution.
-    if (buf_numel > 0) {
-      add_tensor_to_staging_node(*this, idx, staging_idx);
-    }
-    outputs_.push_back({idx, staging_idx});
-    return staging_idx;
+    return set_output_tensor(idx, dtype);
+  } else {
+    outputs_.push_back({idx, kDummyValueRef});
+    return idx;
   }
-  outputs_.push_back({idx, kDummyValueRef});
-  return idx;
 }
 
 ValueRef ComputeGraph::set_output_value(const ValueRef idx) {
@@ -847,6 +863,36 @@ void ComputeGraph::copy_into_staging(
   staging->copy_from(data, nbytes);
 }
 
+void ComputeGraph::maybe_cast_and_copy_into_staging(
+    const ValueRef idx,
+    const void* data,
+    const size_t numel,
+    const vkapi::ScalarType src_data_dtype) {
+  StagingPtr staging = get_staging(idx);
+  vkapi::ScalarType staging_dtype = staging->dtype();
+  if (src_data_dtype == staging_dtype) {
+    size_t nbytes = numel * vkapi::element_size(staging_dtype);
+    staging->copy_from(data, nbytes);
+    return;
+  } else {
+    // Hard-coded type conversion cases
+    if (src_data_dtype == vkapi::kLong && staging_dtype == vkapi::kInt) {
+      const int64_t* casted_data = reinterpret_cast<const int64_t*>(data);
+      staging->cast_and_copy_from<int64_t, int32_t>(casted_data, numel);
+    } else if (
+        src_data_dtype == vkapi::kDouble && staging_dtype == vkapi::kFloat) {
+      const double* casted_data = reinterpret_cast<const double*>(data);
+      staging->cast_and_copy_from<double, float>(casted_data, numel);
+    } else {
+      VK_THROW(
+          "Unsupported type conversion from ",
+          src_data_dtype,
+          " to staging dtype ",
+          staging_dtype);
+    }
+  }
+}
+
 void ComputeGraph::copy_from_staging(
     const ValueRef idx,
     void* data,
@@ -854,6 +900,36 @@ void ComputeGraph::copy_from_staging(
   StagingPtr staging = get_staging(idx);
   size_t nbytes = numel * vkapi::element_size(staging->dtype());
   staging->copy_to(data, nbytes);
+}
+
+void ComputeGraph::maybe_cast_and_copy_from_staging(
+    const ValueRef idx,
+    void* data,
+    const size_t numel,
+    const vkapi::ScalarType dst_data_dtype) {
+  StagingPtr staging = get_staging(idx);
+  vkapi::ScalarType staging_dtype = staging->dtype();
+  if (dst_data_dtype == staging_dtype) {
+    size_t nbytes = numel * vkapi::element_size(staging_dtype);
+    staging->copy_to(data, nbytes);
+    return;
+  } else {
+    // Hard-coded type conversion cases
+    if (dst_data_dtype == vkapi::kLong && staging_dtype == vkapi::kInt) {
+      int64_t* casted_data = reinterpret_cast<int64_t*>(data);
+      staging->cast_and_copy_to<int32_t, int64_t>(casted_data, numel);
+    } else if (
+        dst_data_dtype == vkapi::kDouble && staging_dtype == vkapi::kFloat) {
+      double* casted_data = reinterpret_cast<double*>(data);
+      staging->cast_and_copy_to<float, double>(casted_data, numel);
+    } else {
+      VK_THROW(
+          "Unsupported type conversion from staging dtype ",
+          staging_dtype,
+          " to ",
+          dst_data_dtype);
+    }
+  }
 }
 
 void ComputeGraph::prepare() {

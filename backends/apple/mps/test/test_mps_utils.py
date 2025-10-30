@@ -206,7 +206,7 @@ class TestMPS(unittest.TestCase):
 
         expected_output = model(*sample_inputs)
 
-        model = torch.export.export_for_training(
+        model = torch.export.export(
             model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
         ).module()
 

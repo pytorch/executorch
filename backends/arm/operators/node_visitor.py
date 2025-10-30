@@ -3,14 +3,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import json
 from typing import Any, Dict, List, Optional
 
 import torch
+import tosa_serializer as ts
 
-from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.debug.schema import DebugHook
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import TosaSpecification
@@ -46,12 +46,12 @@ class NodeVisitor:
         self,
         node: torch.fx.Node,
         tosa_graph: Any,
-        tosa_op: Any,
+        tosa_op: ts.Op,
         inputs: List[str],
         outputs: List[str],
         attributes: Optional[Any] = None,
     ) -> None:
-        op_location = ""
+        op_location = ts.TosaOpLocation()
         if self.debug_hook:
             debug_info = self.debug_hook.add(
                 node,
@@ -59,8 +59,8 @@ class NodeVisitor:
                 tosa_op_id=tosa_op,
             )
 
-            if self.debug_hook.mode == ArmCompileSpecBuilder.DebugMode.TOSA:
-                op_location = json.dumps(debug_info.to_dict())
+            if self.debug_hook.mode == ArmCompileSpec.DebugMode.TOSA:
+                op_location.text = json.dumps(debug_info.to_dict())
 
         tosa_graph.addOperator(
             tosa_op,
