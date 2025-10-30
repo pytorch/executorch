@@ -58,6 +58,7 @@ from .decompose_masked_fill import DecomposeMaskedFill  # noqa
 from .decompose_maxpool2d_with_dilation import DecomposeMaxPool2DPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
+from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_sign_pass import DecomposeSignPass  # noqa
