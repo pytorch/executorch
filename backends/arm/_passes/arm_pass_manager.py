@@ -77,6 +77,7 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     FuseBatchnorm2DPass,
     FuseConstantArgsPass,
+    FuseDuplicateUsersPass,
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
@@ -176,6 +177,7 @@ class ArmPassManager(PassManager):
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(ConvertELUParamsPass())
         self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
+        self.add_pass(FuseDuplicateUsersPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
         if self.tosa_spec.is_U55_subset:
@@ -210,6 +212,7 @@ class ArmPassManager(PassManager):
         self.add_pass(RewriteMatmulPass())
         self.add_pass(RewriteUpsamplePass())
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
+
         self.add_pass(InsertRescaleInt32Pass())
         self.add_pass(DecomposeSumPass())
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
@@ -223,6 +226,7 @@ class ArmPassManager(PassManager):
         self, exported_program: ExportedProgram, graph_module: GraphModule
     ) -> GraphModule:
         self.add_pass(AnnotateOutputDimOrderPass())
+        self.add_pass(FuseDuplicateUsersPass())
         self.add_pass(DecomposeExpm1Pass())
         self.add_pass(DecomposeLogitPass())
         self.add_pass(DecomposeMaskedFill())
