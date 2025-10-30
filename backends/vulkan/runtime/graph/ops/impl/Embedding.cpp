@@ -42,11 +42,11 @@ void resize_embedding_node(
     const std::vector<ValueRef>& resize_args) {
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef weight = args.at(1).refs.at(0);
-  const ValueRef indices = args.at(1).refs.at(1);
+  const ValueRef indices = args.at(1).refs.at(0);
+  const ValueRef weight = args.at(1).refs.at(1);
 
-  const std::vector<int64_t> weight_sizes = graph->sizes_of(weight);
   const std::vector<int64_t> indices_sizes = graph->sizes_of(indices);
+  const std::vector<int64_t> weight_sizes = graph->sizes_of(weight);
 
   // Output shape is indices.shape + [embedding_dim]
   // where embedding_dim is the last dimension of weight
