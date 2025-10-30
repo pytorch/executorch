@@ -10,7 +10,7 @@ import tempfile
 from datetime import datetime
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional, ParamSpec, TypeVar
 
 import pytest
 from executorch.backends.arm.ethosu import EthosUCompileSpec
@@ -205,7 +205,7 @@ XfailIfNoCorstone320 = pytest.mark.xfail(
 )
 """Xfails a test if Corsone320 FVP is not installed, or if the executor runner is not built"""
 
-SkipIfNoModelConverter = pytest.mark.skipif(
+SkipIfNoModelConverter = pytest.mark.skipif(  # type: ignore[call-arg]
     condition=not (model_converter_installed()),
     raises=FileNotFoundError,
     reason="Did not find model-converter on path",
@@ -221,6 +221,10 @@ XfailfNoVKMLEmulationLayer = pytest.mark.xfail(
 
 xfail_type = str | tuple[str, type[Exception]]
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+Decorator = Callable[[Callable[_P, _R]], Callable[_P, _R]]
+
 
 def parametrize(
     arg_name: str,
@@ -228,7 +232,7 @@ def parametrize(
     xfails: dict[str, xfail_type] | None = None,
     strict: bool = True,
     flakies: dict[str, int] | None = None,
-):
+) -> Decorator:
     """
     Custom version of pytest.mark.parametrize with some syntatic sugar and added xfail functionality
         - test_data is expected as a dict of (id, test_data) pairs
@@ -241,7 +245,7 @@ def parametrize(
     if flakies is None:
         flakies = {}
 
-    def decorator_func(func):
+    def decorator_func(func: Callable[_P, _R]) -> Callable[_P, _R]:
         """Test data is transformed from a dict of (id, data) pairs to a list of pytest params to work with the native pytests parametrize function"""
         pytest_testsuite = []
         for id, test_parameters in test_data.items():
@@ -261,14 +265,16 @@ def parametrize(
                         "xfail info needs to be str, or tuple[str, type[Exception]]"
                     )
                 # Set up our fail marker
+                marker: tuple[pytest.MarkDecorator, ...]  # type: ignore[no-redef]
                 marker = (
                     pytest.mark.xfail(reason=reason, raises=raises, strict=strict),
                 )
             else:
-                marker = ()
+                marker = ()  # type: ignore[assignment]
 
             pytest_param = pytest.param(test_parameters, id=id, marks=marker)
             pytest_testsuite.append(pytest_param)
-        return pytest.mark.parametrize(arg_name, pytest_testsuite)(func)
+        decorator = pytest.mark.parametrize(arg_name, pytest_testsuite)
+        return decorator(func)
 
     return decorator_func
