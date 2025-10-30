@@ -66,7 +66,7 @@ def maybe_get_tosa_collate_path() -> str | None:
 
 def get_tosa_compile_spec(
     tosa_spec: str | TosaSpecification,
-    custom_path=None,
+    custom_path: Optional[str] = None,
     tosa_debug_mode: TosaCompileSpec.DebugMode | None = None,
 ) -> TosaCompileSpec:
     """Get the compile spec for default TOSA tests."""
@@ -93,6 +93,8 @@ def get_u55_compile_spec(
     tosa_debug_mode: EthosUCompileSpec.DebugMode | None = None,
 ) -> EthosUCompileSpec:
     """Default compile spec for Ethos-U55 tests."""
+    if not custom_path:
+        custom_path = maybe_get_tosa_collate_path()
     artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_u55_")
     if not os.path.exists(artifact_path):
         os.makedirs(artifact_path, exist_ok=True)
@@ -129,6 +131,8 @@ def get_u85_compile_spec(
 ) -> EthosUCompileSpec:
     """Default compile spec for Ethos-U85 tests."""
 
+    if not custom_path:
+        custom_path = maybe_get_tosa_collate_path()
     artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_u85_")
     if not os.path.exists(artifact_path):
         os.makedirs(artifact_path, exist_ok=True)
@@ -157,12 +161,15 @@ def get_u85_compile_spec(
 def get_vgf_compile_spec(
     tosa_spec: str | TosaSpecification,
     compiler_flags: Optional[str] = "",
-    custom_path=None,
+    custom_path: Optional[str] = None,
     tosa_debug_mode: VgfCompileSpec.DebugMode | None = None,
 ) -> VgfCompileSpec:
     """Get the ArmCompileSpec for the default VGF tests, to modify
     the compile spec before calling .build() to finalize it.
     """
+
+    if not custom_path:
+        custom_path = maybe_get_tosa_collate_path()
     if "FP" in repr(tosa_spec):
         artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_vgf_fp_")
     elif "INT" in repr(tosa_spec):
