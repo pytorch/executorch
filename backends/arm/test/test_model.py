@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import time
+from typing import Sequence
 
 
 def get_args():
@@ -96,7 +97,7 @@ def get_args():
     return args
 
 
-def run_external_cmd(cmd: []):
+def run_external_cmd(cmd: Sequence[str]) -> None:
     print("CALL:", *cmd, sep=" ")
     try:
         subprocess.check_call(cmd)

@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 from types import NoneType
-from typing import Any, cast, Dict, List, Literal, Optional, Tuple
+from typing import Any, cast, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -37,7 +37,7 @@ from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch.fx.node import Node
 
 from torch.overrides import TorchFunctionMode
-from tosa.TosaGraph import TosaGraph
+from tosa.TosaGraph import TosaGraph  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
@@ -149,25 +149,28 @@ def get_output_quantization_params(
     Raises:
         RuntimeError if no output quantization parameters are found.
     """
-    quant_params = {}
-    for node in output_node.args[0]:
-        if node.target == torch.ops.quantized_decomposed.dequantize_per_tensor.default:
-            quant_params[node] = QuantizationParams(
-                node_name=node.args[0].name,
-                scale=node.args[1],
-                zp=node.args[2],
-                qmin=node.args[3],
-                qmax=node.args[4],
-                dtype=node.args[5],
+    quant_params: dict[Node, QuantizationParams | None] = {}
+    for node in output_node.args[0]:  # type: ignore[union-attr]
+        if (
+            node.target  # type: ignore[union-attr]
+            == torch.ops.quantized_decomposed.dequantize_per_tensor.default
+        ):
+            quant_params[node] = QuantizationParams(  # type: ignore[index]
+                node_name=node.args[0].name,  # type: ignore[arg-type, union-attr]
+                scale=node.args[1],  # type: ignore[arg-type, union-attr]
+                zp=node.args[2],  # type: ignore[arg-type, union-attr]
+                qmin=node.args[3],  # type: ignore[arg-type, union-attr]
+                qmax=node.args[4],  # type: ignore[arg-type, union-attr]
+                dtype=node.args[5],  # type: ignore[arg-type, union-attr]
             )
         else:
-            quant_params[node] = None
+            quant_params[node] = None  # type: ignore[index]
     return quant_params
 
 
 def torch_tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
     dtype = _torch_to_numpy_dtype_dict[tensor.dtype]
-    array = tensor.detach().numpy().astype(dtype)
+    array = tensor.detach().numpy().astype(dtype)  # type: ignore[var-annotated]
     dim_order = tensor.dim_order()
     if dim_order == NHWC_ORDER:
         a = array.transpose(NHWC_ORDER)
@@ -252,29 +255,28 @@ def run_target(
     executorch_program_manager: ExecutorchProgramManager,
     inputs: Tuple[torch.Tensor],
     intermediate_path: str | Path,
-    target_board: Literal["corestone-300", "corestone-320", "vkml_emulation_layer"],
+    target_board: str,
     elf_path: str | Path,
     timeout: int = 120,  # s
 ):
     if target_board not in VALID_TARGET:
         raise ValueError(f"Unsupported target: {target_board}")
 
-    if target_board in ("corstone-300", "corstone-320"):
-        return run_corstone(
-            executorch_program_manager,
-            inputs,
-            intermediate_path,
-            target_board,
-            elf_path,
-            timeout,
-        )
-    elif target_board == "vkml_emulation_layer":
+    if target_board == "vkml_emulation_layer":
         return run_vkml_emulation_layer(
             executorch_program_manager,
             inputs,
             intermediate_path,
             elf_path,
         )
+    return run_corstone(
+        executorch_program_manager,
+        inputs,
+        intermediate_path,
+        target_board,
+        elf_path,
+        timeout,
+    )
 
 
 def save_inputs_to_file(
@@ -282,10 +284,10 @@ def save_inputs_to_file(
     inputs: Tuple[torch.Tensor],
     intermediate_path: str | Path,
 ):
-    input_file_paths = []
+    input_file_paths: list[str] = []
     input_names = get_input_names(exported_program)
     for input_name, input_ in zip(input_names, inputs):
-        input_path = save_bytes(intermediate_path, input_, input_name)
+        input_path = save_bytes(intermediate_path, input_, input_name)  # type: ignore[arg-type]
         input_file_paths.append(input_path)
 
     return input_file_paths
@@ -298,9 +300,9 @@ def get_output_from_file(
 ):
     output_np = []
     output_node = exported_program.graph_module.graph.output_node()
-    for i, node in enumerate(output_node.args[0]):
+    for i, node in enumerate(output_node.args[0]):  # type: ignore[union-attr]
         output_dtype = node.meta["val"].dtype
-        tosa_ref_output = np.fromfile(
+        tosa_ref_output = np.fromfile(  # type: ignore[var-annotated]
             os.path.join(intermediate_path, f"{output_base_name}-{i}.bin"),
             _torch_to_numpy_dtype_dict[output_dtype],
         )
@@ -362,7 +364,7 @@ def run_corstone(
     executorch_program_manager: ExecutorchProgramManager,
     inputs: Tuple[torch.Tensor],
     intermediate_path: str | Path,
-    target_board: Literal["corestone-300", "corestone-320"],
+    target_board: str,
     elf_path: str | Path,
     timeout: int = 120,  # s
 ) -> list[torch.Tensor]:
@@ -759,7 +761,7 @@ def run_tosa_graph(
     inputs_np = [torch_tensor_to_numpy(input_tensor) for input_tensor in inputs]
 
     if isinstance(tosa_version, Tosa_1_00):
-        import tosa_reference_model as reference_model
+        import tosa_reference_model as reference_model  # type: ignore[import-untyped]
 
         debug_mode = "ALL" if logger.level <= logging.DEBUG else None
         outputs_np, status = reference_model.run(
@@ -781,7 +783,7 @@ def run_tosa_graph(
     # Convert output numpy arrays to tensors with same dim_order as the output nodes
     result = [
         numpy_to_torch_tensor(output_array, node)
-        for output_array, node in zip(outputs_np, output_node.args[0])
+        for output_array, node in zip(outputs_np, output_node.args[0])  # type: ignore[arg-type]
     ]
 
     return result
