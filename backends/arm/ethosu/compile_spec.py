@@ -15,6 +15,16 @@ from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import
 
 
 class EthosUCompileSpec(ArmCompileSpec):
+    """
+    Compile spec for Ethos-U NPU.
+
+    Args:
+        target: Ethos-U accelerator configuration, e.g. ethos-u55-128.
+        system_config: System configuration to select from the Vela configuration file.
+        memory_mode: Memory mode to select from the Vela configuration file.
+        extra_flags: Extra flags for the Vela compiler.
+        config_ini: Vela configuration file(s) in Python ConfigParser .ini file format.
+    """
 
     _TARGET_KEY = "target"
 
@@ -26,16 +36,6 @@ class EthosUCompileSpec(ArmCompileSpec):
         extra_flags: list[str] | None = None,
         config_ini: str | None = "Arm/vela.ini",
     ):
-        """Generate compile spec for Ethos-U NPU
-        Args:
-        target: Ethos-U accelerator configuration, e.g. ethos-u55-128
-        system_config: System configuration to select from the Vela
-            configuration file
-        memory_mode: Memory mode to select from the Vela configuration file
-        extra_flags: Extra flags for the Vela compiler
-        config_ini: Vela configuration file(s) in Python ConfigParser .ini
-            file format
-        """
         self.target = target
 
         # Set vela compiler flags
@@ -87,6 +87,7 @@ class EthosUCompileSpec(ArmCompileSpec):
         compile_spec.target = specs.get(cls._TARGET_KEY, None)
 
     def validate(self):
+        """Throws an error if the compile spec is not valid."""
         if len(self.compiler_flags) == 0:
             raise ValueError(
                 "compile_flags are required in the CompileSpec list for EthosUBackend"

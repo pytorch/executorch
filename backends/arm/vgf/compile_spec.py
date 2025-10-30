@@ -15,19 +15,19 @@ logger = logging.getLogger(__name__)
 
 
 class VgfCompileSpec(ArmCompileSpec):
+    """
+    Compile spec for VGF compatible targets.
+
+    Args:
+        tosa_spec: TOSA specification that should be targeted.
+        compiler_flags: Extra compiler flags for converter_backend.
+    """
 
     def __init__(
         self,
         tosa_spec: TosaSpecification | str | None = None,
         compiler_flags: list[str] | None = None,
     ):
-        """
-        Generate compile spec for VGF compatible targets
-
-        Args:
-            compiler_flags: Extra compiler flags for converter_backend
-        """
-
         if tosa_spec is None:
             tosa_spec = "TOSA-1.0+FP"
         if isinstance(tosa_spec, str):

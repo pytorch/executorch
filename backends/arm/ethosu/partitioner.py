@@ -17,7 +17,7 @@ class EthosUPartitioner(TOSAPartitioner):
     """
     Partitions subgraphs supported by the Arm Ethos-U backend.
 
-    Attributes:
+    Args:
         compile_spec: List of CompileSpec objects for Ethos-U backend.
         additional_checks: Optional sequence of additional operator support checks.
     """

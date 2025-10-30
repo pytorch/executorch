@@ -193,7 +193,7 @@ class TOSAPartitioner(Partitioner):
         """Tag nodes in a module, possibly a submodule, from the containing program.
 
         Args:
-            module: a GraphModule from `containing_program` to tag nodes in.
+            module: A GraphModule from `containing_program` to tag nodes in.
             containing_program: The ExportedProgram that contains the module.
             reporter: A reporter to report why nodes were rejected.
         Returns:
