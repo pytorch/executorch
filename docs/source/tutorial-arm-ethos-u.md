@@ -31,7 +31,7 @@ This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch mo
 
 To successfully complete this tutorial, you will need a Linux machine with aarch64 or x86_64 processor architecture, or a macOS&trade; machine with Apple&reg; Silicon.
 
-To enable development without a specific development board, we will be using a [Fixed Virtual Platform (FVP)](https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms), simulating [Arm&reg; Corstone&trade;-300](https://developer.arm.com/Processors/Corstone-300)(cs300) and [Arm&reg; Corstone&trade;-300](https://developer.arm.com/Processors/Corstone-320)(cs320)systems. Think of it as virtual hardware.
+To enable development without a specific development board, we will be using a [Fixed Virtual Platform (FVP)](https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms), simulating [Arm&reg; Corstone&trade;-300](https://developer.arm.com/Processors/Corstone-300)(cs300) and [Arm&reg; Corstone&trade;-320](https://developer.arm.com/Processors/Corstone-320)(cs320)systems. Think of it as virtual hardware.
 
 ### Software
 
