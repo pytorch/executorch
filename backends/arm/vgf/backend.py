@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 #
 # Main implementation of AoT flow to partition and preprocess for VGF target
@@ -112,7 +111,7 @@ def vgf_compile(
                 Stdout:\n{process_error.stdout.decode()}"
             )
 
-        if artifact_path is not None:
+        if artifact_path:
             logger.info(f"Emitting debug output to: {vgf_path=}")
             os.makedirs(artifact_path, exist_ok=True)
             cp = f"cp {vgf_path} {artifact_path}"

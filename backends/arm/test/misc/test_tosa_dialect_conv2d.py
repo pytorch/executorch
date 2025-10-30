@@ -31,7 +31,7 @@ def test_conv2d_tosa_INT():
                 4,
             ),
             (1, 8, 20, 20),
-            torch.int8,
+            torch.int32,
         ),
         (
             (
@@ -46,7 +46,7 @@ def test_conv2d_tosa_INT():
                 4,
             ),
             (1, 4, 10, 10),
-            torch.int8,
+            torch.int32,
         ),
     ]
 

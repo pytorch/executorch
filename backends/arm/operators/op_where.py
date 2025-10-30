@@ -5,6 +5,8 @@
 
 from typing import Any, List, Sequence
 
+import tosa_serializer as ts
+
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -39,7 +41,6 @@ class WhereVisitor_INT(NodeVisitor):
         output: TosaArg,
         supported_dtypes: Sequence,
     ) -> None:
-        import serializer.tosa_serializer as ts
 
         validate_num_inputs(self.target, inputs, 3)
         # Not first input, which is condition tensor.
@@ -52,13 +53,15 @@ class WhereVisitor_INT(NodeVisitor):
             output.tosa_spec,
         )
 
+        attr = ts.TosaSerializerAttribute()
+        attr.SelectAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().SELECT,
+            ts.Op.SELECT,
             [inputs[0].name, inputs[1].name, inputs[2].name],
             [output.name],
-            None,
+            attr,
         )
 
     def define_node(
@@ -68,8 +71,6 @@ class WhereVisitor_INT(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         bi_supported_dtypes = [
             ts.DType.INT8,
             ts.DType.INT16,
@@ -98,8 +99,6 @@ class WhereVisitor_FP(WhereVisitor_INT):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         mi_supported_dtypes = [
             ts.DType.FP16,
             ts.DType.FP32,

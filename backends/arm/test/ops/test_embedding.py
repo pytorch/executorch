@@ -27,10 +27,17 @@ class Embedding(torch.nn.Module):
         return torch.embedding(weights, indices)
 
 
-input_params = Tuple[torch.Tensor, torch.Tensor, torch.dtype]
+class ExpandEmbedding(Embedding):
+    example_inputs = (torch.randn(10, 3), torch.tensor([[1, 2, 3]], dtype=torch.int32))
+
+    def forward(self, weights: torch.Tensor, indices: torch.Tensor):
+        return torch.embedding(weights, indices.expand(2, 3))
 
 
-test_input: dict[input_params] = {
+input_params = Tuple[torch.Tensor, torch.Tensor]
+
+
+test_input: dict[str, input_params] = {
     "test_1": (
         torch.randn(10, 3),
         torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.int32),
@@ -81,6 +88,21 @@ def test_embedding_tosa_INT(test_input: input_params):
         test_input,
         op.aten_op,
         op.exir_op,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.pop_stage("check.aten")
+    pipeline.pop_stage("check_count.exir")
+
+    pipeline.run()
+
+
+def test_expand_embedding_tosa_INT():
+    op = ExpandEmbedding()
+    pipeline = TosaPipelineINT(
+        op,
+        ExpandEmbedding.example_inputs,
+        ExpandEmbedding.aten_op,
+        ExpandEmbedding.exir_op,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.pop_stage("check.aten")

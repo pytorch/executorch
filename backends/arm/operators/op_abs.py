@@ -3,8 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 from typing import Any, List
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -36,9 +37,6 @@ class AbsVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
 
@@ -49,11 +47,13 @@ class AbsVisitor(NodeVisitor):
             output.tosa_spec,
         )
 
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().ABS,
-            [
-                inputs[0].name,
-            ],
+        attr = ts.TosaSerializerAttribute()
+        attr.AbsAttribute()
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.Op.ABS,
+            [inputs[0].name],
             [output.name],
-            None,
+            attr,
         )

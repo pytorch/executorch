@@ -3,8 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 from typing import Any, List
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -38,14 +39,13 @@ class TanhVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
             self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
         )
-
+        attr = ts.TosaSerializerAttribute()
+        attr.TanhAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.TosaOp.Op().TANH, [inputs[0].name], [output.name]
+            node, tosa_graph, ts.Op.TANH, [inputs[0].name], [output.name], attr
         )
