@@ -106,10 +106,19 @@ if(EXECUTORCH_BUILD_PYBIND)
   )
   if(APPLE)
     set(RPATH "@loader_path/../../pybindings")
+    set(TORCH_RPATH "@loader_path/../../../../torch/lib")
   else()
     set(RPATH "$ORIGIN/../../pybindings")
+    set(TORCH_RPATH "$ORIGIN/../../../../torch/lib")
   endif()
-  set_target_properties(_llm_runner PROPERTIES INSTALL_RPATH ${RPATH})
+  # Set RPATH to find PyTorch libraries relative to the installation location
+  # This goes from executorch/extension/pybindings up to site-packages, then to
+  # torch/lib. This is copied from root level CMakeLists.txt
+  set_target_properties(
+    _llm_runner PROPERTIES BUILD_RPATH "${TORCH_RPATH}"
+                            INSTALL_RPATH "${RPATH};${TORCH_RPATH}"
+  )
+
   # Add include directories
   target_include_directories(
     _llm_runner PRIVATE ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
