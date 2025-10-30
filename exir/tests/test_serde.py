@@ -263,6 +263,33 @@ class TestSerde(unittest.TestCase):
                 == edge_deserialized.to_executorch().buffer
             )
 
+    def test_dim_order_from_stride(self) -> None:
+        from executorch.exir import EdgeCompileConfig
+
+        class Test(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, t1, t2):
+                idx = torch.nonzero(t1).reshape(-1)
+                y = torch.index_select(t2, 0, idx)
+                return y
+
+        M = Test()
+        x = torch.tensor([0, 1, 1, 0, 1], dtype=torch.bool)
+        y = torch.randn(5, 6)
+        M(x, y)
+
+        expo_prog = torch.export.export_for_training(M, (x, y))
+        edge_prog = to_edge_transform_and_lower(
+            expo_prog,
+            partitioner=[XnnpackFloatingPointPartitioner()],
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
+        )
+        edge_prog.to_executorch()
+
     def test_meta_stack_trace_module_hierarchy(self) -> None:
         class Model(nn.Module):
             def __init__(self):
