@@ -574,6 +574,16 @@ def get_quant_properties(  # noqa: C901
             0,
             SharedQuantizationSpec((input_node, node)),
         )
+    elif node.target in [torch.ops.aten.copy_.default]:
+        input_node = ensure_type(Node, node.args[1])
+        quant_properties.quant_inputs = [
+            _QuantProperty(0, input_act_qspec),
+            _QuantProperty(1, input_act_qspec),
+        ]
+        quant_properties.quant_output = _QuantProperty(
+            0,
+            SharedQuantizationSpec((input_node, node)),
+        )
     elif node.target in [
         torch.ops.aten.eq.Tensor,
         torch.ops.aten.ge.Tensor,
