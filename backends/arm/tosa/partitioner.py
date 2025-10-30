@@ -338,6 +338,7 @@ class TOSAPartitioner(Partitioner):
         ops_to_not_decompose_if_quant_op = [
             torch.ops.aten.hardsigmoid.default,
             torch.ops.aten.hardswish.default,
+            torch.ops.aten.linear.default,
         ]
 
         def filter_fn(node: torch.fx.Node) -> bool:
@@ -355,31 +356,45 @@ class TOSAPartitioner(Partitioner):
                 bool: True to keep the op intact; otherwise, False.
 
             """
-            dq = torch.ops.quantized_decomposed.dequantize_per_tensor.default
-            q = torch.ops.quantized_decomposed.quantize_per_tensor.default
+            dq = (
+                torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+                torch.ops.quantized_decomposed.dequantize_per_channel.default,
+            )
+            q = (
+                torch.ops.quantized_decomposed.quantize_per_tensor.default,
+                torch.ops.quantized_decomposed.quantize_per_channel.default,
+            )
 
             if node.target in ops_to_not_decompose_if_quant_op:
                 # Assume we should not decompose the operator (it is quantized)
-                should_not_decompose = True
+                correct_output_quant = True
+                correct_input_quant = True
 
                 input_nodes = node.all_input_nodes
-                ouput_nodes = node.users
+                output_nodes = node.users
 
                 for inp in input_nodes:
-                    if inp.target != dq:
-                        should_not_decompose = False
+                    if inp.target not in dq:
+                        correct_input_quant = False
 
-                for out in ouput_nodes:
-                    if out.target != q:
-                        should_not_decompose = False
+                for out in output_nodes:
+                    if out.target not in q:
+                        correct_output_quant = False
+                # In some cases, a linear is quantized together with its activation.
+                if (
+                    node.target == torch.ops.aten.linear.default
+                    and len(output_nodes) == 1
+                    and list(output_nodes)[0].target
+                    in (torch.ops.aten.relu.default, torch.ops.aten.hardtanh.default)
+                ):
+                    correct_output_quant = True
 
-                return should_not_decompose
+                return correct_input_quant and correct_output_quant
 
             # By default, do not decompose the operator
             return True
 
         ops_to_not_decompose = [
-            torch.ops.aten.linear.default,
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.logit.default,
