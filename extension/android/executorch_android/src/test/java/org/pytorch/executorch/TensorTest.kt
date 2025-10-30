@@ -194,8 +194,8 @@ class TensorTest {
             0x3C00.toShort(), // 1.0
             0xC000.toShort(), // -2.0
             0x0000.toShort(), // 0.0
-            0x7C00.toShort() // +inf
-            )
+            0x7C00.toShort(), // +inf
+        )
     val shape = longArrayOf(2, 2)
     var tensor = Tensor.fromBlob(data, shape)
     assertEquals(DType.HALF, tensor.dtype())
