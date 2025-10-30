@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
+from typing import Callable, Tuple
 
 import torch
 from executorch.backends.arm.test import common
@@ -61,7 +61,6 @@ def test_sum_dim_intlist_tosa_INT(test_data: input_t1):
         aten_op,
         exir_op=[],
     )
-    pipeline.dump_artifact("export")
     pipeline.run()
 
 
@@ -132,4 +131,31 @@ def test_view_u55_INT_failure_set(test_data: Tuple):
         run_on_fvp=False,  # Run fails since we are missing a non partitioned sum op
     )
     pipeline.pop_stage("check_count.exir")
+    pipeline.run()
+
+
+input_t2 = tuple[torch.Tensor]
+
+
+class SumDefault(torch.nn.Module):
+    test_parameters = {
+        "rank1": lambda: (torch.rand(10),),
+        "rank2": lambda: (torch.rand(10, 1, 10),),
+        "rank4": lambda: (torch.rand(1, 1, 5, 8),),
+    }
+    aten_op = "torch.ops.aten.sum.default"
+
+    def forward(self, x: torch.Tensor):
+        return x.sum()
+
+
+@common.parametrize("test_data", SumDefault.test_parameters)
+def test_sum_tosa_FP(test_data: Callable[[], input_t2]):
+    pipeline = TosaPipelineFP[input_t2](SumDefault(), test_data(), SumDefault.aten_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", SumDefault.test_parameters)
+def test_sum_tosa_INT(test_data: Callable[[], input_t2]):
+    pipeline = TosaPipelineINT[input_t1](SumDefault(), test_data(), SumDefault.aten_op)
     pipeline.run()
