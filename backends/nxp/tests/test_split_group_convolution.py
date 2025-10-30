@@ -88,9 +88,9 @@ class TestSplitGroupConvolution(unittest.TestCase):
         graph_module = torch.export.export(module, example_input, strict=True).module()
         original_module = deepcopy(graph_module)
 
-        modified_module = NeutronAtenPassManager([SplitGroupConvolution()])(
-            graph_module
-        ).graph_module
+        modified_module = NeutronAtenPassManager(
+            neutron_target_spec, [SplitGroupConvolution()]
+        )(graph_module).graph_module
 
         # Make sure the fusion worked.
         original_nodes = list(original_module.graph.nodes)
@@ -145,9 +145,9 @@ class TestSplitGroupConvolution(unittest.TestCase):
         graph_module = torch.export.export(module, example_input).module()
         original_module = deepcopy(graph_module)
 
-        modified_module = NeutronAtenPassManager([SplitGroupConvolution()])(
-            graph_module
-        ).graph_module
+        modified_module = NeutronAtenPassManager(
+            neutron_target_spec, [SplitGroupConvolution()]
+        )(graph_module).graph_module
 
         # Make sure the fusion worked.
         original_nodes = list(original_module.graph.nodes)
@@ -199,9 +199,9 @@ class TestSplitGroupConvolution(unittest.TestCase):
         graph_module = torch.export.export(module, example_input).module()
         original_module = deepcopy(graph_module)
 
-        modified_module = NeutronAtenPassManager([SplitGroupConvolution()])(
-            graph_module
-        ).graph_module
+        modified_module = NeutronAtenPassManager(
+            neutron_target_spec, [SplitGroupConvolution()]
+        )(graph_module).graph_module
 
         # Verify that the pass has NOT made any changes, as it is disabled for 3D convolution.
         original_nodes = list(original_module.graph.nodes)
@@ -233,7 +233,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
         graph_module = torch.export.export(module, example_input).module()
         original_module = deepcopy(graph_module)
 
-        modified_module = NeutronAtenPassManager()(
+        modified_module = NeutronAtenPassManager(neutron_target_spec)(
             graph_module
         ).graph_module  # Default passes.
 
