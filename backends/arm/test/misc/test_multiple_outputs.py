@@ -30,14 +30,20 @@ class MultipleOutputsModule(torch.nn.Module):
 
 @common.parametrize("test_data", MultipleOutputsModule.inputs)
 def test_tosa_FP_pipeline(test_data: input_t1):
-    pipeline = TosaPipelineFP[input_t1](MultipleOutputsModule(), test_data, [], [])
+    aten_ops: list[str] = []
+    exir_ops: list[str] = []
+    pipeline = TosaPipelineFP[input_t1](
+        MultipleOutputsModule(), test_data, aten_ops, exir_ops
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", MultipleOutputsModule.inputs)
 def test_tosa_INT_pipeline(test_data: input_t1):
+    aten_ops: list[str] = []
+    exir_ops: list[str] = []
     pipeline = TosaPipelineINT[input_t1](
-        MultipleOutputsModule(), test_data, [], [], qtol=1
+        MultipleOutputsModule(), test_data, aten_ops, exir_ops, qtol=1
     )
     pipeline.run()
 
@@ -45,8 +51,10 @@ def test_tosa_INT_pipeline(test_data: input_t1):
 @common.parametrize("test_data", MultipleOutputsModule.inputs)
 @common.XfailIfNoCorstone300
 def test_U55_pipeline(test_data: input_t1):
+    aten_ops: list[str] = []
+    exir_ops: list[str] = []
     pipeline = EthosU55PipelineINT[input_t1](
-        MultipleOutputsModule(), test_data, [], [], qtol=1
+        MultipleOutputsModule(), test_data, aten_ops, exir_ops, qtol=1
     )
     pipeline.run()
 
@@ -54,7 +62,9 @@ def test_U55_pipeline(test_data: input_t1):
 @common.parametrize("test_data", MultipleOutputsModule.inputs)
 @common.XfailIfNoCorstone320
 def test_U85_pipeline(test_data: input_t1):
+    aten_ops: list[str] = []
+    exir_ops: list[str] = []
     pipeline = EthosU85PipelineINT[input_t1](
-        MultipleOutputsModule(), test_data, [], [], qtol=1
+        MultipleOutputsModule(), test_data, aten_ops, exir_ops, qtol=1
     )
     pipeline.run()

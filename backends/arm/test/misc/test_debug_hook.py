@@ -5,10 +5,13 @@
 
 from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import cast
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.debug.schema import DebugHook, DebugSchema
 from executorch.backends.arm.test import common
+
+from torch.fx import Node
 
 
 @dataclass
@@ -95,9 +98,9 @@ def create_mock_node_3():
     return fx_node_mock
 
 
-def _compare_tosa_and_schema(debug_event: DebugSchema, tosa_op):
+def _compare_tosa_and_schema(debug_event: DebugSchema, tosa_op: str) -> None:
     tosa_info = debug_event.tosa_info
-
+    assert tosa_info is not None
     assert tosa_info.node_name == tosa_op
 
     # The mapping between op_ids to operator names could change
@@ -159,7 +162,7 @@ TESTCASES = {
 @common.parametrize("test_data", TESTCASES)
 def test_debug_hook_add_json(test_data: DebugHookTestCase):
     hook = DebugHook(ArmCompileSpec.DebugMode.JSON)
-    hook.add(test_data.mock_node, test_data.tosa_op, test_data.op_id)
+    hook.add(cast(Node, test_data.mock_node), test_data.tosa_op, test_data.op_id)
 
     debug_events = hook._debug_events
     assert len(debug_events) == test_data.expected_events
@@ -172,7 +175,7 @@ def test_debug_hook_add_json(test_data: DebugHookTestCase):
 @common.parametrize("test_data", TESTCASES)
 def test_debug_hook_add_tosa(test_data: DebugHookTestCase):
     hook = DebugHook(ArmCompileSpec.DebugMode.TOSA)
-    hook.add(test_data.mock_node, test_data.tosa_op, test_data.op_id)
+    hook.add(cast(Node, test_data.mock_node), test_data.tosa_op, test_data.op_id)
 
     debug_events = hook._debug_events
     assert len(debug_events) == test_data.expected_events

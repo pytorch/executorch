@@ -29,7 +29,11 @@ class MultipleDelegatesModule(torch.nn.Module):
 
 @common.parametrize("test_data", MultipleDelegatesModule.inputs)
 def test_tosa_FP_pipeline(test_data: input_t1):
-    pipeline = TosaPipelineFP[input_t1](MultipleDelegatesModule(), test_data, [], [])
+    aten_ops: list[str] = []
+    exir_ops: list[str] = []
+    pipeline = TosaPipelineFP[input_t1](
+        MultipleDelegatesModule(), test_data, aten_ops, exir_ops
+    )
     pipeline.change_args(
         "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
     )
@@ -38,8 +42,10 @@ def test_tosa_FP_pipeline(test_data: input_t1):
 
 @common.parametrize("test_data", MultipleDelegatesModule.inputs)
 def test_tosa_INT_pipeline(test_data: input_t1):
+    aten_ops: list[str] = []
+    exir_ops: list[str] = []
     pipeline = TosaPipelineINT[input_t1](
-        MultipleDelegatesModule(), test_data, [], [], qtol=1
+        MultipleDelegatesModule(), test_data, aten_ops, exir_ops, qtol=1
     )
     pipeline.change_args(
         "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
