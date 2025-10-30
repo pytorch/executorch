@@ -276,9 +276,11 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([view])
         original = builder.get_graph_module()
+        pass_instance = RemoveNopSliceOrViewOpPass()
         graph_after_passes = cast(
-            PassResult, RemoveNopSliceOrViewOpPass()(original)
+            PassResult, pass_instance(original)
         ).graph_module
+        self.assertTrue(pass_instance._modified)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default), 0
         )
@@ -297,12 +299,33 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([slice_])
         original = builder.get_graph_module()
+        pass_instance = RemoveNopSliceOrViewOpPass()
         graph_after_passes = cast(
-            PassResult, RemoveNopSliceOrViewOpPass()(original)
+            PassResult, pass_instance(original)
         ).graph_module
+        self.assertTrue(pass_instance._modified)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.slice_copy.Tensor), 0
         )
+
+    def test_remove_nop_slice_or_view_not_modified(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(3, 5, dtype=torch.float32))
+        abs_x = builder.call_operator(
+            op=exir_ops.edge.aten.abs.default,
+            args=(x,),
+        )
+        builder.output([abs_x])
+        original = builder.get_graph_module()
+        pass_instance = RemoveNopSliceOrViewOpPass()
+        graph_after_passes = cast(
+            PassResult, pass_instance(original)
+        ).graph_module
+        self.assertFalse(pass_instance._modified)
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.abs.default), 1
+        )
+
 
     def test_remove_nop_select_before_view(self) -> None:
         builder = GraphBuilder()

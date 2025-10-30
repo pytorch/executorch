@@ -191,6 +191,10 @@ class RemoveNopSliceOrViewOpPass(ExportPass):
     Remove slice ops that are more like views, and view ops that do not change the shape
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
+
     def call_operator(
         self,
         op,  # pyre-ignore
@@ -204,6 +208,7 @@ class RemoveNopSliceOrViewOpPass(ExportPass):
         }:
             return super().call_operator(op, args, kwargs, meta)
 
+        self._modified = True
         arg0 = cast(ProxyValue, args[0])
         out_shape = meta["val"].shape
 
@@ -213,6 +218,11 @@ class RemoveNopSliceOrViewOpPass(ExportPass):
             if arg0.to_tensor().shape == out_shape
             else super().call_operator(op, args, kwargs, meta)
         )
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
