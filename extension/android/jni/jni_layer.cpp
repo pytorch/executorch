@@ -13,8 +13,8 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/core/portable_type/tensor_impl.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/portable_type/tensor_impl.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
