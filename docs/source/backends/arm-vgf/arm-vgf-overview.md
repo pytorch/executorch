@@ -93,13 +93,13 @@ The example application is recommended to use for testing basic functionality of
 
 ## Reference
 
-**→{doc}`arm-vgf-partitioner` — Partitioner options.**
+**→{doc}`/backends/arm-vgf/arm-vgf-partitioner` — Partitioner options.**
 
-**→{doc}`arm-vgf-quantization` — Supported quantization schemes.**
+**→{doc}`/backends/arm-vgf/arm-vgf-quantization` — Supported quantization schemes.**
 
-**→{doc}`arm-vgf-troubleshooting` — Debug common issues.**
+**→{doc}`/backends/arm-vgf/arm-vgf-troubleshooting` — Debug common issues.**
 
-**→{doc}`tutorials/arm-vgf-tutorials` — Tutorials.**
+**→{doc}`/backends/arm-vgf/tutorials/arm-vgf-tutorials` — Tutorials.**
 
 
 ```{toctree}

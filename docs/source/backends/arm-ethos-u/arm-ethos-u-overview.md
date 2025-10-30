@@ -181,13 +181,13 @@ ExecuTorch for the Ethos-U backend, you automatically install the compiler conta
 
 ## Reference
 
-**→{doc}`arm-ethos-u-partitioner` — Partitioner options.**
+**→{doc}`/backends/arm-ethos-u/arm-ethos-u-partitioner` — Partitioner options.**
 
-**→{doc}`arm-ethos-u-quantization` — Supported quantization schemes.**
+**→{doc}`/backends/arm-ethos-u/arm-ethos-u-quantization` — Supported quantization schemes.**
 
-**→{doc}`arm-ethos-u-troubleshooting` — Troubleshooting and common issues.**
+**→{doc}`/backends/arm-ethos-u/arm-ethos-u-troubleshooting` — Troubleshooting and common issues.**
 
-**→{doc}`tutorials/arm-ethos-u-tutorials` — Tutorials.**
+**→{doc}`/backends/arm-ethos-u/tutorials/arm-ethos-u-tutorials` — Tutorials.**
 
 
 ```{toctree}
