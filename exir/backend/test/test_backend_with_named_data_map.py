@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import unittest
 
 import torch
@@ -33,7 +35,7 @@ class TestBackendWithNamedDataMap(unittest.TestCase):
         stored_data = lowered.named_data_store_output.pte_data
 
         self.assertTrue("aten.add.Tensor" in stored_data)
-        self.assertTrue(buffer_entries[0].buffer == bytes(1))
+        self.assertTrue(buffer_entries[0] == bytes(1))
 
     def test_named_data_with_partitioner(self):
         class M(torch.nn.Module):
@@ -45,7 +47,7 @@ class TestBackendWithNamedDataMap(unittest.TestCase):
                 return y - y
 
         ep = to_edge(torch.export.export(M(), (torch.randn(1, 2),)))
-        ep.to_backend(BackendWithNDMPartitioner())
+        ep = ep.to_backend(BackendWithNDMPartitioner())
 
         ndm_output = ep._named_data_store.get_named_data_store_output()
         buffer_entries = ndm_output.buffers
@@ -71,7 +73,7 @@ class TestBackendWithNamedDataMap(unittest.TestCase):
                 return z - z
 
         ep = to_edge(torch.export.export(M(), (torch.randn(1, 2), torch.randn(1, 2))))
-        ep.to_backend(BackendWithNDMPartitioner())
+        ep = ep.to_backend(BackendWithNDMPartitioner())
 
         ndm_output = ep._named_data_store.get_named_data_store_output()
         buffer_entries = ndm_output.buffers

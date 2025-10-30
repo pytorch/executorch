@@ -31,11 +31,6 @@ constexpr DimIndex kHeight4D = DimIndex::DIM_2ND_LAST;
 constexpr DimIndex kChannel4D = DimIndex::DIM_3RD_LAST;
 constexpr DimIndex kBatch4D = DimIndex::DIM_4TH_LAST;
 
-inline DimIndex normalize_to_dim_index(const api::vTensor& v_in, int32_t dim) {
-  return dim < 0 ? static_cast<DimIndex>(dim)
-                 : static_cast<DimIndex>(dim - v_in.dim());
-}
-
 /*
  * Semantic dimension names for a 1D tensor
  */
@@ -81,15 +76,6 @@ inline int32_t dim_at(const std::vector<int64_t>& sizes, DimIndex dim_index) {
 template <DimIndex DI>
 int32_t dim_at(const std::vector<int64_t>& sizes) {
   return dim_at(sizes, DI);
-}
-
-template <DimIndex DI>
-int32_t dim_at(const api::vTensor& v_in) {
-  return dim_at(v_in.sizes(), DI);
-}
-
-inline int32_t dim_at(const api::vTensor& v_in, DimIndex dim_index) {
-  return dim_at(v_in.sizes(), dim_index);
 }
 
 inline std::ostream& operator<<(std::ostream& os, DimIndex dim_index) {

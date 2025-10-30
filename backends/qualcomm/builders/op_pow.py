@@ -9,7 +9,8 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpElementWisePower, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -37,7 +38,7 @@ class PowTensorTensor(NodeVisitor):
         pow_output_tensors = [output_tensor_wrapper]
 
         # tensor input
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
 
         tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
@@ -51,7 +52,7 @@ class PowTensorTensor(NodeVisitor):
         )
 
         # exp input
-        exp_node = node.args[1]
+        exp_node = self.get_node(node.args[1])
         exp_tensor = self.get_tensor(exp_node, node)
         exp_tensor_wrapper = self.define_tensor(
             exp_node,

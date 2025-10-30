@@ -3,14 +3,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
-from typing import Dict, List
+import json
+from typing import Any, Dict, List, Optional
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+import tosa_serializer as ts
+
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
+from executorch.backends.arm.debug.schema import DebugHook
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.export import ExportedProgram
 
 
@@ -25,18 +28,52 @@ class NodeVisitor:
     # When all node_visitors has been refactored to target a specific
     # version, this list should be removed.
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80+BI"),
-        TosaSpecification.create_from_string("TOSA-0.80+MI"),
+        TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
-    def __init__(self, exported_program: ExportedProgram, tosa_spec: TosaSpecification):
-        self._exported_program = exported_program or None
+    def __init__(
+        self,
+        exported_program: ExportedProgram,
+        tosa_spec: TosaSpecification,
+        debug_hook: Optional[DebugHook] = None,
+    ):
+        self._exported_program = exported_program
         self.tosa_spec = tosa_spec
+        self.debug_hook = debug_hook
+
+    def _serialize_operator(
+        self,
+        node: torch.fx.Node,
+        tosa_graph: Any,
+        tosa_op: ts.Op,
+        inputs: List[str],
+        outputs: List[str],
+        attributes: Optional[Any] = None,
+    ) -> None:
+        op_location = ts.TosaOpLocation()
+        if self.debug_hook:
+            debug_info = self.debug_hook.add(
+                node,
+                tosa_op=outputs[0],
+                tosa_op_id=tosa_op,
+            )
+
+            if self.debug_hook.mode == ArmCompileSpec.DebugMode.TOSA:
+                op_location.text = json.dumps(debug_info.to_dict())
+
+        tosa_graph.addOperator(
+            tosa_op,
+            inputs=inputs,
+            outputs=outputs,
+            attributes=attributes,
+            location=op_location,
+        )
 
     def define_node(
         self,
         node: torch.fx.Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
@@ -45,8 +82,8 @@ class NodeVisitor:
 
 # container for all node visitors
 _node_visitor_dicts: Dict[TosaSpecification, Dict] = {
-    TosaSpecification.create_from_string("TOSA-0.80+BI"): {},
-    TosaSpecification.create_from_string("TOSA-0.80+MI"): {},
+    TosaSpecification.create_from_string("TOSA-1.0+INT"): {},
+    TosaSpecification.create_from_string("TOSA-1.0+FP"): {},
 }
 
 

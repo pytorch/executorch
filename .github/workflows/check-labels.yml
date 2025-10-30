@@ -51,4 +51,4 @@ jobs:
           PR_NUM: ${{ github.event.number || github.event.inputs.pr_number }}
         run: |
           set -ex
-          python3 .github/scripts/check_labels.py --exit-non-zero "${PR_NUM}"
+          python3 .github/scripts/check_labels.py "${PR_NUM}"

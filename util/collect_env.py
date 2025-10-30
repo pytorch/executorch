@@ -220,8 +220,7 @@ def get_cudnn_version(run_lambda):
         cudnn_cmd = '{} /R "{}\\bin" cudnn*.dll'.format(where_cmd, cuda_path)
     elif get_platform() == "darwin":
         # CUDA libraries and drivers can be found in /usr/local/cuda/. See
-        # https://docs.nvidia.com/cuda/cuda-installation-guide-mac-os-x/index.html#install
-        # https://docs.nvidia.com/deeplearning/sdk/cudnn-install/index.html#installmac
+        # https://docs.nvidia.com/cuda/archive/10.1/cuda-installation-guide-mac-os-x/index.html#3.2-Install
         # Use CUDNN_LIBRARY when cudnn library is installed elsewhere.
         cudnn_cmd = "ls /usr/local/cuda/lib/libcudnn*"
     else:

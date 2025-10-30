@@ -25,5 +25,6 @@ def define_common_targets():
             preprocessor_flags = preprocessor_flags,
             deps = [
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
+                "//executorch/runtime/core/portable_type/c10/c10:c10",
             ],
         )

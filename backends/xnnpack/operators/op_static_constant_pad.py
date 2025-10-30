@@ -7,6 +7,7 @@
 from typing import cast, Dict, List
 
 import torch
+
 from executorch.backends.xnnpack.operators.node_visitor import (
     get_tensor_value,
     NodeVisitor,
@@ -17,7 +18,11 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNStaticConstantPad,
     XNode,
 )
-from executorch.backends.xnnpack.utils.utils import check_or_raise, get_input_node
+from executorch.backends.xnnpack.utils.utils import (
+    check_or_raise,
+    get_input_node,
+    PERM_NCHW_TO_NHWC,
+)
 
 
 @register_node_visitor
@@ -113,8 +118,15 @@ class StaticConstantPadVisitor(NodeVisitor):
         # b)
         # tuple[0] = prepadding dim[-1]
         # tuple[1] = postpadding dim[-1]
+        is_channels_last = node.meta.get("XNN_NHWC_NODE", False)
         pre_paddings = all_paddings[-2::-2]  # even index elements in reverse order
         post_paddings = all_paddings[::-2]  # odd index elements in reverse order
+        if is_channels_last:
+            check_or_raise(len(pre_paddings) == 4, "Expecting prepaddings to be 4D")
+            check_or_raise(len(post_paddings) == 4, "Expecting postpaddings to be 4D")
+
+            pre_paddings = [pre_paddings[i] for i in PERM_NCHW_TO_NHWC]
+            post_paddings = [post_paddings[i] for i in PERM_NCHW_TO_NHWC]
 
         # the padding value, which defaults to 0.0
         padding_value = cast(float, node.args[2]) if len(node.args) > 2 else 0.0

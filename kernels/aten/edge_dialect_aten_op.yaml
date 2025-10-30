@@ -11,3 +11,8 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::_to_dim_order_copy_out
+
+- func: dim_order_ops::_clone_dim_order.out(Tensor self, *, bool non_blocking=False, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_clone_dim_order_out

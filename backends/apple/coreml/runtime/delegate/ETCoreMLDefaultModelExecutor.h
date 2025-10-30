@@ -1,13 +1,13 @@
 //
-//  ETCoreMLDefaultModelExecutor.h
-//  executorchcoreml_tests
+// ETCoreMLDefaultModelExecutor.h
 //
-//  Created by Gyan Sinha on 2/25/24.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
+// Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #import <CoreML/CoreML.h>
 
-#import <ETCoreMLModelExecutor.h>
+#import "ETCoreMLModelExecutor.h"
 
 @class ETCoreMLModel;
 

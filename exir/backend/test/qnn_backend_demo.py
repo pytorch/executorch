@@ -24,7 +24,9 @@ class QnnBackend(BackendDetails):
     ) -> PreprocessResult:
         processed_bytes = "imqnncompiled"
         all_nodes_debug_handle = [
-            node.meta["debug_handle"] for node in edge_program.graph.nodes
+            node.meta["debug_handle"]
+            for node in edge_program.graph.nodes
+            if node.op not in ("placeholder", "output")
         ]
         return PreprocessResult(
             processed_bytes=bytes(processed_bytes, encoding="utf8"),

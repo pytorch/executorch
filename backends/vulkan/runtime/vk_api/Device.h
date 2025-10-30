@@ -12,11 +12,19 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
-#include <sstream>
+#include <string>
 #include <vector>
 
 namespace vkcompute {
 namespace vkapi {
+
+enum class DeviceType : uint32_t {
+  UNKNOWN,
+  NVIDIA,
+  MALI,
+  ADRENO,
+  SWIFTSHADER,
+};
 
 struct PhysicalDevice final {
   // Handle
@@ -36,9 +44,12 @@ struct PhysicalDevice final {
 #ifdef VK_KHR_shader_float16_int8
   VkPhysicalDeviceShaderFloat16Int8Features shader_float16_int8_types;
 #endif /* VK_KHR_shader_float16_int8 */
-
-  // Head of the linked list of extensions to be requested
-  void* extension_features;
+#ifdef VK_KHR_shader_integer_dot_product
+  VkPhysicalDeviceShaderIntegerDotProductFeatures
+      shader_int_dot_product_features;
+  VkPhysicalDeviceShaderIntegerDotProductProperties
+      shader_int_dot_product_properties;
+#endif /* VK_KHR_shader_integer_dot_product */
 
   // Available GPU queues
   std::vector<VkQueueFamilyProperties> queue_families;
@@ -46,10 +57,16 @@ struct PhysicalDevice final {
   // Metadata
   uint32_t num_compute_queues;
   bool supports_int16_shader_types;
+  bool supports_int64_shader_types;
+  bool supports_float64_shader_types;
   bool has_unified_memory;
   bool has_timestamps;
   float timestamp_period;
   size_t min_ubo_alignment;
+
+  // Device identity
+  std::string device_name;
+  DeviceType device_type;
 
   explicit PhysicalDevice(VkPhysicalDevice);
 };

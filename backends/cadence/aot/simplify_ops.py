@@ -16,9 +16,10 @@ from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     register_cadence_pass,
 )
-
+from executorch.backends.cadence.aot.utils import rebind
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, ProxyValue
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.pass_base import ExportPass
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -74,7 +75,7 @@ class SimplifySliceOpPass(ExportPass):
         slice_scatter = op == exir_ops.edge.aten.slice_scatter.default
         # Parse the arguments
         # Extract the tensor to be sliced, and the slicing dimension
-        in_tensor = args[0].to_tensor() if isinstance(args[0], ProxyValue) else args[0]
+        in_tensor = args[0].to_tensor()
         dim = args[1 + slice_scatter] if len(args) > 1 + slice_scatter else 0
         # Make dim non-negative
         dim = dim if dim >= 0 else dim + in_tensor.dim()
@@ -109,8 +110,23 @@ class SimplifySliceOpPass(ExportPass):
         return super().call_operator(op, new_args, kwargs, meta)
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class BindOptionalArgsPass(ExportPass):
+    """Bind all optional args and kwargs."""
+
+    def call_operator(self, op, args, kwargs, meta):
+        if not isinstance(op, EdgeOpOverload):
+            return super().call_operator(op, args, kwargs, meta)
+
+        if (updated_args := rebind(op, args, kwargs)) is not None:
+            args, kwargs = updated_args
+
+        return super().call_operator(op, args, kwargs, meta)
+
+
 # This class encapsulates all the functions that simplify the op's args
 class CadenceSimplifyOpsInGraph:
     passes = [
         SimplifySliceOpPass,
+        BindOptionalArgsPass,
     ]

@@ -69,7 +69,9 @@ class SliceCopyVisitor(NodeVisitor):
             output_shape = [output_shape[i] for i in PERM_NCHW_TO_NHWC]
             dim_of_slice = PERM_NHWC_TO_NCHW[dim_of_slice]
 
-        slice_begin_index = cast(int, node.args[2])
+        slice_begin_index = 0
+        if len(node.args) > 2 and node.args[2]:
+            slice_begin_index = cast(int, node.args[2])
         if slice_begin_index < 0:
             slice_begin_index = input_shape[dim_of_slice] + slice_begin_index
 

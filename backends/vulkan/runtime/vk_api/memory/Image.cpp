@@ -99,6 +99,7 @@ VulkanImage::VulkanImage()
       allocator_(VK_NULL_HANDLE),
       memory_{},
       owns_memory_(false),
+      memory_bundled_(false),
       owns_view_(false),
       is_copy_(false),
       handles_{
@@ -125,6 +126,7 @@ VulkanImage::VulkanImage(
       allocator_(vma_allocator),
       memory_{},
       owns_memory_{allocate_memory},
+      memory_bundled_(allocate_memory),
       owns_view_(false),
       is_copy_(false),
       handles_{
@@ -195,6 +197,7 @@ VulkanImage::VulkanImage(
       allocator_(VK_NULL_HANDLE),
       memory_{},
       owns_memory_(false),
+      memory_bundled_(false),
       is_copy_(false),
       handles_{
           image,
@@ -224,6 +227,7 @@ VulkanImage::VulkanImage(VulkanImage&& other) noexcept
       allocator_(other.allocator_),
       memory_(std::move(other.memory_)),
       owns_memory_(other.owns_memory_),
+      memory_bundled_(other.memory_bundled_),
       owns_view_(other.owns_view_),
       is_copy_(other.is_copy_),
       handles_(other.handles_),
@@ -232,12 +236,14 @@ VulkanImage::VulkanImage(VulkanImage&& other) noexcept
   other.handles_.image_view = VK_NULL_HANDLE;
   other.handles_.sampler = VK_NULL_HANDLE;
   other.owns_memory_ = false;
+  other.memory_bundled_ = false;
 }
 
 VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept {
   VkImage tmp_image = handles_.image;
   VkImageView tmp_image_view = handles_.image_view;
   bool tmp_owns_memory = owns_memory_;
+  bool tmp_memory_bundled = memory_bundled_;
 
   device_ = other.device_;
   image_properties_ = other.image_properties_;
@@ -246,6 +252,7 @@ VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept {
   allocator_ = other.allocator_;
   memory_ = std::move(other.memory_);
   owns_memory_ = other.owns_memory_;
+  memory_bundled_ = other.memory_bundled_;
   is_copy_ = other.is_copy_;
   handles_ = other.handles_;
   layout_ = other.layout_;
@@ -253,6 +260,7 @@ VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept {
   other.handles_.image = tmp_image;
   other.handles_.image_view = tmp_image_view;
   other.owns_memory_ = tmp_owns_memory;
+  other.memory_bundled_ = tmp_memory_bundled;
 
   return *this;
 }
@@ -271,14 +279,22 @@ VulkanImage::~VulkanImage() {
 
   if (handles_.image != VK_NULL_HANDLE) {
     if (owns_memory_) {
-      vmaDestroyImage(allocator_, handles_.image, memory_.allocation);
+      if (memory_bundled_) {
+        vmaDestroyImage(allocator_, handles_.image, memory_.allocation);
+        // Prevent the underlying memory allocation from being freed; it was
+        // freed by vmaDestroyImage
+        memory_.allocation = VK_NULL_HANDLE;
+      } else {
+        vkDestroyImage(this->device(), handles_.image, nullptr);
+        // Allow underlying memory allocation to be freed by the destructor of
+        // Allocation class
+      }
     } else {
       vkDestroyImage(this->device(), handles_.image, nullptr);
+      // Prevent the underlying memory allocation from being freed since this
+      // object doesn't own it
+      memory_.allocation = VK_NULL_HANDLE;
     }
-    // Prevent the underlying memory allocation from being freed; it was either
-    // freed by vmaDestroyImage, or this resource does not own the underlying
-    // memory
-    memory_.allocation = VK_NULL_HANDLE;
   }
 }
 
@@ -317,6 +333,31 @@ void VulkanImage::create_image_view() {
       &(image_view_create_info),
       nullptr,
       &(handles_.image_view)));
+}
+
+void VulkanImage::bind_allocation_impl(const Allocation& memory) {
+  VK_CHECK_COND(!memory_, "Cannot bind an already bound allocation!");
+  // To prevent multiple instances of binding the same VkImage to a memory
+  // block, do not actually bind memory if this VulkanImage is a copy. Assume
+  // that the original VulkanImage is responsible for binding the image.
+  if (!is_copy_) {
+    VK_CHECK(vmaBindImageMemory(allocator_, memory.allocation, handles_.image));
+  }
+
+  // Only create the image view if the image has been bound to memory
+  owns_view_ = true;
+  create_image_view();
+}
+
+void VulkanImage::bind_allocation(const Allocation& memory) {
+  bind_allocation_impl(memory);
+  memory_.allocation = memory.allocation;
+}
+
+void VulkanImage::acquire_allocation(Allocation&& memory) {
+  bind_allocation_impl(memory);
+  memory_ = std::move(memory);
+  owns_memory_ = true;
 }
 
 VkMemoryRequirements VulkanImage::get_memory_requirements() const {

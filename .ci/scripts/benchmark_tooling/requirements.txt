@@ -1,0 +1,7 @@
+requests>=2.32.3
+xlsxwriter>=3.2.3
+pandas>=2.3.0
+yaspin>=3.1.0
+tabulate
+matplotlib
+openpyxl

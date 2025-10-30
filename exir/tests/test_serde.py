@@ -7,12 +7,16 @@
 # pyre-strict
 
 import io
+import tempfile
 import unittest
 from typing import Tuple
 
 import executorch.exir as exir
 
 import torch
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+    XnnpackFloatingPointPartitioner,
+)
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import CompileSpec, to_backend
 from executorch.exir.backend.test.backend_with_compiler_demo import (
@@ -20,6 +24,10 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
 )
 
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
+from executorch.exir.program._program import (
+    EdgeProgramManager,
+    to_edge_transform_and_lower,
+)
 from executorch.exir.serde.serialize import deserialize, serialize
 from torch import nn
 from torch.export import export
@@ -34,6 +42,7 @@ class TestSerde(unittest.TestCase):
         ep1: TorchExportedProgram,
         ep2: TorchExportedProgram,
         inputs: Tuple[exir.Value, ...],
+        compare_closeness: bool = False,
     ) -> None:
         """
         Checks if two graphs are equivalent
@@ -47,15 +56,40 @@ class TestSerde(unittest.TestCase):
         for orig, loaded in zip(flat_orig_outputs, flat_loaded_outputs, strict=True):
             self.assertTrue(torch.allclose(orig, loaded))
 
+        if compare_closeness:
+            self.assertEqual(len(ep1.graph.nodes), len(ep2.graph.nodes))
+            for node_a, node_b in zip(ep1.graph.nodes, ep2.graph.nodes):
+                self.assertEqual(node_a.target, node_b.target)
+                self.assertEqual(node_a.name, node_b.name)
+                self.assertEqual(node_a.type, node_b.type)
+                self.assertEqual(node_a.op, node_b.op)
+                if node_a.op != "call_function":
+                    continue
+
+                self.assertEqual(
+                    node_a.meta.get("debug_handle"), node_b.meta.get("debug_handle")
+                )
+                from_node_a = node_a.meta.get("from_node")
+                from_node_b = node_b.meta.get("from_node")
+
+                if from_node_a is None:
+                    self.assertIsNone(from_node_b)
+                else:
+                    self.assertIsNotNone(from_node_b)
+                    for node_source_a, node_source_b in zip(from_node_a, from_node_b):
+                        self.assertEqual(
+                            node_source_a.to_dict(), node_source_b.to_dict()
+                        )
+
     # pyre-ignore
     def check_serde(self, m, inputs, check_executorch=True) -> None:
         aten = export(m, inputs, strict=True)
         aten_new = deserialize(serialize(aten))
-        self.check_ep(aten, aten_new, inputs)
+        self.check_ep(aten, aten_new, inputs, compare_closeness=True)
 
         edge = to_edge(aten)
         edge_new = deserialize(serialize(edge.exported_program()))
-        self.check_ep(edge.exported_program(), edge_new, inputs)
+        self.check_ep(edge.exported_program(), edge_new, inputs, compare_closeness=True)
 
         buffer = io.BytesIO()
         exir.save(edge.exported_program(), buffer)
@@ -202,6 +236,33 @@ class TestSerde(unittest.TestCase):
         edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, inputs)
 
+    def test_delegate_xnnpack(self) -> None:
+        class SimpleConv1DModel(nn.Module):
+            def __init__(self):
+                super(SimpleConv1DModel, self).__init__()
+                self.conv1 = nn.Conv1d(
+                    in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1
+                )
+
+            def forward(self, x):
+                x = self.conv1(x)
+                return x
+
+        x = torch.randn(64, 1, 100)
+        model = SimpleConv1DModel()
+        ep = torch.export.export(model, (x,))
+        edge_orig = to_edge_transform_and_lower(
+            ep, partitioner=[XnnpackFloatingPointPartitioner()]
+        )
+
+        with tempfile.NamedTemporaryFile() as f:
+            exir.save(edge_orig.exported_program(), f)
+            edge_deserialized = EdgeProgramManager(exir.load(f))
+            self.assertTrue(
+                edge_orig.to_executorch().buffer
+                == edge_deserialized.to_executorch().buffer
+            )
+
     def test_meta_stack_trace_module_hierarchy(self) -> None:
         class Model(nn.Module):
             def __init__(self):
@@ -240,3 +301,37 @@ class TestSerde(unittest.TestCase):
         )
         self.assertEqual(metadata[0], metadata_serde[0])
         self.assertEqual(list(metadata[1].keys()), list(metadata_serde[1].keys()))
+
+    def test_meta_debug_handle_and_from_node(self) -> None:
+        class Model(nn.Module):
+            def __init__(self):
+                super(Model, self).__init__()
+                self.conv_layer = nn.Conv2d(
+                    in_channels=1, out_channels=64, kernel_size=3, padding=1
+                )
+
+            def forward(self, x):
+                return self.conv_layer(x)
+
+        m = Model()
+        inputs = (torch.randn(1, 1, 32, 32),)
+
+        edge = to_edge(export(m, inputs, strict=True))
+        edge_new = deserialize(serialize(edge.exported_program()))
+        for node, node_new in zip(
+            edge.exported_program().graph_module.graph.nodes,
+            edge_new.graph_module.graph.nodes,
+        ):
+            if node.op not in {"placeholder", "output"}:
+                self.assertIsNotNone(node.meta.get("debug_handle"))
+                self.assertIsNotNone(node.meta.get("from_node"))
+                self.assertEqual(
+                    node.meta.get("debug_handle"), node_new.meta.get("debug_handle")
+                )
+                self.assertEqual(
+                    len(node.meta.get("from_node")), len(node_new.meta.get("from_node"))
+                )
+                for node_source, node_source_new in zip(
+                    node.meta.get("from_node"), node_new.meta.get("from_node")
+                ):
+                    self.assertEqual(node_source.to_dict(), node_source_new.to_dict())

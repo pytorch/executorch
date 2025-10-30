@@ -24,6 +24,8 @@ ${layout_declare_ubo(8, "ivec4", "mat2_strides")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "reference_matmul_common_buffer.glslh"
+
 void main() {
   const ivec2 out_idx = ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y);
   if (any(greaterThanEqual(out_idx, out_sizes.xy))) {
@@ -37,10 +39,7 @@ void main() {
 
   float sum = 0.0;
   for (int i = 0; i < mat1_sizes.x; ++i) {
-    sum += t_mat1[mat1_id] * t_mat2[mat2_id];
-
-    mat1_id += mat1_strides.x;
-    mat2_id += mat2_strides.y;
+    sum += perform_dot_product(out_idx.y, out_idx.x, i);
   }
 
   const int out_id = out_idx.x * out_strides.x + out_idx.y * out_strides.y;

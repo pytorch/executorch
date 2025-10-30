@@ -93,7 +93,8 @@ from executorch.exir.tensor import (
 from executorch.exir.types import LeafValueSpec, ValueSpec
 from torch._subclasses.fake_tensor import FakeTensor
 
-from torch.export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram, ExportGraphSignature
+from torch.fx.node import Node
 from torch.utils import _pytree as pytree
 
 from typing_extensions import TypeAlias
@@ -146,9 +147,8 @@ class _EmitterState:
     operators: List[Operator]
     delegates: List[BackendDelegate]
     operator_cache: Dict[Tuple[str, str], int]
-    # delegate_cache: the key is hash(delegated_payload) and the value is the index in delegates
-    delegate_cache: Dict[str, int]
     emit_stacktrace: bool
+    emit_mutable_buffer_names: bool
 
     spec2id_dict: Dict[TensorSpec, int] = field(default_factory=dict)
 
@@ -208,11 +208,11 @@ _DelegateDebugIdentifierMap: TypeAlias = Union[
 ]
 
 
-# pyre-ignore[13]: Attribute `node` is never initialized.
 class _Emitter(torch.fx.Interpreter):
     """An abstract interpreter (https://wiki.mozilla.org/Abstract_Interpretation) used to emit the
     given traced torch.fx.GraphModule to the flatbuffer schema."""
 
+    # pyre-ignore[13]: Attribute `node` is never initialized.
     node: torch.fx.Node
 
     def __init__(
@@ -252,6 +252,7 @@ class _Emitter(torch.fx.Interpreter):
 
         self.concrete_output_ids: List[_AbstractValue] = []
         self.debug_handle_map: Dict[int, Union[int, List[int]]] = {}
+        self.instruction_id_to_num_outs_map: Dict[int, int] = {}
         self.instr_id_to_delegate_debug_id_map: Dict[
             int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]
         ] = {}
@@ -371,6 +372,21 @@ class _Emitter(torch.fx.Interpreter):
             )
         return allocation_info
 
+    def _save_to_external_constant_map(
+        self,
+        fqn: str,
+        buffer_idx: int,
+        constant_tag: str,
+    ) -> None:
+        """
+        Saves external constant to the map.
+        """
+        # buffer data should be in the external_constant_buffer already.
+        assert buffer_idx < len(self.program_state.external_constant_buffer)
+        if constant_tag not in self.program_state.external_constant_map:
+            self.program_state.external_constant_map[constant_tag] = {}
+        self.program_state.external_constant_map[constant_tag][fqn] = buffer_idx
+
     def _save_new_const_tensor(
         self,
         spec: TensorSpec,
@@ -402,11 +418,9 @@ class _Emitter(torch.fx.Interpreter):
             buffer_idx = len(self.program_state.external_constant_buffer)
             self.program_state.external_constant_hash[hashed] = buffer_idx
             self.program_state.external_constant_buffer.append(buffer_data)
-            if constant_tag not in self.program_state.external_constant_map:
-                self.program_state.external_constant_map[constant_tag] = {}
-            self.program_state.external_constant_map[constant_tag][
-                spec.extra_tensor_info.fully_qualified_name  # pyre-ignore Undefined attribute [16]: `Optional` has no attribute `fully_qualified_name`.
-            ] = buffer_idx
+            self._save_to_external_constant_map(
+                spec.extra_tensor_info.fully_qualified_name, buffer_idx, constant_tag
+            )
         # Tensor is mutable with initial state. Place into mutable segment
         elif allocation_info:
             buffer_idx = len(self.program_state.mutable_buffer)
@@ -465,6 +479,19 @@ class _Emitter(torch.fx.Interpreter):
                 and spec.extra_tensor_info.location == TensorDataLocation.EXTERNAL
             ):
                 buffer_idx = self.program_state.external_constant_hash.get(hashed, -1)
+                if buffer_idx != -1:
+                    # This constant already exists in the external_constant_buffer,
+                    # And doesn't need to be duplicated. However, the fqn is unique
+                    # and should be added. ie, we have the case: fqn0->data, fqn1->data.
+                    # When buffer_idx == 1, the data is new and added with
+                    # `_save_new_const_tensor` below.
+                    assert spec.extra_tensor_info.fully_qualified_name is not None
+                    assert constant_tag is not None
+                    self._save_to_external_constant_map(
+                        spec.extra_tensor_info.fully_qualified_name,
+                        buffer_idx,
+                        constant_tag,
+                    )
             else:
                 buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
 
@@ -1002,7 +1029,11 @@ class _Emitter(torch.fx.Interpreter):
                     and node.meta.get("debug_handle") is not None
                 ):
                     debug_handle_list.append(node.meta.get("debug_handle"))
+            output_node = lowered_module.original_module.graph.output_node()
+            outputs = output_node.args[0]
+            num_outputs = len(outputs) if isinstance(outputs, (list, tuple)) else 1
             self.debug_handle_map[emitter_id] = debug_handle_list
+            self.instruction_id_to_num_outs_map[emitter_id] = num_outputs
             # Debug handle for this node is the emitter_id which is essentially the index of the
             # instruction in the chain.
             self.node.meta["debug_handle"] = emitter_id
@@ -1029,7 +1060,7 @@ class _Emitter(torch.fx.Interpreter):
         code, module hierarchy etc.
         """
         delegate_map = {}
-        if hasattr(lowered_module, "meta"):
+        if lowered_module.meta is not None:
             delegate_map = lowered_module.meta.get("debug_handle_map", {})
 
         self.instr_id_to_delegate_debug_id_map[delegate_instruction_id] = {
@@ -1085,7 +1116,7 @@ class _Emitter(torch.fx.Interpreter):
         delegate's blob."""
         processed_bytes = lowered_module.processed_bytes
         hashed = hashlib.sha256(processed_bytes).hexdigest()
-        delegate_index = self.emitter_state.delegate_cache.get(hashed)
+        delegate_index = self.program_state.backend_delegate_data_cache.get(hashed)
         delegate_ret = None
 
         if isinstance(self.node.meta["spec"], list):
@@ -1123,28 +1154,20 @@ class _Emitter(torch.fx.Interpreter):
         if delegate_index is None:
             # Allocate an entry for the data. TODO(T150113674): Reuse any duplicate entries if
             # present.
-            hashed = hashlib.sha256(processed_bytes).hexdigest()
-            data_index: Optional[int] = (
-                self.program_state.backend_delegate_data_cache.get(hashed)
+            delegate_index = len(self.program_state.backend_delegate_data_cache)
+            self.program_state.backend_delegate_data_cache[hashed] = delegate_index
+            self.program_state.backend_delegate_data.append(
+                BackendDelegateInlineData(data=processed_bytes)
             )
-            if data_index is None:
-                data_index = len(self.program_state.backend_delegate_data)
-                self.program_state.backend_delegate_data_cache[hashed] = data_index
-                self.program_state.backend_delegate_data.append(
-                    BackendDelegateInlineData(data=processed_bytes)
-                )
 
-            backend_delegate = BackendDelegate(
-                id=lowered_module.backend_id,
-                processed=BackendDelegateDataReference(
-                    location=DataLocation.INLINE, index=data_index
-                ),
-                compile_specs=lowered_module.compile_specs,
-            )
-            delegate_index = len(self.emitter_state.delegate_cache)
-            self.emitter_state.delegates.append(backend_delegate)
-            self.emitter_state.delegate_cache[hashed] = delegate_index
-
+        backend_delegate = BackendDelegate(
+            id=lowered_module.backend_id,
+            processed=BackendDelegateDataReference(
+                location=DataLocation.INLINE, index=delegate_index
+            ),
+            compile_specs=lowered_module.compile_specs,
+        )
+        self.emitter_state.delegates.append(backend_delegate)
         # TODO(angelayi) Will need to emit the kwargs too, in the correct order according to the
         # function's spec and with default arguments. This requires us to store the function's spec
         # in to_backend()
@@ -1157,7 +1180,12 @@ class _Emitter(torch.fx.Interpreter):
             delegate_args.append(elem.id)
 
         self.chain.instructions.append(
-            Instruction(DelegateCall(delegate_index=delegate_index, args=delegate_args))
+            Instruction(
+                DelegateCall(
+                    delegate_index=len(self.emitter_state.delegates) - 1,
+                    args=delegate_args,
+                )
+            )
         )
 
         return delegate_ret
@@ -1479,10 +1507,11 @@ class _Emitter(torch.fx.Interpreter):
             # pyre-ignore
             return self._emit_free(args[0])
 
-        elif target is torch.ops.higher_order.cond:
-            return self._emit_control_flow(target, args, kwargs)
-
-        elif target is torch.ops.higher_order.map_impl:
+        elif target in (
+            torch.ops.higher_order.cond,
+            torch.ops.higher_order.map_impl,
+            torch.ops.higher_order.while_loop,
+        ):
             return self._emit_control_flow(target, args, kwargs)
 
         elif target == executorch_call_delegate:
@@ -1610,7 +1639,7 @@ class _TopLevelEmitter(_Emitter):
             )
         return fqn, is_mutable_buffer
 
-    def placeholder(
+    def placeholder(  # noqa: C901
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> _AbstractValue:
         """Emits the value within the placeholder node.
@@ -1626,6 +1655,28 @@ class _TopLevelEmitter(_Emitter):
         if isinstance(target, str) and isinstance(spec, TensorSpec):
             fqn, is_mutable_buffer = self._find_fqn_for_placeholder(target, spec)
 
+            def _is_buffer(node: Node, graph_signature: ExportGraphSignature) -> bool:
+                """
+                Check if the node is buffer according to the provided graph signature.
+                If it is one return its fqn as well
+                """
+                if node.op == "placeholder":
+                    if isinstance(node.target, str):
+                        if node.target in graph_signature.inputs_to_buffers:
+                            return True
+                return False
+
+            # If the spec does not appear in the mutable section of the graph signature it still might
+            # overall be considered a mutable buffer if it has already been memory planned. This would
+            # suggest that the same abstract buffer is mutable in another entry point so we should
+            # compel it to be considered mutable in all entry points at emission just as the user did with
+            # memory planning.
+            is_mutable_buffer |= (
+                _is_buffer(self.node, self.exported_program.graph_signature)
+                and spec.mem_id is not None
+                and spec.mem_offset is not None
+            )
+
             # If the placeholder has a constant_tag, it is external to the PTE file
             # and requires a fqn and location=TensorDataLocation.EXTERNAL
             if constant_tag is not None:
@@ -1639,6 +1690,26 @@ class _TopLevelEmitter(_Emitter):
                 else:
                     spec.extra_tensor_info.fully_qualified_name = fqn
                     spec.extra_tensor_info.location = TensorDataLocation.EXTERNAL
+
+            if is_mutable_buffer:
+                # Emit names if we are supposed to.
+                if self.emitter_state.emit_mutable_buffer_names:
+                    if spec.extra_tensor_info is None:
+                        spec.extra_tensor_info = ExtraTensorInfo(
+                            fully_qualified_name=fqn,
+                            location=TensorDataLocation.SEGMENT,
+                        )
+                    else:
+                        spec.extra_tensor_info.fully_qualified_name = fqn
+                # if We aren't emitting the name then it needs to be memory planned.
+                elif spec.mem_id is None or spec.mem_offset is None:
+                    raise InternalError(
+                        self._emit_node_specific_error(
+                            self.node,
+                            # [2:] to remove the b_ prefix buffers get
+                            f'Mutable buffer "{target[2:]}" must have a memory id and offset if we are emitting it without a name. Please either memory plan your mutable buffers or call to_executorch with config=ExecutorchBackendConfig(emit_mutable_buffer_names=True)',
+                        )
+                    )
 
             # From the fqn find the corresponding tensor
             real_tensor = None

@@ -6,12 +6,18 @@
 
 # pyre-strict
 
+import copy
 import unittest
 
 import torch
 from executorch import exir
 from executorch.exir import EdgeCompileConfig, to_edge
-from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from executorch.exir.passes.quant_fusion_pass import (
+    _get_node_value_dict,
+    quant_fusion_and_const_prop_pass,
+    QuantFusionPass,
+)
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from torch.ao.quantization import (  # @manual
     float_qparams_weight_only_qconfig,
@@ -30,6 +36,9 @@ from torch.export import export
 from torch.nn import functional as F
 
 from torch.testing import FileCheck
+from torchao.quantization.granularity import PerAxis, PerGroup
+from torchao.quantization.quant_api import IntxWeightOnlyConfig, MappingType, quantize_
+from torchao.quantization.utils import compute_error
 
 
 class TestQuantFusionPass(unittest.TestCase):
@@ -373,3 +382,147 @@ class TestQuantFusionPass(unittest.TestCase):
             # ).run(
             #     m.dump_graph_module().code
             # )
+
+    def test_embedding_torchao(self) -> None:
+        for bit_width, use_dtype_variant, test_per_group, mapping_type in zip(
+            [2, 4, 8],
+            [True, False],
+            [True, False],
+            [MappingType.SYMMETRIC, MappingType.ASYMMETRIC],
+        ):
+            self._test_embedding_torchao(
+                bit_width, use_dtype_variant, test_per_group, mapping_type
+            )
+
+    def _test_embedding_torchao(
+        self,
+        bit_width: int,
+        use_dtype_variant: bool,
+        test_per_group: bool,
+        mapping_type: MappingType,
+    ) -> None:
+        assert bit_width in [2, 4, 8]
+        embedding_suffix = f"{bit_width}bit" if bit_width < 8 else "byte"
+        if use_dtype_variant:
+            embedding_suffix = f"{embedding_suffix}_dtype"
+
+        indices = torch.tensor([1, 2, 3], dtype=torch.int64)
+        model = torch.nn.Sequential(
+            *[torch.nn.Embedding(10, 64), torch.nn.Linear(64, 8)]
+        )
+        example_inputs = (indices,)
+
+        # torchao adds a dtype cast to match embeddings original weight type
+        # this does not happen for float32 because it is the default dtype
+        model = model.to(torch.float16) if use_dtype_variant else model
+
+        # quantize the model
+        granularity = PerGroup(32) if test_per_group else PerAxis(0)
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=getattr(torch, f"int{bit_width}"),
+                granularity=granularity,
+                mapping_type=mapping_type,
+            ),
+            lambda m, fqn: isinstance(m, torch.nn.Embedding),
+        )
+        expected_outputs = model(*example_inputs)
+
+        compile_config = EdgeCompileConfig(
+            _check_ir_validity=False,
+            _use_edge_ops=True,
+        )
+        m = to_edge(
+            export(model, example_inputs, strict=True), compile_config=compile_config
+        )
+        m_copy = copy.deepcopy(m)
+
+        # Before pass, we see torchao dequantize and embedding ops
+        FileCheck().check_count(
+            "executorch_exir_dialects_edge__ops_torchao_dequantize_affine_default",
+            1,
+            exactly=True,
+        ).check_count(
+            "executorch_exir_dialects_edge__ops_aten_embedding_default",
+            1,
+            exactly=True,
+        ).run(
+            m.exported_program().graph_module.code
+        )
+
+        node_value_dict = _get_node_value_dict(m.exported_program())
+        m = m.transform(
+            [QuantFusionPass(_fix_node_meta_val=True, node_value_dict=node_value_dict)]
+        )
+
+        # After pass, we see packing op and quantized embedding op, but no torchao dequantize op
+        FileCheck().check_count(
+            "executorch_exir_dialects_edge__ops_quant_fusion__pack_embedding_weight_default",
+            1 if bit_width < 8 else 0,
+            exactly=True,
+        ).check_count(
+            f"executorch_exir_dialects_edge__ops_quantized_decomposed_embedding_{embedding_suffix}",
+            1,
+            exactly=True,
+        ).check_not(
+            "executorch_exir_dialects_edge__ops_torchao_dequantize_affine_default"
+        ).run(
+            m.exported_program().graph_module.code
+        )
+
+        constant_prop_pass(m.exported_program())
+
+        found_embedding_node = False
+        seeking_suffix = embedding_suffix.replace("_", ".")
+        seeking = f"quantized_decomposed::embedding_{seeking_suffix}"
+        for node in m.exported_program().graph.nodes:
+            if node.op == "call_function" and node.target.name() == seeking:
+                found_embedding_node = True
+                if mapping_type == MappingType.SYMMETRIC:
+                    assert (
+                        node.args[2] is None
+                    ), f"Expected zero_point=None for symmetric quantization, but got {node.args[2]}"
+                else:
+                    assert node.args[2] is not None
+        assert (
+            found_embedding_node
+        ), f"Did not find embedding node with target {seeking}"
+
+        # After constant prop, we see quantized embedding op, but no packing op
+        FileCheck().check_count(
+            f"executorch_exir_dialects_edge__ops_quantized_decomposed_embedding_{embedding_suffix}",
+            1,
+            exactly=True,
+        ).check_not(
+            "executorch_exir_dialects_edge__ops_quant_fusion__pack_embedding_weight_default",
+        ).run(
+            m.exported_program().graph_module.code
+        )
+
+        # Compare numerics
+        actual_outputs = m.exported_program().module()(*example_inputs)
+        sqnr = compute_error(expected_outputs, actual_outputs)
+        self.assertTrue(sqnr >= 50, f"Got sqnr {sqnr}")
+
+        # Can lower to executorch
+        exec_prog = m.to_executorch()  # noqa
+
+        # Alternative flow 2 using quant_fusion_pass on exported program
+        quant_fusion_and_const_prop_pass(m_copy.exported_program())
+        FileCheck().check_count(
+            f"executorch_exir_dialects_edge__ops_quantized_decomposed_embedding_{embedding_suffix}",
+            1,
+            exactly=True,
+        ).check_not(
+            "executorch_exir_dialects_edge__ops_quant_fusion__pack_embedding_weight_default",
+        ).run(
+            m_copy.exported_program().graph_module.code
+        )
+
+        actual_outputs2 = m_copy.exported_program().module()(*example_inputs)
+        sqnr = compute_error(expected_outputs, actual_outputs2)
+        self.assertTrue(sqnr >= 50, f"Got sqnr {sqnr}")
+
+        # Can lower to executorch
+        exec_prog2 = m_copy.to_executorch()  # noqa

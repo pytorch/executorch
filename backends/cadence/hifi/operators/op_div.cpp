@@ -23,7 +23,6 @@ using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::Error;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -86,8 +85,21 @@ div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
   if ((a_type != ScalarType::Float) || (b_type != ScalarType::Float))
     optimized = 0;
 
-  if ((a_dim == 0) || (b_dim == 0))
-    optimized = 0;
+  bool float_types =
+      (a_type == ScalarType::Float) && (b_type == ScalarType::Float);
+
+  if ((a_dim == 0) && float_types) {
+    for (int i = 0; i < b.numel(); i++)
+      out.mutable_data_ptr<float>()[i] =
+          a.const_data_ptr<float>()[0] / b.const_data_ptr<float>()[i];
+    return out;
+  }
+  if ((b_dim == 0) && float_types) {
+    for (int i = 0; i < a.numel(); i++)
+      out.mutable_data_ptr<float>()[i] =
+          a.const_data_ptr<float>()[i] / b.const_data_ptr<float>()[0];
+    return out;
+  }
 
   if ((broadcast == 1) && (max_dim > kNnlibMaxDim))
     optimized = 0;
@@ -165,7 +177,7 @@ Tensor& div_out_mode(
     RuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
-    executorch::aten::optional<executorch::aten::string_view> mode,
+    std::optional<std::string_view> mode,
     Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,
@@ -199,9 +211,6 @@ Tensor& div_out_mode(
   max_dim = out.dim() > max_dim ? out.dim() : max_dim;
 
   if ((a_type != ScalarType::Float) || (b_type != ScalarType::Float))
-    optimized = 0;
-
-  if ((a_dim == 0) || (b_dim == 0))
     optimized = 0;
 
   if ((broadcast == 1) && (max_dim > kNnlibMaxDim))
@@ -312,4 +321,3 @@ Tensor& div_out_mode(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

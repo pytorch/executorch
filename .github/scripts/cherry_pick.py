@@ -39,7 +39,15 @@ def parse_args() -> Any:
     )
     parser.add_argument(
         "--classification",
-        choices=["regression", "critical", "fixnewfeature", "docs", "release"],
+        choices=[
+            "regression",
+            "critical",
+            "fixnewfeature",
+            "docs",
+            "release",
+            "examples",
+            "testci",
+        ],
         required=True,
         help="the cherry pick category",
     )

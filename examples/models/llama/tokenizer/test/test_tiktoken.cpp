@@ -10,7 +10,7 @@
 
 #include <vector>
 
-#include <executorch/extension/llm/tokenizer/tiktoken.h>
+#include <pytorch/tokenizers/tiktoken.h>
 
 #include <gtest/gtest.h>
 
@@ -21,9 +21,9 @@
 using namespace ::testing;
 
 using ::example::Version;
-using ::executorch::extension::llm::Tokenizer;
-using ::executorch::runtime::Error;
-using ::executorch::runtime::Result;
+using ::tokenizers::Error;
+using ::tokenizers::Result;
+using ::tokenizers::Tokenizer;
 
 static std::string get_resource_path(const std::string& name) {
 #ifdef EXECUTORCH_FB_BUCK
@@ -36,7 +36,7 @@ static std::string get_resource_path(const std::string& name) {
 class MultimodalTiktokenV5ExtensionTest : public Test {
  public:
   void SetUp() override {
-    tokenizer_ = std::make_unique<executorch::extension::llm::Tiktoken>(
+    tokenizer_ = std::make_unique<tokenizers::Tiktoken>(
         example::get_multimodal_special_tokens(), 0, 1);
     modelPath_ = get_resource_path("test_tiktoken_tokenizer.model");
   }

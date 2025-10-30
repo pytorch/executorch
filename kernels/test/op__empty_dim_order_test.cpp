@@ -18,10 +18,10 @@
 using namespace ::testing;
 using executorch::aten::DimOrderType;
 using executorch::aten::IntArrayRef;
-using executorch::aten::optional;
 using executorch::aten::OptionalArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpEmptyDimOrderOutTest : public OperatorTest {

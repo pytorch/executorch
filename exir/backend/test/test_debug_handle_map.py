@@ -97,7 +97,13 @@ class TestBackendDebugHandle(unittest.TestCase):
             all_debug_handles = list(lowered_model.meta["debug_handle_map"].values())[0]
             self.assertEqual(
                 len(all_debug_handles),
-                len(lowered_model.original_module.graph.nodes),
+                len(
+                    [
+                        node
+                        for node in lowered_model.original_module.graph.nodes
+                        if node.op not in ("placeholder", "output")
+                    ]
+                ),
             )
 
             class ComposedModel(torch.nn.Module):
@@ -127,5 +133,11 @@ class TestBackendDebugHandle(unittest.TestCase):
                 )[0]
                 self.assertEqual(
                     len(all_debug_handles),
-                    len(lowered_node.original_module.graph.nodes),
+                    len(
+                        [
+                            node
+                            for node in lowered_node.original_module.graph.nodes
+                            if node.op not in ("placeholder", "output")
+                        ]
+                    ),
                 )

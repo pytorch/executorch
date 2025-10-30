@@ -33,7 +33,6 @@ def define_common_targets():
                 "//executorch/kernels/fb/custom_ops/...",
                 "//executorch/runtime/core/test/...",
                 "//executorch/test/...",
-                "//executorch/backends/fb/qnnpack/test/...",
                 "//executorch/extension/kernel_util/test/...",
                 "@EXECUTORCH_CLIENTS",
             ],
@@ -44,6 +43,7 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",
+                "//executorch/runtime/core/portable_type/c10/c10:c10",
             ],
             exported_external_deps = [
                 "gmock" + aten_suffix,

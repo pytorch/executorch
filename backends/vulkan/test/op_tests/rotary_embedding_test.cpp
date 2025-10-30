@@ -14,6 +14,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include "test_utils.h"
+
 #include <cassert>
 
 //
@@ -54,26 +56,6 @@ std::pair<at::Tensor, at::Tensor> rotary_embedding_impl(
 //
 // Test functions
 //
-
-vkcompute::vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
-  using namespace vkcompute;
-  switch (at_scalartype) {
-    case c10::kFloat:
-      return vkapi::kFloat;
-    case c10::kHalf:
-      return vkapi::kHalf;
-    case c10::kInt:
-      return vkapi::kInt;
-    case c10::kLong:
-      return vkapi::kInt;
-    case c10::kChar:
-      return vkapi::kChar;
-    case c10::kByte:
-      return vkapi::kByte;
-    default:
-      VK_THROW("Unsupported at::ScalarType!");
-  }
-}
 
 void test_reference(
     const int n_heads = 4,
@@ -130,9 +112,8 @@ void test_reference(
   ValueRef staging_xk_out = graph.set_output_tensor(r_xk_out);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
-  graph.encode_execute();
 
   //
   // Run model

@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import os
 import struct
@@ -23,20 +22,24 @@ except ImportError:
 
 # Pack either input or output tensor block, compose the related arrays into
 # per-io structs to simplify runtime use.
-def vela_bin_pack_io(prefix, data, shape_order=None):
+def vela_bin_pack_io(prefix, data):
     vela_input_shapes = data[prefix + "_shape"]
+    # Vela input/output shape is fixed to 6D
+    vela_io_shape_dims = 6
 
-    order = shape_order if shape_order else range(len(vela_input_shapes))
     ios = struct.pack("<i", len(vela_input_shapes))
-    for i in order:
+    for i in range(len(vela_input_shapes)):
         io_shape = vela_input_shapes[i]
         io_elem_size = data[prefix + "_elem_size"][i]
         io_offset = data[prefix + "_offset"][i]
         io_region = data[prefix + "_region"][i]
-        assert len(io_shape) <= 4
-        inp_pad = io_shape.tolist() + [0] * (4 - len(io_shape))
+        if len(io_shape) != vela_io_shape_dims:
+            raise ValueError(
+                f"Expected {vela_io_shape_dims}D shape, got {len(io_shape)}D"
+            )
+        inp_pad = io_shape.tolist()
         io_struct = struct.pack(
-            "<iiiiiii", *inp_pad, io_elem_size, io_offset, io_region
+            "<iiiiiiiii", *inp_pad, io_elem_size, io_offset, io_region
         )
         ios += io_struct
     return ios
@@ -46,7 +49,10 @@ def vela_bin_pack_io(prefix, data, shape_order=None):
 # WARNING: Do not change this without changing VelaBinStream.cpp as that
 #          function consumes this format and the two need to align.
 def vela_compile(
-    tosa_flatbuffer: bytes, args: List[str], shape_order=None, verbose: bool = False
+    tosa_flatbuffer: bytes,
+    args: List[str],
+    verbose: bool = False,
+    intermediate_path: str | None = None,
 ):
     """
     Compile a TOSA graph to a binary stream for ArmBackendEthosU using Vela.
@@ -56,14 +62,14 @@ def vela_compile(
             "ethos-u-vela pip package couldn't be imported. Make sure it's installed!"
         )
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    def run(dir: str) -> bytes:
         tosaname = "out.tosa"
-        tosa_path = os.path.join(tmpdir, tosaname)
+        tosa_path = os.path.join(dir, tosaname)
         with open(tosa_path, "wb") as f:
             f.write(tosa_flatbuffer)
 
         # invoke vela
-        output_dir = os.path.join(tmpdir, "output")
+        output_dir = os.path.join(dir, "output")
         args.append(f"--output-dir={output_dir}")
         args.append(tosa_path)
         if verbose:
@@ -73,11 +79,11 @@ def vela_compile(
         if any("ethos-u85" in arg for arg in args) or any(
             "debug-force-regor" in arg for arg in args
         ):
-            np_path = os.path.join(tmpdir, "output", "out_vela.npz")
+            np_path = os.path.join(dir, "output", "out_vela.npz")
         else:
-            np_path = os.path.join(tmpdir, "output", "out_sg0_vela.npz")
-        blocks = b""
+            np_path = os.path.join(dir, "output", "out_sg0_vela.npz")
 
+        blocks = b""
         with np.load(np_path, allow_pickle=False) as data:
             # Construct our modified output_blocks with data in a form easily
             # digested on the device side
@@ -95,10 +101,10 @@ def vela_compile(
             if not isinstance(data["scratch_shape"][0], np.int64):
                 raise RuntimeError("Expected scratch to be int64")
             block_length = int(data["scratch_shape"][0])
-            bin_blocks["scratch_data"] = b"\x00" * block_length
+            bin_blocks["scratch_size"] = struct.pack("<I", block_length)
 
             # Capture inputs and outputs
-            bin_blocks["inputs"] = vela_bin_pack_io("input", data, shape_order)
+            bin_blocks["inputs"] = vela_bin_pack_io("input", data)
             bin_blocks["outputs"] = vela_bin_pack_io("output", data)
 
             bin_blocks["vela_end_stream"] = b""
@@ -123,3 +129,9 @@ def vela_compile(
                 blocks = blocks + block
 
         return blocks
+
+    if intermediate_path is not None:
+        return run(intermediate_path)
+    else:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            return run(tmpdir)

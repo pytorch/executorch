@@ -52,17 +52,21 @@ Tensor& sum_dim_out(
   }
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "sum.IntList_out";
-  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
-    ET_SWITCH_REALHBBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
-      CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
+
+  if (executorch::runtime::isComplexType(in.scalar_type())) {
+    ET_KERNEL_CHECK(
+        ctx, in.scalar_type() == out.scalar_type(), InvalidArgument, out);
+
+    ET_SWITCH_COMPLEXH_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
+      CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
       const bool success = parallel_for_each_reduce_over_dim_list_output_index(
           in, dim_list, out, [&](const auto begin, const auto end) {
             for (const auto out_ix : c10::irange(begin, end)) {
-              CTYPE_OUT sum = 0;
+              CTYPE sum(0, 0);
               if (plan.has_value()) {
-                sum = plan->execute<CTYPE_IN, CTYPE_OUT>(
-                    [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
-                    [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
+                sum = plan->execute<CTYPE, CTYPE>(
+                    [](CTYPE v) { return v; },
+                    [](CTYPE outv, CTYPE acc) { return acc + outv; },
                     out_ix);
               }
               out_data[out_ix] = sum;
@@ -70,7 +74,34 @@ Tensor& sum_dim_out(
           });
       ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
     });
-  });
+  } else {
+    ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
+      ET_SWITCH_REALHBBF16_TYPES(
+          out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
+            CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
+            const bool success =
+                parallel_for_each_reduce_over_dim_list_output_index(
+                    in, dim_list, out, [&](const auto begin, const auto end) {
+                      for (const auto out_ix : c10::irange(begin, end)) {
+                        CTYPE_OUT sum = 0;
+                        if (plan.has_value()) {
+                          sum = plan->execute<CTYPE_IN, CTYPE_OUT>(
+                              [](CTYPE_IN v) {
+                                return static_cast<CTYPE_OUT>(v);
+                              },
+                              [](CTYPE_OUT outv, CTYPE_OUT acc) {
+                                return acc + outv;
+                              },
+                              out_ix);
+                        }
+                        out_data[out_ix] = sum;
+                      }
+                    });
+            ET_KERNEL_CHECK_MSG(
+                ctx, success, Internal, , "parallel_for failed");
+          });
+    });
+  }
 
   return out;
 }

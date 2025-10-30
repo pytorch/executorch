@@ -8,6 +8,8 @@ import torch
 from executorch.exir import to_edge
 from executorch.exir.pass_base import ExportPass, PassResult
 
+from .utils import merge_decomposed_graph
+
 
 class LinalgVectorNorm(torch.nn.Module):
     def __init__(self, exp, dim, keepdim):
@@ -32,9 +34,9 @@ class DecomposeLinalgVectorNorm(ExportPass):
     Decompose for math equivalent op.
     """
 
-    def __init__(self, aten_dialect_capture=False) -> None:
+    def __init__(self, quantization_capture=False) -> None:
         super().__init__()
-        self.aten_dialect_capture = aten_dialect_capture
+        self.quantization_capture = quantization_capture
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
@@ -44,7 +46,7 @@ class DecomposeLinalgVectorNorm(ExportPass):
                 dim = node.args[2] if len(node.args) > 2 else None
                 keepdim = node.args[3] if len(node.args) > 3 else False
                 model = LinalgVectorNorm(ord, dim, keepdim)
-                if self.aten_dialect_capture:
+                if self.quantization_capture:
                     decomposed_module = torch.export.export(
                         model, (node.args[0].meta["val"],), strict=True
                     ).module()
@@ -60,26 +62,12 @@ class DecomposeLinalgVectorNorm(ExportPass):
                     # remap is used to map original node values to new node values,
                     # which ensures that reference to nodes are correctly updated in the new graph
                     remap = {"x": node.args[0]}
-
-                    for decomposed_node in decomposed_module.graph.nodes:
-                        # no need to copy existent 'output'
-                        if decomposed_node.op == "output":
-                            for user in node.users.copy():
-                                # remap
-                                user.replace_input_with(
-                                    node,
-                                    remap[decomposed_node.args[0][0]],
-                                )
-                        # no need to copy existent placeholders
-                        elif decomposed_node.op == "placeholder":
-                            # replace node map from string to graph node
-                            remap[decomposed_node] = remap.pop(decomposed_node.name)
-                        else:
-                            remap[decomposed_node] = graph.node_copy(
-                                decomposed_node,
-                                arg_transform=lambda x, remap=remap: remap[x],
-                            )
-
+                    merge_decomposed_graph(
+                        remap=remap,
+                        target_node=node,
+                        target_graph=graph,
+                        decomposed_graph_module=decomposed_module,
+                    )
                     graph.erase_node(node)
 
         graph.eliminate_dead_code()

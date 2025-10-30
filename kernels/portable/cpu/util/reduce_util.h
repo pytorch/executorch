@@ -147,8 +147,7 @@ void apply_on_flat_ix_with_dim_mask_and_base(
 
 ET_NODISCARD bool check_dim_list_is_valid(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-        dim_list);
+    const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list);
 
 bool check_dim_in_dim_list(
     const size_t dim,
@@ -157,52 +156,49 @@ bool check_dim_in_dim_list(
 
 size_t get_reduced_dim_product(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<int64_t>& dim);
+    const std::optional<int64_t>& dim);
 
 size_t get_reduced_dim_product(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-        dim_list);
+    const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list);
 
 // Resolve ambiguity between the above two overloads -- ArrayRef and
 // optional are both implicitly constructible from int64_t.
 inline size_t get_reduced_dim_product(
     const executorch::aten::Tensor& in,
     int64_t dim) {
-  return get_reduced_dim_product(in, executorch::aten::optional<int64_t>(dim));
+  return get_reduced_dim_product(in, std::optional<int64_t>(dim));
 }
 
 size_t get_out_numel(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<int64_t>& dim);
+    const std::optional<int64_t>& dim);
 
 size_t get_out_numel(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-        dim_list);
+    const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list);
 
 // Resolve ambiguity between the above two overloads -- ArrayRef and
 // optional are both implicitly constructible from int64_t.
 inline size_t get_out_numel(const executorch::aten::Tensor& in, int64_t dim) {
-  return get_out_numel(in, executorch::aten::optional<int64_t>(dim));
+  return get_out_numel(in, std::optional<int64_t>(dim));
 }
 
 size_t get_init_index(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<int64_t>& dim,
+    const std::optional<int64_t>& dim,
     const size_t out_ix);
 
 size_t get_init_index(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-        dim_list,
+    const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
     const size_t out_ix);
 
 inline size_t get_init_index(
     const executorch::aten::Tensor& in,
     int64_t dim,
     const size_t out_ix) {
-  return get_init_index(in, executorch::aten::optional<int64_t>(dim), out_ix);
+  return get_init_index(in, std::optional<int64_t>(dim), out_ix);
 }
 //
 // Iteration Functions
@@ -219,7 +215,7 @@ template <typename Fn>
 void apply_over_dim(
     const Fn& fn,
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<int64_t>& dim) {
+    const std::optional<int64_t>& dim) {
   // If dim is null, apply fn over the entire tensor
   if (!dim.has_value()) {
     fn(in.numel(), 1, 0);
@@ -269,7 +265,7 @@ template <typename Fn>
 void apply_over_dim(
     const Fn& fn,
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<int64_t>& dim,
+    const std::optional<int64_t>& dim,
     const size_t out_ix,
     const int64_t start = 0,
     const int64_t end = -1) {
@@ -326,8 +322,7 @@ class ApplyOverDimListPlan {
   ApplyOverDimListPlan(
       const executorch::aten::Tensor& in,
       // If set, lifetime must last until execute() returns.
-      const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-          dim_list,
+      const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
       const int64_t start = 0,
       const int64_t end = -1)
       : dim_list_(dim_list), in_(in) {
@@ -396,8 +391,8 @@ class ApplyOverDimListPlan {
     return in_;
   }
 
-  const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-  get_dim_list() const {
+  const std::optional<executorch::aten::ArrayRef<int64_t>>& get_dim_list()
+      const {
     return dim_list_;
   }
 
@@ -421,7 +416,7 @@ class ApplyOverDimListPlan {
   };
   ExecutionMode mode_;
   size_t out_numel_;
-  executorch::aten::optional<executorch::aten::ArrayRef<int64_t>> dim_list_;
+  std::optional<executorch::aten::ArrayRef<int64_t>> dim_list_;
   std::array<bool, kTensorDimensionLimit> is_in_dim_list_;
   const executorch::aten::Tensor& in_;
 };
@@ -437,8 +432,7 @@ template <typename Fn>
 void apply_over_dim_list(
     const Fn& fn,
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-        dim_list,
+    const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
     const size_t out_ix,
     const int64_t start = 0,
     const int64_t end = -1) {
@@ -483,7 +477,7 @@ std::tuple<CTYPE_OUT, long> map_reduce_over_dim(
     const MapOp& map_fun,
     const ReduceOp& reduce_fun,
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<int64_t>& dim,
+    const std::optional<int64_t>& dim,
     const size_t out_ix) {
   if (dim.has_value()) {
     if (in.dim() != 0) {
@@ -535,8 +529,7 @@ class MapReduceOverDimListPlan {
  public:
   MapReduceOverDimListPlan(
       const executorch::aten::Tensor& in,
-      const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-          dim_list)
+      const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list)
       : plan_(in, dim_list, 1, -1) {
     ET_CHECK_MSG(in.numel() > 0, "Input tensor must be nonempty");
   }
@@ -550,6 +543,9 @@ class MapReduceOverDimListPlan {
       const MapOp& map_fun,
       const ReduceOp& reduce_fun,
       const size_t out_ix) const {
+    ET_CHECK_MSG(
+        plan_.get_input_tensor().numel() > 0, "Input tensor must be nonempty");
+
     const size_t init_index =
         get_init_index(plan_.get_input_tensor(), plan_.get_dim_list(), out_ix);
 
@@ -605,8 +601,7 @@ CTYPE_OUT map_reduce_over_dim_list(
     const MapOp& map_fun,
     const ReduceOp& reduce_fun,
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-        dim_list,
+    const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
     const size_t out_ix) {
   MapReduceOverDimListPlan plan(in, dim_list);
   return plan.execute<CTYPE_IN, CTYPE_OUT>(map_fun, reduce_fun, out_ix);
@@ -636,7 +631,7 @@ template <typename CTYPE, typename ReduceOp>
 std::tuple<CTYPE, long> reduce_over_dim(
     const ReduceOp& reduce_fun,
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<int64_t>& dim,
+    const std::optional<int64_t>& dim,
     const size_t out_ix) {
   return map_reduce_over_dim<CTYPE, CTYPE>(
       [](CTYPE v) { return v; }, reduce_fun, in, dim, out_ix);
@@ -650,8 +645,7 @@ class ReduceOverDimListPlan {
  public:
   ReduceOverDimListPlan(
       const executorch::aten::Tensor& in,
-      const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-          dim_list)
+      const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list)
       : plan_(in, dim_list) {}
 
   template <typename CTYPE, typename ReduceOp>
@@ -687,8 +681,7 @@ template <typename CTYPE, typename ReduceOp>
 CTYPE reduce_over_dim_list(
     const ReduceOp& reduce_fun,
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-        dim_list,
+    const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
     const size_t out_ix) {
   ReduceOverDimListPlan plan(in, dim_list);
   return plan.execute<CTYPE>(reduce_fun, out_ix);
@@ -700,20 +693,19 @@ CTYPE reduce_over_dim_list(
 
 size_t compute_reduced_out_size(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<int64_t>& dim,
+    const std::optional<int64_t>& dim,
     bool keepdim,
     executorch::aten::SizesType* sizes_arr);
 
 size_t compute_reduced_out_size(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-        dim_list,
+    const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
     bool keepdim,
     executorch::aten::SizesType* sizes_arr);
 
 inline ssize_t compute_reduced_out_dim(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<int64_t>& dim,
+    const std::optional<int64_t>& dim,
     bool keepdim) {
   return (
       keepdim                                ? in.dim()
@@ -723,8 +715,7 @@ inline ssize_t compute_reduced_out_dim(
 
 inline ssize_t compute_reduced_out_dim(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-        dim_list,
+    const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
     bool keepdim) {
   return (
       keepdim ? in.dim()
@@ -741,14 +732,13 @@ inline ssize_t compute_reduced_out_dim(
 
 Error resize_reduction_out(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<int64_t>& dim,
+    const std::optional<int64_t>& dim,
     bool keepdim,
     executorch::aten::Tensor& out);
 
 Error resize_reduction_out(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
-        dim_list,
+    const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
     bool keepdim,
     executorch::aten::Tensor& out);
 
@@ -759,8 +749,7 @@ inline Error resize_reduction_out(
     int64_t dim,
     bool keepdim,
     executorch::aten::Tensor& out) {
-  return resize_reduction_out(
-      in, executorch::aten::optional<int64_t>(dim), keepdim, out);
+  return resize_reduction_out(in, std::optional<int64_t>(dim), keepdim, out);
 }
 
 #ifndef USE_ATEN_LIB
@@ -820,7 +809,7 @@ bool check_prod_out_args(
 template <typename Func>
 [[nodiscard]] bool parallel_for_each_reduce_over_dim_output_index(
     const Tensor& in,
-    executorch::aten::optional<int64_t> dim,
+    std::optional<int64_t> dim,
     const Tensor& out,
     const Func& func) {
 #ifdef ET_USE_THREADPOOL
@@ -843,15 +832,17 @@ template <typename Func>
 template <typename Func>
 [[nodiscard]] bool parallel_for_each_reduce_over_dim_list_output_index(
     const Tensor& in,
-    executorch::aten::optional<ArrayRef<int64_t>> dim_list,
+    std::optional<ArrayRef<int64_t>> dim_list,
     const Tensor& out,
     const Func& func) {
-#ifdef ET_UE_THREADPOOL
+#ifdef ET_USE_THREADPOOL
   const ssize_t reduction_size = get_reduced_dim_product(in, dim_list);
-  const auto grain_size = std::max(
-      static_cast<ssize_t>(1),
-      static_cast<ssize_t>(executorch::extension::internal::GRAIN_SIZE) /
-          reduction_size);
+  const auto grain_size = reduction_size == 0
+      ? 1
+      : std::max(
+            static_cast<ssize_t>(1),
+            static_cast<ssize_t>(executorch::extension::internal::GRAIN_SIZE) /
+                reduction_size);
 #else // ET_USE_THREADPOOL
   const auto grain_size = 1;
 #endif // ET_USE_THREADPOOL

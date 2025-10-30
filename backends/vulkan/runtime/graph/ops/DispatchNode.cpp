@@ -21,10 +21,10 @@ DispatchNode::DispatchNode(
     const utils::uvec3& local_workgroup_size,
     const std::vector<ArgGroup>& args,
     const vkapi::ParamsBindList& params,
+    const std::vector<PushConstantDataInfo>& push_constants,
     const vkapi::SpecVarList& spec_vars,
-    const ResizeFunction& resize_fn,
     const std::vector<ValueRef>& resize_args,
-    const std::vector<PushConstantDataInfo>& push_constants)
+    const ResizeFunction& resize_fn)
     : ExecuteNode(resize_fn, resize_args, args, shader.kernel_name),
       shader_(shader),
       global_workgroup_size_(global_workgroup_size),
@@ -35,10 +35,22 @@ DispatchNode::DispatchNode(
   graph.update_descriptor_counts(shader, /*execute = */ true);
 }
 
+void DispatchNode::prepare_pipelines(ComputeGraph* graph) {
+  graph->register_pipeline_to_create(
+      shader_, local_workgroup_size_, spec_vars_, push_constants_);
+}
+
 void DispatchNode::encode(ComputeGraph* graph) {
   if (!shader_) {
     return;
   }
+
+  // If any global wg size element is 0, then skip encoding this shader
+  if (global_workgroup_size_[0] == 0 || global_workgroup_size_[1] == 0 ||
+      global_workgroup_size_[2] == 0) {
+    return;
+  }
+
   api::Context* const context = graph->context();
   vkapi::PipelineBarrier pipeline_barrier{};
 
@@ -46,15 +58,7 @@ void DispatchNode::encode(ComputeGraph* graph) {
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
 
-  std::array<uint8_t, kMaxPushConstantSize> push_constants_data;
-  uint32_t push_constants_offset = 0;
-
-  for (const auto& push_constant : push_constants_) {
-    push_constants_offset += push_constant.write(
-        push_constants_data.data(),
-        push_constants_offset,
-        kMaxPushConstantSize);
-  }
+  write_push_constant_data();
 
   context->report_shader_dispatch_start(
       shader_.kernel_name,
@@ -63,7 +67,7 @@ void DispatchNode::encode(ComputeGraph* graph) {
       node_id_);
 
   vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
-      shader_, local_workgroup_size_, spec_vars_, push_constants_offset);
+      shader_, local_workgroup_size_, spec_vars_, push_constants_offset_);
 
   uint32_t idx = 0;
   idx = bind_values_to_descriptor_set(
@@ -76,10 +80,37 @@ void DispatchNode::encode(ComputeGraph* graph) {
       pipeline_barrier,
       shader_,
       global_workgroup_size_,
-      push_constants_data.data(),
-      push_constants_offset);
+      push_constants_data_.data(),
+      push_constants_offset_);
 
   context->report_shader_dispatch_end();
+}
+
+void DispatchNode::write_push_constant_data() {
+  push_constants_offset_ = 0;
+  for (const auto& push_constant : push_constants_) {
+    push_constants_offset_ += push_constant.write(
+        push_constants_data_.data(),
+        push_constants_offset_,
+        kMaxPushConstantSize);
+  }
+}
+
+bool DispatchNode::trigger_resize(ComputeGraph* graph) {
+  const bool any_arg_updated = ExecuteNode::trigger_resize(graph);
+
+  if (any_arg_updated) {
+    // If this shader uses push constants, and the tensor metadata associated
+    // with the push constants has changed, then the command buffer needs to be
+    // re-encoded since push constants cannot be updated.
+    for (const auto& push_constant : push_constants_) {
+      if (push_constant.is_tensor_metadata() &&
+          graph->was_value_updated(push_constant.value())) {
+        graph->set_requires_reencode();
+      }
+    }
+  }
+  return any_arg_updated;
 }
 
 } // namespace vkcompute

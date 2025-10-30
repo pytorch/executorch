@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
+import hashlib
+import logging
 
 from typing import cast, Dict, List, Optional, Tuple
 
@@ -34,7 +36,6 @@ from executorch.backends.xnnpack.utils.utils import (
     check_or_raise,
     get_input_node,
     get_param_tensor,
-    get_tensor_name,
     is_param_node,
     PERM_NCHW_TO_NHWC,
 )
@@ -210,7 +211,7 @@ class NodeVisitor:
         self,
         quant_params: Optional[QuantParams],
         node: torch.fx.Node,
-        fp32_static_weight: bool = False,
+        force_fp32: bool = False,
     ) -> XNNDatatype:
         # Default initialization
         dtype = XNNDatatype.xnn_datatype_fp32
@@ -231,7 +232,7 @@ class NodeVisitor:
             if quant_params.dtype == torch.int32:
                 return XNNDatatype.xnn_datatype_qcint32
             elif quant_params.dtype == torch.int8:
-                if quant_params.is_per_channel_group:
+                if quant_params.per_channel_group:
                     # 4-bit per channel group quantized weights
                     # No 8-bit support yet
                     assert (
@@ -267,25 +268,52 @@ class NodeVisitor:
             if node_dtype is not None and node_dtype == torch.float16:
                 dtype = (
                     XNNDatatype.xnn_datatype_fp32
-                    if fp32_static_weight
+                    if force_fp32
                     else XNNDatatype.xnn_datatype_fp16
                 )
 
         return dtype
 
-    def get_quant_params(self, quant_params: QuantParams) -> XNNQuantParams:
+    def get_quant_params(
+        self, quant_params: QuantParams, xnn_graph: XNNGraph
+    ) -> XNNQuantParams:
         if quant_params.per_channel:
             scale = cast(torch.Tensor, quant_params.scale)
-            if quant_params.is_per_channel_group:
+            buffer_idx = len(xnn_graph.constant_data)
+            num_scales = scale.numel()
+
+            if quant_params.per_channel_group:
+                scale = scale.to(torch.bfloat16)
+
+            num_bytes = scale.untyped_storage().nbytes()
+            scale_array = ctypes.cast(
+                scale.untyped_storage().data_ptr(),
+                ctypes.POINTER(ctypes.c_char * num_bytes),
+            ).contents
+            scale_name = hashlib.sha256(bytes(scale_array)).hexdigest()
+            xnn_graph.constant_data.append(
+                ConstantDataOffset(
+                    offset=UINT64_MAX, size=num_bytes, named_key=scale_name
+                )
+            )
+            self._named_data_store.add_named_data(
+                scale_name, bytes(scale_array), CONSTANT_TENSOR_ALIGNMENT
+            )
+
+            if quant_params.per_channel_group:
                 return PerChannelGroupQuant(
-                    scale=scale.flatten().tolist(),
+                    scale=[],
                     channel_dim=quant_params.axis,
                     group_size=quant_params.group_size,
+                    scale_buffer_idx=buffer_idx,
+                    num_scales=num_scales,
                 )
-            else:  # per_channel quant
+            else:
                 return PerChannelQuant(
-                    scale=scale.tolist(),
+                    scale=[],
                     channel_dim=quant_params.axis,
+                    scale_buffer_idx=buffer_idx,
+                    num_scales=num_scales,
                 )
         elif quant_params.is_dynamic:
             # NB:
@@ -307,7 +335,7 @@ class NodeVisitor:
     ) -> None:
         # Make sure things are lining up for per_channel_group quantization case
         # Has to be done this late because we don't have clean access to the actual tensor
-        assert quant_params.is_per_channel_group, "Not per_channel_group quantization"
+        assert quant_params.per_channel_group, "Not per_channel_group quantization"
         # linear weights will be in [oc, ic]. And per_channel quantization must be on axis 0
         num_groups = cast(torch.Tensor, quant_params.scale).shape[1]
         assert (
@@ -348,7 +376,7 @@ class NodeVisitor:
         convert_to_nhwc: bool = False,
         swap_in_out_for_weights: bool = False,
         quant_params: Optional[QuantParams] = None,
-        fp32_static_weights: bool = False,
+        force_fp32: bool = False,
         groups: int = 1,
     ) -> None:
         """
@@ -368,7 +396,7 @@ class NodeVisitor:
                         constant data. If used along with convert_to_nhwc, this
                         swap will happen before converting to nhwc.
             quant_params: Quantization meta data for this tensor, None if it is not quantized
-            fp32_static_weights: XNN_FLAG_FP32_STATIC_WEIGHTS for fp16 conv
+            force_fp32: forces tensor to be serialize as fp32, used for bias of dynamically quantized ops
             groups: number of groups for swap_in_out_for_weights
         """
 
@@ -405,7 +433,7 @@ class NodeVisitor:
             convert_to_nhwc,
             swap_in_out_for_weights,
             quant_params,
-            fp32_static_weights,
+            force_fp32,
             groups,
         )
 
@@ -417,9 +445,7 @@ class NodeVisitor:
             check_or_raise(len(dims) == 4, "Converting to nhwc requires 4d tensor")
             dims = [dims[i] for i in PERM_NCHW_TO_NHWC]
 
-        dtype = self.get_serialized_dtype(
-            quant_params, tensor, fp32_static_weight=fp32_static_weights
-        )
+        dtype = self.get_serialized_dtype(quant_params, tensor, force_fp32=force_fp32)
 
         tvalue = XNNTensorValue(
             datatype=dtype,
@@ -450,7 +476,7 @@ class NodeVisitor:
             else XValue(
                 xvalue_union=XNNQuantizedTensorValue(
                     tensor_value=tvalue,
-                    quant_params=self.get_quant_params(quant_params),
+                    quant_params=self.get_quant_params(quant_params, xnn_graph),
                 )
             )
         )
@@ -504,7 +530,7 @@ class NodeVisitor:
         convert_to_nhwc: bool,
         swap_in_out_for_weights: bool,
         quant_params: Optional[QuantParams],
-        fp32_static_weights: bool = False,
+        force_fp32: bool = False,
         groups: int = 1,
     ) -> int:
         """
@@ -525,7 +551,7 @@ class NodeVisitor:
                         constant data. If used along with convert_to_nhwc, this
                         swap will happen before converting to nhwc.
             quant_params: Quantization meta data for this tensor, None if it is not quantize
-            fp32_static_weights: bool to indicate whether tensor is fp32 static weights
+            force_fp32: bool to indicate whether tensor is fp32 static weights
             groups: groups for swap_in_out_for_weights
 
         Returns:
@@ -554,7 +580,7 @@ class NodeVisitor:
         # Quantize buffer if static data is indeed quantized
         if quant_params is not None and not quant_params.is_dynamic:
             const_val = quant_params.quantize_tensor(const_val).contiguous()
-        elif const_val.dtype != torch.float16 or fp32_static_weights:
+        elif const_val.dtype != torch.float16 or force_fp32:
             # ensure that the const is fp32
             const_val = const_val.to(dtype=torch.float32).contiguous()
 
@@ -576,22 +602,39 @@ class NodeVisitor:
         if quant_params is not None and quant_params.is_qc4w:
             const_val = self.convert_to_qc4w(const_val)
 
-        array_type = ctypes.c_char * const_val.untyped_storage().nbytes()
+        size = const_val.untyped_storage().nbytes()
+        array_type = ctypes.c_char * size
         array = ctypes.cast(
             const_val.untyped_storage().data_ptr(),
             ctypes.POINTER(array_type),
         ).contents
 
-        named_key = get_tensor_name(self.exported_program, get_attr_node)
-        if named_key == "":
-            raise ValueError(f"Tensor from node: {get_attr_node} has no name")
+        check_or_raise(
+            size > 0,
+            f"Serializing constant data node {tensor} but tensor value has no bytes",
+        )
+        sha256_hash = hashlib.sha256(bytes(array))
+        named_key = sha256_hash.hexdigest()
 
         size = const_val.untyped_storage().nbytes()
         xnn_graph.constant_data.append(
             ConstantDataOffset(offset=UINT64_MAX, size=size, named_key=named_key)
         )
+
+        custom_meta = tensor.meta.get("custom", None)
+        external_tag = (
+            custom_meta.get("delegate_constant_tag", None) if custom_meta else None
+        )
+        if external_tag is not None:
+            external_tag = custom_meta.get("delegate_constant_tag", None)
+            logging.info(
+                f"Adding constant data with name {tensor.name}, key {named_key} and external_tag {external_tag} to named_data_store"
+            )
         self._named_data_store.add_named_data(
-            named_key, bytes(array), alignment=CONSTANT_TENSOR_ALIGNMENT
+            named_key,
+            bytes(array),
+            alignment=CONSTANT_TENSOR_ALIGNMENT,
+            external_tag=external_tag,
         )
 
         return buffer_idx

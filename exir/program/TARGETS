@@ -1,9 +1,9 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "lib",
     srcs = [
         "__init__.py",
@@ -14,7 +14,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "program",
     srcs = [
         "_program.py",
@@ -31,9 +31,11 @@ python_library(
         "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir/capture:config",
         "//executorch/exir/emit:emit",
         "//executorch/exir/emit:lib",
+        "//executorch/exir/operator:util",
         "//executorch/exir/passes:insert_write_back_for_buffers_pass",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:normalize_view_copy_base_pass",
@@ -48,7 +50,7 @@ python_library(
     ] +  (["//executorch/exir/program/fb:logger"] if not runtime.is_oss else [])
 )
 
-python_library(
+runtime.python_library(
     name = "fake_program",
     srcs = [
         "_fake_program.py",

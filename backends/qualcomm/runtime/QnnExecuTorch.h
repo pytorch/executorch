@@ -16,14 +16,18 @@
 #include <stdint.h>
 #endif
 
+#define QNN_BACKEND "QnnBackend"
+#define QNN_RUNTIME_LOG_LEVEL "qnn_runtime_log_level"
+#define QNN_RUNTIME_HTP_PERFORMANCE_MODE "qnn_runtime_htp_performance_mode"
+#define QNN_RUNTIME_PROFILE_LEVEL "qnn_runtime_profile_level"
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
 
 // This could be:
 // 1. qnn_context_binary
-// 2. QnnQcirCustomProtocol
-// 3. QnnContextCustomProtocol
+// 2. QnnContextCustomProtocol
 // To check if it is custom protocol, users can deserialize the binary using
 // QnnCustomProtocol and check the status
 typedef struct {

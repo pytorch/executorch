@@ -13,7 +13,7 @@ from typing import Any
 
 import torch
 from torch import nn
-from torchao.quantization.GPTQ import Int8DynActInt4WeightLinear
+from torchao.quantization.linear_quant_modules import Int8DynActInt4WeightLinear
 from torchao.quantization.quant_api import _replace_with_custom_fn_if_matches_filter
 
 

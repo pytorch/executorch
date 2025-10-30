@@ -13,8 +13,10 @@ def define_common_targets():
             "kernels.h",
         ],
         deps = common_deps,
+        compatible_with = ["ovr_config//cpu:xtensa"],
         visibility = [
             "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
             "fbsource//third-party/nnlib-hifi4/xa_nnlib:libxa_nnlib_common",

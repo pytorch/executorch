@@ -61,7 +61,7 @@ def _test_create_delete(kind: InputKind, persistent_buffer: bool = None):
             kwargs={},
         )
 
-    output_node = list(graph.nodes)[-1]
+    output_node = graph.output_node()
     output_node.replace_input_with(input_node, add_node)
 
     # We should now have four nodes: test_node, input, add, output

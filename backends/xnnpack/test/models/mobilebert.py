@@ -12,6 +12,9 @@ from transformers import MobileBertConfig, MobileBertModel  # @manual
 
 
 class TestMobilebert(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     # pyre-ignore
     mobilebert = MobileBertModel(MobileBertConfig()).eval()
     example_inputs = (torch.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10140, 102]]),)

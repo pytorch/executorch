@@ -3,7 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
+from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.convert_squeezes_to_view import (
+    ConvertSqueezesToViewPass,
+)
 from executorch.exir.dialects._ops import (  # type: ignore[import-not-found]
     ops as exir_ops,
 )
@@ -13,7 +19,7 @@ from executorch.exir.pass_base import (  # type: ignore[import-not-found]
 )
 
 
-class ConvertAnyDefaultDimDimsPass(ExportPass):
+class ConvertAnyDefaultDimDimsPass(ArmPass):
     """
     Converts any.default, any.dim and any.dims to a sequence of any.dim by unrolling multi-dimensional reduction.
     Please refer to KeepDimsFalseToSqueezePass for an explanation of this coversion.
@@ -43,6 +49,8 @@ class ConvertAnyDefaultDimDimsPass(ExportPass):
         any.dim(dim2, keepdim = True)
         squeeze(dim = [dim1, dim2])
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {ConvertSqueezesToViewPass}
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False

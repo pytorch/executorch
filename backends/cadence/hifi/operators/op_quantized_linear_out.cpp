@@ -15,16 +15,15 @@
 #include <cmath>
 #include <optional>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
 
-using ::executorch::aten::optional;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
 // The nnlib kernel to compute quantized linear via matmul.
 
@@ -291,7 +290,6 @@ void quantized_linear_per_tensor_out(
   }
 }
 
-}; // namespace native
-}; // namespace HiFi
-}; // namespace impl
-}; // namespace cadence
+} // namespace native
+} // namespace HiFi
+} // namespace impl

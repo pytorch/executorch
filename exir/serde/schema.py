@@ -195,6 +195,7 @@ class NamedArgument:
 
 @dataclass
 class Node:
+    name: str
     target: str
     inputs: List[NamedArgument]
     outputs: List[Argument]
@@ -402,3 +403,4 @@ class LoweredBackendModule:
     original_module: export_schema.ExportedProgram
     original_state_dict: str
     original_constants: str
+    named_data_store: Optional[bytes] = None

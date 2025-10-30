@@ -6,13 +6,14 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <multiarray.h>
+#import "multiarray.h"
+
+#import "objc_array_util.h"
 
 #import <Accelerate/Accelerate.h>
 #import <CoreML/CoreML.h>
 #import <functional>
 #import <numeric>
-#import <objc_array_util.h>
 #import <optional>
 #import <vector>
 
@@ -122,6 +123,12 @@ bool init_bnns_descriptor(BNNSNDArrayDescriptor& bnns_descriptor, const MultiArr
 }
 
 bool copy_using_bnns(const MultiArray& src, MultiArray& dst) {
+    if (src.layout().dataType() != dst.layout().dataType()) {
+        // Copying from FP16 to FP32 is supported and this is a common use case
+        if (!(src.layout().dataType() == MultiArray::DataType::Float16 && dst.layout().dataType() == MultiArray::DataType::Float32)) {
+            return false;
+        }
+    }
     if (dst.layout().num_bytes() < src.layout().num_bytes()) {
         return false;
     }

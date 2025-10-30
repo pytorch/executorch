@@ -42,11 +42,7 @@ class TestJointGraph(unittest.TestCase):
         joint_ep = _export_forward_backward(ep)
         edge = to_edge(joint_ep)
 
-        output_node = None
-        for node in edge.exported_program().graph.nodes:
-            if node.op == "output":
-                output_node = node
-                break
+        output_node = edge.exported_program().graph.output_node()
 
         orig_outputs = len(output_node.args[0])
 
@@ -58,11 +54,7 @@ class TestJointGraph(unittest.TestCase):
             if spec.kind == OutputKind.TOKEN
         ]
 
-        output_node = None
-        for node in et.exported_program().graph.nodes:
-            if node.op == "output":
-                output_node = node
-                break
+        output_node = et.exported_program().graph.output_node()
 
         weight_outputs = len(output_node.args[0])
 

@@ -95,6 +95,13 @@ class MmapDataLoader final : public executorch::runtime::DataLoader {
 
   ET_NODISCARD executorch::runtime::Result<size_t> size() const override;
 
+  ET_NODISCARD
+  executorch::runtime::Error load_into(
+      size_t offset,
+      size_t size,
+      ET_UNUSED const SegmentInfo& segment_info,
+      void* buffer) const override;
+
  private:
   MmapDataLoader(
       int fd,
@@ -112,6 +119,10 @@ class MmapDataLoader final : public executorch::runtime::DataLoader {
   MmapDataLoader(const MmapDataLoader&) = delete;
   MmapDataLoader& operator=(const MmapDataLoader&) = delete;
   MmapDataLoader& operator=(MmapDataLoader&&) = delete;
+
+  ET_NODISCARD executorch::runtime::Error validate_input(
+      size_t offset,
+      size_t size) const;
 
   const char* const file_name_; // String data is owned by the instance.
   const size_t file_size_;

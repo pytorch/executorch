@@ -14,6 +14,9 @@ from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLow
 
 
 class TestLSTM(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class LSTMLinear(torch.nn.Module):
         def __init__(self, input_size, hidden_size, out_size):
             super().__init__()

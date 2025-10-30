@@ -22,19 +22,33 @@ using executorch::aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_trunc_out(const Tensor& a, Tensor& out) {
-  executorch::runtime::KernelRuntimeContext context{};
-  return torch::executor::aten::trunc_outf(context, a, out);
-}
+class OpTruncTest : public OperatorTest {
+ protected:
+  Tensor& op_trunc_out(const Tensor& self, Tensor& out) {
+    return torch::executor::aten::trunc_outf(context_, self, out);
+  }
 
-TEST(OpTruncOutTest, SmokeTest) {
-  TensorFactory<ScalarType::Double> tfDouble;
+  template <ScalarType DTYPE>
+  void test_trunc_float_dtype() {
+    TensorFactory<DTYPE> tf;
 
-  Tensor self =
-      tfDouble.make({1, 6}, {60.5, 16.25, -95.0, -36.125, 19.0, -47.75});
-  Tensor out = tfDouble.zeros({1, 6});
-  Tensor out_expected =
-      tfDouble.make({1, 6}, {60.0, 16.0, -95.0, -36.0, 19.0, -47.0});
-  op_trunc_out(self, out);
-  EXPECT_TENSOR_CLOSE(out, out_expected);
+    Tensor in = tf.make({1, 6}, {60.5, 16.25, -95.0, -36.125, 19.0, -47.75});
+    Tensor out = tf.zeros({1, 6});
+    Tensor expected = tf.make({1, 6}, {60.0, 16.0, -95.0, -36.0, 19.0, -47.0});
+
+    Tensor ret = op_trunc_out(in, out);
+
+    EXPECT_TENSOR_EQ(out, ret);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
+};
+
+TEST_F(OpTruncTest, AllFloatDtypeSupport) {
+#define TEST_ENTRY(ctype, dtype) test_trunc_float_dtype<ScalarType::dtype>();
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+  } else {
+    ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+  }
+#undef TEST_ENTRY
 }

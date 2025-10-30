@@ -38,6 +38,7 @@ using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Method;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
@@ -128,7 +129,7 @@ struct KernelControl {
    */
   static void kernel_hook(
       KernelRuntimeContext& context,
-      ET_UNUSED EValue** args) {
+      ET_UNUSED Span<EValue*> args) {
     auto* control = KernelControl::singleton();
     control->call_count++;
     if (control->call_context_fail) {
@@ -247,6 +248,8 @@ class KernelIntegrationTest : public ::testing::Test {
     ASSERT_EQ(inputs_cleanup.error(), Error::Ok);
     inputs_cleanup_ = std::make_unique<executorch::extension::BufferCleanup>(
         std::move(*inputs_cleanup));
+    auto input_err = method_->set_input(executorch::runtime::EValue(1.0), 2);
+    ASSERT_EQ(input_err, Error::Ok);
   }
 
   void TearDown() override {
@@ -364,8 +367,9 @@ TEST_F(KernelTempMemoryAllocatorIntegrationTest, UsingTempMemoryAllocator) {
   EXPECT_EQ(control_->total_allocated_size, 4);
   EXPECT_EQ(temp_allocator_->number_of_allocations, 1);
   EXPECT_EQ(temp_allocator_->total_allocated_size, 4);
-  // The temp allocator should have been reset after the execution.
-  EXPECT_EQ(temp_allocator_->number_of_resets, 1);
+  // The temp allocator should have been reset after the execution and before
+  // method execution.
+  EXPECT_EQ(temp_allocator_->number_of_resets, 2);
   EXPECT_EQ(temp_allocator_->currently_allocated_size, 0);
 
   control_->temp_memory_size = 8;
@@ -376,6 +380,6 @@ TEST_F(KernelTempMemoryAllocatorIntegrationTest, UsingTempMemoryAllocator) {
   EXPECT_EQ(temp_allocator_->number_of_allocations, 2);
   EXPECT_EQ(temp_allocator_->total_allocated_size, 12);
   // The temp allocator should have been reset after the execution.
-  EXPECT_EQ(temp_allocator_->number_of_resets, 2);
+  EXPECT_EQ(temp_allocator_->number_of_resets, 4);
   EXPECT_EQ(temp_allocator_->currently_allocated_size, 0);
 }

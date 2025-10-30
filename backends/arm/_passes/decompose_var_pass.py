@@ -1,14 +1,18 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
+from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
+from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -33,7 +37,7 @@ def get_var_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get var decomposition for op {op}")
 
 
-class DecomposeVarPass(ExportPass):
+class DecomposeVarPass(ArmPass):
     """
     This pass decomposes var.correction and var.dim into smaller ops (see https://pytorch.org/docs/stable/generated/torch.var.html)
 
@@ -46,6 +50,12 @@ class DecomposeVarPass(ExportPass):
         sum = sum(squared_diff, dim)
         y = div(sum, max(0, N-correction))
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ComputeConstantOpsAOT,
+        DecomposeMeanDimPass,
+        DecomposeSumPass,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (
@@ -77,14 +87,17 @@ class DecomposeVarPass(ExportPass):
             N *= input_shape[d]
 
         mean_op, diff_op, mul_op, sum_op, full_op = get_var_decomposition(op)
-        mean = super().call_operator(mean_op, (x, dim, True), {}, meta)
-        diff = super().call_operator(diff_op, (x, mean), {}, meta)
-        squared_diff = super().call_operator(mul_op, (diff, diff), {}, meta)
-        sum = super().call_operator(sum_op, (squared_diff, dim, keepdim), {}, meta)
+        mean = super().call_operator(mean_op, (x, dim, True), {}, meta, True)
+        diff = super().call_operator(diff_op, (x, mean), {}, meta, True)
+        squared_diff = super().call_operator(mul_op, (diff, diff), {}, meta, True)
+        sum = super().call_operator(
+            sum_op, (squared_diff, dim, keepdim), {}, meta, True
+        )
         full = super().call_operator(
             full_op,
             ([], 1 / max(0, N - correction)),
             {"dtype": dtype},
             meta,
+            True,
         )
-        return super().call_operator(mul_op, (sum, full), {}, meta)
+        return super().call_operator(mul_op, (sum, full), {}, meta, True)

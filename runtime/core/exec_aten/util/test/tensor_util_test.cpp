@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -17,7 +18,7 @@
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using executorch::runtime::extract_scalar_tensor;
+using executorch::ET_RUNTIME_NAMESPACE::extract_scalar_tensor;
 using executorch::runtime::testing::TensorFactory;
 
 class TensorUtilTest : public ::testing::Test {
@@ -148,13 +149,13 @@ TEST_F(TensorUtilTest, GetLeadingDimsSmokeTest) {
   Tensor t = tf_int_.ones({2, 3, 4});
 
   // getLeadingDims(t, 1) => t.size(0)
-  EXPECT_EQ(executorch::runtime::getLeadingDims(t, 1), 2);
+  EXPECT_EQ(executorch::ET_RUNTIME_NAMESPACE::getLeadingDims(t, 1), 2);
 
   // getLeadingDims(t, 2) => t.size(0) * t.size(1)
-  EXPECT_EQ(executorch::runtime::getLeadingDims(t, 2), 6);
+  EXPECT_EQ(executorch::ET_RUNTIME_NAMESPACE::getLeadingDims(t, 2), 6);
 
   // getLeadingDims(t, 3) => t.size(0) * t.size(1) * t.size(2)
-  EXPECT_EQ(executorch::runtime::getLeadingDims(t, 3), 24);
+  EXPECT_EQ(executorch::ET_RUNTIME_NAMESPACE::getLeadingDims(t, 3), 24);
 }
 
 TEST_F(TensorUtilTest, GetLeadingDimsInputOutOfBoundDies) {
@@ -162,9 +163,9 @@ TEST_F(TensorUtilTest, GetLeadingDimsInputOutOfBoundDies) {
   Tensor t = tf_int_.ones({2, 3, 4});
 
   // dim needs to be in the range [0, t.dim()]
-  ET_EXPECT_DEATH(executorch::runtime::getLeadingDims(t, -2), "");
-  ET_EXPECT_DEATH(executorch::runtime::getLeadingDims(t, -1), "");
-  ET_EXPECT_DEATH(executorch::runtime::getLeadingDims(t, 4), "");
+  ET_EXPECT_DEATH(executorch::ET_RUNTIME_NAMESPACE::getLeadingDims(t, -2), "");
+  ET_EXPECT_DEATH(executorch::ET_RUNTIME_NAMESPACE::getLeadingDims(t, -1), "");
+  ET_EXPECT_DEATH(executorch::ET_RUNTIME_NAMESPACE::getLeadingDims(t, 4), "");
 }
 
 TEST_F(TensorUtilTest, GetTrailingDimsSmokeTest) {
@@ -172,13 +173,13 @@ TEST_F(TensorUtilTest, GetTrailingDimsSmokeTest) {
   Tensor t = tf_int_.ones({2, 3, 4});
 
   // getTrailingDims(t, 1) => t.size(2)
-  EXPECT_EQ(executorch::runtime::getTrailingDims(t, 1), 4);
+  EXPECT_EQ(executorch::ET_RUNTIME_NAMESPACE::getTrailingDims(t, 1), 4);
 
   // getTrailingDims(t, 0) => t.size(1) * t.size(2)
-  EXPECT_EQ(executorch::runtime::getTrailingDims(t, 0), 12);
+  EXPECT_EQ(executorch::ET_RUNTIME_NAMESPACE::getTrailingDims(t, 0), 12);
 
   // getTrailingDims(t, -1) => t.size(0) * t.size(1) * t.size(2)
-  EXPECT_EQ(executorch::runtime::getTrailingDims(t, -1), 24);
+  EXPECT_EQ(executorch::ET_RUNTIME_NAMESPACE::getTrailingDims(t, -1), 24);
 }
 
 TEST_F(TensorUtilTest, GetTrailingDimsInputOutOfBoundDies) {
@@ -186,9 +187,9 @@ TEST_F(TensorUtilTest, GetTrailingDimsInputOutOfBoundDies) {
   Tensor t = tf_int_.ones({2, 3, 4});
 
   // dim needs to be in the range [-1, t.dim() - 1)
-  ET_EXPECT_DEATH(executorch::runtime::getTrailingDims(t, -2), "");
-  ET_EXPECT_DEATH(executorch::runtime::getTrailingDims(t, 3), "");
-  ET_EXPECT_DEATH(executorch::runtime::getTrailingDims(t, 4), "");
+  ET_EXPECT_DEATH(executorch::ET_RUNTIME_NAMESPACE::getTrailingDims(t, -2), "");
+  ET_EXPECT_DEATH(executorch::ET_RUNTIME_NAMESPACE::getTrailingDims(t, 3), "");
+  ET_EXPECT_DEATH(executorch::ET_RUNTIME_NAMESPACE::getTrailingDims(t, 4), "");
 }
 
 TEST_F(TensorUtilTest, ContiguousCheckSupported) {
@@ -228,8 +229,8 @@ TEST_F(TensorUtilTest, CheckSameContiguousStrideSupported) {
 
   // Any two tensors in `same_stride_tensor_list` have same strides. The two
   // could contain duplicate tensors.
-  for (int i = 0; i < same_stride_tensor_list.size(); i++) {
-    for (int j = i; j < same_stride_tensor_list.size(); j++) {
+  for (const auto i : c10::irange(same_stride_tensor_list.size())) {
+    for (const auto j : c10::irange(i, same_stride_tensor_list.size())) {
       auto ti = same_stride_tensor_list[i];
       auto tj = same_stride_tensor_list[j];
       ET_CHECK_SAME_STRIDES2(ti, tj);
@@ -238,16 +239,16 @@ TEST_F(TensorUtilTest, CheckSameContiguousStrideSupported) {
 
   // Any tensor in `same_stride_tensor_list` shall not have same stride with
   // `different_stride`.
-  for (int i = 0; i < same_stride_tensor_list.size(); i++) {
+  for (const auto i : c10::irange(same_stride_tensor_list.size())) {
     auto ti = same_stride_tensor_list[i];
     ET_EXPECT_DEATH(ET_CHECK_SAME_STRIDES2(ti, different_stride), "");
   }
 
   // Any three tensors in same_stride_tensor_list have same strides. The three
   // could contain duplicate tensors.
-  for (size_t i = 0; i < same_stride_tensor_list.size(); i++) {
-    for (size_t j = i; j < same_stride_tensor_list.size(); j++) {
-      for (size_t k = j; k < same_stride_tensor_list.size(); k++) {
+  for (const auto i : c10::irange(same_stride_tensor_list.size())) {
+    for (const auto j : c10::irange(i, same_stride_tensor_list.size())) {
+      for (const auto k : c10::irange(j, same_stride_tensor_list.size())) {
         auto ti = same_stride_tensor_list[i];
         auto tj = same_stride_tensor_list[j];
         auto tk = same_stride_tensor_list[k];
@@ -258,8 +259,8 @@ TEST_F(TensorUtilTest, CheckSameContiguousStrideSupported) {
 
   // Any two tensors in same_stride_tensor_list shall not have same strides with
   // `different_stride`. The two could contain duplicate tensors.
-  for (int i = 0; i < same_stride_tensor_list.size(); i++) {
-    for (int j = i; j < same_stride_tensor_list.size(); j++) {
+  for (const auto i : c10::irange(same_stride_tensor_list.size())) {
+    for (const auto j : c10::irange(i, same_stride_tensor_list.size())) {
       auto ti = same_stride_tensor_list[i];
       auto tj = same_stride_tensor_list[j];
       ET_EXPECT_DEATH(ET_CHECK_SAME_STRIDES3(ti, tj, different_stride), "");
@@ -421,7 +422,7 @@ TEST_F(TensorUtilTest, BoolTensorNotScalarFails) {
 //
 
 TEST_F(TensorUtilTest, TensorIsRankTest) {
-  using executorch::runtime::tensor_is_rank;
+  using executorch::ET_RUNTIME_NAMESPACE::tensor_is_rank;
   Tensor a = tf_float_.ones({2, 3, 5});
 
   EXPECT_TRUE(tensor_is_rank(a, 3));
@@ -430,7 +431,7 @@ TEST_F(TensorUtilTest, TensorIsRankTest) {
 }
 
 TEST_F(TensorUtilTest, TensorHasDimTest) {
-  using executorch::runtime::tensor_has_dim;
+  using executorch::ET_RUNTIME_NAMESPACE::tensor_has_dim;
   Tensor a = tf_float_.ones({2, 3, 5});
 
   EXPECT_TRUE(tensor_has_dim(a, 2));
@@ -445,7 +446,7 @@ TEST_F(TensorUtilTest, TensorHasDimTest) {
 }
 
 TEST_F(TensorUtilTest, TensorsHaveSameDtypeTest) {
-  using executorch::runtime::tensors_have_same_dtype;
+  using executorch::ET_RUNTIME_NAMESPACE::tensors_have_same_dtype;
   Tensor a = tf_float_.ones({2, 3});
   Tensor b = tf_float_.ones({2, 3});
   Tensor c = tf_float_.ones({3, 3});
@@ -458,7 +459,7 @@ TEST_F(TensorUtilTest, TensorsHaveSameDtypeTest) {
 }
 
 TEST_F(TensorUtilTest, TensorsHaveSameSizeAtDimTest) {
-  using executorch::runtime::tensors_have_same_size_at_dims;
+  using executorch::ET_RUNTIME_NAMESPACE::tensors_have_same_size_at_dims;
   Tensor a = tf_float_.ones({2, 3, 4, 5});
   Tensor b = tf_float_.ones({5, 4, 3, 2});
 
@@ -470,7 +471,7 @@ TEST_F(TensorUtilTest, TensorsHaveSameSizeAtDimTest) {
 }
 
 TEST_F(TensorUtilTest, TensorsHaveSameShapeTest) {
-  using executorch::runtime::tensors_have_same_shape;
+  using executorch::ET_RUNTIME_NAMESPACE::tensors_have_same_shape;
   Tensor a = tf_float_.ones({2, 3});
   Tensor b = tf_int_.ones({2, 3});
   Tensor c = tf_byte_.ones({2, 3});
@@ -493,7 +494,7 @@ TEST_F(TensorUtilTest, TensorsHaveSameShapeTest) {
 }
 
 TEST_F(TensorUtilTest, TensorsHaveSameShapeAndDtypeTest) {
-  using executorch::runtime::tensors_have_same_shape_and_dtype;
+  using executorch::ET_RUNTIME_NAMESPACE::tensors_have_same_shape_and_dtype;
   Tensor a = tf_float_.ones({2, 3});
   Tensor b = tf_float_.ones({2, 3});
   Tensor c = tf_float_.ones({2, 3});
@@ -515,7 +516,7 @@ TEST_F(TensorUtilTest, TensorsHaveSameShapeAndDtypeTest) {
 }
 
 TEST_F(TensorUtilTest, TensorsHaveSameStridesTest) {
-  using executorch::runtime::tensors_have_same_strides;
+  using executorch::ET_RUNTIME_NAMESPACE::tensors_have_same_strides;
   Tensor a = tf_float_.full_channels_last({4, 5, 2, 3}, 1);
   Tensor b = tf_float_.full_channels_last({4, 5, 2, 3}, 2);
   Tensor c = tf_float_.full_channels_last({4, 5, 2, 3}, 3);
@@ -530,7 +531,7 @@ TEST_F(TensorUtilTest, TensorsHaveSameStridesTest) {
 }
 
 TEST_F(TensorUtilTest, TensorIsContiguous) {
-  using executorch::runtime::tensor_is_contiguous;
+  using executorch::ET_RUNTIME_NAMESPACE::tensor_is_contiguous;
   // Note that the strides.size() == 0 case is not tested, since
   Tensor a = tf_float_.full_channels_last({4, 5, 2, 3}, 1);
   Tensor b = tf_float_.ones({4, 5, 2, 3});
@@ -547,7 +548,7 @@ TEST_F(TensorUtilTest, ResizeZeroDimTensor) {
   Tensor a = tf_float_.ones({});
 
   EXPECT_EQ(
-      executorch::runtime::resize_tensor(a, {}),
+      executorch::ET_RUNTIME_NAMESPACE::resize_tensor(a, {}),
       executorch::runtime::Error::Ok);
   EXPECT_EQ(a.dim(), 0);
 }

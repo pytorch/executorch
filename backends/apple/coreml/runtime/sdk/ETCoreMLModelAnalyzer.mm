@@ -65,9 +65,7 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
                                                               assetManager:assetManager
                                                                      error:&localError];
     if (!model) {
-        ETCoreMLLogError(localError,
-                         "%@: Failed to create model profiler.",
-                         NSStringFromClass(ETCoreMLAssetManager.class));
+        ETCoreMLLogError(localError, "Failed to create model profiler.");
     }
     
     self = [super init];
@@ -98,8 +96,7 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
     if (!self.profiler) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorModelProfilingNotSupported,
-                                      "%@: Model profiling is only available for macOS >= 14.4, iOS >= 17.4, tvOS >= 17.4 and watchOS >= 10.4.",
-                                      NSStringFromClass(ETCoreMLModelAnalyzer.class));
+                                      "Model profiling is only available for macOS >= 14.4, iOS >= 17.4, tvOS >= 17.4 and watchOS >= 10.4.");
         return nil;
     }
     
@@ -125,8 +122,7 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
     if (!self.modelAsset) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorCorruptedData,
-                                      "%@: There is no mlpackage, mlpackage is required for debugging a model. Please check the export path.",
-                                      NSStringFromClass(ETCoreMLModelAnalyzer.class));
+                                      "The AOT blob is missing an 'mlpackage', which is required for debugging the model. Please check the export path.");
         return nil;
     }
     
@@ -142,7 +138,8 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
     if (!self.debugger) {
         return nil;
     }
-    
+
+    NSError *localError = nil;
     NSArray<MLMultiArray *> *modelOutputs = nil;
     NSArray<ETCoreMLModelStructurePath *> *operationPaths = self.debugger.operationPaths;
     NSDictionary<ETCoreMLModelStructurePath *, NSString *> *operationPathToDebugSymbolMap = self.debugger.operationPathToDebugSymbolMap;
@@ -154,8 +151,11 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
                                                                               options:predictionOptions
                                                                                inputs:inputs
                                                                          modelOutputs:&modelOutputs
-                                                                                error:error];
+                                                                                error:&localError];
             if (!outputs) {
+                if (error) {
+                    *error = localError;
+                }
                 return nil;
             }
             

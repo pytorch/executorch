@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <random>
+
 #include <gtest/gtest.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
@@ -15,6 +17,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #define CREATE_FLOAT_TEXTURE(sizes, allocate_memory)  \
   vkcompute::api::vTensor(                            \
@@ -135,6 +139,22 @@ void record_matmul_texture3d(
 // Input & Output Utilities
 //
 
+inline std::vector<float> create_random_float_vector(
+    const size_t numel,
+    const float min = 0.0f,
+    const float max = 1.0f) {
+  std::vector<float> result(numel);
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_real_distribution<float> dis(min, max);
+
+  for (size_t i = 0; i < numel; ++i) {
+    result[i] = dis(gen);
+  }
+
+  return result;
+}
+
 inline void fill_staging(
     vkcompute::api::StagingBuffer& staging,
     float val,
@@ -194,9 +214,7 @@ inline int64_t get_buf_idx(
     vkcompute::ComputeGraph& graph,
     vkcompute::IOValueRef ref,
     const std::vector<int64_t>& tensor_coor) {
-  vkcompute::vTensorPtr vten_ptr = graph.get_tensor(ref.value);
-
-  const std::vector<int64_t>& sizes = vten_ptr->sizes();
+  const std::vector<int64_t>& sizes = graph.sizes_of(ref.value);
 
   int64_t c = vkcompute::dim_at<vkcompute::kChannel4D>(sizes);
   int64_t h = vkcompute::dim_at<vkcompute::kHeight4D>(sizes);
@@ -231,6 +249,22 @@ void execute_graph_and_check_output(
     vkcompute::ComputeGraph& graph,
     std::vector<float> input_vals,
     std::vector<float> expected_outputs);
+
+#define CREATE_RAND_WEIGHT_TENSOR(name, sizes, dtype)              \
+  std::vector<float> data_##name =                                 \
+      create_random_float_buffer(utils::multiply_integers(sizes)); \
+  ValueRef name = graph.add_tensorref(sizes, dtype, data_##name.data());
+
+vkcompute::ComputeGraph build_mm_graph(
+    int B,
+    int M,
+    int K,
+    int N,
+    vkcompute::vkapi::ScalarType dtype,
+    vkcompute::utils::StorageType in_out_stype,
+    vkcompute::utils::GPUMemoryLayout memory_layout,
+    const std::vector<float>& mat2_data,
+    const bool prepack_mat2 = false);
 
 //
 // Debugging Utilities

@@ -10,9 +10,9 @@
 #include <cmath>
 #include <tuple>
 
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/cpu/moments_utils.h>
-#include <executorch/kernels/optimized/vec/functional.h>
-#include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
 
 namespace torch {
@@ -33,8 +33,6 @@ void layer_norm(
     Tensor& out,
     Tensor& mean,
     Tensor& rstd) {
-  using Vec = executorch::vec::Vectorized<CTYPE>;
-
   const size_t dim = input.dim() - normalized_shape.size();
   const size_t dim_size = input.size(dim);
 
@@ -93,8 +91,9 @@ void layer_norm(
         dst_ptr[j] = (src_ptr[j] * scale + offset) * gamma_v + beta_v;
       }
     } else {
-      executorch::vec::map3<CTYPE>(
-          [scale, offset](Vec x, Vec gamma, Vec beta) {
+      at::vec::map3<CTYPE>(
+          [scale, offset](auto x, auto gamma, auto beta) {
+            using Vec = decltype(x);
             return (x * Vec(scale) + Vec(offset)) * gamma + beta;
           },
           dst_ptr,
@@ -115,8 +114,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> opt_native_layer_norm_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const executorch::aten::optional<Tensor>& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& weight,
+    const std::optional<Tensor>& bias,
     double eps,
     Tensor& out,
     Tensor& mean_out,

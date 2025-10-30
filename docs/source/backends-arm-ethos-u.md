@@ -1,415 +1,285 @@
-<!---- Name is a WIP - this reflects better what it can do today ----->
-# ARM Ethos-U Backend
+# Arm&reg; Ethos&trade;-U NPU Backend
 
-<!----This will show a grid card on the page----->
-::::{grid} 2
+The Arm&reg; Ethos&trade;-U backend targets Edge/IoT-type AI use-cases by enabling optimal execution of quantized models on
+[Arm&reg; Ethos&trade;-U55 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u55), [Arm&reg; Ethos&trade;-U65 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u65), and
+[Arm&reg; Ethos&trade;-U85 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85), leveraging [TOSA](https://www.mlplatform.org/tosa/) and the
+[ethos-u-vela](https://pypi.org/project/ethos-u-vela/) graph compiler. This document is a technical reference for using the Ethos-U backend, for a top level view with code examples
+please refer to the [Arm Ethos-U Backend Tutorial](https://docs.pytorch.org/executorch/stable/tutorial-arm-ethos-u.html).
 
-:::{grid-item-card}  Tutorials we recommend you complete before this:
-:class-card: card-prerequisites
-* [Introduction to ExecuTorch](./intro-how-it-works.md)
-* [Getting Started](./getting-started.md)
-* [Building ExecuTorch with CMake](./using-executorch-building-from-source.md)
-:::
 
-:::{grid-item-card}  What you will learn in this tutorial:
-:class-card: card-prerequisites
-In this tutorial you will learn how to export a simple PyTorch model for ExecuTorch Arm Ethos-u backend delegate and run it on a Corstone FVP Simulators.
-:::
+## Features
+- Wide operator support for delegating large parts of models to highly optimized and low power Ethos-U NPUs.
+- A quantizer that optimizes quantization for the NPU target.
+- Example runtime integration for easy hardware bringup.
 
-::::
 
-```{warning}
-This ExecuTorch backend delegate is under active development. You may encounter some rough edges and features which may be documented or planned but not implemented.
-```
+## Target Requirements
+The target system must include an Ethos-U NPU.
 
+
+## Development Requirements
 ```{tip}
-If you are already familiar with this delegate, you may want to jump directly to the examples source dir - [https://github.com/pytorch/executorch/tree/main/examples/arm](https://github.com/pytorch/executorch/tree/main/examples/arm)
+All requirements can be downloaded using `examples/arm/setup.sh --i-agree-to-the-contained-eula` and added to the path using
+set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}")
+`source examples/arm/ethos-u-scratch/setup_path.sh`. Note that this means accepting the End-User License Agreements (EULA:s) required for using the downloaded software.
 ```
 
-## Prerequisites
+For the AOT flow, compilation of a model to `.pte` format using the Ethos-U backend, the requirements are:
+- [TOSA Serialization Library](https://www.mlplatform.org/tosa/software.html) for serializing the Exir IR graph into TOSA IR.
+- [Ethos-U Vela graph compiler](https://pypi.org/project/ethos-u-vela/) for compiling TOSA flatbuffers into an Ethos-U command stream.
 
-Let's make sure you have everything you need before we get started.
+And for building and running the example application available in `examples/arm/executor_runner/`:
+- [Arm GNU Toolchain](https://developer.arm.com/Tools%20and%20Software/GNU%20Toolchain) for cross compilation.
+- [Arm&reg; Corstone&trade; SSE-300 FVP](https://developer.arm.com/documentation/100966/1128/Arm--Corstone-SSE-300-FVP) for testing on a Arm&reg; Cortex&reg;-M55+Ethos-U55 reference design.
+- [Arm&reg; Corstone&trade; SSE-320 FVP](https://developer.arm.com/documentation/109760/0000/SSE-320-FVP) for testing on a Arm&reg; Cortex&reg;-M85+Ethos-U85 reference design.
 
-### Hardware
+Fixed Virtual Platforms (FVPs) are freely available emulators provided by Arm for easy embedded development without the need for a physical development board.
 
-To successfully complete this tutorial, you will need a Linux-based host machine with Arm aarch64 or x86_64 processor architecture.
 
-The target device will be an embedded platform with an Arm Cortex-M CPUs and Ethos-U NPUs (ML processor). This tutorial will show you how to run PyTorch models on both.
-
-We will be using a [Fixed Virtual Platform (FVP)](https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms), simulating [Corstone-300](https://developer.arm.com/Processors/Corstone-300)(cs300) and [Corstone-320](https://developer.arm.com/Processors/Corstone-320)(cs320)systems. Since we will be using the FVP (think of it as virtual hardware), we won't be requiring any real embedded hardware for this tutorial.
-
-### Software
-
-First, you will need to install ExecuTorch. Please follow the recommended tutorials if you haven't already, to set up a working ExecuTorch development environment.
-
-To generate software which can be run on an embedded platform (real or virtual), we will need a tool chain for cross-compilation and an Arm Ethos-U software development kit, including the Vela compiler for Ethos-U NPUs.
-
-In the following sections we will walk through the steps to download each of the dependencies listed above.
-
-## Set Up the Developer Environment
-
-In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial.
-
-For that we will use the `examples/arm/setup.sh` script to pull each item in an automated fashion. It is recommended to run the script in a conda environment. Upon successful execution, you can directly go to [the next step](#convert-the-pytorch-model-to-the-pte-file).
-
-As mentioned before, we currently support only Linux based platforms with x86_64 or aarch64 processor architecture. Let’s make sure we are indeed on a supported platform.
-
-```bash
-uname -s
-# Linux
-
-uname -m
-# x86_64 or aarch64
-```
-
-Next we will walk through the steps performed by the `setup.sh` script to better understand the development setup.
-
-### Download and Set Up the Corstone-300 and Corstone-320 FVP
-
-Fixed Virtual Platforms (FVPs) are pre-configured, functionally accurate simulations of popular system configurations. Here in this tutorial, we are interested in Corstone-300 and Corstone-320 systems. We can download this from the Arm website.
-
-```{note}
- By downloading and running the FVP software, you will be agreeing to the FVP [End-user license agreement (EULA)](https://developer.arm.com/downloads/-/arm-ecosystem-fvps/eula).
-```
-
-To download, we can either download `Corstone-300 Ecosystem FVP` and `Corstone-320 Ecosystem FVP`from [here](https://developer.arm.com/downloads/-/arm-ecosystem-fvps). or `setup.sh` script does that for you under `setup_fvp` function.
-
-### Download and Install the Arm GNU AArch32 Bare-Metal Toolchain
-
-Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55/M85 CPU available on the Corstone-300/Corstone-320 platform.
-
-These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 13.3.rel1 targeting `arm-none-eabi` here for our tutorial. Just like FVP, `setup.sh` script will down the toolchain for you. See `setup_toolchain` function.
-
-### Setup the Arm Ethos-U Software Development
-
-This git repository is the root directory for all Arm Ethos-U software. It is to help us download required repositories and place them in a tree structure. See `setup_ethos_u` function of the setup script for more details.
-
-Once this is done, you should have a working FVP simulator, a functioning toolchain for cross compilation, and the Ethos-U software development setup ready for the bare-metal developement.
-
-### Install the Vela Compiler
-Once this is done, the script will finish the setup by installing the Vela compiler for you, details are in `setup_vela` function.
-
-### Install the TOSA reference model
-This is the last step of the setup process, using `setup_tosa_reference_model` function `setup.sh` script will install TOSA reference model for you.
-
-At the end of the setup, if everything goes well, your top level devlopement dir might look something like this,
-
-```bash
-.
-├── arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi # for x86-64 hosts
-├── arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz
-├── ethos-u
-│   ├── core_platform
-│   ├── core_software
-│   ├── fetch_externals.py
-│   └── [...]
-├── FVP-corstone300
-│   ├── FVP_Corstone_SSE-300.sh
-│   └── [...]
-├── FVP-corstone320
-│   ├── FVP_Corstone_SSE-320.sh
-│   └── [...]
-├── FVP_corstone300.tgz
-├── FVP_corstone320.tgz
-└── setup_path.sh
-```
-
-## Convert the PyTorch Model to the `.pte` File
-
-`.pte` is a binary file produced by ExecuTorch Ahead-of-Time (AoT) pipeline by taking in a PyTorch Model (a torch.nn.Module), exporting it, running a variety of passes, and finally serializing it to a `.pte` file format. This binary file is typically consumed by the ExecuTorch Runtime. This [document](https://github.com/pytorch/executorch/blob/main/docs/source/getting-started-architecture.md) goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.
-
-In this section, we will primarily focus on the AoT flow with the end goal of producing a `.pte` file. There are a set of export configurations to target different backends at runtime. For each, the AoT flow will produce a unique `.pte` file. We will explore a couple of different configurations producing different `.pte` files, particularly interesting for our Corstone-300 system and available processing elements.
-
-Before we get started, let's first talk about the PyTorch modules we will be using.
-
-### PyTorch Example Modules
-We will use a couple of simple PyTorch Modules to explore the end-to-end flow. These modules will be used in various different ways throughout the tutorial, referring to them by their `<class_name>`.
-
-#### SoftmaxModule
-This is a very simple PyTorch module with just one [Softmax](https://pytorch.org/docs/stable/generated/torch.nn.Softmax.html#torch.nn.Softmax) operator.
+## Using the Arm Ethos-U backend
+The main configuration point for the lowering is the `EthosUCompileSpec` consumed by the partitioner and quantizer.
+The full user-facing API is documented below.
 
 ```python
-import torch
-
-class SoftmaxModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.softmax = torch.nn.Softmax()
-
-    def forward(self, x):
-        z = self.softmax(x)
-        return z
+class EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini')
 ```
+Compile spec for Ethos-U NPU
 
-Running it using the Python environment (on the same development Linux machine), we get the expected output.
+Attributes:
+- **target**: Ethos-U accelerator configuration, e.g. ethos-u55-128.
+- **system_config**: System configuration to select from the Vela configuration file.
+- **memory_mode**: Memory mode to select from the Vela configuration file.
+- **extra_flags**: Extra flags for the Vela compiler.
+- **config_ini**: Vela configuration file(s) in Python ConfigParser .ini file format.
 
 ```python
->>> m = SoftmaxModule()
->>> m(torch.ones(2,2))
-tensor([[0.5000, 0.5000],
-        [0.5000, 0.5000]])
+def EthosUCompileSpec.dump_debug_info(self, debug_mode: executorch.backends.arm.common.arm_compile_spec.ArmCompileSpec.DebugMode | None):
 ```
-
-#### AddModule
-Let's write another simple PyTorch module with just one [Add](https://pytorch.org/docs/stable/generated/torch.add.html#torch.add) operator.
+Dump debugging information into the intermediates path.
 
 ```python
-class AddModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return x + x
+def EthosUCompileSpec.dump_intermediate_artifacts_to(self, output_path: str | None):
 ```
-
-Running it using the Python environment (on the same development Linux machine), and as expected 1 + 1 indeed produces 2.
+Sets a path for dumping intermediate results during lowering such as tosa and pte.
 
 ```python
->>> m = AddModule()
->>> m(torch.ones(5, dtype=torch.int32)) # integer types for non-quantized Ethos-U delegation
-tensor([2, 2, 2, 2, 2], dtype=torch.int32)
+def EthosUCompileSpec.get_intermediate_path(self) -> str | None:
 ```
-Keep the inputs and outputs to these modules in mind. When we will lower and run this through alternate means as opposed to running on this Linux machine, we will use the same inputs, and expect the outputs to match with the one shown here.
-
-```{tip}
-We need to be aware of data types for running networks on the Ethos-U55 as it is an integer only processor. For this example we use integer types explicitly, for typical use of such a flow networks are built and trained in floating point, and then are quantized from floating point to integer for efficient inference.
-```
-
-#### MobileNetV2 Module
-[MobileNetV2](https://arxiv.org/abs/1801.04381) is a commonly in-production used network for edge and mobile devices.
-It's also available as a default model in [torchvision](https://github.com/pytorch/vision), so we can load it with the sample code below.
-```
-from torchvision.models import mobilenet_v2  # @manual
-from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
-
-mv2 = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
-```
-For more details, you can refer to the code snippet [here](https://github.com/pytorch/executorch/blob/2354945d47f67f60d9a118ea1a08eef8ba2364b5/examples/models/mobilenet_v2/model.py#L18).
-
-### Non-delegated Workflow
-
-In the ExecuTorch AoT pipeline, one of the options is to select a backend. ExecuTorch offers a variety of different backends. Selecting backend is optional, it is typically done to target a particular mode of acceleration or hardware for a given model compute requirements. Without any backends, ExecuTorch runtime will fallback to using, available by default, a highly portable set of operators.
-
-It's expected that on platforms with dedicated acceleration like the Ethos-U55, that the non-delegated flow is used for two primary cases:
-1. When the network is designed to be very small and best suited to run on the Cortex-M alone.
-2. When the network has a mix of operations that can target the NPU and those that can't, e.g. the Ethos-U55 supports integer operations and so floating point softmax will fall back to execute on the CPU.
-
-In this flow, without any backend delegates, to illustrate the portability of the ExecuTorch runtime, as well as of the operator library we will skip specifying the backend during the `.pte` generation.
-
-Following script will serve as a helper utility to help us generate the `.pte` file. This is available in the `examples/arm` directory.
-
-```bash
-python3 -m examples.arm.aot_arm_compiler --model_name="softmax"
-# This should produce ./softmax_arm_ethos-u55-128.pte
-```
-
-### Delegated Workflow
-
-Working with Arm, we introduced a new Arm backend delegate for ExecuTorch. This backend is under active development and has a limited set of features available as of writing this.
-
-By including a following step during the ExecuTorch AoT export pipeline to generate the `.pte` file, we can enable this backend delegate.
+Returns the path for dumping intermediate results during lowering such as tosa and pte.
 
 ```python
-from executorch.backends.arm.arm_backend import generate_ethosu_compile_spec
+def EthosUCompileSpec.get_output_format() -> str:
+```
+Returns a constant string that is the output format of the class.
 
-graph_module_edge.exported_program = to_backend(
-    model.exported_program,
-    ArmPartitioner(generate_ethosu_compile_spec("ethos-u55-128")))
+
+### Partitioner API
+```python
+class EthosUPartitioner(compile_spec: executorch.backends.arm.ethosu.compile_spec.EthosUCompileSpec, additional_checks: Optional[Sequence[torch.fx.passes.operator_support.OperatorSupportBase]] = None) -> None
+```
+Partitions subgraphs supported by the Arm Ethos-U backend.
+
+Attributes:
+- **compile_spec**: List of CompileSpec objects for Ethos-U backend.
+- **additional_checks**: Optional sequence of additional operator support checks.
+
+```python
+def EthosUPartitioner.ops_to_not_decompose(self, ep: torch.export.exported_program.ExportedProgram) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.node.Node], bool]]]:
+```
+Returns a list of operator names that should not be decomposed. When these ops are
+registered and the `to_backend` is invoked through to_edge_transform_and_lower it will be
+guaranteed that the program that the backend receives will not have any of these ops
+decomposed.
+
+Returns:
+- **List[torch._ops.OpOverload]**: a list of operator names that should not be decomposed.
+- **Optional[Callable[[torch.fx.Node], bool]]]**: an optional callable, acting as a filter, that users can provide
+    which will be called for each node in the graph that users can use as a filter for certain
+    nodes that should be continued to be decomposed even though the op they correspond to is
+    in the list returned by ops_to_not_decompose.
+
+```python
+def EthosUPartitioner.partition(self, exported_program: torch.export.exported_program.ExportedProgram) -> executorch.exir.backend.partitioner.PartitionResult:
+```
+Returns the input exported program with newly created sub-Modules encapsulating
+specific portions of the input "tagged" for delegation.
+
+The specific implementation is free to decide how existing computation in the
+input exported program should be delegated to one or even more than one specific
+backends.
+
+The contract is stringent in that:
+* Each node that is intended to be delegated must be tagged
+* No change in the original input exported program (ExportedProgram) representation can take
+place other than adding sub-Modules for encapsulating existing portions of the
+input exported program and the associated metadata for tagging.
+
+Args:
+- **exported_program**: An ExportedProgram in Edge dialect to be partitioned for backend delegation.
+
+Returns:
+- **PartitionResult**: includes the tagged graph and the delegation spec to indicate what backend_id and compile_spec is used for each node and the tag created by the backend developers.
+
+
+### Quantizer
+Since the Ethos-U backend is integer-only, all ops intended to run on the NPU needs to be quantized. The Ethos-U quantizer supports
+[Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)  and
+[Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html) quantization.
+
+Currently, the symmetric `int8` config defined by `executorch.backends.arm.quantizer.arm_quantizer.get_symmetric_quantization_config` is
+the main config available to use with the Ethos-U quantizer.
+
+```python
+class EthosUQuantizer(compile_spec: 'EthosUCompileSpec') -> 'None'
 ```
 
-Similar to the non-delegate flow, the same script will server as a helper utility to help us generate the `.pte` file. Notice the `--delegate` option to enable the `to_backend` call.
-
-```bash
-python3 -m examples.arm.aot_arm_compiler --model_name="add" --delegate
-# should produce ./add_arm_delegate_ethos-u55-128.pte
+```python
+def EthosUQuantizer.set_global(self, quantization_config: 'QuantizationConfig') -> 'TOSAQuantizer':
 ```
+Set quantization_config for submodules that are not already annotated by name or type filters.
 
-### Delegated Quantized Workflow
-Before generating the `.pte` file for delegated quantized networks like MobileNetV2, we need to build the `quantized_ops_aot_lib`
-
-You can just run the `backends/arm/scripts/build_quantized_ops_aot_lib.sh` script to build this for you or build it yourself like this. 
-
-```bash
-
-cd <executorch_root_dir>
-mkdir -p cmake-out-aot-lib
-cmake -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_XNNPACK=OFF \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
-    -DPYTHON_EXECUTABLE=python3 \
--Bcmake-out-aot-lib \
-    "${et_root_dir}"
-
-cmake --build cmake-out-aot-lib --parallel -- quantized_ops_aot_lib
+```python
+def EthosUQuantizer.set_io(self, quantization_config):
 ```
+Set quantization_config for input and output nodes.
 
-After the `quantized_ops_aot_lib` build, we can run the following script to generate the `.pte` file
-```bash
-python3 -m examples.arm.aot_arm_compiler --model_name="mv2" --delegate --quantize --so_library="$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.so)"
-# should produce ./mv2_arm_delegate_ethos-u55-128.pte
+```python
+def EthosUQuantizer.set_module_name(self, module_name: 'str', quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
 ```
+Set quantization_config for a submodule with name: `module_name`, for example:
+quantizer.set_module_name("blocks.sub"), it will quantize all supported operator/operator
+patterns in the submodule with this module name with the given `quantization_config`
 
-<br />
-
-At the end of this, we should have three different `.pte` files.
-
-- The first one contains the [SoftmaxModule](#softmaxmodule), without any backend delegates.
-- The second one contains the [AddModule](#addmodule), with Arm Ethos-U backend delegate enabled.
-- The third one contains the [quantized MV2Model](#mv2module), with the Arm Ethos-U backend delegate enabled as well.
-
-Now let's try to run these `.pte` files on a Corstone-300 and Corstone-320 platforms in a bare-metal environment.
-
-## Getting a Bare-Metal Executable
-
-In this section, we will go over steps that you need to go through to build the runtime application. This then run on the target device. In the executorch repository we have a functioning script which does the exact same steps. It is located at `executorch/examples/arm/run.sh`. We will use that to build necessary pieces and finally run the previously generated PTE file on an FVP.
-
-By default the `run.sh` will use `arm_test/` as an build and output folder and you will find the build artifacts under it. This can be contolled/overrided with the `--et_build_root` and the `--output` flags if needed.
-
-e.g. running `examples/arm/run.sh --model_name=add --target=ethos-u85-128` will produce a pte and elf file like this:
-
-```bash
-arm_test/add/add_arm_delegate_ethos-u85-128.pte
-arm_test/add/cmake-out/arm_executor_runner
+```python
+def EthosUQuantizer.set_module_type(self, module_type: 'Callable', quantization_config: 'QuantizationConfig') -> 'TOSAQuantizer':
 ```
-Also before we get started, make sure that you have completed ExecuTorch cmake build setup, and the instructions to setup the development environment described [earlier](#set-up-the-developer-environment).
+Set quantization_config for a submodule with type: `module_type`, for example:
+quantizer.set_module_name(Sub) or quantizer.set_module_name(nn.Linear), it will quantize all supported operator/operator
+patterns in the submodule with this module type with the given `quantization_config`
 
-The block diagram below demonstrates, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.
-
-![](./arm-delegate-runtime-build.svg)
-
-```{tip}
-The `generate_pte_file` function in `run.sh` script produces the `.pte` files based on the models provided through `--model_name` input argument
+```python
+def EthosUQuantizer.transform_for_annotation(self, model: 'GraphModule') -> 'GraphModule':
 ```
+An initial pass for transforming the graph to prepare it for annotation.
 
-### Generating ExecuTorch Libraries
 
-ExecuTorch's CMake build system produces a set of build pieces which are critical for us to include and run the ExecuTorch runtime with-in the bare-metal environment we have for Corstone FVPs from Ethos-U SDK.
+## Runtime Integration
 
-[This](./using-executorch-building-from-source.md) document provides a detailed overview of each individual build piece. For running either variant of the `.pte` file, we will need a core set of libraries. Here is a list,
+An example runtime application is available in [examples/arm/executor_runner](https://github.com/pytorch/executorch/blob/main/examples/arm/executor_runner/), and the steps requried for building and deploying it on a FVP it is explained in the previously mentioned [Arm Ethos-U Backend Tutorial](https://docs.pytorch.org/executorch/stable/tutorial-arm-ethos-u.html).
+The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.
+For an in-depth explanation of the architecture of the executor_runner and the steps required for doing such an integration, please refer to [Ethos-U porting guide](https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md).
 
-- `libexecutorch.a`
-- `libportable_kernels.a`
-- `libportable_ops_lib.a`
 
-To run a `.pte` file with the Arm backend delegate call instructions, we will need the Arm backend delegate runtime library, that is,
+### Ethos-U memory modes
+The Ethos-U NPU provides two distinct memory interfaces:
+- One interface for **low-latency, high-bandwidth memory**.
+    - On all Ethos-U NPUs(Ethos-U55, Ethos-U65, Ethos-U85), the low-latency memory is usually the SRAM of the SoC.
+- One interface for **higher-latency, lower-bandwidth memory**, typically external (off-chip) memory.
+    - On a low-power microcontroller, the external memory is usually Flash.
+    - On systems with Arm&reg; Cortex&trade;-A and a rich operating system, the external memory is typically DRAM.
 
-- `libexecutorch_delegate_ethos_u.a`
+When running an inference, the Ethos-U compiler and Ethos-U driver make use of three logical memory regions:
+- Ethos-U scratch buffer - a contiguous block of memory used by the NPU to store the intermediate tensors produced and consumed during inference.
+- Neural Network - a contiguous block of memory holding constant data such as weights, biases, quantization parameters required to run an inference.
+- Ethos-U fast scratch buffer - a contiguous block of memory, assumed to reside in on-chip memory in order to hide the higher latency/lower bandwidth of external memory. Only applicable for Ethos-U65 and Ethos-U85 on systems
+with Cortex-A and the external memory is assumed to be DRAM.
 
-These libraries are generated by the `backends/arm/scripts/build_executorch.sh`, `backends/arm/scripts/build_portable_kernels.sh` and `backends/arm/scripts/build_quantized_ops_aot_lib.sh` scripts called from the `run.sh` script.
+The placement of the scratch buffer and the Neural Network determine the memory mode to be used in the `EthosUCompileSpec` and when building the executor_runner. Three different memory modes are supported:
 
-The `--portable_kernels` flag can be used to set the build flag `EXECUTORCH_SELECT_OPS_LIST` when running `backends/arm/scripts/build_portable_kernels.sh` that will decide the number of portable operators included in the build and are available at runtime. It must match with `.pte` file's requirements, otherwise you will get `Missing Operator` error at runtime.
+| Memory Mode        | Ethos-U Scratch Buffer Placement | Neural Network Placement   | When to Use  | Trade-off |
+|--------------------|----------------------------------|----------------------------|------------  |---------------------------------------------------------------------------|
+| **SRAM-Only**      | On-chip SRAM                     | On-chip SRAM               | When the ML model, the Ethos-U scratch buffer and the wider software stack fit within the SRAM of the SoC | Limited by SRAM size; often not feasible for larger NNs |
+| **Shared-SRAM**    | On-chip SRAM                     | External memory (Flash/DRAM) | Most common mode on Cortex-M and Ethos-U systems; balances good performance and SRAM usage | Requires enough SRAM to hold the largest intermediate tensor |
+| **Dedicated-SRAM** | External memory  | External memory (Flash/DRAM) | Most common mode for Cortex-A and Ethos-U systems. For very large models where the peak intermediates cannot fit in SRAM  | Need high-bandwidth external memory to deliver good performance |
 
-For example, there  in the command line above, to run SoftmaxModule, we only included the softmax CPU operator. Similarly, to run AddModule in a non-delegated manner you will need add op and so on. As you might have already realized, for the delegated operators, which will be executed by the Arm backend delegate, we do not need to include those operators in this list. This is only for *non-delegated* operators.
+Here is an in-depth explanation of the different modes:
 
-### Building the executor_runner Bare-Metal Application
+#### 1. Sram-Only Memory Mode
+- Ethos-U scratch buffer resides in the SRAM.
+- Neural Network resides in the SRAM.
+- Ethos-U fast scratch buffer is not used.
+- Characteristics:
+    - Provides the best performance since all the memory traffic passes via the low-latency/high-bandwidth memory.
+    - The performance uplift is especially noticeable on memory-bound workloads on the external interface.
+    - Available on Ethos-U55, Ethos-U65 and Ethos-U85.
+- Limitations:
+    - Embedded SoCs often have limited SRAM and NNs are becoming larger. This memory mode may be unsuitable for a system running a big model relative to the amount of SRAM available on the SoC.
+Below, you can see a visual representation of the placement of the two logical memory regions for the Sram Only configuration.
 
-The SDK dir is the same one prepared [earlier](#setup-the-arm-ethos-u-software-development). And, we will be passing the `.pte` file (any one of them) generated above.
+![](backend-arm-ethos-u-sram_only.png)
 
-Note, you have to generate a new `executor-runner` binary if you want to change the model or the `.pte` file. This constraint is from the constrained bare-metal runtime environment we have for Corstone-300/Corstone-320 platforms.
+#### 2. Shared-Sram Memory Mode
+- Ethos-U scratch buffer resides in the SRAM.
+- Neural Network resides in the External memory.
+- Ethos-U fast scratch buffer is not used.
+- Characteristics:
+    - Intermediate tensors are stored in the SRAM, leveraging its low-latency and high-bandwidth.
+    - The Ethos-U compiler can prefetch weights from the external memory to the SRAM ahead of time so that when the NPU needs the data, it will already be avaialbe in the on-chip memory.
+    - In this mode, the external interface is Read-Only, the on-chip memory interface is Read/Write
+    - Shared-Sram offers great balance between performance and low SRAM usage.
+    - Available on Ethos-U55, Ethos-U65 and Ethos-U85.
+- Limitations:
+    - You need to have enough space in the SRAM to hold the peak intermediate tensor.
+Below, you can see a visual representation of the placement of the two logical memory regions for the Shared_Sram configuration.
 
-This is performed by the `backends/arm/scripts/build_executorch_runner.sh` script runned from `run.sh`.
+![](backend-arm-ethos-u-shared_sram.png)
 
-```{tip}
-The `run.sh` script takes in `--target` option, which provides a way to provide a specific target, Corstone-300(ethos-u55-128) or Corstone-320(ethos-u85-128)
+#### 3. Dedicated-Sram Memory Mode
+- Ethos-U scratch buffer resides in the External memory.
+- Neural Network resides in the External memory.
+- Ethos-U fast scratch buffer resides in the on-chip memory.
+- Characteristics:
+    - Used when the peak intermediate tensor is too big to fit into the on-chip memory.
+    - Enables silicon acceleration of large models.
+    - The NPU stores the results from the intermediate computations in the external memory.
+    - The dedicated SRAM acts as a software managed cache, improving performance by pre-fetching frequently accessed tensors to the on-chip memory.
+    - Available on Ethos-U65 and Ethos-U85.
+- Limitations:
+    - The SRAM space must be dedicated exculisely to the Ethos-U(the host processor should not access it).
+    - Not available on Ethos-U55.
+Below, you can see a visual representation of the placement of the two logical memory regions for the Shared_Sram configuration.
+
+![](backend-arm-ethos-u-dedicated_sram.png)
+
+
+The memory modes are defined within the [vela.ini file](https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/ethosu/config_files/Arm/vela.ini?ref_type=heads). When you install
+ExecuTorch for the Ethos-U backend, you automatically install the compiler containing the vela.ini file so you can directly create a compile specification with these memory modes.
+#### Interpreting the output from the Ethos-U compiler regarding the memory footprint
+As part of the `to_edge_transform_and_lower` step, you will see a memory footprint information presented as:
+
 ```
+Total SRAM used                               2467.27 KiB
+Total Off-chip Flash used                       12.20 KiB
+````
 
-## Running on Corstone FVP Platforms
+The `Total SRAM used` indicates the peak SRAM utilization needed by the NPU in order to perform an inference. In the snippet above, the Ethos-U compiler requires 2467.27 KiB of SRAM in order to schedule the inference.
+Therefore, from an application standpoint, you need to ensure you have at least 2467.27 KiB of SRAM on the SoC to run this model. The Ethos-U compiler provides a scheduling algorithm allowing to
+lower the peak SRAM usage within reasonable limits, you need to add the `--optimise Size` or `--arena-cache-size` CLI options for to the compile spec. You can read more about the options of the
+Ethos-U compiler in the documentation [here](https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/OPTIONS.md#optimise). If the peak SRAM usage remains too high in
+Shared Sram memory mode, you would need to us the Dedicated Sram mode in order to store the Neural Network and the Ethos-U scratch buffer in the external memory.
+The main advantage of the Dedicated_Sram memory mode is that you can run large models and still benefit from the low-latency/high-bandwidth of the SRAM, used as a cache.
+It is important to highlight that when you specify a memory mode in the compile spec, in the runtime, the user is expected to place the scratch buffer and NN in the correct memory location.
+In other words, when you specify for ex. Shared Sram memory mode, the runtime application logic should place the ethos-U scratch buffer in the on-chip memory and the NN in the external memory for optimal performance.
+You can see how  this coupling between the memory mode and runtime application is done in the
+[Ethos-U porting guide](https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md)
 
-Once the elf is prepared, regardless of the `.pte` file variant is used to generate the bare metal elf. `run.sh` will run the FVP for you via the `backends/arm/scripts/run_fvp.sh` script but you can also run it directly.
+
+### Bundled.io and ETdump
+
+The arm_executor_runner supports [bundled-io](https://docs.pytorch.org/executorch/0.4/bundled-io.html) and [ETdump](https://docs.pytorch.org/executorch/stable/etdump.html) debugging tools.
+
+To enable bundled-io, set `EXECUTORCH_BUILD_DEVTOOLS` when building Executorch and `DET_BUNDLE_IO` when building the executor_runner. To enable ETdump, set `EXECUTORCH_BUILD_ARM_ETDUMP` when building Executorch and `DEXECUTORCH_ENABLE_EVENT_TRACER`
+when building the executor_runner.
 
 
-The below command is used to run the [MV2Model](#mv2module) on Corstone-320 FVP
+## Memory formats
 
-```bash
-ethos_u_build_dir=examples/arm/executor_runner/
+Tensors of rank 4 and higher have two differing [memory format](https://pytorch.org/blog/tensor-memory-format-matters/) standards used.
+Pytorch defaults to contiguous/ channels first/ NCHW memory formats, compared to TOSA which only supports channels last/NHWC memory format.
+To support this, the backend inserts a transpose in the beginning if the incoming memory format is contiguous, and correspondingly a
+transpose in the end if the outgoing memory format is contiguous. Note that this means that you may avoid transposing the data unneccessarily if the runtime integration and
+full network is converted to use channels last. A word of caution must be given here however - changing memory format has been noted to have side effects such as
+unsupported ops being inserted into the graph, and it is currently not widely tested, so the feature must so far be viewed as experimental.
 
-elf=$(find ${ethos_u_build_dir} -name "arm_executor_runner")
-
-FVP_Corstone_SSE-320_Ethos-U85                          \
-    -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
-    -C mps4_board.visualisation.disable-visualisation=1 \
-    -C vis_hdlcd.disable_visualisation=1                \
-    -C mps4_board.telnetterminal0.start_telnet=0        \
-    -C mps4_board.uart0.out_file='-'                    \
-    -C mps4_board.uart0.shutdown_on_eot=1               \
-    -a "${elf}"                                         \
-    --timelimit 120 || true # seconds- after which sim will kill itself
-```
-
-If successful, the simulator should produce something like the following on the shell,
-
-```console
-I [executorch:arm_executor_runner.cpp:364] Model in 0x70000000 $
-I [executorch:arm_executor_runner.cpp:366] Model PTE file loaded. Size: 4425968 bytes.
-I [executorch:arm_executor_runner.cpp:376] Model buffer loaded, has 1 methods
-I [executorch:arm_executor_runner.cpp:384] Running method forward
-I [executorch:arm_executor_runner.cpp:395] Setup Method allocator pool. Size: 62914560 bytes.
-I [executorch:arm_executor_runner.cpp:412] Setting up planned buffer 0, size 752640.
-I [executorch:ArmBackendEthosU.cpp:79] ArmBackend::init 0x70000070
-I [executorch:arm_executor_runner.cpp:445] Method loaded.
-I [executorch:arm_executor_runner.cpp:447] Preparing inputs...
-I [executorch:arm_executor_runner.cpp:461] Input prepared.
-I [executorch:arm_executor_runner.cpp:463] Starting the model execution...
-I [executorch:ArmBackendEthosU.cpp:118] ArmBackend::execute 0x70000070
-I [executorch:ArmBackendEthosU.cpp:298] Tensor input/output 0 will be permuted
-I [executorch:arm_perf_monitor.cpp:120] NPU Inferences : 1
-I [executorch:arm_perf_monitor.cpp:121] Profiler report, CPU cycles per operator:
-I [executorch:arm_perf_monitor.cpp:125] ethos-u : cycle_cnt : 1498202 cycles
-I [executorch:arm_perf_monitor.cpp:132] Operator(s) total: 1498202 CPU cycles
-I [executorch:arm_perf_monitor.cpp:138] Inference runtime: 6925114 CPU cycles total
-I [executorch:arm_perf_monitor.cpp:140] NOTE: CPU cycle values and ratio calculations require FPGA and identical CPU/NPU frequency
-I [executorch:arm_perf_monitor.cpp:149] Inference CPU ratio: 99.99 %
-I [executorch:arm_perf_monitor.cpp:153] Inference NPU ratio: 0.01 %
-I [executorch:arm_perf_monitor.cpp:162] cpu_wait_for_npu_cntr : 729 CPU cycles
-I [executorch:arm_perf_monitor.cpp:167] Ethos-U PMU report:
-I [executorch:arm_perf_monitor.cpp:168] ethosu_pmu_cycle_cntr : 5920305
-I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr0 : 359921
-I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr1 : 0
-I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr2 : 0
-I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr3 : 503
-I [executorch:arm_perf_monitor.cpp:178] Ethos-U PMU Events:[ETHOSU_PMU_EXT0_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT1_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT0_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE]
-I [executorch:arm_executor_runner.cpp:470] model_pte_loaded_size:     4425968 bytes.
-I [executorch:arm_executor_runner.cpp:484] method_allocator_used:     1355722 / 62914560  free: 61558838 ( used: 2 % ) 
-I [executorch:arm_executor_runner.cpp:491] method_allocator_planned:  752640 bytes
-I [executorch:arm_executor_runner.cpp:493] method_allocator_loaded:   966 bytes
-I [executorch:arm_executor_runner.cpp:494] method_allocator_input:    602116 bytes
-I [executorch:arm_executor_runner.cpp:495] method_allocator_executor: 0 bytes
-I [executorch:arm_executor_runner.cpp:498] temp_allocator_used:       0 / 1048576 free: 1048576 ( used: 0 % ) 
-I executorch:arm_executor_runner.cpp:152] Model executed successfully.
-I executorch:arm_executor_runner.cpp:156] 1 outputs:
-Output[0][0]: -0.749744
-Output[0][1]: -0.019224
-Output[0][2]: 0.134570
-...(Skipped)
-Output[0][996]: -0.230691
-Output[0][997]: -0.634399
-Output[0][998]: -0.115345
-Output[0][999]: 1.576386
-I executorch:arm_executor_runner.cpp:177] Program complete, exiting.
-I executorch:arm_executor_runner.cpp:179]
-```
-
-```{note}
-The `run.sh` script provides various options to select a particular FVP target, use desired models, select portable kernels and can be explored using the `--help` argument
-```
-
-## Takeaways
-Through this tutorial we've learnt how to use the ExecuTorch software to both export a standard model from PyTorch and to run it on the compact and fully functioned ExecuTorch runtime, enabling a smooth path for offloading models from PyTorch to Arm based platforms.
-
-To recap, there are two major flows:
- * A direct flow which offloads work onto the Cortex-M using libraries built into ExecuTorch.
- * A delegated flow which partitions the graph into sections for Cortex-M and sections which can be offloaded and accelerated on the Ethos-U hardware.
-
-Both of these flows continue to evolve, enabling more use-cases and better performance.
-
-## FAQs
-<!----
-Describe what common errors users may see and how to resolve them.
-
-* TODO - Binary size and operator Selection
-* TODO - Cross-compilation targeting baremetal
-* TODO - Debugging on FVP
------>
-
-If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).
+## See Also
+- [Arm Ethos-U Backend Tutorial](tutorial-arm-ethos-u.md)

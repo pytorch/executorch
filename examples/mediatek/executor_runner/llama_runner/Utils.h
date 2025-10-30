@@ -59,6 +59,22 @@ static std::vector<std::string> split(const std::string& str, const char sep) {
   return tokens;
 }
 
+static std::vector<std::string> extract_substr(
+    const std::string& str,
+    const std::string& pattern) {
+  std::vector<std::string> tokens;
+  const std::regex token_pattern(pattern);
+  std::smatch matches;
+  auto cur = str.cbegin();
+  while (std::regex_search(cur, str.cend(), matches, token_pattern)) {
+    for (const auto& match : matches) {
+      tokens.push_back(match.str());
+    }
+    cur = matches.suffix().first;
+  }
+  return tokens;
+}
+
 static std::string read_file(const std::string& filepath) {
   std::ifstream file(filepath);
   std::stringstream buffer;

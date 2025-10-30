@@ -24,10 +24,10 @@
 namespace vkcompute {
 namespace api {
 
-Context::Context(size_t adapter_i, const ContextConfig& config)
+Context::Context(vkapi::Adapter* adapter, const ContextConfig& config)
     : config_(config),
       // Important handles
-      adapter_p_(vkapi::runtime()->get_adapter_p(adapter_i)),
+      adapter_p_(adapter),
       device_(adapter_p_->device_handle()),
       queue_(adapter_p_->request_queue()),
       // Resource pools
@@ -111,6 +111,24 @@ void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
           shader.kernel_name, vkapi::VulkanExtension::INT8_STORAGE);
     }
   }
+  if (shader.requires_integer_dot_product) {
+    if (!adapter_p_->supports_int8_dot_product()) {
+      throw vkapi::ShaderNotSupportedError(
+          shader.kernel_name, vkapi::VulkanExtension::INTEGER_DOT_PRODUCT);
+    }
+  }
+  if (shader.requires_shader_int64) {
+    if (!adapter_p_->supports_int64_shader_types()) {
+      throw vkapi::ShaderNotSupportedError(
+          shader.kernel_name, vkapi::VulkanExtension::SHADER_INT64);
+    }
+  }
+  if (shader.requires_shader_float64) {
+    if (!adapter_p_->supports_float64_shader_types()) {
+      throw vkapi::ShaderNotSupportedError(
+          shader.kernel_name, vkapi::VulkanExtension::SHADER_FLOAT64);
+    }
+  }
 }
 
 vkapi::DescriptorSet Context::get_descriptor_set(
@@ -124,11 +142,17 @@ vkapi::DescriptorSet Context::get_descriptor_set(
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
+  vkapi::SpecVarList spec_constants = {
+      SV(local_workgroup_size[0u]),
+      SV(local_workgroup_size[1u]),
+      SV(local_workgroup_size[2u])};
+
+  spec_constants.append(additional_constants);
+
   VkPipeline pipeline = pipeline_cache().retrieve(
       {pipeline_layout_cache().retrieve(shader_layout, push_constants_size),
        shader_cache().retrieve(shader_descriptor),
-       additional_constants,
-       local_workgroup_size});
+       spec_constants});
 
   cmd_.bind_pipeline(pipeline, pipeline_layout, local_workgroup_size);
 
@@ -192,14 +216,18 @@ void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
   if (cmd_) {
     cmd_.end();
     adapter_p_->submit_cmd(
-        queue_, cmd_.get_submit_handle(final_use), fence_handle);
+        queue_,
+        cmd_.get_submit_handle(final_use),
+        fence_handle,
+        VK_NULL_HANDLE,
+        VK_NULL_HANDLE);
 
     submit_count_ = 0u;
   }
 }
 
 void Context::flush() {
-  VK_CHECK(vkQueueWaitIdle(queue()));
+  VK_CHECK(vkQueueWaitIdle(queue().handle));
 
   command_pool_.flush();
   descriptor_pool_.flush();
@@ -250,7 +278,7 @@ Context* context() {
           query_pool_config,
       };
 
-      return new Context(vkapi::runtime()->default_adapter_i(), config);
+      return new Context(vkapi::runtime()->get_adapter_p(), config);
     } catch (...) {
     }
 
@@ -260,13 +288,12 @@ Context* context() {
   return context.get();
 }
 
-#ifdef VULKAN_DEBUG
-
-#ifdef VK_KHR_pipeline_executable_properties
+#if defined(VK_KHR_pipeline_executable_properties) && \
+    defined(ETVK_INSPECT_PIPELINES)
 
 VkPipeline Context::get_shader_pipeline(
     const vkapi::ShaderInfo& shader,
-    const vkapi::SpecVarList& spec_constants) {
+    const vkapi::SpecVarList& additional_constants) {
   const uint32_t push_constants_size = 128u;
 
   VkDescriptorSetLayout shader_layout =
@@ -275,12 +302,15 @@ VkPipeline Context::get_shader_pipeline(
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
   const utils::WorkgroupSize local_workgroup_size(4u, 4u, 1u);
+  vkapi::SpecVarList spec_constants = {
+      SV(local_workgroup_size[0u]),
+      SV(local_workgroup_size[1u]),
+      SV(local_workgroup_size[2u])};
+
+  spec_constants.append(additional_constants);
 
   VkPipeline pipeline = pipeline_cache().retrieve(
-      {pipeline_layout,
-       shader_cache().retrieve(shader),
-       spec_constants,
-       local_workgroup_size});
+      {pipeline_layout, shader_cache().retrieve(shader), spec_constants});
 
   return pipeline;
 }
@@ -471,9 +501,7 @@ void Context::print_shader_executable_properties(
   }
 }
 
-#endif // VK_KHR_pipeline_executable_properties
-
-#endif // VULKAN_DEBUG
+#endif // VK_KHR_pipeline_executable_properties && ETVK_INSPECT_PIPELINES
 
 } // namespace api
 } // namespace vkcompute

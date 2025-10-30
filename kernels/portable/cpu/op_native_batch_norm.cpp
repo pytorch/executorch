@@ -24,8 +24,8 @@ using SizesType = executorch::aten::SizesType;
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Tensor>& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& weight,
+    const std::optional<Tensor>& bias,
     const Tensor& running_mean,
     const Tensor& running_var,
     double momentum,
@@ -102,7 +102,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
   size_t outer = getLeadingDims(in, C_dim);
   size_t inner = getTrailingDims(in, C_dim);
 
-  constexpr auto name = "native_batch_norm_legit_no_training.out";
+  static constexpr auto name = "native_batch_norm_legit_no_training.out";
 
   ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
@@ -139,8 +139,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Tensor>& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& weight,
+    const std::optional<Tensor>& bias,
     Tensor& running_mean,
     Tensor& running_var,
     bool training,
@@ -177,8 +177,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_out(
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Tensor>& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& weight,
+    const std::optional<Tensor>& bias,
     bool training,
     double momentum,
     double eps,
@@ -196,8 +196,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
           in,
           weight,
           bias,
-          executorch::aten::optional<Tensor>(),
-          executorch::aten::optional<Tensor>(),
+          std::optional<Tensor>(),
+          std::optional<Tensor>(),
           momentum,
           eps,
           out,
@@ -259,7 +259,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
       InvalidArgument,
       ret_val);
 
-  constexpr auto name = "_native_batch_norm_legit.no_stats_out";
+  static constexpr auto name = "_native_batch_norm_legit.no_stats_out";
 
   ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();

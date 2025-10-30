@@ -1,183 +1,361 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
-import unittest
 
 from typing import Tuple
 
+import pytest
 import torch
-from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+    TOSAQuantizer,
+)
+from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
+)
+from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.xnnpack.test.tester import Quantize
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+aten_op = "torch.ops.aten.sigmoid.default"  # Used for checking that we do not have softmax in the graph after decompose
+exir_op = "executorch_exir_dialects_edge__ops_aten_sigmoid_default"
+input_t1 = Tuple[torch.Tensor]  # Input x
 
-
-test_data_suite = [
+test_data_suite = {
     # (test_name, test_data)
-    ("zeros", torch.zeros(10, 10, 10, 10)),
-    ("ones", torch.ones(10, 10, 10)),
-    ("rand", torch.rand(10, 10) - 0.5),
-    ("randn_pos", torch.randn(10) + 10),
-    ("randn_neg", torch.randn(10) - 10),
-    ("ramp", torch.arange(-16, 16, 0.2)),
-]
+    "zeros": lambda: torch.zeros(10, 10, 10, 10),
+    "ones": lambda: torch.ones(10, 10, 10),
+    "rand": lambda: torch.rand(10, 10) - 0.5,
+    "rand_4d": lambda: torch.rand(1, 1, 5, 10),
+    "randn_pos": lambda: torch.randn(10) + 10,
+    "randn_neg": lambda: torch.randn(10) - 10,
+    "ramp": lambda: torch.arange(-16, 16, 0.2),
+}
 
 
-class TestSigmoid(unittest.TestCase):
-    class Sigmoid(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.sigmoid = torch.nn.Sigmoid()
+class Sigmoid(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.sigmoid = torch.nn.Sigmoid()
 
-        def forward(self, x):
-            return self.sigmoid(x)
+    def forward(self, x):
+        return self.sigmoid(x)
 
-    class AddSigmoid(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.sigmoid = torch.nn.Sigmoid()
 
-        def forward(self, x):
-            return self.sigmoid(x + x)
+class AddSigmoid(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.sigmoid = torch.nn.Sigmoid()
 
-    class SigmoidAdd(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.sigmoid = torch.nn.Sigmoid()
+    def forward(self, x):
+        return self.sigmoid(x + x)
 
-        def forward(self, x):
-            return x + self.sigmoid(x)
 
-    class SigmoidAddSigmoid(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.sigmoid = torch.nn.Sigmoid()
+class SigmoidAdd(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.sigmoid = torch.nn.Sigmoid()
 
-        def forward(self, x, y):
-            return self.sigmoid((self.sigmoid(y) + self.sigmoid(x)))
+    def forward(self, x):
+        return x + self.sigmoid(x)
 
-    def _test_sigmoid_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check(["torch.ops.aten.sigmoid.default"])
-            .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_sigmoid_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
+
+class SigmoidAddSigmoid(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.sigmoid = torch.nn.Sigmoid()
+
+    def forward(self, x, y):
+        return self.sigmoid((self.sigmoid(y) + self.sigmoid(x)))
+
+
+@common.parametrize("test_data", test_data_suite)
+def test_sigmoid_tosa_FP(test_data: torch.Tensor):
+    TosaPipelineFP[input_t1](Sigmoid(), (test_data(),), aten_op, exir_op).run()
+
+
+@common.parametrize("test_data", test_data_suite)
+def test_sigmoid_tosa_INT(test_data: torch.Tensor):
+    TosaPipelineINT[input_t1](Sigmoid(), (test_data(),), aten_op, exir_op).run()
+
+
+def test_sigmoid_tosa_FP_add():
+    TosaPipelineFP[input_t1](
+        AddSigmoid(),
+        (test_data_suite["zeros"](),),
+        aten_op,
+        exir_op,
+    ).run()
+
+
+def test_sigmoid_tosa_INT_add():
+    TosaPipelineINT[input_t1](
+        AddSigmoid(),
+        (test_data_suite["ramp"](),),
+        aten_op,
+        exir_op,
+    ).run()
+
+
+def test_sigmoid_tosa_FP_add_2():
+    TosaPipelineFP[input_t1](
+        SigmoidAdd(),
+        (test_data_suite["zeros"](),),
+        aten_op,
+        exir_op,
+    ).run()
+
+
+def test_sigmoid_tosa_INT_add_2():
+    TosaPipelineINT[input_t1](
+        SigmoidAdd(),
+        (test_data_suite["zeros"](),),
+        aten_op,
+        exir_op,
+    ).run()
+
+
+def test_sigmoid_tosa_FP_add_3():
+    TosaPipelineFP[input_t1](
+        SigmoidAddSigmoid(),
+        (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
+        aten_op,
+        exir_op,
+    ).run()
+
+
+def test_sigmoid_tosa_INT_3():
+    TosaPipelineINT[input_t1](
+        SigmoidAddSigmoid(),
+        (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
+        aten_op,
+        exir_op,
+    ).run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
+def test_sigmoid_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_sigmoid_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_FP_add():
+    pipeline = VgfPipeline[input_t1](
+        AddSigmoid(),
+        (test_data_suite["zeros"](),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_INT_add():
+    pipeline = VgfPipeline[input_t1](
+        AddSigmoid(),
+        (test_data_suite["ramp"](),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_FP_add_2():
+    pipeline = VgfPipeline[input_t1](
+        SigmoidAdd(),
+        (test_data_suite["zeros"](),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_INT_add_2():
+    pipeline = VgfPipeline[input_t1](
+        SigmoidAdd(),
+        (test_data_suite["zeros"](),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_FP_add_3():
+    pipeline = VgfPipeline[input_t1](
+        SigmoidAddSigmoid(),
+        (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_INT_add_3():
+    pipeline = VgfPipeline[input_t1](
+        SigmoidAddSigmoid(),
+        (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+def get_symmetric_a16w8_sigmoid_quantizer(per_channel_quantization=False):
+    tosa_version = conftest.get_option("tosa_version")
+    tosa_profiles = {
+        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
+    }
+
+    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+
+    # Use a smaller episilon value to not greatly inflate [qmin, qmax]
+    quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization, epsilon=2**-16
         )
+    )
 
-    def _test_sigmoid_tosa_BI_pipeline(self, module: torch.nn.Module, test_data: Tuple):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .check(["torch.ops.aten.sigmoid.default"])
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_sigmoid_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+    return Quantize(
+        quantizer,
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization, epsilon=2**-16
+        ),
+    )
 
-    def _test_sigmoid_tosa_ethos_BI_pipeline(
-        self,
-        compile_spec: list[CompileSpec],
-        module: torch.nn.Module,
-        test_data: Tuple[torch.tensor],
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.sigmoid.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_sigmoid_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-        )
 
-    def _test_sigmoid_tosa_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
-    ):
-        self._test_sigmoid_tosa_ethos_BI_pipeline(
-            common.get_u55_compile_spec(), module, test_data
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_sigmoid_16a8w_tosa_INT(test_data: torch.Tensor):
+    """Test sigmoid operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
 
-    def _test_sigmoid_tosa_u85_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
-    ):
-        self._test_sigmoid_tosa_ethos_BI_pipeline(
-            common.get_u85_compile_spec(), module, test_data
-        )
+    pipeline = TosaPipelineINT[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        tosa_extensions=["int16"],
+    )
 
-    @parameterized.expand(test_data_suite)
-    def test_sigmoid_tosa_MI(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-    ):
-        self._test_sigmoid_tosa_MI_pipeline(self.Sigmoid(), (test_data,))
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_sigmoid_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    def test_sigmoid_tosa_BI(self, test_name: str, test_data: torch.Tensor):
-        self._test_sigmoid_tosa_BI_pipeline(self.Sigmoid(), (test_data,))
 
-    def test_add_sigmoid_tosa_MI(self):
-        self._test_sigmoid_tosa_MI_pipeline(self.AddSigmoid(), (test_data_suite[0][1],))
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
+@pytest.mark.xfail(
+    reason="MLETORCH-707: AssertionError: Output 0 does not match reference output."
+)
+def test_sigmoid_16a8w_u55_INT16(test_data: torch.Tensor):
+    """Test sigmoid operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
 
-    def test_add_sigmoid_tosa_BI(self):
-        self._test_sigmoid_tosa_BI_pipeline(self.AddSigmoid(), (test_data_suite[5][1],))
+    pipeline = EthosU55PipelineINT[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+    )
 
-    def test_sigmoid_add_tosa_MI(self):
-        self._test_sigmoid_tosa_MI_pipeline(self.SigmoidAdd(), (test_data_suite[0][1],))
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_sigmoid_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    pipeline.run()
 
-    def test_sigmoid_add_tosa_BI(self):
-        self._test_sigmoid_tosa_BI_pipeline(self.SigmoidAdd(), (test_data_suite[0][1],))
 
-    def test_sigmoid_add_sigmoid_tosa_MI(self):
-        self._test_sigmoid_tosa_MI_pipeline(
-            self.SigmoidAddSigmoid(), (test_data_suite[4][1], test_data_suite[3][1])
-        )
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_sigmoid_16a8w_u85_INT16(test_data: torch.Tensor):
+    """Test sigmoid operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
 
-    def test_sigmoid_add_sigmoid_tosa_BI(self):
-        self._test_sigmoid_tosa_BI_pipeline(
-            self.SigmoidAddSigmoid(), (test_data_suite[4][1], test_data_suite[3][1])
-        )
+    pipeline = EthosU85PipelineINT[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+    )
 
-    @parameterized.expand(test_data_suite)
-    def test_sigmoid_tosa_u55_BI(self, test_name: str, test_data: torch.Tensor):
-        self._test_sigmoid_tosa_u55_BI_pipeline(self.Sigmoid(), (test_data,))
-
-    @parameterized.expand(test_data_suite)
-    def test_sigmoid_tosa_u85_BI(self, test_name: str, test_data: torch.Tensor):
-        self._test_sigmoid_tosa_u85_BI_pipeline(self.Sigmoid(), (test_data,))
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_sigmoid_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    pipeline.run()

@@ -10,7 +10,6 @@
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/repeat_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <sys/types.h>
 
 #include <cstring>
 

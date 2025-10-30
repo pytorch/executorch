@@ -8,6 +8,8 @@
 
 #include <executorch/kernels/portable/cpu/pattern/comparison_op.h>
 
+#include <functional>
+
 namespace torch {
 namespace executor {
 namespace native {
@@ -19,7 +21,7 @@ Tensor& gt_tensor_out(
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "gt.Tensor_out";
-  return internal::comparison_tensor_out<op_name>(ctx, a, b, out);
+  return internal::comparison_tensor_out<std::greater, op_name>(ctx, a, b, out);
 }
 
 Tensor& gt_scalar_out(
@@ -29,7 +31,7 @@ Tensor& gt_scalar_out(
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "gt.Scalar_out";
-  return internal::comparison_scalar_out<op_name>(ctx, a, b, out);
+  return internal::comparison_scalar_out<std::greater, op_name>(ctx, a, b, out);
 }
 
 } // namespace native

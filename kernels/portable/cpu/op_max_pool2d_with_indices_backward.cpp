@@ -62,7 +62,10 @@ bool check_max_pool2d_backward_args(
 
   ET_CHECK_OR_RETURN_FALSE(
       grad_output.dim() == input.dim(),
-      "grad_output should have same number of dimensions as input");
+      "grad_output should have same number of dimensions as input; grad_output.dim() = %" ET_PRI_TENSOR_DIM
+      ", input.dim() = %" ET_PRI_TENSOR_DIM,
+      grad_output.dim(),
+      input.dim());
 
   ET_LOG_AND_RETURN_IF_FALSE(
       tensor_has_expected_size(grad_output, {output_sizes, output_ndim}));
@@ -166,7 +169,7 @@ Tensor& max_pool2d_with_indices_backward_out(
       InvalidArgument,
       grad_input);
 
-  constexpr auto name = "max_pool2d_with_indices_backward.grad_input";
+  static constexpr auto name = "max_pool2d_with_indices_backward.grad_input";
 
   ET_SWITCH_FLOATHBF16_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
     max_pool_backward_impl<CTYPE, false>(grad_input, grad_output, indices);

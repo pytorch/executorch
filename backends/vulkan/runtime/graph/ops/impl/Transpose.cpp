@@ -23,16 +23,16 @@ void resize_transpose_view_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)args;
-  vTensorPtr out = graph->get_tensor(extra_args[0]);
-  vTensorPtr in = graph->get_tensor(extra_args[1]);
+  const ValueRef out = extra_args.at(0);
+  const ValueRef in = extra_args.at(1);
 
-  const int64_t dim0 = graph->extract_scalar<int64_t>(extra_args[2]);
-  const int64_t dim1 = graph->extract_scalar<int64_t>(extra_args[3]);
+  const int64_t dim0 = graph->extract_scalar<int64_t>(extra_args.at(2));
+  const int64_t dim1 = graph->extract_scalar<int64_t>(extra_args.at(3));
 
-  std::vector<int64_t> new_sizes = in->sizes();
+  std::vector<int64_t> new_sizes = graph->sizes_of(in);
   // Transpose the resized input sizes
   std::iter_swap(new_sizes.begin() + dim0, new_sizes.begin() + dim1);
-  out->virtual_resize(new_sizes);
+  graph->virtual_resize(out, new_sizes);
 }
 
 void check_transpose_view_args(
@@ -62,9 +62,8 @@ void add_transpose_view_node(
   const int64_t dim1 = graph.extract_scalar<int64_t>(dim1_ref);
 
   check_transpose_view_args(graph, input_ref, dim0, dim1, out_ref);
-  const vTensorPtr in = graph.get_tensor(input_ref);
-  graph.get_tensor(out_ref)->virtual_clone(*in);
-  graph.get_tensor(out_ref)->virtual_transpose(dim0, dim1);
+  graph.virtual_clone(out_ref, input_ref);
+  graph.virtual_transpose(out_ref, dim0, dim1);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       resize_transpose_view_node, {out_ref, input_ref, dim0_ref, dim1_ref}));

@@ -5,9 +5,10 @@
 
 import argparse
 import os
-import platform
 import subprocess
 import sys
+import time
+from typing import Sequence
 
 
 def get_args():
@@ -57,10 +58,23 @@ def get_args():
         help="Don't save temporary files during compilation",
     )
     parser.add_argument(
+        "--no_quantize",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Don't quantize model",
+    )
+    parser.add_argument(
         "--extra_flags",
         required=False,
         default=None,
         help="Extra cmake flags to pass the when building the executor_runner",
+    )
+    parser.add_argument(
+        "--timeout",
+        required=False,
+        default=60 * 20,
+        help="Timeout in seconds used when running the model",
     )
     args = parser.parse_args()
 
@@ -76,14 +90,14 @@ def get_args():
         if "u55" in args.target:
             args.memory_mode = "Shared_Sram"
         elif "u85" in args.target:
-            args.memory_mode = "Sram_Only"
+            args.memory_mode = "Dedicated_Sram_384KB"
         else:
             raise RuntimeError(f"Invalid target name {args.target}")
 
     return args
 
 
-def run_external_cmd(cmd: []):
+def run_external_cmd(cmd: Sequence[str]) -> None:
     print("CALL:", *cmd, sep=" ")
     try:
         subprocess.check_call(cmd)
@@ -104,23 +118,6 @@ def build_libs(et_build_root: str, script_path: str):
             "--etdump",
         ]
     )
-    run_external_cmd(
-        [
-            "bash",
-            os.path.join(script_path, "build_portable_kernels.sh"),
-            f"--et_build_root={et_build_root}",
-            "--build_type=Release",
-            "--portable_kernels=aten::_softmax.out",
-        ]
-    )
-    run_external_cmd(
-        [
-            "bash",
-            os.path.join(script_path, "build_quantized_ops_aot_lib.sh"),
-            f"--et_build_root={et_build_root}",
-            "--build_type=Release",
-        ]
-    )
 
 
 def build_pte(
@@ -131,42 +128,37 @@ def build_pte(
     memory_mode: str,
     build_output: str,
     no_intermediate: bool,
+    no_quantize: bool,
 ):
-    soext = {"Darwin": "dylib", "Linux": "so", "Windows": "dll"}.get(
-        platform.system(), None
-    )
-    solibs_path = os.path.join(
-        et_build_root,
-        "cmake-out-aot-lib",
-        "kernels",
-        "quantized",
-        f"libquantized_ops_aot_lib.{soext}",
-    )
-    solibs = f"--so_library={solibs_path}"
+    pte_file_ending = "pte"
+    command_list = [
+        "python3",
+        "-m",
+        "examples.arm.aot_arm_compiler",
+        "--delegate",
+        f"--model_name={model_name}",
+        f"--target={target}",
+        f"--output={build_output}",
+    ]
 
-    intermediate = ""
+    if "vgf" != target:
+        pte_file_ending = "bpte"
+        command_list.append("--bundleio")
+        command_list.append(f"--system_config={system_config}")
+        command_list.append(f"--memory_mode={memory_mode}")
+
+    if not no_quantize:
+        command_list.append("--quantize")
+
     if not no_intermediate:
-        intermediate = f"--intermediate={output}"
+        command_list.append(f"--intermediate={output}")
 
-    run_external_cmd(
-        [
-            "python3",
-            "-m",
-            "examples.arm.aot_arm_compiler",
-            "--delegate",
-            "--quantize",
-            "--bundleio",
-            intermediate,
-            f"--model_name={model_name}",
-            f"--target={target}",
-            f"--output={build_output}",
-            f"--system_config={system_config}",
-            f"--memory_mode={memory_mode}",
-            solibs,
-        ]
+    run_external_cmd(command_list)
+
+    pte_file = os.path.join(
+        output, f"{model_name}_arm_delegate_{args.target}.{pte_file_ending}"
     )
 
-    pte_file = os.path.join(output, f"{model_name}_arm_delegate_{args.target}.bpte")
     return pte_file
 
 
@@ -176,18 +168,15 @@ def build_ethosu_runtime(
     pte_file: str,
     target: str,
     system_config: str,
+    memory_mode: str,
     extra_flags: str,
     elf_build_path: str,
 ):
-
-    extra_build_flag = ""
-    if extra_flags:
-        extra_build_flag = f"--extra_build_flags={extra_flags}"
-
+    elf_build_path = os.path.join(elf_build_path, "cmake-out")
     run_external_cmd(
         [
             "bash",
-            os.path.join(script_path, "build_executorch_runner.sh"),
+            os.path.join(script_path, "build_executor_runner.sh"),
             f"--et_build_root={et_build_root}",
             f"--pte={pte_file}",
             "--bundleio",
@@ -195,33 +184,73 @@ def build_ethosu_runtime(
             f"--target={target}",
             "--build_type=Release",
             f"--system_config={system_config}",
-            extra_build_flag,
+            f"--memory_mode={memory_mode}",
+            f"--extra_build_flags=-DET_LOG_DUMP_OUTPUT=OFF {extra_flags}",
             f"--output={elf_build_path}",
         ]
     )
 
-    elf_file = os.path.join(elf_build_path, "cmake-out", "arm_executor_runner")
+    elf_file = os.path.join(elf_build_path, "arm_executor_runner")
     return elf_file
 
 
-def run_elf_with_fvp(script_path: str, elf_file: str, target: str):
+def run_elf_with_fvp(script_path: str, elf_file: str, target: str, timeout: int):
     run_external_cmd(
         [
             "bash",
             os.path.join(script_path, "run_fvp.sh"),
             f"--elf={elf_file}",
             f"--target={target}",
+            f"--timeout={timeout}",
+        ]
+    )
+
+
+def build_vkml_runtime(
+    et_build_root: str,
+    script_path: str,
+    extra_flags: str,
+    build_path: str,
+):
+    run_external_cmd(
+        [
+            "bash",
+            os.path.join(script_path, "build_executor_runner_vkml.sh"),
+            f"--et_build_root={et_build_root}",
+            "--etdump",
+            "--build_type=Release",
+            f"--extra_build_flags=-DET_DUMP_OUTPUT=OFF {extra_flags}",
+            f"--output={build_path}",
+        ]
+    )
+
+    runner = os.path.join(build_path, "executor_runner")
+    return runner
+
+
+def run_vkml(script_path: str, pte_file: str, runner_build_path: str):
+    run_external_cmd(
+        [
+            "bash",
+            os.path.join(script_path, "run_vkml.sh"),
+            f"--model={pte_file}",
+            f"--build_path={runner_build_path}",
         ]
     )
 
 
 if __name__ == "__main__":
-
+    total_start_time = time.perf_counter()
     args = get_args()
     script_path = os.path.join("backends", "arm", "scripts")
 
     if args.build_libs:
+        start_time = time.perf_counter()
         build_libs(args.test_output, script_path)
+        end_time = time.perf_counter()
+        print(
+            f"[Test model: {end_time - start_time:.2f} s] Build needed executorch libs"
+        )
 
     if args.model:
         model_name = args.model.split(" ")[0].split(";")[0]
@@ -234,6 +263,7 @@ if __name__ == "__main__":
             args.test_output, f"{model_name}_arm_delegate_{args.target}"
         )
 
+        start_time = time.perf_counter()
         pte_file = build_pte(
             args.test_output,
             model_name,
@@ -242,24 +272,65 @@ if __name__ == "__main__":
             args.memory_mode,
             output,
             args.no_intermediate,
+            args.no_quantize,
         )
-        print(f"PTE file created: {pte_file} ")
+        end_time = time.perf_counter()
+        print(
+            f"[Test model: {end_time - start_time:.2f} s] PTE file created: {pte_file}"
+        )
 
-        if "ethos-u" in args.target:
+        if "vgf" == args.target:
+            build_path = os.path.join(
+                output, f"{model_name}_arm_delegate_{args.target}"
+            )
+
+            start_time = time.perf_counter()
+            vkml_runner = build_vkml_runtime(
+                args.test_output,
+                script_path,
+                args.extra_flags,
+                build_path,
+            )
+            end_time = time.perf_counter()
+            print(
+                f"[Test model: {end_time - start_time:.2f} s] ELF file created: {vkml_runner}"
+            )
+
+            start_time = time.perf_counter()
+            run_vkml(script_path, pte_file, build_path)
+            end_time = time.perf_counter()
+            print(
+                f"[Test model: {end_time - start_time:.2f} s] Tested VKML runner: {vkml_runner}"
+            )
+
+        elif "ethos-u" in args.target:
             elf_build_path = os.path.join(
                 output, f"{model_name}_arm_delegate_{args.target}"
             )
 
+            start_time = time.perf_counter()
             elf_file = build_ethosu_runtime(
                 args.test_output,
                 script_path,
                 pte_file,
                 args.target,
                 args.system_config,
+                args.memory_mode,
                 args.extra_flags,
                 elf_build_path,
             )
-            print(f"ELF file created: {elf_file} ")
+            end_time = time.perf_counter()
+            print(
+                f"[Test model: {end_time - start_time:.2f} s] ELF file created: {elf_file}"
+            )
 
-            run_elf_with_fvp(script_path, elf_file, args.target)
-        print(f"Model: {model_name} on {args.target} -> PASS")
+            start_time = time.perf_counter()
+            run_elf_with_fvp(script_path, elf_file, args.target, args.timeout)
+            end_time = time.perf_counter()
+            print(
+                f"[Test model: {end_time - start_time:.2f} s] Tested elf on FVP {elf_file}"
+            )
+        total_end_time = time.perf_counter()
+        print(
+            f"[Test model: {total_end_time - total_start_time:.2f} s total] Model: {model_name} on {args.target} -> PASS"
+        )

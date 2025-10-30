@@ -161,3 +161,17 @@ class TestEdgeDialectVerifier(unittest.TestCase):
         edge_verifier = EXIREdgeDialectVerifier()
 
         edge_verifier(edge.exported_program())
+
+    def test_verifier_preserve_ops_view(self) -> None:
+        class TestExpand(nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x.expand(2, 2, 2, 2)
+
+        model = TestExpand()
+        config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.expand.default])
+        export_model = export(model, (torch.randn(2, 2, 2, 2),), strict=True)
+        with self.assertRaises(RuntimeError):
+            to_edge(export_model, compile_config=config)

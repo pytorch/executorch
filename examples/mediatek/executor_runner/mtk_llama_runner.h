@@ -43,11 +43,9 @@ class MTKLlamaRunner : public executorch::extension::llm::IRunner {
   Error load();
   Error generate(
       const std::string& prompt,
-      int32_t seq_len = 128,
+      executorch::extension::llm::GenerationConfig config,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {},
-      bool echo = true,
-      bool warming = false);
+      std::function<void(const Stats&)> stats_callback = {});
   void stop();
 
   LlamaModelOptions get_model_options();
@@ -67,6 +65,8 @@ class MTKLlamaRunner : public executorch::extension::llm::IRunner {
       const std::string& prompt,
       std::function<void(const std::string&)> token_callback);
   std::unique_ptr<Tokenizer> load_tokenizer();
+
+  void reset() {}
 
  private:
   // model

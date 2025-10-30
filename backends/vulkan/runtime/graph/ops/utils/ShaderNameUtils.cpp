@@ -26,47 +26,43 @@ void add_storage_type_suffix(
   }
 }
 
-void add_storage_type_suffix(
-    std::string& kernel_name,
-    const api::vTensor& tensor) {
-  return add_storage_type_suffix(kernel_name, tensor.storage_type());
-}
-
 void add_dtype_suffix(std::string& kernel_name, const vkapi::ScalarType dtype) {
   switch (dtype) {
+    case vkapi::kDouble:
+      kernel_name += "_double";
+      break;
     case vkapi::kFloat:
       kernel_name += "_float";
       break;
     case vkapi::kHalf:
       kernel_name += "_half";
       break;
-    case vkapi::kInt:
-      kernel_name += "_int";
-      break;
     case vkapi::kChar:
     case vkapi::kQInt8:
       kernel_name += "_int8";
       break;
     case vkapi::kByte:
+    case vkapi::kBool:
     case vkapi::kQUInt8:
       kernel_name += "_uint8";
       break;
-    default:
+    case vkapi::kShort:
+      kernel_name += "_int16";
       break;
-  }
-}
-
-void add_dtype_suffix(std::string& kernel_name, const api::vTensor& tensor) {
-  return add_dtype_suffix(kernel_name, tensor.dtype());
-}
-
-void add_ndim_suffix(std::string& kernel_name, const api::vTensor& tensor) {
-  switch (tensor.storage_type()) {
-    case utils::kTexture3D:
-      kernel_name += "_3d";
+    case vkapi::kUInt16:
+      kernel_name += "_uint16";
       break;
-    case utils::kTexture2D:
-      kernel_name += "_2d";
+    case vkapi::kInt:
+      kernel_name += "_int32";
+      break;
+    case vkapi::kUInt:
+      kernel_name += "_uint32";
+      break;
+    case vkapi::kLong:
+      kernel_name += "_int64";
+      break;
+    case vkapi::kUInt64:
+      kernel_name += "_uint64";
       break;
     default:
       break;
@@ -87,12 +83,6 @@ void add_packed_dim_suffix(std::string& kernel_name, const int32_t packed_dim) {
     default:
       VK_THROW("Invalid packed dim!");
   }
-}
-
-void add_packed_dim_suffix(
-    std::string& kernel_name,
-    const api::vTensor& tensor) {
-  return add_packed_dim_suffix(kernel_name, tensor.packed_dim());
 }
 
 } // namespace vkcompute

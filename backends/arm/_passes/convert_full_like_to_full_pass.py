@@ -3,11 +3,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
+from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class ConvertFullLikeToFullPass(ExportPass):
+class ConvertFullLikeToFullPass(ArmPass):
     """As per the full_like pytorch documentation,
     `torch.full_like(input, fill_value)` is equivalent to
     `torch.full(input.size(),
@@ -18,6 +23,8 @@ class ConvertFullLikeToFullPass(ExportPass):
                 )`
     Skip layout and device since it's not relevant for our backend.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOT}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in [

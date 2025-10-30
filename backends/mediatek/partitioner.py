@@ -81,6 +81,7 @@ class NeuropilotPartitioner(Partitioner):
             torch.ops.aten.upsample_bilinear2d.vec,
             torch.ops.aten.upsample_nearest2d.default,
             torch.ops.aten.upsample_nearest2d.vec,
+            torch.ops.aten._safe_softmax.default,
         ]
         return (ops_not_decompose, None)
 

@@ -36,8 +36,8 @@ struct BufferBindInfo final {
   BufferBindInfo(const VulkanBuffer& buffer_p, const uint32_t offset_p = 0u);
   BufferBindInfo(
       const VulkanBuffer& buffer_p,
-      const uint32_t offset_p,
-      const uint32_t range_p);
+      const size_t offset_p,
+      const size_t range_p);
 };
 
 struct ParamsBindList final {

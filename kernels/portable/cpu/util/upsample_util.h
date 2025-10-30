@@ -45,7 +45,7 @@ Error resize_upsample_2d(
 // Ported from aten/src/ATen/native/UpSample.h
 template <typename scalar_t>
 inline scalar_t compute_scales_value(
-    const executorch::aten::optional<double>& scale,
+    const std::optional<double>& scale,
     int64_t input_size,
     int64_t output_size) {
   return scale.has_value() ? static_cast<scalar_t>(1.0 / scale.value())
@@ -58,7 +58,7 @@ inline scalar_t area_pixel_compute_scale(
     int64_t input_size,
     int64_t output_size,
     bool align_corners,
-    const executorch::aten::optional<double>& scale) {
+    const std::optional<double>& scale) {
   // see Note [area_pixel_compute_scale]
   if (align_corners) {
     if (output_size > 1) {

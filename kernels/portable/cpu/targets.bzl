@@ -43,10 +43,15 @@ def define_common_targets():
         name = "vec_ops",
         exported_deps = [
             "//executorch/runtime/core/portable_type/c10/c10:c10",
+            "//executorch/runtime/platform:compiler",
         ],
         srcs = [],
         exported_headers = ["vec_ops.h"],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
+        visibility = [
+            "//executorch/kernels/portable/...",
+            "//executorch/kernels/quantized/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
 
     # Only for use by targets in this directory. Defines constants like M_PI
@@ -58,7 +63,7 @@ def define_common_targets():
             "math_constants.h",
         ],
         visibility = [
-            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/portable/...", "@EXECUTORCH_CLIENTS",
         ],
     )
 
@@ -68,14 +73,17 @@ def define_common_targets():
         srcs = [],
         exported_headers = ["scalar_utils.h", "selective_build.h"],
         visibility = [
-            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/fb/...",
             "//executorch/kernels/optimized/cpu/...",
+            "//executorch/kernels/portable/cpu/...",
             "//executorch/kernels/portable/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core/exec_aten:lib",
         ],
     )
 

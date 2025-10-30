@@ -6,6 +6,7 @@
 
 import json
 import os
+
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -45,17 +46,11 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     dataset = get_dataset(
         args.hr_ref_dir, args.lr_dir, args.default_dataset, args.artifact
     )
 
-    inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
+    inputs, targets = dataset.lr, dataset.hr
     pte_filename = "esrgan_qnn"
     instance = get_instance(args.oss_repo)
 
@@ -82,8 +77,10 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -170,6 +167,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

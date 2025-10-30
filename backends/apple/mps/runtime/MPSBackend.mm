@@ -30,6 +30,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 class MPSBackend final : public ::executorch::runtime::BackendInterface {
  public:
@@ -72,7 +73,7 @@ class MPSBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
     ET_UNUSED BackendExecutionContext& context,
     DelegateHandle* handle,
-    EValue** args) const override {
+    Span<EValue*> args) const override {
     auto executor = static_cast<mps::delegate::MPSExecutor*>(handle);
     std::vector<const Tensor*> input_pointers;
     std::vector<const Tensor*> output_pointers;

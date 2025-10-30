@@ -19,9 +19,9 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpSumOutTest : public OperatorTest {
@@ -109,6 +109,85 @@ class OpSumOutTest : public OperatorTest {
         context_,
         op_sum_intlist_out(
             self, optional_dim_list, /*keepdim=*/false, dtype, out));
+  }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_complex_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor self = tf.make(
+        {2, 3, 2},
+        {CTYPE(1, 1),
+         CTYPE(2, 2),
+         CTYPE(3, 3),
+         CTYPE(4, 4),
+         CTYPE(5, 5),
+         CTYPE(6, 6),
+
+         CTYPE(7, 7),
+         CTYPE(8, 8),
+         CTYPE(9, 9),
+         CTYPE(10, 10),
+         CTYPE(11, 11),
+         CTYPE(12, 12)});
+
+    Tensor out1 = tf.make(
+        {2, 3, 1},
+        {
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+        });
+    int64_t dims_1[1] = {2};
+    optional<ArrayRef<int64_t>> dim_list1{ArrayRef<int64_t>{dims_1, 1}};
+    optional<ScalarType> dtype = DTYPE;
+
+    op_sum_intlist_out(self, dim_list1, true, dtype, out1);
+
+    Tensor expected1 = tf.make(
+        {2, 3, 1},
+        {CTYPE(3, 3),
+         CTYPE(7, 7),
+         CTYPE(11, 11),
+
+         CTYPE(15, 15),
+         CTYPE(19, 19),
+         CTYPE(23, 23)});
+
+    EXPECT_TENSOR_CLOSE(out1, expected1);
+
+    Tensor out2 = tf.make(
+        {2, 1, 2},
+        {
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+        });
+    int64_t dims_2[1] = {1};
+    optional<ArrayRef<int64_t>> dim_list2{ArrayRef<int64_t>{dims_2, 1}};
+
+    op_sum_intlist_out(self, dim_list2, true, dtype, out2);
+
+    Tensor expected2 = tf.make(
+        {2, 1, 2}, {CTYPE(9, 9), CTYPE(12, 12), CTYPE(27, 27), CTYPE(30, 30)});
+    EXPECT_TENSOR_CLOSE(out2, expected2);
+
+    Tensor out3 = tf.make(
+        {1, 1, 1},
+        {
+            CTYPE(0, 0),
+        });
+    optional<ArrayRef<int64_t>> null_dim_list;
+
+    op_sum_intlist_out(self, null_dim_list, true, dtype, out3);
+
+    Tensor expected3 = tf.make({1, 1, 1}, {CTYPE(78, 78)});
+
+    EXPECT_TENSOR_CLOSE(out3, expected3);
   }
 
   template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
@@ -366,6 +445,16 @@ TEST_F(OpSumOutTest, TypeConversionTest) {
   // clang-format on
 }
 
+TEST_F(OpSumOutTest, AllComplexDtypesSupported) {
+#define TEST_ENTRY(ctype, dtype) test_complex_dtype<ctype, ScalarType::dtype>();
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    ET_FORALL_COMPLEX_TYPES(TEST_ENTRY);
+  } else {
+    ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);
+  }
+#undef TEST_ENTRY
+}
+
 TEST_F(OpSumOutTest, InfinityAndNANTest) {
   TensorFactory<ScalarType::Float> tf_float;
   // clang-format off
@@ -400,4 +489,31 @@ TEST_F(OpSumOutTest, InfinityAndNANTest) {
       NAN
     }));
   // clang-format on
+}
+
+TEST_F(OpSumOutTest, EmptyInput) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor x = tf.make({2, 0, 3}, {});
+  optional<ScalarType> dtype = ScalarType::Float;
+  optional<ArrayRef<int64_t>> dim_list = ArrayRef<int64_t>{};
+  Tensor out = tf.ones({1, 1, 1});
+  op_sum_intlist_out(x, dim_list, /*keepdim=*/true, dtype, out);
+  EXPECT_TENSOR_CLOSE(out, tf.zeros({1, 1, 1}));
+
+  out = tf.ones({});
+  op_sum_intlist_out(x, dim_list, /*keepdim=*/false, dtype, out);
+  EXPECT_TENSOR_CLOSE(out, tf.zeros({}));
+
+  int64_t dims1[1] = {1};
+  dim_list = ArrayRef<int64_t>{dims1, 1};
+  out = tf.ones({2, 3});
+  op_sum_intlist_out(x, dim_list, /*keepdim=*/false, dtype, out);
+  EXPECT_TENSOR_CLOSE(out, tf.zeros({2, 3}));
+
+  int64_t dims2[1] = {2};
+  dim_list = ArrayRef<int64_t>{dims2, 1};
+  out = tf.make({2, 0, 1}, {});
+  op_sum_intlist_out(x, dim_list, /*keepdim=*/true, dtype, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({2, 0, 1}, {}));
 }

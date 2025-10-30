@@ -6,13 +6,15 @@
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 
-#import <ETCoreMLAssetManager.h>
-#import <ETCoreMLModel.h>
-#import <ETCoreMLModelManager.h>
-#import <ETCoreMLStrings.h>
-#import <backend_delegate.h>
-#import <model_event_logger.h>
-#import <multiarray.h>
+#import "backend_delegate.h"
+
+#import "ETCoreMLAssetManager.h"
+#import "ETCoreMLLogging.h"
+#import "ETCoreMLModel.h"
+#import "ETCoreMLModelManager.h"
+#import "ETCoreMLStrings.h"
+#import "model_event_logger.h"
+#import "multiarray.h"
 
 namespace  {
 using namespace executorchcoreml;
@@ -43,40 +45,15 @@ MLModelConfiguration *get_model_configuration(const std::unordered_map<std::stri
     return configuration;
 }
 
-NSURL * _Nullable create_directory_if_needed(NSURL *url,
-                                             NSFileManager *fileManager,
-                                             NSError * __autoreleasing *error) {
-    if (![fileManager fileExistsAtPath:url.path] &&
-        ![fileManager createDirectoryAtURL:url withIntermediateDirectories:YES attributes:@{} error:error]) {
-        return nil;
-    }
-    
-    return url;
-}
-
 ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory_path,
                                                       NSString *trash_directory_path,
                                                       NSString *database_directory_path,
                                                       NSString *database_name,
                                                       NSInteger max_assets_size_in_bytes,
                                                       NSError * __autoreleasing *error) {
-    NSFileManager *fm  = [[NSFileManager alloc] init];
-    
     NSURL *assets_directory_url = [NSURL fileURLWithPath:assets_directory_path];
-    if (!create_directory_if_needed(assets_directory_url, fm, error)) {
-        return nil;
-    }
-    
     NSURL *trash_directory_url = [NSURL fileURLWithPath:trash_directory_path];
-    if (!create_directory_if_needed(trash_directory_url, fm, error)) {
-        return nil;
-    }
-    
     NSURL *database_directory_url = [NSURL fileURLWithPath:database_directory_path];
-    if (!create_directory_if_needed(database_directory_url, fm, error)) {
-        return nil;
-    }
-    
     NSURL *database_url = [database_directory_url URLByAppendingPathComponent:database_name];
     ETCoreMLAssetManager *manager = [[ETCoreMLAssetManager alloc] initWithDatabaseURL:database_url
                                                                    assetsDirectoryURL:assets_directory_url
@@ -282,6 +259,9 @@ public:
         ModelHandle *modelHandle = [model_manager_ loadModelFromAOTData:data
                                                           configuration:configuration
                                                                   error:&localError];
+        if (localError != nil) {
+            ETCoreMLLogError(localError, "Model init failed");
+        }
         return modelHandle;
     }
     
@@ -290,13 +270,16 @@ public:
                  const ModelLoggingOptions& logging_options,
                  ModelEventLogger *event_logger,
                  std::error_code& ec) const noexcept override {
-        NSError *error = nil;
+        NSError *localError = nil;
         if (![model_manager_ executeModelWithHandle:handle
                                             argsVec:args
                                      loggingOptions:logging_options
                                         eventLogger:event_logger
-                                              error:&error]) {
-            ec = static_cast<ErrorCode>(error.code);
+                                              error:&localError]) {
+            if (localError != nil) {
+                ETCoreMLLogError(localError, "Model execution failed");
+                ec = static_cast<ErrorCode>(localError.code);
+            }                                    
             return false;
         }
         

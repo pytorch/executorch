@@ -116,6 +116,6 @@ class OperatorTest : public ::testing::Test {
   }
 
  protected:
-  executorch::runtime::KernelRuntimeContext context_;
+  ::torch::executor::KernelRuntimeContext context_;
   bool expect_failure_;
 };

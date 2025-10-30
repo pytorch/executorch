@@ -6,9 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <gflags/gflags.h>
+#include <iostream>
 
-#include <executorch/examples/models/phi-3-mini/runner.h>
+using executorch::extension::llm::TextLLMRunner;
 
 DEFINE_string(
     model_path,
@@ -42,9 +45,15 @@ int main(int32_t argc, char** argv) {
 
   int32_t seq_len = FLAGS_seq_len;
 
-  example::Runner runner(model_path, tokenizer_path, temperature);
+  std::unique_ptr<tokenizers::Tokenizer> tokenizer =
+      executorch::extension::llm::load_tokenizer(tokenizer_path);
 
-  runner.generate(prompt, seq_len);
+  auto runner = executorch::extension::llm::create_text_llm_runner(
+      model_path, std::move(tokenizer));
+
+  runner->generate(
+      prompt,
+      {.seq_len = seq_len, .temperature = static_cast<float>(temperature)});
 
   return 0;
 }

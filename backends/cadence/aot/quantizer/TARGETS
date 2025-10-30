@@ -1,18 +1,19 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("odai_jarvis")
 
-python_library(
+runtime.python_library(
     name = "utils",
     srcs = [
         "utils.py",
     ],
     deps = [
         "//caffe2:torch",
+        "//pytorch/ao:torchao",
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "patterns",
     srcs = [
         "patterns.py",
@@ -24,7 +25,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "quantizer",
     srcs = [
         "quantizer.py",
@@ -34,11 +35,10 @@ python_library(
         ":patterns",
         ":utils",
         "//caffe2:torch",
-        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer_utils",
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "fusion_pass",
     srcs = [
         "fusion_pass.py",

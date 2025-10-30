@@ -252,14 +252,21 @@ class TestEdgeVerification(unittest.TestCase):
         self.assertTrue(verifier.is_valid(egm))
 
     def test_edge_sad_with_edge_ops(self) -> None:
-        # log_softmax only takes float or double Tensor
-        m = torch.nn.LogSoftmax(dim=1)
+        # add operation does not support complex64 dtype
+        class TestModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x + x
+
+        m = TestModel()
         with self.assertRaises(SpecViolationError):
             _ = (
                 to_edge(
                     export(
                         m,
-                        (torch.randn(1, 3, 100, 100).to(dtype=torch.bfloat16),),
+                        (torch.randn(1, 3, 100, 100).to(dtype=torch.complex64),),
                         strict=True,
                     )
                 )

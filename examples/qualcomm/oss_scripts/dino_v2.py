@@ -6,10 +6,14 @@
 
 import json
 import os
+
 from multiprocessing.connection import Client
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_capture_program_passes,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 
 from executorch.examples.qualcomm.utils import (
@@ -39,14 +43,8 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     img_size, data_num = 224, 100
-    inputs, targets, input_list = get_imagenet_dataset(
+    inputs, targets = get_imagenet_dataset(
         dataset_path=f"{args.dataset}",
         data_size=data_num,
         image_shape=(256, 256),
@@ -56,6 +54,7 @@ def main(args):
 
     pte_filename = "dino_v2"
     instance = get_instance()
+    passes_job = get_capture_program_passes()
     build_executorch_binary(
         instance,
         sample_input,
@@ -65,6 +64,7 @@ def main(args):
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
         quant_dtype=QuantDtype.use_8a8w,
+        passes_job=passes_job,
         shared_buffer=args.shared_buffer,
     )
 
@@ -79,8 +79,10 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -132,6 +134,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

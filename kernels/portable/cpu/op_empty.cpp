@@ -26,7 +26,7 @@ using executorch::aten::Tensor;
 Tensor& empty_out(
     KernelRuntimeContext& context,
     IntArrayRef size,
-    executorch::aten::optional<executorch::aten::MemoryFormat> memory_format,
+    std::optional<executorch::aten::MemoryFormat> memory_format,
     Tensor& out) {
   (void)context;
 

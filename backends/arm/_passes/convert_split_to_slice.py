@@ -1,22 +1,27 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
-# All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
+
+from typing import Set, Type
 
 import torch.fx
-from executorch.backends.arm._passes.arm_pass_utils import create_node
-from executorch.backends.arm.tosa_mapping import extract_tensor_meta
+from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.arm_pass_utils import (
+    create_node,
+    get_first_fake_tensor,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class ConvertSplitToSlicePass(ExportPass):
+class ConvertSplitToSlicePass(ArmPass):
     """
     Replace a split operation with many slice operations.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     split_ops = (
         exir_ops.edge.aten.split_with_sizes_copy.default,
@@ -34,15 +39,31 @@ class ConvertSplitToSlicePass(ExportPass):
             split_node = node
             input_node = split_node.all_input_nodes[0]
             output_nodes = split_node.users.copy()
-            _, shape, _ = extract_tensor_meta(input_node.meta)
+            shape = get_first_fake_tensor(input_node).shape
             rank = len(shape)
             split_lengths = split_node.args[1]
             dim = split_node.args[2] if len(split_node.args) > 2 else 0
             dim = (dim + rank) % rank
 
-            assert (
-                sum(split_lengths) == shape[dim]
-            ), "Given split lengths don't sum up to the size of the dimension."
+            # Validate that split lengths cover the entire dimension
+
+            dim_size = shape[dim]
+            if isinstance(split_lengths, int):
+                if split_lengths <= 0:
+                    raise ValueError(
+                        f"Split size must be positive, got {split_lengths}"
+                    )
+                full_chunks, remainder = divmod(dim_size, split_lengths)
+                split_lengths = [split_lengths] * full_chunks
+                if remainder:
+                    split_lengths.append(remainder)
+            else:
+                length_sum = sum(split_lengths)
+                if length_sum != dim_size:
+                    raise ValueError(
+                        f"Split sizes {split_lengths} sum to {length_sum}, "
+                        f"but dimension {dim} has size {dim_size}"
+                    )
 
             # Convert split argument 'split_lengths' to slice arguments start and end.
             starts = [0] * len(split_lengths)

@@ -19,7 +19,7 @@ There are three flows for delegating a program to a backend:
     is good for reusing lowered modules exported from other flows.
 1. Lower parts of a module according to a partitioner. This is good for
     lowering models that include both lowerable and non-lowerable nodes, and is
-    the most streamlined procecss.
+    the most streamlined process.
 
 ### Flow 1: Lowering the whole module
 
@@ -137,7 +137,7 @@ are meant to be lowered. It will return a `partition_tags` dictionary mapping ta
 backend names and module compile specs. The tagged nodes will then be
 partitioned and lowered to their mapped backends using Flow 1's process.
 Available helper partitioners are documented
-[here](./compiler-custom-compiler-passes.md). These lowered modules
+[here](compiler-custom-compiler-passes.md). These lowered modules
 will be inserted into the top-level module and serialized.
 
 The following is an example of the flow:

@@ -47,23 +47,38 @@
 
 #endif
 
+/**
+ * This hack is for separating out ATen mode vs non-ATen mode. In ATen mode,
+ * we use the ATen types directly. In non-ATen mode, we use the portable types.
+ * To avoid duplicate symbols and/or duplicate operator registration, when a
+ * user depends on both the ATen mode and non-ATen mode versions of the
+ * ExecuTorch library.
+ */
+#ifndef ET_RUNTIME_NAMESPACE
+#if defined(USE_ATEN_LIB)
+#define ET_RUNTIME_NAMESPACE runtime::aten
+#else
+#define ET_RUNTIME_NAMESPACE runtime
+#endif
+#endif
+
 namespace executorch {
 namespace aten {
 
 using TensorShapeDynamism = executorch::runtime::TensorShapeDynamism;
+
+using std::nullopt;
+using std::nullopt_t;
+using std::optional;
+using std::string_view;
 
 #ifdef USE_ATEN_LIB
 
 using Tensor = at::Tensor;
 using TensorList = at::TensorList;
 using TensorImpl = at::TensorImpl;
-using string_view = std::string_view;
 template <typename T>
 using ArrayRef = c10::ArrayRef<T>;
-template <typename T>
-using optional = std::optional<T>;
-using nullopt_t = std::nullopt_t;
-using std::nullopt;
 using ScalarType = at::ScalarType;
 using Scalar = c10::Scalar;
 using MemoryFormat = c10::MemoryFormat;
@@ -95,18 +110,24 @@ inline ssize_t compute_numel(const SizesType* sizes, ssize_t dim) {
       c10::multiply_integers(c10::ArrayRef<SizesType>(sizes, dim)));
 }
 
+#undef ET_PRI_TENSOR_SIZE
+#define ET_PRI_TENSOR_SIZE PRId64
+
+#undef ET_PRI_TENSOR_DIM
+#define ET_PRI_TENSOR_DIM PRId64
+
+#undef ET_PRI_TENSOR_NUMEL
+#define ET_PRI_TENSOR_NUMEL PRId64
+
+#undef ET_PRI_SIZES_AND_STRIDES
+#define ET_PRI_SIZES_AND_STRIDES PRId64
+
 #else // Use executor types
 
 using Tensor = torch::executor::Tensor;
 using TensorImpl = torch::executor::TensorImpl;
-using string_view = torch::executor::string_view;
 template <typename T>
 using ArrayRef = torch::executor::ArrayRef<T>;
-template <typename T>
-using optional = torch::executor::optional<T>;
-using nullopt_t = torch::executor::nullopt_t;
-// NOLINTNEXTLINE(facebook-hte-NamespaceScopedStaticDeclaration)
-using std::nullopt;
 using ScalarType = torch::executor::ScalarType;
 using TensorList = ArrayRef<Tensor>;
 using Scalar = torch::executor::Scalar;

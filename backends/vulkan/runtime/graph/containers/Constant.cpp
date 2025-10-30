@@ -14,7 +14,22 @@ TensorRef::TensorRef(
     const std::vector<int64_t>& t_sizes,
     vkapi::ScalarType t_dtype,
     const void* const t_data)
-    : sizes{}, dtype{t_dtype}, data{t_data} {
+    : sizes{}, dtype{t_dtype}, data{t_data}, buffer{} {
+  size_t ndim = t_sizes.size();
+  sizes.resize(ndim);
+  for (int i = 0; i < ndim; ++i) {
+    sizes[i] = t_sizes.at(i);
+  }
+}
+
+TensorRef::TensorRef(
+    const std::vector<int64_t>& t_sizes,
+    vkapi::ScalarType t_dtype,
+    executorch::runtime::FreeableBuffer&& t_buffer)
+    : sizes{},
+      dtype{t_dtype},
+      data{t_buffer.data()},
+      buffer{std::move(t_buffer)} {
   size_t ndim = t_sizes.size();
   sizes.resize(ndim);
   for (int i = 0; i < ndim; ++i) {

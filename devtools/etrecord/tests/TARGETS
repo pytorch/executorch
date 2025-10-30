@@ -1,4 +1,4 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
@@ -7,16 +7,11 @@ python_unittest(
     name = "etrecord_test",
     srcs = ["etrecord_test.py"],
     deps = [
-        "//caffe2:torch",
-        "//executorch/devtools/bundled_program:config",
-        "//executorch/devtools/bundled_program:core",
-        "//executorch/devtools/etrecord:etrecord",
-        "//executorch/exir:lib",
-        "//executorch/exir/tests:models",
+        ":etrecord_test_library"
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "etrecord_test_library",
     srcs = ["etrecord_test.py"],
     deps = [
@@ -26,5 +21,7 @@ python_library(
         "//executorch/devtools/etrecord:etrecord",
         "//executorch/exir:lib",
         "//executorch/exir/tests:models",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/export:lib",
     ],
 )

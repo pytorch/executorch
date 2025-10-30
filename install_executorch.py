@@ -8,7 +8,6 @@
 
 import argparse
 import glob
-import itertools
 import logging
 import os
 import shutil
@@ -17,9 +16,9 @@ import sys
 from contextlib import contextmanager
 
 from install_requirements import (
+    install_optional_example_requirements,
     install_requirements,
     python_is_compatible,
-    TORCH_NIGHTLY_URL,
 )
 
 # Set up logging
@@ -48,10 +47,26 @@ def clean():
     for d in dirs:
         print(f"Cleaning {d}...")
         shutil.rmtree(d, ignore_errors=True)
+    print("Cleaning buck-out/...")
+    shutil.rmtree("buck-out/", ignore_errors=True)
+
+    # Removes all buck cached state and metadata
+    print("Cleaning buck cached state and metadata ...")
+    shutil.rmtree(os.path.expanduser("~/.buck/buckd"), ignore_errors=True)
+
+    # Clean ccache if available
+    try:
+        result = subprocess.run(["ccache", "--version"], capture_output=True, text=True)
+        if result.returncode == 0:
+            print("Cleaning ccache...")
+            subprocess.run(["ccache", "--clear"], check=True)
+            print("ccache cleared successfully.")
+        else:
+            print("ccache not found, skipping ccache cleanup.")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("ccache not found, skipping ccache cleanup.")
+
     print("Done cleaning build artifacts.")
-
-
-VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training"]
 
 
 ################################################################################
@@ -118,8 +133,10 @@ def check_and_update_submodules():
     if missing_submodules:
         logger.warning("Some required submodules are missing. Updating submodules...")
         try:
-            subprocess.check_call(["git", "submodule", "sync"])
-            subprocess.check_call(["git", "submodule", "update", "--init"])
+            subprocess.check_call(["git", "submodule", "sync", "--recursive"])
+            subprocess.check_call(
+                ["git", "submodule", "update", "--init", "--recursive"]
+            )
         except subprocess.CalledProcessError as e:
             logger.error(f"Error updating submodules: {e}")
             exit(1)
@@ -128,24 +145,16 @@ def check_and_update_submodules():
         for path, file in missing_submodules.items():
             if not check_folder(path, file):
                 logger.error(f"{file} not found in {path}.")
-                logger.error("Please run `git submodule update --init`.")
+                logger.error(
+                    "Submodule update failed. Please run `git submodule update --init --recursive` manually."
+                )
                 exit(1)
-    # Go into tokenizers submodule and install its submodules
-    tokenizers_path = get_required_submodule_paths().get("tokenizers", None)
-    if tokenizers_path:
-        with pushd(tokenizers_path):
-            subprocess.check_call(["git", "submodule", "update", "--init"])
     logger.info("All required submodules are present.")
 
 
-def build_args_parser() -> argparse.ArgumentParser:
-    # Parse options.
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--pybind",
-        action="append",
-        nargs="+",
-        help="one or more of coreml/mps/xnnpack, or off",
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Install executorch in your Python environment."
     )
     parser.add_argument(
         "--clean",
@@ -165,89 +174,37 @@ def build_args_parser() -> argparse.ArgumentParser:
         "picked up without rebuilding the wheel. Extension libraries will be "
         "installed inside the source tree.",
     )
-    return parser
-
-
-def handle_pybind(args, cmake_args, executorch_build_pybind):
-    # Flatten list of lists.
-    args.pybind = list(itertools.chain(*args.pybind))
-    if "off" in args.pybind:
-        if len(args.pybind) != 1:
-            raise Exception(f"Cannot combine `off` with other pybinds: {args.pybind}")
-        executorch_build_pybind = "OFF"
-    else:
-        for pybind_arg in args.pybind:
-            if pybind_arg not in VALID_PYBINDS:
-                raise Exception(
-                    f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
-                )
-            if pybind_arg == "training":
-                cmake_args += " -DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON"
-                os.environ["EXECUTORCH_BUILD_TRAINING"] = "ON"
-            elif pybind_arg == "mps":
-                cmake_args += " -DEXECUTORCH_BUILD_MPS=ON"
-            else:
-                cmake_args += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
-            executorch_build_pybind = "ON"
-    return executorch_build_pybind, cmake_args
+    parser.add_argument(
+        "--minimal",
+        "-m",
+        action="store_true",
+        help="Only installs necessary dependencies for core executorch and skips "
+        " packages necessary for running example scripts.",
+    )
+    return parser.parse_args()
 
 
 def main(args):
     if not python_is_compatible():
         sys.exit(1)
 
-    parser = build_args_parser()
-    args = parser.parse_args()
-
-    EXECUTORCH_BUILD_PYBIND = ""
-    CMAKE_ARGS = os.getenv("CMAKE_ARGS", "")
-    use_pytorch_nightly = True
-
-    if args.pybind:
-        EXECUTORCH_BUILD_PYBIND, CMAKE_ARGS = handle_pybind(
-            args, CMAKE_ARGS, EXECUTORCH_BUILD_PYBIND
-        )
+    args = _parse_args()
 
     if args.clean:
         clean()
         return
 
-    if args.use_pt_pinned_commit:
-        # This option is used in CI to make sure that PyTorch build from the pinned commit
-        # is used instead of nightly. CI jobs wouldn't be able to catch regression from the
-        # latest PT commit otherwise
-        use_pytorch_nightly = False
-
-    # If --pybind is not set explicitly for backends (e.g., --pybind xnnpack)
-    # or is not turned off explicitly (--pybind off)
-    # then install XNNPACK by default.
-    if EXECUTORCH_BUILD_PYBIND == "":
-        EXECUTORCH_BUILD_PYBIND = "ON"
-        CMAKE_ARGS += " -DEXECUTORCH_BUILD_XNNPACK=ON"
-
-    # Use ClangCL on Windows.
-    # ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
-    # mode. Using it on Windows to avoid compiler compatibility issues for MSVC.
-    if os.name == "nt":
-        CMAKE_ARGS += " -T ClangCL"
-
-    #
-    # Install executorch pip package. This also makes `flatc` available on the path.
-    # The --extra-index-url may be necessary if pyproject.toml has a dependency on a
-    # pre-release or nightly version of a torch package.
-    #
-
-    # Set environment variables
-    os.environ["EXECUTORCH_BUILD_PYBIND"] = EXECUTORCH_BUILD_PYBIND
-    os.environ["CMAKE_ARGS"] = CMAKE_ARGS
-
-    # Check if the required submodules are present and update them if not
     check_and_update_submodules()
+    # This option is used in CI to make sure that PyTorch build from the pinned commit
+    # is used instead of nightly. CI jobs wouldn't be able to catch regression from the
+    # latest PT commit otherwise
+    use_pytorch_nightly = not args.use_pt_pinned_commit
 
+    # Step 1: Install core dependencies first
     install_requirements(use_pytorch_nightly)
 
-    # Run the pip install command
-    subprocess.run(
+    # Step 2: Install core package
+    cmd = (
         [
             sys.executable,
             "-m",
@@ -259,17 +216,16 @@ def main(args):
             ".",
             "--no-build-isolation",
             "-v",
-            "--extra-index-url",
-            TORCH_NIGHTLY_URL,
-        ],
-        check=True,
+        ]
     )
+    subprocess.run(cmd, check=True)
+
+    # Step 3: Extra (optional) packages that is only useful for running examples.
+    if not args.minimal:
+        install_optional_example_requirements(use_pytorch_nightly)
 
 
 if __name__ == "__main__":
     # Before doing anything, cd to the directory containing this script.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    if not python_is_compatible():
-        sys.exit(1)
-
     main(sys.argv[1:])

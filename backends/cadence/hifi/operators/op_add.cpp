@@ -16,6 +16,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <executorch/backends/cadence/common/xt_macros.h>
+
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -24,7 +26,6 @@ using executorch::runtime::CppTypeToScalarType;
 using executorch::runtime::KernelRuntimeContext;
 using torch::executor::Error;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -138,8 +139,22 @@ Tensor& add_out(
   if ((out_type != ScalarType::Float) || (alpha_val != 1.0))
     optimized = 0;
 
-  if ((a_dim == 0) || (b_dim == 0))
-    optimized = 0;
+  bool float_types =
+      (a_type == ScalarType::Float) && (b_type == ScalarType::Float);
+
+  if ((a_dim == 0) && float_types) {
+    for (int i = 0; i < b.numel(); i++)
+      out.mutable_data_ptr<float>()[i] = a.const_data_ptr<float>()[0] +
+          alpha_val * b.const_data_ptr<float>()[i];
+    return out;
+  }
+  if ((b_dim == 0) && float_types) {
+    // Precompute the value of b * alpha since it's a constant.
+    const float val_b = alpha_val * b.const_data_ptr<float>()[0];
+    for (int i = 0; i < a.numel(); i++)
+      out.mutable_data_ptr<float>()[i] = a.const_data_ptr<float>()[i] + val_b;
+    return out;
+  }
 
   if ((broadcast == 1) && (max_dim > kNnlibMaxDim))
     optimized = 0;
@@ -171,10 +186,25 @@ Tensor& add_out(
       for (int i = 0; i < b.dim(); i++)
         inp2_shape[i + off_b] = b.size(i);
 
-      xa_nn_elm_add_broadcast_4D_f32xf32_f32(
-          out_data, out_shape, a_data, inp1_shape, b_data, inp2_shape);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_add_broadcast_4D_f32xf32_f32,
+          out_data,
+          out_shape,
+          a_data,
+          inp1_shape,
+          b_data,
+          inp2_shape);
     } else {
-      xa_nn_elm_add_f32xf32_f32(out_data, a_data, b_data, out.numel());
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_add_f32xf32_f32,
+          out_data,
+          a_data,
+          b_data,
+          out.numel());
     }
 
     return out;
@@ -207,4 +237,3 @@ Tensor& add_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

@@ -41,19 +41,20 @@ from executorch.exir.common import (
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.graph_module import LeafValue
 from executorch.exir.operator.convert import is_out_variant
+from executorch.exir.operator.util import _QUANT_PRIMITIVES
 from executorch.exir.types import ValueSpec
 
 from torch._C import _EnableTorchFunction, DisableTorchFunctionSubclass  # @manual
 from torch._decomp import get_decompositions
 from torch._dynamo.guards import Guard
 from torch._functorch.eager_transforms import _maybe_unwrap_functional_tensor
+
 from torch.export import default_decompositions
 from torch.func import functionalize
 from torch.fx.operator_schemas import normalize_function
 from torch.utils._pytree import TreeSpec
 
 from typing_extensions import TypeAlias
-
 
 Value: TypeAlias = Union[
     LeafValue,
@@ -629,10 +630,24 @@ def _default_decomposition_table(
             torch.ops.aten.arange.start,
             torch.ops.aten.transpose,
         ]
-        # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.e...
-        return get_decompositions(decomp_opset)
+        return get_decompositions(decomp_opset)  # pyre-fixme[7]
+
+    decomps = default_decompositions()
+    # Add edge specific decompositions
+    additional_decomp_ops = [
+        # TODO: Eventually this op should be added to the core decompo table, and will not
+        # need to be added here.
+        torch.ops.aten.linalg_vector_norm.default,
+    ]
+    additional_decomps = get_decompositions(additional_decomp_ops)
+    decomps.update(additional_decomps)
     # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
-    return default_decompositions()
+
+    never_decompose = []
+    never_decompose.extend(_QUANT_PRIMITIVES)
+    for op in never_decompose:
+        decomps.pop(op, None)
+    return decomps  # pyre-fixme[7]
 
 
 def dynamo_trace(

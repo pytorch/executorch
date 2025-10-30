@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_dimension_limit.h>
 #include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>
@@ -18,13 +19,13 @@
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 namespace deserialization {
 
 using executorch::runtime::Span;
-using torch::executor::ScalarType;
-using torch::executor::Tensor;
-using torch::executor::TensorImpl;
+using ::torch::executor::ScalarType;
+using ::torch::executor::Tensor;
+using ::torch::executor::TensorImpl;
 
 Result<Tensor> parseTensor(
     const Program* program,
@@ -61,6 +62,13 @@ Result<Tensor> parseTensor(
       s_tensor->sizes() != nullptr, InvalidProgram, "Missing sizes field");
   const auto serialized_sizes = s_tensor->sizes()->data();
   const auto dim = s_tensor->sizes()->size();
+
+  ET_CHECK_OR_RETURN_ERROR(
+      dim <= kTensorDimensionLimit,
+      InvalidProgram,
+      "Tensor rank too large %" PRIu32 " > %zu",
+      dim,
+      kTensorDimensionLimit)
 
   ET_CHECK_OR_RETURN_ERROR(
       s_tensor->dim_order() != nullptr,
@@ -176,5 +184,5 @@ Result<Tensor> parseTensor(
 }
 
 } // namespace deserialization
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

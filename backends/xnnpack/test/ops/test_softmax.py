@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestSoftmax(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class Softmax(torch.nn.Module):
         def __init__(self, dim):
             super().__init__()

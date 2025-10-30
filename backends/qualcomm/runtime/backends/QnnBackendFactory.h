@@ -27,6 +27,8 @@
 namespace executorch {
 namespace backends {
 namespace qnn {
+
+class QnnDlcManager;
 typedef enum { UNINITIALIZED, INITIALIZED } BackendInitializeState;
 
 // @brief Struct containing all handles for a given QNN backend
@@ -67,7 +69,8 @@ class QnnBackendFactory {
       const QnnImplementation& implementation,
       QnnLogger* logger,
       const QnnExecuTorchContextBinary& qnn_context_blob,
-      const QnnExecuTorchOptions* options);
+      const QnnExecuTorchOptions* options,
+      QnnDlcManager* qnn_dlc_manager);
 };
 } // namespace qnn
 } // namespace backends

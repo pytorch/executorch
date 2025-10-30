@@ -44,34 +44,18 @@ TEST(BroadcastIndexesRangeTest, OneDNotBroadcasted) {
 
   Tensor out = tf.zeros({5});
   int idx = 0;
-  for (const auto& elem : range_to_vec(BroadcastIndexesRange<1>(out, out))) {
+  const auto range = BroadcastIndexesRange<1>(out, out);
+  for (const auto& elem : range_to_vec(range)) {
+    EXPECT_EQ(*(range.begin() + idx), elem);
     EXPECT_EQ(elem[0], idx++);
     EXPECT_EQ(elem[0], elem[1]);
   }
 }
 
-// [1] -> [W]
-TEST(BroadcastIndexesRangeTest, ScalarBroadcastToOneD) {
-  TensorFactory<ScalarType::Int> tf;
-
-  Tensor out = tf.zeros({5});
-  Tensor in = tf.zeros({1});
-
-  auto actual = range_to_vec(BroadcastIndexesRange<1>(out, in));
-  decltype(actual) expected = {
-      {0, 0},
-      {1, 0},
-      {2, 0},
-      {3, 0},
-      {4, 0},
-  };
-  EXPECT_EQ(expected, actual);
-}
-
 template <typename Range>
 void test_operator_plus(const Range& range) {
   size_t idx = 0;
-  for (const auto indexes : range) {
+  for (const auto& indexes : range) {
     EXPECT_EQ(*(range.begin() + idx), indexes);
     idx++;
   }

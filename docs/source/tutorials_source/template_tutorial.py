@@ -9,7 +9,7 @@
 Template Tutorial
 =================
 
-**Author:** `FirstName LastName <https://github.com/username>`_
+**Author:** `FirstName LastName <https://github.com/{username}>`_
 
 .. grid:: 2
 

@@ -10,8 +10,11 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
         "//executorch/kernels/portable/cpu/pattern:all_deps",
         "//executorch/runtime/kernel:kernel_includes",
         "//executorch/kernels/portable/cpu:scalar_utils",
+        "//executorch/backends/cadence/common:xt_macros",
         "fbsource//third-party/nnlib-FusionG3/xa_nnlib:libxa_nnlib_common",
         "fbsource//third-party/nnlib-FusionG3/xa_nnlib:libxa_nnlib",
+        ":operators_header",
+        ":xt_utils",
     ]
     if deps == None:
         deps = []
@@ -24,17 +27,22 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
             "//executorch/backends/cadence/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        compatible_with = ["ovr_config//cpu:xtensa"],
         deps = deps + common_deps,
-        exported_deps = [
-            ":operators_header",
-            ":xt_macros",
-            ":xt_utils",
-        ],
     )
 
 OPERATORS = [
     "add",
     "cat",
+    "clamp",
+    "lt",
+    "rsqrt",
+    "sigmoid",
+    "sqrt",
+    "hardtanh",
+    "tanh",
+    "transpose_copy",
+    "where",
     "dequantize",
     "mul",
     "native_layer_norm",
@@ -60,18 +68,6 @@ def define_common_targets():
     runtime.cxx_library(
         name = "operators_header",
         exported_headers = ["operators.h"],
-        visibility = [
-            "//executorch/backends/cadence/...",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/kernel:kernel_runtime_context",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "xt_macros",
-        exported_headers = ["xt_macros.h"],
         visibility = [
             "//executorch/backends/cadence/...",
         ],

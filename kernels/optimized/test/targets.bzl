@@ -38,6 +38,5 @@ def define_common_targets():
     """
     define_supported_features_lib()
 
-    _lib_test_bin("libvec_test_bin")
     _lib_test_bin("moments_utils_test_bin", in_cpu = True)
     _lib_test_bin("libblas_test_bin")

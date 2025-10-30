@@ -63,6 +63,12 @@ enum class Error : error_code_t {
   /// Operator(s) missing in the operator registry.
   OperatorMissing = 0x14,
 
+  /// Registration error: Exceeding the maximum number of kernels.
+  RegistrationExceedingMaxKernels = 0x15,
+
+  /// Registration error: The kernel is already registered.
+  RegistrationAlreadyRegistered = 0x16,
+
   /*
    * Resource errors.
    */
@@ -95,8 +101,53 @@ enum class Error : error_code_t {
   DelegateMemoryAllocationFailed = 0x31,
   /// Execute stage: The handle is invalid.
   DelegateInvalidHandle = 0x32,
-
 };
+
+// Stringify the Error enum.
+constexpr const char* to_string(const Error error) {
+  switch (error) {
+    case Error::Ok:
+      return "Error::Ok";
+    case Error::Internal:
+      return "Error::Internal";
+    case Error::InvalidState:
+      return "Error::InvalidState";
+    case Error::EndOfMethod:
+      return "Error::EndOfMethod";
+    case Error::NotSupported:
+      return "Error::NotSupported";
+    case Error::NotImplemented:
+      return "Error::NotImplemented";
+    case Error::InvalidArgument:
+      return "Error::InvalidArgument";
+    case Error::InvalidType:
+      return "Error::InvalidType";
+    case Error::OperatorMissing:
+      return "Error::OperatorMissing";
+    case Error::NotFound:
+      return "Error::NotFound";
+    case Error::MemoryAllocationFailed:
+      return "Error::MemoryAllocationFailed";
+    case Error::AccessFailed:
+      return "Error::AccessFailed";
+    case Error::InvalidProgram:
+      return "Error::InvalidProgram";
+    case Error::InvalidExternalData:
+      return "Error::InvalidExternalData";
+    case Error::OutOfResources:
+      return "Error::OutOfResources";
+    case Error::DelegateInvalidCompatibility:
+      return "Error::DelegateInvalidCompatibility";
+    case Error::DelegateMemoryAllocationFailed:
+      return "Error::DelegateMemoryAllocationFailed";
+    case Error::DelegateInvalidHandle:
+      return "Error::DelegateInvalidHandle";
+    case Error::RegistrationExceedingMaxKernels:
+      return "Error::RegistrationExceedingMaxKernels";
+    case Error::RegistrationAlreadyRegistered:
+      return "Error::RegistrationAlreadyRegistered";
+  }
+}
 
 } // namespace runtime
 } // namespace executorch
@@ -154,42 +205,37 @@ using ::executorch::runtime::error_code_t;
  * @param[in] ... Optional format string for the log error message and its
  * arguments.
  */
-#define ET_CHECK_OK_OR_RETURN_ERROR(error__, ...) \
-  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR(error__, ##__VA_ARGS__)
-
-// Internal only: Use ET_CHECK_OK_OR_RETURN_ERROR() instead.
-#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR(...) \
-  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_SELECT(    \
-      __VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1) \
-  (__VA_ARGS__)
+#define ET_CHECK_OK_OR_RETURN_ERROR(...) \
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR(__VA_ARGS__)
 
 /**
  * Internal only: Use ET_CHECK_OK_OR_RETURN_ERROR() instead.
  * This macro selects the correct version of
  * ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR based on the number of arguments passed.
- * It uses a trick with the preprocessor to count the number of arguments and
- * then selects the appropriate macro.
- *
- * The macro expansion uses __VA_ARGS__ to accept any number of arguments and
- * then appends them to ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_, followed by the
- * count of arguments. The count is determined by the macro
- * ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_SELECT which takes the arguments and
- * passes them along with a sequence of numbers (2, 1). The preprocessor then
- * matches this sequence to the correct number of arguments provided.
- *
- * If two arguments are passed, ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2 is
- * selected, suitable for cases where an error code and a custom message are
- * provided. If only one argument is passed,
- * ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_1 is selected, which is used for cases
- * with just an error code.
- *
- * Usage:
- * ET_CHECK_OK_OR_RETURN_ERROR(error_code); // Calls v1
- * ET_CHECK_OK_OR_RETURN_ERROR(error_code, "Error message", ...); // Calls v2
+ * It uses a helper that reliably picks the 1-arg or 2+-arg form on
+ * MSVC/Clang/GCC.
  */
-#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_SELECT( \
-    _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, N, ...) \
-  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_##N
+#define ET_INTERNAL_EXPAND(x) x
+#define ET_INTERNAL_GET_MACRO(                          \
+    _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, NAME, ...) \
+  NAME
+
+// Internal only: Use ET_CHECK_OK_OR_RETURN_ERROR() instead.
+// Picks _2 for 2..10 args, _1 for exactly 1 arg.
+#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR(...)      \
+  ET_INTERNAL_EXPAND(ET_INTERNAL_GET_MACRO(            \
+      __VA_ARGS__,                                     \
+      ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2, /* 10 */ \
+      ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2, /* 9  */ \
+      ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2, /* 8  */ \
+      ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2, /* 7  */ \
+      ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2, /* 6  */ \
+      ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2, /* 5  */ \
+      ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2, /* 4  */ \
+      ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2, /* 3  */ \
+      ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2, /* 2  */ \
+      ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_1 /* 1  */  \
+      )(__VA_ARGS__))
 
 // Internal only: Use ET_CHECK_OK_OR_RETURN_ERROR() instead.
 #define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_1(error__)   \
@@ -209,21 +255,3 @@ using ::executorch::runtime::error_code_t;
       return et_error__;                                                \
     }                                                                   \
   } while (0)
-
-// Internal only: Use ET_CHECK_OK_OR_RETURN_ERROR() instead.
-#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_3 \
-  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
-#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_4 \
-  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
-#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_5 \
-  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
-#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_6 \
-  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
-#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_7 \
-  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
-#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_8 \
-  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
-#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_9 \
-  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
-#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_10 \
-  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2

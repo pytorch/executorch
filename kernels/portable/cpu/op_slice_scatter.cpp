@@ -24,8 +24,8 @@ Tensor& slice_scatter_out(
     const Tensor& input,
     const Tensor& src,
     int64_t dim,
-    executorch::aten::optional<int64_t> start_val,
-    executorch::aten::optional<int64_t> end_val,
+    std::optional<int64_t> start_val,
+    std::optional<int64_t> end_val,
     int64_t step,
     Tensor& out) {
   (void)ctx;

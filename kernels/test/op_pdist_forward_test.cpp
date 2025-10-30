@@ -23,7 +23,7 @@ using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 Tensor& op_pdist_forward_out(const Tensor& input, double p, Tensor& out) {
-  executorch::runtime::KernelRuntimeContext context{};
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context{};
   return torch::executor::aten::_pdist_forward_outf(context, input, p, out);
 }
 

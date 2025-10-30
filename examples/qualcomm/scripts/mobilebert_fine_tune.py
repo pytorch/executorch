@@ -23,7 +23,6 @@ from executorch.examples.qualcomm.utils import (
     make_output_dir,
     make_quantizer,
     parse_skip_delegation_node,
-    QnnPartitioner,
     setup_common_args_and_variables,
     SimpleADB,
 )
@@ -66,10 +65,10 @@ def accuracy_per_class(preds, goldens, labels):
 
 def get_dataset(data_val):
     # prepare input data
-    inputs, input_list = [], ""
+    inputs = []
     # max_position_embeddings defaults to 512
     position_ids = torch.arange(512).expand((1, -1)).to(torch.int32)
-    for index, data in enumerate(data_val):
+    for data in data_val:
         data = [d.to(torch.int32) for d in data]
         # input_ids, attention_mask, token_type_ids, position_ids
         inputs.append(
@@ -79,12 +78,8 @@ def get_dataset(data_val):
                 position_ids[:, : data[0].shape[1]],
             )
         )
-        input_text = " ".join(
-            [f"input_{index}_{i}.raw" for i in range(len(inputs[-1]))]
-        )
-        input_list += f"{input_text}\n"
 
-    return inputs, input_list
+    return inputs
 
 
 def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
@@ -103,10 +98,7 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
     from transformers import get_linear_schedule_with_warmup
 
     # grab dataset
-    url = (
-        "https://raw.githubusercontent.com/susanli2016/NLP-with-Python"
-        "/master/data/title_conference.csv"
-    )
+    url = "https://raw.githubusercontent.com/susanli2016/NLP-with-Python/master/data/title_conference.csv"
     content = requests.get(url, allow_redirects=True).content
     data = pd.read_csv(BytesIO(content))
 
@@ -232,17 +224,11 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     batch_size, pte_filename = 1, "ptq_mb_qnn"
     model, data_val, labels = get_fine_tuned_mobilebert(
         args.artifact, args.pretrained_weight, batch_size
     )
-    inputs, input_list = get_dataset(data_val)
+    inputs = get_dataset(data_val)
 
     try:
         quant_dtype = getattr(QuantDtype, f"use_{args.ptq}")
@@ -273,19 +259,15 @@ def main(args):
 
         quantizer = make_quantizer(quant_dtype=quant_dtype)
         backend_options = generate_htp_compiler_spec(quant_dtype is not None)
-        partitioner = QnnPartitioner(
-            generate_qnn_executorch_compiler_spec(
-                soc_model=getattr(QcomChipset, args.model),
-                backend_options=backend_options,
-            ),
-            skip_node_id_set=skip_node_id_set,
-            skip_node_op_set=skip_node_op_set,
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=getattr(QcomChipset, args.model),
+            backend_options=backend_options,
         )
         # skip embedding layer cause it's quantization sensitive
         graph_module, _ = skip_annotation(
             nn_module=model,
             quantizer=quantizer,
-            partitioner=partitioner,
+            compiler_specs=compiler_specs,
             sample_input=inputs[0],
             calibration_cb=calibrator,
             fp_node_op_set={torch.ops.aten.embedding.default},
@@ -310,8 +292,9 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -389,6 +372,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

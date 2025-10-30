@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import logging
 import os
 import random
 import re
@@ -49,16 +50,15 @@ def get_dataset(data_size, dataset_dir, download):
 
     # prepare input data
     random.shuffle(dataset)
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     for index, data in enumerate(dataset):
         if index >= data_size:
             break
         image, target = data
         inputs.append((image.unsqueeze(0),))
         targets.append(np.array(target.resize(input_size)))
-        input_list += f"input_{index}_0.raw\n"
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def main(args):
@@ -67,17 +67,14 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     data_num = 100
-    if args.compile_only:
+    if args.ci:
         inputs = [(torch.rand(1, 3, 224, 224),)]
+        logging.warning(
+            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
+        )
     else:
-        inputs, targets, input_list = get_dataset(
+        inputs, targets = get_dataset(
             data_size=data_num, dataset_dir=args.artifact, download=args.download
         )
 
@@ -108,8 +105,9 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -196,6 +194,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

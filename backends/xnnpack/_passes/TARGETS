@@ -1,15 +1,14 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "xnnpack_passes",
     srcs = native.glob(["*.py"]),
     deps = [
         "//caffe2:torch",
         "//executorch/backends/transforms:addmm_mm_to_linear",
         "//executorch/backends/transforms:lib",
-        "//executorch/backends/xnnpack/partition:configs",
         "//executorch/backends/xnnpack/partition:partitioner_graphs",
         "//executorch/backends/xnnpack/serialization:xnnpack_schema",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",

@@ -26,11 +26,8 @@ layout(set = 0, binding = 1) buffer  PRECISION restrict readonly Buffer {
   BUF_T buffer_in[];
 };
 
-layout(set = 0, binding = 2) uniform PRECISION restrict Sizes {
+layout(push_constant) uniform PRECISION restrict Block {
   ivec4 sizes;
-};
-
-layout(set = 0, binding = 3) uniform PRECISION restrict OriginalSizes {
   ivec4 original_sizes;
 };
 

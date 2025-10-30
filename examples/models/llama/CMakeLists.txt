@@ -15,7 +15,7 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-cmake_minimum_required(VERSION 3.24)  # 3.24 is required for WHOLE_ARCHIVE
+cmake_minimum_required(VERSION 3.24) # 3.24 is required for WHOLE_ARCHIVE
 project(llama_runner)
 
 # Duplicating options as root CMakeLists.txt
@@ -37,7 +37,7 @@ cmake_dependent_option(
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
 
-option(EXECUTORCH_BUILD_TORCHAO "Build the torchao kernels" OFF)
+option(EXECUTORCH_BUILD_KERNELS_TORCHAO_MPS "Build the torchao MPS kernels" OFF)
 
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
@@ -77,20 +77,20 @@ find_package(gflags REQUIRED)
 # llama_main: test binary to run llama, with tokenizer and sampler integrated
 #
 
-# find `executorch` libraries Same as for gflags
-set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
-find_package(executorch CONFIG REQUIRED)
-if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
-  target_link_options_shared_lib(executorch)
-endif()
+# find `executorch` libraries. CMAKE_PREFIX_PATH would work for host
+# compilation, but CMAKE_FIND_ROOT_PATH appears to be necessary for
+# cross-compiling (e.g., to Android) to work as well.
+list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
+find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
+executorch_target_link_options_shared_lib(executorch)
 
 # llama_runner library
 add_subdirectory(runner)
 
-set(link_libraries gflags)
+set(link_libraries executorch gflags)
 set(_srcs main.cpp)
 
-if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+if(TARGET optimized_native_cpu_ops_lib)
   list(
     APPEND
     link_libraries
@@ -100,31 +100,39 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     cpublas
     eigen_blas
   )
-  target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
-  target_link_options_shared_lib(portable_ops_lib)
+  executorch_target_link_options_shared_lib(portable_ops_lib)
 endif()
 
 # quantized_ops_lib: Register quantized op kernels into the runtime
-target_link_options_shared_lib(quantized_ops_lib)
+executorch_target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
+if(TARGET custom_ops)
+  executorch_target_link_options_shared_lib(custom_ops)
+  list(APPEND link_libraries custom_ops)
 endif()
 
-if(EXECUTORCH_BUILD_TORCHAO)
-  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental)
-  target_link_options_shared_lib(torchao_ops_executorch)
+if(TARGET torchao_ops_executorch)
+  executorch_target_link_options_shared_lib(torchao_ops_executorch)
   list(APPEND link_libraries torchao_ops_executorch)
-  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-    add_subdirectory(
-      ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
-      ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps)
-    target_link_options_shared_lib(torchao_ops_mps_executorch)
-    list(APPEND link_libraries torchao_ops_mps_executorch)
+endif()
+
+if(EXECUTORCH_BUILD_KERNELS_TORCHAO_MPS)
+  # Currently only enable this on Arm-based Macs
+  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL
+                                             "arm64"
+  )
+    if(EXECUTORCH_BUILD_MPS)
+      add_subdirectory(
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
+        ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
+      )
+      executorch_target_link_options_shared_lib(torchao_ops_mps_executorch)
+      list(APPEND link_libraries torchao_ops_mps_executorch)
+    endif()
   endif()
 endif()
 
@@ -147,24 +155,24 @@ endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
-  set(xnnpack_backend_libs xnnpack_backend XNNPACK microkernels-prod)
+  set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   if(TARGET kleidiai)
     list(APPEND xnnpack_backend_libs kleidiai)
   endif()
   list(APPEND link_libraries ${xnnpack_backend_libs})
-  target_link_options_shared_lib(xnnpack_backend)
+  executorch_target_link_options_shared_lib(xnnpack_backend)
 endif()
 
 # Vulkan backend
 if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
-  target_link_options_shared_lib(vulkan_backend)
+  executorch_target_link_options_shared_lib(vulkan_backend)
 endif()
 
 # Qnn backend
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
-  target_link_options_shared_lib(qnn_executorch_backend)
+  executorch_target_link_options_shared_lib(qnn_executorch_backend)
 endif()
 
 # MPS backend
@@ -178,7 +186,14 @@ if(TARGET mpsdelegate)
     "-weak_framework MetalPerformanceShadersGraph"
     "-weak_framework Metal"
   )
-  target_link_options_shared_lib(mpsdelegate)
+  executorch_target_link_options_shared_lib(mpsdelegate)
+endif()
+
+# Openvino backend
+if(TARGET openvino_backend)
+  find_package(OpenVINO REQUIRED)
+  list(APPEND link_libraries openvino_backend)
+  executorch_target_link_options_shared_lib(openvino_backend)
 endif()
 
 if(TARGET coremldelegate)
@@ -192,7 +207,7 @@ if(TARGET coremldelegate)
     "-framework CoreML"
     "-framework Accelerate"
   )
-  target_link_options_shared_lib(coremldelegate)
+  executorch_target_link_options_shared_lib(coremldelegate)
 endif()
 
 # This one is needed for cpuinfo where it uses android specific log lib
@@ -201,25 +216,19 @@ if(ANDROID)
 endif()
 
 add_executable(llama_main ${_srcs})
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  if(APPLE)
-    target_link_options(llama_main PRIVATE "LINKER:-dead_strip")
-  else()
-    target_link_options(llama_main PRIVATE "LINKER:--gc-sections,-s")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(llama_main)
+  if(NOT APPLE)
+    target_link_options(llama_main PRIVATE "LINKER:-s")
   endif()
 endif()
 
-target_include_directories(
-  llama_main
-  PUBLIC ${_common_include_directories}
-         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
-)
+target_include_directories(llama_main PUBLIC ${_common_include_directories})
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
-
 if(APPLE)
-  target_link_options_shared_lib(executorch)
+  target_link_options(llama_main PRIVATE -Wl,-rpath,@loader_path)
+elseif(UNIX)
+  set_target_properties(llama_main PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'")
 endif()
-
-# Print all summary
-executorch_print_configuration_summary()
+# Windows doesn't need rpath - DLLs are found via standard Windows search order

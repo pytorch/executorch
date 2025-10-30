@@ -19,6 +19,9 @@ from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 
 
 class TestConv1d(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class Conv1d(torch.nn.Module):
         def __init__(self, dtype: torch.dtype = torch.float):
             groups = 1

@@ -9,7 +9,11 @@ from typing import List
 
 import torch
 
-from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_PASS_ACTIVATE_KEY,
+    QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
+    QCOM_QUANT_ATTRS,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.export.exported_program import ExportedProgram
@@ -103,3 +107,11 @@ def split_graph(edge_program: ExportedProgram, num_layers: int, shares: int):
     graph_module = edge_program.graph_module
     shard_layers = list(range(0, num_layers, int(num_layers / shares)))
     return SplitGraph(shard_layers)(graph_module)
+
+
+def get_split_graph_pass(num_layers: int, shares: int):
+    shard_layers = list(range(0, num_layers, int(num_layers / shares)))
+    return SplitGraph, {
+        QCOM_PASS_ACTIVATE_KEY: True,
+        QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: {"shard_layers": shard_layers},
+    }

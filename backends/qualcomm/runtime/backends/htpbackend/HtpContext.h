@@ -16,6 +16,7 @@ namespace executorch {
 namespace backends {
 namespace qnn {
 
+class QnnDlcManager;
 class HtpContext : public QnnContext {
  public:
   HtpContext(
@@ -23,8 +24,9 @@ class HtpContext : public QnnContext {
       QnnBackend* backend,
       QnnDevice* device,
       QnnBackendCache* cache,
-      const QnnExecuTorchHtpBackendOptions* htp_options)
-      : QnnContext(implementation, backend, device, cache) {
+      const QnnExecuTorchHtpBackendOptions* htp_options,
+      QnnDlcManager* qnn_dlc_manager)
+      : QnnContext(implementation, backend, device, cache, qnn_dlc_manager) {
     htp_context_custom_config_ =
         std::make_unique<HtpContextCustomConfig>(this, htp_options);
   }

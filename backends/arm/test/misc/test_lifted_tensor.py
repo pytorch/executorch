@@ -4,24 +4,29 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
-import unittest
-from typing import Union
+from typing import Tuple, Union
 
 import torch
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from parameterized import parameterized  # type: ignore[import-untyped]
+from executorch.backends.arm.test.tester.test_pipeline import (
+    TosaPipelineFP,
+    TosaPipelineINT,
+)
+from executorch.backends.test.harness.stages import StageType
+
+
+input_t1 = Tuple[torch.Tensor]
 
 
 class LiftedTensor(torch.nn.Module):
 
-    test_data = [
-        # (operator, test_data, length)
-        (operator.add, (torch.randn(2, 2), 2)),
-        (operator.truediv, (torch.ones(2, 2), 2)),
-        (operator.mul, (torch.randn(2, 2), 2)),
-        (operator.sub, (torch.rand(2, 2), 2)),
-    ]
+    test_data = {
+        # test_name: (operator, test_data, length)
+        "add": (operator.add, (torch.randn(2, 2), 2)),
+        "truediv": (operator.truediv, (torch.ones(2, 2), 2)),
+        "mul": (operator.mul, (torch.randn(2, 2), 2)),
+        "sub": (operator.sub, (torch.rand(2, 2), 2)),
+    }
 
     def __init__(self, op: callable):  # type: ignore[valid-type]
         super().__init__()
@@ -34,13 +39,13 @@ class LiftedTensor(torch.nn.Module):
 
 
 class LiftedScalarTensor(torch.nn.Module):
-    test_data = [
-        # (operator, test_data)
-        (operator.add, (torch.randn(2, 2),), 1.0),
-        (operator.truediv, (torch.randn(4, 2),), 1.0),
-        (operator.mul, (torch.randn(1, 2),), 2.0),
-        (operator.sub, (torch.randn(3),), 1.0),
-    ]
+    test_data = {
+        # test_name: (operator, test_data)
+        "add": (operator.add, (torch.randn(2, 2),), 1.0),
+        "truediv": (operator.truediv, (torch.randn(4, 2),), 1.0),
+        "mul": (operator.mul, (torch.randn(1, 2),), 2.0),
+        "sub": (operator.sub, (torch.randn(3),), 1.0),
+    }
 
     def __init__(self, op: callable, arg1: Union[int, float, torch.tensor]):  # type: ignore[valid-type]
         super().__init__()
@@ -51,71 +56,76 @@ class LiftedScalarTensor(torch.nn.Module):
         return self.op(x, self.arg1)  # type: ignore[misc]
 
 
-class TestLiftedTensor(unittest.TestCase):
-    """Tests the ArmPartitioner with a placeholder of type lifted tensor."""
+"""Tests the ArmPartitioner with a placeholder of type lifted tensor."""
 
-    @parameterized.expand(LiftedTensor.test_data)
-    def test_partition_lifted_tensor_tosa_MI(self, op, data):
-        tester = (
-            ArmTester(
-                LiftedTensor(op),
-                example_inputs=data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .to_edge()
-        )
-        signature = tester.get_artifact().exported_program().graph_signature
-        assert len(signature.lifted_tensor_constants) > 0
-        tester.partition()
-        tester.to_executorch()
-        tester.run_method_and_compare_outputs(data)
 
-    @parameterized.expand(LiftedTensor.test_data)
-    def test_partition_lifted_tensor_tosa_BI(self, op, data):
-        tester = (
-            ArmTester(
-                LiftedTensor(op),
-                example_inputs=data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .to_edge()
-        )
-        signature = tester.get_artifact().exported_program().graph_signature
-        assert len(signature.lifted_tensor_constants) == 0
-        tester.partition()
-        tester.to_executorch()
-        tester.run_method_and_compare_outputs(data)
+@common.parametrize("test_data", LiftedTensor.test_data)
+def test_partition_lifted_tensor_tosa_FP(test_data: input_t1):
+    op = test_data[0]
+    data = test_data[1:]
+    module = LiftedTensor(op)
+    pipeline = TosaPipelineFP[input_t1](
+        module,
+        *data,
+        [],
+        exir_op=[],
+        use_to_edge_transform_and_lower=False,
+    )
+    pipeline.run()
+    signature = (
+        pipeline.tester.stages[StageType.TO_EDGE]
+        .artifact.exported_program()
+        .graph_signature
+    )
+    assert len(signature.lifted_tensor_constants) > 0
 
-    @parameterized.expand(LiftedScalarTensor.test_data)
-    def test_partition_lifted_scalar_tensor_tosa_MI(self, op, data, arg1):
-        (
-            ArmTester(
-                LiftedScalarTensor(op, arg1),
-                example_inputs=(data),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .to_edge()
-            .partition()
-            .to_executorch()
-            .run_method_and_compare_outputs(data)
-        )
 
-    @parameterized.expand(LiftedScalarTensor.test_data)
-    def test_partition_lifted_scalar_tensor_tosa_BI(self, op, data, arg1):
-        (
-            ArmTester(
-                LiftedScalarTensor(op, arg1),
-                example_inputs=(data),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .partition()
-            .to_executorch()
-            .run_method_and_compare_outputs(data)
-        )
+@common.parametrize("test_data", LiftedTensor.test_data)
+def test_partition_lifted_tensor_tosa_INT(test_data: input_t1):
+    op = test_data[0]
+    data = test_data[1:]
+    module = LiftedTensor(op)
+    pipeline = TosaPipelineINT[input_t1](
+        module,
+        *data,
+        [],
+        exir_op=[],
+        use_to_edge_transform_and_lower=False,
+    )
+    pipeline.run()
+    signature = (
+        pipeline.tester.stages[StageType.TO_EDGE]
+        .artifact.exported_program()
+        .graph_signature
+    )
+    assert len(signature.lifted_tensor_constants) == 0
+
+
+@common.parametrize("test_data", LiftedScalarTensor.test_data)
+def test_partition_lifted_scalar_tensor_tosa_FP(test_data: input_t1):
+    op = test_data[0]
+    data = test_data[1:]
+    module = LiftedScalarTensor(op, data[-1])
+    pipeline = TosaPipelineFP[input_t1](
+        module,
+        data[0],
+        [],
+        exir_op=[],
+        use_to_edge_transform_and_lower=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", LiftedScalarTensor.test_data)
+def test_partition_lifted_scalar_tensor_tosa_INT(test_data: input_t1):
+    op = test_data[0]
+    data = test_data[1:]
+    module = LiftedScalarTensor(op, data[-1])
+    pipeline = TosaPipelineINT[input_t1](
+        module,
+        data[0],
+        [],
+        exir_op=[],
+        use_to_edge_transform_and_lower=False,
+    )
+    pipeline.run()

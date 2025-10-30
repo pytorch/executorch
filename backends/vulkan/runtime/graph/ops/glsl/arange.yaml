@@ -7,13 +7,13 @@
 arange:
   parameter_names_with_default_values:
     NDIM: 3
-    DTYPE: int
+    DTYPE: int32
     STORAGE: texture3d
     PACKING: C_packed
   generate_variant_forall:
     DTYPE:
       - VALUE: half
       - VALUE: float
-      - VALUE: int
+      - VALUE: int32
   shader_variants:
     - NAME: arange

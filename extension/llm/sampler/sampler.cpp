@@ -34,6 +34,7 @@
 
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <algorithm>
+#include <ctime>
 
 namespace executorch {
 namespace extension {
@@ -129,6 +130,12 @@ Sampler::Sampler(
       topp_(topp),
       rng_state_(rng_seed) {}
 
+Sampler::Sampler(int vocab_size, float temperature)
+    : vocab_size_(vocab_size),
+      inv_temperature_(static_cast<bool>(temperature) ? 1.0f / temperature : 0),
+      topp_(kTopp),
+      rng_state_(std::time(nullptr)) {}
+
 template <typename T>
 static void softmax(T* x, int size) {
   // find max value (for numerical stability)
@@ -191,6 +198,7 @@ int32_t Sampler::sample(T* logits) {
 }
 
 template int32_t Sampler::sample<float>(float* logits);
+template int32_t Sampler::sample<uint16_t>(uint16_t* logits);
 template int32_t Sampler::sample<executorch::aten::Half>(
     executorch::aten::Half* logits);
 template int32_t Sampler::sample<executorch::aten::BFloat16>(

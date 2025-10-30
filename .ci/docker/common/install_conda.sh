@@ -13,7 +13,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 install_miniconda() {
   BASE_URL="https://repo.anaconda.com/miniconda"
   CONDA_FILE="Miniconda3-py${PYTHON_VERSION//./}_${MINICONDA_VERSION}-Linux-x86_64.sh"
-  if [[ $(uname -m) == "aarch64" ]]; then 
+  if [[ $(uname -m) == "aarch64" ]]; then
     CONDA_FILE="Miniconda3-py${PYTHON_VERSION//./}_${MINICONDA_VERSION}-Linux-aarch64.sh"
   fi
 
@@ -71,4 +71,8 @@ fix_conda_ubuntu_libstdcxx() {
 install_miniconda
 install_python
 install_pip_dependencies
-fix_conda_ubuntu_libstdcxx
+# Hack breaks the job on aarch64 but is still necessary everywhere
+# else.
+if [ "$(uname -m)" != "aarch64" ]; then
+    fix_conda_ubuntu_libstdcxx
+fi

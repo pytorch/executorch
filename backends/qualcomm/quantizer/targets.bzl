@@ -10,6 +10,7 @@ def define_common_targets():
         name = "quantizer",
         srcs = glob([
             "*.py",
+            "*/*.py",
         ]),
         visibility = [
             "@EXECUTORCH_CLIENTS",

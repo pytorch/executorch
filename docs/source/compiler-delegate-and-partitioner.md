@@ -1,4 +1,4 @@
-# Backends and Delegates
+# Understanding Backends and Delegates
 
 Audience: Vendors, Backend Delegate developers, who are interested in integrating their own compilers and hardware as part of ExecuTorch
 
@@ -28,7 +28,7 @@ A delegate backend implementation is composed of:
 
 The diagram looks like following
 
-<img src="./_static/img/backend_interface.png" alt="drawing" style="width:600px;"/>
+<img src="_static/img/backend_interface.png" alt="drawing" style="width:600px;"/>
 
 **Figure 1.** A high level of entry points for backend interfaces, including both ahead-of-time and runtime.
 
@@ -37,7 +37,7 @@ The diagram looks like following
 There are mainly two Ahead-of-Time entry point for backend to implement: `partition` and `preprocess`.
 
 `partitioner` is an algorithm implemented by the backend to tag the nodes to be lowered to the backend. `to_backend` API will apply the partition algorithm and lower each subgraph, which consists of connected tagged nodes, to the targeted backend. Every subgraph
-will be sent to the `preprocess` part provided by the backend to compiled as a binary blob.
+will be sent to the `preprocess` part provided by the backend to be compiled as a binary blob.
 
 During partition, the `exported_program` is not allowed to mutate the program, and it's supposed to apply tag to each node. The
 `PartitionResult` includes both tagged exported program and the partition tags dictionary for `to_backend` to look up the tag and
@@ -71,7 +71,7 @@ parsed and executed at runtime.
 
 The diagram looks like following
 
-<img src="./_static/img/backend_interface_aot.png" alt="drawing" style="width:800px;"/>
+<img src="_static/img/backend_interface_aot.png" alt="drawing" style="width:800px;"/>
 
 **Figure 2.** The graph goes through partition and each subgraph will be sent to the preprocess part.
 
@@ -99,7 +99,7 @@ ET_NODISCARD virtual Result<DelegateHandle*> init(
 ET_NODISCARD virtual Error execute(
     BackendExecutionContext& context,
     DelegateHandle* handle,
-    EValue** args);
+    Span<EValue*> args);
 
 // [optional] Runtime destroy. Destroy the resource held by the backend
 virtual void destroy(ET_UNUSED DelegateHandle* handle);
@@ -107,7 +107,7 @@ virtual void destroy(ET_UNUSED DelegateHandle* handle);
 
 The diagram looks like following
 
-<img src="./_static/img/backend_interface_runtime.png" alt="drawing" style="width:600px;"/>
+<img src="_static/img/backend_interface_runtime.png" alt="drawing" style="width:600px;"/>
 
 **Figure 3.** The relationship between standard ExecuTorch Runtime and backend entry point.
 
@@ -129,20 +129,20 @@ static auto success_with_compiler = register_backend(backend);
 
 ## Developer Tools Integration: Debuggability
 
-Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native Developer Tools for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it [here](./etrecord).
+Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native Developer Tools for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it [here](etrecord.rst).
 
 Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special `call_delegate` instruction, which asks corresponding backend to handle the execution of the subgraph or program. Due to the opaque nature of backend delgates, native Developer Tools does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it's non-delegated counterpart.
 
-In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, Developer Tools provide an interface to correlate delegated (sub)graph to original (sub)graph. The Developer Tools do so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, backend developer can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to [Delegate Debugging](./delegate-debugging).
+In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, Developer Tools provide an interface to correlate delegated (sub)graph to original (sub)graph. The Developer Tools do so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, backend developer can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to [Delegate Debugging](delegate-debugging.md).
 
 By leveraging the debug identifier, backend developer can embed the debug as part of the delegated blob
 
-<img src="./_static/img/backend_debug_handle.png" alt="drawing" style="width:600px;"/>
+<img src="_static/img/backend_debug_handle.png" alt="drawing" style="width:600px;"/>
 
 In this way, during execute stage, with the debug identifier, backend developer can associate the failed instruction inside the delegate
 back to the exact line of PyThon code.
 
-<img src="./_static/img/backend_debug_handle_example.png" alt="drawing" style="width:700px;"/>
+<img src="_static/img/backend_debug_handle_example.png" alt="drawing" style="width:700px;"/>
 
 ## Common Questions
 
@@ -194,8 +194,8 @@ qnnpack is one backend and xnnpack is another backend. We haven't open-sourced
 these two backends delegates yet, and this example won't run out of box. It can
 be used as a reference to see how it can be done.
 
-This option is easy to try becuase usually all backends will implement their own
-parititioner. However this option may get different results if we change the
+This option is easy to try because usually all backends will implement their own
+partitioner. However this option may get different results if we change the
 order of to_backend call. If we want to have a better control on the nodes, like
 which backend they should go, option 2 is better.
 
@@ -236,7 +236,7 @@ class Backend_1_2_Partitioner(Partitioner):
 **6. Is there an easy way to write a partitioner?**
 
 We provide some helper partitioners
-[here](./compiler-custom-compiler-passes.md) to make it easy to find
+[here](compiler-custom-compiler-passes.md) to make it easy to find
 nodes from decomposed operators.
 
 **7. How do we link the node back to the source code?**

@@ -32,7 +32,9 @@ def get_xnnpack_partitioner(dynamic_quant_only_partitioner: bool = True):
 
 
 def get_vulkan_partitioner(
-    dtype_override: Optional[str] = None, enable_dynamic_shape: bool = False
+    dtype_override: Optional[str] = None,
+    enable_dynamic_shape: bool = False,
+    force_fp16: bool = False,
 ):
     assert (
         dtype_override == "fp32" or dtype_override is None
@@ -41,7 +43,9 @@ def get_vulkan_partitioner(
         VulkanPartitioner,
     )
 
-    return VulkanPartitioner({"require_dynamic_shapes": enable_dynamic_shape})
+    return VulkanPartitioner(
+        {"require_dynamic_shapes": enable_dynamic_shape, "force_fp16": force_fp16}
+    )
 
 
 def get_mps_partitioner(use_kv_cache: bool = False):
@@ -57,11 +61,24 @@ def get_mps_partitioner(use_kv_cache: bool = False):
         )
     except ImportError:
         raise ImportError(
-            "Please install the MPS backend follwing https://pytorch.org/executorch/main/build-run-mps.html"
+            "Please install the MPS backend follwing https://pytorch.org/executorch/main/backends-mps"
         )
 
     compile_specs = [CompileSpec("use_fp16", bytes([True]))]
     return MPSPartitioner(compile_specs)  # pyre-fixme[16]
+
+
+def get_openvino_partitioner(device: str):
+    try:
+        from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+        from executorch.exir.backend.backend_details import CompileSpec
+    except ImportError:
+        raise ImportError(
+            "Please install the OpenVINO backend following https://github.com/pytorch/executorch/tree/main/backends/openvino"
+        )
+
+    compile_specs = [CompileSpec("device", device.encode())]
+    return OpenvinoPartitioner(compile_specs)
 
 
 def get_coreml_partitioner(
@@ -81,7 +98,7 @@ def get_coreml_partitioner(
         )
     except ImportError:
         raise ImportError(
-            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/backends-coreml"
             + "; for buck users, please add example dependancies: //executorch/backends/apple/coreml:backend, and etc"
         )
 
@@ -195,7 +212,7 @@ def get_qnn_partitioner(
         )
     except ImportError:
         raise ImportError(
-            "Please install the Qualcomm backend following https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html"
+            "Please install the Qualcomm backend following https://pytorch.org/executorch/main/backends-qualcomm"
         )
 
     use_fp16 = True
@@ -216,4 +233,6 @@ def get_qnn_partitioner(
         ),
         skip_node_id_set={},
         skip_node_op_set=skip_node_op_set,
+        # TODO: if deprecated legacy export, skip_mutable_buffer can be set False
+        skip_mutable_buffer=True,
     )

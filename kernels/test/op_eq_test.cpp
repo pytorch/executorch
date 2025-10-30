@@ -63,7 +63,7 @@ class OpEqScalarOutTest : public OperatorTest {
 
 TEST_F(OpEqScalarOutTest, AllRealInputBoolOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) test_eq_scalar_out<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -100,7 +100,7 @@ TEST_F(OpEqScalarOutTest, AllRealOutputDTypes) {
     GTEST_SKIP() << "ATen kernel can handle non-bool output dtype";
   }
 #define TEST_ENTRY(ctype, dtype) test_eq_all_output_dtypes<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

@@ -17,9 +17,9 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpConvOutTest : public OperatorTest {
@@ -164,7 +164,7 @@ TEST_F(OpConvCorrectnessTest, GenericSmokeTest) {
   op_convolution_out(
       input,
       weight,
-      executorch::aten::optional<Tensor>(bias),
+      std::optional<Tensor>(bias),
       executorch::aten::ArrayRef<int64_t>{stride, 1},
       executorch::aten::ArrayRef<int64_t>{padding, 1},
       executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -492,7 +492,7 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
       op_convolution_out(
           input,
           weight,
-          executorch::aten::optional<Tensor>(bias),
+          std::optional<Tensor>(bias),
           executorch::aten::ArrayRef<int64_t>{stride, 1},
           executorch::aten::ArrayRef<int64_t>{padding, 1},
           executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -506,7 +506,7 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
       op_convolution_out(
           input,
           weight,
-          executorch::aten::optional<Tensor>(bias),
+          std::optional<Tensor>(bias),
           executorch::aten::ArrayRef<int64_t>{stride, 1},
           executorch::aten::ArrayRef<int64_t>{padding, 1},
           executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -538,7 +538,7 @@ TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
   op_convolution_out(
       input,
       weight,
-      executorch::aten::optional<Tensor>(bias),
+      std::optional<Tensor>(bias),
       executorch::aten::ArrayRef<int64_t>{stride, 1},
       executorch::aten::ArrayRef<int64_t>{padding, 1},
       executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -575,7 +575,7 @@ TEST_F(OpConvCorrectnessTest, TransposedNonDefaultParams) {
   op_convolution_out(
       input,
       weight,
-      executorch::aten::optional<Tensor>(bias),
+      std::optional<Tensor>(bias),
       executorch::aten::ArrayRef<int64_t>{stride, 1},
       executorch::aten::ArrayRef<int64_t>{padding, 1},
       executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -643,7 +643,7 @@ TEST_F(OpConvCorrectnessTest, TransposedDefaultParamsChannelsLast) {
   op_convolution_out(
       input,
       weight,
-      executorch::aten::optional<Tensor>(bias),
+      std::optional<Tensor>(bias),
       executorch::aten::ArrayRef<int64_t>{stride, 1},
       executorch::aten::ArrayRef<int64_t>{padding, 1},
       executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -687,7 +687,7 @@ TEST_F(OpConvCorrectnessTest, TransposedNonDefaultParamsChannelsLast) {
   op_convolution_out(
       input,
       weight,
-      executorch::aten::optional<Tensor>(bias),
+      std::optional<Tensor>(bias),
       executorch::aten::ArrayRef<int64_t>{stride, 1},
       executorch::aten::ArrayRef<int64_t>{padding, 1},
       executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -719,7 +719,7 @@ TEST_F(OpConvCorrectnessTest, InvalidOutputPadding) {
       op_convolution_out(
           input,
           weight,
-          executorch::aten::optional<Tensor>(bias),
+          std::optional<Tensor>(bias),
           executorch::aten::ArrayRef<int64_t>{stride, 1},
           executorch::aten::ArrayRef<int64_t>{padding, 1},
           executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -727,4 +727,60 @@ TEST_F(OpConvCorrectnessTest, InvalidOutputPadding) {
           executorch::aten::ArrayRef<int64_t>{output_padding, 1},
           groups,
           out));
+}
+
+TEST_F(OpConvCorrectnessTest, HalfTypeSmokeTest) {
+  TensorFactory<ScalarType::Half> tf;
+
+  auto input = tf.make({1, 2, 3}, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+  auto weight = tf.make({2, 2, 2}, {0.5, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0});
+  optional<Tensor> bias;
+  auto expected = tf.make({1, 2, 2}, {6.0, 8.0, 12.0, 16.0});
+  auto out = tf.zeros({1, 2, 2});
+
+  int64_t stride[1] = {1};
+  int64_t padding[1] = {0};
+  int64_t dilation[1] = {1};
+  int64_t output_padding[1] = {0};
+
+  op_convolution_out(
+      input,
+      weight,
+      bias,
+      executorch::aten::ArrayRef<int64_t>{stride, 1},
+      executorch::aten::ArrayRef<int64_t>{padding, 1},
+      executorch::aten::ArrayRef<int64_t>{dilation, 1},
+      false,
+      executorch::aten::ArrayRef<int64_t>{output_padding, 1},
+      int64_t(1),
+      out);
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, BFloat16TypeSmokeTest) {
+  TensorFactory<ScalarType::BFloat16> tf;
+
+  auto input = tf.make({1, 2, 3}, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+  auto weight = tf.make({2, 2, 2}, {0.5, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0});
+  optional<Tensor> bias;
+  auto expected = tf.make({1, 2, 2}, {6.0, 8.0, 12.0, 16.0});
+  auto out = tf.zeros({1, 2, 2});
+
+  int64_t stride[1] = {1};
+  int64_t padding[1] = {0};
+  int64_t dilation[1] = {1};
+  int64_t output_padding[1] = {0};
+
+  op_convolution_out(
+      input,
+      weight,
+      bias,
+      executorch::aten::ArrayRef<int64_t>{stride, 1},
+      executorch::aten::ArrayRef<int64_t>{padding, 1},
+      executorch::aten::ArrayRef<int64_t>{dilation, 1},
+      false,
+      executorch::aten::ArrayRef<int64_t>{output_padding, 1},
+      int64_t(1),
+      out);
+  EXPECT_TENSOR_CLOSE(out, expected);
 }

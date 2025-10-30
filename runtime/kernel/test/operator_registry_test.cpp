@@ -183,7 +183,8 @@ class OperatorRegistryTest : public ::testing::Test {
 };
 
 TEST_F(OperatorRegistryTest, Basic) {
-  Kernel kernels[] = {Kernel("foo", [](KernelRuntimeContext&, EValue**) {})};
+  Kernel kernels[] = {
+      Kernel("foo", [](KernelRuntimeContext&, Span<EValue*>) {})};
   Span<const Kernel> kernels_span(kernels);
   Error err = register_kernels(kernels_span);
   ASSERT_EQ(err, Error::Ok);
@@ -193,8 +194,8 @@ TEST_F(OperatorRegistryTest, Basic) {
 
 TEST_F(OperatorRegistryTest, RegisterOpsMoreThanOnceDie) {
   Kernel kernels[] = {
-      Kernel("foo", [](KernelRuntimeContext&, EValue**) {}),
-      Kernel("foo", [](KernelRuntimeContext&, EValue**) {})};
+      Kernel("foo", [](KernelRuntimeContext&, Span<EValue*>) {}),
+      Kernel("foo", [](KernelRuntimeContext&, Span<EValue*>) {})};
   Span<const Kernel> kernels_span = Span<const Kernel>(kernels);
   ET_EXPECT_DEATH({ (void)register_kernels(kernels_span); }, "");
 }
@@ -275,7 +276,7 @@ TEST_F(OperatorRegistryTest, RegisterKernels) {
   KernelKey key = KernelKey(buf_long_contiguous.data());
 
   Kernel kernel_1 = Kernel(
-      "test::boo", key, [](KernelRuntimeContext& context, EValue** stack) {
+      "test::boo", key, [](KernelRuntimeContext& context, Span<EValue*> stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
@@ -326,12 +327,16 @@ TEST_F(OperatorRegistryTest, RegisterTwoKernels) {
   ASSERT_EQ(err, Error::Ok);
   KernelKey key_2 = KernelKey(buf_float_contiguous.data());
   Kernel kernel_1 = Kernel(
-      "test::bar", key_1, [](KernelRuntimeContext& context, EValue** stack) {
+      "test::bar",
+      key_1,
+      [](KernelRuntimeContext& context, Span<EValue*> stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
   Kernel kernel_2 = Kernel(
-      "test::bar", key_2, [](KernelRuntimeContext& context, EValue** stack) {
+      "test::bar",
+      key_2,
+      [](KernelRuntimeContext& context, Span<EValue*> stack) {
         (void)context;
         *(stack[0]) = Scalar(50);
       });
@@ -392,12 +397,12 @@ TEST_F(OperatorRegistryTest, DoubleRegisterKernelsDies) {
   KernelKey key = KernelKey(buf_long_contiguous.data());
 
   Kernel kernel_1 = Kernel(
-      "test::baz", key, [](KernelRuntimeContext& context, EValue** stack) {
+      "test::baz", key, [](KernelRuntimeContext& context, Span<EValue*> stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
   Kernel kernel_2 = Kernel(
-      "test::baz", key, [](KernelRuntimeContext& context, EValue** stack) {
+      "test::baz", key, [](KernelRuntimeContext& context, Span<EValue*> stack) {
         (void)context;
         *(stack[0]) = Scalar(50);
       });
@@ -417,7 +422,7 @@ TEST_F(OperatorRegistryTest, ExecutorChecksKernel) {
   KernelKey key = KernelKey(buf_long_contiguous.data());
 
   Kernel kernel_1 = Kernel(
-      "test::qux", key, [](KernelRuntimeContext& context, EValue** stack) {
+      "test::qux", key, [](KernelRuntimeContext& context, Span<EValue*> stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
@@ -453,7 +458,9 @@ TEST_F(OperatorRegistryTest, ExecutorUsesKernel) {
   KernelKey key = KernelKey(buf_long_contiguous.data());
 
   Kernel kernel_1 = Kernel(
-      "test::quux", key, [](KernelRuntimeContext& context, EValue** stack) {
+      "test::quux",
+      key,
+      [](KernelRuntimeContext& context, Span<EValue*> stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
@@ -485,7 +492,7 @@ TEST_F(OperatorRegistryTest, ExecutorUsesFallbackKernel) {
   Kernel kernel_1 = Kernel(
       "test::corge",
       KernelKey{},
-      [](KernelRuntimeContext& context, EValue** stack) {
+      [](KernelRuntimeContext& context, Span<EValue*> stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });

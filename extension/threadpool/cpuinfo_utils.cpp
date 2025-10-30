@@ -16,6 +16,10 @@
 
 #include <executorch/runtime/platform/assert.h>
 
+#if defined(__APPLE__) && defined(__aarch64__)
+#include <sys/sysctl.h>
+#endif
+
 namespace executorch::extension::cpuinfo {
 
 // Ignore revisions (last digit (4 LSBs))
@@ -33,6 +37,11 @@ bool is_non_performant_core(const struct cpuinfo_uarch_info* uarch_info) {
     case cpuinfo_uarch_cortex_a53:
     case cpuinfo_uarch_cortex_a510:
     case cpuinfo_uarch_icestorm:
+    case cpuinfo_uarch_blizzard:
+    case cpuinfo_uarch_sawtooth:
+    case cpuinfo_uarch_coll_sawtooth:
+    case cpuinfo_uarch_tupai_sawtooth:
+    case cpuinfo_uarch_tahiti_sawtooth:
       return true;
     // This can be so many other cores.
     // Need to update this to better account for slow cores
@@ -167,6 +176,23 @@ uint32_t get_num_performant_cores() {
     // In one plua 12 while it has 2 little cores, the topology
     // reported in /sys/devices/system/cpu/cpu* /topology/core_siblings_list
     // report wrong topology which results in wront configratuon
+#if defined(__aarch64__) && defined(__APPLE__)
+    // Copied from ATen/ParallelCommon.cpp
+    // On Apple Silicon there are efficient and performance core
+    // Restrict parallel algorithms to performance cores by default
+    int32_t num_cores = -1;
+    size_t num_cores_len = sizeof(num_cores);
+    if (sysctlbyname(
+            "hw.perflevel0.physicalcpu",
+            &num_cores,
+            &num_cores_len,
+            nullptr,
+            0) == 0) {
+      if (num_cores > 1) {
+        return static_cast<uint32_t>(num_cores);
+      }
+    }
+#endif
     return _get_num_performant_cores();
   }
 }

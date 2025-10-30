@@ -7,22 +7,11 @@
 # pyre-strict
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
-from executorch.exir.scalar_type import ScalarType
+from executorch.exir.tensor_layout import TensorLayout
 
 # Note: check executorch/extension/data_format/flat_tensor.fbs for explanations of these fields.
-
-
-@dataclass
-class TensorMetadata:
-    fully_qualified_name: str
-    scalar_type: ScalarType
-    sizes: List[int]
-    dim_order: List[int]
-
-    segment_index: int
-    offset: int
 
 
 @dataclass
@@ -32,8 +21,14 @@ class DataSegment:
 
 
 @dataclass
+class NamedData:
+    key: str
+    segment_index: int
+    tensor_layout: Optional[TensorLayout] = None
+
+
+@dataclass
 class FlatTensor:
     version: int
-    tensor_alignment: int
-    tensors: List[TensorMetadata]
     segments: List[DataSegment]
+    named_data: List[NamedData]

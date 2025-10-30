@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 namespace vkcompute {
 
@@ -17,39 +18,31 @@ namespace vkcompute {
 //
 
 std::vector<int64_t> calculate_broadcasted_output_size(
-    const api::vTensor& t1,
-    const api::vTensor& t2);
+    const std::vector<int64_t>& sizes1,
+    const std::vector<int64_t>& sizes2);
 
 //
 // Tensor property checking functions
 //
 
-bool check_ndim_is(const api::vTensor& t, size_t ndim);
-
-bool check_same_ndim(const api::vTensor& t1, const api::vTensor& t2);
-
-bool check_same_sizes_at(
-    const api::vTensor& t1,
-    int64_t d1,
-    const api::vTensor& t2,
-    int64_t d2);
-
-bool check_packed_dim_is(const api::vTensor& t, const int32_t packed_dim);
-
-bool check_same_packed_dim(const api::vTensor& t1, const api::vTensor& t2);
-
 bool check_same_packed_dim(
-    const api::vTensor& t1,
-    const api::vTensor& t2,
-    const api::vTensor& t3);
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef out);
 
 //
 // Broadcast flag functions
 //
 
+bool is_packed_dim_broadcasted(
+    ComputeGraph& graph,
+    const ValueRef sndr,
+    const ValueRef rcvr);
+
 utils::ivec2 create_broadcast_params(
-    const api::vTensor& t1,
-    const api::vTensor& t2);
+    ComputeGraph& graph,
+    const ValueRef t1,
+    const ValueRef t2);
 
 //
 // Work group size calculation functions

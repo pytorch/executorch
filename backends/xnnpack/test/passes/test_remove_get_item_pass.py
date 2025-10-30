@@ -7,7 +7,7 @@
 import unittest
 
 import torch
-from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
+from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
 
 
@@ -15,6 +15,9 @@ class TestRemoveGetItemPass(unittest.TestCase):
     PassStage = RunPasses([RemoveGetItemPass])
     max_pool2d_name = "executorch_exir_dialects_edge__ops_aten_max_pool2d_default"
     amax_name = "executorch_exir_dialects_edge__ops_aten_amax_default"
+
+    def setUp(self):
+        torch._dynamo.reset()
 
     class MaxPool2dModule(torch.nn.Module):
         def __init__(

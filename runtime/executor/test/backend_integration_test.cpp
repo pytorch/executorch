@@ -42,6 +42,7 @@ using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Method;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
@@ -56,8 +57,8 @@ class StubBackend final : public BackendInterface {
       FreeableBuffer*,
       ArrayRef<CompileSpec>,
       BackendInitContext&)>;
-  using ExecuteFn =
-      std::function<Error(BackendExecutionContext&, DelegateHandle*, EValue**)>;
+  using ExecuteFn = std::function<
+      Error(BackendExecutionContext&, DelegateHandle*, Span<EValue*>)>;
   using DestroyFn = std::function<void(DelegateHandle*)>;
 
   // Default name that this backend is registered as.
@@ -97,7 +98,7 @@ class StubBackend final : public BackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     if (execute_fn_) {
       return execute_fn_.value()(context, handle, args);
     }
@@ -289,7 +290,7 @@ class BackendIntegrationTest : public ::testing::TestWithParam<bool> {
     ASSERT_EQ(StubBackend::register_singleton(), Error::Ok);
 
     // Paths to the test program files.
-    program_path_ = std::getenv("ET_MODULE_ADD_MUL_PATH");
+    program_path_ = std::getenv("ET_MODULE_ADD_MUL_DELEGATED_PATH");
     ASSERT_FALSE(program_path_.empty());
     program_nosegments_path_ = std::getenv("ET_MODULE_ADD_MUL_NOSEGMENTS_PATH");
     ASSERT_FALSE(program_nosegments_path_.empty());
@@ -345,6 +346,37 @@ TEST_P(BackendIntegrationTest, BasicInitSucceeds) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method_res = program->load_method("forward", &mmm.get());
   EXPECT_EQ(method_res.error(), Error::Ok);
+}
+
+TEST_P(BackendIntegrationTest, GetBackendNamesSuccess) {
+  // Load the program from file.
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Get method metadata for the "forward" method.
+  auto method_meta = program->method_meta("forward");
+
+  // Ensure the StubBackend is used.
+  EXPECT_TRUE(method_meta->uses_backend(StubBackend::kName));
+
+  // Retrieve the number of backends.
+  const size_t num_backends = method_meta->num_backends();
+  EXPECT_GT(num_backends, 0u);
+
+  // Iterate through each backend and verify its name.
+  for (size_t i = 0; i < num_backends; ++i) {
+    auto backend_name_result = method_meta->get_backend_name(i);
+    ASSERT_TRUE(backend_name_result.ok());
+    const char* name = backend_name_result.get();
+    // For this test, we expect that the only backend is StubBackend.
+    EXPECT_STREQ(name, StubBackend::kName);
+  }
+  // Check that an out-of-range index returns an error.
+  auto out_of_range_result = method_meta->get_backend_name(num_backends);
+  EXPECT_FALSE(out_of_range_result.ok());
 }
 
 TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
@@ -411,7 +443,7 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   StubBackend::singleton().install_execute(
       [&](ET_UNUSED BackendExecutionContext& backend_execution_context,
           DelegateHandle* handle,
-          ET_UNUSED EValue** args) -> Error {
+          ET_UNUSED Span<EValue*> args) -> Error {
         execute_handle = handle;
         auto* processed = reinterpret_cast<FreeableBuffer*>(handle);
 
@@ -562,7 +594,7 @@ TEST_P(BackendIntegrationTest, GetMethodNameDuringExecuteSuccess) {
   StubBackend::singleton().install_execute(
       [&](BackendExecutionContext& backend_execution_context,
           ET_UNUSED DelegateHandle* handle,
-          ET_UNUSED EValue** args) -> Error {
+          ET_UNUSED Span<EValue*> args) -> Error {
         // Ensure that we can get the method name during execution via context
         auto method_name = backend_execution_context.get_method_name();
         EXPECT_STREQ(method_name, "forward");
@@ -572,6 +604,25 @@ TEST_P(BackendIntegrationTest, GetMethodNameDuringExecuteSuccess) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method = program->load_method("forward", &mmm.get());
   EXPECT_TRUE(method.ok());
+
+  int32_t sizes[2] = {2, 2};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {2, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  auto input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0);
+  input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 1);
+  input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
 }
@@ -625,8 +676,8 @@ class DelegateDataAlignmentTest : public ::testing::TestWithParam<bool> {
       // The delegate data inline alignment used by the -da1024 file.
       return 1024;
     } else {
-      // A small alignment that's compatible with any realistic alignment.
-      return 4;
+      // Minimum alignment expected by program.cpp.
+      return alignof(std::max_align_t);
     }
   }
 

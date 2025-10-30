@@ -19,8 +19,8 @@ bool check_quantized_mixed_linear_args(
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
-    const executorch::aten::optional<ScalarType> dtype,
+    const std::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<ScalarType> dtype,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 2));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, 2));
@@ -61,15 +61,19 @@ bool check_quantized_mixed_linear_args(
 }
 
 Tensor& quantized_mixed_linear_out(
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
-    const executorch::aten::optional<ScalarType> dtype,
+    const std::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<ScalarType> dtype,
     Tensor& out) {
-  // TODO (gjcomer) Replace with ET_KERNEL_CHECK when context is available.
-  ET_CHECK(check_quantized_mixed_linear_args(
-      in, weight, weight_scales, opt_weight_zero_points, dtype, out));
+  ET_KERNEL_CHECK(
+      ctx,
+      check_quantized_mixed_linear_args(
+          in, weight, weight_scales, opt_weight_zero_points, dtype, out),
+      InvalidArgument,
+      out);
 
   ScalarType out_dtype = dtype.has_value() ? dtype.value() : out.scalar_type();
 
@@ -78,8 +82,11 @@ Tensor& quantized_mixed_linear_out(
   output_sizes[0] = in.size(0);
   output_sizes[1] = weight.size(0);
 
-  // TODO (gjcomer) Replace with ET_KERNEL_CHECK when context is available.
-  ET_CHECK(resize_tensor(out, {output_sizes, output_ndim}) == Error::Ok);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {output_sizes, output_ndim}) == Error::Ok,
+      InvalidArgument,
+      out);
 
   constexpr auto name = "quantized_decomposed::mixed_linear.out";
 
@@ -113,18 +120,19 @@ Tensor& quantized_mixed_linear_out(
 }
 
 Tensor& quantized_mixed_linear_out(
-    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
-    const executorch::aten::optional<ScalarType> dtype,
+    const std::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<ScalarType> dtype,
     Tensor& out) {
   // TODO(mcandales): Remove the need for this wrapper
   // TODO(mkg): add support for dtype
-  (void)ctx;
-  return quantized_mixed_linear_out(
-      in, weight, weight_scales, opt_weight_zero_points, dtype, out);
+  KernelRuntimeContext context;
+  auto& res = quantized_mixed_linear_out(
+      context, in, weight, weight_scales, opt_weight_zero_points, dtype, out);
+  ET_CHECK(context.failure_state() == Error::Ok);
+  return res;
 }
 
 } // namespace native

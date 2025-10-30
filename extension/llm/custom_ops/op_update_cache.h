@@ -15,11 +15,21 @@ namespace executor {
 
 namespace native {
 
+// Original update_cache_out function without indices parameter
 Tensor& update_cache_out(
     RuntimeContext& ctx,
     const Tensor& value,
     Tensor& cache,
     const int64_t start_pos,
+    Tensor& output);
+
+// New function that explicitly takes indices
+Tensor& update_cache_with_indices_out(
+    RuntimeContext& ctx,
+    const Tensor& value,
+    Tensor& cache,
+    const int64_t start_pos,
+    const Tensor& indices,
     Tensor& output);
 } // namespace native
 } // namespace executor

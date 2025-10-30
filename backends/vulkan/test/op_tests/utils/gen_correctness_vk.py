@@ -34,6 +34,7 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
     std::tie(test_dtype, default_storage_type, default_memory_layout) = GetParam();
     config.set_storage_type_override(default_storage_type);
     config.set_memory_layout_override(default_memory_layout);
+    config.force_resize = true;
     graph = new ComputeGraph(config);
 
     if (test_dtype == at::kHalf) {{
@@ -109,6 +110,8 @@ using TensorOptions = at::TensorOptions;
 
 vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
   switch (at_scalartype) {
+    case c10::kDouble:
+      return vkapi::kDouble;
     case c10::kFloat:
       return vkapi::kFloat;
     case c10::kHalf:
@@ -119,6 +122,8 @@ vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
       return vkapi::kInt;
     case c10::kChar:
       return vkapi::kChar;
+    case c10::kBool:
+      return vkapi::kBool;
     default:
       VK_THROW("Unsupported at::ScalarType!");
   }

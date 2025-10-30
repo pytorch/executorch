@@ -424,6 +424,15 @@ SAMPLE_INPUT = {
         ],
         "returns": [Return(ArgType.Tensor)],
     },
+    "elu.default": {  # (Tensor self, Scalar alpha=1, Scalar scale=1, Scalar input_scale=1, *, Tensor(a!) out) -> Tensor(a!)
+        "args": [
+            InArg(ArgType.Tensor),
+            InArg(ArgType.Scalar),
+            InArg(ArgType.Scalar),
+            InArg(ArgType.Scalar),
+        ],
+        "returns": [Return(ArgType.Tensor)],
+    },
     "embedding.default": {  # (Tensor weight, Tensor indices, SymInt padding_idx=-1, bool scale_grad_by_freq=False, bool sparse=False) -> Tensor
         "args": [
             InArg(ArgType.Tensor),

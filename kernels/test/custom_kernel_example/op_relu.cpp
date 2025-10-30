@@ -17,8 +17,8 @@ namespace native {
 
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 using executorch::runtime::Error;
-using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::resize_tensor;
 using executorch::runtime::tensors_have_same_shape_and_dtype;
 

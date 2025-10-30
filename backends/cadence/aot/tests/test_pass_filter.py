@@ -4,12 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
+# pyre-strict
 
 
 import unittest
-
 from copy import deepcopy
+
+from typing import Callable, Type
 
 from executorch.backends.cadence.aot import pass_utils
 from executorch.backends.cadence.aot.pass_utils import (
@@ -19,28 +20,30 @@ from executorch.backends.cadence.aot.pass_utils import (
     register_cadence_pass,
 )
 
-from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_base import ExportPass, PassBase
 
 
 class TestBase(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         # Before running each test, create a copy of _all_passes to later restore it after test.
         # This avoids messing up the original _all_passes when running tests.
         self._all_passes_original = deepcopy(ALL_CADENCE_PASSES)
         # Clear _all_passes to do a clean test. It'll be restored after each test in tearDown().
         pass_utils.ALL_CADENCE_PASSES.clear()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         # Restore _all_passes to original state before test.
         pass_utils.ALL_CADENCE_PASSES = self._all_passes_original
 
-    def get_filtered_passes(self, filter_):
-        return {cls: attr for cls, attr in ALL_CADENCE_PASSES.items() if filter_(cls)}
+    def get_filtered_passes(
+        self, filter_: Callable[[Type[PassBase]], bool]
+    ) -> dict[Type[PassBase], CadencePassAttribute]:
+        return {c: attr for c, attr in ALL_CADENCE_PASSES.items() if filter_(c)}
 
 
 # Test pass registration
 class TestPassRegistration(TestBase):
-    def test_register_cadence_pass(self):
+    def test_register_cadence_pass(self) -> None:
         pass_attr_O0 = CadencePassAttribute(opt_level=0)
         pass_attr_debug = CadencePassAttribute(opt_level=None, debug_pass=True)
         pass_attr_O1_all_backends = CadencePassAttribute(
@@ -73,7 +76,7 @@ class TestPassRegistration(TestBase):
 
 # Test pass filtering
 class TestPassFiltering(TestBase):
-    def test_filter_none(self):
+    def test_filter_none(self) -> None:
         pass_attr_O0 = CadencePassAttribute(opt_level=0)
         pass_attr_O1_debug = CadencePassAttribute(opt_level=1, debug_pass=True)
         pass_attr_O1_all_backends = CadencePassAttribute(
@@ -103,7 +106,7 @@ class TestPassFiltering(TestBase):
         }
         self.assertEqual(O1_filter_passes, expected_passes)
 
-    def test_filter_debug(self):
+    def test_filter_debug(self) -> None:
         pass_attr_O1_debug = CadencePassAttribute(opt_level=1, debug_pass=True)
         pass_attr_O2 = CadencePassAttribute(opt_level=2)
 
@@ -122,7 +125,7 @@ class TestPassFiltering(TestBase):
         # chooses debug=False.
         self.assertEqual(debug_filter_passes, {DummyPass_O2: pass_attr_O2})
 
-    def test_filter_all(self):
+    def test_filter_all(self) -> None:
         @register_cadence_pass(CadencePassAttribute(opt_level=1))
         class DummyPass_O1(ExportPass):
             pass
@@ -138,7 +141,7 @@ class TestPassFiltering(TestBase):
         # passes with opt_level <= 0
         self.assertEqual(debug_filter_passes, {})
 
-    def test_filter_opt_level_None(self):
+    def test_filter_opt_level_None(self) -> None:
         pass_attr_O1 = CadencePassAttribute(opt_level=1)
         pass_attr_O2_debug = CadencePassAttribute(opt_level=2, debug_pass=True)
 
