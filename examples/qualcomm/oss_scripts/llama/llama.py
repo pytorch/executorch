@@ -892,7 +892,6 @@ def inference(
             pte_path=pte_path,
             tokenizer=tokenizer,
             runtime_tokenizer_path=runtime_tokenizer_path,
-            max_seq_length=args.max_seq_len,
         )
 
         # Evaluate the model
@@ -1013,6 +1012,7 @@ def inference(
             host_id=args.host,
             soc_model=args.model,
             shared_buffer=args.shared_buffer,
+            target=args.target,
             runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
         )
         # No pregen inputs, input_list is not required
@@ -1151,12 +1151,6 @@ def _build_parser():
         type=str,
         choices=["fp32", "fp16"],
         help="Override the dtype of the model (default is the checkpoint dtype). Options: fp32",
-    )
-
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated llama in the given directory.",
-        type=str,
     )
 
     parser.add_argument(

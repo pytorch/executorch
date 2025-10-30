@@ -198,7 +198,7 @@ Add the `--data_path` argument to provide the appropriate data blob to the comma
 - For CUDA: `--data_path path/to/aoti_cuda_blob.ptd`
 - For Metal: `--data_path path/to/aoti_metal_blob.ptd`
 
-# Example output:
+### Example output:
 ```
 The speaker in this audio seems to be talking about their concerns about a device called the model or maybe they're just talking about the model in general. They mention that the model was trained with the speaker for inference, which suggests that
  the model was trained based on the speaker's data or instructions. They also mention that the volume is quite small, which could imply that the speaker is trying to control the volume of the model's output, likely because they are concerned about how loud the model's responses might
@@ -212,7 +212,7 @@ I 00:00:24.036822 executorch:stats.h:147]       Time to first generated token:  
 I 00:00:24.036828 executorch:stats.h:153]       Sampling time over 487 tokens:  0.099000 (seconds)
 ```
 
-# Generating audio input
+## Generating audio input
 You can easily produce an `.bin` for the audio input in Python like this:
 ```
 # t = some torch.Tensor
@@ -235,3 +235,7 @@ say -o call_samantha_hall.aiff "Call Samantha Hall"
 # Convert to .wav format
 afconvert -f WAVE -d LEI16 call_samantha_hall.aiff call_samantha_hall.wav
 ```
+
+## Android and iOS mobile demo apps
+
+We have example mobile demo apps for Android and iOS (using XNNPACK) [here](https://github.com/meta-pytorch/executorch-examples/tree/main/llm)

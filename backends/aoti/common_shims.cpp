@@ -184,6 +184,10 @@ int32_t aoti_torch_dtype_int32() {
   return 3; // PyTorch's int32 dtype code
 }
 
+int32_t aoti_torch_dtype_bool() {
+  return 11; // PyTorch's bool dtype code
+}
+
 int32_t aoti_torch_dtype_int64() {
   return 4; // PyTorch's int64 dtype code
 }
