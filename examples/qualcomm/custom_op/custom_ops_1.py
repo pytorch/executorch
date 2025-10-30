@@ -256,6 +256,7 @@ def main(args):
             device_id=args.device,
             host_id=args.host,
             soc_model=args.model,
+            shared_buffer=args.shared_buffer,
         )
         adb.push(inputs=sample_input, files=op_package_paths)
         adb.execute()
