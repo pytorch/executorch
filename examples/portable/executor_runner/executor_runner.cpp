@@ -60,10 +60,7 @@ DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
-DEFINE_string(
-    data_path,
-    "",
-    "Path to data file. This has precedence over --inputs.");
+DEFINE_string(data_path, "", "Path to data file (.ptd).");
 DEFINE_string(inputs, "", "Comma-separated list of input files");
 DEFINE_string(
     output_file,
@@ -246,40 +243,12 @@ int main(int argc, char** argv) {
   }
 #endif
 
-  // Inputs can come from bundleio, from ptd file, as optional input file(s), or
+  // Inputs can come from bundleio, as optional input file(s), or
   // everything hardcoded to ones.
   std::vector<std::string> inputs_storage;
   std::vector<std::pair<char*, size_t>> input_buffers;
-  std::unique_ptr<FileDataLoader> ptd_loader;
-  std::unique_ptr<FlatTensorDataMap> ptd_data_map;
-
   if (!bundle_io) {
-    if (!FLAGS_data_path.empty()) {
-      ET_LOG(Info, "Loading inputs from .ptd file.");
-      const char* data_path = FLAGS_data_path.c_str();
-      Result<FileDataLoader> ptd_loader_result =
-          FileDataLoader::from(data_path);
-      ET_CHECK_MSG(
-          ptd_loader_result.ok(),
-          "FileDataLoader::from() failed for PTD file: 0x%" PRIx32,
-          (uint32_t)ptd_loader_result.error());
-      ptd_loader =
-          std::make_unique<FileDataLoader>(std::move(ptd_loader_result.get()));
-      ET_LOG(Info, "PTD file %s is loaded.", data_path);
-
-      Result<FlatTensorDataMap> ptd_data_map_result =
-          FlatTensorDataMap::load(ptd_loader.get());
-      ET_CHECK_MSG(
-          ptd_data_map_result.ok(),
-          "FlatTensorDataMap::load() failed for PTD file: 0x%" PRIx32,
-          (uint32_t)ptd_data_map_result.error());
-      ptd_data_map = std::make_unique<FlatTensorDataMap>(
-          std::move(ptd_data_map_result.get()));
-      ET_LOG(
-          Info,
-          "PTD data map created with %" PRIu64 " keys.",
-          static_cast<uint64_t>(ptd_data_map->get_num_keys().get()));
-    } else if (!FLAGS_inputs.empty()) {
+    if (!FLAGS_inputs.empty()) {
       ET_LOG(Info, "Loading inputs from input file(s).");
       std::stringstream list_of_input_files(FLAGS_inputs);
       std::string path;
@@ -314,6 +283,34 @@ int main(int argc, char** argv) {
         input_buffers.emplace_back(&inputs_storage.back()[0], file_size);
       }
     }
+  }
+
+  std::unique_ptr<FileDataLoader> ptd_loader;
+  std::unique_ptr<FlatTensorDataMap> ptd_data_map;
+  if (!FLAGS_data_path.empty()) {
+    ET_LOG(Info, "Loading tensor data from .ptd file.");
+    const char* data_path = FLAGS_data_path.c_str();
+    Result<FileDataLoader> ptd_loader_result = FileDataLoader::from(data_path);
+    ET_CHECK_MSG(
+        ptd_loader_result.ok(),
+        "FileDataLoader::from() failed for PTD file: 0x%" PRIx32,
+        (uint32_t)ptd_loader_result.error());
+    ptd_loader =
+        std::make_unique<FileDataLoader>(std::move(ptd_loader_result.get()));
+    ET_LOG(Info, "PTD file %s is loaded.", data_path);
+
+    Result<FlatTensorDataMap> ptd_data_map_result =
+        FlatTensorDataMap::load(ptd_loader.get());
+    ET_CHECK_MSG(
+        ptd_data_map_result.ok(),
+        "FlatTensorDataMap::load() failed for PTD file: 0x%" PRIx32,
+        (uint32_t)ptd_data_map_result.error());
+    ptd_data_map = std::make_unique<FlatTensorDataMap>(
+        std::move(ptd_data_map_result.get()));
+    ET_LOG(
+        Info,
+        "PTD data map created with %" PRIu64 " keys.",
+        static_cast<uint64_t>(ptd_data_map->get_num_keys().get()));
   }
 
   // Create a loader to get the data of the program file. There are other
