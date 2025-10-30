@@ -418,6 +418,8 @@ class Tester:
         # Wrap both outputs as tuple, since executor output is always a tuple even if single tensor
         if isinstance(reference_output, torch.Tensor):
             reference_output = (reference_output,)
+        elif isinstance(reference_output, OrderedDict):
+            reference_output = tuple(reference_output.values())
         if isinstance(stage_output, torch.Tensor):
             stage_output = (stage_output,)
 
