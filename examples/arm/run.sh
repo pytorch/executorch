@@ -42,6 +42,7 @@ toolchain=arm-none-eabi-gcc
 select_ops_list="aten::_softmax.out"
 qdq_fusion_op=false
 model_explorer=false
+perf_overlay=false
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -72,7 +73,8 @@ function help() {
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
     echo "  --qdq_fusion_op                        Enable QDQ fusion op"
-    echo "  --model_explorer                       Generate and open a visual graph of the compiled model."
+    echo "  --model_explorer                       Enable model explorer to visualize TOSA graph."
+    echo "  --perf_overlay                         With --model_explorer, include performance data from FVP PMU trace."
     exit 0
 }
 
@@ -102,10 +104,16 @@ for arg in "$@"; do
       --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
       --qdq_fusion_op) qdq_fusion_op=true;;
       --model_explorer) model_explorer=true ;;
+      --perf_overlay) perf_overlay=true ;;
       *)
       ;;
     esac
 done
+
+if [ "$perf_overlay" = true ] && [ "$model_explorer" != true ]; then
+    echo "Error: --perf_overlay requires --model_explorer" >&2
+    exit 1
+fi
 
 if ! [[ ${pte_placement} == "elf" ]]; then
     if ! [[ "$pte_placement" =~ ^0x[0-9a-fA-F]{1,16}$ ]]; then
@@ -204,6 +212,7 @@ bundleio_flag=""
 etrecord_flag=""
 et_dump_flag=""
 qdq_fusion_op_flag=""
+fvp_pmu_flag=""
 if [ "$build_with_etdump" = true ] ; then
     et_dump_flag="--etdump"
     etrecord_flag="--etrecord"
@@ -273,6 +282,11 @@ for i in "${!test_model[@]}"; do
         output_folder=${et_build_root}/${model_short_name}
     fi
 
+    if [ "$perf_overlay" = true ] ; then
+        model_compiler_flags+="--enable_debug_mode tosa"
+        fvp_pmu_flag="--trace_file=${output_folder}/pmu_trace.gz"
+    fi
+
     mkdir -p ${output_folder}
     output_folder=$(realpath ${output_folder})
     pte_file="${output_folder}/${model_filename_ext}"
@@ -330,14 +344,18 @@ for i in "${!test_model[@]}"; do
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
 
-            backends/arm/scripts/run_fvp.sh --elf=${elf_file} ${model_data} --target=$target ${etrecord_flag}
+            backends/arm/scripts/run_fvp.sh --elf=${elf_file} ${model_data} --target=$target ${etrecord_flag} ${fvp_pmu_flag}
         fi
         set +x
     fi
 
     if [ "$model_explorer" = true ]; then
         tosa_flatbuffer_path=$(find ${output_folder} -name "*TOSA*.tosa" | head -n 1)
-        python3 ${script_dir}/visualize.py ${tosa_flatbuffer_path}
+        perf_flags=""
+        if [ "$perf_overlay" = true ]; then
+            perf_flags+="--trace ${output_folder}/pmu_trace.gz --tables ${output_folder}/output/out_debug.xml"
+        fi
+        python3 ${script_dir}/visualize.py --model_path ${tosa_flatbuffer_path} ${perf_flags}
     fi
 done
 
