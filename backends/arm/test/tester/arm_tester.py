@@ -266,6 +266,7 @@ class ArmTester(Tester):
             StageType.QUANTIZE,
             StageType.EXPORT,
         ]
+        self.original_module.requires_grad_(False)
 
         # Initial model needs to be set as a *possible* but not yet added Stage, therefore add None entry.
         self.stages[StageType.INITIAL_MODEL] = None

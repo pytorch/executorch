@@ -137,8 +137,6 @@ def test_nn_Modules_FP(test_data):
     "test_data",
     test_parameters,
     xfails={
-        "GRUModule": "RuntimeError: Node aten_linear_default with op <EdgeOpOverload: aten.linear[...]> was not decomposed or delegated.",
-        "PReLUModule": "RuntimeError: mul(): functions with out=... arguments don't support automatic differentiation, but one of the arguments requires grad.",
         "TransformerModule": "AssertionError: Output 0 does not match reference output.",
     },
 )
