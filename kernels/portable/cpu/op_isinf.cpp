@@ -14,7 +14,18 @@ namespace torch {
 namespace executor {
 namespace native {
 
-DEFINE_UNARY_UFUNC_REALHBBF16_TO_BOOL(isinf_out, std::isinf)
+bool isinf_float(float x) {
+  return std::isinf(x);
+}
+
+bool isinf_double(double x) {
+  return std::isinf(x);
+}
+
+Tensor& isinf_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
+  return internal::unary_ufunc_realhbbf16_to_bool(
+      isinf_float, isinf_double, ctx, in, out);
+}
 
 } // namespace native
 } // namespace executor
