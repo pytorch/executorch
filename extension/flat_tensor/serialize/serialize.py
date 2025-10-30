@@ -13,17 +13,14 @@ import math
 import os
 import tempfile
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Literal, Optional, Union
+from typing import ClassVar, Dict, List, Literal, Optional
 
 import executorch.extension.flat_tensor.serialize as serialize_package
 
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
-from executorch.exir._serialize._named_data_store import (
-    NamedDataStore,
-    NamedDataStoreOutput,
-)
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir._serialize._program import _insert_flatbuffer_header
 from executorch.exir._serialize.data_serializer import (
     DataEntry,
