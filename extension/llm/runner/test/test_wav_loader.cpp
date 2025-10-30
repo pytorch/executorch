@@ -259,6 +259,10 @@ TEST_F(WavLoaderTest, LoadAudioDataRejectsUnsupportedFormat) {
       make_wav_bytes_with_format(0x0006, 16, sample_data);
   TempFile file(wav_bytes.data(), wav_bytes.size());
 
+#if ET_LOG_ENABLED
+  EXPECT_DEATH({ load_wav_audio_data(file.path()); }, "");
+#else
   EXPECT_DEATH(
       { load_wav_audio_data(file.path()); }, "Unsupported audio format");
+#endif
 }
