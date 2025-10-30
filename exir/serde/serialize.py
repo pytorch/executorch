@@ -597,8 +597,10 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             named_data_store = None
         else:
             named_data_store = export_serialize._dict_to_dataclass(NamedDataStoreOutput, json.loads(serialized_lowered_module.named_data_store))
+            new_buffers = []
             for buffer in named_data_store.buffers:
-                buffer.buffer = base64.b64decode(buffer.buffer.encode("ascii"))
+                new_buffers.append(base64.b64decode(buffer.encode("ascii")))
+            named_data_store.buffers = new_buffers
 
         lowered_module = ExirLoweredBackendModule(
             original_module,
