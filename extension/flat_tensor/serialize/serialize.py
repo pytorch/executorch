@@ -440,11 +440,13 @@ class FlatTensorSerializer(DataSerializer):
 
         return payload
 
-    def deserialize_to_named_data_store_output(self, blob: bytes, name: str) -> NamedDataStoreOutput:
+    def deserialize_to_named_data_store_output(
+        self, blob: bytes, name: str
+    ) -> NamedDataStoreOutput:
         bytes = Cord(blob)
         data_payload = self.deserialize(bytes)
         return NamedDataStoreOutput(
-            buffers = data_payload.buffers,
-            pte_data = {},
-            external_data = {name:data_payload.named_data}
+            buffers=data_payload.buffers,
+            pte_data={},
+            external_data={name:data_payload.named_data}
         )
