@@ -108,6 +108,7 @@ libXNNPACK.a,\
 libkleidiai.a,\
 libxnnpack_backend.a,\
 libxnnpack-microkernels-prod.a,\
+libkleidiai.a,\
 :"
 
 FRAMEWORK_KERNELS_LLM="kernels_llm:\
