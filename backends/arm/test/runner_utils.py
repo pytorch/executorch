@@ -384,7 +384,6 @@ def run_corstone(
         to figure out the shape and dtype of the buffer that was
         output from the FVP.
     """
-
     exported_program = executorch_program_manager.exported_program()
     intermediate_path = Path(intermediate_path)
     intermediate_path.mkdir(exist_ok=True)
@@ -400,11 +399,18 @@ def run_corstone(
     input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
 
     output_base_name = "out"
-    out_path = os.path.join(intermediate_path, output_base_name)
 
-    cmd_line = f"executor_runner -m {pte_path} -o {out_path}"
+    cmd_line = "executor_runner -m program.pte -o out"
     for input_path in input_paths:
-        cmd_line += f" -i {input_path}"
+        relative_path = os.path.relpath(
+            Path(input_path).resolve(), start=intermediate_path
+        )
+        cmd_line += f" -i {relative_path}"
+
+    if len(cmd_line) > 256:
+        raise ValueError(
+            "The argument passed to the FVP should be less than 256 characters long, otherwise it gets truncated"
+        )
 
     ethos_u_extra_args = ""
     if is_option_enabled("fast_fvp"):
@@ -430,6 +436,8 @@ def run_corstone(
                 f"ethosu.extra_args='{ethos_u_extra_args}'",
                 "-C",
                 "cpu0.semihosting-heap_limit=0",
+                "-C",
+                f"cpu0.semihosting-cwd={intermediate_path}",
                 "-C",
                 f"cpu0.semihosting-cmd_line='{cmd_line}'",
                 "-a",
@@ -460,6 +468,8 @@ def run_corstone(
                 "mps4_board.subsystem.cpu0.semihosting-stack_base=0",
                 "-C",
                 "mps4_board.subsystem.cpu0.semihosting-heap_limit=0",
+                "-C",
+                f"mps4_board.subsystem.cpu0.semihosting-cwd={intermediate_path}",
                 "-C",
                 f"mps4_board.subsystem.ethosu.extra_args='{ethos_u_extra_args}'",
                 "-C",
