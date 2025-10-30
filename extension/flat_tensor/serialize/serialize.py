@@ -448,5 +448,5 @@ class FlatTensorSerializer(DataSerializer):
         return NamedDataStoreOutput(
             buffers=data_payload.buffers,
             pte_data={},
-            external_data={name:data_payload.named_data}
+            external_data={name: data_payload.named_data},
         )
