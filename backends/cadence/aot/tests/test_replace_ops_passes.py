@@ -983,7 +983,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 args=(x,),
             )
         p = ReplaceSqueezeAndUnsqueezeWithViewPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        graph_after_passes = result.graph_module
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default),
@@ -999,6 +1000,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 count_node(graph_after_passes, exir_ops.edge.aten.squeeze_copy.default),
                 0,
             )
+        self.assertTrue(p._modified)
 
     @expand(
         [
@@ -1018,7 +1020,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(x, dim),
         )
         p = ReplaceSqueezeAndUnsqueezeWithViewPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        graph_after_passes = result.graph_module
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default),
@@ -1028,6 +1031,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.unsqueeze_copy.default),
             0,
         )
+        self.assertTrue(p._modified)
 
     @torch.no_grad()
     def test_replace_conv1d_with_linear(self) -> None:
@@ -1137,7 +1141,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(x, dim, index),
         )
         p = ReplaceSelectWithViewOpPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        graph_after_passes = result.graph_module
         # Assert that select op was replaced with view op
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.select_copy.int), 0
@@ -1145,6 +1150,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default), 1
         )
+        self.assertTrue(p._modified)
 
     @expand(
         [
