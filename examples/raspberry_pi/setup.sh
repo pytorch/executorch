@@ -450,6 +450,10 @@ build_executorch_core() {
     fi
 
     log_info "Building ExecuTorch core libraries..."
+    # Debug: Show environment and paths
+    log_info "WORKSPACE_DIR: $WORKSPACE_DIR"
+    log_info "CMAKE_OUT_DIR: $CMAKE_OUT_DIR"
+    log_info "PWD: $(pwd)"
 
     # Configure
     cmake --preset llm \
