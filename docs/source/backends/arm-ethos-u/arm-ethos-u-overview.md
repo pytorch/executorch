@@ -85,7 +85,7 @@ Returns a constant string that is the output format of the class.
 
 ### Partitioner API
 
-See [Partitioner API](backends/arm-ethos-u/arm-ethos-u-partitioner.md) for more information of the Partitioner API.
+See [Partitioner API](/backends/arm-ethos-u/arm-ethos-u-partitioner) for more information of the Partitioner API.
 
 ## Quantization
 
@@ -93,7 +93,7 @@ Since the Ethos-U backend is integer-only, all operators intended be executed on
 [Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)  and
 [Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html) quantization.
 
-For more information on quantization, see [Quantization](backends/arm-ethos-u/arm-ethos-u-quantization)
+For more information on quantization, see [Quantization](/backends/arm-ethos-u/arm-ethos-u-quantization)
 
 ## Runtime Integration
 
