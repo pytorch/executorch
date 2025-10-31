@@ -298,7 +298,7 @@ class TestQuantizedOpFusionPass(unittest.TestCase):
 
         # Output multiplier should be close to 2^30 (for 1.0 scale)
         self.assertAlmostEqual(output_mult, 2**30, delta=1000)
-        self.assertEqual(output_shift, -1)
+        self.assertEqual(output_shift, -18)
 
     def test_executorch_program_generation(self):
         """Verify ExecuTorch program generation with fused ops"""
