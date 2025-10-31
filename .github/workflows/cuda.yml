@@ -87,8 +87,8 @@ jobs:
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
         PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
 
-  export-voxtral-cuda-artifact:
-    name: export-voxtral-cuda-${{ matrix.quant.name }}
+  export-model-cuda-artifact:
+    name: export-${{ matrix.model.name }}-cuda-${{ matrix.quant.name }}
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -99,17 +99,40 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        model:
+          - name: "voxtral"
+            hf_model: "mistralai/Voxtral-Mini-3B-2507"
+            task: "multimodal-text-to-text"
+            max_seq_len: 1024
+            extra_pip: "mistral-common librosa"
+            preprocessor_feature_size: 128
+            preprocessor_output: "voxtral_preprocessor.pte"
+          - name: "whisper"
+            hf_model: "open-ai/whisper-small"
+            task: "automatic-speech-recognition"
+            max_seq_len: ""
+            extra_pip: "librosa"
+            preprocessor_feature_size: 80
+            preprocessor_output: "whisper_preprocessor.pte"
+          - name: "gemma3"
+            hf_model: "google/gemma-3-4b-it"
+            task: "multimodal-text-to-text"
+            max_seq_len: 64
+            extra_pip: ""
+            preprocessor_feature_size: ""
+            preprocessor_output: ""
         quant:
           - name: "non-quantized"
-            artifact: "voxtral-cuda-export"
             extra_args: ""
           - name: "quantized-int4-tile-packed"
-            artifact: "voxtral-cuda-quantized-int4-tile-packed"
             extra_args: "--qlinear 4w --qlinear_encoder 4w --qlinear_packing_format tile_packed_to_4d --qlinear_encoder_packing_format tile_packed_to_4d"
           - name: "quantized-int4-weight-only"
-            artifact: "voxtral-cuda-quantized-int4-weight-only"
             # TODO: adding "--qlinear 4w" produces invalid results. Need further investigation.
             extra_args: "--qlinear_encoder 4w"
+        exclude:
+          # TODO: enable int4-weight-only on gemma3.
+          - model: { name: "gemma3" }
+            quant: { name: "quantized-int4-weight-only" }
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -118,7 +141,7 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      upload-artifact: ${{ matrix.quant.artifact }}
+      upload-artifact: ${{ matrix.model.name }}-cuda-${{ matrix.quant.name == 'non-quantized' && 'export' || matrix.quant.name }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -132,120 +155,64 @@ jobs:
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
-        pip install mistral-common librosa
+        if [ -n "${{ matrix.model.extra_pip }}" ]; then
+          pip install ${{ matrix.model.extra_pip }}
+        fi
         pip list
         echo "::endgroup::"
 
-        echo "::group::Export Voxtral (${{ matrix.quant.name }})"
+        echo "::group::Export ${{ matrix.model.name }} (${{ matrix.quant.name }})"
         EXTRA_ARGS="${{ matrix.quant.extra_args }}"
+        MAX_SEQ_LEN_ARG=""
+        if [ -n "${{ matrix.model.max_seq_len }}" ]; then
+          MAX_SEQ_LEN_ARG="--max_seq_len ${{ matrix.model.max_seq_len }}"
+        fi
         optimum-cli export executorch \
-            --model "mistralai/Voxtral-Mini-3B-2507" \
-            --task "multimodal-text-to-text" \
+            --model "${{ matrix.model.hf_model }}" \
+            --task "${{ matrix.model.task }}" \
             --recipe "cuda" \
             --dtype bfloat16 \
             --device cuda \
-            --max_seq_len 1024 \
+            ${MAX_SEQ_LEN_ARG} \
             ${EXTRA_ARGS} \
             --output_dir ./
-        python -m executorch.extension.audio.mel_spectrogram \
-            --feature_size 128 \
-            --stack_output \
-            --max_audio_len 300 \
-            --output_file voxtral_preprocessor.pte
+
+        if [ -n "${{ matrix.model.preprocessor_output }}" ]; then
+          python -m executorch.extension.audio.mel_spectrogram \
+              --feature_size ${{ matrix.model.preprocessor_feature_size }} \
+              --stack_output \
+              --max_audio_len 300 \
+              --output_file ${{ matrix.model.preprocessor_output }}
+        fi
 
         test -f model.pte
         test -f aoti_cuda_blob.ptd
-        test -f voxtral_preprocessor.pte
+        if [ -n "${{ matrix.model.preprocessor_output }}" ]; then
+          test -f ${{ matrix.model.preprocessor_output }}
+        fi
         echo "::endgroup::"
 
-        echo "::group::Store Voxtral Artifacts (${{ matrix.quant.name }})"
+        echo "::group::Store ${{ matrix.model.name }} Artifacts (${{ matrix.quant.name }})"
         mkdir -p "${RUNNER_ARTIFACT_DIR}"
         cp model.pte "${RUNNER_ARTIFACT_DIR}/"
         cp aoti_cuda_blob.ptd "${RUNNER_ARTIFACT_DIR}/"
-        cp voxtral_preprocessor.pte "${RUNNER_ARTIFACT_DIR}/"
+        if [ -n "${{ matrix.model.preprocessor_output }}" ]; then
+          cp ${{ matrix.model.preprocessor_output }} "${RUNNER_ARTIFACT_DIR}/"
+        fi
         ls -al "${RUNNER_ARTIFACT_DIR}"
         echo "::endgroup::"
 
-  export-gemma3-cuda-artifact:
-    name: export-gemma3-cuda-${{ matrix.quant.name }}
-    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+  benchmark-model-cuda:
+    name: benchmark-${{ matrix.model }}-cuda
+    needs: export-model-cuda-artifact
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
-    secrets: inherit
     strategy:
       fail-fast: false
       matrix:
-        quant:
-          - name: "non-quantized"
-            artifact: "gemma3-cuda-export"
-            extra_args: ""
-          - name: "quantized-int4-tile-packed"
-            artifact: "gemma3-cuda-quantized-int4-tile-packed"
-            extra_args: "--qlinear 4w --qlinear_encoder 4w --qlinear_packing_format tile_packed_to_4d --qlinear_encoder_packing_format tile_packed_to_4d"
-          # TODO: enable int4-weight-only on gemma3.
-          # - name: "quantized-int4-weight-only"
-          #   artifact: "voxtral-cuda-quantized-int4-weight-only"
-          #   # TODO: adding "--qlinear 4w" produces invalid results. Need further investigation.
-          #   extra_args: "--qlinear_encoder 4w"
-    with:
-      timeout: 90
-      secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.g5.4xlarge.nvidia.gpu
-      gpu-arch-type: cuda
-      gpu-arch-version: 12.6
-      use-custom-docker-registry: false
-      submodules: recursive
-      upload-artifact: ${{ matrix.quant.artifact }}
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      script: |
-        set -eux
-
-        echo "::group::Setup ExecuTorch"
-        ./install_executorch.sh
-        echo "::endgroup::"
-
-        echo "::group::Setup Huggingface"
-        pip install -U "huggingface_hub[cli]<1.0" accelerate
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
-        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
-        pip list
-        echo "::endgroup::"
-
-        echo "::group::Export Gemma3 (${{ matrix.quant.name }})"
-        EXTRA_ARGS="${{ matrix.quant.extra_args }}"
-        optimum-cli export executorch \
-            --model "google/gemma-3-4b-it" \
-            --task "multimodal-text-to-text" \
-            --recipe "cuda" \
-            --dtype bfloat16 \
-            --device cuda \
-            --max_seq_len 64 \
-            --output_dir ./
-
-        test -f model.pte
-        test -f aoti_cuda_blob.ptd
-        echo "::endgroup::"
-
-        echo "::group::Store Gemma3 Artifacts (${{ matrix.quant.name }})"
-        mkdir -p "${RUNNER_ARTIFACT_DIR}/"
-        cp model.pte "${RUNNER_ARTIFACT_DIR}/"
-        cp aoti_cuda_blob.ptd "${RUNNER_ARTIFACT_DIR}/"
-        ls -al "${RUNNER_ARTIFACT_DIR}/"
-        echo "::endgroup::"
-
-  benchmark-voxtral-cuda:
-    name: benchmark-voxtral-cuda
-    needs: export-voxtral-cuda-artifact
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
+        model: [voxtral, gemma3]
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -253,7 +220,7 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      download-artifact: voxtral-cuda-export
+      download-artifact: ${{ matrix.model }}-cuda-export
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -263,13 +230,13 @@ jobs:
         pip list
         echo "::endgroup::"
 
-        echo "::group::Prepare Voxtral Artifacts"
+        echo "::group::Prepare ${{ matrix.model }} Artifacts"
         cp "${RUNNER_ARTIFACT_DIR}/model.pte" .
         cp "${RUNNER_ARTIFACT_DIR}/aoti_cuda_blob.ptd" .
         ls -al model.pte aoti_cuda_blob.ptd
         echo "::endgroup::"
 
-        echo "::group::Build Voxtral Benchmark"
+        echo "::group::Build ${{ matrix.model }} Benchmark"
         cmake -DCMAKE_BUILD_TYPE=Release \
               -DEXECUTORCH_BUILD_CUDA=ON \
               -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
@@ -280,66 +247,16 @@ jobs:
         cmake --build cmake-out -j$(( $(nproc) - 1 )) --target multimodal_benchmark
         echo "::endgroup::"
 
-        echo "::group::Run Voxtral Benchmark"
+        echo "::group::Run ${{ matrix.model }} Benchmark"
 
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        cmake-out/backends/cuda/multimodal_benchmark voxtral model.pte aoti_cuda_blob.ptd
+        cmake-out/backends/cuda/multimodal_benchmark ${{ matrix.model }} model.pte aoti_cuda_blob.ptd
 
         echo "::endgroup::"
 
-  benchmark-gemma3-cuda:
-    name: benchmark-gemma3-cuda
-    needs: export-gemma3-cuda-artifact
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      timeout: 90
-      runner: linux.g5.4xlarge.nvidia.gpu
-      gpu-arch-type: cuda
-      gpu-arch-version: 12.6
-      use-custom-docker-registry: false
-      submodules: recursive
-      download-artifact: gemma3-cuda-export
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      script: |
-        set -eux
-
-        echo "::group::Setup ExecuTorch Requirements"
-        ./install_requirements.sh
-        pip list
-        echo "::endgroup::"
-
-        echo "::group::Prepare Gemma3 Artifacts"
-        cp "${RUNNER_ARTIFACT_DIR}/model.pte" .
-        cp "${RUNNER_ARTIFACT_DIR}/aoti_cuda_blob.ptd" .
-        ls -al model.pte aoti_cuda_blob.ptd
-        echo "::endgroup::"
-
-        echo "::group::Build Gemma3 Benchmark"
-        cmake -DCMAKE_BUILD_TYPE=Release \
-              -DEXECUTORCH_BUILD_CUDA=ON \
-              -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-              -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-              -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
-              -DEXECUTORCH_BUILD_TESTS=ON \
-              -Bcmake-out .
-        cmake --build cmake-out -j$(( $(nproc) - 1 )) --target multimodal_benchmark
-        echo "::endgroup::"
-
-        echo "::group::Run Gemma3 Benchmark"
-
-        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        cmake-out/backends/cuda/multimodal_benchmark gemma3 model.pte aoti_cuda_blob.ptd
-
-        echo "::endgroup::"
-
-  test-voxtral-cuda-e2e:
-    name: test-voxtral-cuda-e2e-${{ matrix.format.name }}
-    needs: export-voxtral-cuda-artifact
+  test-model-cuda-e2e:
+    name: test-${{ matrix.model.name }}-cuda-e2e-${{ matrix.format.name }}
+    needs: export-model-cuda-artifact
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -347,103 +264,38 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        model:
+          - name: "voxtral"
+            runner_target: "voxtral_runner"
+            runner_path: "voxtral"
+            expected_output: "poem"
+            preprocessor: "voxtral_preprocessor.pte"
+            tokenizer_url: "https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main"
+            tokenizer_file: "tekken.json"
+            audio_url: "https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
+            audio_file: "poem.wav"
+          - name: "whisper"
+            runner_target: "whisper_runner"
+            runner_path: "whisper"
+            expected_output: "Mr. Quilter"
+            preprocessor: "whisper_preprocessor.pte"
+            tokenizer_url: "https://huggingface.co/openai/whisper-small/resolve/main"
+            audio_file: "output.wav"
+          - name: "gemma3"
+            runner_target: "gemma3_e2e_runner"
+            runner_path: "gemma3"
+            expected_output: "chip"
+            preprocessor: ""
+            tokenizer_url: "https://huggingface.co/google/gemma-3-4b-it/resolve/main"
+            image_path: "docs/source/_static/img/et-logo.png"
         format:
           - name: "non-quantized"
-            artifact: "voxtral-cuda-export"
           - name: "quantized-int4-tile-packed"
-            artifact: "voxtral-cuda-quantized-int4-tile-packed"
           - name: "quantized-int4-weight-only"
-            artifact: "voxtral-cuda-quantized-int4-weight-only"
-    with:
-      timeout: 90
-      runner: linux.g5.4xlarge.nvidia.gpu
-      gpu-arch-type: cuda
-      gpu-arch-version: 12.6
-      use-custom-docker-registry: false
-      submodules: recursive
-      download-artifact: ${{ matrix.format.artifact }}
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      script: |
-        set -eux
-
-        echo "::group::Setup ExecuTorch Requirements"
-        ./install_requirements.sh
-        pip list
-        echo "::endgroup::"
-
-        echo "::group::Prepare Voxtral Artifacts (${{ matrix.format.name }})"
-        cp "${RUNNER_ARTIFACT_DIR}/model.pte" .
-        cp "${RUNNER_ARTIFACT_DIR}/aoti_cuda_blob.ptd" .
-        cp "${RUNNER_ARTIFACT_DIR}/voxtral_preprocessor.pte" .
-        TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main/tekken.json"
-        curl -L $TOKENIZER_URL -o tekken.json
-        ls -al model.pte aoti_cuda_blob.ptd voxtral_preprocessor.pte tekken.json
-        echo "::endgroup::"
-
-        echo "::group::Download Test Audio File"
-        AUDIO_URL="https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
-        curl -L $AUDIO_URL -o poem.wav
-        echo "::endgroup::"
-
-        echo "::group::Build Voxtral Runner"
-        cmake --preset llm \
-              -DEXECUTORCH_BUILD_CUDA=ON \
-              -DCMAKE_INSTALL_PREFIX=cmake-out \
-              -DCMAKE_BUILD_TYPE=Release \
-              -Bcmake-out -S.
-        cmake --build cmake-out -j$(( $(nproc) - 1 )) --target install --config Release
-
-        cmake -DEXECUTORCH_BUILD_CUDA=ON \
-              -DCMAKE_BUILD_TYPE=Release \
-              -Sexamples/models/voxtral \
-              -Bcmake-out/examples/models/voxtral/
-        cmake --build cmake-out/examples/models/voxtral --target voxtral_runner --config Release
-        echo "::endgroup::"
-
-        echo "::group::Run Voxtral Runner (${{ matrix.format.name }})"
-        set +e
-        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        OUTPUT=$(cmake-out/examples/models/voxtral/voxtral_runner \
-              --model_path model.pte \
-              --data_path aoti_cuda_blob.ptd \
-              --tokenizer_path tekken.json \
-              --audio_path poem.wav \
-              --processor_path voxtral_preprocessor.pte \
-              --temperature 0 2>&1)
-        EXIT_CODE=$?
-        set -e
-
-        echo "$OUTPUT"
-
-        if ! echo "$OUTPUT" | grep -iq "poem"; then
-          echo "Expected output 'poem' not found in output"
-          exit 1
-        fi
-
-        if [ $EXIT_CODE -ne 0 ]; then
-          echo "Unexpected exit code: $EXIT_CODE"
-          exit $EXIT_CODE
-        fi
-        echo "::endgroup::"
-
-  test-gemma3-cuda-e2e:
-    name: test-gemma3-cuda-e2e-${{ matrix.format.name }}
-    needs: export-gemma3-cuda-artifact
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        format:
-          - name: "non-quantized"
-            artifact: "gemma3-cuda-export"
-          - name: "quantized-int4-tile-packed"
-            artifact: "gemma3-cuda-quantized-int4-tile-packed"
+        exclude:
           # TODO: enable int4-weight-only on gemma3.
-          # - name: "quantized-int4-weight-only"
-          #   artifact: "gemma3-cuda-quantized-int4-weight-only"
+          - model: { name: "gemma3" }
+            format: { name: "quantized-int4-weight-only" }
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -451,7 +303,7 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      download-artifact: ${{ matrix.format.artifact }}
+      download-artifact: ${{ matrix.model.name }}-cuda-${{ matrix.format.name == 'non-quantized' && 'export' || matrix.format.name }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -461,16 +313,41 @@ jobs:
         pip list
         echo "::endgroup::"
 
-        echo "::group::Prepare Gemma3 Artifacts (${{ matrix.format.name }})"
+        echo "::group::Prepare ${{ matrix.model.name }} Artifacts (${{ matrix.format.name }})"
         cp "${RUNNER_ARTIFACT_DIR}/model.pte" .
         cp "${RUNNER_ARTIFACT_DIR}/aoti_cuda_blob.ptd" .
-        TOKENIZER_URL="https://huggingface.co/unsloth/gemma-3-1b-it/resolve/main/tokenizer.json"
-        curl -L $TOKENIZER_URL -o tokenizer.json
-        ls -al model.pte aoti_cuda_blob.ptd tokenizer.json
-        IMAGE_PATH="docs/source/_static/img/et-logo.png"
+
+        # Copy preprocessor if present
+        if [ -n "${{ matrix.model.preprocessor }}" ]; then
+          cp "${RUNNER_ARTIFACT_DIR}/${{ matrix.model.preprocessor }}" .
+        fi
+
+        # Download tokenizer files
+        TOKENIZER_URL="${{ matrix.model.tokenizer_url }}"
+        if [ "${{ matrix.model.tokenizer_file }}" != "" ]; then
+          curl -L $TOKENIZER_URL/${{ matrix.model.tokenizer_file }} -o ${{ matrix.model.tokenizer_file }}
+        else
+          curl -L $TOKENIZER_URL/tokenizer.json -o tokenizer.json
+          curl -L $TOKENIZER_URL/tokenizer_config.json -o tokenizer_config.json
+          curl -L $TOKENIZER_URL/special_tokens_map.json -o special_tokens_map.json
+        fi
+
+        # Download test files
+        if [ "${{ matrix.model.audio_url }}" != "" ]; then
+          curl -L ${{ matrix.model.audio_url }} -o ${{ matrix.model.audio_file }}
+        elif [ "${{ matrix.model.audio_file }}" = "output.wav" ]; then
+          python <<EOF
+            from datasets import load_dataset
+            import soundfile as sf
+            sample = load_dataset("distil-whisper/librispeech_long", "clean", split="validation")[0]["audio"]
+            sf.write('output.wav', sample["array"][:sample["sampling_rate"]*30], sample["sampling_rate"])
+          EOF
+        fi
+
+        ls -al
         echo "::endgroup::"
 
-        echo "::group::Build Gemma3 Runner"
+        echo "::group::Build ${{ matrix.model.name }} Runner"
         cmake --preset llm \
               -DEXECUTORCH_BUILD_CUDA=ON \
               -DCMAKE_INSTALL_PREFIX=cmake-out \
@@ -480,27 +357,40 @@ jobs:
 
         cmake -DEXECUTORCH_BUILD_CUDA=ON \
               -DCMAKE_BUILD_TYPE=Release \
-              -Sexamples/models/gemma3 \
-              -Bcmake-out/examples/models/gemma3/
-        cmake --build cmake-out/examples/models/gemma3 --target gemma3_e2e_runner --config Release
+              -Sexamples/models/${{ matrix.model.runner_path }} \
+              -Bcmake-out/examples/models/${{ matrix.model.runner_path }}/
+        cmake --build cmake-out/examples/models/${{ matrix.model.runner_path }} --target ${{ matrix.model.runner_target }} --config Release
         echo "::endgroup::"
 
-        echo "::group::Run Gemma3 Runner (${{ matrix.format.name }})"
+        echo "::group::Run ${{ matrix.model.name }} Runner (${{ matrix.format.name }})"
         set +e
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        OUTPUT=$(cmake-out/examples/models/gemma3/gemma3_e2e_runner \
-              --model_path model.pte \
-              --data_path aoti_cuda_blob.ptd \
-              --tokenizer_path tokenizer.json \
-              --image_path $IMAGE_PATH \
-              --temperature 0 2>&1)
+
+        # Build runner command with common arguments
+        RUNNER_BIN="cmake-out/examples/models/${{ matrix.model.runner_path }}/${{ matrix.model.runner_target }}"
+        RUNNER_ARGS="--model_path model.pte --data_path aoti_cuda_blob.ptd --temperature 0"
+
+        # Add model-specific arguments
+        case "${{ matrix.model.name }}" in
+          voxtral)
+            RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${{ matrix.model.tokenizer_file }} --audio_path ${{ matrix.model.audio_file }} --processor_path ${{ matrix.model.preprocessor }}"
+            ;;
+          whisper)
+            RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ./ --audio_path ${{ matrix.model.audio_file }} --processor_path ${{ matrix.model.preprocessor }}"
+            ;;
+          gemma3)
+            RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ./ --image_path ${{ matrix.model.image_path }}"
+            ;;
+        esac
+
+        OUTPUT=$($RUNNER_BIN $RUNNER_ARGS 2>&1)
         EXIT_CODE=$?
         set -e
 
         echo "$OUTPUT"
 
-        if ! echo "$OUTPUT" | grep -iq "chip"; then
-          echo "Expected output 'chip' not found in output"
+        if ! echo "$OUTPUT" | grep -iq "${{ matrix.model.expected_output }}"; then
+          echo "Expected output '${{ matrix.model.expected_output }}' not found in output"
           exit 1
         fi
 

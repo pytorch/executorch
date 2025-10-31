@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # keep sorted
+set_overridable_option(EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
