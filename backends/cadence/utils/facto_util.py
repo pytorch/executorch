@@ -344,14 +344,23 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                 ]
             )
         case "div.Tensor":
-            tensor_constraints.extend(
-                [
-                    cp.Value.Ne(lambda deps, dtype, struct: 0),
-                    cp.Value.Le(lambda deps, dtype, struct: 2**3),
-                    cp.Size.Le(lambda deps, r, d: 2**3),
-                    cp.Rank.Le(lambda deps: 2**2),
-                ]
-            )
+            if index == 1:  # Only apply zero-prevention to divisor
+                tensor_constraints.extend(
+                    [
+                        cp.Value.Ne(lambda deps, dtype, struct: 0),  # Prevent division by zero
+                        cp.Value.Le(lambda deps, dtype, struct: 2**3),
+                        cp.Size.Le(lambda deps, r, d: 2**3),
+                        cp.Rank.Le(lambda deps: 2**2),
+                    ]
+                )
+            else:
+                tensor_constraints.extend(
+                    [
+                        cp.Value.Le(lambda deps, dtype, struct: 2**3),
+                        cp.Size.Le(lambda deps, r, d: 2**3),
+                        cp.Rank.Le(lambda deps: 2**2),
+                    ]
+                )
         case "pow.Tensor_Scalar":
             tensor_constraints.extend(
                 [
