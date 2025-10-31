@@ -351,12 +351,15 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                 ]
             )
         case "constant_pad_nd.default":
-            tensor_constraints.extend(
-                [
-                    cp.Dtype.In(lambda deps: [torch.float32]),
-                    cp.Size.Le(lambda deps, r, d: 2**2),
-                ]
-            )
+            tensor_constraints = [
+                cp.Dtype.In(lambda deps: [torch.float32]),
+                cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
+                cp.Value.Le(lambda deps, dtype, struct: 2**4),
+                cp.Rank.Ge(lambda deps: 1),
+                cp.Rank.Le(lambda deps: 2),  # Reduced from 3 to 2 (max 2D tensors)
+                cp.Size.Ge(lambda deps, r, d: 1),
+                cp.Size.Le(lambda deps, r, d: 3),  # Max dimension size of 3
+            ]
         case "avg_pool2d.default":
             tensor_constraints.extend(
                 [
