@@ -196,6 +196,30 @@ class ReplacePT2DequantWithCadenceDequantPass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
+class ReplaceCaffe2BoxWithNMSLimitWithCadenceBoxWithNMSLimit(ExportPass):
+    """Replaces _caffe2 BoxWithNMSLimit ops with Cadence BoxWithNMSLimit ops.
+    """
+
+    def call_operator(
+        self,
+        op,
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        ns = exir_ops.edge if isinstance(op, EdgeOpOverload) else torch.ops
+        if op != ns._caffe2.BoxWithNMSLimit.default:
+            return super().call_operator(op, args, kwargs, meta)
+
+        return super().call_operator(
+            exir_ops.edge.cadence.box_with_nms_limit.default,
+            args,
+            kwargs,
+            meta,
+        )
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceSqueezeAndUnsqueezeWithViewPass(ExportPass):
     """
     When the shape is static, replace squeeze_copy and unsqueeze_copy ops with
@@ -2162,6 +2186,7 @@ class CadenceReplaceOpsInGraph:
         ReplaceScalarTensorWithFullPass,
         ReplaceInfArgInFullWithValuePass,
         ReplaceLogicalNotBooleanWhereWithWherePass,
+        ReplaceCaffe2BoxWithNMSLimitWithCadenceBoxWithNMSLimit,
         ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
         ReplaceAtenAvgPoolWithCadenceAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
