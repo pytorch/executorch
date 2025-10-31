@@ -65,9 +65,6 @@ build_python_enabled() {
 
     # Build the package
     ./install_executorch.sh --minimal
-
-    # Install torchao
-    pip install third-party/ao
 }
 
 main() {
