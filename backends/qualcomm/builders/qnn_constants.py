@@ -399,6 +399,21 @@ class OpPoolAvg2d:
 
 
 @dataclass(init=False, frozen=True)
+class OpPoolAvg3d:
+    op_name: str = "PoolAvg3d"
+    param_filter_size: str = "filter_size"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_count_pad_for_edges: str = "count_pad_for_edges"
+    param_rounding_mode: str = "rounding_mode"
+
+    @unique
+    class RoundingMode(IntEnum):
+        FLOOR = 0
+        CEIL = 1
+
+
+@dataclass(init=False, frozen=True)
 class OpPoolMax2d:
     op_name: str = "PoolMax2d"
     param_filter_size: str = "filter_size"

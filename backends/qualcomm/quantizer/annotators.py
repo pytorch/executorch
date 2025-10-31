@@ -578,6 +578,18 @@ def annotate_avgpool2d(node: Node, quantization_config: QuantizationConfig) -> N
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.avg_pool3d.default])
+def annotate_avgpool3d(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.adaptive_avg_pool3d.default])
+def annotate_adaptive_avgpool3d(
+    node: Node, quantization_config: QuantizationConfig
+) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.permute.default])
 def annotate_permute(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)

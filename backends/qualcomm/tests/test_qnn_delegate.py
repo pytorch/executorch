@@ -119,6 +119,21 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 512, 7, 7),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_adaptive_avg_pool3d(self):
+        # NOTE: Support the cases mod(input_dhw, output_dhw) = 0
+        modules = [
+            AdaptiveAvgPool3D((2, 2, 2)),  # noqa: F405
+            AdaptiveAvgPool3D((8)),  # noqa: F405
+            AdaptiveAvgPool3D((2, None, None)),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn(1, 512, 16, 8, 16),),
+        ]
+        for j in range(len(sample_inputs)):
+            for i, module in enumerate(modules):
+                with self.subTest(i=i):
+                    self.lower_module_and_test_output(module, sample_inputs[j])
+
     def test_qnn_backend_alias(self):
         module = Alias()  # noqa: F405
         sample_input = (torch.randn(1, 10),)
@@ -254,6 +269,25 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_inputs[i])
+
+    def test_qnn_backend_avg_pool3d(self):
+        # NOTE: Support the cases mod(input_dhw, filter_dhw) = 0
+        # NOTE: The pad should be at most half of effective kernel size.
+        modules = [
+            AvgPool3d((8), (2), (1), True, True),  # noqa: F405
+            AvgPool3d((8), (2), (1), True, False),  # noqa: F405
+            AvgPool3d((8), (2), (1), False, False),  # noqa: F405
+            AvgPool3d((16, 16, 16), (4, 4, 4), (1, 1, 1), False, True),  # noqa: F405
+            AvgPool3d((8, 8, 8), (2, 2, 2), (1, 1, 1), True, True),  # noqa: F405
+            AvgPool3d((12, 12, 12), (4, 6, 2), (0, 0, 0), True, True),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn(1, 3, 64, 48, 32),),
+        ]
+        for j in range(len(sample_inputs)):
+            for i, module in enumerate(modules):
+                with self.subTest(i=i):
+                    self.lower_module_and_test_output(module, sample_inputs[j])
 
     def test_qnn_backend_batch_norm(self):
         modules = [BatchNorm(32), BatchNorm(32, False)]  # noqa: F405
@@ -2041,6 +2075,22 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_adaptive_avg_pool3d(self):
+        # NOTE: Support the cases mod(input_dhw, output_dhw) = 0
+        modules = [
+            AdaptiveAvgPool3D((2, 2, 2)),  # noqa: F405
+            AdaptiveAvgPool3D((8)),  # noqa: F405
+            AdaptiveAvgPool3D((2, None, None)),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn(1, 512, 16, 8, 16),),
+        ]
+        for j in range(len(sample_inputs)):
+            for i, module in enumerate(modules):
+                with self.subTest(i=i):
+                    module = self.get_qdq_module(module, sample_inputs[j])
+                    self.lower_module_and_test_output(module, sample_inputs[j])
+
     def test_qnn_backend_alias(self):
         module = Alias()  # noqa: F405
         sample_input = (torch.randn(1, 10),)
@@ -2186,6 +2236,26 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_inputs[i])
                 self.lower_module_and_test_output(module, sample_inputs[i])
+
+    def test_qnn_backend_avg_pool3d(self):
+        # NOTE: Support the cases mod(input_dhw, filter_dhw) = 0
+        # NOTE: The pad should be at most half of effective kernel size.
+        modules = [
+            AvgPool3d((8), (2), (1), True, True),  # noqa: F405
+            AvgPool3d((8), (2), (1), True, False),  # noqa: F405
+            AvgPool3d((8), (2), (1), False, False),  # noqa: F405
+            AvgPool3d((16, 16, 16), (4, 4, 4), (1, 1, 1), False, True),  # noqa: F405
+            AvgPool3d((8, 8, 8), (2, 2, 2), (1, 1, 1), True, True),  # noqa: F405
+            AvgPool3d((12, 12, 12), (4, 6, 2), (0, 0, 0), True, True),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn(1, 3, 64, 48, 32),),
+        ]
+        for j in range(len(sample_inputs)):
+            for i, module in enumerate(modules):
+                with self.subTest(i=i):
+                    module = self.get_qdq_module(module, sample_inputs[j])
+                    self.lower_module_and_test_output(module, sample_inputs[j])
 
     def test_qnn_backend_batch_norm(self):
         modules = [BatchNorm(32), BatchNorm(32, False)]  # noqa: F405

@@ -59,6 +59,16 @@ class AdaptiveAvgPool2D(torch.nn.Module):
         return adaptive_avg_pool(x)
 
 
+class AdaptiveAvgPool3D(torch.nn.Module):
+    def __init__(self, output_size):
+        super().__init__()
+        self.output_size = output_size
+
+    def forward(self, x):
+        adaptive_avg_pool3d = torch.nn.AdaptiveAvgPool3d(self.output_size)
+        return adaptive_avg_pool3d(x)
+
+
 class Add(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -222,6 +232,21 @@ class Atan(torch.nn.Module):
 
     def forward(self, x):
         return torch.atan(x)
+
+
+class AvgPool3d(torch.nn.Module):
+    def __init__(self, kernel_size, stride, padding, ceil_mode, count_include_pad):
+        super().__init__()
+        self.avg_pool3d = torch.nn.AvgPool3d(
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            ceil_mode=ceil_mode,
+            count_include_pad=count_include_pad,
+        )
+
+    def forward(self, x):
+        return self.avg_pool3d(x)
 
 
 class AvgPoolModule(torch.nn.Module):
