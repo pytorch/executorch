@@ -336,11 +336,11 @@ jobs:
         if [ "${{ matrix.model.audio_url }}" != "" ]; then
           curl -L ${{ matrix.model.audio_url }} -o ${{ matrix.model.audio_file }}
         elif [ "${{ matrix.model.audio_file }}" = "output.wav" ]; then
-          python <<EOF
-            from datasets import load_dataset
-            import soundfile as sf
-            sample = load_dataset("distil-whisper/librispeech_long", "clean", split="validation")[0]["audio"]
-            sf.write('output.wav', sample["array"][:sample["sampling_rate"]*30], sample["sampling_rate"])
+          python <<-EOF
+          from datasets import load_dataset
+          import soundfile as sf
+          sample = load_dataset("distil-whisper/librispeech_long", "clean", split="validation")[0]["audio"]
+          sf.write('output.wav', sample["array"][:sample["sampling_rate"]*30], sample["sampling_rate"])
           EOF
         fi
 
