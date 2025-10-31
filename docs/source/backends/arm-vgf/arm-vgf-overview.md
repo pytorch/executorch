@@ -77,18 +77,18 @@ Returns a constant string that is the output format of the class.
 
 ### Partitioner API
 
-See [Partitioner API](/backends/arm-vgf/arm-vgf-partitioner) for more information of the Partitioner API.
+See [Partitioner API](/backends/arm-vgf/arm-vgf-partitioner.md) for more information of the Partitioner API.
 
 ## Quantization
 
 The VGF quantizer supports [Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)
 and [Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html).
 
-For more information on quantization, see [Quantization](/backends/arm-vgf/arm-vgf-quantization).
+For more information on quantization, see [Quantization](/backends/arm-vgf/arm-vgf-quantization.md).
 
 ## Runtime Integration
 
-The VGF backend can use the default ExecuTorch runner. The steps required for building and running it are explained in the [VGF Backend Tutorial](/backends/arm-vgf/tutorials/vgf-getting-started).
+The VGF backend can use the default ExecuTorch runner. The steps required for building and running it are explained in the [VGF Backend Tutorial](/backends/arm-vgf/tutorials/vgf-getting-started.md).
 The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.
 
 ## Reference
