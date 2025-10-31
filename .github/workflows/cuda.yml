@@ -108,7 +108,7 @@ jobs:
             preprocessor_feature_size: 128
             preprocessor_output: "voxtral_preprocessor.pte"
           - name: "whisper"
-            hf_model: "open-ai/whisper-small"
+            hf_model: "openai/whisper-small"
             task: "automatic-speech-recognition"
             max_seq_len: ""
             extra_pip: "librosa"
