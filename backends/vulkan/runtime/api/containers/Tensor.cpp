@@ -654,15 +654,16 @@ vTensor::vTensor(
       uniforms_(),
       buffer_meta_(),
       // Construct Tensor storage
-      storage_(std::make_shared<vTensorStorage>(
-          context,
-          storage_type,
-          memory_layout,
-          axis_map_,
-          packed_dim_,
-          sizes,
-          dtype_,
-          allocate_memory)) {
+      storage_(
+          std::make_shared<vTensorStorage>(
+              context,
+              storage_type,
+              memory_layout,
+              axis_map_,
+              packed_dim_,
+              sizes,
+              dtype_,
+              allocate_memory)) {
   // uniform_data_ only valid for low dim tensors
   if (sizes.size() <= 4) {
     uniform_data_ = std::make_shared<UniformData>(UniformData{
