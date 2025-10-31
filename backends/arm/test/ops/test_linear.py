@@ -274,10 +274,6 @@ def get_symmetric_a16w8_linear_quantizer(
 
 
 test_data_all_16a8w = test_data_rank1_INT | test_data_rank4_INT
-# TODO: Remove large rand test as they are flaky until sorted out why: MLETORCH-1377
-for k in list(test_data_all_16a8w.keys()):
-    if "large_rand" in k:
-        test_data_all_16a8w.pop(k)
 
 
 @common.parametrize("test_data", test_data_all_16a8w)
@@ -311,7 +307,19 @@ def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_all_16a8w)
+x_fails = {}
+for test_name in [
+    "model_linear_rank4_zeros",
+    "model_linear_rank4_negative_ones",
+    "model_linear_rank4_negative_large_rand",
+]:
+    for set_per_chan in ["True", "False"]:
+        x_fails[test_name + ",per_channel_quant={}".format(set_per_chan)] = (
+            "MLETORCH-1452: AssertionError: Output 0 does not match reference output."
+        )
+
+
+@common.parametrize("test_data", test_data_all_16a8w, x_fails)
 @common.XfailIfNoCorstone300
 def test_linear_16a8w_u55_INT16(test_data: torch.Tensor):
     """Test linear operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
