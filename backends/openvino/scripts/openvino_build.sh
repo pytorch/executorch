@@ -12,7 +12,6 @@ cd "$EXECUTORCH_ROOT"
 
 install_requirements() {
     echo "Installing Requirements For OpenVINO Backend"
-    cd "$EXECUTORCH_ROOT"
     pip install -r backends/openvino/requirements.txt
 }
 
@@ -57,7 +56,6 @@ build_python_enabled() {
     echo "Building Python Package with Pybinding"
 
     # Enter the Executorch root directory
-    # cd "$EXECUTORCH_ROOT"
 
     # Set parameters to configure the project with CMake
     # Note: Add any additional configuration options you need here
