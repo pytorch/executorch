@@ -284,6 +284,7 @@ _one_to_one = [
     torch.ops.aten.sin.default,
     torch.ops.aten.tanh.default,
     torch.ops.aten.sum.dim_IntList,
+    torch.ops.aten.sum.default,
     torch.ops.aten.hardsigmoid.default,
     torch.ops.aten.hardswish.default,
     torch.ops.aten.hardswish_.default,
@@ -569,6 +570,16 @@ def get_quant_properties(  # noqa: C901
     elif node.target in _one_to_one_shared_input_qspec:
         input_node = ensure_type(Node, node.args[0])
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
+        quant_properties.quant_output = _QuantProperty(
+            0,
+            SharedQuantizationSpec((input_node, node)),
+        )
+    elif node.target in [torch.ops.aten.copy_.default]:
+        input_node = ensure_type(Node, node.args[1])
+        quant_properties.quant_inputs = [
+            _QuantProperty(0, input_act_qspec),
+            _QuantProperty(1, input_act_qspec),
+        ]
         quant_properties.quant_output = _QuantProperty(
             0,
             SharedQuantizationSpec((input_node, node)),
