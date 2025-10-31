@@ -33,6 +33,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
     check_out_zero_point_is_min_range,
+    copy_node_metadata,
     create_zero_bias_int32,
     find_sequential_partitions_aten,
     get_conv_args,
@@ -159,6 +160,8 @@ def get_args_and_kwargs_layer_norm(
             ),
             {"dtype": torch.float32},
         )
+        if len(inputs_inputs) > 0:
+            copy_node_metadata(weight, inputs_inputs[0])
 
     bias = other_inputs[2] if len(other_inputs) > 2 else None
 
@@ -171,6 +174,8 @@ def get_args_and_kwargs_layer_norm(
             ),
             {"dtype": torch.float32},
         )
+        if len(inputs_inputs) > 0:
+            copy_node_metadata(bias, inputs_inputs[0])
 
     # Make the args and kwargs for the replacement op
     args = tuple(inputs_inputs + [scale, zero_point])
@@ -346,6 +351,8 @@ def get_args_and_kwargs_softmax(
         ),
         {"dtype": torch.int32},
     )
+    if len(inputs_inputs) > 0:
+        copy_node_metadata(mask_tensor, inputs_inputs[0])
     # Make the scale and zero_point tensors
     in_scale = dequants_inputs[0].args[1]
     in_zero_point = dequants_inputs[0].args[2]
@@ -395,10 +402,13 @@ def get_args_and_kwargs_mixed_w8a32_conv(
         torch.ops.aten.permute.default,
         (other_inputs[0], [0, 2, 1]),  # NCL -> NLC
     )
+    copy_node_metadata(transposed_inputs, other_inputs[0])
+
     transposed_weights = graph_module.graph.call_function(
         torch.ops.aten.permute.default,
         (weights_inputs[0], [2, 0, 1]),  # NCL -> LNC
     )
+    copy_node_metadata(transposed_weights, weights_inputs[0])
 
     args = (
         transposed_inputs,
@@ -582,6 +592,26 @@ class QuantFusion(ExportPass):
                             torch.ops.aten.transpose.int,
                             (weights_inputs[0], 0, 1),
                         )
+                        if "val" in weights_inputs[0].meta:
+                            original_val = weights_inputs[0].meta["val"]
+                            fake_mode = original_val.fake_mode
+                            if fake_mode is not None:
+                                with fake_mode:
+                                    transposed_val = torch.ops.aten.transpose.int(
+                                        original_val, 0, 1
+                                    )
+                                transposed_weights.meta["val"] = transposed_val
+                            else:
+                                transposed_shape = list(original_val.shape)
+                                transposed_shape[0], transposed_shape[1] = (
+                                    transposed_shape[1],
+                                    transposed_shape[0],
+                                )
+                                transposed_weights.meta["val"] = torch.zeros(
+                                    transposed_shape, dtype=original_val.dtype
+                                )
+                            copy_node_metadata(transposed_weights, weights_inputs[0])
+
                         # Call linear with transposed weight
                         args, kwargs = get_args_and_kwargs_linear(
                             graph_module,
@@ -654,6 +684,19 @@ class QuantFusion(ExportPass):
 
             legalize_graph(graph_module)
             graph_module.graph.eliminate_dead_code()
+            nodes_list = list(graph_module.graph.nodes)
+
+            if len(nodes_list) > 0 and nodes_list[-1].op != "output":
+                output_nodes = [n for n in nodes_list if n.op == "output"]
+                output_arg = output_nodes[0].args[0]
+                original_meta = output_nodes[0].meta.copy()
+
+                for out_node in output_nodes:
+                    graph_module.graph.erase_node(out_node)
+
+                new_output_node = graph_module.graph.output(output_arg)
+                new_output_node.meta.update(original_meta)
+
             graph_module.recompile()
         return PassResult(graph_module, True)
 
