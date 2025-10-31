@@ -73,7 +73,7 @@ utils::uvec3 linear_qcsnw_tiled_global_wg_size(
   }
 
   // Number of output texels in the output tile
-  uint32_t out_tile_ntxcols = 2;
+  uint32_t out_tile_ntxcols = 1;
   if (quant_nbits == 4) {
     out_tile_ntxcols = 2;
   }
@@ -325,7 +325,7 @@ void add_linear_qcsnw_tiled_node(
   }
 
   // Number of output texels in the output tile
-  uint32_t out_tile_ntxcols = 2;
+  uint32_t out_tile_ntxcols = 1;
   if (quant_nbits == 4) {
     out_tile_ntxcols = 2;
   }
