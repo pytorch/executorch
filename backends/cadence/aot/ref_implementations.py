@@ -15,6 +15,8 @@ import torch.nn.functional as F
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
+from typing import Optional
+
 m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
 torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
 
@@ -2145,4 +2147,46 @@ def quantized_softmax(
         int(in_zero_point.item()),
         out_scale,
         out_zero_point,
+    )
+
+
+@impl_tracked(m, "box_with_nms_limit")
+def meta_box_with_nms_limit(
+    tscores: torch.Tensor,
+    tboxes: torch.Tensor,
+    tbatch_splits: torch.Tensor,
+    score_thres: float,
+    nms_thres: float,
+    detections_per_im: int,
+    soft_nms_enabled: bool,
+    soft_nms_method_str: str,
+    soft_nms_sigma: float,
+    soft_nms_min_score_thres: float,
+    rotated: bool,
+    cls_agnostic_bbox_reg: bool,
+    input_boxes_include_bg_cls: bool,
+    output_classes_include_bg_cls: bool,
+    legacy_plus_one: bool,
+    optional_tensor_list: Optional[list[torch.Tensor]] = None,
+) -> tuple[
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
+]:
+
+    return torch.ops._caffe2.BoxWithNMSLimit(
+        tscores,
+        tboxes,
+        tbatch_splits,
+        score_thres,
+        nms_thres,
+        detections_per_im,
+        soft_nms_enabled,
+        soft_nms_method_str,
+        soft_nms_sigma,
+        soft_nms_min_score_thres,
+        rotated,
+        cls_agnostic_bbox_reg,
+        input_boxes_include_bg_cls,
+        output_classes_include_bg_cls,
+        legacy_plus_one,
+        optional_tensor_list,
     )
