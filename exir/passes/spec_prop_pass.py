@@ -92,10 +92,7 @@ class SpecPropPass(ExportPass):
 
     # pyre-ignore
     def call_operator(self, op, args, kwargs, meta):
-        args_data, kwargs_data = pytree.tree_map_only(
-            ProxyValue, lambda x: x.data, (args, kwargs)
-        )
-        meta["spec"] = pytree.tree_map(make_spec, op(*args_data, **kwargs_data))
+        meta["spec"] = pytree.tree_map(make_spec, meta["val"])
         return super().call_operator(op, args, kwargs, meta)
 
     # pyre-ignore
