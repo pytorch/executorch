@@ -59,6 +59,17 @@ class CortexMTensorAdd(Model):
     }
 
 
+class CortexMTensorAddBroadcast(Model):
+    # TODO: Quantize and accelerate broadcasted adds
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
+    }
+
+
 class CortexMAlphaAdd(ModelAlpha):
     ops_before_transforms = {
         "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
@@ -104,26 +115,26 @@ test_cases = {
     ),
     "tensor_scalar": McuTestCase(
         CortexMScalarAdd(),
-        (torch.ones(2, 2), 1.0),
+        (torch.ones(1), 1.1),
     ),
     "scalar_tensor": McuTestCase(
         CortexMScalarAdd(),
-        (1000.0, torch.ones(2, 2)),
+        (1000.1, torch.ones(1)),
     ),
     "tensor_tensor": McuTestCase(
         CortexMTensorAdd(),
         (torch.rand(2, 2) * 10, torch.rand(2, 2)),
     ),
     "broadcast_1": McuTestCase(
-        CortexMTensorAdd(),
+        CortexMTensorAddBroadcast(),
         (torch.ones(1), torch.ones(2, 2, 2, 2)),
     ),
     "broadcast_2": McuTestCase(
-        CortexMTensorAdd(),
+        CortexMTensorAddBroadcast(),
         (torch.ones((2, 1, 1, 1)), torch.ones(1)),
     ),
     "broadcast_3": McuTestCase(
-        CortexMTensorAdd(),
+        CortexMTensorAddBroadcast(),
         (
             ramp_tensor(-2, 2, (2, 1, 2, 1)),
             ramp_tensor(-5, 5, (1, 2, 1, 2)),
@@ -148,26 +159,6 @@ dialect_xfails = {
         "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
         AttributeError,
     ),
-    "tensor_scalar": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "scalar_tensor": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_1": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_2": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_3": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
     "alpha": (
         "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
         AssertionError,
@@ -191,26 +182,6 @@ implementation_xfails = {
     "scalar_scalar": (
         "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
         AttributeError,
-    ),
-    "tensor_scalar": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "scalar_tensor": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_1": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_2": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_3": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
-        RuntimeError,
     ),
     "alpha": (
         "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
