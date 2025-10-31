@@ -1,1 +1,2 @@
+transformers
 diffusers>=0.29.0

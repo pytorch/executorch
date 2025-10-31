@@ -11,7 +11,7 @@ Follow the [instructions](../../../backends/openvino/README.md) of **Prerequisit
 
 ### Install dependencies
 ```bash
-pip install -r requirements.txt
+pip install -r ../requirements.txt
 ```
 
 ## Export the Model

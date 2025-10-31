@@ -7,6 +7,9 @@ set -e
 EXECUTORCH_ROOT=$(realpath "$(dirname "$0")/../../..")
 echo EXECUTORCH_ROOT=${EXECUTORCH_ROOT}
 
+# Enter the Executorch root directory
+cd "$EXECUTORCH_ROOT"
+
 install_requirements() {
     echo "Installing Requirements For OpenVINO Backend"
     cd "$EXECUTORCH_ROOT"
@@ -21,8 +24,6 @@ build_cpp_runtime() {
     # Set build directory
     local build_dir="cmake-out"
 
-    # Enter the Executorch root directory
-    cd "$EXECUTORCH_ROOT"
     rm -rf "${build_dir}"
 
     CMAKE_ARGS=(
@@ -56,8 +57,7 @@ build_python_enabled() {
     echo "Building Python Package with Pybinding"
 
     # Enter the Executorch root directory
-    cd "$EXECUTORCH_ROOT"
-    ./install_executorch.sh --clean
+    # cd "$EXECUTORCH_ROOT"
 
     # Set parameters to configure the project with CMake
     # Note: Add any additional configuration options you need here
@@ -75,22 +75,23 @@ build_python_enabled() {
 main() {
     build_type=${1:-"--build_all"}
 
-    # If the first arguments is --build_all (default), build python package, C++ runtime, and llama runner binary
+    # If the first argument is --build_all (default), build python package, C++ runtime
     if [[ -z "$build_type" || "$build_type" == "--build_all" ]]; then
+        ./install_executorch.sh --clean
         install_requirements
         build_python_enabled
         build_cpp_runtime
 
-    # If the first arguments is --cpp_runtime, build libraries for C++ runtime
+    # If the first argument is --cpp_runtime, build libraries for C++ runtime
     elif [[ "$build_type" == "--cpp_runtime" ]]; then
         build_cpp_runtime
 
-    # If the first arguments is --llama_runner, build export llama runner binary
-    # Note: c++ runtime with openvino backend should be built before building export llama runner
+    # If the first argument is --cpp_runtime_llm, build C++ runtime with llm extension
+    # Note: c++ runtime with openvino backend should be built before building llama runner
     elif [[ "$build_type" == "--cpp_runtime_llm" ]]; then
         build_cpp_runtime 1
 
-    # If the first arguments is --enable_python, build python package with python bindings
+    # If the first argument is --enable_python, build python package with python bindings
     elif [[ "$build_type" == "--enable_python" ]]; then
         install_requirements
         build_python_enabled
