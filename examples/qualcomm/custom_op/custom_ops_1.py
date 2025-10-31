@@ -79,7 +79,7 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
 
     quantization_config = get_ptq_per_channel_quant_config()
     for node in gm.graph.nodes:
-        if node.target != torch.ops.my_ops.mul3.default:
+        if node.target != torch.ops.my_ops.mul3.default: g
             continue
 
         # skip annotation if it is already annotated
@@ -232,7 +232,7 @@ def main(args):
                 f"--output_folder_path {output_data_folder}",
             ]
         )
-        print(f"Running command: {runner_cmd}")
+
         subprocess.run(
             runner_cmd,
             # stdout=subprocess.PIPE,
