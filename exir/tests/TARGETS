@@ -385,6 +385,7 @@ python_unittest(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:dim_order_utils",
+        "//executorch/exir:lib",
     ],
 )
 
