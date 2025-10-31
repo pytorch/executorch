@@ -250,6 +250,8 @@ class ArmTester(Tester):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
+        use_portable_ops: bool = False,
+        timeout: int = 600,
     ):
         """
         Args:
@@ -271,6 +273,8 @@ class ArmTester(Tester):
         # Initial model needs to be set as a *possible* but not yet added Stage, therefore add None entry.
         self.stages[StageType.INITIAL_MODEL] = None
         self._run_stage(InitialModel(self.original_module))
+        self.use_portable_ops = use_portable_ops
+        self.timeout = timeout
 
     def quantize(
         self,
@@ -348,13 +352,15 @@ class ArmTester(Tester):
         return super().to_executorch(to_executorch_stage)
 
     def serialize(
-        self, serialize_stage: Optional[Serialize] = None, timeout: int = 480
+        self,
+        serialize_stage: Optional[Serialize] = None,
     ):
         if serialize_stage is None:
             serialize_stage = Serialize(
                 compile_spec=self.compile_spec,
                 module=self.original_module,
-                timeout=timeout,
+                use_portable_ops=self.use_portable_ops,
+                timeout=self.timeout,
             )
         assert (
             self.compile_spec.get_intermediate_path() is not None
