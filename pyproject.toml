@@ -66,6 +66,7 @@ dependencies=[
   "pytest-xdist",
   "pytest-rerunfailures==15.1",
   "pytest-json-report",
+  "pytorch-tokenizers",
   "pyyaml",
   "ruamel.yaml",
   "sympy",
