@@ -10,9 +10,12 @@ import dataclasses
 import math
 import unittest
 
-from typing import List, Optional
+from typing import Dict, List, Optional
+
+import torch
 
 from executorch.exir._serialize._cord import Cord
+from executorch.exir._serialize._named_data_store import NamedDataStore
 
 from executorch.exir._serialize.data_serializer import (
     DataEntry,
@@ -89,6 +92,22 @@ class TestSerialize(unittest.TestCase):
         self.assertEqual(expected.scalar_type, actual.scalar_type)
         self.assertEqual(expected.sizes, actual.sizes)
         self.assertEqual(expected.dim_order, actual.dim_order)
+
+    def _check_named_data_entries(
+        self, reference: Dict[str, DataEntry], actual: Dict[str, DataEntry]
+    ) -> None:
+        self.assertEqual(reference.keys(), actual.keys())
+        SKIP_FIELDS = {"alignment"}  # Fields to ignore in comparison.
+        for key in reference.keys():
+            ref_entry = reference[key]
+            actual_entry = actual[key]
+            for field in dataclasses.fields(ref_entry):
+                if field.name not in SKIP_FIELDS:
+                    self.assertEqual(
+                        getattr(ref_entry, field.name),
+                        getattr(actual_entry, field.name),
+                        f"Named data record {key}.{field.name} does not match.",
+                    )
 
     def test_serialize(self) -> None:
         config = FlatTensorConfig()
@@ -245,19 +264,51 @@ class TestSerialize(unittest.TestCase):
                 f"Buffer at index {i} does not match.",
             )
 
-        self.assertEqual(
-            TEST_DATA_PAYLOAD.named_data.keys(), deserialized_payload.named_data.keys()
+        self._check_named_data_entries(
+            TEST_DATA_PAYLOAD.named_data, deserialized_payload.named_data
         )
 
-        SKIP_FIELDS = {"alignment"}  # Fields to ignore in comparison.
-        for key in TEST_DATA_PAYLOAD.named_data.keys():
-            reference = TEST_DATA_PAYLOAD.named_data[key]
-            actual = deserialized_payload.named_data[key]
+    def test_deserialize_to_named_data_store_output(self) -> None:
+        store = NamedDataStore()
+        external_tag = "model"
 
-            for field in dataclasses.fields(reference):
-                if field.name not in SKIP_FIELDS:
-                    self.assertEqual(
-                        getattr(reference, field.name),
-                        getattr(actual, field.name),
-                        f"Named data record {key}.{field.name} does not match.",
-                    )
+        tensor_layout = TensorLayout(ScalarType.FLOAT, [1, 2], [0, 1])
+        store.add_named_data(
+            "key0",
+            b"data0",
+            alignment=1,
+            external_tag=external_tag,
+            tensor_layout=tensor_layout,
+        )
+        store.add_named_data(
+            "key1",
+            torch.tensor([[1, 2], [3, 4]], dtype=torch.float32),
+            alignment=1,
+            external_tag=external_tag,
+        )
+
+        output = store.get_named_data_store_output()
+        self.assertEqual(len(output.buffers), 2)
+        self.assertEqual(len(output.pte_data), 0)
+        self.assertEqual(len(output.external_data), 1)
+        self.assertEqual(len(output.external_data[external_tag]), 2)
+
+        # Serialize and deserialize.
+        config = FlatTensorConfig()
+        serializer: DataSerializer = FlatTensorSerializer(config)
+        data_payload = DataPayload(
+            buffers=output.buffers, named_data=output.external_data[external_tag]
+        )
+        serialized_data = serializer.serialize(data_payload)
+
+        output2 = serializer.deserialize_to_named_data_store_output(
+            bytes(serialized_data), external_tag
+        )
+
+        self.assertEqual(output.buffers, output2.buffers)
+        self.assertEqual(len(output.pte_data), 0)
+        self.assertEqual(len(output2.pte_data), 0)
+
+        self._check_named_data_entries(
+            output.external_data[external_tag], output2.external_data[external_tag]
+        )
