@@ -440,6 +440,12 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Size.Le(lambda deps, r, d: 2**2),
                 ]
             )
+        case "flip.default":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32]),
+                ]
+            )
         case _:
             pass
     return tensor_constraints
