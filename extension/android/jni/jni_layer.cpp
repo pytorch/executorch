@@ -13,6 +13,7 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
@@ -117,7 +118,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     std::vector<executorch::aten::SizesType> shape_vec;
     shape_vec.reserve(rank);
 
-    auto numel = 1;
+    int64_t numel = 1;
     for (int i = 0; i < rank; i++) {
       shape_vec.push_back(shapeArr[i]);
     }
@@ -132,11 +133,24 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
     }
     ScalarType scalar_type = java_dtype_to_scalar_type.at(jdtype);
-    const auto dataCapacity = jni->GetDirectBufferCapacity(jbuffer.get());
-    if (dataCapacity != numel) {
+    const jlong dataCapacity = jni->GetDirectBufferCapacity(jbuffer.get());
+    if (dataCapacity < 0) {
+      std::stringstream ss;
+      ss << "Tensor buffer is not direct or has invalid capacity";
+      jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+    }
+    const size_t elementSize = executorch::runtime::elementSize(scalar_type);
+    const jlong expectedElements = static_cast<jlong>(numel);
+    const jlong expectedBytes =
+        expectedElements * static_cast<jlong>(elementSize);
+    const bool matchesElements = dataCapacity == expectedElements;
+    const bool matchesBytes = dataCapacity == expectedBytes;
+    if (!matchesElements && !matchesBytes) {
       std::stringstream ss;
       ss << "Tensor dimensions(elements number: " << numel
-         << "inconsistent with buffer capacity " << dataCapacity << "]";
+         << ") inconsistent with buffer capacity " << dataCapacity
+         << " (element size bytes: " << elementSize << ")";
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
     }
