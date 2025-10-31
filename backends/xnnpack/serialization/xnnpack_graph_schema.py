@@ -351,6 +351,10 @@ class XNNPReLU(XNNNode2x1):
 class XNNSin(XNNNode1x1):
     pass
 
+@dataclass
+class XNNCos(XNNNode1x1):
+    pass
+
 
 @dataclass
 class XNNScaledDotProductAttention:
@@ -409,6 +413,7 @@ XNodeUnion = Union[
     XNNTanh,
     XNNExp,
     XNNSin,
+    XNNCos,
 ]
 
 
