@@ -28,7 +28,6 @@ from executorch.backends.arm.constants import (
 )
 
 from executorch.backends.arm.ethosu import EthosUCompileSpec
-from executorch.backends.arm.test.conftest import is_option_enabled
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
 from executorch.backends.arm.vgf import VgfCompileSpec
@@ -414,10 +413,6 @@ def run_corstone(
             "The argument passed to the FVP should be less than 256 characters long, otherwise it gets truncated"
         )
 
-    ethos_u_extra_args = ""
-    if is_option_enabled("fast_fvp"):
-        ethos_u_extra_args = ethos_u_extra_args + "--fast"
-
     match target_board:
         case "corstone-300":
             command_args = [
@@ -435,11 +430,11 @@ def run_corstone(
                 "-C",
                 "cpu0.semihosting-stack_base=0",
                 "-C",
-                f"ethosu.extra_args='{ethos_u_extra_args}'",
-                "-C",
                 "cpu0.semihosting-heap_limit=0",
                 "-C",
                 f"cpu0.semihosting-cwd={intermediate_path}",
+                "-C",
+                "ethosu.extra_args='--fast'",
                 "-C",
                 f"cpu0.semihosting-cmd_line='{cmd_line}'",
                 "-a",
@@ -473,7 +468,7 @@ def run_corstone(
                 "-C",
                 f"mps4_board.subsystem.cpu0.semihosting-cwd={intermediate_path}",
                 "-C",
-                f"mps4_board.subsystem.ethosu.extra_args='{ethos_u_extra_args}'",
+                "mps4_board.subsystem.ethosu.extra_args='--fast'",
                 "-C",
                 f"mps4_board.subsystem.cpu0.semihosting-cmd_line='{cmd_line}'",
                 "-a",
@@ -719,20 +714,25 @@ def assert_elf_path_exists(elf_path):
         )
 
 
-def get_elf_path(target_board):
+def get_elf_path(target_board: str, use_portable_ops: bool = False):
     if target_board not in VALID_TARGET:
         raise ValueError(f"Unsupported target: {target_board}")
+
+    if use_portable_ops:
+        portable_ops_str = "portable-ops_"
+    else:
+        portable_ops_str = ""
 
     if target_board in ("corstone-300", "corstone-320"):
         elf_path = os.path.join(
             "arm_test",
-            f"arm_semihosting_executor_runner_{target_board}",
+            f"arm_semihosting_executor_runner_{portable_ops_str}{target_board}",
             "arm_executor_runner",
         )
         assert_elf_path_exists(elf_path)
     elif target_board == "vkml_emulation_layer":
         elf_path = os.path.join(
-            "arm_test/arm_executor_runner_vkml",
+            f"arm_test/arm_executor_runner_{portable_ops_str}vkml",
             "executor_runner",
         )
         assert_elf_path_exists(elf_path)
@@ -740,9 +740,9 @@ def get_elf_path(target_board):
     return elf_path
 
 
-def arm_executor_runner_exists(target_board):
+def arm_executor_runner_exists(target_board: str, use_portable_ops: bool = False):
     try:
-        get_elf_path(target_board)
+        get_elf_path(target_board, use_portable_ops=use_portable_ops)
     except:
         return False
     else:
