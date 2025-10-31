@@ -260,9 +260,9 @@ TEST_F(WavLoaderTest, LoadAudioDataRejectsUnsupportedFormat) {
   TempFile file(wav_bytes.data(), wav_bytes.size());
 
 #if ET_LOG_ENABLED
-  EXPECT_DEATH({ load_wav_audio_data(file.path()); }, "");
-#else
   EXPECT_DEATH(
       { load_wav_audio_data(file.path()); }, "Unsupported audio format");
+#else
+  EXPECT_DEATH({ load_wav_audio_data(file.path()); }, "");
 #endif
 }
