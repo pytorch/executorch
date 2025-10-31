@@ -349,3 +349,21 @@ def quantized_linear_impl(
     output += output_offset
     output = torch.clamp(output, activation_min, activation_max).to(torch.int8)
     return output
+
+
+# ===================================================================
+# TRANSPOSE OPERATION DEFINITION
+# ===================================================================
+lib.define("transpose(Tensor input, int[] perm) -> Tensor")
+lib.define("transpose.out(Tensor input, int[] perm, *, Tensor(a!) out) -> Tensor(a!)")
+
+
+@register_fake("cortex_m::transpose")
+def transpose_meta(input: torch.Tensor, perm) -> torch.Tensor:
+    output_shape = [input.shape[idx] for idx in perm]
+    return torch.empty(output_shape, dtype=input.dtype, device=input.device)
+
+
+@impl(lib, "transpose", "CompositeExplicitAutograd")
+def transpose_impl(input: torch.Tensor, perm) -> torch.Tensor:
+    return input.permute(tuple(perm)).contiguous()
