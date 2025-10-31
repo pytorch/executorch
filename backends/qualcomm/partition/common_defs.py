@@ -20,7 +20,6 @@ not_supported_operator = [
 
 to_be_implemented_operator = [
     exir_ops.edge.aten._adaptive_avg_pool3d.default,
-    exir_ops.edge.aten.adaptive_max_pool2d.default,
     exir_ops.edge.aten.adaptive_max_pool3d.default,
     exir_ops.edge.aten.avg_pool3d.default,
     exir_ops.edge.aten.div.Tensor_mode,

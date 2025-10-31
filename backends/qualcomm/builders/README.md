@@ -431,7 +431,7 @@ Please help update following table if you are contributing new operators:
 | Gelu | &check; |
 | GetSparseIndices | &cross; |
 | GetSparseValues | &cross; |
-| GridSample | &cross; |
+| GridSample | &check; |
 | GroupNorm | &check; |
 | HardSwish | &check; |
 | InstanceNorm | &check; |
