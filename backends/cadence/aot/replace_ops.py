@@ -149,6 +149,10 @@ class ReplacePT2QuantWithCadenceQuantPass(ExportPass):
     replace them with cadence ops at all optimization levels.
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
+
     def call_operator(
         self,
         op,
@@ -160,12 +164,18 @@ class ReplacePT2QuantWithCadenceQuantPass(ExportPass):
         if op != ns.quantized_decomposed.quantize_per_tensor.default:
             return super().call_operator(op, args, kwargs, meta)
 
+        self._modified = True
         return super().call_operator(
             ns.cadence.quantize_per_tensor.default,
             args,
             kwargs,
             meta,
         )
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -175,6 +185,10 @@ class ReplacePT2DequantWithCadenceDequantPass(ExportPass):
     We do not link kernels to the PT2 quantization ops, so we need to
     replace them with cadence ops at all optimization levels.
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
 
     def call_operator(
         self,
@@ -187,12 +201,18 @@ class ReplacePT2DequantWithCadenceDequantPass(ExportPass):
         if op != ns.quantized_decomposed.dequantize_per_tensor.default:
             return super().call_operator(op, args, kwargs, meta)
 
+        self._modified = True
         return super().call_operator(
             ns.cadence.dequantize_per_tensor.default,
             args,
             kwargs,
             meta,
         )
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -201,6 +221,10 @@ class ReplaceSqueezeAndUnsqueezeWithViewPass(ExportPass):
     When the shape is static, replace squeeze_copy and unsqueeze_copy ops with
     view_copy op
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
 
     def call_operator(
         self,
@@ -225,10 +249,16 @@ class ReplaceSqueezeAndUnsqueezeWithViewPass(ExportPass):
                 return super().call_operator(op, args, kwargs, meta)
 
         # Return a view op with the new shape
+        self._modified = True
         view_args = (args[0], list(out_shape))
         return super().call_operator(
             exir_ops.edge.aten.view_copy.default, view_args, kwargs, meta
         )
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -253,6 +283,10 @@ class ReplaceSelectWithViewOpPass(ExportPass):
     by view op.
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
+
     def call_operator(self, op, args, kwargs, meta):
         if op != exir_ops.edge.aten.select_copy.int:
             return super().call_operator(op, args, kwargs, meta)
@@ -266,11 +300,17 @@ class ReplaceSelectWithViewOpPass(ExportPass):
 
         if in_shape[select_dim] == 1:
             # Return a view op with the new shape
+            self._modified = True
             view_args = (args[0], list(out_shape))
             return super().call_operator(
                 exir_ops.edge.aten.view_copy.default, view_args, kwargs, meta
             )
         return super().call_operator(op, args, kwargs, meta)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))

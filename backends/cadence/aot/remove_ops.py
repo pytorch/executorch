@@ -48,6 +48,10 @@ class RemoveCloneOpsTransformImported(ExportPass):
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveDetachCopyPass(ExportPass):
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
+
     def call_operator(
         self,
         op,  # pyre-ignore
@@ -58,8 +62,14 @@ class RemoveDetachCopyPass(ExportPass):
         if op != exir_ops.edge.aten.detach_copy.default:
             return super().call_operator(op, args, kwargs, meta)
 
+        self._modified = True
         assert len(args) == 1
         return cast(ProxyValue, args[0])
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 # The following class consolidates passes to remove ops that are redundant:
@@ -73,6 +83,10 @@ class RemoveRedundantOps:
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveZeroSizedCatArgsPass(ExportPass):
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
+
     def call_operator(
         self,
         op,  # pyre-ignore
@@ -92,6 +106,7 @@ class RemoveZeroSizedCatArgsPass(ExportPass):
         # If all the tensors were empty, we just return an empty tensor with
         # the right shape.
         if not cat_inputs:
+            self._modified = True
             empty_shape = meta["val"].shape
             dtype = meta["val"].dtype
             return super().call_operator(
@@ -104,13 +119,23 @@ class RemoveZeroSizedCatArgsPass(ExportPass):
         # If there was only one tensor in the cat_inputs list,
         # we can safely erase this cat op.
         if len(cat_inputs) == 1:
+            self._modified = True
             return cat_inputs[0]
+
+        # If we filtered out any zero-sized tensors, mark as modified
+        if len(cat_inputs) != len(cast(Sequence[ProxyValue], args[0])):
+            self._modified = True
 
         # Otherwise, we replace args[0] with cat_inputs.
         new_args = list(args)
         # pyre error introduced after D66937105
         new_args[0] = cat_inputs  # pyre-ignore[6]
         return super().call_operator(op, tuple(new_args), kwargs, meta)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -119,6 +144,10 @@ class RemoveNopExpandOpPass(ExportPass):
     For an expand op, if the operator shape matches the expand shape, then the
     expand is a nop.
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
 
     def call_operator(
         self,
@@ -138,14 +167,24 @@ class RemoveNopExpandOpPass(ExportPass):
         arg1 = cast(Sequence[int], args[1])
         in_tensor = arg0.to_tensor()
         if list(in_tensor.shape) == list(arg1):
+            self._modified = True
             return arg0
 
         return super().call_operator(op, args, kwargs, meta)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveToOpsPass(ExportPass):
     # aten.to.* as of now are all nops
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
+
     def call_operator(
         self,
         op,  # pyre-ignore
@@ -159,8 +198,14 @@ class RemoveToOpsPass(ExportPass):
         ):
             return super().call_operator(op, args, kwargs, meta)
 
+        self._modified = True
         logging.debug(f"Erasing to.dtype node (target = {op})")
         return cast(ProxyValue, args[0])
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -191,6 +236,10 @@ class RemoveNopSliceOrViewOpPass(ExportPass):
     Remove slice ops that are more like views, and view ops that do not change the shape
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
+
     def call_operator(
         self,
         op,  # pyre-ignore
@@ -204,6 +253,7 @@ class RemoveNopSliceOrViewOpPass(ExportPass):
         }:
             return super().call_operator(op, args, kwargs, meta)
 
+        self._modified = True
         arg0 = cast(ProxyValue, args[0])
         out_shape = meta["val"].shape
 
@@ -214,12 +264,21 @@ class RemoveNopSliceOrViewOpPass(ExportPass):
             else super().call_operator(op, args, kwargs, meta)
         )
 
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
+
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveNopLinalgVectorNormOpPass(ExportPass):
     """
     If the norm is applied over a dimension that is size 1, it can be eliminated.
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
 
     def call_operator(
         self,
@@ -249,7 +308,13 @@ class RemoveNopLinalgVectorNormOpPass(ExportPass):
                 if shape[d] != 1:
                     return super().call_operator(op, args, kwargs, meta)
 
+        self._modified = True
         return t
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -366,6 +431,10 @@ class RemoveNopSelectOpPass(ExportPass):
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveCloneOpPass(ExportPass):
     # If the op is a clone op, return the input and eliminate the op
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
+
     def call_operator(
         self,
         op,  # pyre-ignore
@@ -376,7 +445,13 @@ class RemoveCloneOpPass(ExportPass):
         if op != exir_ops.edge.aten.clone.default:
             return super().call_operator(op, args, kwargs, meta)
 
+        self._modified = True
         return args[0]
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -388,6 +463,10 @@ class RemoveContiguousOpPass(ExportPass):
     original graph module.
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
+
     def call_operator(
         self,
         op,  # pyre-ignore
@@ -398,8 +477,14 @@ class RemoveContiguousOpPass(ExportPass):
         if op != exir_ops.edge.aten.contiguous.default:
             return super().call_operator(op, args, kwargs, meta)
 
+        self._modified = True
         assert len(args) == 1
         return cast(ProxyValue, args[0])
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -408,6 +493,10 @@ class RemoveAliasCopyOpPass(ExportPass):
 
     alias_copy is a no-op and can be removed.
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
 
     def call_operator(
         self,
@@ -419,8 +508,14 @@ class RemoveAliasCopyOpPass(ExportPass):
         if op != exir_ops.edge.aten.alias_copy.default:
             return super().call_operator(op, args, kwargs, meta)
 
+        self._modified = True
         assert len(args) == 1
         return cast(ProxyValue, args[0])
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -432,6 +527,10 @@ class RemoveNopRequantizeOpPass(ExportPass):
     3. the dtypes of the input and output tensors are the same
     then the requantize op is redundant, and can be eliminated
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
 
     def call_operator(
         self,
@@ -454,9 +553,15 @@ class RemoveNopRequantizeOpPass(ExportPass):
             and in_zero_point == out_zero_point
             and in_dtype == out_dtype
         ):
+            self._modified = True
             return cast(ProxyValue, args[0])
 
         return super().call_operator(op, args, kwargs, meta)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -465,6 +570,10 @@ class RemoveNopMulOpPass(ExportPass):
     If a mul op is multiplying two tensors with the same shape and one
     of those tensors is all zeros, return the zero tensor instead.
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
 
     def call_operator(
         self,
@@ -486,12 +595,19 @@ class RemoveNopMulOpPass(ExportPass):
         # Check if one of the inputs is a zero tensor
         if input1.node.target == exir_ops.edge.aten.full.default:
             if input1.node.args[1] == 0:
+                self._modified = True
                 return input1
         elif input2.node.target == exir_ops.edge.aten.full.default:
             if input2.node.args[1] == 0:
+                self._modified = True
                 return input2
 
         return super().call_operator(op, args, kwargs, meta)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -500,6 +616,10 @@ class RemoveNopAddOpPass(ExportPass):
     If an add op is adding two tensors with the same shape and one
     of those tensors is all zeros, return the other tensor instead.
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
 
     def call_operator(
         self,
@@ -521,12 +641,19 @@ class RemoveNopAddOpPass(ExportPass):
         # Check if one of the inputs is a zero tensor
         if input1.node.target == exir_ops.edge.aten.full.default:
             if input1.node.args[1] == 0:
+                self._modified = True
                 return input2
         elif input2.node.target == exir_ops.edge.aten.full.default:
             if input2.node.args[1] == 0:
+                self._modified = True
                 return input1
 
         return super().call_operator(op, args, kwargs, meta)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))

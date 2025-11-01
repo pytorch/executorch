@@ -60,7 +60,9 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([x])
         original = builder.get_graph_module()
-        graph_after_passes = cast(PassResult, RemoveToOpsPass()(original)).graph_module
+        p = RemoveToOpsPass()
+        result = cast(PassResult, p(original))
+        graph_after_passes = result.graph_module
 
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.to.dtype),
@@ -71,6 +73,8 @@ class TestRemoveOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.to.dtype_layout),
             0,
         )
+
+        self.assertTrue(p._modified)
 
     @expand(
         [
@@ -96,13 +100,14 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([right_add])
         original = builder.get_graph_module()
-        graph_after_passes = cast(
-            PassResult, RemoveNopAddOpPass()(original)
-        ).graph_module
+        p = RemoveNopAddOpPass()
+        result = cast(PassResult, p(original))
+        graph_after_passes = result.graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.add.Tensor),
             0,
         )
+        self.assertTrue(p._modified)
 
     @expand(
         [
@@ -128,13 +133,14 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([right_mul])
         original = builder.get_graph_module()
-        graph_after_passes = cast(
-            PassResult, RemoveNopMulOpPass()(original)
-        ).graph_module
+        p = RemoveNopMulOpPass()
+        result = cast(PassResult, p(original))
+        graph_after_passes = result.graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.mul.Tensor),
             0,
         )
+        self.assertTrue(p._modified)
 
     @expand(
         [
@@ -150,13 +156,14 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([alias])
         original = builder.get_graph_module()
-        graph_after_passes = cast(
-            PassResult, RemoveAliasCopyOpPass()(original)
-        ).graph_module
+        p = RemoveAliasCopyOpPass()
+        result = cast(PassResult, p(original))
+        graph_after_passes = result.graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.alias_copy.default),
             0,
         )
+        self.assertTrue(p._modified)
 
     @expand(
         [
@@ -172,13 +179,14 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([detach])
         original = builder.get_graph_module()
-        graph_after_passes = cast(
-            PassResult, RemoveDetachCopyPass()(original)
-        ).graph_module
+        p = RemoveDetachCopyPass()
+        result = cast(PassResult, p(original))
+        graph_after_passes = result.graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.detach_copy.default),
             0,
         )
+        self.assertTrue(p._modified)
 
     @expand(
         [
@@ -212,12 +220,13 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([expand])
         original = builder.get_graph_module()
-        graph_after_passes = cast(
-            PassResult, RemoveNopExpandOpPass()(original)
-        ).graph_module
+        p = RemoveNopExpandOpPass()
+        result = cast(PassResult, p(original))
+        graph_after_passes = result.graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.expand_copy.default), 0
         )
+        self.assertTrue(p._modified)
 
     def test_remove_zero_arg_cat(self) -> None:
         builder = GraphBuilder()
@@ -228,12 +237,13 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([concat])
         original = builder.get_graph_module()
-        graph_after_passes = cast(
-            PassResult, RemoveZeroSizedCatArgsPass()(original)
-        ).graph_module
+        p = RemoveZeroSizedCatArgsPass()
+        result = cast(PassResult, p(original))
+        graph_after_passes = result.graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.cat.default), 0
         )
+        self.assertTrue(p._modified)
 
     def test_remove_clone(self) -> None:
         builder = GraphBuilder()
@@ -246,6 +256,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_after_passes, torch.ops.aten.clone.default), 0
         )
+        self.assertTrue(p._modified)
 
     def test_remove_contiguous(self) -> None:
         builder = GraphBuilder()
@@ -260,6 +271,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_after_passes, torch.ops.aten.contiguous.default), 0
         )
+        self.assertTrue(p._modified)
 
     @expand(
         [
@@ -276,9 +288,11 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([view])
         original = builder.get_graph_module()
+        pass_instance = RemoveNopSliceOrViewOpPass()
         graph_after_passes = cast(
-            PassResult, RemoveNopSliceOrViewOpPass()(original)
+            PassResult, pass_instance(original)
         ).graph_module
+        self.assertTrue(pass_instance._modified)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default), 0
         )
@@ -297,12 +311,33 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([slice_])
         original = builder.get_graph_module()
+        pass_instance = RemoveNopSliceOrViewOpPass()
         graph_after_passes = cast(
-            PassResult, RemoveNopSliceOrViewOpPass()(original)
+            PassResult, pass_instance(original)
         ).graph_module
+        self.assertTrue(pass_instance._modified)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.slice_copy.Tensor), 0
         )
+
+    def test_remove_nop_slice_or_view_not_modified(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(3, 5, dtype=torch.float32))
+        abs_x = builder.call_operator(
+            op=exir_ops.edge.aten.abs.default,
+            args=(x,),
+        )
+        builder.output([abs_x])
+        original = builder.get_graph_module()
+        pass_instance = RemoveNopSliceOrViewOpPass()
+        graph_after_passes = cast(
+            PassResult, pass_instance(original)
+        ).graph_module
+        self.assertFalse(pass_instance._modified)
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.abs.default), 1
+        )
+
 
     def test_remove_nop_select_before_view(self) -> None:
         builder = GraphBuilder()
@@ -454,15 +489,16 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([linalg_vector_norm])
         original = builder.get_graph_module()
-        graph_after_passes = none_throws(
-            RemoveNopLinalgVectorNormOpPass()(original)
-        ).graph_module
+        p = RemoveNopLinalgVectorNormOpPass()
+        result = none_throws(p(original))
+        graph_after_passes = result.graph_module
         self.assertEqual(
             count_node(
                 graph_after_passes, exir_ops.edge.aten.linalg_vector_norm.default
             ),
             0,
         )
+        self.assertTrue(p._modified)
 
     def test_remove_permutes_around_elemwise_ops_add(self) -> None:
         builder = GraphBuilder()
