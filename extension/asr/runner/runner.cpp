@@ -54,11 +54,11 @@ Error AsrRunner::load_tokenizer() {
 
   auto tokenizer =
       ::executorch::extension::llm::load_tokenizer(tokenizer_path_);
-  if (!tokenizer) {
-    ET_LOG(
-        Error, "Failed to create tokenizer from %s", tokenizer_path_.c_str());
-    return Error::Internal;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      tokenizer,
+      Error::Internal,
+      "Failed to create tokenizer from %s",
+      tokenizer_path_.c_str());
 
   tokenizer_ = std::move(tokenizer);
   if (!tokenizer_->is_loaded()) {
