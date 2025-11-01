@@ -392,6 +392,12 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                 cp.Value.Le(lambda deps, dtype, struct: 2**2),
                 cp.Size.Le(lambda deps, r, d: 2**3),
             ]
+        case "leaky_relu.default":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32]),
+                ]
+            )
         case "_softmax.default":
             tensor_constraints.extend(
                 [
@@ -443,6 +449,14 @@ def facto_testcase_gen(  # noqa: C901
                 spec.inspec[index].deps = [0, 1]
                 spec.inspec[index].constraints.extend(
                     [cp.Value.Ge(lambda deps, _: deps[1])]
+                )
+            elif in_spec.name == "negative_slope" and op_name == "leaky_relu.default":
+                # For leaky_relu, negative_slope should be in typical range (0, 1]
+                spec.inspec[index].constraints.extend(
+                    [
+                        cp.Value.Gt(lambda deps, dtype: 0),
+                        cp.Value.Le(lambda deps, dtype: 1.0),
+                    ]
                 )
             else:
                 spec.inspec[index].constraints.extend(
