@@ -70,11 +70,7 @@ install(
 # CUDA-specific AOTI functionality
 set(_aoti_cuda_sources
     runtime/cuda_backend.cpp
-    runtime/shims/memory.cpp
-    runtime/shims/tensor_attribute.cpp
     runtime/guard.cpp
-    runtime/shims/cuda_guard.cpp
-    runtime/shims/int4mm.cu
     runtime/platform/platform.cpp
 )
 add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
@@ -95,10 +91,9 @@ target_link_options(
   aoti_cuda PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
 )
 
-# Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and PyTorch
-# CUDA libraries
+# Link against CUDA::cudart, cuda_tensor_maker, and PyTorch CUDA libraries
 target_link_libraries(
-  aoti_cuda PUBLIC aoti_common cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
+  aoti_cuda PUBLIC executorch cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
 )
 # If you need other CUDA libraries, link them similarly:
 # target_link_libraries(aoti_cuda PUBLIC CUDA::cublas CUDA::cufft ...)
