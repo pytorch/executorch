@@ -5,13 +5,14 @@ This file provides you the instructions to run LLM Decoder model with different 
  1. LLAMA2 Stories 110M
  2. LLAMA3.2 1B
  3. LLAMA3.2 3B
- 4. Gemma 2B
- 5. Gemma3 1B
- 6. Phi4-mini-instruct
- 7. QWEN2.5 0.5B / 1.5B
- 8. QWEN3 0.6B / 1.7B
- 9. SmolLM2 135M
- 10. SmolLM3 3B
+ 4. Codegen2 1B
+ 5. Gemma 2B
+ 6. Gemma3 1B
+ 7. Phi4-mini-instruct
+ 8. QWEN2.5 0.5B / 1.5B
+ 9. QWEN3 0.6B / 1.7B
+ 10. SmolLM2 135M
+ 11. SmolLM3 3B
  
 
 We offer the following modes to execute the model:
@@ -80,6 +81,12 @@ Default example using kv mode.
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-3b_instruct --model_mode kv --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
 ```
 
+#### Codegen2
+Default example using kv mode.
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model codegen2_1b --model_mode kv --max_seq_len 1024 --prompt "def hello_world():" 
+```
+
 #### Gemma 2B
 Default example using hybrid mode
 ```bash
@@ -134,7 +141,6 @@ Default example using kv mode.
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smollm3-3b --model_mode kv --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1
 ```
-
 
 ### KV Cache update mechanism
 We have two distinct mechanisms for updating the key-value (KV) cache, which can be selected at runtime. Shift Pointer and Smart Mask.

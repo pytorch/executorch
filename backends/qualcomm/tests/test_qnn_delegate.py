@@ -5762,6 +5762,67 @@ class TestQNNQuantizedUtils(TestQNN):
 
 
 class TestExampleLLMScript(TestQNN):
+    def test_codegen2_1b(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "def hello_world():"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            prompt,
+            "--temperature",
+            "0",
+            "--decoder_model",
+            "codegen2_1b",
+            "--model_mode",
+            "kv",
+            "--max_seq_len",
+            "128",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        golden_start_with = "def hello_world():"
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.compile_only:
+                    model_out = msg["result"][0]
+                    self.assertTrue(
+                        model_out.startswith(golden_start_with),
+                        f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
+                    )
+                if not self.enable_x86_64:
+                    pte_size = msg["pte_size"]
+                    self.assertLessEqual(pte_size, 1_200_000_000)  # 1200MB
+                if not self.compile_only and not self.enable_x86_64:
+                    self.assertGreaterEqual(msg["inference_speed"], 60)
+
     def test_static_gemma_2b(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
