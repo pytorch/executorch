@@ -8,6 +8,9 @@
 #include "HTP/core/optimize.h"
 #include "HTP/core/simple_reg.h"
 #include "QnnOpPackage.h"
+#include "hexagon_types.h"
+#include "hvx_hexagon_protos.h"
+
 #ifdef __hexagon__
 #include "HAP_farf.h"
 #else /* __hexagon__ */
@@ -175,21 +178,57 @@ GraphStatus examplecustomopImpl(TensorType& out_0, const TensorType& in_0)
           p_output[i]);
     }
   } else if (input_intfc.dtype == DType::QUInt8) {
+    // const uint8_t* p_input = static_cast<const
+    // uint8_t*>(in_0.raw_data_const()); uint8_t* p_output =
+    // static_cast<uint8_t*>(out_0.raw_data()); const int multiplier = 3 *
+    // input_intfc.scale / out_intfc.scale; for (size_t i = 0; i <
+    // input_num_elements; ++i) {
+    //   p_output[i] = multiplier * p_input[i];
+
+    //   FARF(
+    //       ALWAYS,
+    //       "[QNN ExecuTorch Op Package test]"
+    //       "input0[%zu]=%f, multiplier=%d, output[%zu]=%f",
+    //       i,
+    //       p_input[i],
+    //       multiplier,
+    //       i,
+    //       p_output[i]);
+    // }
+
     const uint8_t* p_input = static_cast<const uint8_t*>(in_0.raw_data_const());
     uint8_t* p_output = static_cast<uint8_t*>(out_0.raw_data());
-    const int multiplier = 3 * input_intfc.scale / out_intfc.scale;
-    for (size_t i = 0; i < input_num_elements; ++i) {
-      p_output[i] = multiplier * p_input[i];
+    const float multiplier_f = 3.0f * input_intfc.scale / out_intfc.scale;
+    const int multiplier =
+        static_cast<int>(multiplier_f * 128.0f); // fixed-point scale
 
-      FARF(
-          ALWAYS,
-          "[QNN ExecuTorch Op Package test]"
-          "input0[%zu]=%f, multiplier=%d, output[%zu]=%f",
-          i,
-          p_input[i],
-          multiplier,
-          i,
-          p_output[i]);
+    const HVX_Vector* in_vec = reinterpret_cast<const HVX_Vector*>(p_input);
+    HVX_Vector* out_vec = reinterpret_cast<HVX_Vector*>(p_output);
+
+    HVX_Vector v_mult = Q6_V_vsplat_R(multiplier & 0xFF);
+    HVX_Vector vzero = Q6_V_vzero();
+
+    const size_t vec_elems = 128; // 128 bytes per HVX vector
+    const size_t nvecs = input_num_elements / vec_elems;
+
+    for (size_t i = 0; i < nvecs; ++i) {
+      HVX_Vector vin = Q6_V_vldu_A(in_vec + i);
+      HVX_Vector vout;
+
+#if defined(__HEXAGON_ARCH__)
+      // use available multiply intrinsic
+      vout = Q6_Vub_vmpy_VubRb_s1_rnd_sat(vin, v_mult);
+#else
+      // fallback scalar multiply for x86 simulation
+      alignas(128) uint8_t tmp_in[128], tmp_out[128];
+      memcpy(tmp_in, p_input + i * 128, 128);
+      for (int j = 0; j < 128; ++j)
+        tmp_out[j] = std::min(255, (tmp_in[j] * multiplier) >> 7);
+      memcpy(p_output + i * 128, tmp_out, 128);
+      continue;
+#endif
+
+      Q6_V_vstu_A(out_vec + i, vout);
     }
   }
 
