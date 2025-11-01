@@ -269,7 +269,7 @@ setup_environment() {
     # Install ExecuTorch
     log_info "Installing ExecuTorch dependencies..."
     if [[ -f "./install_executorch.sh" ]]; then
-        ./install_executorch.sh
+        ./install_executorch.sh --use-pt-pinned-commit
     else
         log_error "./install_executorch.sh not found"
         log_info "Make sure you're in the ExecuTorch root directory"
@@ -450,9 +450,14 @@ build_executorch_core() {
     fi
 
     log_info "Building ExecuTorch core libraries..."
+    # log info
+    log_info "WORKSPACE_DIR: $WORKSPACE_DIR"
+    log_info "CMAKE_OUT_DIR: $CMAKE_OUT_DIR"
+    log_info "PWD: $(pwd)"
 
     # Configure
     cmake --preset llm \
+        -B "$CMAKE_OUT_DIR" \
         -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN_FILE" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="$CMAKE_OUT_DIR" \
