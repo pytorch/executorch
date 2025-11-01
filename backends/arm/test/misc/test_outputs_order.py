@@ -79,7 +79,7 @@ def _read_tosa_outputs(tosa_path: Path):
 
 
 @pytest.mark.parametrize("batch_size", [1, 4])
-def test_network_output_order_and_restore(tmp_path, batch_size):
+def test_network_output_order_and_restore(batch_size):
     model = Network(batch_norm=True).eval()
     # Prepare spec
     spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
@@ -97,7 +97,7 @@ def test_network_output_order_and_restore(tmp_path, batch_size):
     model = convert_pt2e(model)
     # Export to aten dialect
     aten_gm = torch.export.export(model, args=(dummy,), strict=True)
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir="") as tmpdir:
         art_dir = Path(tmpdir)
         part = TOSAPartitioner(
             TosaCompileSpec(spec).dump_intermediate_artifacts_to(str(art_dir))
