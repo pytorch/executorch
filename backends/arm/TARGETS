@@ -84,7 +84,6 @@ runtime.python_library(
         "fbsource//third-party/tosa_tools:tosa",
         "//executorch/backends/arm/operators:node_visitor",
         "//executorch/backends/arm/tosa:mapping",
-        "//executorch/backends/arm/tosa:quant_utils",
         "//executorch/backends/arm/tosa:utils",
         "//executorch/exir:lib",
     ],
