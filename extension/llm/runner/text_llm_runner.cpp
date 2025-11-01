@@ -247,7 +247,7 @@ Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
   Error err = generate(prompt, config);
 
   // Reset stats after warmup, not resetting the std::unique_ptr!
-  stats_->reset();
+  reset();
   return err;
 }
 

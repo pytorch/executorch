@@ -40,7 +40,12 @@ DEFINE_double(
 DEFINE_int32(
     seq_len,
     128,
-    "Total number of tokens to generate (prompt + output). Defaults to max_seq_len. If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
+    "DEPRECATED: Please use max_seq_len instead. Total number of tokens to generate (prompt + output). Defaults to max_seq_len. If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
+
+DEFINE_int32(
+    max_new_tokens,
+    -1,
+    "Total number of tokens to generate, excluding the prompt, will be capped by max_seq_len - # prompt tokens.");
 
 DEFINE_int32(
     cpu_threads,
@@ -122,20 +127,33 @@ int32_t main(int32_t argc, char** argv) {
   }
 
   if (warmup) {
-    auto error = runner->warmup(prompt, /*max_new_tokens=*/seq_len);
+    int32_t warmup_max_new_tokens =
+        FLAGS_max_new_tokens != -1 ? FLAGS_max_new_tokens : seq_len;
+    auto error =
+        runner->warmup(prompt, /*max_new_tokens=*/warmup_max_new_tokens);
     if (error != executorch::runtime::Error::Ok) {
       ET_LOG(Error, "Failed to warmup llama runner");
       return 1;
     }
-    // reset kv cache pos to 0
-    runner->reset();
   }
   // generate
   executorch::extension::llm::GenerationConfig config{
-      .seq_len = seq_len, .temperature = temperature};
+      .temperature = temperature};
+
+  if (FLAGS_max_new_tokens != -1) {
+    config.max_new_tokens = FLAGS_max_new_tokens;
+  } else {
+    ET_LOG(
+        Info,
+        "max_new_tokens not provided, falling back to seq_len=%d. "
+        "Consider using --max_new_tokens instead of --seq_len for specifying generation length.",
+        seq_len);
+    config.seq_len = seq_len;
+  }
+
   auto error = runner->generate(prompt, config);
   if (error != executorch::runtime::Error::Ok) {
-    ET_LOG(Error, "Failed to warmup llama runner");
+    ET_LOG(Error, "Failed to run llama runner");
     return 1;
   }
 
