@@ -17,6 +17,7 @@ from executorch.exir._warnings import experimental
 
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassType
 from torchao.core.config import AOBaseConfig
 from torchao.quantization.pt2e.quantizer import Quantizer
@@ -122,6 +123,7 @@ class LoweringRecipe:
         edge_transform_passes: Optional list of callables that take (method_name: str, exported_program: ExportedProgram) as arguments
                                and return a list of passes (PassType) to be executed during lowering stages.
         edge_compile_config: Optional edge compilation configuration
+        post_to_backend_passes: Optional list of passes to run after all partitioners have ran.
     """
 
     partitioners: Optional[List[Partitioner]] = None
@@ -130,6 +132,7 @@ class LoweringRecipe:
     ) = None
     # pyre-ignore[11]: Type not defined
     edge_compile_config: Optional[EdgeCompileConfig] = None
+    post_to_backend_passes: list[PassType | type[ExportPass]] | None = None
 
 
 @experimental(
