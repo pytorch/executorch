@@ -237,8 +237,8 @@ class RewriteConv2dPass(ArmPass):
                 pad[3],
                 dilation[1],
             )
-
-            if bias is None:
+            has_bias = bias is not None
+            if not has_bias:
                 bias = self._add_bias(graph_module, node, weight)
 
             if self._is_depthwise_conv2d(node):
@@ -278,14 +278,20 @@ class RewriteConv2dPass(ArmPass):
             if (
                 tosa_node_fake_tensor.dtype == torch.int32
                 and input_fake_tensor.dtype == torch.int8
-            ) or (
-                tosa_node_fake_tensor.dtype == torch.int32
-                and input_fake_tensor.dtype == torch.int16
             ):
                 output_rescale = self.insert_output_rescale(graph_module, tosa_op)
                 node.replace_all_uses_with(output_rescale)
-                if input_fake_tensor.dtype == torch.int16:
-                    tosa_op.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
+            elif (
+                tosa_node_fake_tensor.dtype == torch.int32
+                and input_fake_tensor.dtype == torch.int16
+            ):
+                has_bias = len(node.meta["input_qparams"]) > 2
+                if not has_bias:
+                    output_rescale = self.insert_output_rescale(graph_module, tosa_op)
+                    node.replace_all_uses_with(output_rescale)
+                else:
+                    node.replace_all_uses_with(tosa_op)
+                tosa_op.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
             else:
                 node.replace_all_uses_with(tosa_op)
 
