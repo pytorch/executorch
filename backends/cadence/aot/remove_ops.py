@@ -191,6 +191,11 @@ class RemoveNopSliceOrViewOpPass(ExportPass):
     Remove slice ops that are more like views, and view ops that do not change the shape
     """
 
+    @staticmethod
+    def _is_nop(input_shape: tuple[int, ...], output_shape: tuple[int, ...]) -> bool:
+        # If both arg_shape and out_shape are the same, this slice is a nop
+        return input_shape == output_shape
+
     def call_operator(
         self,
         op,  # pyre-ignore
@@ -207,12 +212,26 @@ class RemoveNopSliceOrViewOpPass(ExportPass):
         arg0 = cast(ProxyValue, args[0])
         out_shape = meta["val"].shape
 
-        # If both arg_shape and out_shape are the same, this slice is a nop
         return (
             arg0
-            if arg0.to_tensor().shape == out_shape
+            if self._is_nop(arg0.to_tensor().shape, out_shape)
             else super().call_operator(op, args, kwargs, meta)
         )
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        for target in [
+            exir_ops.edge.aten.slice_copy.Tensor,
+            exir_ops.edge.aten.view_copy.default,
+        ]:
+            for node in graph_module.graph.find_nodes(
+                op="call_function", target=target
+            ):
+                input_node = node.args[0]
+                assert isinstance(input_node, torch.fx.Node)
+                if self._is_nop(input_node.meta["val"].shape, node.meta["val"].shape):
+                    return super().call(graph_module)
+
+        return PassResult(graph_module, False)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
