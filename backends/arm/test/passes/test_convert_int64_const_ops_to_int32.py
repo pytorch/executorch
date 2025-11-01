@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple, Union
+from typing import Callable, ClassVar, Dict, Tuple, Union
 
 import pytest
 
@@ -22,6 +22,10 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 input_t1 = Tuple[torch.Tensor]  # Input x
 input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
+Scalar = Union[bool, float, int]
+ArangeNoneParam = Tuple[Callable[[], input_t1], Tuple[Scalar, Scalar, Scalar]]
+FullNoneParam = Tuple[Callable[[], input_t1], Tuple[Tuple[int, ...], Scalar]]
+
 
 #####################################################
 ## Test arange(dtype=int64) -> arange(dtype=int32) ##
@@ -29,11 +33,10 @@ input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
 
 class ArangeDefaultIncrementViewLessThan(torch.nn.Module):
-
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return (torch.arange(10, dtype=torch.int64) + 1).view(-1, 1) < x
 
-    test_data = {
+    test_data: ClassVar[Dict[str, input_t1]] = {
         "randint": (
             torch.randint(
                 0,
@@ -46,7 +49,9 @@ class ArangeDefaultIncrementViewLessThan(torch.nn.Module):
 
 
 @common.parametrize("test_data", ArangeDefaultIncrementViewLessThan.test_data)
-def test_convert_arange_default_int64_dtype_to_int32_pass_tosa_FP(test_data: input_t1):
+def test_convert_arange_default_int64_dtype_to_int32_pass_tosa_FP(
+    test_data: input_t1,
+) -> None:
     module = ArangeDefaultIncrementViewLessThan()
     aten_ops_checks = [
         "torch.ops.aten.lt.Tensor",
@@ -67,7 +72,9 @@ def test_convert_arange_default_int64_dtype_to_int32_pass_tosa_FP(test_data: inp
 
 
 @common.parametrize("test_data", ArangeDefaultIncrementViewLessThan.test_data)
-def test_convert_arange_default_int64_dtype_to_int32_pass_tosa_INT(test_data: input_t1):
+def test_convert_arange_default_int64_dtype_to_int32_pass_tosa_INT(
+    test_data: input_t1,
+) -> None:
     module = ArangeDefaultIncrementViewLessThan()
     aten_ops_checks = [
         "torch.ops.aten.lt.Tensor",
@@ -88,11 +95,10 @@ def test_convert_arange_default_int64_dtype_to_int32_pass_tosa_INT(test_data: in
 
 
 class ArangeStartIncrementViewLessThan(torch.nn.Module):
-
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return (torch.arange(0, 10, dtype=torch.int64) + 1).view(-1, 1) < x
 
-    test_data = {
+    test_data: ClassVar[Dict[str, input_t1]] = {
         "randint": (
             torch.randint(
                 0,
@@ -105,7 +111,9 @@ class ArangeStartIncrementViewLessThan(torch.nn.Module):
 
 
 @common.parametrize("test_data", ArangeStartIncrementViewLessThan.test_data)
-def test_convert_arange_start_int64_dtype_to_int32_pass_tosa_FP(test_data: input_t1):
+def test_convert_arange_start_int64_dtype_to_int32_pass_tosa_FP(
+    test_data: input_t1,
+) -> None:
     module = ArangeStartIncrementViewLessThan()
     aten_ops_checks = [
         "torch.ops.aten.lt.Tensor",
@@ -126,7 +134,9 @@ def test_convert_arange_start_int64_dtype_to_int32_pass_tosa_FP(test_data: input
 
 
 @common.parametrize("test_data", ArangeStartIncrementViewLessThan.test_data)
-def test_convert_arange_start_int64_dtype_to_int32_pass_tosa_INT(test_data: input_t1):
+def test_convert_arange_start_int64_dtype_to_int32_pass_tosa_INT(
+    test_data: input_t1,
+) -> None:
     module = ArangeStartIncrementViewLessThan()
     aten_ops_checks = [
         "torch.ops.aten.lt.Tensor",
@@ -147,11 +157,10 @@ def test_convert_arange_start_int64_dtype_to_int32_pass_tosa_INT(test_data: inpu
 
 
 class ArangeStartStepIncrementViewLessThan(torch.nn.Module):
-
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return (torch.arange(0, 10, 2, dtype=torch.int64) + 1).view(-1, 1) < x
 
-    test_data = {
+    test_data: ClassVar[Dict[str, input_t1]] = {
         "randint": (
             torch.randint(
                 0,
@@ -166,7 +175,7 @@ class ArangeStartStepIncrementViewLessThan(torch.nn.Module):
 @common.parametrize("test_data", ArangeStartStepIncrementViewLessThan.test_data)
 def test_convert_arange_start_step_int64_dtype_to_int32_pass_tosa_FP(
     test_data: input_t1,
-):
+) -> None:
     module = ArangeStartStepIncrementViewLessThan()
     aten_ops_checks = [
         "torch.ops.aten.lt.Tensor",
@@ -189,7 +198,7 @@ def test_convert_arange_start_step_int64_dtype_to_int32_pass_tosa_FP(
 @common.parametrize("test_data", ArangeStartStepIncrementViewLessThan.test_data)
 def test_convert_arange_start_step_int64_dtype_to_int32_pass_tosa_INT(
     test_data: input_t1,
-):
+) -> None:
     module = ArangeStartStepIncrementViewLessThan()
     aten_ops_checks = [
         "torch.ops.aten.lt.Tensor",
@@ -225,7 +234,7 @@ class ArangeAddDtypeNone(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.arange(*self.args) + x
 
-    test_data = {
+    test_data: ClassVar[Dict[str, ArangeNoneParam]] = {
         "int64": (lambda: (torch.randn(10, 1),), (0, 10, 1)),
         "float32_start": (lambda: (torch.randn(10, 1),), (0.0, 10, 1)),
         "float32_stop": (lambda: (torch.randn(10, 1),), (0, 10.0, 1)),
@@ -238,11 +247,11 @@ class ArangeAddDtypeNone(torch.nn.Module):
 
 
 @common.parametrize("test_data", ArangeAddDtypeNone.test_data)
-def test_arange_dtype_none_tosa_FP(test_data):
-    input_data, init_data = test_data
+def test_arange_dtype_none_tosa_FP(test_data: ArangeNoneParam) -> None:
+    input_factory, init_data = test_data
     pipeline = TosaPipelineFP[input_t1](
         ArangeAddDtypeNone(*init_data),
-        input_data(),
+        input_factory(),
         ArangeAddDtypeNone.aten_op,
         ArangeAddDtypeNone.exir_op,
     )
@@ -250,11 +259,11 @@ def test_arange_dtype_none_tosa_FP(test_data):
 
 
 @common.parametrize("test_data", ArangeAddDtypeNone.test_data)
-def test_arange_dtype_none_tosa_INT(test_data):
-    input_data, init_data = test_data
+def test_arange_dtype_none_tosa_INT(test_data: ArangeNoneParam) -> None:
+    input_factory, init_data = test_data
     pipeline = TosaPipelineINT[input_t1](
         ArangeAddDtypeNone(*init_data),
-        input_data(),
+        input_factory(),
         ArangeAddDtypeNone.aten_op,
         ArangeAddDtypeNone.exir_op,
     )
@@ -268,8 +277,7 @@ def test_arange_dtype_none_tosa_INT(test_data):
 
 
 class FullIncrementViewMulXLessThanY(torch.nn.Module):
-
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return (
             (
                 torch.full(
@@ -286,7 +294,7 @@ class FullIncrementViewMulXLessThanY(torch.nn.Module):
             * x
         ) < y
 
-    test_data = {
+    test_data: ClassVar[Dict[str, input_t2]] = {
         "randint": (
             torch.randint(
                 0,
@@ -305,7 +313,9 @@ class FullIncrementViewMulXLessThanY(torch.nn.Module):
 
 
 @common.parametrize("test_data", FullIncrementViewMulXLessThanY.test_data)
-def test_convert_full_int64_dtype_to_int32_pass_tosa_FP(test_data: input_t1):
+def test_convert_full_int64_dtype_to_int32_pass_tosa_FP(
+    test_data: input_t2,
+) -> None:
     """
     There are four int64 placeholders in the original graph:
     1. _lifted_tensor_constant0: 1
@@ -347,7 +357,9 @@ def test_convert_full_int64_dtype_to_int32_pass_tosa_FP(test_data: input_t1):
 
 
 @common.parametrize("test_data", FullIncrementViewMulXLessThanY.test_data)
-def test_convert_full_int64_dtype_to_int32_pass_tosa_INT(test_data: input_t1):
+def test_convert_full_int64_dtype_to_int32_pass_tosa_INT(
+    test_data: input_t2,
+) -> None:
     """
     For INT profile, _lifted_tensor_constant0 is still int64 after applying ConvertInt64ConstOpsToInt32Pass().
     And an int64->int32 cast is inserted at the beginning of the graph.
@@ -380,8 +392,7 @@ def test_convert_full_int64_dtype_to_int32_pass_tosa_INT(test_data: input_t1):
 
 
 class RejectFullIncrementViewMulXLessThanY(torch.nn.Module):
-
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return (
             (
                 torch.full(
@@ -398,7 +409,7 @@ class RejectFullIncrementViewMulXLessThanY(torch.nn.Module):
             * x
         ) < y
 
-    test_data = {
+    test_data: ClassVar[Dict[str, input_t2]] = {
         "randint": (
             torch.randint(
                 0,
@@ -420,7 +431,9 @@ class RejectFullIncrementViewMulXLessThanY(torch.nn.Module):
 @pytest.mark.xfail(
     reason="MLETORCH-1254: Add operator support check for aten.arange and aten.full"
 )
-def test_reject_convert_full_int64_dtype_to_int32_pass_tosa_FP(test_data: input_t1):
+def test_reject_convert_full_int64_dtype_to_int32_pass_tosa_FP(
+    test_data: input_t2,
+) -> None:
     module = RejectFullIncrementViewMulXLessThanY()
     aten_ops_checks = [
         "torch.ops.aten.full.default",
@@ -469,11 +482,11 @@ class AddConstFullDtypeNone(torch.nn.Module):
 
 
 @common.parametrize("test_data", AddConstFullDtypeNone.test_data)
-def test_full_dtype_none_tosa_FP(test_data):
-    input_data, init_data = test_data
+def test_full_dtype_none_tosa_FP(test_data: FullNoneParam) -> None:
+    input_factory, init_data = test_data
     pipeline = TosaPipelineFP[input_t1](
         AddConstFullDtypeNone(*init_data),
-        input_data(),
+        input_factory(),
         aten_op=[],
         exir_op=AddConstFullDtypeNone.exir_op,
     )
@@ -481,11 +494,11 @@ def test_full_dtype_none_tosa_FP(test_data):
 
 
 @common.parametrize("test_data", AddConstFullDtypeNone.test_data_bool)
-def test_full_dtype_none_tosa_FP_bool(test_data):
-    input_data, init_data = test_data
+def test_full_dtype_none_tosa_FP_bool(test_data: FullNoneParam) -> None:
+    input_factory, init_data = test_data
     pipeline = TosaPipelineFP[input_t1](
         AddConstFullDtypeNone(*init_data),
-        input_data(),
+        input_factory(),
         aten_op=[],
         exir_op=AddConstFullDtypeNone.exir_op,
     )
@@ -501,9 +514,10 @@ def test_full_dtype_none_tosa_FP_bool(test_data):
 )
 def test_full_dtype_none_tosa_INT(test_data):
     input_data, init_data = test_data
+    input_factory, init_data = test_data
     pipeline = TosaPipelineINT[input_t1](
         AddConstFullDtypeNone(*init_data),
-        input_data(),
+        input_factory(),
         aten_op=[],
         exir_op=AddConstFullDtypeNone.exir_op,
     )

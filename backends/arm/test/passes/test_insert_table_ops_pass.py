@@ -3,8 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
-from typing import Tuple
+from typing import ClassVar, Dict, Tuple
 
 import torch
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
@@ -18,16 +17,16 @@ input_t = Tuple[torch.Tensor]  # Input x
 
 
 class Sigmoid(torch.nn.Module):
-    test_data = {
+    test_data: ClassVar[Dict[str, input_t]] = {
         "rand": (torch.rand(4),),
     }
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x.sigmoid()
 
 
 @common.parametrize("test_data", Sigmoid.test_data)
-def test_insert_table_tosa_INT(test_data: input_t):
+def test_insert_table_tosa_INT(test_data: input_t) -> None:
     module = Sigmoid()
     pipeline = PassPipeline[input_t](
         module,
