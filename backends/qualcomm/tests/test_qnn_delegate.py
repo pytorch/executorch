@@ -5841,8 +5841,6 @@ class TestExampleLLMScript(TestQNN):
             str(self.port),
             "--prompt",
             f"{prompt}",
-            "--ptq",
-            "16a4w_block",
             "--temperature",
             "0",
             "--decoder_model",
@@ -5856,7 +5854,6 @@ class TestExampleLLMScript(TestQNN):
             "wikitext",
             "--limit",
             "1",
-            "--enable_masked_softmax",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
