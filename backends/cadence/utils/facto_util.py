@@ -347,7 +347,9 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
             if index == 1:  # Only apply zero-prevention to divisor
                 tensor_constraints.extend(
                     [
-                        cp.Value.Ne(lambda deps, dtype, struct: 0),  # Prevent division by zero
+                        cp.Value.Ne(
+                            lambda deps, dtype, struct: 0
+                        ),  # Prevent division by zero
                         cp.Value.Le(lambda deps, dtype, struct: 2**3),
                         cp.Size.Le(lambda deps, r, d: 2**3),
                         cp.Rank.Le(lambda deps: 2**2),
@@ -382,7 +384,9 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Dtype.In(lambda deps: [torch.int64, torch.int32, torch.float32]),
                     cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
                     cp.Value.Le(lambda deps, dtype, struct: 2**4),
-                    cp.Value.Ne(lambda deps, dtype, struct: 0),  # Prevent division by zero
+                    cp.Value.Ne(
+                        lambda deps, dtype, struct: 0
+                    ),  # Prevent division by zero
                     cp.Rank.Ge(lambda deps: 1),
                     cp.Rank.Eq(lambda deps: deps[0].dim()),
                     cp.Size.Eq(lambda deps, r, d: fn.safe_size(deps[0], d)),
