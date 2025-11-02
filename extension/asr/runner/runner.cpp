@@ -56,7 +56,7 @@ Error AsrRunner::load_tokenizer() {
       ::executorch::extension::llm::load_tokenizer(tokenizer_path_);
   ET_CHECK_OR_RETURN_ERROR(
       tokenizer,
-      Error::Internal,
+      Internal,
       "Failed to create tokenizer from %s",
       tokenizer_path_.c_str());
 
