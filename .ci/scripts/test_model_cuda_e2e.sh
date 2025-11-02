@@ -1,7 +1,11 @@
 #!/bin/bash
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
-# Test CUDA model end-to-end
+# Test CUDA model end-to-end, need to run .ci/scripts/export_model_cuda_artifact.sh first
 
 show_help() {
   cat << EOF
@@ -81,7 +85,7 @@ case "$HF_MODEL" in
     RUNNER_PATH="voxtral"
     EXPECTED_OUTPUT="poem"
     PREPROCESSOR="voxtral_preprocessor.pte"
-    TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main"
+    TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main" # @lint-ignore
     TOKENIZER_FILE="tekken.json"
     AUDIO_URL="https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
     AUDIO_FILE="poem.wav"
@@ -93,7 +97,7 @@ case "$HF_MODEL" in
     RUNNER_PATH="whisper"
     EXPECTED_OUTPUT="Mr. Quilter"
     PREPROCESSOR="whisper_preprocessor.pte"
-    TOKENIZER_URL="https://huggingface.co/openai/whisper-small/resolve/main"
+    TOKENIZER_URL="https://huggingface.co/openai/whisper-small/resolve/main" # @lint-ignore
     TOKENIZER_FILE=""
     AUDIO_URL=""
     AUDIO_FILE="output.wav"
@@ -105,7 +109,7 @@ case "$HF_MODEL" in
     RUNNER_PATH="gemma3"
     EXPECTED_OUTPUT="chip"
     PREPROCESSOR=""
-    TOKENIZER_URL="https://huggingface.co/google/gemma-3-4b-it/resolve/main"
+    TOKENIZER_URL="https://huggingface.co/google/gemma-3-4b-it/resolve/main" # @lint-ignore
     TOKENIZER_FILE=""
     AUDIO_URL=""
     AUDIO_FILE=""
