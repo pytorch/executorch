@@ -58,11 +58,11 @@ template <> struct DeviceTraits<executorch::backends::cuda::c10::DeviceType::CUD
   static void *allocate(size_t nbytes, const executorch::backends::cuda::c10::Device &device) {
     executorch::backends::cuda::slim::cuda::CUDAGuard guard(device);
     void *data = nullptr;
-    STANDALONE_CUDA_CHECK(cudaMalloc(&data, nbytes));
+    STANDALONE_CUDA_CHECK(cudaMallocAsync(&data, nbytes, cudaStreamDefault));
     return data;
   }
 
-  static void free(void *ptr) { STANDALONE_CUDA_CHECK_WARN(cudaFree(ptr)); }
+  static void free(void *ptr) { STANDALONE_CUDA_CHECK_WARN(cudaFreeAsync(ptr, cudaStreamDefault)); }
 
   static void memcpy(void *dst, const void *src, size_t nbytes,
                      const executorch::backends::cuda::c10::Device &dst_device,
