@@ -237,6 +237,7 @@ def parametrize(
     arg_name: str,
     test_data: dict[str, Any],
     xfails: dict[str, xfail_type] | None = None,
+    skips: dict[str, str] | None = None,
     strict: bool = True,
     flakies: dict[str, int] | None = None,
 ) -> Decorator:
@@ -249,6 +250,8 @@ def parametrize(
     """
     if xfails is None:
         xfails = {}
+    if skips is None:
+        skips = {}
     if flakies is None:
         flakies = {}
 
@@ -259,6 +262,9 @@ def parametrize(
             if id in flakies:
                 # Mark this parameter as flaky with given reruns
                 marker = (pytest.mark.flaky(reruns=flakies[id]),)
+            elif id in skips:
+                # fail markers do not work with 'buck' based ci, so use skip instead
+                marker = (pytest.mark.skip(reason=skips[id]),)
             elif id in xfails:
                 xfail_info = xfails[id]
                 reason = ""
