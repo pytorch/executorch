@@ -13,6 +13,7 @@
 
 #include <executorch/runtime/platform/compiler.h>
 #include <sys/stat.h>
+#include <cstdint>
 
 #ifndef _WIN32
 
@@ -75,8 +76,8 @@ ET_INLINE int get_file_stat(int fd, size_t* out_size) {
 /**
  * Platform-specific mmap offset type conversion.
  */
-ET_INLINE std::uint64_t get_mmap_offset(size_t offset) {
-  return static_cast<std::uint64_t>(offset);
+ET_INLINE uint64_t get_mmap_offset(size_t offset) {
+  return static_cast<uint64_t>(offset);
 }
 
 #endif
