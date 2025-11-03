@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
+from typing import ClassVar, Dict, Tuple
 
 import torch
 from executorch.backends.arm._passes import FoldAndAnnotateQParamsPass
@@ -15,16 +15,16 @@ input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
 
 class SimpleQuantizeModel(torch.nn.Module):
-    test_data = {
+    test_data: ClassVar[Dict[str, input_t]] = {
         "rand": (torch.rand(1, 1280, 7, 7), torch.rand(1, 1280, 7, 7)),
     }
 
-    def forward(self, x, y):
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return x + torch.max((x + x), (y + y))
 
 
 @common.parametrize("test_data", SimpleQuantizeModel.test_data)
-def test_fold_qdq_pass_tosa_INT(test_data: input_t):
+def test_fold_qdq_pass_tosa_INT(test_data: input_t) -> None:
     """
     Tests the FoldAndAnnotateQParamsPass which folds dq/q nodes into
     the node and stores the quantization parameters in meta.

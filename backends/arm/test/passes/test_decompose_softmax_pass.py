@@ -22,7 +22,7 @@ class Softmax(torch.nn.Module):
         super(Softmax, self).__init__()
         self.softmax = torch.nn.Softmax(dim=1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.softmax(x)
         return x
 
@@ -39,7 +39,7 @@ class SoftmaxLog(torch.nn.Module):
         super(SoftmaxLog, self).__init__()
         self.softmax = torch.nn.LogSoftmax(dim=1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.softmax(x)
         return x
 

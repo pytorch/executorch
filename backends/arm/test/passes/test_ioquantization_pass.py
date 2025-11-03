@@ -14,7 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import EthosU55PipelineIN
 from executorch.exir.passes.quantize_io_pass import QuantizeInputs, QuantizeOutputs
 
 
-input_t = Tuple[torch.Tensor]
+input_t = Tuple[torch.Tensor, torch.Tensor]
 
 
 class SimpleModel(torch.nn.Module):

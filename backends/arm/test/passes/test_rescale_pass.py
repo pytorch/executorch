@@ -174,7 +174,7 @@ def test_quantized_rescale_tosa_bi(test_data: tuple[torch.Tensor, torch.Tensor])
 
 @common.parametrize("test_data", RescaleNetwork.test_data)
 @common.XfailIfNoCorstone300
-def test_quantized_rescale_u55(test_data: tuple[torch.Tensor, torch.Tensor]):
+def test_quantized_rescale_u55(test_data: input_t):
     """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
     need the InsertRescalesPass, make sure that they play nicely together."""
     module = RescaleNetwork()
@@ -189,7 +189,7 @@ def test_quantized_rescale_u55(test_data: tuple[torch.Tensor, torch.Tensor]):
 
 @common.parametrize("test_data", RescaleNetwork.test_data)
 @common.XfailIfNoCorstone320
-def test_quantized_rescale_u85(test_data: tuple[torch.Tensor, torch.Tensor]):
+def test_quantized_rescale_u85(test_data: input_t):
     """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
     need the InsertRescalesPass, make sure that they play nicely together."""
     module = RescaleNetwork()
