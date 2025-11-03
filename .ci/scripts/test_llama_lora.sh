@@ -55,7 +55,7 @@ cmake_build_llama_runner
 # Constants.
 RUNTIME_ARGS="--tokenizer_path=${DOWNLOADED_PATH}/tokenizer.model --temperature=0 --seq_len=20 --warmup=1"
 PROMPT="What happens if you eat watermelon seeds?"
-EXPECTED_PREFIX="What happens if you eat watermelon seeds? Watermelon seeds are a good source of vitamin C,"
+EXPECTED_PREFIX="What happens if you eat watermelon seeds? Watermelon seeds are a good source of vitamin C and"
 
 # Export LoRA PTE file.
 MODEL_NAME="llama_3_2_1B_lora"
@@ -94,7 +94,7 @@ else
   exit 1
 fi
 
-# Export LoRA PTE, PTD file.
+# Export LoRA PTE, foundation PTD file.
 MODEL_SEPARATE="${MODEL_NAME}_separate"
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
@@ -114,7 +114,7 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
 NOW=$(date +"%H:%M:%S")
 echo "Starting to run llama runner at ${NOW}"
 # shellcheck source=/dev/null
-cmake-out/examples/models/llama/llama_main --model_path=${MODEL_SEPARATE}.pte --data_path=${MODEL_SEPARATE}.ptd --prompt="${PROMPT}" ${RUNTIME_ARGS} > result2.txt
+cmake-out/examples/models/llama/llama_main --model_path=${MODEL_SEPARATE}.pte --data_paths=${MODEL_SEPARATE}.ptd --prompt="${PROMPT}" ${RUNTIME_ARGS} > result2.txt
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
@@ -122,8 +122,8 @@ RESULT2=$(cat result2.txt)
 if [[ "${RESULT2}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT2}"
+  # Do not clean up files if test passes, as they're re-used in the next test.
   echo "Success"
-  cleanup_files
 else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT2}"
@@ -131,3 +131,45 @@ else
   cleanup_files
   exit 1
 fi
+
+# Export LoRA PTE, LoRA PTD, foundation PTD file.
+MODEL_PROGRAM_ONLY="${MODEL_NAME}_program"
+MODEL_LORA_WEIGHTS="lora_weights"
+MODEL_FOUNDATION_WEIGHTS="foundation_weights"
+$PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
+    base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
+    base.params="${DOWNLOADED_PATH}/params.json" \
+    base.adapter_checkpoint="${DOWNLOADED_PATH}/adapter_model.pt" \
+    base.adapter_config="${DOWNLOADED_PATH}/adapter_config.json" \
+    base.tokenizer_path="${DOWNLOADED_PATH}/tokenizer.model" \
+    model.use_kv_cache=true \
+    model.use_sdpa_with_kv_cache=true \
+    model.dtype_override="fp32" \
+    backend.xnnpack.enabled=true \
+    backend.xnnpack.extended_ops=true \
+    export.output_name="${MODEL_PROGRAM_ONLY}.pte" \
+    export.foundation_weights_file="${MODEL_FOUNDATION_WEIGHTS}.ptd" \
+    export.lora_weights_file="${MODEL_LORA_WEIGHTS}.ptd"
+
+# Run llama runner.
+NOW=$(date +"%H:%M:%S")
+echo "Starting to run llama runner at ${NOW}"
+# shellcheck source=/dev/null
+cmake-out/examples/models/llama/llama_main --model_path=${MODEL_PROGRAM_ONLY}.pte --data_paths="${MODEL_FOUNDATION_WEIGHTS}.ptd,${MODEL_LORA_WEIGHTS}.ptd" --prompt="${PROMPT}" ${RUNTIME_ARGS} > result3.txt
+NOW=$(date +"%H:%M:%S")
+echo "Finished at ${NOW}"
+
+RESULT3=$(cat result3.txt)
+if [[ "${RESULT3}" == "${EXPECTED_PREFIX}"* ]]; then
+  echo "Expected result prefix: ${EXPECTED_PREFIX}"
+  echo "Actual result: ${RESULT3}"
+  echo "Success"
+else
+  echo "Expected result prefix: ${EXPECTED_PREFIX}"
+  echo "Actual result: ${RESULT3}"
+  echo "Failure; results not the same"
+  cleanup_files
+  exit 1
+fi
+
+cleanup_files

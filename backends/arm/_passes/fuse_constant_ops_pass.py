@@ -8,6 +8,7 @@ from typing import Set, Type
 
 import torch._export.utils
 import torch.fx
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_constant_placeholder_kind,
     get_first_fake_tensor,
@@ -29,7 +30,7 @@ from torch.export.graph_signature import InputKind
 logger = logging.getLogger(__name__)
 
 
-class FuseConstantArgsPass(ExportPass):
+class FuseConstantArgsPass(ArmPass):
     """
     Fuses ops with only placeholder parameters into one placeholder parameter node with the op
     pre-calulcated on its data.
@@ -114,6 +115,7 @@ class FuseConstantArgsPass(ExportPass):
             if node.op != "call_function":
                 continue
             if node.target in [
+                exir_ops.backend.tosa.MATMUL.default,
                 exir_ops.backend.tosa.RESCALE.default,
                 exir_ops.backend.tosa.RESIZE.default,
                 exir_ops.backend.tosa.TABLE.default,
@@ -161,7 +163,7 @@ class FuseConstantArgsPass(ExportPass):
         return PassResult(graph_module, True)
 
 
-class ComputeConstantOpsAOT(ExportPass):
+class ComputeConstantOpsAOT(ArmPass):
     """
     Evaluates call_functions that produce constant tensor outputs and replaces them with placeholders.
 

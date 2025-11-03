@@ -20,12 +20,12 @@
 - op: _softmax.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::_softmax_out
+      kernel_name: impl::vision::_softmax_out
 
 - op: add.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::add_out
+      kernel_name: impl::vision::add_out
 
 - op: bmm.out
   kernels:
@@ -55,7 +55,7 @@
 - op: embedding.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::embedding_out
+      kernel_name: impl::vision::embedding_out
 
 - op: empty.out
   kernels:
@@ -70,7 +70,7 @@
 - op: full.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::full_out
+      kernel_name: impl::vision::full_out
 
 - op: gelu.out
   kernels:
@@ -135,7 +135,7 @@
 - op: view_copy.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::view_copy_out
+      kernel_name: impl::vision::view_copy_out
 
 - op: where.self_out
   kernels:
@@ -182,84 +182,94 @@
   variants: function
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::quantize_per_tensor_out
+      kernel_name: impl::vision::quantize_per_tensor_out
 
 - func: cadence::dequantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::dequantize_per_tensor_out
+      kernel_name: impl::vision::dequantize_per_tensor_out
 
 - func: cadence::quantized_conv.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::quantized_conv_out
+      kernel_name: impl::vision::quantized_conv_out
+
+- func: cadence::quantized_conv2d_nchw.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::vision::quantized_conv2d_nchw_out
+
+- func: cadence::quantized_conv2d_nhwc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::vision::quantized_conv2d_nhwc_out
 
 - func: cadence::quantized_layer_norm.out(Tensor input, Tensor in_scale, Tensor in_zero_point, int[] normalized_shape, Tensor weight, Tensor bias, float eps, float output_scale, int output_zero_point, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::quantized_layer_norm_out
+      kernel_name: impl::vision::quantized_layer_norm_out
 - func: cadence::quantized_layer_norm.per_tensor_out(Tensor input, float in_scale, int in_zero_point, int[] normalized_shape, Tensor weight, Tensor bias, float eps, float output_scale, int output_zero_point, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::quantized_layer_norm_per_tensor_out
+      kernel_name: impl::vision::quantized_layer_norm_per_tensor_out
 
 - func: cadence::quantized_linear.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::quantized_linear_out
+      kernel_name: impl::vision::quantized_linear_out
 
 - func: cadence::quantized_relu.out(Tensor X, Tensor X_zero_point, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::quantized_relu_out
+      kernel_name: impl::vision::quantized_relu_out
 
 - func: cadence::quantized_relu.per_tensor_out(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::quantized_relu_per_tensor_out
+      kernel_name: impl::vision::quantized_relu_per_tensor_out
 
 - func: cadence::quantized_matmul.out(Tensor X, int X_zero_point, Tensor Y, int Y_zero_point, Tensor? bias, int out_multiplier, int out_shift, int out_zero_point, bool transposed, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::quantized_matmul_out
+      kernel_name: impl::vision::quantized_matmul_out
 
 - func: cadence::quantized_linear.per_tensor_out(Tensor src, Tensor weight, Tensor bias, SymInt src_zero_point, SymInt weight_zero_point, SymInt out_multiplier, SymInt out_shift, SymInt out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::quantized_linear_per_tensor_out
+      kernel_name: impl::vision::quantized_linear_per_tensor_out
 
 - func: cadence::im2row.out(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, Tensor in_zero_point, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::im2row_out
+      kernel_name: impl::vision::im2row_out
 
 - func: cadence::im2row.per_tensor_out(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, int in_zero_point, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::im2row_per_tensor_out
+      kernel_name: impl::vision::im2row_per_tensor_out
 
 - func: cadence::quantized_conv.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::quantized_conv_per_tensor_out
+      kernel_name: impl::vision::quantized_conv_per_tensor_out
 
 - func: cadence::quantized_fully_connected.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::quantized_fully_connected_out
+      kernel_name: impl::vision::quantized_fully_connected_out
 
 - func: cadence::quantized_fully_connected.per_tensor_out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::quantized_fully_connected_per_tensor_out
+      kernel_name: impl::vision::quantized_fully_connected_per_tensor_out
 
 - func: cadence::requantize.out(Tensor input, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point, ScalarType out_dtype, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::requantize_out
+      kernel_name: impl::vision::requantize_out
 
 - func: cadence::requantize.per_tensor_out(Tensor input, float in_scale, int in_zero_point, float out_scale, int out_zero_point, ScalarType out_dtype, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::vision::native::requantize_per_tensor_out
+      kernel_name: impl::vision::requantize_per_tensor_out

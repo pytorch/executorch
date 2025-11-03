@@ -6,7 +6,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 
 from executorch.backends.arm.test import common
@@ -214,7 +213,6 @@ def test_var_dim_u85_INT_no_dim(test_data: Tuple):
 
 @common.parametrize("test_data", Var.test_parameters)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_var_dim_vgf_FP_no_dim(test_data: Tuple):
     data, keepdim, correction = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -225,7 +223,6 @@ def test_var_dim_vgf_FP_no_dim(test_data: Tuple):
 
 @common.parametrize("test_data", Var.test_parameters)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_var_dim_vgf_INT_no_dim(test_data: Tuple):
     data, keepdim, correction = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -296,7 +293,6 @@ def test_var_dim_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", VarDim.test_parameters)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_var_dim_vgf_FP(test_data: Tuple):
     data, dim, keepdim, unbiased = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -307,7 +303,6 @@ def test_var_dim_vgf_FP(test_data: Tuple):
 
 @common.parametrize("test_data", VarDim.test_parameters)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_var_dim_vgf_INT(test_data: Tuple):
     data, dim, keepdim, unbiased = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -349,7 +344,17 @@ def test_var_dim_tosa_INT_correction(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", VarCorrection.test_parameters)
+# TODO: Xfail "var_3d_dims_keep_dim_0_correction" until the Ethos-U Vela compiler ships commit
+# 642f7517d3a6bd053032e1942822f6e38ccd546f. That patch fixes the bug that causes the test to fail.
+@common.parametrize(
+    "test_data",
+    VarCorrection.test_parameters,
+    xfails={
+        "var_3d_dims_keep_dim_0_correction": (
+            "Blocked by Vela commit 642f7517d3a6bd053032e1942822f6e38ccd546f"
+        ),
+    },
+)
 @common.XfailIfNoCorstone300
 def test_var_dim_u55_INT_correction(test_data: Tuple):
     test_data, dim, keepdim, correction = test_data()
@@ -377,7 +382,6 @@ def test_var_dim_u85_INT_correction(test_data: Tuple):
 
 @common.parametrize("test_data", VarCorrection.test_parameters)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_var_dim_vgf_FP_correction(test_data: Tuple):
     data, dim, keepdim, corr = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -388,7 +392,6 @@ def test_var_dim_vgf_FP_correction(test_data: Tuple):
 
 @common.parametrize("test_data", VarCorrection.test_parameters)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_var_dim_vgf_INT_correction(test_data: Tuple):
     data, dim, keepdim, corr = test_data()
     pipeline = VgfPipeline[input_t1](

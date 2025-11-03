@@ -17,12 +17,6 @@ In this tutorial you will learn how to export a simple PyTorch model for the Exe
 
 ::::
 
-```{warning}
-This delegate is under active development, to get best results please use a recent version.
-The TOSA and Ethos-U backend support is reasonably mature and used in production by some users.
-You may encounter some rough edges and features which may be documented or planned but not implemented, please refer to the in-tree documentation for the latest status of features.
-```
-
 ```{tip}
 If you are already familiar with this delegate, you may want to jump directly to the examples:
 * [Examples in the ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm)
@@ -37,7 +31,7 @@ This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch mo
 
 To successfully complete this tutorial, you will need a Linux machine with aarch64 or x86_64 processor architecture, or a macOS&trade; machine with Apple&reg; Silicon.
 
-To enable development without a specific development board, we will be using a [Fixed Virtual Platform (FVP)](https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms), simulating [Arm&reg; Corstone&trade;-300](https://developer.arm.com/Processors/Corstone-300)(cs300) and [Arm&reg; Corstone&trade;-300](https://developer.arm.com/Processors/Corstone-320)(cs320)systems. Think of it as virtual hardware.
+To enable development without a specific development board, we will be using a [Fixed Virtual Platform (FVP)](https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms), simulating [Arm&reg; Corstone&trade;-300](https://developer.arm.com/Processors/Corstone-300)(cs300) and [Arm&reg; Corstone&trade;-320](https://developer.arm.com/Processors/Corstone-320)(cs320)systems. Think of it as virtual hardware.
 
 ### Software
 

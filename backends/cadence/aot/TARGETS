@@ -117,6 +117,7 @@ runtime.python_library(
     ],
     deps = [
         "fbcode//caffe2:torch",
+        "fbcode//executorch/backends/cadence/aot:ref_implementations",
         "fbcode//executorch/backends/cadence/aot:utils",
     ],
 )
@@ -267,6 +268,7 @@ runtime.python_library(
     ],
     typing = True,
     deps = [
+        ":ops_registrations",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:simplify_ops",
@@ -627,7 +629,18 @@ python_unittest(
     deps = [
         ":typing_stubs",
         "//executorch/backends/cadence/aot:ops_registrations",
-        "//executorch/backends/cadence/aot:ref_implementations",
         "//caffe2:torch",
     ]
+)
+
+python_unittest(
+    name = "test_quantizer_ops",
+    srcs = [
+        "tests/test_quantizer_ops.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
+    ],
 )

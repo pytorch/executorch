@@ -12,6 +12,9 @@ on:
     paths:
       - .github/workflows/test-backend-arm.yml
       - .github/workflows/_test_backend.yml
+      - .ci/scripts/test_backend.sh
+      - backends/test/suite/flow.py
+      - backends/test/suite/flows/arm.py
   workflow_dispatch:
 
 concurrency:

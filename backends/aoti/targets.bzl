@@ -1,6 +1,21 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
+    runtime.python_library(
+        name = "aoti_partitioner",
+        srcs = [
+            "aoti_partitioner.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/backend:partitioner",
+            "//executorch/exir/backend:utils",
+        ],
+    )
+
     # AOTI common shims functionality
     runtime.cxx_library(
         name = "common_shims",
@@ -25,12 +40,9 @@ def define_common_targets():
 
     # AOTI model container functionality
     runtime.cxx_library(
-        name = "model_container",
-        srcs = [
-            "aoti_model_container.cpp",
-        ],
+        name = "delegate_handle",
         headers = [
-            "aoti_model_container.h",
+            "aoti_delegate_handle.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
@@ -44,15 +56,15 @@ def define_common_targets():
         ],
     )
 
-    # Common AOTI functionality (combining both common_shims and model_container)
+    # Common AOTI functionality (combining both common_shims and delegate_handle)
     runtime.cxx_library(
         name = "aoti_common",
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
         supports_python_dlopen = True,
         visibility = ["@EXECUTORCH_CLIENTS"],
-        deps = [
+        exported_deps = [
             ":common_shims",
-            ":model_container",
+            ":delegate_handle",
         ],
     )

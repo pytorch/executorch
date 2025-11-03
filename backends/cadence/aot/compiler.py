@@ -37,8 +37,8 @@ from executorch.exir import (
     ExecutorchProgramManager,
 )
 from executorch.exir.passes import ToOutVarPass
-from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
-from executorch.exir.program._program import to_edge
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+from executorch.exir.program._program import _transform, to_edge
 
 from torch.export.exported_program import ExportedProgram
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e
@@ -50,29 +50,17 @@ from .utils import print_ops_info
 default_quantizer = CadenceDefaultQuantizer()
 
 
-# Note: this is not meant as a primary API since it can create inconsistencies
-# if the quantizer here is different from the quantizer used to convert. It is
-# however useful for unit tests to separate the converted model from the fused
-# model, to be able to get reference numerics.
-# If this does not apply, please use quantize_pt2 instead.
 def trace(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
+    ops_to_keep: Optional[list[torch._ops.OpOverload]] = None,
 ) -> ExportedProgram:
     """
     Trace the model with export and return an ExportedProgram.
     """
-
-    ops_to_keep = [
-        torch.ops.aten.conv1d.default,
-        torch.ops.aten.conv2d.default,
-        torch.ops.aten.layer_norm.default,
-        torch.ops.aten.linear.default,
-        torch.ops.aten.matmul.default,
-        torch.ops.aten.rms_norm.default,
-    ]
-
+    if ops_to_keep is None:
+        ops_to_keep = []
     program = trace_fn(
         model, inputs, is_qat=False, strict=True, ops_to_keep=ops_to_keep
     )
@@ -99,7 +87,10 @@ def prepare_pt2(
     Returns a GraphModule with the prepared model.
     """
 
-    traced_program = trace(model, inputs, dump_graphs=dump_graphs)
+    ops_to_keep = quantizer.get_ops_to_preserve_from_decomposition()
+    traced_program = trace(
+        model, inputs, dump_graphs=dump_graphs, ops_to_keep=ops_to_keep
+    )
     prepared_program = prepare_traced_pt2(
         traced_program, quantizer, dump_graphs=dump_graphs
     )
@@ -154,22 +145,22 @@ def convert_pt2(
 # fused model, to be able to get reference numerics.
 # If this does not apply, please use quantize_pt2 instead.
 def fuse_pt2(
-    converted_graph_module: torch.fx.GraphModule,
+    converted_program: ExportedProgram,
     quantizer: CadenceQuantizer,
-) -> torch.fx.GraphModule:
+) -> ExportedProgram:
     """
-    Fuse a converted graph module using the given quantizer.
+    Fuse a converted exported program using the given quantizer.
     The quantizer must be the same as the one used to convert the model.
     If you do not expect that behavior, please use quantize_pt2 instead,
     which will instantiate a default quantizer for you if needed.
-    Returns a GraphModule with the fused model.
+    Returns an ExportedProgram with the fused model.
     """
     # Get patterns and apply fusion of dq -> op -> q to qop
     # pyre-ignore[16]: no attribute
     patterns = [q.pattern for q in quantizer.quantizers]
-    QuantFusion(patterns)(converted_graph_module)
+    fused_program = _transform(converted_program, QuantFusion(patterns))
 
-    return converted_graph_module
+    return fused_program
 
 
 # Note: quantizer is not optional here to force the user to supply a quantizer
@@ -184,7 +175,8 @@ def get_fake_quant_model(
     # Make the model inference mode by calling model.eval()
     model.eval()
 
-    program = trace(model, inputs, dump_graphs=dump_graphs)
+    ops_to_keep = quantizer.get_ops_to_preserve_from_decomposition()
+    program = trace(model, inputs, dump_graphs=dump_graphs, ops_to_keep=ops_to_keep)
 
     if dump_graphs:
         logging.info("Graph after trace:")
@@ -218,7 +210,7 @@ def quantize_pt2(
     If calibration data is provided, it will be used to calibrate the model. If
     not, the inputs will be used for calibration instead, which is useful for
     unit tests but should not be used for end-to-end use cases.
-    Returns a GraphModule with the quantized model.
+    Returns an ExportedProgram with the quantized model.
     Note: this function should not be called directly in general. Please use
     quantize_and_export_to_executorch for most needs.
     """
@@ -235,16 +227,15 @@ def quantize_pt2(
         dump_graphs=dump_graphs,
     )
 
-    # Get fused model
-    fused_gm = fuse_pt2(converted_gm, quantizer)
+    # Apply quant fusion to the exported program
+    program = torch.export.export(converted_gm, inputs, strict=True)
+    fused_program = fuse_pt2(program, quantizer)
 
     if dump_graphs:
         logging.info("Graph after quantization and fusion:")
-        logging.info(fused_gm.graph.print_tabular())
+        logging.info(fused_program.graph_module.graph.print_tabular())
 
-    program = torch.export.export(fused_gm, inputs, strict=True)
-
-    return program
+    return fused_program
 
 
 TO_EDGE_OP_EXCEPTION_LIST: list[torch._ops.OpOverload] = [
@@ -452,7 +443,7 @@ def _lower_ep_to_cadence_gen_etrecord(
             emit_stacktrace=False,
             to_out_var_pass=ToOutVarPass(),
             extract_delegate_segments=False,
-            sym_shape_eval_pass=HintBasedSymShapeEvalPass(),
+            sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
         ),
     )
 

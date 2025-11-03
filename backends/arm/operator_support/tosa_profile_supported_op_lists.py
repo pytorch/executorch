@@ -55,6 +55,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.log.default,
     exir_ops.edge.aten.linear.default,
     exir_ops.edge.aten.split_with_sizes_copy.default,
+    exir_ops.edge.aten.split_copy.Tensor,
     exir_ops.edge.aten.floor.default,
     exir_ops.edge.aten.full.default,
     exir_ops.edge.aten.full_like.default,
@@ -76,6 +77,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.repeat.default,
     exir_ops.edge.aten.reciprocal.default,
     exir_ops.edge.aten.relu.default,
+    exir_ops.edge.aten.remainder.Tensor,
     exir_ops.edge.aten.rsqrt.default,
     exir_ops.edge.aten.select_copy.int,
     exir_ops.edge.aten.sub.Tensor,
@@ -116,6 +118,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.acos.default,
     exir_ops.edge.aten.elu.default,
     exir_ops.edge.aten.bitwise_not.default,
+    exir_ops.edge.aten.copy.default,
 }
 
 
@@ -152,6 +155,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.log.default,
     exir_ops.edge.aten.linear.default,
     exir_ops.edge.aten.split_with_sizes_copy.default,
+    exir_ops.edge.aten.split_copy.Tensor,
     exir_ops.edge.aten.floor.default,
     exir_ops.edge.aten.full.default,
     exir_ops.edge.aten.full_like.default,
@@ -176,12 +180,15 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.native_group_norm.default,
     exir_ops.edge.aten.sigmoid.default,
     exir_ops.edge.aten.mean.dim,
+    exir_ops.edge.aten.mean.default,
     exir_ops.edge.aten.mm.default,
     exir_ops.edge.aten.minimum.default,
     exir_ops.edge.aten.maximum.default,
     exir_ops.edge.aten.repeat.default,
     exir_ops.edge.aten.reciprocal.default,
     exir_ops.edge.aten.relu.default,
+    exir_ops.edge.aten.remainder.Scalar,
+    exir_ops.edge.aten.remainder.Tensor,
     exir_ops.edge.aten.leaky_relu.default,
     exir_ops.edge.aten.sqrt.default,
     exir_ops.edge.aten.rsqrt.default,
@@ -227,6 +234,8 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.logit.default,
     exir_ops.edge.aten.acos.default,
     exir_ops.edge.aten.elu.default,
+    exir_ops.edge.aten.copy.default,
+    exir_ops.edge.aten.floor_divide.default,
 }
 
 

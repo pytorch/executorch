@@ -21,6 +21,7 @@
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/multimodal_runner.h>
+#include <executorch/extension/llm/runner/wav_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -34,6 +35,7 @@ DEFINE_string(
     "multimodal.pte",
     "Model serialized in flatbuffer format.");
 
+DEFINE_string(data_path, "", "Path to data file.");
 DEFINE_string(tokenizer_path, "tekken.json", "Tokenizer stuff.");
 
 DEFINE_string(prompt, "What is happening in this audio?", "Text prompt.");
@@ -113,15 +115,15 @@ MultimodalInput loadPreprocessedAudio(const std::string& audio_path) {
 }
 
 /**
- * @brief Loads a .bin file into a tensor and processes it using a .pte
- * processor
+ * @brief Loads raw audio from a .bin or .wav file and processes it using a
+ * .pte processor
  *
- * This function loads raw audio data from a .bin file (similar to
- * loadPreprocessedAudio), creates a tensor from it, and then passes it through
- * a processor module loaded from a .pte file to generate processed audio
- * features.
+ * This function loads raw audio data from either a .bin file (raw float array)
+ * or a .wav file (WAV format with headers), creates a tensor from it, and then
+ * passes it through a processor module loaded from a .pte file to generate
+ * processed audio features.
  *
- * @param audio_path Path to the .bin audio file
+ * @param audio_path Path to the .bin or .wav audio file
  * @param processor_path Path to the .pte processor file
  * @return MultimodalInput containing the processed audio data
  * @throws std::runtime_error if file loading or processing fails
@@ -133,6 +135,41 @@ MultimodalInput processRawAudioFile(
     ET_LOG(Error, "Processor path is required for raw audio processing");
     throw std::runtime_error(
         "Processor path is required for raw audio processing");
+  }
+
+  // Load the audio data from file (.bin or .wav)
+  std::vector<float> audio_data;
+  if (ends_with(audio_path, ".wav")) {
+    audio_data = ::executorch::extension::llm::load_wav_audio_data(audio_path);
+    ET_LOG(
+        Info,
+        "Loaded WAV file: %s, %zu samples",
+        audio_path.c_str(),
+        audio_data.size());
+  } else if (ends_with(audio_path, ".bin")) {
+    std::ifstream f(audio_path, std::ios::binary | std::ios::ate);
+    if (!f.is_open()) {
+      ET_LOG(Error, "Failed to open audio file: %s", audio_path.c_str());
+      throw std::runtime_error("Failed to open audio file");
+    }
+
+    std::size_t n_floats = f.tellg() / sizeof(float);
+    f.seekg(0, std::ios::beg);
+
+    audio_data.resize(n_floats);
+    f.read(
+        reinterpret_cast<char*>(audio_data.data()),
+        audio_data.size() * sizeof(float));
+    f.close();
+
+    ET_LOG(
+        Info, "Loaded .bin file: %s, %zu floats", audio_path.c_str(), n_floats);
+  } else {
+    ET_LOG(
+        Error,
+        "Unsupported audio file format: %s (only .bin and .wav files are supported)",
+        audio_path.c_str());
+    throw std::runtime_error("Unsupported audio file format");
   }
 
   // Load the audio processor .pte.
@@ -152,25 +189,6 @@ MultimodalInput processRawAudioFile(
     ET_LOG(Error, "Exception while loading processor module: %s", e.what());
     throw std::runtime_error("Exception while loading processor module");
   }
-
-  // Load the audio data from file.
-  std::ifstream f(audio_path, std::ios::binary | std::ios::ate);
-  if (!f.is_open()) {
-    ET_LOG(Error, "Failed to open audio file: %s", audio_path.c_str());
-    throw std::runtime_error("Failed to open audio file");
-  }
-
-  std::size_t n_floats = f.tellg() / sizeof(float);
-  f.seekg(0, std::ios::beg);
-
-  std::vector<float> audio_data(n_floats);
-  f.read(
-      reinterpret_cast<char*>(audio_data.data()),
-      audio_data.size() * sizeof(float));
-  f.close();
-
-  ET_LOG(
-      Info, "Loaded .bin file: %s, %zu floats", audio_path.c_str(), n_floats);
 
   // Execute the processor
   std::vector<executorch::aten::SizesType> tensor_shape = {
@@ -226,33 +244,39 @@ MultimodalInput processRawAudioFile(
  *
  * Dispatches audio file processing based on file extension and processor
  * availability:
+ * - .wav files: Requires processor, processes raw audio through processor
  * - .bin files with processor: Loads raw audio from .bin and processes through
  * processor
  * - .bin files without processor: Loads preprocessed mel spectrogram features
  * directly
  *
- * @param audio_path Path to the audio file (.bin)
- * @param processor_path Path to the processor .pte file (optional)
+ * @param audio_path Path to the audio file (.bin or .wav)
+ * @param processor_path Path to the processor .pte file (optional for .bin,
+ * required for .wav)
  * @return MultimodalInput containing the processed audio data
  * @throws std::runtime_error if file format is unsupported or processing fails
  */
 MultimodalInput processAudioFile(
     const std::string& audio_path,
     const std::string& processor_path = "") {
-  if (ends_with(audio_path, ".bin")) {
-    if (!processor_path.empty()) {
-      // Process raw audio from .bin file through the processor
-      return processRawAudioFile(audio_path, processor_path);
-    } else {
-      // Load preprocessed audio stored as a binary file (existing behavior)
-      return loadPreprocessedAudio(audio_path);
+  if (ends_with(audio_path, ".wav") || ends_with(audio_path, ".bin")) {
+    if (processor_path.empty()) {
+      if (ends_with(audio_path, ".wav")) {
+        ET_CHECK_MSG(
+            false,
+            "Processor path is required for .wav file processing: %s",
+            audio_path.c_str());
+      } else {
+        // Load preprocessed audio stored as a binary file (existing behavior)
+        return loadPreprocessedAudio(audio_path);
+      }
     }
+    return processRawAudioFile(audio_path, processor_path);
   } else {
-    ET_LOG(
-        Error,
-        "Unsupported audio file format: %s (only .bin files are supported)",
+    ET_CHECK_MSG(
+        false,
+        "Unsupported audio file format: %s (only .bin and .wav files are supported)",
         audio_path.c_str());
-    throw std::runtime_error("Unsupported audio file format");
   }
 }
 
@@ -267,6 +291,7 @@ int32_t main(int32_t argc, char** argv) {
   const char* prompt = FLAGS_prompt.c_str();
   const char* audio_path = FLAGS_audio_path.c_str();
   const char* processor_path = FLAGS_processor_path.c_str();
+  const char* data_path = FLAGS_data_path.c_str();
   float temperature = FLAGS_temperature;
   int32_t cpu_threads = FLAGS_cpu_threads;
   bool warmup = FLAGS_warmup;
@@ -294,7 +319,7 @@ int32_t main(int32_t argc, char** argv) {
   // Create multimodal runner
   std::unique_ptr<::executorch::extension::llm::MultimodalRunner> runner =
       ::executorch::extension::llm::create_multimodal_runner(
-          model_path, std::move(tokenizer));
+          model_path, std::move(tokenizer), data_path, Module::LoadMode::Mmap);
   if (runner == nullptr) {
     ET_LOG(Error, "Failed to create multimodal runner");
     return 1;

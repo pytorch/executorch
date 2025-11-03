@@ -259,6 +259,7 @@ def execute(args):
         soc_model=args.model,
         host_id=args.host,
         shared_buffer=args.shared_buffer,
+        target=args.target,
     )
 
     logger.info("pushing QNN libraries & other artifacts")
@@ -414,9 +415,7 @@ def main():
         "--pass_job",
         nargs="+",
         type=str,
-        help=(
-            'Add extra passes for model lowering. e.g. "ExpandBroadcastTensorShape".'
-        ),
+        help=('Add extra passes for model lowering. e.g. "TagQuantIO".'),
     )
     sub_compile.add_argument(
         "--shared_buffer",
@@ -484,6 +483,18 @@ def main():
         "--host",
         type=str,
         help="Gateway hostname.",
+    )
+    sub_execute.add_argument(
+        "-t",
+        "--target",
+        help="Target platform for deployment",
+        choices=[
+            "aarch64-android",
+            "aarch64-oe-linux-gcc9.3",
+            "aarch64-oe-linux-gcc11.2",
+        ],
+        default="aarch64-android",
+        type=str,
     )
     sub_execute.add_argument(
         "--shared_buffer",

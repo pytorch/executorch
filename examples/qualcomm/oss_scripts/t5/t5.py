@@ -296,6 +296,8 @@ def main(args):
             device_id=args.device,
             host_id=args.host,
             soc_model=args.model,
+            shared_buffer=args.shared_buffer,
+            target=args.target,
             runner="examples/qualcomm/oss_scripts/t5/qnn_t5_runner",
         )
         adb.push(
@@ -323,11 +325,6 @@ if __name__ == "__main__":
         "--artifact",
         help="path for storing generated artifacts and output by this example. Default ./t5",
         default="./t5",
-        type=str,
-    )
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated t5 in the given directory.",
         type=str,
     )
     parser.add_argument(

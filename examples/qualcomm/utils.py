@@ -64,8 +64,9 @@ class SimpleADB:
         error_only (bool): Redirect stdio and leave error messages only
         shared_buffer (bool): Apply zero-copy mechanism in runtime
         runner (str): Runtime executor binary
-        expected_input_shape (Tuple[torch.Size]): input shape of dynamic graph
-        expected_output_shape (Tuple[torch.Size]): output shape of dynamic graph
+        target (str): Target toolchain name
+        expected_input_shape (Tuple[torch.Size]): Input shape of dynamic graph
+        expected_output_shape (Tuple[torch.Size]): Output shape of dynamic graph
     """
 
     def __init__(
@@ -81,6 +82,7 @@ class SimpleADB:
         shared_buffer=False,
         dump_intermediate_outputs=False,
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
+        target="aarch64-android",
         expected_input_shape=None,
         expected_output_shape=None,
     ):
@@ -100,6 +102,7 @@ class SimpleADB:
         self.error_only = error_only
         self.shared_buffer = shared_buffer
         self.runner = runner
+        self.target = target
         self.expected_input_shape = expected_input_shape
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
@@ -130,20 +133,20 @@ class SimpleADB:
             # necessary artifacts
             artifacts = [
                 *self.pte_path,
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtp.so",
                 (
                     f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
                     f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
                 ),
                 (
-                    f"{self.qnn_sdk}/lib/aarch64-android/"
+                    f"{self.qnn_sdk}/lib/{self.target}/"
                     f"libQnnHtpV{self.htp_arch}Stub.so"
                 ),
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpPrepare.so",
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
                 f"{self.build_path}/{self.runner}",
                 f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
             ]
         input_list_file, input_files = generate_inputs(
             self.working_dir, self.input_list_filename, inputs
@@ -418,7 +421,7 @@ def build_executorch_binary(
         None: The function writes the output to a specified .pte file.
     """
     backend_options = generate_htp_compiler_spec(
-        use_fp16=False if quant_dtype else True
+        use_fp16=False if quant_dtype is not None else True
     )
     compile_spec = generate_qnn_executorch_compiler_spec(
         soc_model=getattr(QcomChipset, soc_model),
@@ -877,6 +880,25 @@ def setup_common_args_and_variables():
         type=int,
     )
 
+    parser.add_argument(
+        "-t",
+        "--target",
+        help="Target platform for deployment",
+        choices=[
+            "aarch64-android",
+            "aarch64-oe-linux-gcc9.3",
+            "aarch64-oe-linux-gcc11.2",
+        ],
+        default="aarch64-android",
+        type=str,
+    )
+
+    parser.add_argument(
+        "--pre_gen_pte",
+        help="Run the pre-generated pte in the given directory.",
+        type=str,
+    )
+
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
     if "QNN_SDK_ROOT" not in os.environ:
@@ -918,24 +940,34 @@ def generate_inputs(dest_path: str, file_name: str, inputs=None):
     input_list_file = None
     input_files = []
 
+    def prepare_input_file(tensor, fd, index, sub_index):
+        # transform torch.Tensor to raw file
+        input_file_name = f"input_{index}_{sub_index}.raw"
+        input_file_path = f"{dest_path}/{input_file_name}"
+        if not isinstance(tensor, torch.Tensor):
+            tensor = torch.tensor(tensor)
+        tensor.detach().numpy().tofile(input_file_path)
+        input_files.append(input_file_path)
+        # prepare input_list
+        if sub_index > 0:
+            fd.write(" ")
+        fd.write(input_file_name)
+
     # Prepare input data
     if inputs is not None:
         input_list_file = f"{dest_path}/{file_name}"
         with open(input_list_file, "w") as f:
             for idx, data in enumerate(inputs):
-                for i, d in enumerate(data):
-                    # transform torch.Tensor to raw file
-                    file_name = f"input_{idx}_{i}.raw"
-                    file_path = f"{dest_path}/{file_name}"
-                    if not isinstance(d, torch.Tensor):
-                        d = torch.tensor(d)
-                    d.detach().numpy().tofile(file_path)
-                    input_files.append(file_path)
+                sub_index = 0
+                for d in data:
+                    if isinstance(d, (list, tuple)):
+                        for sub_d in d:
+                            prepare_input_file(sub_d, f, idx, sub_index)
+                            sub_index += 1
+                    else:
+                        prepare_input_file(d, f, idx, sub_index)
+                        sub_index += 1
 
-                    # prepare input_list
-                    if i > 0:
-                        f.write(" ")
-                    f.write(file_name)
                 f.write("\n")
 
     return input_list_file, input_files

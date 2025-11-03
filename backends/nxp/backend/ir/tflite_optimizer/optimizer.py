@@ -11,9 +11,6 @@ from typing import Callable
 
 from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_activation_functions import (
-    FuseActivationFunctions,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.move_relu_before_concat import (
     MoveActivationBeforeConcatenation,
 )
@@ -27,8 +24,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_tra
 
 
 class Optimization(Enum):
-    FUSE_ACTIVATION_FUNCTIONS = 1
-
     FUSE_TRANSPOSE_OPERATORS = 5
     REMOVE_IDENTITY_TRANSPOSE_OPERATORS = 6
 
@@ -64,9 +59,6 @@ class Optimizer:
         self._builder = builder
 
         self.optimization_map = {
-            Optimization.FUSE_ACTIVATION_FUNCTIONS: FuseActivationFunctions(
-                builder, conversion_config
-            ),
             Optimization.FUSE_TRANSPOSE_OPERATORS: FuseTransposeOperators(
                 builder, conversion_config
             ),

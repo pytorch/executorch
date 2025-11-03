@@ -12,6 +12,7 @@ Deploy ExecuTorch on Android devices with hardware acceleration support.
 **→ {doc}`android-section` — Complete Android deployment guide**
 
 Key features:
+
 - Hardware acceleration support (CPU, GPU, NPU)
 - Multiple backend options (XNNPACK, Vulkan, Qualcomm, MediaTek, ARM, Samsung)
 - Comprehensive examples and demos
@@ -58,12 +59,13 @@ Key features:
 ## Next Steps
 
 After choosing your platform:
+
 - **{doc}`backends-section`** - Deep dive into backend selection and optimization
-- **{doc}`llms-section`** - Working with Large Language Models on edge devices
+- **{doc}`llm/working-with-llms`** - Working with Large Language Models on edge devices
 
 ```{toctree}
 :hidden:
-:maxdepth: 2
+:maxdepth: 3
 :caption: Edge Platforms
 
 android-section

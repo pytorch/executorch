@@ -8,13 +8,11 @@
 
 #pragma once
 
-#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <cstdint>
 
-namespace executorch {
-namespace backends {
-namespace cuda {
+namespace executorch::backends::cuda {
 
 // Common using declarations for ExecutorTorch types
 using executorch::runtime::Error;
@@ -35,6 +33,4 @@ int32_t aoti_torch_device_type_cuda();
 
 } // extern "C"
 
-} // namespace cuda
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::cuda
