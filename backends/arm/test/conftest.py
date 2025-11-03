@@ -6,10 +6,11 @@
 import logging
 import os
 import random
-import sys
 from typing import Any
 
 import pytest
+
+logger = logging.getLogger(__name__)
 
 """
 This file contains the pytest hooks, fixtures etc. for the Arm test suite.
@@ -28,8 +29,6 @@ def pytest_configure(config):
     pytest._test_options["tosa_version"] = "1.0"  # type: ignore[attr-defined]
     if config.option.arm_run_tosa_version:
         pytest._test_options["tosa_version"] = config.option.arm_run_tosa_version
-
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
 def pytest_collection_modifyitems(config, items):
@@ -98,7 +97,7 @@ def set_random_seed():
                 "ARM_TEST_SEED env variable must be integers or the string RANDOM"
             )
 
-    print(f" ARM_TEST_SEED={seed} ", end=" ")
+    logger.info(f"ARM_TEST_SEED={seed}")
 
 
 # ==== End of Pytest fixtures =====

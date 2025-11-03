@@ -32,6 +32,6 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
 
         args = node.args
         if len(args) == 5 and (step := args[4]) != 1:
-            logging.warning(f"{node.target} with step size of {step} not supported.")
+            logger.warning(f"{node.target} with step size of {step} not supported.")
             return False
         return True
