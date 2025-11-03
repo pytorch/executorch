@@ -6529,11 +6529,55 @@ class TestExampleLLMScript(TestQNN):
 
 
 class TestExampleMultimodalityScript(TestQNN):
-    def test_smolvlm_500m_instruct(self):
-        if not self.required_envs():
+
+    @dataclass(frozen=True)
+    class MLLMSpecs:
+        max_seq_len: int
+        sm8650_token_rate: float
+        sm8750_token_rate: float
+        encoder_pte_size: float
+        text_embedding_pte_size: float
+        decoder_pte_size: float
+
+    @dataclass(frozen=True)
+    class VLMSpecs(MLLMSpecs):
+        image_path: str
+        golden_image_feature: str
+
+    # TODO: refactor to support different backends
+    def setUp(self):
+        self.vlm_specs = {
+            "smolvlm_500m_instruct": TestExampleMultimodalityScript.VLMSpecs(
+                max_seq_len=128,
+                sm8650_token_rate=50,
+                sm8750_token_rate=55,
+                encoder_pte_size=110_000_000,  # 110MB
+                text_embedding_pte_size=100_000_000,  # 100MB
+                decoder_pte_size=400_000_000,  # 400MB
+                image_path="https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg",  # New York Bay
+                golden_image_feature="city",
+            ),
+            "internvl3_1b": TestExampleMultimodalityScript.VLMSpecs(
+                max_seq_len=320,
+                sm8650_token_rate=11,
+                sm8750_token_rate=13,
+                encoder_pte_size=425_000_000,  # 425MB
+                text_embedding_pte_size=300_000_000,  # 300MB
+                decoder_pte_size=550_000_000,  # 550 MB
+                image_path="http://images.cocodataset.org/val2017/000000039769.jpg",  # Two cats lying on a blanket
+                golden_image_feature="cats",
+            ),
+        }
+
+    def test_static_vlm(self):
+        if not self.required_envs([self.model_name]):
             self.skipTest("missing required envs")
 
+        vlm_specs: TestExampleMultimodalityScript.VLMSpecs = self.vlm_specs[
+            self.model_name
+        ]
         prompt = "Can you describe this image?"
+        image_path = vlm_specs.image_path
         cmds = [
             "python",
             f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
@@ -6549,14 +6593,16 @@ class TestExampleMultimodalityScript(TestQNN):
             str(self.port),
             "--prompt",
             prompt,
+            "--image_path",
+            image_path,
             "--temperature",
             "0",
             "--decoder_model",
-            "smolvlm_500m_instruct",
+            f"{self.model_name}",
             "--model_mode",
             "kv",
             "--max_seq_len",
-            "128",
+            f"{vlm_specs.max_seq_len}",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -6577,75 +6623,40 @@ class TestExampleMultimodalityScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
+                if not self.compile_only:
+                    model_out = msg["result"][0]
+                    self.assertTrue(
+                        vlm_specs.golden_image_feature in model_out,
+                        f"Expected Output contains feature: '{vlm_specs.golden_image_feature}'  Actual Output: '{model_out}'",
+                    )
+                    print(f"Image Path: {image_path}")
+                    print(f"Query: {prompt}")
+                    print(f"Answer: {model_out}")
                 if not self.enable_x86_64:
                     encoder_pte_size = msg["encoder_pte_size"]
                     text_embedding_pte_size = msg["text_embedding_pte_size"]
                     decoder_pte_size = msg["pte_size"]
-                    self.assertLessEqual(encoder_pte_size, 110_000_000)  # 110MB
-                    self.assertLessEqual(text_embedding_pte_size, 100_000_000)  # 100MB
-                    self.assertLessEqual(decoder_pte_size, 400_000_000)  # 400MB
+                    self.assertLessEqual(encoder_pte_size, vlm_specs.encoder_pte_size)
+                    self.assertLessEqual(
+                        text_embedding_pte_size, vlm_specs.text_embedding_pte_size
+                    )
+                    self.assertLessEqual(decoder_pte_size, vlm_specs.decoder_pte_size)
                     print(f"Encoder PTE Size: {encoder_pte_size} bytes")
                     print(f"Text Embedding PTE Size: {text_embedding_pte_size} bytes")
                     print(f"Decoder PTE Size: {decoder_pte_size} bytes")
 
-    def test_internvl3_1b(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        prompt = "Can you describe this image?"
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--prompt",
-            prompt,
-            "--temperature",
-            "0",
-            "--decoder_model",
-            "internvl3_1b",
-            "--model_mode",
-            "kv",
-            "--max_seq_len",
-            "320",
-        ]
-        if self.compile_only:
-            cmds.extend(["--compile_only"])
-        elif self.device:
-            cmds.extend(["--device", self.device])
-        if self.host:
-            cmds.extend(["--host", self.host])
-        elif self.enable_x86_64:
-            cmds.extend(["--enable_x86_64"])
-        if self.pre_gen_pte:
-            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                if not self.enable_x86_64:
-                    encoder_pte_size = msg["encoder_pte_size"]
-                    text_embedding_pte_size = msg["text_embedding_pte_size"]
-                    decoder_pte_size = msg["pte_size"]
-                    self.assertLessEqual(encoder_pte_size, 425_000_000)  # 425MB
-                    self.assertLessEqual(text_embedding_pte_size, 300_000_000)  # 300MB
-                    self.assertLessEqual(decoder_pte_size, 550_000_000)  # 550MB
-                    print(f"Encoder PTE Size: {encoder_pte_size} bytes")
-                    print(f"Text Embedding PTE Size: {text_embedding_pte_size} bytes")
-                    print(f"Decoder PTE Size: {decoder_pte_size} bytes")
+                attr_name = f"{self.model.lower()}_token_rate"
+                if (
+                    not self.compile_only
+                    and not self.enable_x86_64
+                    and hasattr(vlm_specs, attr_name)
+                ):
+                    device_inference_speed = msg["inference_speed"]
+                    expected_inference_speed = getattr(vlm_specs, attr_name)
+                    print(f"Prompt Evaluation: {device_inference_speed} tokens/second")
+                    self.assertGreaterEqual(
+                        device_inference_speed, expected_inference_speed
+                    )
 
 
 class TestExampleOssScript(TestQNN):
