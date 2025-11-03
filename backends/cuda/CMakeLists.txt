@@ -32,6 +32,7 @@ find_package(CUDAToolkit REQUIRED)
 
 # Use ExecutorTorch's standard way to find PyTorch libraries for AOTI
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+find_package_torch()
 
 # CUDA tensor maker for backends that support incontiguous tensors
 set(_tensor_maker_sources runtime/tensor/tensor_maker.cpp)
@@ -79,8 +80,7 @@ set(_aoti_cuda_sources
 add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
 target_include_directories(
   aoti_cuda
-  PUBLIC ${CUDAToolkit_INCLUDE_DIRS}
-         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+  PUBLIC ${CUDAToolkit_INCLUDE_DIRS} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
          $<INSTALL_INTERFACE:include>
 )
 target_compile_options(
