@@ -104,6 +104,12 @@ case "$QUANT_NAME" in
 esac
 
 echo "::group::Export $MODEL_NAME"
+
+if [ -n "$EXTRA_PIP" ]; then
+  pip install $EXTRA_PIP
+fi
+pip list
+
 MAX_SEQ_LEN_ARG=""
 if [ -n "$MAX_SEQ_LEN" ]; then
   MAX_SEQ_LEN_ARG="--max_seq_len $MAX_SEQ_LEN"

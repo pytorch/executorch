@@ -133,10 +133,6 @@ jobs:
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
-        if [ -n "$EXTRA_PIP" ]; then
-          pip install $EXTRA_PIP
-        fi
-        pip list
         echo "::endgroup::"
 
         source .ci/scripts/export_model_cuda_artifact.sh "${{ matrix.model }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
