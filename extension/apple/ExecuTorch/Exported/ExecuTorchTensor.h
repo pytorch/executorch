@@ -152,13 +152,42 @@ __attribute__((objc_subclassing_restricted))
 
 /**
  * Creates a new tensor that shares the underlying data storage with the
+ * given tensor, with metadata overrides. An empty array for
+ * a parameter signifies that it should be inherited or derived.
+ *
+ * @param otherTensor The tensor instance to create a view of.
+ * @param shape An override for the tensor's shape.
+ * @param dimensionOrder An override for the tensor's dimension order.
+ * @param strides An override for the tensor's strides.
+ * @return A new ExecuTorchTensor instance that shares data with otherTensor.
+ */
+- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
+                         shape:(NSArray<NSNumber *> *)shape
+                dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                       strides:(NSArray<NSNumber *> *)strides
+    NS_REFINED_FOR_SWIFT;
+
+/**
+ * Creates a new tensor that shares the underlying data storage with the
+ * given tensor, with an overridden shape.
+ *
+ * @param otherTensor The tensor instance to create a view of.
+ * @param shape An override for the tensor's shape.
+ * @return A new ExecuTorchTensor instance that shares data with otherTensor.
+ */
+- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
+                         shape:(NSArray<NSNumber *> *)shape
+    NS_SWIFT_UNAVAILABLE("");
+
+/**
+ * Creates a new tensor that shares the underlying data storage with the
  * given tensor. This new tensor is a view and does not own the data.
  *
  * @param otherTensor The tensor instance to create a view of.
  * @return A new ExecuTorchTensor instance that shares data with otherTensor.
  */
 - (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
-    NS_SWIFT_NAME(init(_:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Creates a deep copy of the tensor.
