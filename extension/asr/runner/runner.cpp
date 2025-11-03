@@ -14,6 +14,7 @@
 
 #include <executorch/extension/llm/runner/constants.h>
 #include <executorch/extension/llm/runner/util.h>
+#include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/assert.h>
@@ -28,12 +29,12 @@ constexpr const char* kDecoderMethodName = "text_decoder";
 } // namespace
 
 AsrRunner::AsrRunner(
-    std::string module_path,
-    std::string data_path,
-    std::string tokenizer_path)
-    : module_path_(std::move(module_path)),
-      data_path_(std::move(data_path)),
-      tokenizer_path_(std::move(tokenizer_path)) {
+    const std::string& module_path,
+    std::optional<std::string> data_path,
+    const std::string& tokenizer_path)
+    : module_path_(module_path),
+      data_path_(data_path.value_or("")),
+      tokenizer_path_(tokenizer_path) {
   if (data_path_.empty()) {
     module_ = std::make_unique<Module>(module_path_, Module::LoadMode::Mmap);
   } else {
@@ -271,8 +272,9 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
     ET_CHECK_OR_RETURN_ERROR(
         vocab_size > 0, Internal, "Decoder logits tensor is empty.");
 
-    const int64_t next_token = static_cast<int64_t>(
-        logits_to_token(logits_tensor, config.temperature));
+    const int64_t next_token =
+        static_cast<int64_t>(::executorch::extension::llm::logits_to_token(
+            logits_tensor, config.temperature));
 
     if (!first_token_generated) {
       stats_.first_token_ms = ::executorch::extension::llm::time_in_ms();

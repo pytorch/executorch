@@ -115,8 +115,7 @@ jobs:
           - model:
               repo: "google"
               name: "gemma-3-4b-it"
-            quant:
-              - "quantized-int4-weight-only"
+            quant: "quantized-int4-weight-only"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -169,8 +168,7 @@ jobs:
           - model:
               repo: "google"
               name: "gemma-3-4b-it"
-            quant:
-              - "quantized-int4-weight-only"
+            quant: "quantized-int4-weight-only"
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -222,7 +220,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        hf_model:
+        model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
           - repo: "openai"
@@ -235,11 +233,10 @@ jobs:
           - "quantized-int4-weight-only"
         exclude:
           # TODO: enable int4-weight-only on gemma3.
-          - hf_model:
+          - model:
               repo: "google"
               name: "gemma-3-4b-it"
-            quant:
-              - "quantized-int4-weight-only"
+            quant: "quantized-int4-weight-only"
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -247,7 +244,7 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      download-artifact: ${{ matrix.hf_model.repo }}-${{ matrix.hf_model.name }}-cuda-${{ matrix.quant }}
+      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        source .ci/scripts/test_model_cuda_e2e.sh "${{ matrix.hf_model.repo }}" "${{ matrix.hf_model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+        source .ci/scripts/test_model_cuda_e2e.sh "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"

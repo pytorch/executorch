@@ -95,7 +95,7 @@ case "$HF_MODEL" in
     MODEL_NAME="whisper"
     RUNNER_TARGET="whisper_runner"
     RUNNER_PATH="whisper"
-    EXPECTED_OUTPUT="Mr. Quilter"
+    EXPECTED_OUTPUT="Mr. Quilter is the apostle of the middle classes"
     PREPROCESSOR="whisper_preprocessor.pte"
     TOKENIZER_URL="https://huggingface.co/openai/whisper-small/resolve/main" # @lint-ignore
     TOKENIZER_FILE=""

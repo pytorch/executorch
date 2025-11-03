@@ -40,7 +40,7 @@ using ::executorch::runtime::Result;
  * max_new_tokens controls the number of tokens generated after the prompt.
  * Temperature controls the randomness of the output.
  */
-struct AsrTranscribeConfig {
+struct ET_EXPERIMENTAL AsrTranscribeConfig {
   int64_t max_new_tokens = 128;
   std::unordered_set<int64_t> eos_token_ids = {};
   float temperature = 0.0f;
@@ -57,12 +57,12 @@ struct AsrTranscribeConfig {
  *  - "text_decoder": consumes the decoder input ids, encoder output and cache
  *    positions to autoregressively generate logits.
  */
-class AsrRunner {
+class ET_EXPERIMENTAL AsrRunner {
  public:
   AsrRunner(
-      std::string module_path,
-      std::string data_path,
-      std::string tokenizer_path);
+      const std::string& module_path,
+      std::optional<std::string> data_path,
+      const std::string& tokenizer_path);
 
   /**
    * Returns true when the module and tokenizer are ready for inference.
@@ -77,8 +77,9 @@ class AsrRunner {
   /**
    * Executes an end-to-end transcription cycle.
    *
-   * @param preprocessed_features Audio features already processed by a
-   * preprocessor module (see voxtral example).
+   * @param preprocessed_features Audio features tensor of shape [batch, time,
+   * features] already processed by a preprocessor module. Typically produced
+   * by an audio feature extractor (e.g., mel-spectrogram computation).
    * @param config Controls generation length and termination criteria.
    * @param token_callback Optional functor invoked for each decoded piece of
    * text emitted during generation.
@@ -95,51 +96,6 @@ class AsrRunner {
   ::executorch::runtime::Error load_tokenizer();
   inline const std::unordered_set<int64_t>& eos_token_ids() const {
     return eos_token_ids_;
-  }
-
-  /**
-   * Sample the next token from the logits tensor.
-   * @param logits_tensor The logits tensor.
-   * @param temperature The temperature parameter used to control randomness in
-   * sampling.
-   * @return The next token.
-   */
-  inline int32_t logits_to_token(
-      const executorch::aten::Tensor& logits_tensor,
-      const float temperature = 0.0f) {
-    int32_t result = 0;
-
-    // Create a minimal context for error handling in ET_SWITCH
-    struct {
-      [[noreturn]] void fail(torch::executor::Error /* error */) {
-        ET_CHECK_MSG(false, "Unsupported dtype in logits_to_token");
-      }
-    } ctx;
-
-    ET_SWITCH_FOUR_TYPES(
-        Float,
-        Half,
-        BFloat16,
-        UInt16,
-        logits_tensor.scalar_type(),
-        ctx,
-        "logits_to_token",
-        CTYPE,
-        [&]() {
-          // If the logit_tensor rank is 3, the shape is [batch, seq_length,
-          // vocab_size], get the last logits, sample and return. Else the model
-          // outputs the last logit, directly sample and return.
-          auto* logits = logits_tensor.mutable_data_ptr<CTYPE>();
-          ssize_t vocab_size = logits_tensor.size(logits_tensor.dim() - 1);
-          if (logits_tensor.dim() == 3) {
-            auto num_tokens = logits_tensor.size(1);
-            logits += (num_tokens - 1) * vocab_size;
-          }
-          // @lint-ignore CLANGTIDY facebook-hte-Deprecated
-          Sampler sampler(vocab_size, temperature);
-          result = sampler.sample(logits);
-        });
-    return result;
   }
 
   std::string module_path_;
