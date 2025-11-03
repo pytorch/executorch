@@ -435,6 +435,13 @@ TEST_F(MmapDataLoaderTest, LoadIntoCopiesOffsetCorrectly) {
 // This test verifies that offsets and sizes beyond 32-bit limits are handled
 // correctly by creating a sparse file with data at a large offset.
 TEST_F(MmapDataLoaderTest, LargeFileOffsetSupport) {
+// We run some 32 bit tests on Linux so we need to skip this
+// test.
+#ifndef _WIN32
+  if (sizeof(off_t) <= 8) {
+    return;
+  }
+#endif
   // Create a sparse file with a marker at an offset beyond 2GB (32-bit limit).
   // We use 3GB to ensure we're testing 64-bit offset handling.
   const size_t large_offset = 3ULL * 1024 * 1024 * 1024; // 3GB

@@ -134,11 +134,20 @@ class TempFile {
     ASSERT_TRUE(file.good())
         << "Failed to write " << data.size() << " bytes at offset " << offset;
 
-    // Ensure file is the specified size by seeking to the end.
-    file.seekp(file_size - 1, std::ios::beg);
+    // Ensure file is the specified size by seeking to the end and writing a
+    // byte, but only if the file needs to be extended beyond the data we just
+    // wrote.
+    if (file_size > offset + data.size()) {
+      file.seekp(file_size - 1, std::ios::beg);
+      ASSERT_TRUE(file.good())
+          << "Failed to seek to file_size - 1: " << file_size - 1;
 
-    // Write a single byte to ensure file has the correct size.
-    file.write("\0", 1);
+      // Write a single byte to ensure file has the correct size.
+      file.write("\0", 1);
+      ASSERT_TRUE(file.good())
+          << "Failed to write final byte at position " << file_size - 1;
+    }
+
     file.close();
     ASSERT_TRUE(file.good() || file.eof()) << "Error closing file: " << path;
 
