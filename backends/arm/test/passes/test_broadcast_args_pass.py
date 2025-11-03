@@ -52,5 +52,6 @@ def test_multiple_broacasts_model(module: NeedsMultipleBroadcastsModel):
         ops_not_before_pass=ops_not_before_pass,
         ops_after_pass=ops_after_pass,
         pass_list=[BroadcastArgsPass],
+        tosa_extensions=["u55"],
     )
     pipeline.run()
