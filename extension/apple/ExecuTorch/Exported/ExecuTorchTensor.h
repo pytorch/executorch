@@ -169,6 +169,16 @@ __attribute__((objc_subclassing_restricted))
 - (instancetype)copy;
 
 /**
+ * Creates a deep copy of the tensor, potentially casting to a new data type.
+ * The new tensor will have its own copy of the data.
+ *
+ * @param dataType The desired data type for the new tensor.
+ * @return A new ExecuTorchTensor instance that is a duplicate (and possibly casted) of the current tensor.
+*/
+- (instancetype)copyToDataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(copy(to:));
+
+/**
  * Executes a block with a pointer to the tensor's immutable byte data.
  *
  * @param handler A block that receives:
