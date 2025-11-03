@@ -126,7 +126,7 @@ class ConvertMhaToSha(ExportPass):
         pattern_qk = [_is_softmax, "*", lambda x: _is_matmul(x) or _is_bmm(x)]
         qk = find_pattern(softmax, pattern_qk)
         if not qk:
-            return None, None
+            return None, None, None
 
         patterns_qkv = [
             _is_softmax,
@@ -139,7 +139,7 @@ class ConvertMhaToSha(ExportPass):
 
         qkv = find_pattern(softmax, patterns_qkv, from_args=False)
         if qkv is None:
-            return None, None
+            return None, None, None
 
         permute, reshape = qkv[0][-2:]
         matmul = qkv[0][2]
