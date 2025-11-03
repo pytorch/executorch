@@ -106,8 +106,10 @@ void main() {
     // Preload weight tensor
     for (int r = 0; r < 4; r++) {
       T qmat2[TILE_TXCOLS * 4];
-      VEC4_T qmat2_vec4;
-      uvec4 packed_weight_tex;
+      $if QUANT_NBITS == 4:
+        uvec4 packed_weight_tex;
+      $else:
+        ivec4 packed_weight_tex;
 
       $if QUANT_NBITS == 4:
         $for c in range(0, TILE_TXCOLS, 2):
@@ -119,28 +121,27 @@ void main() {
             packed_weight_tex = texelFetch(
               t_weight, ivec2(weight_txcol + ${c}, pos + r), 0);
 
-          qmat2_vec4 = VEC4_T(packed_weight_tex >> 4);
-          qmat2[${c} * 4 * TILE_TXCOLS + 0] = qmat2_vec4.x;
-          qmat2[${c} * 4 * TILE_TXCOLS + 1] = qmat2_vec4.y;
-          qmat2[${c} * 4 * TILE_TXCOLS + 2] = qmat2_vec4.z;
-          qmat2[${c} * 4 * TILE_TXCOLS + 3] = qmat2_vec4.w;
+          const uvec4 tmp1 = packed_weight_tex >> 4;
+          qmat2[${c} * 4 * TILE_TXCOLS + 0] = T(tmp1.x);
+          qmat2[${c} * 4 * TILE_TXCOLS + 1] = T(tmp1.y);
+          qmat2[${c} * 4 * TILE_TXCOLS + 2] = T(tmp1.z);
+          qmat2[${c} * 4 * TILE_TXCOLS + 3] = T(tmp1.w);
 
-          qmat2_vec4 = VEC4_T(packed_weight_tex & 0x0F);
-          qmat2[${c} * 4 * TILE_TXCOLS + 4] = qmat2_vec4.x;
-          qmat2[${c} * 4 * TILE_TXCOLS + 5] = qmat2_vec4.y;
-          qmat2[${c} * 4 * TILE_TXCOLS + 6] = qmat2_vec4.z;
-          qmat2[${c} * 4 * TILE_TXCOLS + 7] = qmat2_vec4.w;
+          const uvec4 tmp2 = packed_weight_tex & 0x0F;
+          qmat2[${c} * 4 * TILE_TXCOLS + 4] = T(tmp2.x);
+          qmat2[${c} * 4 * TILE_TXCOLS + 5] = T(tmp2.y);
+          qmat2[${c} * 4 * TILE_TXCOLS + 6] = T(tmp2.z);
+          qmat2[${c} * 4 * TILE_TXCOLS + 7] = T(tmp2.w);
       $else:
         $for c in range(TILE_TXCOLS):
           $if WEIGHT_STORAGE == "buffer":
             qmat2_bufi = (pos + r) * weight_row_txstride + out_txcol;
             encoded_weight = t_weight[qmat2_bufi + ${c}];
-            packed_weight_tex = uvec4(encoded_weight & 0xFF, (encoded_weight >> 8) & 0xFF, (encoded_weight >> 16) & 0xFF, encoded_weight >> 24);
-            qmat2_vec4 = VEC4_T(packed_weight_tex);
+            packed_weight_tex = ivec4(encoded_weight & 0xFF, (encoded_weight >> 8) & 0xFF, (encoded_weight >> 16) & 0xFF, encoded_weight >> 24);
           $else:
-            qmat2_vec4 = VEC4_T(texelFetch(t_weight, ivec2(out_txcol + ${c}, pos + r), 0));
+            packed_weight_tex = ivec4(texelFetch(t_weight, ivec2(out_txcol + ${c}, pos + r), 0));
           $for j in range(4):
-            qmat2[${c} * 4 + ${j}] = qmat2_vec4[${j}];
+            qmat2[${c} * 4 + ${j}] = T(packed_weight_tex[${j}]);
 
       for (int tr = 0; tr < TILE_ROWS; ++tr) {
         $for c in range(TILE_TXCOLS):

@@ -76,11 +76,7 @@ def test_permute_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    test_data_suite,
-    xfails={"rank_4_3": "MLETORCH-955 : Permutation numerical diff for u55"},
-)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_permute_u55_INT(test_data):
     test_data, dims = test_data()
