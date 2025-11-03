@@ -88,7 +88,7 @@ jobs:
         PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
 
   export-model-cuda-artifact:
-    name: export-${{ matrix.model }}-cuda-${{ matrix.quant }}
+    name: export-${{ matrix.model.repo }}/${{ matrix.model.name }}-cuda-${{ matrix.quant.id }}
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -100,17 +100,23 @@ jobs:
       fail-fast: false
       matrix:
         model:
-          - "mistralai/Voxtral-Mini-3B-2507"
-          - "openai/whisper-small"
-          - "google/gemma-3-4b-it"
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "openai"
+            name: "whisper-small"
+          - repo: "google"
+            name: "gemma-3-4b-it"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
           - "quantized-int4-weight-only"
         exclude:
           # TODO: enable int4-weight-only on gemma3.
-          - model: "google/gemma-3-4b-it"
-            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "google"
+              name: "gemma-3-4b-it"
+            quant:
+              - "quantized-int4-weight-only"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -119,7 +125,7 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      upload-artifact: ${{ matrix.model }}-cuda-${{ matrix.quant == 'non-quantized' && 'export' || matrix.quant }}
+      upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -135,7 +141,7 @@ jobs:
         pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         echo "::endgroup::"
 
-        source .ci/scripts/export_model_cuda_artifact.sh "${{ matrix.model }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+        source .ci/scripts/export_model_cuda_artifact.sh "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
   benchmark-model-cuda:
     name: benchmark-${{ matrix.model }}-cuda
@@ -190,7 +196,7 @@ jobs:
         echo "::endgroup::"
 
   test-model-cuda-e2e:
-    name: test-${{ matrix.hf_model }}-cuda-e2e-${{ matrix.quant }}
+    name: test-${{ matrix.hf_model.repo }}/${{ matrix.hf_model.name }}-cuda-e2e-${{ matrix.quant.id }}
     needs: export-model-cuda-artifact
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
@@ -200,17 +206,23 @@ jobs:
       fail-fast: false
       matrix:
         hf_model:
-          - "mistralai/Voxtral-Mini-3B-2507"
-          - "openai/whisper-small"
-          - "google/gemma-3-4b-it"
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "openai"
+            name: "whisper-small"
+          - repo: "google"
+            name: "gemma-3-4b-it"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
           - "quantized-int4-weight-only"
         exclude:
           # TODO: enable int4-weight-only on gemma3.
-          - hf_model: "google/gemma-3-4b-it"
-            quant: "quantized-int4-weight-only"
+          - hf_model:
+              repo: "google"
+              name: "gemma-3-4b-it"
+            quant:
+              - "quantized-int4-weight-only"
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -218,7 +230,7 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      download-artifact: ${{ matrix.hf_model }}-cuda-${{ matrix.quant == 'non-quantized' && 'export' || matrix.quant }}
+      download-artifact: ${{ matrix.hf_model.repo }}-${{ matrix.hf_model.name }}-cuda-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        source .ci/scripts/test_model_cuda_e2e.sh "${{ matrix.hf_model }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+        source .ci/scripts/test_model_cuda_e2e.sh "${{ matrix.hf_model.repo }}" "${{ matrix.hf_model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
