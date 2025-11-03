@@ -16,7 +16,7 @@ This file provides you the instructions to run LLM Decoder model with different 
  1. QWEN3 0.6B / 1.7B
  1. SmolLM2 135M
  1. SmolLM3 3B
- 
+
 
 We offer the following modes to execute the model:
 
