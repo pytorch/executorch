@@ -4,14 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import copy
 import getpass
 import logging
 import os
 import subprocess
 from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -101,7 +100,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         max_seq_length: int,
         ar_len: int,
         use_kv_cache: bool,
-        example_input: Tuple[List[torch.Tensor]],
+        get_example_inputs: Callable,
         use_i64_token: bool,
         seq_mse_candidates: int,
     ):
@@ -113,7 +112,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         self._model = model.to(self.device)
         self.ar_len = ar_len
         self._use_kv_cache = use_kv_cache
-        self.example_input = example_input
+        self.get_example_inputs = get_example_inputs
         self.max_seq_length = max_seq_length
         self.use_i64_token = use_i64_token
         self.seq_mse_candidates = seq_mse_candidates
@@ -126,9 +125,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
             kwargs["seq_mse_candidates"] = self.seq_mse_candidates
 
         all_logits = INFERENCE_REGISTRY[self._use_kv_cache](
-            copy.deepcopy(
-                self.example_input
-            ),  # Copy the example input to avoid KV cache pollution when testing PPL
+            self.get_example_inputs,
             inps,
             self._model,
             self._tokenizer,
@@ -779,7 +776,7 @@ def _generate(
 
 @register_inference(use_kv_cache=True)
 def kv_inference(  # noqa: C901
-    example_input,
+    get_example_inputs: Callable,
     prompt: Union[str, list],
     module: torch.fx.GraphModule,
     tokenizer,
@@ -801,7 +798,7 @@ def kv_inference(  # noqa: C901
         ]
     )
 
-    _, atten_mask, _, k_caches, v_caches = example_input
+    _, atten_mask, _, k_caches, v_caches = get_example_inputs()
 
     # TODO: change criteria & support batch inputs if necessary
     all_pos = torch.arange(0, max_seq_len, 1, dtype=torch.int32).unsqueeze(0)
@@ -920,7 +917,7 @@ def kv_inference(  # noqa: C901
 
 @register_inference(use_kv_cache=False)
 def prefill_inference(
-    example_input,
+    get_example_inputs: Callable,
     prompt: Union[str, list],
     module: torch.fx.GraphModule,
     tokenizer,
@@ -939,7 +936,7 @@ def prefill_inference(
         ]
     )
 
-    _, atten_mask = example_input
+    _, atten_mask = get_example_inputs()
 
     # TODO: change criteria & support batch inputs if necessary
 
@@ -1001,7 +998,7 @@ def prefill_inference(
 
 def graph_module_inference(
     use_kv_cache: bool,
-    example_input,
+    get_example_inputs: Callable,
     module: torch.fx.GraphModule,
     tokenizer,
     ar_len=1,
@@ -1034,7 +1031,7 @@ def graph_module_inference(
             kwargs["lookahead_config"] = lookahead_config
 
         INFERENCE_REGISTRY[use_kv_cache](
-            example_input,
+            get_example_inputs,
             prompt,
             module,
             tokenizer,
@@ -1054,7 +1051,7 @@ def graph_module_inference(
             max_seq_length=max_seq_len,
             ar_len=ar_len,
             use_kv_cache=use_kv_cache,
-            example_input=example_input,
+            get_example_inputs=get_example_inputs,
             use_i64_token=use_i64_token,
             seq_mse_candidates=seq_mse_candidates,
         )

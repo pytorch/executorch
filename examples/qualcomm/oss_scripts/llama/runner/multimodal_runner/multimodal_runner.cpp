@@ -9,12 +9,11 @@
 // A llama 3.2 runner that includes preprocessing and post processing
 // logic. The module takes in a string as input and emits a string as output.
 
-#include <executorch/examples/models/llama/runner/runner.h>
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/client_mem.h>
-#include <executorch/examples/qualcomm/oss_scripts/llama/runner/lhd_token_generator.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_lhd_token_generator.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/rpc_mem.h>
-#include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -25,6 +24,11 @@
 #include <algorithm>
 #include <fstream>
 
+#if defined(__aarch64__)
+#include "arm_neon.h"
+#endif
+
+using executorch::aten::Tensor;
 using executorch::extension::Module;
 using executorch::extension::llm::get_rss_bytes;
 using executorch::extension::llm::print_report;
@@ -85,8 +89,9 @@ void save_logits(
 } // namespace
 
 template <typename T>
-Runner<T>::Runner(
+MultimodalRunner<T>::MultimodalRunner(
     std::unique_ptr<executorch::extension::Module> module,
+    std::unique_ptr<executorch::extension::Module> embedding_module,
     const std::string& decoder_model_version,
     const std::string& model_path,
     const std::string& tokenizer_path,
@@ -98,8 +103,10 @@ Runner<T>::Runner(
     const int ngram,
     const int window,
     const int gcap,
-    std::unique_ptr<tokenizers::Tokenizer> tokenizer)
+    std::unique_ptr<executorch::aten::Tensor> image_hidden_states)
     : module_(std::move(module)),
+      embedding_module_(std::move(embedding_module)),
+      image_hidden_states_(std::move(image_hidden_states)),
       ngram_(ngram),
       window_(window),
       gcap_(gcap),
@@ -108,38 +115,13 @@ Runner<T>::Runner(
       dump_logits_path_(dump_logits_path),
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
-      shared_buffer_(shared_buffer),
-      tokenizer_(std::move(tokenizer)) {
+      shared_buffer_(shared_buffer) {
   stats_.reset();
 
-  if (decoder_model_version == "llama2") {
-    decoder_model_version_ = DecoderModelVersion::kLlama2;
-  } else if (decoder_model_version == "llama3") {
-    decoder_model_version_ = DecoderModelVersion::kLlama3;
-  } else if (decoder_model_version == "gemma") {
-    decoder_model_version_ = DecoderModelVersion::kGemma;
-  } else if (decoder_model_version == "gemma2") {
-    decoder_model_version_ = DecoderModelVersion::kGemma2;
-    cache_mode_ = CacheMode::HybridCache;
-  } else if (decoder_model_version == "gemma3") {
-    decoder_model_version_ = DecoderModelVersion::kGemma3;
-    cache_mode_ = CacheMode::HybridCache;
-  } else if (decoder_model_version == "granite") {
-    decoder_model_version_ = DecoderModelVersion::kGranite;
-  } else if (decoder_model_version == "phi_4_mini") {
-    decoder_model_version_ = DecoderModelVersion::kPhi4;
-  } else if (decoder_model_version == "qwen2_5") {
-    decoder_model_version_ = DecoderModelVersion::kQwen2_5;
-  } else if (decoder_model_version == "qwen3") {
-    decoder_model_version_ = DecoderModelVersion::kQwen3;
-  } else if (decoder_model_version == "smollm2_135m") {
-    decoder_model_version_ = DecoderModelVersion::kSmollm2_135m;
-  } else if (decoder_model_version == "smollm3") {
-    decoder_model_version_ = DecoderModelVersion::kSmollm3;
-  } else if (decoder_model_version == "codegen") {
-    decoder_model_version_ = DecoderModelVersion::kCodegen;
-  } else if (decoder_model_version == "glm") {
-    decoder_model_version_ = DecoderModelVersion::kGlm;
+  if (decoder_model_version == "smolvlm") {
+    decoder_model_version_ = MultimodalDecoderModelVersion::kSmolvlm;
+  } else if (decoder_model_version == "internvl3") {
+    decoder_model_version_ = MultimodalDecoderModelVersion::kInternvl3;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
@@ -150,27 +132,34 @@ Runner<T>::Runner(
 }
 
 template <typename T>
-bool Runner<T>::is_loaded() const {
-  return module_->is_loaded() && tokenizer_ && decoder_runner_ &&
-      prompt_processor_ && token_generator_ && kv_manager_ && buffer_manager_;
+bool MultimodalRunner<T>::is_loaded() const {
+  return module_->is_loaded() && embedding_module_->is_loaded() && tokenizer_ &&
+      decoder_runner_ && prompt_processor_ && token_generator_ && kv_manager_ &&
+      buffer_manager_;
 }
 
 template <typename T>
-Error Runner<T>::load() {
+Error MultimodalRunner<T>::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
 
+  std::string prompt_embedding_method_name, token_embedding_method_name;
   std::string token_generator_method_name, prompt_processor_method_name;
   std::vector<std::string> method_names;
   switch (eval_mode_) {
     case EvalMode::kKVCached:
+      prompt_embedding_method_name = "tok_embedding_kv_forward";
+      token_embedding_method_name = "tok_embedding_kv_forward";
       prompt_processor_method_name = "forward";
       token_generator_method_name = "forward";
+      method_names.emplace_back(prompt_processor_method_name);
       method_names.emplace_back(token_generator_method_name);
       break;
     case EvalMode::kHybrid:
     case EvalMode::kLookaheadDecoding:
+      prompt_embedding_method_name = "tok_embedding_prefill_forward";
+      token_embedding_method_name = "tok_embedding_kv_forward";
       prompt_processor_method_name = "prefill_forward";
       token_generator_method_name = "kv_forward";
       method_names.emplace_back(prompt_processor_method_name);
@@ -194,26 +183,14 @@ Error Runner<T>::load() {
     }
     eos_ids->insert(tokenizer_->eos_tok());
   }
-  if (decoder_model_version_ == DecoderModelVersion::kLlama3) {
-    eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
-  } else if (decoder_model_version_ == DecoderModelVersion::kPhi4) {
-    eos_ids->insert(tokenizer_->encode("<|end|>", 0, 0).get()[0]);
+  if (decoder_model_version_ == MultimodalDecoderModelVersion::kSmolvlm) {
+    eos_ids->insert(tokenizer_->encode("<end_of_utterance>", 0, 0).get()[0]);
   } else if (
-      decoder_model_version_ == DecoderModelVersion::kQwen3 ||
-      decoder_model_version_ == DecoderModelVersion::kSmollm2_135m ||
-      decoder_model_version_ == DecoderModelVersion::kSmollm3) {
+      decoder_model_version_ == MultimodalDecoderModelVersion::kInternvl3) {
     eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
-  } else if (
-      decoder_model_version_ == DecoderModelVersion::kGemma ||
-      decoder_model_version_ == DecoderModelVersion::kGemma2 ||
-      decoder_model_version_ == DecoderModelVersion::kGemma3) {
-    eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);
-  } else if (decoder_model_version_ == DecoderModelVersion::kCodegen) {
-    eos_ids->insert(tokenizer_->encode("<|endoftext|>", 0, 0).get()[0]);
-  } else if (decoder_model_version_ == DecoderModelVersion::kGlm) {
-    eos_ids->insert(tokenizer_->encode("<|user|>", 0, 0).get()[0]);
   }
 
+  // Try avoid getMetadataHelper as it is time consuming.
   Result<MethodMeta> method_meta =
       module_->method_meta(token_generator_method_name);
 
@@ -235,8 +212,15 @@ Error Runner<T>::load() {
   auto k_cache_shape = method_meta->output_tensor_meta(1)->sizes();
   int64_t num_heads = k_cache_shape[1];
   int64_t head_dim = k_cache_shape[2];
-  bool use_int64_token = method_meta->input_tensor_meta(0)->scalar_type() ==
-      executorch::aten::ScalarType::Long;
+
+  // TODO: filter shape hidden_state: [1, ar_len, dim]
+  int64_t dim = embedding_module_->method_meta(token_embedding_method_name)
+                    ->output_tensor_meta(0)
+                    ->sizes()[2];
+  bool use_int64_token =
+      embedding_module_->method_meta(token_embedding_method_name)
+          ->input_tensor_meta(0)
+          ->scalar_type() == executorch::aten::ScalarType::Long;
 
   // Use attention mask length to retrieve AR length and context length
   // Cache len equals to context_len - ar_len
@@ -265,6 +249,21 @@ Error Runner<T>::load() {
         std::min(token_generator_ar_len, prompt_processor_ar_len);
   max_ar_len = std::max(token_generator_ar_len, prompt_processor_ar_len);
 
+  embedding_runner_ =
+      std::make_unique<EmbeddingRunner>(embedding_module_.get());
+  ET_CHECK_OK_OR_RETURN_ERROR(embedding_runner_->load(
+      {prompt_embedding_method_name, token_embedding_method_name}));
+  // Initialize EmbeddingProcessor
+  embedding_processor_ = std::make_unique<EmbeddingProcessor>(
+      embedding_runner_.get(),
+      prompt_embedding_method_name,
+      EmbeddingProcessor::Metadata{
+          context_len_,
+          prompt_processor_ar_len,
+          vocab_size,
+          use_int64_token,
+          static_cast<int32_t>(dim)});
+
   // Load the sliding window size if the model supports it.
   // This is used to configure the attention mask for models with window
   // attention
@@ -280,11 +279,11 @@ Error Runner<T>::load() {
       num_heads,
       num_layers});
 
-  prompt_processor_ = std::make_unique<PromptProcessor<T>>(
+  prompt_processor_ = std::make_unique<MultimodalPromptProcessor<T>>(
       decoder_runner_.get(),
       kv_manager_.get(),
       prompt_processor_method_name,
-      typename PromptProcessor<T>::Metadata{
+      typename MultimodalPromptProcessor<T>::Metadata{
           context_len_,
           num_heads,
           num_layers,
@@ -292,15 +291,131 @@ Error Runner<T>::load() {
           vocab_size,
           use_int64_token,
           sliding_window,
-          cache_mode_});
+          cache_mode_,
+          static_cast<int32_t>(dim)});
+
+  if (eval_mode_ == EvalMode::kLookaheadDecoding ||
+      eval_mode_ == EvalMode::kHybrid) {
+    output_k_cache_scales_.resize(num_layers);
+    output_k_cache_zero_points_.resize(num_layers);
+    output_v_cache_scales_.resize(num_layers);
+    output_v_cache_zero_points_.resize(num_layers);
+    for (int i = 0; i < num_layers; i++) {
+      std::string get_k_scale_output_name =
+          "get_k_scale_output_" + std::to_string(i);
+      std::string get_k_zero_point_output_name =
+          "get_k_zero_point_output_" + std::to_string(i);
+      std::string get_v_scale_output_name =
+          "get_v_scale_output_" + std::to_string(i);
+      std::string get_v_zero_point_output_name =
+          "get_v_zero_point_output_" + std::to_string(i);
+
+      if (module_->method_names()->count(get_k_scale_output_name) > 0) {
+        output_k_cache_scales_[i] = static_cast<float>(
+            ET_UNWRAP(module_->get(get_k_scale_output_name)).toDouble());
+      } else {
+        ET_LOG(Error, "Cannot find method %s", get_k_scale_output_name.c_str());
+        return Error::Internal;
+      }
+      if (module_->method_names()->count(get_k_zero_point_output_name) > 0) {
+        output_k_cache_zero_points_[i] = static_cast<T>(
+            ET_UNWRAP(module_->get(get_k_zero_point_output_name)).toInt());
+      } else {
+        ET_LOG(
+            Error,
+            "Cannot find method %s",
+            get_k_zero_point_output_name.c_str());
+        return Error::Internal;
+      }
+      if (module_->method_names()->count(get_v_scale_output_name) > 0) {
+        output_v_cache_scales_[i] = static_cast<float>(
+            ET_UNWRAP(module_->get(get_v_scale_output_name)).toDouble());
+      } else {
+        ET_LOG(Error, "Cannot find method %s", get_v_scale_output_name.c_str());
+        return Error::Internal;
+      }
+      if (module_->method_names()->count(get_v_zero_point_output_name) > 0) {
+        output_v_cache_zero_points_[i] = static_cast<T>(
+            ET_UNWRAP(module_->get(get_v_zero_point_output_name)).toInt());
+      } else {
+        ET_LOG(
+            Error,
+            "Cannot find method %s",
+            get_v_zero_point_output_name.c_str());
+        return Error::Internal;
+      }
+    }
+    // Load scale and zero point for quantized input KV cache
+    input_k_cache_scales_.resize(num_layers);
+    input_k_cache_zero_points_.resize(num_layers);
+    input_v_cache_scales_.resize(num_layers);
+    input_v_cache_zero_points_.resize(num_layers);
+    for (int i = 0; i < num_layers; i++) {
+      std::string get_k_scale_input_name =
+          "get_k_scale_input_" + std::to_string(i);
+      std::string get_k_zero_point_input_name =
+          "get_k_zero_point_input_" + std::to_string(i);
+      std::string get_v_scale_input_name =
+          "get_v_scale_input_" + std::to_string(i);
+      std::string get_v_zero_point_input_name =
+          "get_v_zero_point_input_" + std::to_string(i);
+      if (module_->method_names()->count(get_k_scale_input_name) > 0) {
+        input_k_cache_scales_[i] = static_cast<float>(
+            ET_UNWRAP(module_->get(get_k_scale_input_name)).toDouble());
+      } else {
+        ET_LOG(Error, "Cannot find method %s", get_k_scale_input_name.c_str());
+        return Error::Internal;
+      }
+      if (module_->method_names()->count(get_k_zero_point_input_name) > 0) {
+        input_k_cache_zero_points_[i] = static_cast<T>(
+            ET_UNWRAP(module_->get(get_k_zero_point_input_name)).toInt());
+      } else {
+        ET_LOG(
+            Error,
+            "Cannot find method %s",
+            get_k_zero_point_input_name.c_str());
+        return Error::Internal;
+      }
+      if (module_->method_names()->count(get_v_scale_input_name) > 0) {
+        input_v_cache_scales_[i] = static_cast<float>(
+            ET_UNWRAP(module_->get(get_v_scale_input_name)).toDouble());
+      } else {
+        ET_LOG(Error, "Cannot find method %s", get_v_scale_input_name.c_str());
+        return Error::Internal;
+      }
+      if (module_->method_names()->count(get_v_zero_point_input_name) > 0) {
+        input_v_cache_zero_points_[i] = static_cast<T>(
+            ET_UNWRAP(module_->get(get_v_zero_point_input_name)).toInt());
+      } else {
+        ET_LOG(
+            Error,
+            "Cannot find method %s",
+            get_v_zero_point_input_name.c_str());
+        return Error::Internal;
+      }
+    }
+  }
+
+  // Initialize EmbeddingGenerator
+  embedding_generator_ = std::make_unique<EmbeddingProcessor>(
+      embedding_runner_.get(),
+      token_embedding_method_name,
+      EmbeddingProcessor::Metadata{
+          context_len_,
+          token_generator_ar_len,
+          vocab_size,
+          use_int64_token,
+          static_cast<int32_t>(dim)});
   if (eval_mode_ == EvalMode::kLookaheadDecoding) {
-    token_generator_ = std::make_unique<LhdTokenGenerator<T>>(
+    // Initialize TokenGenerator
+    token_generator_ = std::make_unique<MultimodalLhdTokenGenerator<T>>(
         tokenizer_.get(),
+        embedding_generator_.get(),
         decoder_runner_.get(),
         kv_manager_.get(),
         token_generator_method_name,
         std::move(eos_ids),
-        typename LhdTokenGenerator<T>::Metadata{
+        typename MultimodalLhdTokenGenerator<T>::Metadata{
             context_len_,
             num_heads,
             num_layers,
@@ -311,16 +426,18 @@ Error Runner<T>::load() {
             window_,
             gcap_,
             sliding_window,
-            cache_mode_},
+            cache_mode_,
+            static_cast<int32_t>(dim)},
         &stats_);
   } else {
-    token_generator_ = std::make_unique<TokenGenerator<T>>(
+    token_generator_ = std::make_unique<MultimodalTokenGenerator<T>>(
         tokenizer_.get(),
+        embedding_generator_.get(),
         decoder_runner_.get(),
         kv_manager_.get(),
         token_generator_method_name,
         std::move(eos_ids),
-        typename TokenGenerator<T>::Metadata{
+        typename MultimodalTokenGenerator<T>::Metadata{
             context_len_,
             num_heads,
             num_layers,
@@ -328,7 +445,8 @@ Error Runner<T>::load() {
             vocab_size,
             use_int64_token,
             sliding_window,
-            cache_mode_},
+            cache_mode_,
+            static_cast<int32_t>(dim)},
         &stats_);
   }
 
@@ -337,8 +455,11 @@ Error Runner<T>::load() {
     buffer_manager_ = std::make_unique<RpcMem>(
         kv_manager_->total_cache_size_in_bytes(),
         prompt_processor_->total_prompt_processor_io_size_in_bytes(),
-        token_generator_->total_token_generator_io_size_in_bytes());
+        token_generator_->total_token_generator_io_size_in_bytes(),
+        embedding_processor_->total_embedding_processor_io_size_in_bytes(),
+        embedding_generator_->total_embedding_processor_io_size_in_bytes());
   }
+
   ET_LOG(Info, "creating io_memory");
   // prepare io
   kv_manager_->init_cache(buffer_manager_.get(), prompt_processor_ar_len);
@@ -347,11 +468,18 @@ Error Runner<T>::load() {
       module_->method_meta(prompt_processor_method_name));
   token_generator_->init_io(
       buffer_manager_.get(), module_->method_meta(token_generator_method_name));
+  // Prepare io for embedding
+  embedding_processor_->init_io(
+      buffer_manager_.get(),
+      embedding_module_->method_meta(prompt_embedding_method_name));
+  embedding_generator_->init_io(
+      buffer_manager_.get(),
+      embedding_module_->method_meta(token_embedding_method_name));
   return Error::Ok;
 }
 
 template <typename T>
-Error Runner<T>::generate(
+Error MultimodalRunner<T>::generate(
     const std::string& prompt,
     const llm::GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
@@ -361,7 +489,7 @@ Error Runner<T>::generate(
 }
 
 template <typename T>
-Error Runner<T>::generate_from_prompt_or_file(
+Error MultimodalRunner<T>::generate_from_prompt_or_file(
     const std::string& prompt,
     bool tokenized_prompt,
     const llm::GenerationConfig& config,
@@ -392,7 +520,8 @@ Error Runner<T>::generate_from_prompt_or_file(
         context_len_);
     seq_len = context_len_;
   }
-  int32_t n_bos = (cur_pos_ == 0) ? 1 : 0;
+  // For multimodal, we will disable n_bos
+  int32_t n_bos = 0;
 
   // encode the (string) prompt into tokens sequence
   std::vector<uint64_t> prompt_tokens;
@@ -433,8 +562,23 @@ Error Runner<T>::generate_from_prompt_or_file(
     token_callback(prompt);
   }
   bool dump_logits = dump_logits_path_.empty() ? false : true;
+  embedding_processor_->prefill(prompt_tokens);
+  const TensorStruct<float>& text_embeddings =
+      embedding_processor_->get_prompt_embeddings();
+  int64_t embedding_dim = text_embeddings.tensor->size(2);
+
+  uint64_t placeholder_token_id = 0;
+  if (module_->method_names()->count("modality_placeholder_token_id") > 0) {
+    placeholder_token_id =
+        module_->get("modality_placeholder_token_id")->toInt();
+  }
+
+  ET_LOG(Info, "Merging text embeddings with image hidden states");
+  merge_multimodal_embeddings(
+      prompt_tokens, text_embeddings, placeholder_token_id);
+
   auto prefill_res =
-      prompt_processor_->prefill(prompt_tokens, cur_pos_, dump_logits);
+      prompt_processor_->prefill(merged_embeddings_, cur_pos_, dump_logits);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
   cur_pos_ += num_prompt_tokens;
@@ -454,6 +598,47 @@ Error Runner<T>::generate_from_prompt_or_file(
 
   // start the main loop
   prompt_tokens.push_back(cur_token);
+
+  // Requant kv cache for prefill decode I/O
+  if (eval_mode_ == EvalMode::kLookaheadDecoding ||
+      eval_mode_ == EvalMode::kHybrid) {
+    int64_t num_heads = prompt_processor_->get_num_heads();
+    int64_t num_layers = prompt_processor_->get_num_layers();
+    int64_t head_dim = kv_manager_->get_head_dim();
+    std::vector<KVCache<T>> k_cache_ptrs = kv_manager_->get_k_cache_();
+    std::vector<KVCache<T>> v_cache_ptrs = kv_manager_->get_v_cache_();
+
+    const int64_t num_elems_per_layer =
+        (context_len_ - 1) * num_heads * head_dim;
+    // Requant kv cache from prefill output scale/zero_point to decode input
+    // scale/zero_point
+    for (int layer_idx = 0; layer_idx < num_layers; layer_idx++) {
+      T* k_cache_data = k_cache_ptrs[layer_idx].buffer;
+      T* v_cache_data = v_cache_ptrs[layer_idx].buffer;
+
+      const float scale_ratio_k =
+          output_k_cache_scales_[layer_idx] / input_k_cache_scales_[layer_idx];
+      const float scale_ratio_v =
+          output_v_cache_scales_[layer_idx] / input_v_cache_scales_[layer_idx];
+
+      for (int64_t i = 0; i < num_elems_per_layer; i++) {
+        // Requant k_cache_data from prefill output scale/zero_point to decode
+        // input scale/zero_point
+        k_cache_data[i] = static_cast<T>(
+            (k_cache_data[i] - output_k_cache_zero_points_[layer_idx]) *
+                scale_ratio_k +
+            input_k_cache_zero_points_[layer_idx]);
+
+        // Requant v_cache_data from prefill output scale/zero_point to decode
+        // input scale/zero_point
+        v_cache_data[i] = static_cast<T>(
+            (v_cache_data[i] - output_v_cache_zero_points_[layer_idx]) *
+                scale_ratio_v +
+            input_v_cache_zero_points_[layer_idx]);
+      }
+    }
+  }
+
   int64_t num_generated_tokens = ET_UNWRAP(token_generator_->generate(
       prompt_tokens, cur_pos_, seq_len, token_callback, dump_logits));
   stats_.inference_end_ms = time_in_ms();
@@ -483,7 +668,75 @@ Error Runner<T>::generate_from_prompt_or_file(
 }
 
 template <typename T>
-Result<DecoderModelVersion> Runner<T>::get_decoder_model_version() {
+void MultimodalRunner<T>::merge_multimodal_embeddings(
+    const std::vector<uint64_t>& input_ids,
+    const TensorStruct<float>& text_embeddings,
+    uint64_t placeholder_token_id) {
+  // This implements the modality_inputs_merger logic from decoder_utils.py
+  // Find positions where placeholder tokens appear
+  std::vector<size_t> placeholder_positions;
+  for (size_t i = 0; i < input_ids.size(); ++i) {
+    if (input_ids[i] == placeholder_token_id) {
+      placeholder_positions.push_back(i);
+    }
+  }
+
+  int64_t embedding_dim;
+  int64_t num_tokens = input_ids.size();
+  if (text_embeddings.tensor) {
+    embedding_dim = text_embeddings.tensor->size(2);
+    num_tokens = text_embeddings.tensor->size(1);
+  } else {
+    ET_CHECK_MSG(
+        false,
+        "text_embeddings.tensor is null; cannot determine embedding dim during multimodal embedding merge");
+  }
+
+  // Allocate new buffer for merged embeddings
+  size_t total_elements = num_tokens * embedding_dim;
+  multimodal_embeddings_buffer_.resize(total_elements);
+
+  // First, copy all text embeddings to the new buffer
+  std::memcpy(
+      multimodal_embeddings_buffer_.data(),
+      text_embeddings.data,
+      total_elements * sizeof(float));
+
+  // Then replace placeholder positions with image hidden states
+  auto* image_data = image_hidden_states_->const_data_ptr<float>();
+  auto* merged_data = multimodal_embeddings_buffer_.data();
+
+  int64_t image_seq_len = image_hidden_states_->size(1);
+
+  // Copy image hidden states to placeholder positions
+  for (int32_t i = 0; i < placeholder_positions.size(); ++i) {
+    int32_t pos = placeholder_positions[i];
+    std::memcpy(
+        merged_data + pos * embedding_dim,
+        image_data + i * embedding_dim,
+        embedding_dim * sizeof(float));
+  }
+
+  merged_embeddings_.data = multimodal_embeddings_buffer_.data();
+  merged_embeddings_.size = total_elements * sizeof(float);
+
+  // Create TensorImpl with proper shape [1, num_tokens, embedding_dim]
+  multimodal_embeddings_sizes_ = {
+      1, static_cast<int>(num_tokens), static_cast<int>(embedding_dim)};
+  multimodal_embeddings_dim_order_ = {0, 1, 2};
+  merged_embeddings_.tensor = std::make_unique<executorch::aten::TensorImpl>(
+      executorch::aten::ScalarType::Float,
+      multimodal_embeddings_sizes_.size(),
+      multimodal_embeddings_sizes_.data(),
+      merged_embeddings_.data,
+      multimodal_embeddings_dim_order_.data());
+
+  ET_LOG(Info, "Multimodal embeddings merged successfully");
+}
+
+template <typename T>
+Result<MultimodalDecoderModelVersion>
+MultimodalRunner<T>::get_decoder_model_version() {
   if (!is_loaded()) {
     stats_.model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
@@ -493,7 +746,7 @@ Result<DecoderModelVersion> Runner<T>::get_decoder_model_version() {
 }
 
 // Explicit instantiations
-template class Runner<uint16_t>;
-template class Runner<uint8_t>;
+template class MultimodalRunner<uint16_t>;
+template class MultimodalRunner<uint8_t>;
 
 } // namespace example

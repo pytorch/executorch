@@ -23,6 +23,19 @@ RpcMem::RpcMem(
   shared_buffer_base_ptr_ = QnnExecuTorchAllocCustomMem(
       total_bytes, MemoryAllocator::kDefaultAlignment);
 }
+RpcMem::RpcMem(
+    const size_t total_cache_size,
+    const size_t total_prompt_processor_io_size,
+    const size_t total_token_generator_io_size,
+    const size_t total_embedding_processor_io_size,
+    const size_t total_embedding_generator_io_size)
+    : calculated_offsets_(0) {
+  size_t total_bytes = total_cache_size + total_prompt_processor_io_size +
+      total_token_generator_io_size + total_embedding_processor_io_size +
+      total_embedding_generator_io_size;
+  shared_buffer_base_ptr_ = QnnExecuTorchAllocCustomMem(
+      total_bytes, MemoryAllocator::kDefaultAlignment);
+}
 RpcMem::~RpcMem() {
   QnnExecuTorchFreeCustomMem(shared_buffer_base_ptr_);
 }
