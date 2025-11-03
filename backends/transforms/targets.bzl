@@ -96,6 +96,7 @@ def define_common_targets():
         srcs = ["fuse_view_copy.py"],
         visibility = [
             "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             "//caffe2:torch",
