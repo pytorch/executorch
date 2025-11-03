@@ -22,6 +22,7 @@ non_fbcode_target(_kind = fb_android_library,
     language = "JAVA",
     deps = [
         "//fbandroid/java/com/facebook/jni:jni",
+        "//xplat/executorch/backends/vulkan:vulkan_backend_lib_static",
         "//fbandroid/libraries/soloader/java/com/facebook/soloader/nativeloader:nativeloader",
     ],
 )
