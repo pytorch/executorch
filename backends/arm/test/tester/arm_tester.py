@@ -6,6 +6,8 @@
 import copy
 
 import logging
+import shutil
+import tempfile
 
 from collections import Counter
 from pprint import pformat
@@ -86,7 +88,6 @@ from tabulate import tabulate
 
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
-
 
 logger = logging.getLogger(__name__)
 
@@ -667,6 +668,14 @@ class ArmTester(Tester):
                     qtol=0,
                 )
             raise e
+
+    def __del__(self):
+        intermediate_path = self.compile_spec.get_intermediate_path()
+        if not intermediate_path:
+            return
+        if len(tempdir := tempfile.gettempdir()) > 0:
+            if intermediate_path.startswith(tempdir):
+                shutil.rmtree(intermediate_path, ignore_errors=True)
 
 
 def _get_dtype_distribution(

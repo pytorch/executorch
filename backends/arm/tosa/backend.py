@@ -10,6 +10,7 @@
 # JIT compiler flows.
 #
 import logging
+import tempfile
 from collections import deque
 from itertools import count
 from typing import cast, Dict, final, List, Set
@@ -30,7 +31,6 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.graph_module import get_control_flow_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph, GraphModule, Node
-
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
@@ -157,11 +157,16 @@ class TOSABackend(BackendDetails):
 
         if artifact_path:
             tag = arm_get_first_delegation_tag(edge_program.graph_module)
-            debug_tosa_dump(
-                binary,
-                artifact_path,
-                suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),
-            )
+
+            # Only dump TOSA if we are not saving to temporary folder.
+            if len(
+                tempdir := tempfile.gettempdir()
+            ) > 0 and not artifact_path.startswith(tempdir):
+                debug_tosa_dump(
+                    binary,
+                    artifact_path,
+                    suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),
+                )
 
             if debug_hook is not None:
                 if debug_hook.mode == ArmCompileSpec.DebugMode.JSON:
