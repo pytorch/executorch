@@ -88,7 +88,7 @@ jobs:
         PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
 
   export-model-cuda-artifact:
-    name: export-${{ matrix.model.repo }}/${{ matrix.model.name }}-cuda-${{ matrix.quant.id }}
+    name: export-model-cuda-artifact
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -153,7 +153,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: [voxtral, gemma3]
+        model:
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "openai"
+            name: "whisper-small"
+          - repo: "google"
+            name: "gemma-3-4b-it"
+        quant:
+          - "non-quantized"
+          - "quantized-int4-tile-packed"
+          - "quantized-int4-weight-only"
+        exclude:
+          # TODO: enable int4-weight-only on gemma3.
+          - model:
+              repo: "google"
+              name: "gemma-3-4b-it"
+            quant:
+              - "quantized-int4-weight-only"
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -161,7 +178,7 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      download-artifact: ${{ matrix.model }}-cuda-export
+      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -196,7 +213,7 @@ jobs:
         echo "::endgroup::"
 
   test-model-cuda-e2e:
-    name: test-${{ matrix.hf_model.repo }}/${{ matrix.hf_model.name }}-cuda-e2e-${{ matrix.quant.id }}
+    name: test-model-cuda-e2e
     needs: export-model-cuda-artifact
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
