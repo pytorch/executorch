@@ -130,6 +130,29 @@ public extension AnyTensor {
   /// The total number of elements in the tensor.
   var count: Int { __count }
 
+  /// Creates a new tensor that shares the underlying data storage with the
+  /// given tensor, with metadata overrides. An empty array for
+  /// a parameter signifies that it should be inherited or derived.
+  ///
+  /// - Parameters:
+  ///   - tensor: The tensor instance to create a view of.
+  ///   - shape: An override for the tensor's shape.
+  ///   - dimensionOrder: An override for the tensor's dimension order.
+  ///   - strides: An override for the tensor's strides.
+  convenience init(
+    _ tensor: AnyTensor,
+    shape: [Int] = [],
+    dimensionOrder: [Int] = [],
+    strides: [Int] = []
+  ) {
+    self.init(
+      __tensor: tensor,
+      shape: shape.map(NSNumber.init),
+      dimensionOrder: dimensionOrder.map(NSNumber.init),
+      strides: strides.map(NSNumber.init)
+    )
+  }
+
   /// Initializes a tensor without copying the provided data.
   ///
   /// - Parameters:
@@ -234,8 +257,7 @@ public extension AnyTensor {
 
   /// Attempts to convert this type-erased `AnyTensor` into a strongly-typed `Tensor<T>`.
   ///
-  /// - Returns: An `AnyTensor` if `self.dataType == T.dataType`,
-  ///            otherwise `nil` when the runtime dtype doesn’t match.
+  /// - Returns: A `Tensor<T>` if the runtime data type matches, otherwise `nil`.
   func asTensor<T: Scalar>() -> Tensor<T>? {
     guard dataType == T.dataType else { return nil }
     return Tensor<T>(self)
@@ -586,11 +608,28 @@ public final class Tensor<T: Scalar>: Equatable {
   }
 
   /// Creates a new tensor that shares the underlying data storage with the
-  /// given tensor. This new tensor is a view and does not own the data.
+  /// given tensor, with optional metadata overrides. An empty array for
+  /// a parameter signifies that it should be inherited or derived.
   ///
-  /// - Parameter tensor: The tensor to create a view of.
-  public convenience init(_ tensor: Tensor<T>) {
-    self.init(AnyTensor(tensor.anyTensor))
+  /// - Parameters:
+  ///   - tensor: The tensor to create a view of.
+  ///   - shape: An override for the tensor's shape.
+  ///   - dimensionOrder: An override for the tensor's dimension order.
+  ///   - strides: An override for the tensor's strides.
+  public convenience init(
+    _ tensor: Tensor<T>,
+    shape: [Int] = [],
+    dimensionOrder: [Int] = [],
+    strides: [Int] = []
+  ) {
+    self.init(
+      AnyTensor(
+        tensor.anyTensor,
+        shape: shape,
+        dimensionOrder: dimensionOrder,
+        strides: strides
+      )
+    )
   }
 
   /// Initializes a tensor without copying the provided data.
