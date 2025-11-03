@@ -9,9 +9,9 @@
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <limits>
-#include <cstdint>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -203,13 +203,8 @@ Result<FreeableBuffer> MmapDataLoader::load(
   // can also map the same pages and share the same memory.
   const auto map_offset = get_mmap_offset(range.start);
 
-  void* pages = ::mmap(
-      nullptr,
-      map_size,
-      PROT_READ,
-      MAP_SHARED,
-      fd_,
-      map_offset);
+  void* pages =
+      ::mmap(nullptr, map_size, PROT_READ, MAP_SHARED, fd_, map_offset);
   ET_CHECK_OR_RETURN_ERROR(
       pages != MAP_FAILED,
       AccessFailed,
@@ -313,13 +308,8 @@ Error MmapDataLoader::load_into(
   // modifying the file.
   const auto map_offset = get_mmap_offset(range.start);
 
-  void* pages = ::mmap(
-      nullptr,
-      map_size,
-      PROT_READ,
-      MAP_PRIVATE,
-      fd_,
-      map_offset);
+  void* pages =
+      ::mmap(nullptr, map_size, PROT_READ, MAP_PRIVATE, fd_, map_offset);
   ET_CHECK_OR_RETURN_ERROR(
       pages != MAP_FAILED,
       AccessFailed,

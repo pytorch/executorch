@@ -21,8 +21,8 @@
 
 #include <errno.h>
 #include <io.h>
-#include <limits>
 #include <cstdint>
+#include <limits>
 #define NOMINMAX
 #include <windows.h>
 #undef NOMINMAX
@@ -162,12 +162,14 @@ void* mmap(
   const std::uint64_t maxSize = off + static_cast<std::uint64_t>(len);
 
   const DWORD dwFileOffsetLow = static_cast<DWORD>(off & 0xFFFFFFFFULL);
-  const DWORD dwFileOffsetHigh = static_cast<DWORD>((off >> 32) & 0xFFFFFFFFULL);
+  const DWORD dwFileOffsetHigh =
+      static_cast<DWORD>((off >> 32) & 0xFFFFFFFFULL);
   const DWORD protect = __map_mmap_prot_page(prot);
   const DWORD desiredAccess = __map_mmap_prot_file(prot);
 
   const DWORD dwMaxSizeLow = static_cast<DWORD>(maxSize & 0xFFFFFFFFULL);
-  const DWORD dwMaxSizeHigh = static_cast<DWORD>((maxSize >> 32) & 0xFFFFFFFFULL);
+  const DWORD dwMaxSizeHigh =
+      static_cast<DWORD>((maxSize >> 32) & 0xFFFFFFFFULL);
 
   h = ((flags & MAP_ANONYMOUS) == 0) ? (HANDLE)_get_osfhandle(fildes)
                                      : INVALID_HANDLE_VALUE;

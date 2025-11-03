@@ -461,8 +461,7 @@ TEST_F(MmapDataLoaderTest, LargeFileOffsetSupport) {
       large_offset,
       test_marker.size(),
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
-  ASSERT_EQ(fb.error(), Error::Ok)
-      << "Failed to load data from large offset";
+  ASSERT_EQ(fb.error(), Error::Ok) << "Failed to load data from large offset";
 
   EXPECT_EQ(fb->size(), test_marker.size());
   EXPECT_EQ(0, std::memcmp(fb->data(), test_marker.data(), test_marker.size()))
@@ -477,6 +476,7 @@ TEST_F(MmapDataLoaderTest, LargeFileOffsetSupport) {
       buffer.data());
   ASSERT_EQ(err, Error::Ok) << "load_into failed for large offset";
 
-  EXPECT_EQ(0, std::memcmp(buffer.data(), test_marker.data(), test_marker.size()))
+  EXPECT_EQ(
+      0, std::memcmp(buffer.data(), test_marker.data(), test_marker.size()))
       << "load_into data at large offset does not match expected marker";
 }

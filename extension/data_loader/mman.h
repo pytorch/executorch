@@ -19,7 +19,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-
 ET_INLINE size_t get_os_page_size() {
   return sysconf(_SC_PAGESIZE);
 }
@@ -50,7 +49,6 @@ ET_INLINE off_t get_mmap_offset(size_t offset) {
 #undef NOMINMAX
 #include <io.h>
 #include <sys/stat.h>
-
 
 #include <executorch/extension/data_loader/mman_windows.h>
 

@@ -131,8 +131,8 @@ class TempFile {
 
     // Write the data.
     file.write(data.data(), data.size());
-    ASSERT_TRUE(file.good()) << "Failed to write " << data.size()
-                             << " bytes at offset " << offset;
+    ASSERT_TRUE(file.good())
+        << "Failed to write " << data.size() << " bytes at offset " << offset;
 
     // Ensure file is the specified size by seeking to the end.
     file.seekp(file_size - 1, std::ios::beg);
