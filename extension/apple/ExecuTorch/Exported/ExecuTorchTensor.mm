@@ -147,6 +147,11 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   return [[ExecuTorchTensor allocWithZone:zone] initWithNativeInstance:&tensor];
 }
 
+- (instancetype)copyToDataType:(ExecuTorchDataType)dataType {
+  auto tensor = clone_tensor_ptr(_tensor, static_cast<ScalarType>(dataType));
+  return [[ExecuTorchTensor alloc] initWithNativeInstance:&tensor];
+}
+
 - (void *)nativeInstance {
   return &_tensor;
 }
