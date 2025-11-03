@@ -143,7 +143,7 @@ jobs:
         source .ci/scripts/export_model_cuda_artifact.sh "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
   benchmark-model-cuda:
-    name: benchmark-${{ matrix.model }}-cuda
+    name: benchmark-model-cuda
     needs: export-model-cuda-artifact
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
@@ -155,8 +155,6 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
-          - repo: "openai"
-            name: "whisper-small"
           - repo: "google"
             name: "gemma-3-4b-it"
         quant:
@@ -200,13 +198,13 @@ jobs:
               -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
               -DEXECUTORCH_BUILD_TESTS=ON \
               -Bcmake-out .
-        cmake --build cmake-out -j$(( $(nproc) - 1 )) --target multimodal_benchmark
+        cmake --build cmake-out -j$(nproc) --target multimodal_benchmark
         echo "::endgroup::"
 
-        echo "::group::Run ${{ matrix.model }} Benchmark"
+        echo "::group::Run ${{ matrix.model.name }} Benchmark"
 
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        cmake-out/backends/cuda/multimodal_benchmark ${{ matrix.model }} model.pte aoti_cuda_blob.ptd
+        cmake-out/backends/cuda/multimodal_benchmark ${{ matrix.model.name }} model.pte aoti_cuda_blob.ptd
 
         echo "::endgroup::"
 

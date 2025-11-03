@@ -143,6 +143,7 @@ fi
 if [ "$AUDIO_URL" != "" ]; then
   curl -L $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
 elif [ "$MODEL_NAME" = "whisper" ]; then
+  pip install datasets soundfile
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
 fi
 
@@ -192,7 +193,7 @@ set -e
 if ! echo "$OUTPUT" | grep -iq "$EXPECTED_OUTPUT"; then
   echo "Expected output '$EXPECTED_OUTPUT' not found in output"
   exit 1
-elif
+else
   echo "Success: '$EXPECTED_OUTPUT' found in output"
 fi
 
