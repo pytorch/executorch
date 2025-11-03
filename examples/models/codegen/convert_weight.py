@@ -65,7 +65,7 @@ def codegen_hf_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.T
 def convert_weights(input_dir_or_checkpoint: str, output_file: str) -> None:
     pt_path = os.path.join(input_dir_or_checkpoint, "pytorch_model.bin")
     print("Loading checkpoint from file...")
-    sd = torch.load(pt_path, map_location="cpu")
+    sd = torch.load(pt_path, map_location="cpu", weights_only=True)
     print("Converting checkpoint...")
     sd = codegen_hf_to_meta(sd)
 

@@ -573,10 +573,12 @@ def compile(
         n_heads = llama_instance_list[0].n_heads
         n_kv_heads = llama_instance_list[0].n_kv_heads
         n_layers = llama_instance_list[0].n_layers
-        partial_rotary_dim = int(1 // kv_config.partial_rotary_factor) # TODO Handle cases where input size isn't divisible.
+        partial_rotary_dim = int(
+            1 // kv_config.partial_rotary_factor
+        )  # TODO Handle cases where input size isn't divisible.
         for layer_i in range(n_layers):
             state_dict[f"layers.{layer_i}.attention.wq.weight"] = permute(
-                state_dict[f"layers.{layer_i}.attention.wq.weight"], 
+                state_dict[f"layers.{layer_i}.attention.wq.weight"],
                 n_heads,
                 partial_rotary_dim,
             )
