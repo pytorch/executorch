@@ -254,8 +254,20 @@ fi
 if [[ "${QUANTIZE_KV_CACHE}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} model.quantize_kv_cache=true"
 fi
+
+# Display the time
+echo "=========================================="
+echo "Starting model export at $(date +"%Y-%m-%d %H:%M:%S")"
+echo "Configuration: MODE=${MODE}, DTYPE=${DTYPE}, MODEL=${MODEL_NAME}"
+EXPORT_START_TIME=$(date +%s)
+
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm ${EXPORT_ARGS}
+
+EXPORT_END_TIME=$(date +%s)
+EXPORT_DURATION=$((EXPORT_END_TIME - EXPORT_START_TIME))
+echo "Model export completed at $(date +"%Y-%m-%d %H:%M:%S") - Duration: ${EXPORT_DURATION} seconds"
+echo "=========================================="
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"
