@@ -12,11 +12,11 @@
 #pragma once
 
 #include <executorch/runtime/platform/compiler.h>
+#include <sys/stat.h>
 
 #ifndef _WIN32
 
 #include <sys/mman.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
 ET_INLINE size_t get_os_page_size() {
@@ -48,7 +48,6 @@ ET_INLINE off_t get_mmap_offset(size_t offset) {
 #include <windows.h>
 #undef NOMINMAX
 #include <io.h>
-#include <sys/stat.h>
 
 #include <executorch/extension/data_loader/mman_windows.h>
 
