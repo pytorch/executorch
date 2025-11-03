@@ -11,11 +11,7 @@ runtime.python_library(
         "//executorch/...",
     ],
     deps = [
-        "//caffe2:torch",
-        "//executorch/backends/aoti/passes:passes",
-        "//executorch/exir/_serialize:lib",
-        "//executorch/exir/backend:backend_details",
-        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/backends/aoti:aoti_backend",
     ],
 )
 
