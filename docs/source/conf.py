@@ -77,22 +77,13 @@ doxygen_xml_dir = os.path.join(
 html_favicon = "_static/img/executorch-chip-logo.svg"
 
 # Get ET_VERSION_DOCS during the build.
-et_version_docs = os.environ.get("ET_VERSION_DOCS", None)
+# The version is already parsed in the workflow (e.g., "1.12" or "main")
+# Adopted from PyTorch docs workflow pattern
+et_version_docs = os.environ.get("ET_VERSION_DOCS", "main")
 print(f"et_version_docs: {et_version_docs}")
 
-# The code below will cut version displayed in the dropdown like this:
-# By default, set to "main".
-# If it's a tag like refs/tags/v1.2.3-rc4 or refs/tags/v1.2.3, then
-# cut to 1.2
-# the version varible is used in layout.html: https://github.com/pytorch/executorch/blob/main/docs/source/_templates/layout.html#L29
-version = release = "main"
-if et_version_docs:
-    if et_version_docs.startswith("refs/tags/v"):
-        version = ".".join(
-            et_version_docs.split("/")[-1].split("-")[0].lstrip("v").split(".")[:2]
-        )
-    elif et_version_docs.startswith("refs/heads/release/"):
-        version = et_version_docs.split("/")[-1]
+# The version variable is used in layout.html and version switcher
+version = release = et_version_docs
 print(f"Version: {version}")
 html_title = " ".join((project, version, "documentation"))
 
@@ -241,6 +232,13 @@ html_context = {
     "pytorch_project": "executorch",
     "display_version": True,
 }
+
+# Control the noindex meta tag based on version
+# Only add noindex for main branch (not stable releases)
+if version == "main":
+    html_meta = {
+        "robots": "noindex",
+    }
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

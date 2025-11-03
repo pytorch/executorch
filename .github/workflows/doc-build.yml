@@ -49,11 +49,20 @@ jobs:
         # Get the version of ExecuTorch from REF_NAME and save as ET_VERSION_DOCS
         # ET_VERSION_DOCS will be pulled during the doc build to add to the version dropdown
         # on the website. See docs/source/conf.py for details
+        # Convert refs/tags/v1.12.0rc3 into 1.12
+        # Adopted from https://github.com/pytorch/pytorch/blob/main/.github/workflows/_docs.yml
 
         GITHUB_REF=${{ github.ref }}
-        echo "$GITHUB_REF"
-        export ET_VERSION_DOCS="${GITHUB_REF}"
-        echo "$ET_VERSION_DOCS"
+        echo "GITHUB_REF: $GITHUB_REF"
+
+        if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\.[0-9]+) ]]; then
+          ET_VERSION_DOCS="${BASH_REMATCH[1]}"
+        else
+          ET_VERSION_DOCS="main"
+        fi
+
+        export ET_VERSION_DOCS
+        echo "ET_VERSION_DOCS: $ET_VERSION_DOCS"
 
         set -eux
 
@@ -74,11 +83,7 @@ jobs:
         cp -rf executorch_android/build/intermediates/java_doc_dir/release/javaDocReleaseGeneration "${RUNNER_DOCS_DIR}/javadoc"
         cd ../..
 
-        # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
-        echo "GitHub Ref: ${GITHUB_REF}"
-        if [[ "${{ github.ref }}" == 'refs/heads/main' ]]; then
-          find docs/_build/html/ -name "*.html" -print0 | xargs -0 sed -i '/<head>/a \ \ <meta name="robots" content="noindex">';
-        fi
+        # Note: noindex meta tag is automatically added by conf.py for non-stable releases (main, dev versions)
 
         cp -rf docs/_build/html/* "${RUNNER_DOCS_DIR}"
 
