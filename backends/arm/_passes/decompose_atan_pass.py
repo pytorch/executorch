@@ -80,6 +80,14 @@ class DecomposeAtanPass(ArmPass):
         if op is not edge_atan:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
+            return super().call_operator(op, args, kwargs, meta)
+
         logging.info(
             f"Approximating atan. This may introduce small numerical errors. For details, see {__file__}."
         )

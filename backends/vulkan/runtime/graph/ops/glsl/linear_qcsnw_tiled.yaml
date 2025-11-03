@@ -12,7 +12,7 @@ linear_qcsnw_tiled:
     WEIGHT_STORAGE: texture2d
     SCALES_STORAGE: texture2d
     TILE_ROWS: 4
-    TILE_TXCOLS: 2
+    TILE_TXCOLS: 1
     QUANT_NBITS: 8
   generate_variant_forall:
     TILE_ROWS:
