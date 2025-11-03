@@ -187,6 +187,32 @@ HEXAGON_CXX_FLAGS_V73 := $(HEXAGON_CXX_FLAGS) -mv73 -I$(HEXAGON_SDK_ROOT_V73)/rt
 HEXAGON_CXX_FLAGS_V75 := $(HEXAGON_CXX_FLAGS) -mv75 -I$(HEXAGON_SDK_ROOT_V75)/rtos/qurt/computev75/include/qurt -I$(HEXAGON_SDK_ROOT_V75)/rtos/qurt/computev75/include/posix -I$(HEXAGON_SDK_ROOT_V75)/incs -I$(HEXAGON_SDK_ROOT_V75)/incs/stddef
 HEXAGON_CXX_FLAGS_V79 := $(HEXAGON_CXX_FLAGS) -mv79 -I$(HEXAGON_SDK_ROOT_V79)/rtos/qurt/computev79/include/qurt -I$(HEXAGON_SDK_ROOT_V79)/rtos/qurt/computev79/include/posix -I$(HEXAGON_SDK_ROOT_V79)/incs -I$(HEXAGON_SDK_ROOT_V79)/incs/stddef
 
+QHL_HVX_DIR := $(HEXAGON_SDK_ROOT)/libs/qhl_hvx
+QHL_HVX_INC_DIRS := \
+  $(QHL_HVX_DIR)/inc/internal \
+  $(QHL_HVX_DIR)/inc/qhdsp_hvx \
+  $(QHL_HVX_DIR)/inc/qhblas_hvx \
+  $(QHL_HVX_DIR)/inc/qhmath_hvx
+
+HEXAGON_CXX_FLAGS_V79 += $(addprefix -I,$(QHL_HVX_INC_DIRS))
+
+QHL_DIR := $(HEXAGON_SDK_ROOT)/libs/qhl
+QHL_INC_DIRS := \
+  $(QHL_DIR)/inc/qhmath \
+  $(QHL_DIR)/inc/qhcomplex \
+  $(QHL_DIR)/inc/qhdsp \
+  $(QHL_DIR)/inc/qhblas
+
+QHL_LIBS := \
+  $(HEXAGON_SDK_ROOT)/libs/qhl/prebuilt/hexagon_toolv88_v79/libqhblas.a \
+  $(HEXAGON_SDK_ROOT)/libs/qhl/prebuilt/hexagon_toolv88_v79/libqhdsp.a \
+  $(HEXAGON_SDK_ROOT)/libs/qhl/prebuilt/hexagon_toolv88_v79/libqhmath.a \
+  $(HEXAGON_SDK_ROOT)/libs/qhl/prebuilt/hexagon_toolv88_v79/libqhcomplex.a \
+  $(HEXAGON_SDK_ROOT)/libs/qhl_hvx/prebuilt/hexagon_toolv88_v79/libqhdsp_hvx.a \
+  $(HEXAGON_SDK_ROOT)/libs/qhl_hvx/prebuilt/hexagon_toolv88_v79/libqhblas_hvx.a
+
+HEXAGON_CXX_FLAGS_V79 += $(addprefix -I,$(QHL_INC_DIRS))
+
 $(info "HEXAGON_TOOLS_VERSION_V68 is [${HEXAGON_TOOLS_VERSION_V68}]")
 $(info "HEXAGON_TOOLS_VERSION_V69 is [${HEXAGON_TOOLS_VERSION_V69}]")
 $(info "HEXAGON_TOOLS_VERSION_V73 is [${HEXAGON_TOOLS_VERSION_V73}]")
@@ -251,7 +277,6 @@ HEXAGON_BUILD_V73:  $(WORK)/hexagon-v73/$(LIBRARY_NAME)
 HEXAGON_BUILD_V75:  $(WORK)/hexagon-v75/$(LIBRARY_NAME)
 
 HEXAGON_BUILD_V79:  $(WORK)/hexagon-v79/$(LIBRARY_NAME)
-
 
 
 X86_BUILD: $(WORK)/x86_64-linux-clang/$(LIBRARY_NAME)
@@ -366,8 +391,11 @@ $(WORK)/hexagon-v79/ops/%.o: $(OP_SRC_DIR)/%.cpp | $(WORK)/hexagon-v79
 $(WORK)/hexagon-v79/ops/%.o: $(OP_SRC_DIR)/v79_asm/%.S | $(WORK)/hexagon-v79
 	$(HEXAGON_CXX_V79) $(HEXAGON_CXX_FLAGS_V79) -DTHIS_PKG_NAME=$(PACKAGE_NAME) -MMD -c $< -o $@
 
-$(WORK)/hexagon-v79/$(LIBRARY_NAME): $(hexagon-v79_objs) | $(HFILES)
-	$(HEXAGON_CXX_V79) -fPIC -std=c++17 -g -shared -o $@ $^ $(HEX_LDFLAGS)
+# $(WORK)/hexagon-v79/$(LIBRARY_NAME): $(hexagon-v79_objs) | $(HFILES)
+# 	$(HEXAGON_CXX_V79) -fPIC -std=c++17 -g -shared -o $@ $^ $(HEX_LDFLAGS)
+
+$(WORK)/hexagon-v79/$(LIBRARY_NAME): $(hexagon-v79_objs)
+	$(HEXAGON_CXX_V79) -fPIC -std=c++17 -g -shared -o $@ $^ $(QHL_LIBS) $(HEX_LDFLAGS)
 
 
 

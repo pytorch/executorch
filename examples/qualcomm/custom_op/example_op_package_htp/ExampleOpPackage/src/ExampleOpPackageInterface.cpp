@@ -12,6 +12,12 @@
 #include "QnnOpPackage.h"
 #include "QnnSdkBuildId.h"
 
+#ifdef __hexagon__
+#include "qhblas_hvx.h" // may re-export symbols in qhblas
+#include "qhcomplex.h"
+#include "qhdsp_hvx.h" // still present under qhl/inc/qhdsp
+#endif
+
 DEFINE_UNIQ_TY()
 BEGIN_PKG_OPS_OPTS_LIST()
 
