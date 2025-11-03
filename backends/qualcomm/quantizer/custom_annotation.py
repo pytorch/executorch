@@ -138,6 +138,9 @@ def annotate_output_16a8w(gm: torch.fx.GraphModule, is_qat: bool = False) -> Non
         weight = node.args[1]
         input_qspec_map[weight] = quantization_config.weight
 
+        if len(node.args) > 2 and isinstance(node.args[2], Node):
+            input_qspec_map[node.args[2]] = quantization_config.bias(node)
+
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,

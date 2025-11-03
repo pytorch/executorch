@@ -13,6 +13,7 @@ from typing import List, Optional, Tuple
 import scipy
 import torch
 import torch.nn as nn
+
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import (
     hf_precompute_freqs_cis,
@@ -23,42 +24,11 @@ from executorch.examples.qualcomm.oss_scripts.llama.masking_utils import (
     CausalAttentionMask,
     SlidingWindowAttentionMask,
 )
-
-
-def apply_rotary_emb_single(
-    x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
-) -> torch.Tensor:
-    # The implementation of RoPE in HuggingFace processes query and key with two half instead of interleaved way.
-    # The main difference is stride in StrideSlice op. For interleaved way, stride is two which is not friendly for HTP backend.
-    # Ref: https://github.com/huggingface/transformers/issues/25199
-    x_r, x_i = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
-    # broadcast for batch_prefill mode input x
-    if x.dim() == 4:
-        freqs_cos = freqs_cos[None, :, None, :]
-        freqs_sin = freqs_sin[None, :, None, :]
-    x_out_r = x_r * freqs_cos - x_i * freqs_sin
-    x_out_i = x_r * freqs_sin + x_i * freqs_cos
-
-    x_out = torch.cat([x_out_r, x_out_i], dim=-1)
-    return x_out
-
-
-def apply_partial_rotary_emb_single(
-    x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
-) -> torch.Tensor:
-
-    if x.dim() == 4:
-        freqs_cos = freqs_cos[None, :, None, :]
-        freqs_sin = freqs_sin[None, :, None, :]
-
-    rotary_dim = freqs_cos.shape[-1] * 2
-
-    x_rot, x_pass = x[..., :rotary_dim], x[..., rotary_dim:]
-    x_r, x_i = x_rot[..., : x_rot.shape[-1] // 2], x_rot[..., x_rot.shape[-1] // 2 :]
-    x_out_r = x_r * freqs_cos - x_i * freqs_sin
-    x_out_i = x_r * freqs_sin + x_i * freqs_cos
-    x_rotated = torch.cat([x_out_r, x_out_i], dim=-1)
-    return torch.cat([x_rotated, x_pass], dim=-1)
+from executorch.examples.qualcomm.oss_scripts.llama.model import (
+    FeedForward_REGISTRY,
+    NORM_REGISTRY,
+    ROTARY_EMB_REGISTRY,
+)
 
 
 class LlamaAttention(nn.Module):
@@ -88,9 +58,9 @@ class LlamaAttention(nn.Module):
             self.k_norm_fn = torch.nn.RMSNorm(k_norm_dim, eps=config.norm_eps)
 
         if config.partial_rotary_factor < 1:
-            self.apply_rope_emb = apply_partial_rotary_emb_single
+            self.apply_rope_emb = ROTARY_EMB_REGISTRY["partial"]
         else:
-            self.apply_rope_emb = apply_rotary_emb_single
+            self.apply_rope_emb = ROTARY_EMB_REGISTRY["default"]
 
         self.wq = nn.Linear(
             self.dim,
@@ -227,7 +197,6 @@ class LlamaAttention(nn.Module):
             .reshape(bsz, seq_len, self.head_dim)
             for wv_sha in self.wv_sha
         ]
-
         for i in range(len(q)):
             if self.use_qk_norm and self.qk_norm_before_rope:
                 q[i] = self.q_norm_fn(q[i])
@@ -411,9 +380,19 @@ class LlamaDecoderLayer(nn.Module):
             config=config,
             output_new_cache_only=output_new_cache_only,
         )
-        self.feed_forward = FeedForward(config)
-        self.attention_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
-        self.ffn_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+
+        self.feed_forward = FeedForward_REGISTRY.get(
+            config.model_architecture, FeedForward
+        )(config)
+        self.attention_norm = NORM_REGISTRY[config.norm_type](
+            config.dim, eps=config.norm_eps
+        )
+        self.ffn_norm = (
+            NORM_REGISTRY[config.norm_type](config.dim, eps=config.norm_eps)
+            if config.use_ffn_norm
+            else None
+        )
+
         self.post_attention_norm = (
             torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
             if config.post_attention_norm
@@ -434,8 +413,10 @@ class LlamaDecoderLayer(nn.Module):
         k_caches: List[torch.Tensor],
         v_caches: List[torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+
+        hidden_states = self.attention_norm(x)
         h, k_cache, v_cache = self.attention(
-            hidden_states=self.attention_norm(x),
+            hidden_states=hidden_states,
             freqs_cos=freqs_cos,
             freqs_sin=freqs_sin,
             atten_mask=atten_mask,
@@ -445,10 +426,12 @@ class LlamaDecoderLayer(nn.Module):
         if self.post_attention_norm:
             h = self.post_attention_norm(h)
         h = x + h
-        out = self.feed_forward(self.ffn_norm(h))
+        hidden_states = hidden_states if self.ffn_norm is None else self.ffn_norm(h)
+        out = self.feed_forward(hidden_states)
         if self.post_ffn_norm:
             out = self.post_ffn_norm(out)
         output = h + out
+
         return output, k_cache, v_cache
 
 
@@ -486,8 +469,9 @@ class LlamaModel(nn.Module):
                 for i in range(config.n_layers)
             ]
         )
-        self.norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
-        self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
+        self.norm = NORM_REGISTRY[config.norm_type](config.dim, eps=config.norm_eps)
+        self.output = nn.Linear(config.dim, config.vocab_size, bias=config.output_bias)
+
         self.tok_embeddings = nn.Embedding(config.vocab_size, config.dim)
         if config.use_hf_rope:
             freqs_cos, freqs_sin = hf_precompute_freqs_cis(
@@ -532,7 +516,6 @@ class LlamaModel(nn.Module):
         input_pos: Optional[torch.Tensor] = None,
         *args,
     ) -> Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
-
         output_k_cache = []
         output_v_cache = []
         # following tensors should be invariant across batches

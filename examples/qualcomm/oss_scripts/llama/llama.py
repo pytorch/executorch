@@ -445,7 +445,6 @@ def compile(
     kv_config.use_kv_cache = True
     kv_config.enable_r3 = decoder_model_config.r3
     kv_config.kv_io_bit_width = decoder_model_config.get_kv_io_bit_width()
-
     if decoder_model_config.masked_softmax:
         if is_qnn_sdk_version_less_than("2.35"):
             logging.warning(
@@ -561,25 +560,32 @@ def compile(
 
     if decoder_model_config.transform_weight:
         # Change to HuggingFace weight to improve the performance of RoPE in HTP backend.
-        def permute(w, heads):
+        def permute(w, heads, partial_rotary_dim):
             dim_0 = w.size(0)
             dim_1 = w.size(1)
-            return (
-                w.view(heads, dim_0 // heads // 2, 2, dim_1)
-                .transpose(1, 2)
+            transformed_weight = (
+                w.view(heads, -1, dim_0 // heads // 2 // partial_rotary_dim, 2, dim_1)
+                .transpose(2, 3)
                 .reshape(dim_0, dim_1)
             )
+            return transformed_weight
 
         n_heads = llama_instance_list[0].n_heads
         n_kv_heads = llama_instance_list[0].n_kv_heads
         n_layers = llama_instance_list[0].n_layers
-
+        partial_rotary_dim = int(
+            1 // kv_config.partial_rotary_factor
+        )  # TODO Handle cases where input size isn't divisible.
         for layer_i in range(n_layers):
             state_dict[f"layers.{layer_i}.attention.wq.weight"] = permute(
-                state_dict[f"layers.{layer_i}.attention.wq.weight"], n_heads
+                state_dict[f"layers.{layer_i}.attention.wq.weight"],
+                n_heads,
+                partial_rotary_dim,
             )
             state_dict[f"layers.{layer_i}.attention.wk.weight"] = permute(
-                state_dict[f"layers.{layer_i}.attention.wk.weight"], n_kv_heads
+                state_dict[f"layers.{layer_i}.attention.wk.weight"],
+                n_kv_heads,
+                partial_rotary_dim,
             )
 
     for llama_instance in llama_instance_list:
@@ -648,6 +654,7 @@ def compile(
         for layer in llama_instance.layers:
             if getattr(layer.attention, "prepare_sha", None):
                 layer.attention.prepare_sha()
+
             if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
                 layer.feed_forward.prepare_feedfoward_conv()
 
@@ -1293,8 +1300,13 @@ def export_llama(args) -> None:
             runtime_tokenizer_path = tokenizer_artifacts[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path, tokenizer_config)
 
+    if args.decoder_model == "codegen2_1b":
+        # Override the default BOS and EOS token IDs for codegen2_1b
+        tokenizer.bos_id = 1
+        tokenizer.eos_id = 2
+
     # TODO: Remove this once error is resolved.
-    if args.decoder_model == "phi_4_mini":
+    elif args.decoder_model == "phi_4_mini":
         with open(runtime_tokenizer_path, "r+") as file:
             data = json.load(file)
             # TODO: Encountered the following error during runtime, so switched behavior for now.

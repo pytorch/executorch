@@ -46,12 +46,17 @@ class ModelArgs:
     head_dim: Optional[int] = None  # Optional customized head_dim
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
+    model_architecture: str = (
+        "LlamaForCausalLM"  # This setting is currently only supported for the QNN backend
+    )
     norm_eps: float = 1e-5
     post_attention_norm: bool = False
     post_ffn_norm: bool = False
     max_batch_size: int = 1
     max_seq_len: int = 2048
     max_context_len: int = 2048
+    use_ffn_norm: bool = True
+    output_bias: bool = False
     moe: bool = False  # True to enable the MoE (Mixture of Experts)
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate

@@ -25,4 +25,5 @@ DECODER_MODEL_VERSION = {
     "qwen3-1_7b": "qwen3",
     "smollm2_135m": "smollm2_135m",
     "smollm3-3b": "smollm3",
+    "codegen2_1b": "codegen",
 }
