@@ -17,7 +17,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 
-input_t1 = Tuple[torch.Tensor]  # Input x
+input_t1 = Tuple[torch.Tensor, ...]  # Input x
 
 
 class ChannelsLastInput(torch.nn.Module):
