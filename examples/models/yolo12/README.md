@@ -51,7 +51,7 @@ python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080]  --b
 OpenVINO quantized model:
 
 ```bash
-python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080]  --backend openvino --quantize --video_input /path/to/calibration/video --device CPU
+python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080]  --backend openvino --quantize --video_path /path/to/calibration/video --device CPU
 ```
 
 XNNPACK:
