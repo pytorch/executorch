@@ -41,6 +41,14 @@ class DecomposeAcoshPass(ArmPass):
         if op is not edge_acosh_op:
             return super().call_operator(op, args, kwargs, meta, updated)
 
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
+            return super().call_operator(op, args, kwargs, meta, updated)
+
         log_op, sqrt_op, mul_op, sub_op, add_op, add_op_scalar = (
             exir_ops.edge.aten.log.default,
             exir_ops.edge.aten.sqrt.default,

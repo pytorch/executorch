@@ -53,7 +53,7 @@ class RescaleVisitor(NodeVisitor):
             and input_zp != 0
         ):
             raise ValueError(
-                f"If input dtype is not int8 or int16, input_zp must be 0. Got input_dtype{input_dtype=}, {input_zp=}"
+                f"If input dtype is not int8 or int16, input_zp must be 0. Got input_dtype {input_dtype=}, {input_zp=}"
             )
         if output_dtype not in [torch.int8, torch.int16] and output_zp != 0:
             raise ValueError(

@@ -118,11 +118,12 @@ def test_pow_tensor_tensor_vgf_FP(test_data: Pow_TensorTensor.input_t):
 
 x_fail = {
     "exp_two": "TOSA constraints: If x <0 .",
-    "non_neg_base_exp_pos_decimal": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
 }
 
 
-@common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
+@common.parametrize(
+    "test_data", Pow_TensorScalar.test_data, xfails=x_fail, strict=False
+)
 def test_pow_tensor_scalar_tosa_FP(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
     pipeline = TosaPipelineFP[Pow_TensorScalar.input_t](
@@ -186,7 +187,10 @@ def test_pow_tensor_scalar_vgf_FP(test_data: Pow_TensorScalar.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
+@common.parametrize(
+    "test_data",
+    Pow_TensorScalar.test_data,
+)
 @common.SkipIfNoModelConverter
 def test_pow_tensor_scalar_vgf_INT(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
