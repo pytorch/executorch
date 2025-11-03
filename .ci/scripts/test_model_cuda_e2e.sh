@@ -110,7 +110,7 @@ case "$HF_MODEL" in
     EXPECTED_OUTPUT="chip"
     PREPROCESSOR=""
     TOKENIZER_URL="https://huggingface.co/google/gemma-3-4b-it/resolve/main" # @lint-ignore
-    TOKENIZER_FILE=""
+    TOKENIZER_FILE="tokenizers.json"
     AUDIO_URL=""
     AUDIO_FILE=""
     IMAGE_PATH="docs/source/_static/img/et-logo.png"
@@ -143,7 +143,7 @@ fi
 if [ "$AUDIO_URL" != "" ]; then
   curl -L $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
 elif [ "$MODEL_NAME" = "whisper" ]; then
-  pip install datasets soundfile
+  pip install datasets soundfile torchcodec
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
 fi
 
@@ -182,7 +182,7 @@ case "$MODEL_NAME" in
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR"
     ;;
   gemma3)
-    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --image_path $IMAGE_PATH"
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --image_path $IMAGE_PATH"
     ;;
 esac
 
