@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import torch
 
+from backends.nxp.tests.executors import ToNCHWPreprocess, ToNHWCPreprocess
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
@@ -16,7 +17,7 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelLastPreprocess,
 )
 from executorch.backends.nxp.tests.models import (
-    SliceTensorModule,
+    SliceTensorConvModule,
     AddTensorModule,
     AddTensorOneInputModule,
 )
@@ -30,22 +31,16 @@ def reseed_model_per_test_run():
 
 
 @pytest.mark.parametrize(
-    "slice_params, x_input_shape",
+    "x_input_shape, dims, starts, ends",
     [
-        pytest.param({
-            "dim": 0,
-            "start": 0,
-            "end": 32,
-            "step": 8
-        }, (32,), id="1D.")
+        pytest.param((128, 96, 16), (0, 1, 2), (0, 0, 8), (128, 96, 16), id="4D.")
     ],
 )
-def test_slice_tensor_quant_conversion(mocker, slice_params, x_input_shape):
-    model = SliceTensorModule(
-        dim=slice_params["dim"],
-        start=slice_params["start"],
-        end=slice_params["end"],
-        step=slice_params["step"]
+def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends):
+    model = SliceTensorConvModule(
+        dims=dims,
+        starts=starts,
+        ends=ends,
     )
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
@@ -54,16 +49,17 @@ def test_slice_tensor_quant_conversion(mocker, slice_params, x_input_shape):
     _ = to_quantized_edge_program(model, x_input_shape).exported_program()
 
     # Capture generated model
-    x = converter_spy.spy_return
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
-    input_data = (np.random.random(x_input_shape).astype(np.float32) * 50).astype(np.int8)
-    input_data = {0: input_data, 1: input_data}
+    input_data_1 = (np.random.random(x_input_shape).astype(np.float32) * 50).astype(np.int8)
+    input_data = {0: input_data_1}
 
     convert_run_compare(
-        exported_program, tfl_model=tflite_flatbuffers_model, input_data=input_data
+        exported_program,
+        input_data=input_data,
+        tfl_model=tflite_flatbuffers_model
     )
 

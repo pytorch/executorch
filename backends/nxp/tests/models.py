@@ -170,20 +170,23 @@ class LinearModule(torch.nn.Module):
         return self.linear(x)
     
 
-class SliceTensorModule(torch.nn.Module):
-    def __init__(self, dim, start, end, step):
-        self.dim = dim
-        self.start = start
-        self.end = end
-        self.step = step
-
+class SliceTensorConvModule(torch.nn.Module):
+    def __init__(self, dims, starts, ends):
         super().__init__()
+        self.dims = dims
+        self.starts = starts
+        self.ends = ends
+        
+    def do_slice(self, x):
+        slices = [slice(None)] * x.dim()
+        for i, dim in enumerate(self.dims):
+            slices[dim] = slice(self.starts[i], self.ends[i])
+        return x[tuple(slices)]
 
     def forward(self, x):
-        
-        slices = [slice(None)] * x.dim()
-        slices[self.dim] = slice(self.start, self.end, self.step)
-        return x[tuple(slices)]
+        x = self.do_slice(x)
+
+        return x
 
 
 class AddmmModule(torch.nn.Module):
