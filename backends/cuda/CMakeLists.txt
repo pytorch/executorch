@@ -32,7 +32,7 @@ find_package(CUDAToolkit REQUIRED)
 
 # Use ExecutorTorch's standard way to find PyTorch libraries for AOTI
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
-find_package_torch()
+find_package_torch_headers()
 
 # CUDA tensor maker for backends that support incontiguous tensors
 set(_tensor_maker_sources runtime/tensor/tensor_maker.cpp)
@@ -70,7 +70,6 @@ install(
 # CUDA-specific AOTI functionality
 set(_aoti_cuda_sources
     runtime/cuda_backend.cpp
-    runtime/guard.cpp
     runtime/platform/platform.cpp
 )
 add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
@@ -86,6 +85,12 @@ target_compile_options(
   aoti_cuda PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
                    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
 )
+# Define EXPORT_AOTI_FUNCTIONS to export AOTI shim symbols
+target_compile_definitions(aoti_cuda PUBLIC EXPORT_AOTI_FUNCTIONS)
+
+# Define USE_CUDA to enable CUDA-specific functionality
+target_compile_definitions(aoti_cuda PUBLIC USE_CUDA)
+
 # Ensure symbols are exported properly
 target_link_options(
   aoti_cuda PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>

@@ -8,41 +8,111 @@
 #include <utility>
 #include <vector>
 
-#include <standalone/c10/core/Contiguity.h>
-#include <standalone/c10/core/MemoryFormat.h>
-#include <standalone/c10/core/Scalar.h>
-#include <standalone/c10/core/ScalarType.h>
-#include <standalone/c10/core/SizesAndStrides.h>
-#include <standalone/c10/core/WrapDimMinimal.h>
-#include <standalone/c10/util/safe_numerics.h>
-#include <standalone/slim/core/Storage.h>
-#include <standalone/slim/util/SizeUtil.h>
+#include <executorch/backends/cuda/runtime/c10/core/Contiguity.h>
+#include <executorch/backends/cuda/runtime/c10/core/MemoryFormat.h>
+#include <executorch/backends/cuda/runtime/c10/core/Scalar.h>
+#include <executorch/backends/cuda/runtime/c10/core/ScalarType.h>
+#include <executorch/backends/cuda/runtime/c10/core/SizesAndStrides.h>
+#include <executorch/backends/cuda/runtime/c10/core/WrapDimMinimal.h>
+#include <executorch/backends/cuda/runtime/c10/util/safe_numerics.h>
+#include <executorch/backends/cuda/runtime/slim/core/Storage.h>
+#include <executorch/backends/cuda/runtime/slim/util/SizeUtil.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
-namespace standalone::slim {
+namespace executorch::backends::cuda::slim {
+
+// Helper to convert ExecuTorch ScalarType to
+// executorch::backends::cuda::c10::ScalarType
+inline executorch::backends::cuda::c10::ScalarType etensor_to_slim_dtype(
+    executorch::aten::ScalarType et_dtype) {
+  switch (et_dtype) {
+    case executorch::aten::ScalarType::Float:
+      return executorch::backends::cuda::c10::ScalarType::Float;
+    case executorch::aten::ScalarType::Double:
+      return executorch::backends::cuda::c10::ScalarType::Double;
+    case executorch::aten::ScalarType::Half:
+      return executorch::backends::cuda::c10::ScalarType::Half;
+    case executorch::aten::ScalarType::BFloat16:
+      return executorch::backends::cuda::c10::ScalarType::BFloat16;
+    case executorch::aten::ScalarType::Long:
+      return executorch::backends::cuda::c10::ScalarType::Long;
+    case executorch::aten::ScalarType::Int:
+      return executorch::backends::cuda::c10::ScalarType::Int;
+    case executorch::aten::ScalarType::Short:
+      return executorch::backends::cuda::c10::ScalarType::Short;
+    case executorch::aten::ScalarType::Char:
+      return executorch::backends::cuda::c10::ScalarType::Char;
+    case executorch::aten::ScalarType::Byte:
+      return executorch::backends::cuda::c10::ScalarType::Byte;
+    case executorch::aten::ScalarType::Bool:
+      return executorch::backends::cuda::c10::ScalarType::Bool;
+    default:
+      STANDALONE_CHECK(false, "Unsupported ETensor dtype for SlimTensor");
+  }
+}
 
 class SlimTensor {
-public:
-  SlimTensor(Storage &&storage, standalone::c10::IntArrayRef sizes,
-             standalone::c10::IntArrayRef strides,
-             standalone::c10::ScalarType dtype, int64_t storage_offset = 0)
-      : storage_(std::move(storage)), storage_offset_(storage_offset),
+ public:
+  SlimTensor(
+      Storage&& storage,
+      executorch::backends::cuda::c10::IntArrayRef sizes,
+      executorch::backends::cuda::c10::IntArrayRef strides,
+      executorch::backends::cuda::c10::ScalarType dtype,
+      int64_t storage_offset = 0)
+      : storage_(std::move(storage)),
+        storage_offset_(storage_offset),
         dtype_(dtype) {
     set_sizes_and_strides(sizes, strides);
   }
 
   // Default constructor - creates an undefined tensor
   SlimTensor()
-      : storage_(Storage()), storage_offset_(0),
-        dtype_(standalone::c10::ScalarType::Float), numel_(0),
+      : storage_(Storage()),
+        storage_offset_(0),
+        dtype_(executorch::backends::cuda::c10::ScalarType::Float),
+        numel_(0),
         is_contiguous_(true) {
     sizes_and_strides_.set_sizes({0});
     sizes_and_strides_.set_strides({1});
   }
 
-  SlimTensor(const SlimTensor &) = default;
-  SlimTensor &operator=(const SlimTensor &) = default;
-  SlimTensor(SlimTensor &&) = default;
-  SlimTensor &operator=(SlimTensor &&) = default;
+  // Constructor from ETensor - does NOT take ownership of the data
+  // Note: ETensor is guaranteed to be on CPU, contiguous, and in either
+  // channels_last or contiguous memory format
+  explicit SlimTensor(executorch::runtime::etensor::Tensor* etensor)
+      : SlimTensor() {
+    STANDALONE_CHECK(
+        etensor != nullptr, "Cannot create SlimTensor from null ETensor");
+
+    // Get ETensor properties
+    auto et_sizes = etensor->sizes();
+    auto et_strides = etensor->strides();
+    auto et_dtype = etensor->scalar_type();
+    void* data_ptr = etensor->mutable_data_ptr();
+
+    // Convert sizes and strides to int64_t vectors
+    std::vector<int64_t> sizes(et_sizes.begin(), et_sizes.end());
+    std::vector<int64_t> strides(et_strides.begin(), et_strides.end());
+
+    // Convert dtype
+    auto slim_dtype = etensor_to_slim_dtype(et_dtype);
+
+    // Create a non-owning storage that wraps the ETensor's data
+    // ETensor is guaranteed to be on CPU
+    Storage storage(new MaybeOwningStorage(
+        CPU_DEVICE,
+        data_ptr,
+        etensor->nbytes()
+        ));
+
+    // Initialize the SlimTensor with the wrapped storage
+    *this = SlimTensor(std::move(storage), sizes, strides, slim_dtype, 0);
+  }
+
+  SlimTensor(const SlimTensor&) = default;
+  SlimTensor& operator=(const SlimTensor&) = default;
+  SlimTensor(SlimTensor&&) = default;
+  SlimTensor& operator=(SlimTensor&&) = default;
 
   ~SlimTensor() = default;
 
@@ -52,77 +122,108 @@ public:
   }
 
   // Accessors
-  Storage storage() const { return storage_; }
+  Storage storage() const {
+    return storage_;
+  }
 
-  size_t nbytes() const { return numel() * itemsize(); }
+  size_t nbytes() const {
+    return numel() * itemsize();
+  }
 
-  size_t itemsize() const { return standalone::c10::elementSize(dtype_); }
+  size_t itemsize() const {
+    return executorch::backends::cuda::c10::elementSize(dtype_);
+  }
 
-  standalone::c10::IntArrayRef sizes() const {
+  executorch::backends::cuda::c10::IntArrayRef sizes() const {
     return sizes_and_strides_.sizes_arrayref();
   }
 
   int64_t size(int64_t dim) const {
-    int64_t wrapped_dim =
-        standalone::c10::maybe_wrap_dim(dim, static_cast<int64_t>(this->dim()));
+    int64_t wrapped_dim = executorch::backends::cuda::c10::maybe_wrap_dim(
+        dim, static_cast<int64_t>(this->dim()));
     return sizes_and_strides_.size_at(static_cast<size_t>(wrapped_dim));
   }
 
-  standalone::c10::IntArrayRef strides() const {
+  executorch::backends::cuda::c10::IntArrayRef strides() const {
     return sizes_and_strides_.strides_arrayref();
   }
 
   int64_t stride(int64_t dim) const {
-    int64_t wrapped_dim =
-        standalone::c10::maybe_wrap_dim(dim, static_cast<int64_t>(this->dim()));
+    int64_t wrapped_dim = executorch::backends::cuda::c10::maybe_wrap_dim(
+        dim, static_cast<int64_t>(this->dim()));
     return sizes_and_strides_.stride_at(static_cast<size_t>(wrapped_dim));
   }
 
-  standalone::c10::ScalarType dtype() const { return dtype_; }
+  executorch::backends::cuda::c10::ScalarType dtype() const {
+    return dtype_;
+  }
 
-  const standalone::c10::Device &device() const { return storage_->device(); }
+  const executorch::backends::cuda::c10::Device& device() const {
+    return storage_->device();
+  }
 
-  standalone::c10::DeviceType device_type() const {
+  executorch::backends::cuda::c10::DeviceType device_type() const {
     return storage_->device().type();
   }
 
-  standalone::c10::DeviceIndex device_index() const {
+  executorch::backends::cuda::c10::DeviceIndex device_index() const {
     return storage_->device().index();
   }
 
-  int64_t storage_offset() const { return storage_offset_; }
-
-  size_t numel() const { return numel_; }
-
-  size_t dim() const { return sizes_and_strides_.size(); }
-
-  void *data_ptr() const {
-    return static_cast<char *>(storage_->data()) + storage_offset_ * itemsize();
+  int64_t storage_offset() const {
+    return storage_offset_;
   }
 
-  bool is_contiguous() const { return is_contiguous_; }
+  size_t numel() const {
+    return numel_;
+  }
 
-  bool is_empty() const { return numel_ == 0; }
+  size_t dim() const {
+    return sizes_and_strides_.size();
+  }
 
-  bool is_cuda() const { return device().is_cuda(); }
+  void* data_ptr() const {
+    return static_cast<char*>(storage_->data()) + storage_offset_ * itemsize();
+  }
 
-  bool is_cpu() const { return device().is_cpu(); }
+  bool is_contiguous() const {
+    return is_contiguous_;
+  }
+
+  bool is_empty() const {
+    return numel_ == 0;
+  }
+
+  bool is_cuda() const {
+    return device().is_cuda();
+  }
+
+  bool is_cpu() const {
+    return device().is_cpu();
+  }
 
   // Check if tensor is defined (not default-constructed)
-  bool defined() const { return storage_.get() != nullptr; }
+  bool defined() const {
+    return storage_.get() != nullptr;
+  }
 
   // Setters
-  void set_storage(Storage &&new_storage) { storage_ = std::move(new_storage); }
+  void set_storage(Storage&& new_storage) {
+    storage_ = std::move(new_storage);
+  }
 
-  void
-  set_sizes_and_strides(standalone::c10::IntArrayRef sizes,
-                        standalone::c10::IntArrayRef strides,
-                        std::optional<int64_t> storage_offset = std::nullopt) {
+  void set_sizes_and_strides(
+      executorch::backends::cuda::c10::IntArrayRef sizes,
+      executorch::backends::cuda::c10::IntArrayRef strides,
+      std::optional<int64_t> storage_offset = std::nullopt) {
     const int64_t new_dim = static_cast<int64_t>(sizes.size());
-    STANDALONE_CHECK(new_dim == static_cast<int64_t>(strides.size()),
-                     "dimensionality of sizes (", new_dim,
-                     ") must match dimensionality of strides (", strides.size(),
-                     ")");
+    STANDALONE_CHECK(
+        new_dim == static_cast<int64_t>(strides.size()),
+        "dimensionality of sizes (",
+        new_dim,
+        ") must match dimensionality of strides (",
+        strides.size(),
+        ")");
 
     std::vector<int64_t> new_sizes = sizes.vec();
     std::vector<int64_t> new_strides = strides.vec();
@@ -138,8 +239,9 @@ public:
           if (dim == new_dim - 1) {
             new_strides[dim] = 1;
           } else {
-            overflowed |= standalone::c10::mul_overflows(
-                new_strides[dim + 1], std::max<int64_t>(new_sizes[dim + 1], 1),
+            overflowed |= executorch::backends::cuda::c10::mul_overflows(
+                new_strides[dim + 1],
+                std::max<int64_t>(new_sizes[dim + 1], 1),
                 &new_strides[dim]);
           }
         }
@@ -157,40 +259,51 @@ public:
     refresh_contiguous();
   }
 
-  void set_sizes_contiguous(standalone::c10::IntArrayRef new_size) {
+  void set_sizes_contiguous(
+      executorch::backends::cuda::c10::IntArrayRef new_size) {
     sizes_and_strides_.set_sizes(new_size);
     refresh_numel();
-    empty_tensor_restride(standalone::c10::MemoryFormat::Contiguous);
+    empty_tensor_restride(
+        executorch::backends::cuda::c10::MemoryFormat::Contiguous);
   }
 
-  void empty_tensor_restride(standalone::c10::MemoryFormat memory_format);
+  void empty_tensor_restride(
+      executorch::backends::cuda::c10::MemoryFormat memory_format);
 
-  SlimTensor resize_(standalone::c10::IntArrayRef sizes,
-                     std::optional<c10::MemoryFormat> optional_memory_format);
+  SlimTensor resize_(
+      executorch::backends::cuda::c10::IntArrayRef sizes,
+      std::optional<c10::MemoryFormat> optional_memory_format);
 
   // Conversion operations
-  SlimTensor to(const standalone::c10::Device &device) const {
+  SlimTensor to(const executorch::backends::cuda::c10::Device& device) const {
     if (device == storage_->device()) {
       return *this;
     }
     // Does not mutate the current tensor. Returns a new tensor
     Storage new_storage(new MaybeOwningStorage(storage_->clone(device)));
     return SlimTensor(
-        std::move(new_storage), sizes_and_strides_.sizes_arrayref(),
-        sizes_and_strides_.strides_arrayref(), dtype_, storage_offset_);
+        std::move(new_storage),
+        sizes_and_strides_.sizes_arrayref(),
+        sizes_and_strides_.strides_arrayref(),
+        dtype_,
+        storage_offset_);
   }
 
-  SlimTensor cpu() const { return to(CPU_DEVICE); }
+  SlimTensor cpu() const {
+    return to(CPU_DEVICE);
+  }
 
-  SlimTensor cuda() const { return to(DEFAULT_CUDA_DEVICE); }
+  SlimTensor cuda() const {
+    return to(DEFAULT_CUDA_DEVICE);
+  }
 
-  SlimTensor to(standalone::c10::ScalarType dtype) const {
+  SlimTensor to(executorch::backends::cuda::c10::ScalarType dtype) const {
     STANDALONE_CHECK(false, "TBD: to(dtype)");
   }
 
-  SlimTensor &copy_(const SlimTensor &other) {
-    STANDALONE_CHECK(this->numel() == other.numel(),
-                     "copy_: numel of tensors must match");
+  SlimTensor& copy_(const SlimTensor& other) {
+    STANDALONE_CHECK(
+        this->numel() == other.numel(), "copy_: numel of tensors must match");
     STANDALONE_CHECK(this->dtype() == other.dtype(), "copy_: dtype must match");
 
     if (this->numel() == 0) {
@@ -199,16 +312,17 @@ public:
 
     // Case 1: Both tensors are contiguous. We can do a fast bulk copy.
     if (this->is_contiguous() && other.is_contiguous()) {
-      storage_->copy_(this->data_ptr(), other.data_ptr(), other.nbytes(),
-                      other.device());
+      storage_->copy_(
+          this->data_ptr(), other.data_ptr(), other.nbytes(), other.device());
       return *this;
     }
 
     // Case 2: At least one tensor is non-contiguous, perform element-wise copy
     // that respects both source and destination strides.
-    const size_t elem_size = standalone::c10::elementSize(dtype_);
-    char *dst_data = static_cast<char *>(this->data_ptr());
-    const char *src_data = static_cast<const char *>(other.data_ptr());
+    const size_t elem_size =
+        executorch::backends::cuda::c10::elementSize(dtype_);
+    char* dst_data = static_cast<char*>(this->data_ptr());
+    const char* src_data = static_cast<const char*>(other.data_ptr());
 
     std::vector<int64_t> counter(this->dim(), 0);
     for (size_t i = 0; i < this->numel(); i++) {
@@ -226,14 +340,17 @@ public:
 
       // Copy elem_size bytes from src to dst
       if (this->device().is_cpu() && other.device().is_cpu()) {
-        std::memcpy(dst_data + dst_offset * elem_size,
-                    src_data + src_offset * elem_size, elem_size);
+        std::memcpy(
+            dst_data + dst_offset * elem_size,
+            src_data + src_offset * elem_size,
+            elem_size);
       } else if (this->device().is_cuda() || other.device().is_cuda()) {
 #if defined(USE_CUDA)
         DeviceTraits<c10::DeviceType::CUDA>::memcpy(
             dst_data + dst_offset * elem_size,
-            src_data + src_offset * elem_size, elem_size,
-            device(),      // dst device
+            src_data + src_offset * elem_size,
+            elem_size,
+            device(), // dst device
             other.device() // src device
         );
 #else
@@ -252,7 +369,7 @@ public:
     return *this;
   }
 
-  SlimTensor &fill_(const c10::Scalar &value) {
+  SlimTensor& fill_(const c10::Scalar& value) {
     // Fast path for byte patterns on contiguous tensors - use memset
     if (value.equal(0) && this->is_contiguous()) {
       if (this->device().is_cpu()) {
@@ -261,8 +378,10 @@ public:
       } else if (this->device().is_cuda()) {
 #ifdef USE_CUDA
         cudaError_t err = cudaMemset(this->data_ptr(), 0, this->nbytes());
-        STANDALONE_CHECK(err == cudaSuccess,
-                         "CUDA memset failed: ", cudaGetErrorString(err));
+        STANDALONE_CHECK(
+            err == cudaSuccess,
+            "CUDA memset failed: ",
+            cudaGetErrorString(err));
         return *this;
 #else
         STANDALONE_CHECK(false, "CUDA support not available");
@@ -281,18 +400,26 @@ public:
             // Special handling for bool since std::vector<bool> doesn't have
             // data()
             std::vector<uint8_t> host_data(this->numel(), typed_value ? 1 : 0);
-            cudaError_t err =
-                cudaMemcpy(this->data_ptr(), host_data.data(), this->nbytes(),
-                           cudaMemcpyHostToDevice);
-            STANDALONE_CHECK(err == cudaSuccess,
-                             "CUDA memcpy failed: ", cudaGetErrorString(err));
+            cudaError_t err = cudaMemcpy(
+                this->data_ptr(),
+                host_data.data(),
+                this->nbytes(),
+                cudaMemcpyHostToDevice);
+            STANDALONE_CHECK(
+                err == cudaSuccess,
+                "CUDA memcpy failed: ",
+                cudaGetErrorString(err));
           } else {
             std::vector<SType> host_data(this->numel(), typed_value);
-            cudaError_t err =
-                cudaMemcpy(this->data_ptr(), host_data.data(), this->nbytes(),
-                           cudaMemcpyHostToDevice);
-            STANDALONE_CHECK(err == cudaSuccess,
-                             "CUDA memcpy failed: ", cudaGetErrorString(err));
+            cudaError_t err = cudaMemcpy(
+                this->data_ptr(),
+                host_data.data(),
+                this->nbytes(),
+                cudaMemcpyHostToDevice);
+            STANDALONE_CHECK(
+                err == cudaSuccess,
+                "CUDA memcpy failed: ",
+                cudaGetErrorString(err));
           }
         } else {
           // Handle non-contiguous tensors by copying to CPU, filling, then
@@ -307,14 +434,15 @@ public:
       } else if (this->device().is_cpu()) {
         if (this->is_contiguous()) {
           // Fast path for contiguous tensors
-          SType *data = static_cast<SType *>(this->data_ptr());
+          SType* data = static_cast<SType*>(this->data_ptr());
           for (size_t i = 0; i < this->numel(); ++i) {
             data[i] = typed_value;
           }
         } else {
           // Handle non-contiguous tensors by respecting strides
-          const size_t elem_size = standalone::c10::elementSize(this->dtype_);
-          char *base_data = static_cast<char *>(this->data_ptr());
+          const size_t elem_size =
+              executorch::backends::cuda::c10::elementSize(this->dtype_);
+          char* base_data = static_cast<char*>(this->data_ptr());
 
           std::vector<int64_t> counter(this->dim(), 0);
           for (size_t i = 0; i < this->numel(); ++i) {
@@ -325,8 +453,8 @@ public:
             }
 
             // Set the value at the computed offset
-            SType *element_ptr =
-                reinterpret_cast<SType *>(base_data + offset * elem_size);
+            SType* element_ptr =
+                reinterpret_cast<SType*>(base_data + offset * elem_size);
             *element_ptr = typed_value;
 
             // Increment the multi-dimensional counter
@@ -344,84 +472,94 @@ public:
     };
 
     switch (this->dtype()) {
-    case standalone::c10::ScalarType::Double:
-      fill_value(value.to<double>());
-      break;
-    case standalone::c10::ScalarType::Float:
-      fill_value(value.to<float>());
-      break;
-    case standalone::c10::ScalarType::Half:
-      fill_value(value.to<standalone::c10::Half>());
-      break;
-    case standalone::c10::ScalarType::BFloat16:
-      fill_value(value.to<standalone::c10::BFloat16>());
-      break;
-    case standalone::c10::ScalarType::Long:
-      fill_value(value.to<int64_t>());
-      break;
-    case standalone::c10::ScalarType::Int:
-      fill_value(value.to<int32_t>());
-      break;
-    case standalone::c10::ScalarType::Short:
-      fill_value(value.to<int16_t>());
-      break;
-    case standalone::c10::ScalarType::Char:
-      fill_value(value.to<int8_t>());
-      break;
-    case standalone::c10::ScalarType::Byte:
-      fill_value(value.to<uint8_t>());
-      break;
-    case standalone::c10::ScalarType::Bool:
-      fill_value(value.to<bool>());
-      break;
-    case standalone::c10::ScalarType::ComplexFloat:
-      fill_value(value.to<standalone::c10::complex<float>>());
-      break;
-    case standalone::c10::ScalarType::ComplexDouble:
-      fill_value(value.to<standalone::c10::complex<double>>());
-      break;
-    default:
-      STANDALONE_CHECK(false, "fill_: Unsupported dtype");
+      case executorch::backends::cuda::c10::ScalarType::Double:
+        fill_value(value.to<double>());
+        break;
+      case executorch::backends::cuda::c10::ScalarType::Float:
+        fill_value(value.to<float>());
+        break;
+      case executorch::backends::cuda::c10::ScalarType::Half:
+        fill_value(value.to<executorch::backends::cuda::c10::Half>());
+        break;
+      case executorch::backends::cuda::c10::ScalarType::BFloat16:
+        fill_value(value.to<executorch::backends::cuda::c10::BFloat16>());
+        break;
+      case executorch::backends::cuda::c10::ScalarType::Long:
+        fill_value(value.to<int64_t>());
+        break;
+      case executorch::backends::cuda::c10::ScalarType::Int:
+        fill_value(value.to<int32_t>());
+        break;
+      case executorch::backends::cuda::c10::ScalarType::Short:
+        fill_value(value.to<int16_t>());
+        break;
+      case executorch::backends::cuda::c10::ScalarType::Char:
+        fill_value(value.to<int8_t>());
+        break;
+      case executorch::backends::cuda::c10::ScalarType::Byte:
+        fill_value(value.to<uint8_t>());
+        break;
+      case executorch::backends::cuda::c10::ScalarType::Bool:
+        fill_value(value.to<bool>());
+        break;
+      case executorch::backends::cuda::c10::ScalarType::ComplexFloat:
+        fill_value(value.to<executorch::backends::cuda::c10::complex<float>>());
+        break;
+      case executorch::backends::cuda::c10::ScalarType::ComplexDouble:
+        fill_value(
+            value.to<executorch::backends::cuda::c10::complex<double>>());
+        break;
+      default:
+        STANDALONE_CHECK(false, "fill_: Unsupported dtype");
     }
     return *this;
   }
 
   SlimTensor clone() const {
-    return _clone_impl(this->sizes(), this->strides(), this->dtype(),
-                       this->device());
+    return _clone_impl(
+        this->sizes(), this->strides(), this->dtype(), this->device());
   }
 
   SlimTensor clone_contiguous() const {
     std::vector<int64_t> contig_strides =
-        standalone::slim::compute_contiguous_strides(this->sizes());
-    return _clone_impl(this->sizes(), contig_strides, this->dtype(),
-                       this->device());
+        executorch::backends::cuda::slim::compute_contiguous_strides(
+            this->sizes());
+    return _clone_impl(
+        this->sizes(), contig_strides, this->dtype(), this->device());
   }
 
   // View operations
-  SlimTensor as_strided(standalone::c10::IntArrayRef sizes,
-                        standalone::c10::IntArrayRef strides,
-                        int64_t storage_offset) const;
-  SlimTensor as_strided_(standalone::c10::IntArrayRef sizes,
-                         standalone::c10::IntArrayRef strides,
-                         int64_t storage_offset);
+  SlimTensor as_strided(
+      executorch::backends::cuda::c10::IntArrayRef sizes,
+      executorch::backends::cuda::c10::IntArrayRef strides,
+      int64_t storage_offset) const;
+  SlimTensor as_strided_(
+      executorch::backends::cuda::c10::IntArrayRef sizes,
+      executorch::backends::cuda::c10::IntArrayRef strides,
+      int64_t storage_offset);
 
-  SlimTensor permute(standalone::c10::IntArrayRef dims) const;
+  SlimTensor permute(executorch::backends::cuda::c10::IntArrayRef dims) const;
 
   // Transpose operations
   SlimTensor transpose() const;
   SlimTensor transpose(int64_t dim0, int64_t dim1) const;
   SlimTensor t() const;
 
-  SlimTensor reshape(standalone::c10::IntArrayRef proposed_shape) const;
+  SlimTensor reshape(
+      executorch::backends::cuda::c10::IntArrayRef proposed_shape) const;
 
   SlimTensor narrow(int64_t dim, int64_t start, int64_t length) const;
 
   // Generic element access returning SlimTensor
-  SlimTensor operator[](standalone::c10::IntArrayRef indices) const {
-    STANDALONE_CHECK(indices.size() <= this->dim(), "Number of indices (",
-                     indices.size(), ") cannot exceed tensor dimensions (",
-                     this->dim(), ")");
+  SlimTensor operator[](
+      executorch::backends::cuda::c10::IntArrayRef indices) const {
+    STANDALONE_CHECK(
+        indices.size() <= this->dim(),
+        "Number of indices (",
+        indices.size(),
+        ") cannot exceed tensor dimensions (",
+        this->dim(),
+        ")");
 
     if (indices.size() == this->dim()) {
       // Full indexing - return 0-dimensional tensor
@@ -429,13 +567,13 @@ public:
       for (size_t i = 0; i < indices.size(); ++i) {
         int64_t idx = indices[i];
         int64_t size = this->size(i);
-        idx = standalone::c10::maybe_wrap_dim(idx, size);
+        idx = executorch::backends::cuda::c10::maybe_wrap_dim(idx, size);
         linear_index += idx * this->stride(i);
       }
       // Create 0-dimensional tensor pointing to the indexed element
       int64_t new_storage_offset = this->storage_offset_ + linear_index;
-      return SlimTensor(Storage(this->storage_), {}, {}, this->dtype_,
-                        new_storage_offset);
+      return SlimTensor(
+          Storage(this->storage_), {}, {}, this->dtype_, new_storage_offset);
     } else {
       // Partial indexing - return tensor with reduced dimensions
       std::vector<int64_t> new_sizes;
@@ -446,7 +584,7 @@ public:
       for (size_t i = 0; i < indices.size(); ++i) {
         int64_t idx = indices[i];
         int64_t size = this->size(i);
-        idx = standalone::c10::maybe_wrap_dim(idx, size);
+        idx = executorch::backends::cuda::c10::maybe_wrap_dim(idx, size);
         offset_adjustment += idx * this->stride(i);
       }
 
@@ -457,76 +595,82 @@ public:
       }
 
       int64_t new_storage_offset = this->storage_offset_ + offset_adjustment;
-      return SlimTensor(Storage(this->storage_), new_sizes, new_strides,
-                        this->dtype_, new_storage_offset);
+      return SlimTensor(
+          Storage(this->storage_),
+          new_sizes,
+          new_strides,
+          this->dtype_,
+          new_storage_offset);
     }
   }
 
   // Convenience overload for single index
   SlimTensor operator[](int64_t index) const {
-    return (*this)[standalone::c10::IntArrayRef{index}];
+    return (*this)[executorch::backends::cuda::c10::IntArrayRef{index}];
   }
 
   // Convenience overloads for common multi-dimensional cases
   SlimTensor operator[](std::initializer_list<int64_t> indices) const {
-    return (*this)[standalone::c10::IntArrayRef(indices)];
+    return (*this)[executorch::backends::cuda::c10::IntArrayRef(indices)];
   }
 
   // Extract scalar value from 0-dimensional tensor
-  standalone::c10::Scalar item() const {
+  executorch::backends::cuda::c10::Scalar item() const {
     switch (this->dtype()) {
-    case standalone::c10::ScalarType::Double:
-      return this->item<double>();
-    case standalone::c10::ScalarType::Float:
-      return this->item<float>();
-    case standalone::c10::ScalarType::Half:
-      return this->item<standalone::c10::Half>();
-    case standalone::c10::ScalarType::BFloat16:
-      return this->item<standalone::c10::BFloat16>();
-    case standalone::c10::ScalarType::Long:
-      return this->item<int64_t>();
-    case standalone::c10::ScalarType::Int:
-      return this->item<int32_t>();
-    case standalone::c10::ScalarType::Short:
-      return this->item<int16_t>();
-    case standalone::c10::ScalarType::Char:
-      return this->item<int8_t>();
-    case standalone::c10::ScalarType::Byte:
-      return this->item<uint8_t>();
-    case standalone::c10::ScalarType::Bool:
-      return this->item<bool>();
-    case standalone::c10::ScalarType::ComplexFloat:
-      return this->item<standalone::c10::complex<float>>();
-    case standalone::c10::ScalarType::ComplexDouble:
-      return this->item<standalone::c10::complex<double>>();
-    default:
-      STANDALONE_CHECK(false, "item(): Unsupported dtype");
+      case executorch::backends::cuda::c10::ScalarType::Double:
+        return this->item<double>();
+      case executorch::backends::cuda::c10::ScalarType::Float:
+        return this->item<float>();
+      case executorch::backends::cuda::c10::ScalarType::Half:
+        return this->item<executorch::backends::cuda::c10::Half>();
+      case executorch::backends::cuda::c10::ScalarType::BFloat16:
+        return this->item<executorch::backends::cuda::c10::BFloat16>();
+      case executorch::backends::cuda::c10::ScalarType::Long:
+        return this->item<int64_t>();
+      case executorch::backends::cuda::c10::ScalarType::Int:
+        return this->item<int32_t>();
+      case executorch::backends::cuda::c10::ScalarType::Short:
+        return this->item<int16_t>();
+      case executorch::backends::cuda::c10::ScalarType::Char:
+        return this->item<int8_t>();
+      case executorch::backends::cuda::c10::ScalarType::Byte:
+        return this->item<uint8_t>();
+      case executorch::backends::cuda::c10::ScalarType::Bool:
+        return this->item<bool>();
+      case executorch::backends::cuda::c10::ScalarType::ComplexFloat:
+        return this->item<executorch::backends::cuda::c10::complex<float>>();
+      case executorch::backends::cuda::c10::ScalarType::ComplexDouble:
+        return this->item<executorch::backends::cuda::c10::complex<double>>();
+      default:
+        STANDALONE_CHECK(false, "item(): Unsupported dtype");
     }
   }
 
   // Dump operations
-  bool dump_binary(const std::string &filename) const;
-  bool dump_text(const std::string &filename,
-                 const std::string &label = "") const;
+  bool dump_binary(const std::string& filename) const;
+  bool dump_text(const std::string& filename, const std::string& label = "")
+      const;
 
   // Templated version to access 0-dimensional tensor
-  template <typename T> T item() const {
-    STANDALONE_CHECK(this->dim() == 0,
-                     "item() can only be called on 0-dimensional tensors");
-    STANDALONE_CHECK(this->numel() == 1,
-                     "item() requires tensor to have exactly 1 element");
+  template <typename T>
+  T item() const {
+    STANDALONE_CHECK(
+        this->dim() == 0, "item() can only be called on 0-dimensional tensors");
+    STANDALONE_CHECK(
+        this->numel() == 1, "item() requires tensor to have exactly 1 element");
 
     // For 0-dimensional tensors, directly access the single element at
     // data_ptr() No need to compute linear index since there's only one element
-    const T *data = static_cast<const T *>(this->data_ptr());
+    const T* data = static_cast<const T*>(this->data_ptr());
     return *data;
   }
 
-private:
-  SlimTensor _clone_impl(standalone::c10::IntArrayRef sizes,
-                         standalone::c10::IntArrayRef strides,
-                         standalone::c10::ScalarType dtype,
-                         const standalone::c10::Device &device) const {
+ private:
+  SlimTensor _clone_impl(
+      executorch::backends::cuda::c10::IntArrayRef sizes,
+      executorch::backends::cuda::c10::IntArrayRef strides,
+      executorch::backends::cuda::c10::ScalarType dtype,
+      const executorch::backends::cuda::c10::Device& device) const {
     Storage storage = new_storage(sizes, strides, dtype, device);
     SlimTensor result =
         SlimTensor(std::move(storage), sizes, strides, dtype, 0);
@@ -539,9 +683,10 @@ private:
   }
 
   bool compute_is_contiguous() const {
-    return standalone::c10::_compute_contiguous<int64_t>(
+    return executorch::backends::cuda::c10::_compute_contiguous<int64_t>(
         sizes_and_strides_.sizes_arrayref(),
-        sizes_and_strides_.strides_arrayref(), numel_);
+        sizes_and_strides_.strides_arrayref(),
+        numel_);
   }
 
   void refresh_contiguous() {
@@ -552,20 +697,20 @@ private:
 
   Storage storage_; // device_type_ and device_index_ are stored in storage_
   int64_t storage_offset_{0};
-  standalone::c10::SizesAndStrides sizes_and_strides_;
+  executorch::backends::cuda::c10::SizesAndStrides sizes_and_strides_;
   // If sizes and strides are empty, the numel is 1!!  However, most of the
   // time, we will immediately set sizes to {0} and reset numel to 0.
   // (Can't do that in the default initializers, because there's no way to
   // spell "allocate a one-element array" for strides_).
   size_t numel_{1};
-  standalone::c10::ScalarType dtype_;
+  executorch::backends::cuda::c10::ScalarType dtype_;
   bool is_contiguous_{true};
   // NOLINTNEXTLINE(clang-diagnostic-unused-private-field)
   std::array<int8_t, 6> reserved_{0}; // padding to align to 8 bytes
 };
 
-} // namespace standalone::slim
+} // namespace executorch::backends::cuda::slim
 
-#include <standalone/slim/core/SlimTensorResize-incl.h>
-#include <standalone/slim/core/SlimTensorSerialize-incl.h>
-#include <standalone/slim/core/SlimTensorView-incl.h>
+#include <executorch/backends/cuda/runtime/slim/core/SlimTensorResize-incl.h>
+#include <executorch/backends/cuda/runtime/slim/core/SlimTensorSerialize-incl.h>
+#include <executorch/backends/cuda/runtime/slim/core/SlimTensorView-incl.h>

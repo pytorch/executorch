@@ -1,15 +1,15 @@
 #pragma once
 
-#include <standalone/slim/core/Empty.h>
+#include <executorch/backends/cuda/runtime/slim/core/Empty.h>
 
-namespace standalone::slim {
+namespace executorch::backends::cuda::slim {
 
 inline SlimTensor constant_pad_nd(const SlimTensor &self,
-                                  standalone::c10::IntArrayRef pad,
-                                  const standalone::c10::Scalar &value) {
+                                  executorch::backends::cuda::c10::IntArrayRef pad,
+                                  const executorch::backends::cuda::c10::Scalar &value) {
   STANDALONE_CHECK(pad.size() % 2 == 0, "Length of pad must be even");
 
-  standalone::c10::IntArrayRef input_sizes = self.sizes();
+  executorch::backends::cuda::c10::IntArrayRef input_sizes = self.sizes();
   int64_t l_inp = self.dim();
   int64_t l_pad = static_cast<int64_t>(pad.size()) / 2;
   int64_t l_diff = l_inp - l_pad;
@@ -49,7 +49,7 @@ inline SlimTensor constant_pad_nd(const SlimTensor &self,
     new_shape.emplace_back(input_sizes[i]);
   }
 
-  for (const auto i : standalone::c10::irange((size_t)l_pad)) {
+  for (const auto i : executorch::backends::cuda::c10::irange((size_t)l_pad)) {
     auto pad_idx = pad.size() - ((i + 1) * 2);
     auto new_dim = input_sizes[l_diff + i] + pad[pad_idx] + pad[pad_idx + 1];
     STANDALONE_CHECK(new_dim > 0, "The input size ", input_sizes[l_diff + i],
@@ -66,7 +66,7 @@ inline SlimTensor constant_pad_nd(const SlimTensor &self,
 
   // create a view into the center of the output tensor
   SlimTensor c_output = output;
-  for (const auto i : standalone::c10::irange(l_diff, l_inp)) {
+  for (const auto i : executorch::backends::cuda::c10::irange(l_diff, l_inp)) {
     auto pad_idx = 2 * (l_inp - i - 1);
     if (pad[pad_idx] > 0) {
       c_output =
@@ -81,7 +81,7 @@ inline SlimTensor constant_pad_nd(const SlimTensor &self,
   return output;
 }
 
-inline SlimTensor pad(const SlimTensor &self, standalone::c10::IntArrayRef pad,
+inline SlimTensor pad(const SlimTensor &self, executorch::backends::cuda::c10::IntArrayRef pad,
                       std::string_view mode, std::optional<double> value) {
   if (mode == "constant") {
     return constant_pad_nd(self, pad, value.value_or(0.0));
@@ -90,4 +90,4 @@ inline SlimTensor pad(const SlimTensor &self, standalone::c10::IntArrayRef pad,
                    ". Only constant mode is available.");
 }
 
-} // namespace standalone::slim
+} // namespace executorch::backends::cuda::slim

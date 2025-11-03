@@ -8,9 +8,9 @@
 
 #pragma once
 
+#include <executorch/backends/cuda/runtime/slim/core/SlimTensor.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
-#include <executorch/backends/cuda/runtime/slim/core/SlimTensor.h>
 
 namespace executorch {
 namespace backends {
@@ -22,7 +22,7 @@ using executorch::runtime::etensor::Tensor;
 extern "C" {
 
 // Type definitions
-using AOTITensorHandle = standalone::slim::SlimTensor*;
+using AOTITensorHandle = executorch::backends::cuda::slim::SlimTensor*;
 using AOTIRuntimeError = Error;
 
 // Forward declarations for AOT Inductor model container
@@ -52,11 +52,11 @@ using AOTInductorModelContainerGetNumOutputsFunc = AOTIRuntimeError (*)(
 using AOTInductorModelContainerRunFunc = AOTIRuntimeError (*)(
     AOTInductorModelContainerHandle container_handle,
     AOTITensorHandle* input_handles, // array of input SlimTensor*; handles
-                                      // are stolen; the array itself is borrowed
+                                     // are stolen; the array itself is borrowed
     size_t num_inputs,
     AOTITensorHandle* output_handles, // array for writing SlimTensor*; handles
-                                       // will be stolen by the caller; the array itself
-                                       // is borrowed
+                                      // will be stolen by the caller; the array
+                                      // itself is borrowed
     size_t n_outputs,
     AOTInductorStreamHandle stream_handle,
     AOTIProxyExecutorHandle proxy_executor_handle);

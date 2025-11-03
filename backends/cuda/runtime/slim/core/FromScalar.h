@@ -1,15 +1,15 @@
 #pragma once
 
-#include <standalone/slim/core/Empty.h>
+#include <executorch/backends/cuda/runtime/slim/core/Empty.h>
 
-namespace standalone::slim {
+namespace executorch::backends::cuda::slim {
 
 inline SlimTensor
-scalar_to_tensor(const standalone::c10::Scalar &s,
-                 const standalone::c10::Device &device = CPU_DEVICE) {
+scalar_to_tensor(const executorch::backends::cuda::c10::Scalar &s,
+                 const executorch::backends::cuda::c10::Device &device = CPU_DEVICE) {
   SlimTensor result = empty_strided({}, {}, s.type(), device);
   result.fill_(s);
   return result;
 }
 
-} // namespace standalone::slim
+} // namespace executorch::backends::cuda::slim

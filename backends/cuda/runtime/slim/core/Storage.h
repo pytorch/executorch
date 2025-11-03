@@ -5,37 +5,37 @@
 #include <stdexcept>
 
 #ifdef USE_CUDA
-#include <standalone/c10/cuda/Exception.h>
-#include <standalone/slim/cuda/Guard.h>
+#include <executorch/backends/cuda/runtime/c10/cuda/Exception.h>
+#include <executorch/backends/cuda/runtime/slim/cuda/Guard.h>
 #endif
 
-#include <standalone/c10/core/Device.h>
-#include <standalone/c10/core/ScalarType.h>
-#include <standalone/c10/util/ArrayRef.h>
-#include <standalone/c10/util/Exception.h>
-#include <standalone/slim/util/SharedPtr.h>
-#include <standalone/slim/util/SizeUtil.h>
+#include <executorch/backends/cuda/runtime/c10/core/Device.h>
+#include <executorch/backends/cuda/runtime/c10/core/ScalarType.h>
+#include <executorch/backends/cuda/runtime/c10/util/ArrayRef.h>
+#include <executorch/backends/cuda/runtime/c10/util/Exception.h>
+#include <executorch/backends/cuda/runtime/slim/util/SharedPtr.h>
+#include <executorch/backends/cuda/runtime/slim/util/SizeUtil.h>
 
-namespace standalone::slim {
+namespace executorch::backends::cuda::slim {
 using DeleterFn = void (*)(void *);
 
 namespace detail {
 inline void noop(void *) {}
 } // namespace detail
 
-const standalone::c10::Device CPU_DEVICE =
-    standalone::c10::Device(standalone::c10::DeviceType::CPU, 0);
+const executorch::backends::cuda::c10::Device CPU_DEVICE =
+    executorch::backends::cuda::c10::Device(executorch::backends::cuda::c10::DeviceType::CPU, 0);
 
-const standalone::c10::Device DEFAULT_CUDA_DEVICE =
-    standalone::c10::Device(standalone::c10::DeviceType::CUDA, 0);
+const executorch::backends::cuda::c10::Device DEFAULT_CUDA_DEVICE =
+    executorch::backends::cuda::c10::Device(executorch::backends::cuda::c10::DeviceType::CUDA, 0);
 
-// standalone::c10::Device traits template for device-specific operations
-template <standalone::c10::DeviceType D> struct DeviceTraits;
+// executorch::backends::cuda::c10::Device traits template for device-specific operations
+template <executorch::backends::cuda::c10::DeviceType D> struct DeviceTraits;
 
 // CPU specialization
-template <> struct DeviceTraits<standalone::c10::DeviceType::CPU> {
+template <> struct DeviceTraits<executorch::backends::cuda::c10::DeviceType::CPU> {
   static void *allocate(size_t nbytes,
-                        const standalone::c10::Device &device = CPU_DEVICE) {
+                        const executorch::backends::cuda::c10::Device &device = CPU_DEVICE) {
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
     return malloc(nbytes);
   }
@@ -46,17 +46,17 @@ template <> struct DeviceTraits<standalone::c10::DeviceType::CPU> {
   }
 
   static void memcpy(void *dst, const void *src, size_t nbytes,
-                     const standalone::c10::Device &dst_device,
-                     const standalone::c10::Device &src_device) {
+                     const executorch::backends::cuda::c10::Device &dst_device,
+                     const executorch::backends::cuda::c10::Device &src_device) {
     std::memcpy(dst, src, nbytes);
   }
 };
 
 // CUDA specialization
 #ifdef USE_CUDA
-template <> struct DeviceTraits<standalone::c10::DeviceType::CUDA> {
-  static void *allocate(size_t nbytes, const standalone::c10::Device &device) {
-    standalone::slim::cuda::CUDAGuard guard(device);
+template <> struct DeviceTraits<executorch::backends::cuda::c10::DeviceType::CUDA> {
+  static void *allocate(size_t nbytes, const executorch::backends::cuda::c10::Device &device) {
+    executorch::backends::cuda::slim::cuda::CUDAGuard guard(device);
     void *data = nullptr;
     STANDALONE_CUDA_CHECK(cudaMalloc(&data, nbytes));
     return data;
@@ -65,11 +65,11 @@ template <> struct DeviceTraits<standalone::c10::DeviceType::CUDA> {
   static void free(void *ptr) { STANDALONE_CUDA_CHECK_WARN(cudaFree(ptr)); }
 
   static void memcpy(void *dst, const void *src, size_t nbytes,
-                     const standalone::c10::Device &dst_device,
-                     const standalone::c10::Device &src_device) {
+                     const executorch::backends::cuda::c10::Device &dst_device,
+                     const executorch::backends::cuda::c10::Device &src_device) {
     // Determine the direction
     cudaMemcpyKind direction = cudaMemcpyDeviceToDevice;
-    standalone::c10::Device cuda_device =
+    executorch::backends::cuda::c10::Device cuda_device =
         dst_device; // Default to destination device
 
     if (src_device.is_cpu()) {
@@ -83,13 +83,13 @@ template <> struct DeviceTraits<standalone::c10::DeviceType::CUDA> {
                        src_device.index(), "!=", dst_device.index());
     }
     // Set up CUDA context for the appropriate device
-    standalone::slim::cuda::CUDAGuard guard(cuda_device);
+    executorch::backends::cuda::slim::cuda::CUDAGuard guard(cuda_device);
     STANDALONE_CUDA_CHECK(cudaMemcpy(dst, src, nbytes, direction));
   }
 };
 #else
-template <> struct DeviceTraits<standalone::c10::DeviceType::CUDA> {
-  static void *allocate(size_t nbytes, const standalone::c10::Device &device) {
+template <> struct DeviceTraits<executorch::backends::cuda::c10::DeviceType::CUDA> {
+  static void *allocate(size_t nbytes, const executorch::backends::cuda::c10::Device &device) {
     STANDALONE_CHECK(false, "Build with USE_CUDA=1 to enable CUDA support");
   }
 
@@ -98,8 +98,8 @@ template <> struct DeviceTraits<standalone::c10::DeviceType::CUDA> {
   }
 
   static void memcpy(void *dst, const void *src, size_t nbytes,
-                     const standalone::c10::Device &dst_device,
-                     const standalone::c10::Device &src_device) {
+                     const executorch::backends::cuda::c10::Device &dst_device,
+                     const executorch::backends::cuda::c10::Device &src_device) {
     STANDALONE_CHECK(false, "Build with USE_CUDA=1 to enable CUDA support");
   }
 };
@@ -110,23 +110,23 @@ template <> struct DeviceTraits<standalone::c10::DeviceType::CUDA> {
 // non-owning.
 class MaybeOwningStorage {
 public:
-  MaybeOwningStorage(const standalone::c10::Device &device, size_t nbytes)
+  MaybeOwningStorage(const executorch::backends::cuda::c10::Device &device, size_t nbytes)
       : device_(device), capacity_(nbytes), is_owning_(true) {
     // Allocating memory here so owning_ has to be true.
     if (device.is_cpu()) {
-      data_ = DeviceTraits<standalone::c10::DeviceType::CPU>::allocate(nbytes,
+      data_ = DeviceTraits<executorch::backends::cuda::c10::DeviceType::CPU>::allocate(nbytes,
                                                                        device);
-      deleter_ = DeviceTraits<standalone::c10::DeviceType::CPU>::free;
+      deleter_ = DeviceTraits<executorch::backends::cuda::c10::DeviceType::CPU>::free;
     } else if (device.is_cuda()) {
-      data_ = DeviceTraits<standalone::c10::DeviceType::CUDA>::allocate(nbytes,
+      data_ = DeviceTraits<executorch::backends::cuda::c10::DeviceType::CUDA>::allocate(nbytes,
                                                                         device);
-      deleter_ = DeviceTraits<standalone::c10::DeviceType::CUDA>::free;
+      deleter_ = DeviceTraits<executorch::backends::cuda::c10::DeviceType::CUDA>::free;
     } else {
       STANDALONE_CHECK(false, "Unsupported device type");
     }
   }
 
-  MaybeOwningStorage(const standalone::c10::Device &device, void *data,
+  MaybeOwningStorage(const executorch::backends::cuda::c10::Device &device, void *data,
                      size_t nbytes)
       : device_(device), data_(data), capacity_(nbytes), is_owning_(false) {
     // data pointer is not owned by this object
@@ -172,7 +172,7 @@ public:
   ~MaybeOwningStorage() { free_data(); }
 
   void copy_(void *dst_data_ptr, void *src_data_ptr, size_t nbytes,
-             const standalone::c10::Device &src_device) {
+             const executorch::backends::cuda::c10::Device &src_device) {
     STANDALONE_CHECK(dst_data_ptr,
                      "Storage clone failed: dst_data_ptr can not be nullptr")
     STANDALONE_CHECK(src_data_ptr,
@@ -192,7 +192,7 @@ public:
     }
   }
 
-  MaybeOwningStorage clone(const standalone::c10::Device &device) const {
+  MaybeOwningStorage clone(const executorch::backends::cuda::c10::Device &device) const {
     STANDALONE_CHECK(data_,
                      "Storage clone failed: source data can not be nullptr")
     // Create a new owning storage with the specified device and same capacity
@@ -201,11 +201,11 @@ public:
     // Copy the data from the current storage to the new storage
     if (device_.is_cpu() && device.is_cpu()) {
       // CPU to CPU copy
-      DeviceTraits<standalone::c10::DeviceType::CPU>::memcpy(
+      DeviceTraits<executorch::backends::cuda::c10::DeviceType::CPU>::memcpy(
           cloned_storage.data_, data_, capacity_, device, device_);
     } else {
       // At least one of the devices is CUDA
-      DeviceTraits<standalone::c10::DeviceType::CUDA>::memcpy(
+      DeviceTraits<executorch::backends::cuda::c10::DeviceType::CUDA>::memcpy(
           cloned_storage.data_, data_, capacity_, device, device_);
     }
 
@@ -220,7 +220,7 @@ public:
     return data_;
   }
 
-  const standalone::c10::Device &device() const { return device_; }
+  const executorch::backends::cuda::c10::Device &device() const { return device_; }
 
   size_t nbytes() const { return this->capacity_; }
 
@@ -247,7 +247,7 @@ public:
   void set_nbytes(size_t new_nbytes) { capacity_ = new_nbytes; }
 
 private:
-  standalone::c10::Device device_ = CPU_DEVICE;
+  executorch::backends::cuda::c10::Device device_ = CPU_DEVICE;
   void *data_ = nullptr;
   size_t capacity_ = 0;
   DeleterFn deleter_ = detail::noop;
@@ -256,12 +256,12 @@ private:
 
 using Storage = SharedPtr<MaybeOwningStorage>;
 
-inline Storage new_storage(standalone::c10::IntArrayRef sizes,
-                           standalone::c10::IntArrayRef strides,
-                           standalone::c10::ScalarType dtype,
-                           const standalone::c10::Device &device = CPU_DEVICE) {
+inline Storage new_storage(executorch::backends::cuda::c10::IntArrayRef sizes,
+                           executorch::backends::cuda::c10::IntArrayRef strides,
+                           executorch::backends::cuda::c10::ScalarType dtype,
+                           const executorch::backends::cuda::c10::Device &device = CPU_DEVICE) {
   size_t nbytes = compute_storage_nbytes(
-      sizes, strides, standalone::c10::elementSize(dtype), 0);
+      sizes, strides, executorch::backends::cuda::c10::elementSize(dtype), 0);
   return Storage(new MaybeOwningStorage(device, nbytes));
 }
-} // namespace standalone::slim
+} // namespace executorch::backends::cuda::slim

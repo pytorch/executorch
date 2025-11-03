@@ -49,10 +49,8 @@ runtime.cxx_library(
 runtime.cxx_library(
     name = "runtime_shims",
     srcs = [
-        "guard.cpp",
     ],
     headers = [
-        "guard.h",
         "utils.h",
     ],
     # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)

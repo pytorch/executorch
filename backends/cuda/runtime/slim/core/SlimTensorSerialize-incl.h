@@ -6,7 +6,7 @@
 #include <fstream>
 #include <iomanip>
 
-namespace standalone::slim {
+namespace executorch::backends::cuda::slim {
 
 inline bool SlimTensor::dump_binary(const std::string &filename) const {
   // Binary format header for SlimTensor dump
@@ -89,76 +89,76 @@ inline bool SlimTensor::dump_text(const std::string &filename,
   const void *data_ptr = cpu_tensor.data_ptr();
 
   switch (cpu_tensor.dtype()) {
-  case standalone::c10::ScalarType::Float: {
+  case executorch::backends::cuda::c10::ScalarType::Float: {
     const float *data = static_cast<const float *>(data_ptr);
     for (size_t i = 0; i < numel; ++i) {
       file << std::scientific << std::setprecision(8) << data[i] << "\n";
     }
     break;
   }
-  case standalone::c10::ScalarType::BFloat16: {
+  case executorch::backends::cuda::c10::ScalarType::BFloat16: {
     // Convert BFloat16 to float for text output
-    const standalone::c10::BFloat16 *data =
-        static_cast<const standalone::c10::BFloat16 *>(data_ptr);
+    const executorch::backends::cuda::c10::BFloat16 *data =
+        static_cast<const executorch::backends::cuda::c10::BFloat16 *>(data_ptr);
     for (size_t i = 0; i < numel; ++i) {
       float val = static_cast<float>(data[i]);
       file << std::scientific << std::setprecision(8) << val << "\n";
     }
     break;
   }
-  case standalone::c10::ScalarType::Half: {
+  case executorch::backends::cuda::c10::ScalarType::Half: {
     // Convert Half to float for text output
-    const standalone::c10::Half *data =
-        static_cast<const standalone::c10::Half *>(data_ptr);
+    const executorch::backends::cuda::c10::Half *data =
+        static_cast<const executorch::backends::cuda::c10::Half *>(data_ptr);
     for (size_t i = 0; i < numel; ++i) {
       float val = static_cast<float>(data[i]);
       file << std::scientific << std::setprecision(8) << val << "\n";
     }
     break;
   }
-  case standalone::c10::ScalarType::Long: {
+  case executorch::backends::cuda::c10::ScalarType::Long: {
     const int64_t *data = static_cast<const int64_t *>(data_ptr);
     for (size_t i = 0; i < numel; ++i) {
       file << data[i] << "\n";
     }
     break;
   }
-  case standalone::c10::ScalarType::Int: {
+  case executorch::backends::cuda::c10::ScalarType::Int: {
     const int32_t *data = static_cast<const int32_t *>(data_ptr);
     for (size_t i = 0; i < numel; ++i) {
       file << data[i] << "\n";
     }
     break;
   }
-  case standalone::c10::ScalarType::Double: {
+  case executorch::backends::cuda::c10::ScalarType::Double: {
     const double *data = static_cast<const double *>(data_ptr);
     for (size_t i = 0; i < numel; ++i) {
       file << std::scientific << std::setprecision(16) << data[i] << "\n";
     }
     break;
   }
-  case standalone::c10::ScalarType::Short: {
+  case executorch::backends::cuda::c10::ScalarType::Short: {
     const int16_t *data = static_cast<const int16_t *>(data_ptr);
     for (size_t i = 0; i < numel; ++i) {
       file << data[i] << "\n";
     }
     break;
   }
-  case standalone::c10::ScalarType::Char: {
+  case executorch::backends::cuda::c10::ScalarType::Char: {
     const int8_t *data = static_cast<const int8_t *>(data_ptr);
     for (size_t i = 0; i < numel; ++i) {
       file << static_cast<int>(data[i]) << "\n";
     }
     break;
   }
-  case standalone::c10::ScalarType::Byte: {
+  case executorch::backends::cuda::c10::ScalarType::Byte: {
     const uint8_t *data = static_cast<const uint8_t *>(data_ptr);
     for (size_t i = 0; i < numel; ++i) {
       file << static_cast<unsigned int>(data[i]) << "\n";
     }
     break;
   }
-  case standalone::c10::ScalarType::Bool: {
+  case executorch::backends::cuda::c10::ScalarType::Bool: {
     const bool *data = static_cast<const bool *>(data_ptr);
     for (size_t i = 0; i < numel; ++i) {
       file << (data[i] ? "1" : "0") << "\n";
@@ -176,4 +176,4 @@ inline bool SlimTensor::dump_text(const std::string &filename,
   return true;
 }
 
-} // namespace standalone::slim
+} // namespace executorch::backends::cuda::slim

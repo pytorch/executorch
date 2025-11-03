@@ -5,9 +5,9 @@
 #include <stdexcept>
 #include <utility>
 
-#include <standalone/c10/util/Exception.h>
+#include <executorch/backends/cuda/runtime/c10/util/Exception.h>
 
-namespace standalone::slim {
+namespace executorch::backends::cuda::slim {
 
 /**
  * NonAtomicSharedPtr - A lightweight, non-thread-safe shared pointer
@@ -188,7 +188,7 @@ std::shared_ptr<T> make_shared(Args &&...args) {
 
 #else
 template <typename T>
-using SharedPtr = ::standalone::slim::NonAtomicSharedPtr<T>;
+using SharedPtr = ::executorch::backends::cuda::slim::NonAtomicSharedPtr<T>;
 
 // make_shared for NonAtomicSharedPtr
 template <typename T, typename... Args>
@@ -197,4 +197,4 @@ NonAtomicSharedPtr<T> make_shared(Args &&...args) {
 }
 
 #endif // USE_MULTI_THREAD
-} // namespace standalone::slim
+} // namespace executorch::backends::cuda::slim
