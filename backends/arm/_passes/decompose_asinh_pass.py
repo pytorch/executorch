@@ -40,6 +40,14 @@ class DecomposeAsinhPass(ArmPass):
         if op not in edge_asinh_op:
             return super().call_operator(op, args, kwargs, meta)
 
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
+            return super().call_operator(op, args, kwargs, meta)
+
         log_op, sqrt_op, mul_op, add_op_scalar, add_op = (
             exir_ops.edge.aten.log.default,
             exir_ops.edge.aten.sqrt.default,
