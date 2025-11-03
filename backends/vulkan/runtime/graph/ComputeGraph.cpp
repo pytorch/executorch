@@ -410,14 +410,15 @@ ValueRef ComputeGraph::add_tensor(
     const utils::AxisMapLayout axis_map_layout) {
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
-  values_.emplace_back(api::vTensor(
-      context(),
-      sizes,
-      dtype,
-      storage_type,
-      memory_layout,
-      false,
-      axis_map_layout));
+  values_.emplace_back(
+      api::vTensor(
+          context(),
+          sizes,
+          dtype,
+          storage_type,
+          memory_layout,
+          false,
+          axis_map_layout));
 
   if (shared_object_idx >= 0) {
     get_shared_object(shared_object_idx).add_user(this, idx);

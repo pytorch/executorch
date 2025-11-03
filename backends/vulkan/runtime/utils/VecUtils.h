@@ -173,8 +173,7 @@ inline constexpr bool greater_than_max(const T& x) {
 template <typename To, typename From>
 std::enable_if_t<
     std::is_integral<From>::value && !std::is_same<From, bool>::value,
-    bool>
-overflows(From f) {
+    bool> overflows(From f) {
   using limit = std::numeric_limits<To>;
   // Casting from signed to unsigned; allow for negative numbers to wrap using
   // two's complement arithmetic.

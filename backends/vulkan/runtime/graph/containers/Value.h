@@ -77,7 +77,7 @@ struct Value final {
 
     Payload() : u() {}
     // NOLINTNEXTLINE
-    ~Payload(){};
+    ~Payload() {};
   };
 
  public:

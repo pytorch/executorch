@@ -11,7 +11,7 @@
 namespace vkcompute {
 
 SymInt::SymInt(api::Context* context_p, const int32_t val)
-    : gpu_buffer(context_p, val){};
+    : gpu_buffer(context_p, val) {};
 
 void SymInt::set(const int32_t val) {
   gpu_buffer.update(val);

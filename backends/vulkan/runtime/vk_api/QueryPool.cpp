@@ -184,22 +184,22 @@ std::vector<ShaderResult> QueryPool::get_shader_timestamp_data() {
   std::lock_guard<std::mutex> lock(mutex_);
   std::vector<ShaderResult> shader_result;
   for (ShaderDuration& entry : shader_durations_) {
-    shader_result.push_back(ShaderResult{
-        /* .kernel_name = */ entry.kernel_name,
-        /* .dispatch_id = */ entry.dispatch_id,
-        /* .start_time_ns = */ entry.start_time_ns,
-        /* .end_time_ns = */ entry.end_time_ns,
-        /* .metadata = */
-        ShaderMetadata{
-            /* .global_workgroup_size = */
-            {entry.global_workgroup_size.width,
-             entry.global_workgroup_size.height,
-             entry.global_workgroup_size.depth},
-            /* .local_workgroup_size = */
-            {entry.local_workgroup_size.width,
-             entry.local_workgroup_size.height,
-             entry.local_workgroup_size.depth},
-        }});
+    shader_result.push_back(
+        ShaderResult{/* .kernel_name = */ entry.kernel_name,
+                     /* .dispatch_id = */ entry.dispatch_id,
+                     /* .start_time_ns = */ entry.start_time_ns,
+                     /* .end_time_ns = */ entry.end_time_ns,
+                     /* .metadata = */
+                     ShaderMetadata{
+                         /* .global_workgroup_size = */
+                         {entry.global_workgroup_size.width,
+                          entry.global_workgroup_size.height,
+                          entry.global_workgroup_size.depth},
+                         /* .local_workgroup_size = */
+                         {entry.local_workgroup_size.width,
+                          entry.local_workgroup_size.height,
+                          entry.local_workgroup_size.depth},
+                     }});
   }
   return shader_result;
 }
