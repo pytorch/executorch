@@ -63,7 +63,7 @@ void* mmap(
     int prot,
     int flags,
     int fildes,
-    std::uint64_t off);
+    uint64_t off);
 int munmap(void* addr, size_t len);
 int mprotect(void* addr, size_t len, int prot);
 int msync(void* addr, size_t len, int flags);

@@ -139,7 +139,7 @@ void* mmap(
     int prot,
     int flags,
     int fildes,
-    std::uint64_t off) {
+    uint64_t off) {
   HANDLE fm, h;
   void* map = MAP_FAILED;
 

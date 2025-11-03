@@ -16,10 +16,31 @@
 #ifndef _WIN32
 
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
+
 
 ET_INLINE size_t get_os_page_size() {
   return sysconf(_SC_PAGESIZE);
+}
+
+/**
+ * Platform-specific file stat function.
+ */
+ET_INLINE int get_file_stat(int fd, size_t* out_size) {
+  struct stat st;
+  int err = ::fstat(fd, &st);
+  if (err >= 0) {
+    *out_size = static_cast<size_t>(st.st_size);
+  }
+  return err;
+}
+
+/**
+ * Platform-specific mmap offset type conversion.
+ */
+ET_INLINE off_t get_mmap_offset(size_t offset) {
+  return static_cast<off_t>(offset);
 }
 
 #else
@@ -28,6 +49,8 @@ ET_INLINE size_t get_os_page_size() {
 #include <windows.h>
 #undef NOMINMAX
 #include <io.h>
+#include <sys/stat.h>
+
 
 #include <executorch/extension/data_loader/mman_windows.h>
 
@@ -38,6 +61,25 @@ ET_INLINE long get_os_page_size() {
       ? si.dwAllocationGranularity
       : si.dwPageSize;
   return pagesize;
+}
+
+/**
+ * Platform-specific file stat function.
+ */
+ET_INLINE int get_file_stat(int fd, size_t* out_size) {
+  struct _stat64 st;
+  int err = ::_fstat64(fd, &st);
+  if (err >= 0) {
+    *out_size = static_cast<size_t>(st.st_size);
+  }
+  return err;
+}
+
+/**
+ * Platform-specific mmap offset type conversion.
+ */
+ET_INLINE std::uint64_t get_mmap_offset(size_t offset) {
+  return static_cast<std::uint64_t>(offset);
 }
 
 #endif

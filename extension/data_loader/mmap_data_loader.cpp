@@ -95,13 +95,8 @@ Result<MmapDataLoader> MmapDataLoader::from(
   }
 
   // Cache the file size.
-#if defined(_WIN32)
-  struct _stat64 st;
-  int err = ::_fstat64(fd, &st);
-#else
-  struct stat st;
-  int err = ::fstat(fd, &st);
-#endif
+  size_t file_size;
+  int err = get_file_stat(fd, &file_size);
   if (err < 0) {
     ET_LOG(
         Error,
@@ -112,15 +107,6 @@ Result<MmapDataLoader> MmapDataLoader::from(
     ::close(fd);
     return Error::AccessFailed;
   }
-
-  uint64_t file_size_u64 = static_cast<uint64_t>(st.st_size);
-  ET_CHECK_OR_RETURN_ERROR(
-      file_size_u64 <= std::numeric_limits<size_t>::max(),
-      NotSupported,
-      "File %s is too large (%llu bytes) for current platform",
-      file_name,
-      static_cast<unsigned long long>(file_size_u64));
-  size_t file_size = static_cast<size_t>(file_size_u64);
 
   // Copy the filename so we can print better debug messages if reads fail.
   const char* file_name_copy = ::strdup(file_name);
@@ -215,11 +201,7 @@ Result<FreeableBuffer> MmapDataLoader::load(
 
   // Map the pages read-only. Use shared mappings so that other processes
   // can also map the same pages and share the same memory.
-#if defined(_WIN32)
-  const std::uint64_t map_offset = static_cast<std::uint64_t>(range.start);
-#else
-  const off_t map_offset = static_cast<off_t>(range.start);
-#endif
+  const auto map_offset = get_mmap_offset(range.start);
 
   void* pages = ::mmap(
       nullptr,
@@ -329,11 +311,7 @@ Error MmapDataLoader::load_into(
   // Map the pages read-only. MAP_PRIVATE vs. MAP_SHARED doesn't matter since
   // the data is read-only, but use PRIVATE just to further avoid accidentally
   // modifying the file.
-#if defined(_WIN32)
-  const std::uint64_t map_offset = static_cast<std::uint64_t>(range.start);
-#else
-  const off_t map_offset = static_cast<off_t>(range.start);
-#endif
+  const auto map_offset = get_mmap_offset(range.start);
 
   void* pages = ::mmap(
       nullptr,
