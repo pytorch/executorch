@@ -7,6 +7,7 @@
 from itertools import chain
 from typing import Callable, cast, Dict, Iterator, Set, Type
 
+import math
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
@@ -119,9 +120,10 @@ class InsertTableOpsPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def __init__(self, exported_program: ExportedProgram) -> None:
+    def __init__(self, exported_program: ExportedProgram, tosa_spec=None) -> None:
         super().__init__()
         self.exported_program = exported_program
+        self.tosa_spec = tosa_spec
         self.table_ops = TableOps(exported_program)
 
     def register_buffer(self, buffer_name: str, buffer: torch.Tensor) -> None:
@@ -157,7 +159,77 @@ class InsertTableOpsPass(ArmPass):
             0,
         )
 
-    def generate_16_bit_table_values(
+    def generate_16_bit_table_values_u55_tflite(
+        self,
+        torch_op: Callable[[torch.Tensor], torch.Tensor],
+        in_quantargs: QuantArgs,
+        out_quantargs: QuantArgs,
+    ) -> tuple[torch.Tensor, int]:
+        """
+        Generate table values for U55 using TFLite-style bias correction.
+
+        1. Evaluate function at base, midpoint, and next for each interval
+        2. Quantize all three output values
+        3. Calculate bias = (interpolated_midpoint - actual_midpoint) / 2
+        4. Apply bias correction to base value
+        5. Store corrected base values (513 values total)
+        """
+
+        # Calculate input range in FLOAT space (like TFLite)
+        qmin_in = in_quantargs.qmin
+        qmax_in = in_quantargs.qmax
+        qmin_out = out_quantargs.qmin
+        qmax_out = out_quantargs.qmax
+
+        input_min = in_quantargs.scale * (qmin_in - in_quantargs.zp)  # type: ignore[operator]
+        input_max = in_quantargs.scale * (qmax_in - in_quantargs.zp)  # type: ignore[operator]
+        output_min = out_quantargs.scale * (qmin_out - out_quantargs.zp)  # type: ignore[operator]
+        output_max = out_quantargs.scale * (qmax_out - out_quantargs.zp)  # type: ignore[operator]
+
+        steps = 512
+        step = (input_max - input_min) / steps
+        half_step = step / 2.0
+        output_scaling_inv = (qmax_out - qmin_out + 1) / (output_max - output_min)
+
+
+        def f(x_float: float) -> float:
+            x_tensor = torch.tensor([x_float], dtype=torch.float32)
+            result = torch_op(x_tensor).item()
+
+            if math.isnan(result) or math.isinf(result):
+                return input_max
+
+            return result
+
+        lut_values = []
+
+        for i in range(steps + 1):  # 513 values
+            val = f(input_min + i * step)
+            sample_val = round(val * output_scaling_inv)
+
+            if i < steps:
+                val_midpoint = f(input_min + i * step + half_step)
+                val_next = f(input_min + (i + 1) * step)
+
+                midpoint_interp_val = round(
+                    (val_next * output_scaling_inv + sample_val) / 2.0
+                )
+                midpoint_val = round(val_midpoint * output_scaling_inv)
+                midpoint_err = midpoint_interp_val - midpoint_val
+                bias = round(midpoint_err / 2.0)
+
+                clamped_lut_result = max(qmin_out, min(qmax_out, sample_val - bias))
+                lut_result = int(clamped_lut_result)
+
+                lut_values.append(lut_result)
+            else:
+                # Last value (i == steps): no bias correction, just quantize and clamp
+                clamped = max(qmin_out, min(qmax_out, sample_val))
+                lut_values.append(int(clamped))
+
+        return torch.tensor(lut_values, dtype=torch.int16).contiguous(), 0
+
+    def generate_16_bit_table_values_tosa(
         self,
         torch_op: Callable[[torch.Tensor], torch.Tensor],
         in_quantargs: QuantArgs,
@@ -209,6 +281,26 @@ class InsertTableOpsPass(ArmPass):
         rescale_lshift = rshift - 7
         lut_values = lut_values >> rshift
         return lut_values.to(dtype=torch.int16), rescale_lshift
+
+    def generate_16_bit_table_values(
+        self,
+        torch_op: Callable[[torch.Tensor], torch.Tensor],
+        in_quantargs: QuantArgs,
+        out_quantargs: QuantArgs,
+    ) -> tuple[torch.Tensor, int]:
+        """Compute LUT values for a INT16 tables.
+        The function returns rescale_lshift which says how much to rescale after the table. This value can negative.
+        """
+
+        if self.tosa_spec and self.tosa_spec.is_U55_subset:
+            # U55 needs TFLite-style table generation with bias correction
+            return self.generate_16_bit_table_values_u55_tflite(
+                torch_op, in_quantargs, out_quantargs
+            )
+        else:
+            return self.generate_16_bit_table_values_tosa(
+                torch_op, in_quantargs, out_quantargs
+            )
 
     def generate_table_values(
         self,
@@ -280,7 +372,15 @@ class InsertTableOpsPass(ArmPass):
                 )
                 output_node = table_op_node
 
-                if lshift != 0:
+                if (
+                    self.tosa_spec
+                    and self.tosa_spec.is_U55_subset
+                    and input_qparams[0].dtype == torch.int16
+                ):
+                    # U55: NO RESCALE needed - use table output directly
+                    # Adding RESCALE creates a second operation that overwrites the table output!
+                    output_node = table_op_node  # Use table output directly!
+                elif lshift != 0:
                     scale = 2.0**lshift
                     rescale_node = create_node(
                         graph=graph_module.graph,

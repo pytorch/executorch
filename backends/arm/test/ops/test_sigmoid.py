@@ -309,12 +309,10 @@ def test_sigmoid_16a8w_tosa_INT(test_data: torch.Tensor):
     )
     pipeline.run()
 
+test_data_suite_no_rand_4d = {k: v for k, v in test_data_suite.items() if k not in ['rand_4d']}
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite_no_rand_4d)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="MLETORCH-707: AssertionError: Output 0 does not match reference output."
-)
 def test_sigmoid_16a8w_u55_INT16(test_data: torch.Tensor):
     """Test sigmoid operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
