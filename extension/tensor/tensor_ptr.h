@@ -114,7 +114,7 @@ inline TensorPtr make_tensor_ptr(
     ET_CHECK_MSG(
         runtime::canCast(deduced_type, type),
         "Cannot cast deduced type to specified type.");
-    std::vector<uint8_t> casted_data(data.size() * runtime::elementSize(type));
+    std::vector<uint8_t> casted_data(data.size() * aten::elementSize(type));
 
     // Create a minimal context for error handling in ET_SWITCH
     struct {
@@ -414,10 +414,43 @@ inline TensorPtr make_tensor_ptr(
  * TensorPtr, or nullptr if the original data is null.
  *
  * @param tensor The Tensor to clone.
+ * @param type The data type for the cloned tensor. The data will be cast
+ * from the source tensor's type.
+ * @return A new TensorPtr that manages a Tensor with the specified type
+ * and copied/cast data.
+ */
+TensorPtr clone_tensor_ptr(
+    const executorch::aten::Tensor& tensor,
+    executorch::aten::ScalarType type);
+
+/**
+ * Creates a TensorPtr that manages a new Tensor with the same properties
+ * as the given Tensor, but with a copy of the data owned by the returned
+ * TensorPtr, or nullptr if the original data is null.
+ *
+ * @param tensor The Tensor to clone.
  * @return A new TensorPtr that manages a Tensor with the same properties as the
  * original but with copied data.
  */
-TensorPtr clone_tensor_ptr(const executorch::aten::Tensor& tensor);
+inline TensorPtr clone_tensor_ptr(const executorch::aten::Tensor& tensor) {
+  return clone_tensor_ptr(tensor, tensor.scalar_type());
+}
+
+/**
+ * Creates a new TensorPtr by cloning the given TensorPtr, copying the
+ * underlying data.
+ *
+ * @param tensor The TensorPtr to clone.
+ * @param type The data type for the cloned tensor. The data will be cast
+ * from the source tensor's type.
+ * @return A new TensorPtr that manages a Tensor with the specified type
+ * and copied/cast data.
+ */
+inline TensorPtr clone_tensor_ptr(
+    const TensorPtr& tensor,
+    executorch::aten::ScalarType type) {
+  return clone_tensor_ptr(*tensor, type);
+}
 
 /**
  * Creates a new TensorPtr by cloning the given TensorPtr, copying the
@@ -428,7 +461,7 @@ TensorPtr clone_tensor_ptr(const executorch::aten::Tensor& tensor);
  * original but with copied data.
  */
 inline TensorPtr clone_tensor_ptr(const TensorPtr& tensor) {
-  return clone_tensor_ptr(*tensor);
+  return clone_tensor_ptr(*tensor, tensor->scalar_type());
 }
 
 /**
