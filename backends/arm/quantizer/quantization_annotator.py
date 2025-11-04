@@ -2,6 +2,12 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Provide quantization annotation logic for Arm backends.
+
+This module computes per-node quantization properties and applies input/output
+annotations to FX graphs using TorchAO qspecs.
+
+"""
 
 import logging
 import operator
@@ -44,12 +50,31 @@ class _QuantProperty:
 
 
 class _OpQuantProperties:
+    """Collect input/output quantization properties for a node.
+
+    Attributes:
+        quant_inputs (List[_QuantProperty]): Quantization specs for inputs
+            indexed by argument positions.
+        quant_output (Optional[_QuantProperty]): Quantization spec for the
+            node's output when applicable.
+
+    """
+
     def __init__(self):
         self.quant_inputs: List[_QuantProperty] = []
         self.quant_output: Optional[_QuantProperty] = None
 
 
 def _as_list(x):
+    """Return ``x`` wrapped as a list if needed.
+
+    Args:
+        x: Value or list of values.
+
+    Returns:
+        list: ``x`` if already a list; otherwise ``[x]``.
+
+    """
     if isinstance(x, list):
         return x
     else:
@@ -66,16 +91,19 @@ def _is_ok_for_quantization(
     A node can be quantized if:
     - All inputs that are required for quantization are of type `float32`
       and are not large scalar values.
-    - The output of the node itself is of type `float32` and is not a large scalar.
+    - The output of the node itself is of type `float32` and is not a large
+      scalar.
 
     Args:
         node (Node): The node being analyzed.
-        quant_properties (_OpQuantProperties): Contains quantization properties for
-            the node, including input and output quantization specifications.
-        gm (torch.fx.GraphModule): The graph module containing the computational graph.
+        quant_properties (_OpQuantProperties): Contains quantization properties
+            for the node, including input and output quantization specifications.
+        gm (torch.fx.GraphModule): The graph module containing the computational
+            graph.
 
     Returns:
         bool: `True` if the node can be quantized, otherwise `False`.
+
     """
     # Check output
     if quant_properties.quant_output is not None:
@@ -127,6 +155,16 @@ def _is_ok_for_quantization(
 
 
 def _get_node_target(module: torch.nn.Module | torch.fx.GraphModule, target_str: str):
+    """Get an attribute from a module by dotted path.
+
+    Args:
+        module (torch.nn.Module | torch.fx.GraphModule): Root module.
+        target_str (str): Dotted attribute path, e.g., ``"sub.weight"``.
+
+    Returns:
+        Any: Resolved attribute on the module.
+
+    """
     targets = target_str.split(".")
     for target in targets[:-1]:
         module = module.get_submodule(target)
@@ -134,9 +172,11 @@ def _get_node_target(module: torch.nn.Module | torch.fx.GraphModule, target_str:
 
 
 def _is_large_scalar(node: Node, gm: torch.fx.GraphModule):
-    """Check if input is a large scalar value. So that we can skip quantization for the
-    node since histc op (in HistogramObserver) only works for values up to certain upper
-    bound.
+    """Return True if input is a large scalar value.
+
+    Large scalars are skipped because ``torch.histc`` supports values only up
+    to a certain upper bound.
+
     """
     HISTC_UPPER_BOUND = 3.4028235e15
     if node.op == "get_attr" and isinstance(node.target, str):
@@ -166,11 +206,12 @@ def _is_non_float_tensor(node: Node) -> bool:
         bool: `True` if the data type is not float32, otherwise `False`.
 
     Note:
-        - If `node.meta["val"]` is a `list`, the function returns `True` if **any**
-          element is **not** an instance of `FakeTensor` or does **not** have
+        - If `node.meta["val"]` is a `list`, the function returns `True` if
+          any element is not an instance of `FakeTensor` or does not have
           `torch.float32` as its data type.
-        - If node.meta["val"] is missing or is not an instance of `FakeTensor`, the
-          function returns True.
+        - If node.meta["val"] is missing or is not an instance of `FakeTensor`,
+          the function returns True.
+
     """
     if "val" in node.meta and isinstance(node.meta["val"], Sequence):
         return any(
@@ -186,6 +227,20 @@ def _is_non_float_tensor(node: Node) -> bool:
 
 
 def _annotate_input(node: Node, quant_property: _QuantProperty):
+    """Annotate a node's input with the given qspec.
+
+    Maps the specified input argument(s) to the provided quantization spec and
+    optionally marks the input node(s) as annotated.
+
+    Args:
+        node (Node): Node whose input should be annotated.
+        quant_property (_QuantProperty): Input index and qspec(s).
+
+    Raises:
+        RuntimeError: If the node is already annotated.
+        TypeError: If an input argument is not a ``Node`` instance.
+
+    """
     if is_annotated(node):
         raise RuntimeError(
             f"Cannot annotate input: node '{node.name}' is already annotated"
@@ -211,6 +266,18 @@ def _annotate_input(node: Node, quant_property: _QuantProperty):
 
 
 def _annotate_output(node: Node, quant_property: _QuantProperty):
+    """Annotate a node's output with the given qspec.
+
+    Args:
+        node (Node): Node whose output should be annotated.
+        quant_property (_QuantProperty): Output index and qspec.
+
+    Raises:
+        RuntimeError: If the node is already annotated.
+        ValueError: If ``mark_annotated`` is True, ``optional`` is True, or
+            ``index`` is not zero.
+
+    """
     if is_annotated(node):
         raise RuntimeError(
             f"Cannot annotate output: node '{node.name}' is already annotated"
@@ -230,12 +297,13 @@ def _annotate_output(node: Node, quant_property: _QuantProperty):
 def _match_pattern(
     node: Node, pattern: List[List], filter_fn: Optional[Callable[[Node], bool]] = None
 ) -> bool:
-    """
-    Check if there's a chain of node.ancestors? -> node -> node.descendant? that matches the
-    chain provided in 'pattern'. If 'filter_fn' is provided, check that all the nodes in the
-    chain pass the filtering.
+    """Check whether a node chain matches a pattern.
 
-    Each 'pattern' element is composed of a list of disjunctive nodes types.
+    Verify a chain of ancestors -> node -> descendants matches the provided
+    ``pattern``. If ``filter_fn`` is provided, require all nodes in the chain
+    to pass the filter. Each pattern element is a list of disjunctive node
+    targets.
+
     """
     if len(pattern) < 1:
         raise ValueError("No pattern provided")
@@ -382,6 +450,21 @@ _one_to_one_shared_input_or_input_act_qspec = [
 def get_quant_properties(  # noqa: C901
     node: Node, gm: torch.fx.GraphModule, quantization_config
 ) -> _OpQuantProperties | None:
+    """Compute quantization properties for a node.
+
+    Determine which inputs and/or outputs should be annotated for quantization
+    based on the node's operator and surrounding pattern.
+
+    Args:
+        node (Node): Node to analyze.
+        gm (torch.fx.GraphModule): Owning graph module.
+        quantization_config: Source for activation/weight/bias qspecs.
+
+    Returns:
+        _OpQuantProperties | None: Properties to apply, or ``None`` if the
+            node is unsupported or not suitable for quantization.
+
+    """
     input_act_qspec = quantization_config.get_input_act_qspec()
     weight_qspec = quantization_config.get_weight_qspec()
     output_act_qspec = quantization_config.get_output_act_qspec()
@@ -390,6 +473,7 @@ def get_quant_properties(  # noqa: C901
     quant_properties = _OpQuantProperties()
 
     def any_or_hardtanh_min_zero(n: Node):
+        """Return True for any op or hardtanh with ``min_val == 0``."""
         # Check that if the node is a hardtanh, its min_val is zero
         return n.target != torch.ops.aten.hardtanh.default or n.args[1] == 0
 
@@ -636,6 +720,21 @@ def annotate_graph(  # type: ignore[return]
     quantization_config: QuantizationConfig,
     filter_fn: Optional[Callable[[Node], bool]] = None,
 ) -> Optional[List[List[Node]]]:
+    """Annotate supported nodes in a graph with quantization specs.
+
+    Iterate through call_function nodes, computes quantization properties, and
+    apply input/output annotations. A filter can restrict which nodes are
+    considered.
+
+    Args:
+        gm (torch.fx.GraphModule): Graph to annotate.
+        quantization_config (QuantizationConfig): Default qspecs for nodes.
+        filter_fn (Optional[Callable[[Node], bool]]): Optional node predicate.
+
+    Returns:
+        Optional[List[List[Node]]]: Reserved for future use; currently None.
+
+    """
     for node in gm.graph.nodes:
         if node.op != "call_function":
             continue
