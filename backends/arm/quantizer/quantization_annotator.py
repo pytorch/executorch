@@ -608,12 +608,19 @@ def get_quant_properties(  # noqa: C901
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)
     elif node.target in (torch.ops.aten.where.self,):
         true_node = ensure_type(Node, node.args[1])
-        shared_qspec = SharedQuantizationSpec(true_node)
+        input_qspec = (
+            SharedQuantizationSpec(true_node)
+            if is_output_annotated(true_node)
+            else input_act_qspec
+        )
         quant_properties.quant_inputs = [
-            _QuantProperty(1, shared_qspec),
-            _QuantProperty(2, shared_qspec),
+            _QuantProperty(1, input_qspec),
+            _QuantProperty(2, SharedQuantizationSpec((true_node, node))),
         ]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
+        quant_properties.quant_output = _QuantProperty(
+            0,
+            SharedQuantizationSpec((true_node, node)),
+        )
     elif node.target in _one_to_one_shared_input_or_input_act_qspec:
         input_node = ensure_type(Node, node.args[0])
         input_qspec = (
