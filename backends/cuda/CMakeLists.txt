@@ -80,11 +80,8 @@ set(_aoti_cuda_sources
 add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
 target_include_directories(
   aoti_cuda
-  PUBLIC ${CUDAToolkit_INCLUDE_DIRS}
-         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+  PUBLIC ${CUDAToolkit_INCLUDE_DIRS} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
          $<INSTALL_INTERFACE:include>
-         # PyTorch AOTI headers from ExecutorTorch's torch detection
-         ${TORCH_INCLUDE_DIRS}
 )
 target_compile_options(
   aoti_cuda PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>

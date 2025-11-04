@@ -30,11 +30,8 @@ set(_aoti_common_sources common_shims.cpp)
 add_library(aoti_common STATIC ${_aoti_common_sources})
 target_include_directories(
   aoti_common
-  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
-         $<INSTALL_INTERFACE:include>
+  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
          $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
-         # PyTorch AOTI headers from ExecuTorch's torch detection
-         ${TORCH_INCLUDE_DIRS}
 )
 target_compile_options(
   aoti_common
