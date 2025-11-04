@@ -6,6 +6,8 @@
 import copy
 
 import logging
+import shutil
+import tempfile
 
 from collections import Counter
 from pprint import pformat
@@ -86,7 +88,6 @@ from tabulate import tabulate
 
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
-
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,8 @@ class ArmTester(Tester):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
+        use_portable_ops: bool = False,
+        timeout: int = 600,
     ):
         """
         Args:
@@ -266,10 +269,13 @@ class ArmTester(Tester):
             StageType.QUANTIZE,
             StageType.EXPORT,
         ]
+        self.original_module.requires_grad_(False)
 
         # Initial model needs to be set as a *possible* but not yet added Stage, therefore add None entry.
         self.stages[StageType.INITIAL_MODEL] = None
         self._run_stage(InitialModel(self.original_module))
+        self.use_portable_ops = use_portable_ops
+        self.timeout = timeout
 
     def quantize(
         self,
@@ -347,13 +353,15 @@ class ArmTester(Tester):
         return super().to_executorch(to_executorch_stage)
 
     def serialize(
-        self, serialize_stage: Optional[Serialize] = None, timeout: int = 480
+        self,
+        serialize_stage: Optional[Serialize] = None,
     ):
         if serialize_stage is None:
             serialize_stage = Serialize(
                 compile_spec=self.compile_spec,
                 module=self.original_module,
-                timeout=timeout,
+                use_portable_ops=self.use_portable_ops,
+                timeout=self.timeout,
             )
         assert (
             self.compile_spec.get_intermediate_path() is not None
@@ -660,6 +668,14 @@ class ArmTester(Tester):
                     qtol=0,
                 )
             raise e
+
+    def __del__(self):
+        intermediate_path = self.compile_spec.get_intermediate_path()
+        if not intermediate_path:
+            return
+        if len(tempdir := tempfile.gettempdir()) > 0:
+            if intermediate_path.startswith(tempdir):
+                shutil.rmtree(intermediate_path, ignore_errors=True)
 
 
 def _get_dtype_distribution(

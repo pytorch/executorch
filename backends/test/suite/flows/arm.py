@@ -20,11 +20,15 @@ def _create_arm_flow(
     compile_spec: ArmCompileSpec,
     symmetric_io_quantization: bool = False,
     per_channel_quantization: bool = True,
+    use_portable_ops: bool = True,
+    timeout: int = 1200,
 ) -> TestFlow:
 
     def _create_arm_tester(*args, **kwargs) -> ArmTester:
         kwargs["compile_spec"] = compile_spec
-        return ArmTester(*args, **kwargs)
+        return ArmTester(
+            *args, **kwargs, use_portable_ops=use_portable_ops, timeout=timeout
+        )
 
     support_serialize = not isinstance(compile_spec, TosaCompileSpec)
     quantize = compile_spec.tosa_spec.support_integer()
