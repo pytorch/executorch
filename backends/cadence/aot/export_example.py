@@ -63,10 +63,11 @@ def export_model(
     # Get reference outputs from converted model
     ref_outputs = converted_model(*example_inputs)
 
-    ep = torch.export.export(converted_model, example_inputs, strict=True)
+    # Quantize the model (note: quantizer needs to be the same as
+    # the one used in prepare_and_convert_pt2)
+    quantized_model = fuse_pt2(converted_model, quantizer)
 
-    # Fuse the quantized patterns on the exported program (note: quantizer needs to be the same as the one used in prepare_and_convert_pt2)
-    ep = fuse_pt2(ep, quantizer)
+    ep = torch.export.export(quantized_model, example_inputs, strict=True)
 
     # Get edge program after Cadence specific passes
     exec_prog: ExecutorchProgramManager = _lower_ep_to_cadence_gen_etrecord(
