@@ -741,6 +741,14 @@ public final class Tensor<T: Scalar>: Equatable {
     Tensor<T>(anyTensor.copy())
   }
 
+  /// Returns a copy of the tensor, converted to the specified scalar type.
+  ///
+  /// - Parameter dataType: The target scalar type.
+  /// - Returns: A new tensor with the same shape and metadata but converted elements.
+  public func copy<U: Scalar>(to dataType: U.Type) -> Tensor<U> {
+    Tensor<U>(anyTensor.copy(to: U.dataType))
+  }
+
   /// Calls the closure with a typed, immutable buffer pointer over the tensor’s elements.
   ///
   /// - Parameter body: A closure that receives an `UnsafeBufferPointer<T>` bound to the tensor’s data.

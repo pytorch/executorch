@@ -123,6 +123,15 @@ class DecomposeAsinAndAcosPass(ArmPass):
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_asin_op + edge_acos_op):
             return super().call_operator(op, args, kwargs, meta)
+
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
+            return super().call_operator(op, args, kwargs, meta)
+
         logging.info(
             f"Approximating {op}. This may introduce small numerical errors. For details, see {__file__}."
         )
