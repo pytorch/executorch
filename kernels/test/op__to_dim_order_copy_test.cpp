@@ -653,7 +653,7 @@ TEST_F(OpToDimOrderCopyTest, PreserveChanneslLast) {
   Tensor ret = op__to_dim_order_copy_out(
       /*self*/ x,
       /*non_blocking*/ false,
-      /*dim_order*/ executorch::aten::nullopt,
+      /*dim_order*/ std::nullopt,
       out);
 
   EXPECT_TENSOR_EQ(out, expected);

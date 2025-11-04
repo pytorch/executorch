@@ -22,11 +22,11 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::nullopt;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
+using ::std::nullopt;
+using ::std::optional;
 using torch::executor::testing::TensorFactory;
 
 using OptScalar = std::optional<Scalar>;

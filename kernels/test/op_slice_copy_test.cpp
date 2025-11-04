@@ -217,21 +217,20 @@ TEST_F(OpSliceCopyTensorOutTest, AllStartValsSupported) {
   // The result shall equal to input[:, 3:3:1, :], which is an empty tensor
   Tensor expected_start_3_or_above = tf.make({2, 0, 4}, {});
   // clang-format on
-  std::vector<Tensor> expected_rets = {
-      // start = -3
-      expected_start_0_or_below,
-      // start = -2
-      expected_start_1,
-      // start = -1
-      expected_start_2,
-      // start = 0
-      expected_start_0_or_below,
-      // start = 1
-      expected_start_1,
-      // start = 2
-      expected_start_2,
-      // start = 3
-      expected_start_3_or_above};
+  std::vector<Tensor> expected_rets = {// start = -3
+                                       expected_start_0_or_below,
+                                       // start = -2
+                                       expected_start_1,
+                                       // start = -1
+                                       expected_start_2,
+                                       // start = 0
+                                       expected_start_0_or_below,
+                                       // start = 1
+                                       expected_start_1,
+                                       // start = 2
+                                       expected_start_2,
+                                       // start = 3
+                                       expected_start_3_or_above};
 
   // In this test, we maintain dim and step as 1 and 1, also set the end
   // large enough to hold any start
@@ -316,21 +315,20 @@ TEST_F(OpSliceCopyTensorOutTest, AllEndValsSupported) {
       -9., -10., -11., -12., // [1, 2, :]
     });
   // clang-format on
-  std::vector<Tensor> expected_rets = {
-      // end = -3
-      expected_end_0_or_below,
-      // end = -2
-      expected_end_1,
-      // end = -1
-      expected_end_2,
-      // end = 0
-      expected_end_0_or_below,
-      // end = 1
-      expected_end_1,
-      // end = 2
-      expected_end_2,
-      // end = 3
-      expected_end_3_or_above};
+  std::vector<Tensor> expected_rets = {// end = -3
+                                       expected_end_0_or_below,
+                                       // end = -2
+                                       expected_end_1,
+                                       // end = -1
+                                       expected_end_2,
+                                       // end = 0
+                                       expected_end_0_or_below,
+                                       // end = 1
+                                       expected_end_1,
+                                       // end = 2
+                                       expected_end_2,
+                                       // end = 3
+                                       expected_end_3_or_above};
 
   int64_t dim = 1;
   int64_t start = 0;
@@ -570,7 +568,7 @@ TEST_F(OpSliceCopyTensorOutTest, DefaultStartValSupported) {
   Tensor ret_default_start = op_slice_copy_tensor_out(
       input,
       /*dim=*/0,
-      /*start=*/executorch::aten::nullopt,
+      /*start=*/std::nullopt,
       /*end=*/2,
       /*step=*/1,
       out);
@@ -590,7 +588,7 @@ TEST_F(OpSliceCopyTensorOutTest, DefaultEndValSupported) {
       input,
       /*dim=*/0,
       /*start=*/0,
-      /*end=*/executorch::aten::nullopt,
+      /*end=*/std::nullopt,
       /*step=*/1,
       out);
   EXPECT_TENSOR_EQ(ret_default_end, out);

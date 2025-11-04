@@ -332,36 +332,34 @@ TEST_F(OpSliceScatterTensorOutTest, AllStartValsSupported) {
     });
   // clang-format on
 
-  std::vector<Tensor> src_tensors = {
-      // start = -3
-      src_start_0_or_below,
-      // start = -2
-      src_start_1,
-      // start = -1
-      src_start_2,
-      // start = 0
-      src_start_0_or_below,
-      // start = 1
-      src_start_1,
-      // start = 2
-      src_start_2,
-      // start = 3
-      src_start_3_or_above};
-  std::vector<Tensor> expected_rets = {
-      // start = -3
-      expected_start_0_or_below,
-      // start = -2
-      expected_start_1,
-      // start = -1
-      expected_start_2,
-      // start = 0
-      expected_start_0_or_below,
-      // start = 1
-      expected_start_1,
-      // start = 2
-      expected_start_2,
-      // start = 3
-      expected_start_3_or_above};
+  std::vector<Tensor> src_tensors = {// start = -3
+                                     src_start_0_or_below,
+                                     // start = -2
+                                     src_start_1,
+                                     // start = -1
+                                     src_start_2,
+                                     // start = 0
+                                     src_start_0_or_below,
+                                     // start = 1
+                                     src_start_1,
+                                     // start = 2
+                                     src_start_2,
+                                     // start = 3
+                                     src_start_3_or_above};
+  std::vector<Tensor> expected_rets = {// start = -3
+                                       expected_start_0_or_below,
+                                       // start = -2
+                                       expected_start_1,
+                                       // start = -1
+                                       expected_start_2,
+                                       // start = 0
+                                       expected_start_0_or_below,
+                                       // start = 1
+                                       expected_start_1,
+                                       // start = 2
+                                       expected_start_2,
+                                       // start = 3
+                                       expected_start_3_or_above};
 
   // In this test, we maintain dim and step as 1 and 1, also set the end
   // large enough to hold any start
@@ -500,37 +498,35 @@ TEST_F(OpSliceScatterTensorOutTest, AllEndValsSupported) {
     });
   // clang-format on
 
-  std::vector<Tensor> src_tensors = {
-      // end = -3
-      src_end_0_or_below,
-      // end = -2
-      src_end_1,
-      // end = -1
-      src_end_2,
-      // end = 0
-      src_end_0_or_below,
-      // end = 1
-      src_end_1,
-      // end = 2
-      src_end_2,
-      // end = 3
-      src_end_3_or_above};
+  std::vector<Tensor> src_tensors = {// end = -3
+                                     src_end_0_or_below,
+                                     // end = -2
+                                     src_end_1,
+                                     // end = -1
+                                     src_end_2,
+                                     // end = 0
+                                     src_end_0_or_below,
+                                     // end = 1
+                                     src_end_1,
+                                     // end = 2
+                                     src_end_2,
+                                     // end = 3
+                                     src_end_3_or_above};
 
-  std::vector<Tensor> expected_rets = {
-      // end = -3
-      expected_end_0_or_below,
-      // end = -2
-      expected_end_1,
-      // end = -1
-      expected_end_2,
-      // end = 0
-      expected_end_0_or_below,
-      // end = 1
-      expected_end_1,
-      // end = 2
-      expected_end_2,
-      // end = 3
-      expected_end_3_or_above};
+  std::vector<Tensor> expected_rets = {// end = -3
+                                       expected_end_0_or_below,
+                                       // end = -2
+                                       expected_end_1,
+                                       // end = -1
+                                       expected_end_2,
+                                       // end = 0
+                                       expected_end_0_or_below,
+                                       // end = 1
+                                       expected_end_1,
+                                       // end = 2
+                                       expected_end_2,
+                                       // end = 3
+                                       expected_end_3_or_above};
 
   int64_t dim = 1;
   int64_t start = 0;
@@ -817,7 +813,7 @@ TEST_F(OpSliceScatterTensorOutTest, DefaultStartValSupported) {
       input,
       src,
       /*dim=*/0,
-      /*start=*/executorch::aten::nullopt,
+      /*start=*/std::nullopt,
       /*end=*/2,
       /*step=*/1,
       out);
@@ -839,7 +835,7 @@ TEST_F(OpSliceScatterTensorOutTest, DefaultEndValSupported) {
       src,
       /*dim=*/0,
       /*start=*/0,
-      /*end=*/executorch::aten::nullopt,
+      /*end=*/std::nullopt,
       /*step=*/1,
       out);
   EXPECT_TENSOR_EQ(ret_default_end, out);
@@ -861,7 +857,7 @@ TEST_F(OpSliceScatterTensorOutTest, DynamicShapeTest) {
       src,
       /*dim=*/0,
       /*start=*/0,
-      /*end=*/executorch::aten::nullopt,
+      /*end=*/std::nullopt,
       /*step=*/1,
       out);
   EXPECT_TENSOR_EQ(ret_default_end, out);

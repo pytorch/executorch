@@ -412,7 +412,7 @@ struct EValue {
   template <typename T>
   inline std::optional<T> toOptional() const {
     if (this->isNone()) {
-      return executorch::aten::nullopt;
+      return std::nullopt;
     }
     return this->to<T>();
   }
@@ -467,7 +467,7 @@ struct EValue {
 
 #define EVALUE_DEFINE_TO(T, method_name)                                       \
   template <>                                                                  \
-  inline T EValue::to<T>() && {                                                \
+  inline T EValue::to<T>()&& {                                                 \
     return static_cast<T>(std::move(*this).method_name());                     \
   }                                                                            \
   template <>                                                                  \
@@ -481,7 +481,7 @@ struct EValue {
   template <>                                                                  \
   inline ::executorch::runtime::internal::evalue_to_ref_overload_return<       \
       T>::type                                                                 \
-  EValue::to<T>() & {                                                          \
+  EValue::to<T>()& {                                                           \
     typedef ::executorch::runtime::internal::evalue_to_ref_overload_return<    \
         T>::type return_type;                                                  \
     return static_cast<return_type>(this->method_name());                      \
