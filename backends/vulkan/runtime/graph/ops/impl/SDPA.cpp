@@ -282,6 +282,7 @@ void add_sdpa_kv_cache_update_node(
     const ValueRef projected,
     const ValueRef cache) {
   std::string kernel_name("sdpa_kv_cache_update");
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(cache));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(projected));
   add_dtype_suffix(kernel_name, graph.dtype_of(projected));
 
