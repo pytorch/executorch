@@ -357,13 +357,11 @@ public extension AnyTensor {
   ///
   /// - Parameters:
   ///   - shape: An array of integers representing the desired shape.
-  ///   - strides: An array of integers representing the desired strides.
   ///   - dataType: A `DataType` value specifying the element type.
   ///   - shapeDynamism: A value specifying whether the shape is static or dynamic.
   /// - Returns: A new `AnyTensor` instance filled with ones.
   static func ones(
     shape: [Int],
-    strides: [Int] = [],
     dataType: DataType,
     shapeDynamism: ShapeDynamism = .dynamicBound
   ) -> AnyTensor {
@@ -398,13 +396,11 @@ public extension AnyTensor {
   ///
   /// - Parameters:
   ///   - shape: An array of integers representing the desired shape.
-  ///   - strides: An array of integers representing the desired strides.
   ///   - dataType: A `DataType` value specifying the element type.
   ///   - shapeDynamism: A value specifying whether the shape is static or dynamic.
   /// - Returns: A new `AnyTensor` instance filled with zeros.
   static func zeros(
     shape: [Int],
-    strides: [Int] = [],
     dataType: DataType,
     shapeDynamism: ShapeDynamism = .dynamicBound
   ) -> AnyTensor {
@@ -937,12 +933,10 @@ public extension Tensor {
   ///
   /// - Parameters:
   ///   - shape: An array of integers representing the desired shape.
-  ///   - strides: An array of integers representing the desired strides.
   ///   - shapeDynamism: A value specifying whether the shape is static or dynamic.
   /// - Returns: A new `Tensor` instance filled with ones.
   static func ones(
     shape: [Int],
-    strides: [Int] = [],
     shapeDynamism: ShapeDynamism = .dynamicBound
   ) -> Tensor<T> {
     Tensor<T>(AnyTensor.ones(
@@ -974,12 +968,10 @@ public extension Tensor {
   ///
   /// - Parameters:
   ///   - shape: An array of integers representing the desired shape.
-  ///   - strides: An array of integers representing the desired strides.
   ///   - shapeDynamism: A value specifying whether the shape is static or dynamic.
   /// - Returns: A new `Tensor` instance filled with zeros.
   static func zeros(
     shape: [Int],
-    strides: [Int] = [],
     shapeDynamism: ShapeDynamism = .dynamicBound
   ) -> Tensor<T> {
     Tensor<T>(AnyTensor.zeros(
