@@ -26,7 +26,7 @@ examples/openvino
 Follow the [instructions](../../backends/openvino/README.md) of **Prerequisites** and **Setup** in `backends/openvino/README.md` to set up the OpenVINO backend.
 
 ## Example Requirements
-OpenVINO backend examples have dependencies that can be installed by running the install_requirements.sh script in the Executorch root directory.
+OpenVINO backend examples have dependencies that can be installed by running the `install_requirements.sh` script in the Executorch root directory.
 
 ## AOT step:
 
