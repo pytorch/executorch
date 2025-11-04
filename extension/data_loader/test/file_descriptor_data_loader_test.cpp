@@ -8,8 +8,8 @@
 
 #include <executorch/extension/data_loader/file_descriptor_data_loader.h>
 
-#include <cstring>
 #include <fcntl.h>
+#include <cstring>
 
 #include <gtest/gtest.h>
 
