@@ -77,8 +77,9 @@ set(_common_include_directories
 )
 
 target_include_directories(
-  aten_ops_cadence PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
-                          ${_common_include_directories}
+  aten_ops_cadence
+  PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR} ${_common_include_directories}
+         ${CMAKE_CURRENT_SOURCE_DIR}/../third-party
 )
 
 # Custom ops that are needed to run the test model.
@@ -118,3 +119,6 @@ message("Generated cadence x86 files ${gen_command_sources}")
 gen_operators_lib(
   LIB_NAME "cadence_ops_lib" KERNEL_LIBS custom_ops DEPS aten_ops_cadence
 )
+
+# Link custom_ops to the generated library to ensure the symbols are available
+target_link_libraries(cadence_ops_lib PUBLIC custom_ops)

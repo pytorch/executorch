@@ -8,6 +8,7 @@ from typing import Set, Type
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm.constants import DQ_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -30,6 +31,12 @@ class ConvertELUParamsPass(ArmPass):
             op="call_function", target=exir_ops.edge.aten.elu.default
         )
         for node in node_list:
+            input_node = node.all_input_nodes[0]
+            is_quantized = (
+                input_node.op == "call_function" and input_node.target in DQ_OPS
+            )
+            if not is_quantized:
+                continue
             with graph.inserting_after(node):
                 replace_node = create_node(graph, exir_ops.edge.aten.elu.default)
                 old_args = list(node.args)

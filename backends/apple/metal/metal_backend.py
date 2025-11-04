@@ -29,7 +29,6 @@ from torch.export.passes import move_to_device_pass
 
 # exist fallback operators in et namespace;
 supported_fallback_kernels: Dict[str, Any] = {
-    "aoti_torch_mps_addmm_out": None,
     "aoti_torch_mps_convolution": None,
     "aoti_torch_mps_mm_out": None,
     "at::_ops::_scaled_dot_product_attention_math_for_mps::call": None,
@@ -108,8 +107,11 @@ class MetalBackend(BackendDetails):
         options: dict[str, typing.Any] = {
             # Do not link against the full PyTorch/libtorch library
             "aot_inductor.link_libtorch": False,
-            # Package model constants and other generated files directly in the shared object (.so) file
-            "aot_inductor.package_constants_in_so": True,
+            # Separate weight constants from the .so file
+            "aot_inductor.package": True,
+            "aot_inductor.package_constants_in_so": False,
+            # Store weight constants on disk in a binary blob
+            "aot_inductor.package_constants_on_disk_format": "binary_blob",
             # Enable maximum automatic tuning for optimal performance
             "max_autotune": True,
             # "aot_inductor.debug_compile": True,
@@ -117,7 +119,7 @@ class MetalBackend(BackendDetails):
         }
 
         with collect_unsupported_fallback_kernels():
-            so_path = torch._inductor.aot_compile(edge_program_module, tuple(user_input_placeholders), options=options)  # type: ignore[arg-type]
+            paths = torch._inductor.aot_compile(edge_program_module, tuple(user_input_placeholders), options=options)  # type: ignore[arg-type]
             if len(missing_fallback_kernels) > 0:
                 formatted_kernels = "\n  - ".join(sorted(missing_fallback_kernels))
                 raise RuntimeError(
@@ -125,17 +127,42 @@ class MetalBackend(BackendDetails):
                     "Please add them to the AOTI backend."
                 )
 
+        # Extract the .so and .blob paths from the returned list
+        so_path = None
+        blob_path = None
+        for path in paths:
+            if path.endswith(".wrapper.so"):
+                so_path = path
+            elif path.endswith(".wrapper_weights.blob"):
+                blob_path = path
+
+        if so_path is None or blob_path is None:
+            raise RuntimeError(
+                f"Could not find required files in compiled paths, got {paths}"
+            )
+
         # pyre-ignorep[6]: Incompatible parameter type
         with open(so_path, "rb") as f:
             so_data = f.read()
 
         named_data_store = NamedDataStore()
         method_name = MetalBackend.method_name_from_compile_specs(compile_specs)
+
+        # Keep the so file in the NamedDataStore, so that it can be packaged into the .pte file.
+        named_data_store.add_named_data(method_name + "_so_blob", so_data, 1, None)
+
+        # Add weights blob to named data store
+        with open(blob_path, "rb") as f:
+            blob_data = f.read()
+
         named_data_store.add_named_data(
-            method_name + "_so_blob", so_data, 1, "aoti_metal_blob"
+            method_name + "_weights_blob", blob_data, 1, "aoti_metal_blob"
         )
 
-        # Clean up the generated so file; it has been packaged into the NamdeDataStore
+        # Clean up the weights blob file
+        os.remove(blob_path)
+
+        # Clean up the generated so file; it has been packaged into the NamedDataStore
         # pyre-ignorep[6]: Incompatible parameter type
         os.remove(so_path)
 

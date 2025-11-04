@@ -84,6 +84,13 @@ class FuseEqualPlaceholdersPass(ArmPass):
                     common_persistent,
                 )
 
+                # TBD: Find a principled way to merge node.meta across all fused node
+                # For now, i specifically transfer over the TosaSpecialDtype.meta_key() of the rep_node
+                if TosaSpecialDtype.meta_key() in rep_node.meta:
+                    common_node.meta[TosaSpecialDtype.meta_key()] = rep_node.meta[
+                        TosaSpecialDtype.meta_key()
+                    ]
+
             # Replace uses and delete duplicates
             for node, _ in nodes_tensors:
                 node.replace_all_uses_with(common_node)

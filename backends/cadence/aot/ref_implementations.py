@@ -985,6 +985,70 @@ def quantized_w8a32_linear(
     return output
 
 
+@impl_tracked(m, "quantized_w8a32_gru")
+def quantized_w8a32_gru(
+    inputs: torch.Tensor,
+    hidden: torch.Tensor,
+    weights_inputs: torch.Tensor,
+    w_i_scale: float,
+    weights_hidden: torch.Tensor,
+    w_h_scale: float,
+    bias_inputs: torch.Tensor,
+    b_i_scale: float,
+    bias_hidden: torch.Tensor,
+    b_h_scale: float,
+) -> torch.Tensor:
+    assert weights_inputs.dtype == torch.int8
+    assert weights_hidden.dtype == torch.int8
+    assert bias_inputs.dtype == torch.int8
+    assert bias_hidden.dtype == torch.int8
+    assert inputs.dtype == torch.float32
+    assert hidden.dtype == torch.float32
+
+    if len(hidden.shape) > 2:
+        raise ValueError("Hidden state must be 2D or 1D")
+
+    if len(hidden.shape) == 2 and hidden.shape[0] != 1:
+        raise ValueError("Leading dimension of hidden state must be 1")
+
+    original_hidden_shape = hidden.shape
+    hidden = hidden.view(-1)
+
+    hidden_dim = hidden.shape[0]
+    if (hidden_dim % 4) != 0:
+        raise ValueError(
+            "Hidden dimension must be a multiple of 4 for HiFi SIMD operations"
+        )
+
+    dequant_weights_inputs = weights_inputs.float() * w_i_scale
+    dequant_weights_hidden = weights_hidden.float() * w_h_scale
+
+    # C++ implementation averages the two bias scales
+    avg_bias_scale = (b_i_scale + b_h_scale) / 2
+    dequant_bias_inputs = bias_inputs.float() * avg_bias_scale
+    dequant_bias_hidden = bias_hidden.float() * avg_bias_scale
+
+    gi = F.linear(inputs, dequant_weights_inputs, dequant_bias_inputs)
+    gh = F.linear(hidden, dequant_weights_hidden, dequant_bias_hidden)
+
+    i_r, i_z, i_n = gi.chunk(3, -1)
+    h_r, h_z, h_n = gh.chunk(3, -1)
+
+    reset_gate = torch.sigmoid(i_r + h_r)
+    update_gate = torch.sigmoid(i_z + h_z)
+    new_gate = torch.tanh(i_n + reset_gate * h_n)
+
+    new_hidden = (1 - update_gate) * new_gate + update_gate * hidden
+
+    if new_hidden.shape[0] != 1:
+        raise ValueError("Leading dimension of hidden state must be 1")
+
+    assert new_hidden.shape == original_hidden_shape
+
+    new_hidden = new_hidden.view(-1)
+    return torch.stack([new_hidden, new_hidden], dim=0)
+
+
 @impl_tracked(m, "quantized_conv2d_nhwc.per_tensor")
 def quantized_conv2d_nhwc_per_tensor(
     input_tensor: torch.Tensor,
@@ -1979,3 +2043,106 @@ def linalg_svd(
     assert compute_uv
     U, S, Vh = torch.linalg.svd(A, full_matrices=full_matrices, driver=driver)
     return U.contiguous(), S.contiguous(), Vh.contiguous()
+
+
+@impl_tracked(m, "_softmax_f32_f32")
+def softmax_f32_f32(
+    input_tensor: torch.Tensor,
+    dim: int,
+    half_to_float: bool | None = None,
+) -> torch.Tensor:
+    assert input_tensor.dtype == torch.float32, "input_tensor must be float32"
+    assert not half_to_float, "half_to_float is not supported"
+    return torch.nn.functional.softmax(input_tensor, dim=dim, dtype=torch.float32)
+
+
+def quantized_softmax_per_tensor_common(
+    input_tensor: torch.Tensor,
+    mask: torch.Tensor | None,
+    dim: int,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    """
+    Quantized softmax operation.
+
+    Args:
+        - input_tensor (Tensor): The quantized input tensor
+        - mask (Tensor): Mask tensor
+        - dim (int): The dimension along which softmax is computed
+        - in_scale (float): The scale of the input quantization
+        - in_zero_point (int): The zero point of the input quantization
+        - out_scale (float): The scale of the output quantization
+        - out_zero_point (int): The zero point of the output quantization
+    """
+    # TODO: T228751479 - Add support for mask parameter in softmax
+    assert mask is None
+    supported_dtypes = [torch.int8, torch.uint8, torch.int16]
+    if input_tensor.dtype not in supported_dtypes:
+        raise ValueError(
+            f"Input dtype must be one of {supported_dtypes}. Got {input_tensor.dtype}"
+        )
+
+    float_input_tensor = dequantize_per_tensor(
+        input_tensor,
+        in_scale,
+        in_zero_point,
+        torch.iinfo(input_tensor.dtype).min,
+        torch.iinfo(input_tensor.dtype).max,
+        input_tensor.dtype,
+    )
+
+    softmax_output = torch.nn.functional.softmax(float_input_tensor, dim=dim)
+
+    return quantize_per_tensor(
+        softmax_output,
+        out_scale,
+        out_zero_point,
+        torch.iinfo(input_tensor.dtype).min,
+        torch.iinfo(input_tensor.dtype).max,
+        input_tensor.dtype,
+    )
+
+
+@impl_tracked(m, "quantized_softmax.per_tensor")
+def quantized_softmax_per_tensor(
+    input_tensor: torch.Tensor,
+    mask: torch.Tensor | None,
+    dim: int,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    return quantized_softmax_per_tensor_common(
+        input_tensor,
+        mask,
+        dim,
+        in_scale,
+        in_zero_point,
+        out_scale,
+        out_zero_point,
+    )
+
+
+@impl_tracked(m, "quantized_softmax")
+def quantized_softmax(
+    input_tensor: torch.Tensor,
+    mask: torch.Tensor | None,
+    dim: int,
+    in_scale: torch.Tensor,
+    in_zero_point: torch.Tensor,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    return quantized_softmax_per_tensor_common(
+        input_tensor,
+        mask,
+        dim,
+        float(in_scale.item()),
+        int(in_zero_point.item()),
+        out_scale,
+        out_zero_point,
+    )
