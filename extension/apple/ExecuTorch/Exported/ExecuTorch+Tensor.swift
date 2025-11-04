@@ -777,6 +777,7 @@ public final class Tensor<T: Scalar>: Equatable {
   }
 
   /// Returns a copy of the tensor, converted to the specified scalar type.
+  ///
   /// - Parameter dataType: The target scalar type.
   /// - Returns: A new tensor with the same shape and metadata but converted elements.
   public func copy<U: Scalar>(to dataType: U.Type) -> Tensor<U> {

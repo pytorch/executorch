@@ -152,7 +152,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 if len(n.users) == 0:
                     graph_module.graph.erase_node(n)
 
-    def call(self, graph_module: GraphModule) -> PassResult:
+    def call(self, graph_module: GraphModule) -> PassResult:  # noqa: C901
 
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
         for n in graph_module.graph.nodes:
