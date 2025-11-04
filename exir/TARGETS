@@ -86,6 +86,7 @@ runtime.python_library(
     ],
     deps = [
         ":scalar_type",
+        ":tensor",
     ]
 )
 

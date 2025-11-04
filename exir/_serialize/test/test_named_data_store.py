@@ -8,6 +8,8 @@
 
 import unittest
 
+import torch
+
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._serialize.data_serializer import DataEntry
 from executorch.exir.scalar_type import ScalarType
@@ -35,6 +37,53 @@ class TestNamedDataStore(unittest.TestCase):
         self.assertEqual(len(output.external_data["file1"]), 2)
         self.assertEqual(output.external_data["file1"]["key2"], DataEntry(1, 16, None))
         self.assertEqual(output.external_data["file1"]["key3"], DataEntry(2, 16, None))
+
+    def test_add_torch_tensor(self) -> None:
+        store = NamedDataStore()
+        t0 = torch.tensor([[1, 2], [3, 4]], dtype=torch.int)
+        t1 = torch.randn(2, 3, 4, 5).contiguous(memory_format=torch.channels_last)
+
+        store.add_named_data("key0", t0, None, None)
+        store.add_named_data("key1", t1, 16, None)
+
+        output = store.get_named_data_store_output()
+        self.assertEqual(len(output.buffers), 2)
+        self.assertEqual(output.buffers[0], bytes(t0.untyped_storage()))
+        self.assertEqual(output.buffers[1], bytes(t1.untyped_storage()))
+
+        self.assertEqual(len(output.pte_data), 2)
+        self.assertEqual(
+            output.pte_data["key0"],
+            DataEntry(0, 1, TensorLayout(ScalarType.INT, [2, 2], [0, 1])),
+        )
+        self.assertEqual(
+            output.pte_data["key1"],
+            DataEntry(
+                1, 16, TensorLayout(ScalarType.FLOAT, [2, 3, 4, 5], [0, 2, 3, 1])
+            ),
+        )
+        self.assertEqual(len(output.external_data), 0)
+
+    def test_add_invalid_torch_tensor_layout(self) -> None:
+        store = NamedDataStore()
+        t0 = torch.tensor([[1, 2], [3, 4]], dtype=torch.int)
+        # TensorLayout does not match the torch.tensor.
+        self.assertRaises(
+            ValueError,
+            store.add_named_data,
+            "key",
+            t0,
+            1,
+            None,
+            TensorLayout(ScalarType.FLOAT, [1, 2], [0, 1]),
+        )
+
+    def test_add_invalid_torch_tensor_dim_order(self) -> None:
+        store = NamedDataStore()
+        t0 = torch.randn(2, 3, 4, 5)
+        t0 = t0.permute(0, 2, 3, 1)
+        # Non-contiguous tensor is not supported.
+        self.assertRaises(ValueError, store.add_named_data, "key", t0, 1, None)
 
     def test_add_duplicate_name_and_data(self) -> None:
         store = NamedDataStore()

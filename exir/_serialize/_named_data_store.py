@@ -7,10 +7,11 @@
 # pyre-strict
 
 import hashlib
-from dataclasses import dataclass
 
-# from dataclasses import dataclass
-from typing import Dict, List, Optional
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Union
+
+import torch
 
 from executorch.exir._serialize.data_serializer import DataEntry
 from executorch.exir.tensor_layout import TensorLayout
@@ -137,7 +138,7 @@ class NamedDataStore:
     def add_named_data(
         self,
         key: str,
-        data: bytes,
+        data: Union[bytes, torch.Tensor],
         alignment: Optional[int] = 1,
         external_tag: Optional[str] = None,
         tensor_layout: Optional[TensorLayout] = None,
@@ -146,7 +147,7 @@ class NamedDataStore:
         Adds a named blob to the NamedDataStore.
         Args:
             key (str): key associated with the data.
-            data (bytes): Bytes being requested to be serialized.
+            data (Union[bytes, torch.Tensor]): Union of bytes, or torch.Tensor to serialize. Note: if a tensor is passed, it must have contiguous memory layout. The tensor_layout will be inferred from the tensor and should not be passed in.
             alignment (int): alignment for bytes to be serialized with.
             external (Optional[str]): the external filename that this data is saved to.
             tensor_layout (Optional[TensorLayout]): layout of the tensor, if applicable.
@@ -161,14 +162,25 @@ class NamedDataStore:
         if alignment <= 0:
             raise ValueError(f"Alignment must be greater than 0, received {alignment}.")
 
+        if isinstance(data, torch.Tensor):
+            real_tensor_layout = TensorLayout.from_tensor(data)
+            if tensor_layout is not None and not (real_tensor_layout == tensor_layout):
+                raise ValueError(
+                    f"Tensor {key} is a torch.Tensor, with tensor_layout {real_tensor_layout}. The provided tensor layout {tensor_layout} does not match."
+                )
+            tensor_layout = real_tensor_layout
+            byte_data = bytes(data.untyped_storage())
+        else:
+            byte_data = data
+
         if external_tag is None:
             self._add_named_data_to_map(
-                key, data, alignment, self.pte_data, tensor_layout
+                key, byte_data, alignment, self.pte_data, tensor_layout
             )
         else:
             self._add_named_data_to_map(
                 key,
-                data,
+                byte_data,
                 alignment,
                 self.external_data.setdefault(external_tag, {}),
                 tensor_layout,
