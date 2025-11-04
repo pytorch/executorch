@@ -158,7 +158,7 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 
         def forward(self, x):
             rank = x.dim()
-            x = x.unsqueeze(-1) if rank == 3 else x.reshape(1, *x.shape, 1)
+            x = x.reshape(*x.shape, 1) if rank == 3 else x.reshape(1, *x.shape, 1)
             x = torch.transpose(x, 1, 2)
             res = self.conv(x)
             res = torch.transpose(res, 1, 2)
