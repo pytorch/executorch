@@ -81,6 +81,7 @@ void main() {
   const int Q_H = q_projected_sizes.y;
   // sequence length
   const int S = q_projected_sizes.z;
+  const int S_aligned = align_up_4(S);
 
   // number of K/V heads
   const int KV_H = k_cache_sizes.y;
@@ -205,7 +206,7 @@ void main() {
       s,
       q_h,
       context_texel_len,
-      S,
+      S_aligned,
       Q_H);
   }
 }
