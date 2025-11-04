@@ -22,7 +22,7 @@ namespace metal {
 extern "C" {
 
 // Global storage declarations
-extern std::unordered_map<Tensor*, bool> is_tensor_own_memory;
+extern std::unordered_map<void*, int32_t> memory_to_n_tensor;
 extern std::unordered_set<std::shared_ptr<Tensor>> tensors;
 
 // Memory-related operations

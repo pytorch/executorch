@@ -10,13 +10,13 @@
 #define REDUCE_OP_DEFS_GLSLH
 
 struct Accum {
-  T val;
+  ACCUM_T val;
   uint idx;
   uint count;
 };
 
 void init_accum(out Accum accum, T val, uint idx) {
-  accum.val = val;
+  accum.val = ACCUM_T(val);
   accum.idx = idx;
   accum.count = 1;
 }
@@ -30,7 +30,7 @@ void init_accum_zero(out Accum accum) {
 // Sum / Mean
 
 void update_accum_sum(inout Accum accum, T val, uint idx) {
-  accum.val += val;
+  accum.val += ACCUM_T(val);
   accum.count += 1;
 }
 
@@ -45,7 +45,8 @@ void postprocess_accum_mean(inout Accum accum) {
 
 // Amax (maximum value)
 
-void update_accum_amax(inout Accum accum, T val, uint idx) {
+void update_accum_amax(inout Accum accum, T in_val, uint idx) {
+  ACCUM_T val = ACCUM_T(in_val);
   if (val > accum.val) {
     accum.val = val;
     accum.idx = idx;
@@ -69,7 +70,8 @@ void merge_accum_amax(inout Accum accum, const Accum other) {
 
 // Amin (minimum value)
 
-void update_accum_amin(inout Accum accum, T val, uint idx) {
+void update_accum_amin(inout Accum accum, T in_val, uint idx) {
+  ACCUM_T val = ACCUM_T(in_val);
   if (val < accum.val) {
     accum.val = val;
     accum.idx = idx;

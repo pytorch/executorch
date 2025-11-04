@@ -424,7 +424,7 @@ def get_dims_reduced(node: torch.fx.Node) -> Union[int, List[int]]:
     ndim = utils.ndim_of(node.args[0])
     assert ndim is not None
     dims_reduced = None
-    if len(node.args) >= 1:
+    if len(node.args) >= 2:
         dims_reduced = node.args[1]
 
     # If dim_list is None, return a list containing all the dims of the tensor
@@ -479,10 +479,6 @@ def is_reduce_node_supported_by_general_impl(node: torch.fx.Node) -> bool:
 
 
 def is_reduce_node_supported(node: torch.fx.Node) -> bool:
-    # 0-dim output unsupported at the moment
-    if utils.ndim_of(node) == 0:
-        return False
-
     return is_reduce_node_supported_by_per_row_impl(
         node
     ) or is_reduce_node_supported_by_general_impl(node)
@@ -493,7 +489,7 @@ def pick_storage_for_reduce(node: torch.fx.Node):
     outputs_storage = utils.NO_STORAGE
 
     ndim = utils.ndim_of(node.args[0])
-    dim_list = node.args[1]
+    dim_list = get_dims_reduced(node)
 
     if is_reduce_node_supported_by_general_impl(node):
         inputs_storage = inputs_storage.make_union(utils.ANY_TEXTURE)
@@ -539,6 +535,8 @@ def pick_storage_for_reduce(node: torch.fx.Node):
         exir_ops.edge.aten.sum.dim_IntList,
         exir_ops.edge.aten.amax.default,
         exir_ops.edge.aten.amin.default,
+        exir_ops.edge.aten.argmax.default,
+        exir_ops.edge.aten.argmin.default,
     ]
 )
 def register_reduce_op():

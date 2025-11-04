@@ -6,7 +6,6 @@
 
 # pyre-strict
 
-import logging
 from math import prod
 from typing import Callable, Optional, Tuple
 
@@ -49,37 +48,15 @@ def _validate_ref_impl_exists() -> None:
         "cadence::roi_align_box_processor",
     }
 
-    # All of these should either
-    # 1. be removed
-    # 2. have a reference implementation added to ref_implementations.py
-    _WARN_ONLY = {
-        "cadence::_softmax_f32_f32",
-        "cadence::quantized_softmax.per_tensor",
-        "cadence::quantized_softmax",
-        "cadence::quantized_w8a32_gru",
-    }
-
     ref_impls = get_registered_ref_implementations()
-    warn_impls = []
     error_impls = []
     for op_name in _REGISTERED_META_KERNELS:
         # Strip the namespace prefix if present (e.g., "cadence::" -> "")
         op_name_clean = op_name.split("::")[-1] if "::" in op_name else op_name
 
         if op_name_clean not in ref_impls:
-            if op_name in _WARN_ONLY:
-                warn_impls.append(op_name)
-            elif op_name not in _SKIP_OPS:
+            if op_name not in _SKIP_OPS:
                 error_impls.append(op_name)
-
-    if warn_impls:
-        warn_msg = (
-            f"The following {len(warn_impls)} meta kernel registrations are missing reference implementations:\n"
-            + "\n".join(f"  - {op}" for op in warn_impls)
-            + "\n\nPlease add reference implementations in ref_implementations.py using "
-            + "@impl_tracked(m, '<op_name>')."
-        )
-        logging.warning(warn_msg)
 
     if error_impls:
         error_msg = (
@@ -640,10 +617,10 @@ lib.define(
     "int sampling_ratio, bool aligned) -> (Tensor out)"
 )
 lib.define(
-    "_softmax_f32_f32(Tensor self, int dim, bool? half_to_float) -> (Tensor out)"
+    "_softmax_f32_f32(Tensor self, int dim, bool? half_to_float = None) -> (Tensor out)"
 )
 lib.define(
-    "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float, *, Tensor(a!) out) -> Tensor(a!)"
+    "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float = None, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -2652,12 +2629,13 @@ def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_meta(
 
 @register_fake("cadence::_softmax_f32_f32")
 def softmax_f32_f32_meta(
-    self: torch.Tensor,
+    input_tensor: torch.Tensor,
     dim: int,
-    dtype: torch.dtype,
     half_to_float: Optional[bool] = None,
 ) -> torch.Tensor:
-    return self.new_empty(self.size(), dtype=self.dtype)
+    assert input_tensor.dtype == torch.float32, "input_tensor must be float32"
+    assert not half_to_float, "half_to_float is not supported"
+    return input_tensor.new_empty(input_tensor.size(), dtype=torch.float32)
 
 
 @register_fake("cadence::quantized_softmax")
@@ -2753,7 +2731,7 @@ def quantized_w8a32_gru_meta(
     bias_hidden: torch.Tensor,
     b_h_scale: float,
 ) -> torch.Tensor:
-    return inputs.new_empty((2, hidden.shape[-1]), dtype=inputs.dtype)
+    return hidden.new_empty((2, hidden.shape[-1]), dtype=torch.float32)
 
 
 # Validate that all meta kernels have reference implementations

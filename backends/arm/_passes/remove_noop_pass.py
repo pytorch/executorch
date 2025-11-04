@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import logging
 from typing import Set, Type
@@ -26,6 +25,7 @@ class RemoveNoopPass(ArmPass):
         if op not in (
             exir_ops.edge.dim_order_ops._clone_dim_order.default,
             exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+            exir_ops.edge.aten.copy.default,
         ):
             return super().call_operator(op, args, kwargs, meta)
 
@@ -35,4 +35,6 @@ class RemoveNoopPass(ArmPass):
         if input_dtype != output_dtype:
             return super().call_operator(op, args, kwargs, meta)
 
+        if op == exir_ops.edge.aten.copy.default:
+            return args[1]
         return args[0]

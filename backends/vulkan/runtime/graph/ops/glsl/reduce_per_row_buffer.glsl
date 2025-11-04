@@ -10,6 +10,7 @@
 
 #define PRECISION ${PRECISION}
 
+#define ACCUM_T ${accum_scalar_type(DTYPE)}
 #define T ${texel_load_component_type(DTYPE, "buffer")}
 
 #define NUM_OUTPUTS_PER_WG 1
@@ -23,6 +24,7 @@ ${define_required_extensions(DTYPE)}
 layout(std430) buffer;
 
 #include "indexing.glslh"
+#include "convert.glslh"
 #include "reduce_op_defs.glslh"
 
 $if OUTPUT_IS_INDICES:
@@ -116,7 +118,7 @@ void main() {
 #ifdef OUTPUT_IS_INDICES
     t_out[out_bufi] = int(0); // int(local_accum.idx);
 #else
-    t_out[out_bufi] = local_accum.val;
+    t_out[out_bufi] = convert_to_T(local_accum.val);
 #endif
   }
 }

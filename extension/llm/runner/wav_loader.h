@@ -22,6 +22,9 @@
 #include <executorch/runtime/platform/log.h>
 
 namespace executorch::extension::llm {
+// See https://www.mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html
+constexpr uint16_t kWavFormatPcm = 0x0001;
+constexpr uint16_t kWavFormatIeeeFloat = 0x0003;
 
 constexpr float kOneOverIntMax = 1 / static_cast<float>(INT32_MAX);
 constexpr float kOneOverShortMax = 1 / static_cast<float>(INT16_MAX);
@@ -168,24 +171,42 @@ inline std::vector<float> load_wav_audio_data(const std::string& fp) {
   size_t data_offset = header->dataOffset;
   size_t data_size = header->Subchunk2Size;
   int bits_per_sample = header->bitsPerSample;
+  int audio_format = header->AudioFormat;
+
+  if (audio_format != kWavFormatPcm && audio_format != kWavFormatIeeeFloat) {
+    ET_CHECK_MSG(
+        false,
+        "Unsupported audio format: 0x%04X. Only PCM (0x%04X) and IEEE Float (0x%04X) are supported.",
+        audio_format,
+        kWavFormatPcm,
+        kWavFormatIeeeFloat);
+  }
 
   std::vector<float> audio_data;
 
   if (bits_per_sample == 32) {
     size_t num_samples = data_size / 4;
-    audio_data.resize(num_samples);
-    const int32_t* input_buffer =
-        reinterpret_cast<const int32_t*>(data + data_offset);
 
-    for (size_t i = 0; i < num_samples; ++i) {
-      audio_data[i] = static_cast<float>(
-          static_cast<double>(input_buffer[i]) * kOneOverIntMax);
+    if (audio_format == kWavFormatIeeeFloat) {
+      // IEEE float format - read directly as floats
+      const float* input_buffer =
+          reinterpret_cast<const float*>(data + data_offset);
+      audio_data.assign(input_buffer, input_buffer + num_samples);
+    } else {
+      // PCM integer format - normalize from int32
+      const int32_t* input_buffer =
+          reinterpret_cast<const int32_t*>(data + data_offset);
+      audio_data.resize(num_samples);
+      for (size_t i = 0; i < num_samples; ++i) {
+        audio_data[i] = static_cast<float>(
+            static_cast<double>(input_buffer[i]) * kOneOverIntMax);
+      }
     }
   } else if (bits_per_sample == 16) {
     size_t num_samples = data_size / 2;
-    audio_data.resize(num_samples);
     const int16_t* input_buffer =
         reinterpret_cast<const int16_t*>(data + data_offset);
+    audio_data.resize(num_samples);
 
     for (size_t i = 0; i < num_samples; ++i) {
       audio_data[i] = static_cast<float>(

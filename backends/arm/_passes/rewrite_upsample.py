@@ -74,7 +74,7 @@ class RewriteUpsamplePass(ArmPass):
                     rescale_node.args = (
                         tosa_resize_node,
                         output_dtype,
-                        output_scale,
+                        [output_scale],
                         0,  # zero point
                         0,  # zero point
                     )

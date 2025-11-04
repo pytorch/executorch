@@ -265,8 +265,8 @@ utils::uvec3 reduce_per_row_global_wg_size(
   (void)shader;
   (void)resize_args;
 
-  const ValueRef in = args.at(1).refs.at(0);
-  return {1u, utils::safe_downcast<uint32_t>(graph->numel_of(in)), 1u};
+  const ValueRef out = args.at(0).refs.at(0);
+  return {1u, utils::safe_downcast<uint32_t>(graph->numel_of(out)), 1u};
 }
 
 utils::uvec3 reduce_per_row_local_wg_size(
@@ -324,8 +324,14 @@ void add_reduce_per_row_node(
 
 #define DEFINE_REDUCE_FN(op_name, out_arg_idx)                           \
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
-    const std::vector<int64_t> dims_list =                               \
-        graph.extract_int_or_symint_list(args[1]);                       \
+    std::vector<int64_t> dims_list;                                      \
+    if (graph.val_is_not_none(args[1])) {                                \
+      dims_list = graph.extract_int_or_symint_list(args[1]);             \
+    } else if (graph.dim_of(args[0]) == 1) {                             \
+      dims_list = {-1};                                                  \
+    } else {                                                             \
+      VK_THROW("dims_list=None only supported for 1D tensors");          \
+    }                                                                    \
     if (dims_list.size() == 1) {                                         \
       int64_t dim_val = dims_list.at(0);                                 \
       int64_t ndim = graph.dim_of(args[0]);                              \
