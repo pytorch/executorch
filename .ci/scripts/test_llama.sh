@@ -54,7 +54,7 @@ PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
 # Default CMake Build Type to release mode
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
 
-# Default CMake Build Type to release mode
+# Default maximum export time. 
 MAX_EXPORT_TIME=${MAX_EXPORT_TIME:500}
 
 # Argument validation is done individually below for each required parameter
@@ -270,6 +270,7 @@ EXPORT_END_TIME=$(date +%s)
 EXPORT_DURATION=$((EXPORT_END_TIME - EXPORT_START_TIME))
 echo "Model export completed at $(date +"%Y-%m-%d %H:%M:%S") - Duration: ${EXPORT_DURATION} seconds"
 
+# Check export time against threshold. Default is 500 seconds.
 if [ $EXPORT_DURATION -gt $MAX_EXPORT_TIME ]; then
     echo "Failure; Export took ${EXPORT_DURATION} seconds, exceeding threshold of ${MAX_EXPORT_TIME} seconds"
     exit 1
