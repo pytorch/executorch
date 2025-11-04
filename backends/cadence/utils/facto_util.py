@@ -15,6 +15,7 @@ import facto.specdb.function as fn
 import torch
 from facto.inputgen.argtuple.gen import ArgumentTupleGenerator
 from facto.inputgen.specs.model import ConstraintProducer as cp
+from facto.inputgen.utils.random_manager import seeded_random_manager as rm
 from facto.inputgen.variable.type import ScalarDtype
 from facto.specdb.db import SpecDictDB
 
@@ -24,6 +25,33 @@ MAX_CASES = 50
 
 # Global cache to store generated shapes per tensor to ensure consistency
 _shape_cache: dict[str, list[int]] = {}
+
+
+def _positive_valid_dim_list(tensor: torch.Tensor, length: int) -> set[tuple[int, ...]]:
+    """
+    Generate valid permutations using only positive dimension indices.
+    This is required for Cadence/Xtensa kernels that don't support negative indexing.
+
+    Args:
+        tensor: Input tensor to generate permutations for
+        length: Number of dimensions in the permutation (must equal tensor.dim())
+
+    Returns:
+        Set of valid permutation tuples containing only positive indices [0, rank-1]
+    """
+    if length > tensor.dim():
+        return set()
+
+    n = tensor.dim()
+    pool = list(range(n))
+
+    # Generate multiple valid permutations (only positive indices)
+    permutations: set[tuple[int, ...]] = set()
+    for _ in range(3):  # Generate 3 different permutations for diversity
+        perm = tuple(rm.get_random().sample(pool, length))
+        permutations.add(perm)
+
+    return permutations
 
 
 def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
@@ -493,12 +521,32 @@ def facto_testcase_gen(  # noqa: C901
                 apply_tensor_contraints(op_name, index)
             )
         elif in_spec.type.is_dim_list():
-            spec.inspec[index].constraints.extend(
-                [
-                    cp.Length.Ge(lambda deps: 1),
-                    cp.Optional.Eq(lambda deps: False),
-                ]
-            )
+            # Special handling for permute_copy.default to ensure valid permutation
+            if op_name == "permute_copy.default":
+                spec.inspec[index].constraints.extend(
+                    [
+                        cp.Length.Ge(lambda deps: 1),
+                        cp.Length.Eq(
+                            lambda deps: deps[0].dim()
+                        ),  # Must be a complete permutation
+                        cp.Optional.Eq(lambda deps: False),
+                        # Generate valid permutations using only positive indices
+                        # Cadence/Xtensa hardware kernels do not support negative dimension indices
+                        cp.Value.Gen(
+                            lambda deps, length: (
+                                _positive_valid_dim_list(deps[0], length),
+                                fn.invalid_dim_list(deps[0], length),
+                            )
+                        ),
+                    ]
+                )
+            else:
+                spec.inspec[index].constraints.extend(
+                    [
+                        cp.Length.Ge(lambda deps: 1),
+                        cp.Optional.Eq(lambda deps: False),
+                    ]
+                )
         elif in_spec.type.is_bool():
             spec.inspec[index].constraints.extend(
                 [
