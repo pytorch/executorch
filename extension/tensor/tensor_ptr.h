@@ -13,9 +13,12 @@
 #include <memory>
 #include <vector>
 
+#include <c10/macros/Macros.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+
+C10_DIAGNOSTIC_PUSH_AND_IGNORED_IF_DEFINED("-Wswitch-enum")
 
 namespace executorch {
 namespace extension {
@@ -478,3 +481,5 @@ runtime::Error resize_tensor_ptr(
 
 } // namespace extension
 } // namespace executorch
+
+C10_DIAGNOSTIC_POP()

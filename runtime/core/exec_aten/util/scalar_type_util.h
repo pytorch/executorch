@@ -27,7 +27,10 @@
 #include <limits>
 #include <type_traits>
 
+#include <c10/macros/Macros.h>
 #include <executorch/runtime/platform/assert.h>
+
+C10_DIAGNOSTIC_PUSH_AND_IGNORED_IF_DEFINED("-Wswitch-enum")
 
 #ifdef USE_ATEN_LIB
 // Note that a lot of the macros/functions defined in this ScalarTypeUtil.h file
@@ -1421,3 +1424,5 @@ using ::executorch::runtime::internal::U1;
 } // namespace internal
 } // namespace executor
 } // namespace torch
+
+C10_DIAGNOSTIC_POP()
