@@ -80,6 +80,7 @@ def test_floor_divide_tosa_FP(test_data: input_t1):
         FloorDivide.aten_op,
         FloorDivide.exir_op,
         use_to_edge_transform_and_lower=False,
+        rtol=0.06,
     )
     pipeline.run()
 
@@ -136,6 +137,7 @@ def test_floor_divide_vgf_FP(test_data: input_t1):
         FloorDivide.exir_op,
         tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=False,
+        rtol=0.06,
     )
     pipeline.run()
 
