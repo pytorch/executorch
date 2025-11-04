@@ -810,7 +810,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       util
       torch
   )
-  
+
   # Build common AOTI functionality if needed by CUDA or Metal backends
   if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_METAL)
     list(APPEND _dep_libs aoti_common)

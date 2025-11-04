@@ -62,6 +62,18 @@ from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
 from pathlib import Path
 from typing import List, Optional
 
+# Add the current directory to sys.path to import install_utils
+CWD = Path(__file__).absolute().parent
+# Add the current directory to the Python path so that we can import `install_utils`.
+# This is required when running this script with a PEP-517-enabled build backend.
+#
+# From the PEP-517 documentation: https://peps.python.org/pep-0517
+#
+# > When importing the module path, we do *not* look in the directory containing
+# > the source tree, unless that would be on `sys.path` anyway (e.g. because it
+# > is specified in `PYTHONPATH`).
+#
+sys.path.insert(0, str(CWD))  # this only affects the current process
 import install_utils
 
 from setuptools import Extension, setup
@@ -750,6 +762,7 @@ class CustomBuild(build):
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
             cmake_build_args += ["--target", "aoti_cuda"]
+            cmake_build_args += ["--target", "aoti_common"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
             cmake_build_args += ["--target", "_llm_runner"]
