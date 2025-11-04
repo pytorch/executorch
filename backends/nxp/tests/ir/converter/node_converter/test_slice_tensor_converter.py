@@ -33,7 +33,7 @@ def reseed_model_per_test_run():
 @pytest.mark.parametrize(
     "x_input_shape, dims, starts, ends",
     [
-        pytest.param((128, 96, 16), (0, 1, 2), (0, 0, 8), (128, 96, 16), id="4D.")
+        pytest.param((128, 96, 16), (0, 1, 2), (8, 8, 0), (128, 96, 16), id="4D.")
     ],
 )
 def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends):
