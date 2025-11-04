@@ -88,15 +88,15 @@ class OpProdIntOutTest : public ::testing::Test {
   }
 };
 
-TEST_F(OpProdOutTest, SmokeTest) {
+TEST_F(OpProdOutTest, SmokeTest){
 #define TEST_ENTRY(ctype, dtype) test_dtype<ScalarType::dtype>();
-  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY)
+    ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY)
 #undef TEST_ENTRY
 }
 
-TEST_F(OpProdIntOutTest, SmokeTest) {
+TEST_F(OpProdIntOutTest, SmokeTest){
 #define TEST_ENTRY(ctype, dtype) test_dtype<ScalarType::dtype>();
-  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY)
+    ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY)
 #undef TEST_ENTRY
 }
 

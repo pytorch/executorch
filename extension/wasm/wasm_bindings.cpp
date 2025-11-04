@@ -394,7 +394,8 @@ EValue to_evalue(val v) {
     } else if (type_str == "object") {
       // If it is an object, assume it is a tensor.
       THROW_IF_FALSE(
-          v.instanceof(val::module_property("Tensor")),
+          v.instanceof
+          (val::module_property("Tensor")),
           "Received non-tensor object: %s",
           val::global("JSON").call<std::string>("stringify", v).c_str());
       return EValue(v.as<JsTensor&>().get_tensor());
@@ -591,9 +592,9 @@ class ET_EXPERIMENTAL JsModule final {
           data.as<std::string>(),
           Module::LoadMode::File,
           std::move(etdump_gen)));
-    } else if (data.instanceof(val::global("Uint8Array"))) {
+    } else if (data.instanceof (val::global("Uint8Array"))) {
       return load_from_uint8_array(data);
-    } else if (data.instanceof(val::global("ArrayBuffer"))) {
+    } else if (data.instanceof (val::global("ArrayBuffer"))) {
       return load_from_uint8_array(val::global("Uint8Array").new_(data));
     } else {
       THROW_JS_ERROR(

@@ -140,13 +140,10 @@ struct type_convert<
     final {
   explicit type_convert(ETensor value)
       : value_(value),
-        converted_(
-            at::from_blob(
-                value_.mutable_data_ptr(),
-                std::vector<int64_t>{
-                    value_.sizes().begin(),
-                    value_.sizes().end()},
-                c10::ScalarType(value_.scalar_type()))) {}
+        converted_(at::from_blob(
+            value_.mutable_data_ptr(),
+            std::vector<int64_t>{value_.sizes().begin(), value_.sizes().end()},
+            c10::ScalarType(value_.scalar_type()))) {}
 
   ATensor call() {
     return converted_;
