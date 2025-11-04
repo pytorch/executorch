@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List, Sequence
+from typing import Any, List
 
 import tosa_serializer as ts
 
@@ -23,24 +23,35 @@ from torch.fx import Node
 
 
 @register_node_visitor
-class WhereVisitor_INT(NodeVisitor):
+class WhereVisitor(NodeVisitor):
     target = "aten.where.self"
 
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
     def __init__(self, *args):
         super().__init__(*args)
 
-    def _add_node_to_tosa_graph(
+    def define_node(
         self,
         node: Node,
         tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
-        supported_dtypes: Sequence,
     ) -> None:
+
+        supported_dtypes = []
+        if output.tosa_spec.support_integer():
+            supported_dtypes += [
+                ts.DType.BOOL,
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+            ]
+        if output.tosa_spec.support_float():
+            supported_dtypes += [ts.DType.BOOL, ts.DType.FP16, ts.DType.FP32]
 
         validate_num_inputs(self.target, inputs, 3)
         # Not first input, which is condition tensor.
@@ -62,51 +73,4 @@ class WhereVisitor_INT(NodeVisitor):
             [inputs[0].name, inputs[1].name, inputs[2].name],
             [output.name],
             attr,
-        )
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        bi_supported_dtypes = [
-            ts.DType.INT8,
-            ts.DType.INT16,
-            ts.DType.INT32,
-            ts.DType.BOOL,
-        ]
-        self._add_node_to_tosa_graph(
-            node, tosa_graph, inputs, output, bi_supported_dtypes
-        )
-
-
-@register_node_visitor
-class WhereVisitor_FP(WhereVisitor_INT):
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        mi_supported_dtypes = [
-            ts.DType.FP16,
-            ts.DType.FP32,
-            ts.DType.INT8,
-            ts.DType.INT16,
-            ts.DType.INT32,
-            ts.DType.BOOL,
-        ]
-        self._add_node_to_tosa_graph(
-            node, tosa_graph, inputs, output, mi_supported_dtypes
         )
