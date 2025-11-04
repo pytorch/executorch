@@ -192,7 +192,6 @@ class ArmPassManager(PassManager):
 
         # Node transformation passes (post q/dq folding)
 
-        self.add_pass(DecomposeExpm1Pass())
         self.add_pass(DecomposeLogitPass())
         self.add_pass(DecomposeMaskedFill())
         self.add_pass(DecomposeRoundPass())
@@ -211,7 +210,6 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSinhPass())
         self.add_pass(DecomposeSignPass())
         self.add_pass(DecomposeFloorDividePass())
-        self.add_pass(DecomposeDivTensorModePass())
         self.add_pass(DecomposeGeluPass())
         self.add_pass(DecomposeAddSubAlphaPass())
         self.add_pass(DecomposeGroupedConv())

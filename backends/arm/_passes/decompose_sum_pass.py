@@ -77,7 +77,11 @@ class DecomposeSumPass(ArmPass):
 
         for dim in dims:
             input_node = super().call_operator(
-                sum_op, (input_node, dim, True), kwargs, meta, updated=True
+                sum_op,
+                (input_node, dim, True),
+                kwargs,
+                meta,
+                updated=True,
             )
 
         if not keepdims:
