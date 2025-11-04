@@ -86,7 +86,7 @@ ET_NODISCARD Result<BoxedEvalueList<std::optional<T>>> parseListOptionalType(
     // copy assignment is not defined if its non trivial.
     if (index == -1) {
       new (&optional_tensor_list[output_idx])
-          std::optional<T>(executorch::aten::nullopt);
+          std::optional<T>(std::nullopt);
       // no value to point to. BoxedEvalueList for optional tensor will convert
       // this to nullopt.
       // TODO(T161156879): do something less hacky here.

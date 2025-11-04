@@ -193,10 +193,11 @@ class BackendDelegate final {
       }
       case executorch_flatbuffer::DataLocation::SEGMENT: {
         const char* backend_id = delegate.id()->c_str();
-        return program->LoadSegment(DataLoader::SegmentInfo(
-            DataLoader::SegmentInfo::Type::Backend,
-            processed->index(),
-            backend_id));
+        return program->LoadSegment(
+            DataLoader::SegmentInfo(
+                DataLoader::SegmentInfo::Type::Backend,
+                processed->index(),
+                backend_id));
       }
       default:
         ET_LOG(
@@ -469,9 +470,9 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
             static_cast<const executorch_flatbuffer::Int*>(val)->int_val());
       } break;
       case executorch_flatbuffer::KernelTypes::Double: {
-        new (&values_[i])
-            EValue(static_cast<const executorch_flatbuffer::Double*>(val)
-                       ->double_val());
+        new (&values_[i]) EValue(
+            static_cast<const executorch_flatbuffer::Double*>(val)
+                ->double_val());
       } break;
       case executorch_flatbuffer::KernelTypes::Bool: {
         new (&values_[i]) EValue(

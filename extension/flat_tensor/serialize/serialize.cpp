@@ -90,16 +90,18 @@ runtime::Error save_ptd(
         builder.CreateVector(
             tensor.dim_order().data(), tensor.dim_order().size()));
 
-    named_data.push_back(::flat_tensor_flatbuffer::CreateNamedData(
-        /*_fbb=*/builder,
-        /*key=*/key,
-        /*segment_index=*/i,
-        /*tensor_layout=*/tensor_layout));
+    named_data.push_back(
+        ::flat_tensor_flatbuffer::CreateNamedData(
+            /*_fbb=*/builder,
+            /*key=*/key,
+            /*segment_index=*/i,
+            /*tensor_layout=*/tensor_layout));
 
-    segments.push_back(::flat_tensor_flatbuffer::CreateDataSegment(
-        /*_fbb=*/builder,
-        /*offset=*/total_segment_size,
-        /*size=*/tensor.nbytes()));
+    segments.push_back(
+        ::flat_tensor_flatbuffer::CreateDataSegment(
+            /*_fbb=*/builder,
+            /*offset=*/total_segment_size,
+            /*size=*/tensor.nbytes()));
 
     // Do not pad the last tensor.
     total_segment_size += (i == tensor_count - 1)

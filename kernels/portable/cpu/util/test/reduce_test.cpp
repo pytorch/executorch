@@ -86,7 +86,8 @@ TEST(ReduceUtilTest, ApplyOverDim) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_2[1] = {2};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_2, 1});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_2, 1});
   _apply_over_dim(in, 2);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -104,7 +105,8 @@ TEST(ReduceUtilTest, ApplyOverDim) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_3[1] = {3};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_3, 1});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_3, 1});
   _apply_over_dim(in, 3);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -143,7 +145,8 @@ TEST(ReduceUtilTest, ApplyOverZeroDim) {
   TensorFactory<ScalarType::Long> tf;
   std::optional<ArrayRef<int64_t>> dim_list;
   int64_t dim_array_0[1] = {0};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_0, 1});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_0, 1});
 
   Tensor in = tf.ones({});
   _apply_over_dim_list(in, dim_list);
@@ -165,7 +168,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength1) {
 
   Tensor in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_0[1] = {0};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_0, 1});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_0, 1});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -183,7 +187,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength1) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_1[1] = {1};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_1, 1});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_1, 1});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -201,7 +206,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength1) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_2[1] = {2};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_2, 1});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_2, 1});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -219,7 +225,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength1) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_3[1] = {3};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_3, 1});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_3, 1});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -242,7 +249,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength2) {
 
   Tensor in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_01[2] = {0, 1};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_01, 2});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_01, 2});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -260,7 +268,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength2) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_02[2] = {0, 2};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_02, 2});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_02, 2});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -278,7 +287,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength2) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_03[2] = {0, 3};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_03, 2});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_03, 2});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -296,7 +306,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength2) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_12[2] = {1, 2};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_12, 2});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_12, 2});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -314,7 +325,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength2) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_13[2] = {1, 3};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_13, 2});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_13, 2});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -332,7 +344,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength2) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_23[2] = {2, 3};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_23, 2});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_23, 2});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -355,7 +368,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength3) {
 
   Tensor in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_012[3] = {0, 1, 2};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_012, 3});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_012, 3});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -373,7 +387,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength3) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_013[3] = {0, 1, 3};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_013, 3});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_013, 3});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -391,7 +406,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength3) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_023[3] = {0, 2, 3};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_023, 3});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_023, 3});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -409,7 +425,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength3) {
 
   in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_123[3] = {1, 2, 3};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_123, 3});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_123, 3});
   _apply_over_dim_list(in, dim_list);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -432,7 +449,8 @@ TEST(ReduceUtilTest, ApplyOverDimListLength4) {
 
   Tensor in = tf.ones({2, 4, 5, 3});
   int64_t dim_array_0123[4] = {0, 1, 2, 3};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_0123, 4});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_0123, 4});
   _apply_over_dim_list(in, dim_list);
   EXPECT_TENSOR_EQ(in, tf.zeros({2, 4, 5, 3}));
 }
@@ -520,7 +538,8 @@ TEST(ReduceUtilTest, ApplyOnEmptyTensorOverDimList) {
 
   // dim list = {0, 1}
   int64_t dim_array_01[2] = {0, 1};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_01, 2});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_01, 2});
 
   EXPECT_TRUE(in.numel() == 0);
   EXPECT_TRUE(out.numel() == 15 && out.numel() == get_out_numel(in, dim_list));
@@ -542,7 +561,8 @@ TEST(ReduceUtilTest, ApplyOnEmptyTensorOverDimList) {
 
   // dim list = {0, 2}
   int64_t dim_array_02[2] = {0, 2};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_02, 2});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_02, 2});
 
   EXPECT_TRUE(in.numel() == 0);
   EXPECT_TRUE(get_out_numel(in, dim_list) == 0);
@@ -558,25 +578,29 @@ TEST(ReduceUtilTest, ApplyOverDimListInvalid) {
 
   Tensor in = tf.zeros({2, 4, 5, 3});
   int64_t dim_array_09[2] = {0, 9};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_09, 2});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_09, 2});
 
   ET_EXPECT_DEATH(
       apply_over_dim_list([](size_t in_ix) { return; }, in, dim_list, 0), "");
 
   int64_t dim_array_neg[3] = {0, -5, 3};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_neg, 3});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_neg, 3});
 
   ET_EXPECT_DEATH(
       apply_over_dim_list([](size_t in_ix) { return; }, in, dim_list, 0), "");
 
   int64_t dim_array_011[3] = {0, 1, 1};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_011, 3});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_011, 3});
 
   ET_EXPECT_DEATH(
       apply_over_dim_list([](size_t in_ix) { return; }, in, dim_list, 0), "");
 
   int64_t dim_array_1_3[2] = {1, -3};
-  dim_list = std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_1_3, 2});
+  dim_list =
+      std::optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_1_3, 2});
 
   ET_EXPECT_DEATH(
       apply_over_dim_list([](size_t in_ix) { return; }, in, dim_list, 0), "");

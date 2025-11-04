@@ -294,15 +294,17 @@ struct PyBundledModule : public BundledModule {
       uint32_t bundled_input_pool_size)
       : BundledModule(buffer.cast<std::string_view>().data()),
         bundled_program_ptr_(buffer),
-        program_ptr_(static_cast<const void*>(
+        program_ptr_(
+            static_cast<const void*>(
+                bundled_program_flatbuffer::GetBundledProgram(
+                    get_bundled_program_ptr())
+                    ->program()
+                    ->data())),
+        program_len_(
             bundled_program_flatbuffer::GetBundledProgram(
                 get_bundled_program_ptr())
                 ->program()
-                ->data())),
-        program_len_(bundled_program_flatbuffer::GetBundledProgram(
-                         get_bundled_program_ptr())
-                         ->program()
-                         ->size()) {}
+                ->size()) {}
 
   static std::unique_ptr<PyBundledModule> load_from_buffer(
       const py::bytes& buffer,

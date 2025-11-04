@@ -67,7 +67,8 @@ class OpMeanOutTest : public OperatorTest {
 
     // out-of-bound dim in dim list
     int64_t dims_1[1] = {3};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         op_mean_out(self, optional_dim_list, /*keepdim=*/true, dtype, out));
@@ -103,7 +104,8 @@ class OpMeanOutTest : public OperatorTest {
     Tensor out = tf_out.zeros({2, 4});
     std::optional<ScalarType> dtype = OUT_DTYPE;
     int64_t dims_1[1] = {1};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         op_mean_out(self, optional_dim_list, /*keepdim=*/true, dtype, out));
@@ -136,7 +138,8 @@ class OpMeanOutTest : public OperatorTest {
     // keepdim=true should work
     Tensor out = tf_out.zeros({2, 3, 1});
     int64_t dims_1[1] = {2};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
     std::optional<ScalarType> dtype = OUT_DTYPE;
     op_mean_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
     // clang-format off
@@ -229,7 +232,8 @@ class OpMeanOutTest : public OperatorTest {
 
     Tensor out = tf_float.zeros({1, 1, 4});
     int64_t dims[2] = {0, 1};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims, 2}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims, 2}};
     std::optional<ScalarType> dtype = OUT_DTYPE;
     op_mean_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
     EXPECT_TENSOR_CLOSE(
@@ -322,7 +326,8 @@ TEST_F(OpMeanOutTest, MismatchedDTypesDies) {
   // keepdim=true should work
   Tensor out = tf_float.zeros({2, 3, 1});
   int64_t dims_1[1] = {2};
-  std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+  std::optional<ArrayRef<int64_t>> optional_dim_list{
+      ArrayRef<int64_t>{dims_1, 1}};
   std::optional<ScalarType> dtype;
 
   // self tensor must have a floating point dtype when dtype is not specified
@@ -383,7 +388,8 @@ TEST_F(OpMeanOutTest, InfinityAndNANTest) {
 
   Tensor out = tf_float.zeros({2, 3, 1});
   int64_t dims[1] = {-1};
-  std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims, 1}};
+  std::optional<ArrayRef<int64_t>> optional_dim_list{
+      ArrayRef<int64_t>{dims, 1}};
   std::optional<ScalarType> dtype;
   op_mean_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
   // clang-format off

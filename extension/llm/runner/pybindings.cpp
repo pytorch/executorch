@@ -587,11 +587,12 @@ PYBIND11_MODULE(_llm_runner, m) {
         if (audio_tensor.scalar_type() == torch::kUInt8) {
           uint8_t* data = audio_tensor.data_ptr<uint8_t>();
           std::vector<uint8_t> audio_data(data, data + audio_tensor.numel());
-          return MultimodalInput(RawAudio{
-              std::move(audio_data),
-              static_cast<int32_t>(batch_size),
-              static_cast<int32_t>(n_channels),
-              static_cast<int32_t>(n_samples)});
+          return MultimodalInput(
+              RawAudio{
+                  std::move(audio_data),
+                  static_cast<int32_t>(batch_size),
+                  static_cast<int32_t>(n_channels),
+                  static_cast<int32_t>(n_samples)});
         } else {
           throw std::runtime_error(
               "Unsupported raw audio tensor dtype. Only uint8 is supported for raw audio.");

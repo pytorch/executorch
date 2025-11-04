@@ -59,7 +59,8 @@ class OpSumOutTest : public OperatorTest {
 
     // out-of-bound dim in dim list
     int64_t dims_1[1] = {3};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         op_sum_intlist_out(
@@ -97,7 +98,8 @@ class OpSumOutTest : public OperatorTest {
     Tensor out = tf_out.zeros({2, 4});
     std::optional<ScalarType> dtype = OUT_DTYPE;
     int64_t dims_1[1] = {1};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         op_sum_intlist_out(
@@ -211,7 +213,8 @@ class OpSumOutTest : public OperatorTest {
     // keepdim=true should work
     Tensor out = tf_out.zeros({2, 3, 1});
     int64_t dims_1[1] = {2};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
     std::optional<ScalarType> dtype = OUT_DTYPE;
     op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
     // clang-format off
@@ -365,7 +368,8 @@ TEST_F(OpSumOutTest, MismatchedDTypesDies) {
 
   Tensor out = tf_float.zeros({2, 3, 1});
   int64_t dims_1[1] = {2};
-  std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+  std::optional<ArrayRef<int64_t>> optional_dim_list{
+      ArrayRef<int64_t>{dims_1, 1}};
   std::optional<ScalarType> dtype = ScalarType::Double;
 
   // out tensor should be of the same dtype with dtype when dtype is specified
@@ -407,7 +411,8 @@ TEST_F(OpSumOutTest, TypeConversionTest) {
   // clang-format on
 
   int64_t dims_1[1] = {2};
-  std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+  std::optional<ArrayRef<int64_t>> optional_dim_list{
+      ArrayRef<int64_t>{dims_1, 1}};
   std::optional<ScalarType> dtype;
 
   // int -> bool conversion should work
@@ -473,7 +478,8 @@ TEST_F(OpSumOutTest, InfinityAndNANTest) {
 
   Tensor out = tf_float.zeros({2, 3, 1});
   int64_t dims[1] = {-1};
-  std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims, 1}};
+  std::optional<ArrayRef<int64_t>> optional_dim_list{
+      ArrayRef<int64_t>{dims, 1}};
   std::optional<ScalarType> dtype;
   op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
   // clang-format off

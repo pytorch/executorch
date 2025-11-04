@@ -73,7 +73,8 @@ class OpVarOutTest : public OperatorTest {
 
     // out-of-bound dim in dim list
     int64_t dims_1[1] = {3};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         op_var_out(
@@ -119,7 +120,8 @@ class OpVarOutTest : public OperatorTest {
     Tensor out = tf_out.zeros({2, 4});
     std::optional<ScalarType> dtype = OUT_DTYPE;
     int64_t dims_1[1] = {1};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         op_var_out(
@@ -162,7 +164,8 @@ class OpVarOutTest : public OperatorTest {
     // keepdim=true should work
     Tensor out = tf_out.zeros({2, 3, 1});
     int64_t dims_1[1] = {2};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
     std::optional<ScalarType> dtype = OUT_DTYPE;
     op_var_out(
         self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
@@ -343,7 +346,8 @@ TEST_F(OpVarOutTest, InvalidDTypeDies) {
   // keepdim=true should work
   Tensor out = tf_float.zeros({2, 3, 1});
   int64_t dims_1[1] = {2};
-  std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+  std::optional<ArrayRef<int64_t>> optional_dim_list{
+      ArrayRef<int64_t>{dims_1, 1}};
 
   ET_EXPECT_KERNEL_FAILURE(
       context_,
@@ -405,7 +409,8 @@ TEST_F(OpVarOutTest, InfinityAndNANTest) {
 
   Tensor out = tf_float.zeros({2, 3, 1});
   int64_t dims[1] = {-1};
-  std::optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims, 1}};
+  std::optional<ArrayRef<int64_t>> optional_dim_list{
+      ArrayRef<int64_t>{dims, 1}};
   std::optional<ScalarType> dtype;
   op_var_out(self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
   // clang-format off

@@ -195,8 +195,9 @@ runtime::Error Module::load(const Program::Verification verification) {
       for (const auto& data_map : named_data_maps_) {
         raw_data_maps.push_back(data_map.get());
       }
-      auto res_merged = MergedDataMap::load(runtime::Span<const NamedDataMap*>(
-          raw_data_maps.data(), raw_data_maps.size()));
+      auto res_merged = MergedDataMap::load(
+          runtime::Span<const NamedDataMap*>(
+              raw_data_maps.data(), raw_data_maps.size()));
       if (!res_merged.ok()) {
         return res_merged.error();
       }
@@ -329,8 +330,9 @@ runtime::Error Module::set_inputs(
     const std::vector<runtime::EValue>& input_values) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   auto& method = methods_.at(method_name).method;
-  return method->set_inputs(executorch::aten::ArrayRef<runtime::EValue>(
-      input_values.data(), input_values.size()));
+  return method->set_inputs(
+      executorch::aten::ArrayRef<runtime::EValue>(
+          input_values.data(), input_values.size()));
 }
 
 runtime::Error Module::set_output(

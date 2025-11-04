@@ -152,8 +152,7 @@ using quint2x4 = torch::executor::quint2x4;
 using IntArrayRef = torch::executor::IntArrayRef;
 
 template <typename T>
-using OptionalArrayRef =
-    std::optional<torch::executor::ArrayRef<T>>;
+using OptionalArrayRef = std::optional<torch::executor::ArrayRef<T>>;
 using OptionalIntArrayRef = OptionalArrayRef<int64_t>;
 
 using torch::executor::compute_numel;
