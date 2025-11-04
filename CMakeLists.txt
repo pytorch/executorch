@@ -926,6 +926,11 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   list(APPEND _executorch_extensions extension_llm_runner)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/asr/runner)
+  list(APPEND _executorch_extensions extension_asr_runner)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
 endif()

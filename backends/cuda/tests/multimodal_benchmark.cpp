@@ -60,7 +60,8 @@ ModelType parse_model_type(const std::string& model_name) {
       lower_name.begin(),
       [](unsigned char c) { return std::tolower(c); });
 
-  if (lower_name.find("gemma3") != std::string::npos) {
+  if (lower_name.find("gemma3") != std::string::npos ||
+      lower_name.find("gemma-3") != std::string::npos) {
     return ModelType::GEMMA3;
   } else if (lower_name.find("voxtral") != std::string::npos) {
     return ModelType::VOXTRAL;
