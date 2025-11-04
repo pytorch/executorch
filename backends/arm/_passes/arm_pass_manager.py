@@ -155,78 +155,25 @@ class ArmPassManager(PassManager):
         with TosaLoweringContext(self.tosa_spec):
             return self(graph_module).graph_module
 
-    def _tosa_INT_pipeline(
+    def _tosa_pipeline(
         self, exported_program: ExportedProgram, graph_module: GraphModule
     ) -> GraphModule:
         self.add_pass(AnnotateOutputDimOrderPass())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
-        self.add_pass(ConvertSplitToSlicePass())
-        self.add_pass(ConvertMmToBmmPass())
-        self.add_pass(DecomposeMeanDimPass(graph_module, self.tosa_spec))
-        self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
-        self.add_pass(ConvertMinMaxPass())
-        self.add_pass(ConvertAnyDefaultDimDimsPass())
-        self.add_pass(MatchArgDtypePass())
-        if self.tosa_spec.is_U55_subset:
-            self.add_pass(CastToInt32Pass())
-
-        self.add_pass(CastBoolToInt8Pass())
-        self.add_pass(ReplaceScalarWithTensorByProfilePass())
+        self.add_pass(DecomposeGroupNormPass())
+        self.add_pass(DecomposeLayerNormPass())
+        self.add_pass(DecomposeBatchNormNoStatsPass())
+        self.add_pass(DecomposeVarPass())
+        self.add_pass(
+            DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)
+        )
         self.add_pass(AnnotateDecomposedMatmulPass())
-        self.add_pass(QuantizeOperatorArguments())
         self.add_pass(ConvertELUParamsPass())
+        self.add_pass(ConvertSplitToSlicePass())
+        self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
-        self.add_pass(FuseDuplicateUsersPass())
-        self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
-        self.add_pass(MatchArgRanksPass(exported_program))
-        if self.tosa_spec.is_U55_subset:
-            self.add_pass(BroadcastArgsPass())
-        self.add_pass(DecomposeLinearPass())
-        self.add_pass(DecomposeAdaptiveAvgPool2dPass())
-        self.add_pass(DecomposeAvgPool2d())
-        self.add_pass(ComputeConstantOpsAOT(exported_program))
-
-        self.add_pass(DecomposeGroupedConv())
-
-        self.add_pass(ConvertExpandCopyToRepeatPass())
-        self.add_pass(UnsqueezeBeforeRepeatPass())
-        self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
-        self.add_pass(DecomposeCumsumPass(exported_program))
-        self.add_pass(Conv1dUnsqueezePass())
-        self.add_pass(DecomposeMaxPool2DPass())
-        self.add_pass(SizeAdjustInputPass())
-        self.add_pass(DecomposeSelectPass())
-        self.add_pass(ConvertSqueezesToViewPass())
-
-        self.add_pass(FuseViewCopyTransform())
-        self.add_pass(FuseConstantArgsPass(exported_program))
-        self.add_pass(InsertTableOpsPass(exported_program))
-        # If we have a conv2d with int16 activation split up into a convolution
-        # and an addition, to work-around the lack of support for int48 in torch
-        # needs to happen before RewriteConv2dPass, but after the table ops are inserted
-        # to be able to validate that conv2d has right dtype arguments.
-        self.add_pass(DecomposeConv2dWithInt16ActivationPass())
-        self.add_pass(RewriteConv2dPass(exported_program))
-
-        self.add_pass(RewriteMatmulPass())
-        self.add_pass(RewriteUpsamplePass())
-        self.add_pass(FuseEqualPlaceholdersPass(exported_program))
-
-        self.add_pass(InsertRescaleInt32Pass())
-        self.add_pass(DecomposeSumPass())
-        self.add_pass(ToTosaMemoryFormatPass(exported_program))
-        self.add_pass(RemoveNoopPass())
-        self.add_pass(InsertRescalePass())
-
-        self.validate_constraints_mandatory()
-        return self._transform(graph_module)
-
-    def _tosa_FP_pipeline(
-        self, exported_program: ExportedProgram, graph_module: GraphModule
-    ) -> GraphModule:
-        self.add_pass(AnnotateOutputDimOrderPass())
         self.add_pass(FuseDuplicateUsersPass())
         self.add_pass(DecomposeExpm1Pass())
         self.add_pass(DecomposeLogitPass())
@@ -252,32 +199,20 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeRemainderPass())
         self.add_pass(DecomposeDivTensorModePass())
         self.add_pass(DecomposeEmbeddingPass())
-        self.add_pass(FuseQuantizedActivationPass())
-        self.add_pass(RemoveGetItemPass())
-        self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(FuseBatchnorm2DPass(exported_program))
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeGluPass())
         self.add_pass(DecomposeLinearPass())
         self.add_pass(DecomposeLeakyReLUPass())
-        self.add_pass(DecomposeGroupNormPass())
-        self.add_pass(DecomposeLayerNormPass())
-        self.add_pass(DecomposeBatchNormNoStatsPass())
-        self.add_pass(DecomposeVarPass())
-        self.add_pass(DecomposeMeanDimPass(graph_module, self.tosa_spec))
         self.add_pass(DecomposeNotEqualPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeAddSubAlphaPass())
         self.add_pass(DecomposeSoftmaxPass())
         self.add_pass(DecomposeGeluPass())
         self.add_pass(ConvertFullLikeToFullPass())
-        self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
         self.add_pass(MatchArgDtypePass())
-        self.add_pass(AnnotateDecomposedMatmulPass())
-        self.add_pass(QuantizeOperatorArguments())
-        self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
         self.add_pass(DecomposeAdaptiveAvgPool2dPass())
@@ -290,22 +225,26 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeGroupedConv())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
-        self.add_pass(DecomposeSumPass())
         self.add_pass(DecomposeCumsumPass(exported_program))
         self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeMaxPool2DPass())
         self.add_pass(SizeAdjustInputPass())
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
+        self.add_pass(CastToInt32Pass())
+        self.add_pass(BroadcastArgsPass())
 
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
-        self.add_pass(RewriteConv2dPass(exported_program))
+        self.add_pass(DecomposeConv2dWithInt16ActivationPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
-        self.add_pass(RewriteUpsamplePass())
         self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(RewriteUpsamplePass())
+        self.add_pass(RewriteConv2dPass(exported_program))
         self.add_pass(RewriteMatmulPass())
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
+        self.add_pass(InsertRescaleInt32Pass())
+        self.add_pass(DecomposeSumPass())
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(RemoveNoopPass())
         self.add_pass(InsertRescalePass())
@@ -317,10 +256,11 @@ class ArmPassManager(PassManager):
         self, exported_program: ExportedProgram, graph_module: GraphModule
     ):
         """Apply passes before transforming program to backend"""
-        if self.tosa_spec == TosaSpecification.create_from_string("TOSA-1.0+FP"):
-            return self._tosa_FP_pipeline(exported_program, graph_module)
-        elif self.tosa_spec == TosaSpecification.create_from_string("TOSA-1.0+INT"):
-            return self._tosa_INT_pipeline(exported_program, graph_module)
+        if self.tosa_spec in (
+            TosaSpecification.create_from_string("TOSA-1.0+FP"),
+            TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        ):
+            return self._tosa_pipeline(exported_program, graph_module)
         else:
             raise NotImplementedError(
                 f"No pass pipeline implemented for {self.tosa_spec=}"

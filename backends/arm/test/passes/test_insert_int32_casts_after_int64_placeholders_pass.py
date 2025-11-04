@@ -10,7 +10,7 @@ from executorch.backends.arm._passes import InsertInt32CastsAfterInt64Placeholde
 
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
-input_t = Tuple[torch.Tensor]  # Input x
+input_t = Tuple[torch.Tensor, torch.Tensor]  # weights, indices
 
 
 class Int64InputModel(torch.nn.Module):

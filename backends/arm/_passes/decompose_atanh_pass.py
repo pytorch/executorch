@@ -50,6 +50,14 @@ class DecomposeAtanhPass(ArmPass):
         if op is not edge_atanh:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
+            return super().call_operator(op, args, kwargs, meta)
+
         ops = _get_atanh_ops(op)
         (
             op_mul_tensor,
