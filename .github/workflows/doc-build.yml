@@ -46,23 +46,15 @@ jobs:
           export CHANNEL=nightly
         fi
 
-        # Get the version of ExecuTorch from REF_NAME and save as ET_VERSION_DOCS
-        # ET_VERSION_DOCS will be pulled during the doc build to add to the version dropdown
-        # on the website. See docs/source/conf.py for details
-        # Convert refs/tags/v1.12.0rc3 into 1.12
-        # Adopted from https://github.com/pytorch/pytorch/blob/main/.github/workflows/_docs.yml
-
+        # Set RELEASE environment variable for tagged releases
         GITHUB_REF=${{ github.ref }}
-        echo "GITHUB_REF: $GITHUB_REF"
-
-        if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\.[0-9]+) ]]; then
-          ET_VERSION_DOCS="${BASH_REMATCH[1]}"
+        if [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+ ]]; then
+          export RELEASE=true
+          echo "Building release docs (RELEASE=true)"
         else
-          ET_VERSION_DOCS="main"
+          export RELEASE=false
+          echo "Building main docs (RELEASE=false)"
         fi
-
-        export ET_VERSION_DOCS
-        echo "ET_VERSION_DOCS: $ET_VERSION_DOCS"
 
         set -eux
 

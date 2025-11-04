@@ -76,16 +76,38 @@ doxygen_xml_dir = os.path.join(
 
 html_favicon = "_static/img/executorch-chip-logo.svg"
 
-# Get ET_VERSION_DOCS during the build.
-# The version is already parsed in the workflow (e.g., "1.12" or "main")
-# Adopted from PyTorch docs workflow pattern
-et_version_docs = os.environ.get("ET_VERSION_DOCS", "main")
-print(f"et_version_docs: {et_version_docs}")
+# Import executorch version
+# Adopted from PyTorch docs pattern
+from executorch import version as et_version
 
-# The version variable is used in layout.html and version switcher
-version = release = et_version_docs
-print(f"Version: {version}")
-html_title = " ".join((project, version, "documentation"))
+executorch_version = str(et_version.__version__)
+
+# Check if this is a release build
+RELEASE = os.environ.get("RELEASE", False)
+
+# The version info for the project you're documenting, acts as replacement for
+# |version| and |release|, also used in various other places throughout the
+# built documents.
+#
+# The short X.Y version.
+version = "main (" + executorch_version + " )"
+# The full version, including alpha/beta/rc tags.
+release = "main"
+
+# Customized html_title here.
+# Default is " ".join(project, release, "documentation") if not set
+if RELEASE:
+    # Turn 0.8.0a0+a90e907 into 0.8
+    # Note: the release candidates should no longer have the aHASH suffix, but in any
+    # case we wish to leave only major.minor, even for rc builds.
+    version = ".".join(executorch_version.split("+")[0].split(".")[:2])
+    html_title = " ".join((project, version, "documentation"))
+    release = version
+
+switcher_version = "main" if not RELEASE else version
+
+print(f"executorch_version: {executorch_version}")
+print(f"Version: {version}, RELEASE: {RELEASE}")
 
 html_baseurl = "https://docs.pytorch.org/executorch/"  # needed for sphinx-sitemap
 sitemap_locales = [None]
@@ -167,8 +189,6 @@ html_theme_path = [pytorch_sphinx_theme2.get_html_theme_path()]
 # documentation.
 #
 
-switcher_version = version
-
 html_theme_options = {
     "logo": {
         "image_light": "_static/img/et-logo.png",
@@ -235,7 +255,7 @@ html_context = {
 
 # Control the noindex meta tag based on version
 # Only add noindex for main branch (not stable releases)
-if version == "main":
+if not RELEASE:
     html_meta = {
         "robots": "noindex",
     }
