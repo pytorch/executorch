@@ -114,7 +114,7 @@ def _patch_build_mode_flags(kwargs):
 
     kwargs["compiler_flags"] = kwargs["compiler_flags"] + select({
             "DEFAULT": [],
-            "ovr_config//os:macos": ["-fvisibility=default"],
+            # @oss-disable: "ovr_config//os:macos": ["-fvisibility=default"],
     })
 
     return kwargs
