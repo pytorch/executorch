@@ -757,6 +757,11 @@ class CustomBuild(build):
             cmake_build_args += ["--target", "custom_ops_aot_lib"]
             cmake_build_args += ["--target", "quantized_ops_aot_lib"]
 
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_QNN"):
+            cmake_build_args += ["--target", "qnn_executorch_backend"]
+            cmake_build_args += ["--target", "PyQnnManagerAdaptor"]
+            cmake_build_args += ["--target", "PyQnnWrapperAdaptor"]
+
         # Set PYTHONPATH to the location of the pip package.
         os.environ["PYTHONPATH"] = (
             site.getsitepackages()[0] + ";" + os.environ.get("PYTHONPATH", "")
@@ -852,13 +857,13 @@ setup(
             dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
         ),
         BuiltExtension(
-            src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/python/%BUILD_TYPE%/",
+            src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
             src="PyQnnManagerAdaptor.*",
             modpath="executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
             dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
         ),
         BuiltExtension(
-            src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/python/%BUILD_TYPE%/",
+            src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
             src="PyQnnWrapperAdaptor.*",
             modpath="executorch.backends.qualcomm.python.PyQnnWrapperAdaptor",
             dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
