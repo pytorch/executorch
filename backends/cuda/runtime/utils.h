@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <cuda_runtime.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -17,6 +18,45 @@
 #include <cstdint>
 #include <vector>
 
+// CUDA error checking macro (with return)
+#define ET_CUDA_CHECK_OR_RETURN_ERROR(EXPR) \
+  do {                                      \
+    const cudaError_t err = EXPR;           \
+    if (err == cudaSuccess) {               \
+      break;                                \
+    }                                       \
+    ET_LOG(                                 \
+        Error,                              \
+        "%s:%d CUDA error: %s",             \
+        __FILE__,                           \
+        __LINE__,                           \
+        cudaGetErrorString(err));           \
+    return Error::Internal;                 \
+  } while (0)
+
+// CUDA error checking macro (without return, for use in void functions)
+#define ET_CUDA_CHECK(EXPR)                                         \
+  do {                                                              \
+    const cudaError_t err = EXPR;                                   \
+    if (err == cudaSuccess) {                                       \
+      break;                                                        \
+    }                                                               \
+    ET_LOG(                                                         \
+        Error,                                                      \
+        "%s:%d CUDA error: %s",                                     \
+        __FILE__,                                                   \
+        __LINE__,                                                   \
+        cudaGetErrorString(err));                                   \
+    ET_CHECK_MSG(false, "CUDA error: %s", cudaGetErrorString(err)); \
+  } while (0)
+
+// Kernel launch check macro (with return)
+#define ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR() \
+  ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetLastError())
+
+// Kernel launch check macro (without return, for use in void functions)
+#define ET_CUDA_KERNEL_LAUNCH_CHECK() ET_CUDA_CHECK(cudaGetLastError())
+
 namespace executorch {
 namespace backends {
 namespace cuda {
@@ -24,10 +64,30 @@ namespace cuda {
 // Common using declarations for ExecuTorch types
 using executorch::runtime::Error;
 
+// Enum for supported data types in et-cuda backend
+enum class SupportedDTypes : int32_t {
+  INT8 = 1, // PyTorch's int8 dtype code
+  INT16 = 2, // PyTorch's int16 dtype code
+  INT32 = 3, // PyTorch's int32 dtype code
+  INT64 = 4, // PyTorch's int64 dtype code
+  FLOAT32 = 6, // PyTorch's float32 dtype code
+  BFLOAT16 = 15, // PyTorch's bfloat16 dtype code
+};
+
+// Enum for supported device types in et-cuda backend
+enum class SupportedDevices : int32_t {
+  CPU = 0, // CPU device
+  CUDA = 1, // CUDA device
+};
+
 extern "C" {
 
 // Common AOTI type aliases
-using AOTITorchError = Error;
+// AOTITorchError is int32_t to match AOTI shim layer convention
+using AOTITorchError = int32_t;
+
+// Storage offset validation utility function
+inline AOTITorchError validate_storage_offset(int64_t storage_offset) {
 
 // Map int32_t dtype to ExecuTorch ScalarType (robust version of hardcoded
 // ScalarType::Float)

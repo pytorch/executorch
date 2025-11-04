@@ -36,4 +36,3 @@ using AOTITorchError = int32_t;
 // work without any change, e.g. c10::DeviceType::CUDA will actually refer to
 // executorch::backends::cuda::c10::DeviceType::CUDA
 using namespace executorch::backends::cuda;
-using namespace executorch::backends::cuda::c10;

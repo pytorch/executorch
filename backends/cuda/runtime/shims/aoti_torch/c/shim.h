@@ -16,8 +16,6 @@
 
 using AtenTensorOpaque = executorch::backends::cuda::slim::SlimTensor;
 using AtenTensorHandle = executorch::backends::cuda::slim::SlimTensor *;
-using namespace executorch::backends::cuda::c10;
-
 
 // AOTIProxyExecutorHandle isn't supported in standalone mode.
 // Just defining it to void* to make the code compile
@@ -30,7 +28,7 @@ extern "C" {
 // DeviceType
 #define AOTI_TORCH_DEVICE_TYPE_IMPL(device_str, device_type)                   \
   AOTI_TORCH_EXPORT int32_t aoti_torch_device_type_##device_str() {            \
-    return (int32_t)DeviceType::device_type;                              \
+    return (int32_t) executorch::backends::cuda::c10::DeviceType::device_type;                              \
   }
 
 AOTI_TORCH_DEVICE_TYPE_IMPL(cpu, CPU)
@@ -42,7 +40,7 @@ AOTI_TORCH_DEVICE_TYPE_IMPL(xpu, XPU)
 // SclarType
 #define AOTI_TORCH_DTYPE_IMPL(dtype, stype)                                    \
   AOTI_TORCH_EXPORT int32_t aoti_torch_dtype_##dtype() {                       \
-    return (int32_t)ScalarType::stype;                                    \
+    return (int32_t) executorch::backends::cuda::c10::ScalarType::stype;                                    \
   }
 
 AOTI_TORCH_DTYPE_IMPL(float8_e5m2, Float8_e5m2)
@@ -69,7 +67,7 @@ AOTI_TORCH_DTYPE_IMPL(complex128, ComplexDouble)
 
 #define AOTI_TORCH_LAYOUT_IMPL(name, enum)                                     \
   AOTI_TORCH_EXPORT int32_t aoti_torch_layout_##name() {                       \
-    return (int32_t)Layout::enum;                                         \
+    return (int32_t) executorch::backends::cuda::c10::Layout::enum;                                         \
   }
 
 AOTI_TORCH_LAYOUT_IMPL(strided, Strided)
@@ -84,7 +82,7 @@ AOTI_TORCH_LAYOUT_IMPL(jagged, Jagged)
 
 #define AOTI_TORCH_MEMORY_FORMAT_IMPL(name, enum)                              \
   AOTI_TORCH_EXPORT int32_t aoti_torch_memory_format_##name() {                \
-    return (int32_t)MemoryFormat::enum;                                   \
+    return (int32_t) executorch::backends::cuda::c10::MemoryFormat::enum;                                   \
   }
 
 AOTI_TORCH_MEMORY_FORMAT_IMPL(contiguous_format, Contiguous)
@@ -112,8 +110,8 @@ AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(int16, int16_t)
 AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(int32, int32_t)
 AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(int64, int64_t)
 AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(bool, bool)
-AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(complex64, complex<float>)
-AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(complex128, complex<double>)
+AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(complex64, executorch::backends::cuda::c10::complex<float>)
+AOTI_TORCH_SCALAR_TO_TENSOR_IMPL(complex128, executorch::backends::cuda::c10::complex<double>)
 #undef AOTI_TORCH_SCALAR_TO_TENSOR_IMPL
 
 AOTI_TORCH_EXPORT bool aoti_torch_grad_mode_is_enabled() { return false; }
@@ -201,13 +199,13 @@ AOTI_TORCH_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob(
     const int64_t *strides_ptr, int64_t storage_offset, int32_t dtype,
     int32_t device_type, int32_t device_index,
     AtenTensorHandle *ret_new_tensor) {
-  IntArrayRef sizes(sizes_ptr, ndim);
-  IntArrayRef strides(strides_ptr, ndim);
+  executorch::backends::cuda::c10::IntArrayRef sizes(sizes_ptr, ndim);
+  executorch::backends::cuda::c10::IntArrayRef strides(strides_ptr, ndim);
   *ret_new_tensor =
       new executorch::backends::cuda::slim::SlimTensor(executorch::backends::cuda::slim::from_blob(
-          data, sizes, strides, static_cast<ScalarType>(dtype),
-          {static_cast<DeviceType>(device_type),
-           static_cast<DeviceIndex>(device_index)},
+          data, sizes, strides, static_cast<executorch::backends::cuda::c10::ScalarType>(dtype),
+          {static_cast<executorch::backends::cuda::c10::DeviceType>(device_type),
+           static_cast<executorch::backends::cuda::c10::DeviceIndex>(device_index)},
           storage_offset));
   return AOTI_TORCH_SUCCESS;
 }
@@ -218,13 +216,13 @@ AOTI_TORCH_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     int32_t device_type, int32_t device_index, AtenTensorHandle *ret_new_tensor,
     int32_t layout, const uint8_t *opaque_metadata,
     int64_t opaque_metadata_size) {
-  IntArrayRef sizes(sizes_ptr, ndim);
-  IntArrayRef strides(strides_ptr, ndim);
+  executorch::backends::cuda::c10::IntArrayRef sizes(sizes_ptr, ndim);
+  executorch::backends::cuda::c10::IntArrayRef strides(strides_ptr, ndim);
   *ret_new_tensor =
       new executorch::backends::cuda::slim::SlimTensor(executorch::backends::cuda::slim::from_blob(
-          data, sizes, strides, static_cast<ScalarType>(dtype),
-          {static_cast<DeviceType>(device_type),
-           static_cast<DeviceIndex>(device_index)},
+          data, sizes, strides, static_cast<executorch::backends::cuda::c10::ScalarType>(dtype),
+          {static_cast<executorch::backends::cuda::c10::DeviceType>(device_type),
+           static_cast<executorch::backends::cuda::c10::DeviceIndex>(device_index)},
           storage_offset));
   return AOTI_TORCH_SUCCESS;
 }
@@ -233,12 +231,12 @@ AOTI_TORCH_EXPORT AOTITorchError aoti_torch_empty_strided(
     int64_t ndim, const int64_t *sizes_ptr, const int64_t *strides_ptr,
     int32_t dtype, int32_t device_type, int32_t device_index,
     AtenTensorHandle *ret_new_tensor) {
-  IntArrayRef sizes(sizes_ptr, ndim);
-  IntArrayRef strides(strides_ptr, ndim);
+  executorch::backends::cuda::c10::IntArrayRef sizes(sizes_ptr, ndim);
+  executorch::backends::cuda::c10::IntArrayRef strides(strides_ptr, ndim);
   auto empty_strided = executorch::backends::cuda::slim::empty_strided(
-          sizes, strides, static_cast<ScalarType>(dtype),
-          {static_cast<DeviceType>(device_type),
-           static_cast<DeviceIndex>(device_index)});
+          sizes, strides, static_cast<executorch::backends::cuda::c10::ScalarType>(dtype),
+          {static_cast<executorch::backends::cuda::c10::DeviceType>(device_type),
+           static_cast<executorch::backends::cuda::c10::DeviceIndex>(device_index)});
   *ret_new_tensor =
       new executorch::backends::cuda::slim::SlimTensor(empty_strided);
   return AOTI_TORCH_SUCCESS;
@@ -248,8 +246,8 @@ AOTI_TORCH_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
     AtenTensorHandle self, int64_t ndim, const int64_t *sizes_ptr,
     const int64_t *strides_ptr, int64_t offset_increment,
     AtenTensorHandle *ret_new_tensor) {
-  IntArrayRef sizes(sizes_ptr, ndim);
-  IntArrayRef strides(strides_ptr, ndim);
+  executorch::backends::cuda::c10::IntArrayRef sizes(sizes_ptr, ndim);
+  executorch::backends::cuda::c10::IntArrayRef strides(strides_ptr, ndim);
   *ret_new_tensor = new executorch::backends::cuda::slim::SlimTensor(
       self->storage(), sizes, strides, self->dtype(),
       self->storage_offset() + offset_increment);
@@ -259,8 +257,8 @@ AOTI_TORCH_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
 AOTI_TORCH_EXPORT AOTITorchError
 aoti_torch_as_strided(AtenTensorHandle self, const int64_t *sizes_ptr,
                       const int64_t *strides_ptr, AtenTensorHandle *ret) {
-  IntArrayRef sizes(sizes_ptr, self->dim());
-  IntArrayRef strides(strides_ptr, self->dim());
+  executorch::backends::cuda::c10::IntArrayRef sizes(sizes_ptr, self->dim());
+  executorch::backends::cuda::c10::IntArrayRef strides(strides_ptr, self->dim());
   *ret = new executorch::backends::cuda::slim::SlimTensor(
       self->storage(), sizes, strides, self->dtype(), self->storage_offset());
   return AOTI_TORCH_SUCCESS;
