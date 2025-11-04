@@ -106,7 +106,8 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
 def get_8a8w_qnn_ptq_config(
     act_symmetric: bool = False, act_observer=MovingAverageMinMaxObserver
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    # the smallest scale: 0.0001 / 255
+    extra_args: Dict[str, Any] = {"eps": 2**-21}
 
     act_quantization_spec = QuantizationSpec(
         dtype=torch.uint8,
@@ -147,7 +148,8 @@ def get_8a8w_qnn_ptq_config(
 def get_8a4w_qnn_ptq_config(
     act_symmetric: bool = True, act_observer=MovingAverageMinMaxObserver
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    # the smallest scale: 0.0001 / 255
+    extra_args: Dict[str, Any] = {"eps": 2**-21}
 
     if act_symmetric:
         # If zero_point is 128, htp can do optimizations.
@@ -203,7 +205,8 @@ def get_8a4w_qnn_ptq_config(
 def get_16a4w_qnn_ptq_config(
     act_observer=MovingAverageMinMaxObserver,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-20}
+    # the smallest scale: 0.0001 / 65535
+    extra_args: Dict[str, Any] = {"eps": 2**-29}
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
@@ -242,7 +245,8 @@ def get_16a4w_qnn_ptq_config(
 def get_16a8w_qnn_ptq_config(
     act_observer=MovingAverageMinMaxObserver,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-20}
+    # the smallest scale: 0.0001 / 65535
+    extra_args: Dict[str, Any] = {"eps": 2**-29}
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
@@ -279,7 +283,8 @@ def get_16a8w_qnn_ptq_config(
 def get_16a8w_qnn_qat_config(
     act_observer=MovingAverageMinMaxObserver,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-20}
+    # the smallest scale: 0.0001 / 65535
+    extra_args: Dict[str, Any] = {"eps": 2**-29}
     act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
@@ -336,7 +341,8 @@ def get_16a8w_qnn_qat_config(
 def get_16a16w_qnn_ptq_config(
     act_observer=MovingAverageMinMaxObserver,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-20}
+    # the smallest scale: 0.0001 / 65535
+    extra_args: Dict[str, Any] = {"eps": 2**-29}
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
@@ -380,7 +386,8 @@ def get_ptq_per_channel_quant_config(
     act_symmetric: bool = False,
     ch_axis: int = 0,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    # the smallest scale: 0.0001 / 65535
+    extra_args: Dict[str, Any] = {"eps": 2**-29}
 
     supported_act_types = {
         torch.uint8,
@@ -451,7 +458,8 @@ def get_ptq_per_block_quant_config(
     act_symmetric: bool = False,
     ch_axis: int = 0,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    # the smallest scale: 0.0001 / 65535
+    extra_args: Dict[str, Any] = {"eps": 2**-29}
     quantization_config = get_ptq_per_channel_quant_config(
         act_dtype=act_dtype,
         weight_dtype=weight_dtype,

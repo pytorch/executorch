@@ -114,6 +114,120 @@ class LlamaAttention(nn.Module):
                 persistent=False,
             )
 
+    def prepare_attention_conv(self):
+        self.wq_conv = nn.Conv2d(
+            self.dim,
+            self.n_heads * self.head_dim,
+            1,
+            bias=getattr(self.config, "attention_qkv_bias", False),
+        )
+        self.wk_conv = nn.Conv2d(
+            self.dim,
+            self.n_kv_heads * self.head_dim,
+            1,
+            bias=getattr(self.config, "attention_qkv_bias", False),
+        )
+        self.wv_conv = nn.Conv2d(
+            self.dim,
+            self.n_kv_heads * self.head_dim,
+            1,
+            bias=getattr(self.config, "attention_qkv_bias", False),
+        )
+        self.wo_conv = nn.Conv2d(self.n_heads * self.head_dim, self.dim, 1, bias=False)
+
+        self.forward_no_conv = self.forward
+        self.forward = self.forward_attention_conv
+
+        self.wq_conv.weight.data.copy_(self.wq.weight[:, :, None, None])
+        if self.wq_conv.bias is not None:
+            self.wq_conv.bias.data.copy_(self.wq.bias)
+        self.wk_conv.weight.data.copy_(self.wk.weight[:, :, None, None])
+        if self.wk_conv.bias is not None:
+            self.wk_conv.bias.data.copy_(self.wk.bias)
+        self.wv_conv.weight.data.copy_(self.wv.weight[:, :, None, None])
+        if self.wv_conv.bias is not None:
+            self.wv_conv.bias.data.copy_(self.wv.bias)
+        self.wo_conv.weight.data.copy_(self.wo.weight[:, :, None, None])
+
+        del self.wq
+        del self.wk
+        del self.wv
+        del self.wo
+
+    def forward_attention_conv(
+        self,
+        hidden_states: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+        atten_mask: torch.Tensor,
+        k_caches: List[torch.Tensor],
+        v_caches: List[torch.Tensor],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        bsz, seq_len, _ = hidden_states.shape
+        hidden_states = torch.reshape(
+            hidden_states, (bsz, seq_len, 1, self.dim)
+        ).transpose(1, 3)
+
+        q = self.wq_conv(hidden_states)
+        k = self.wk_conv(hidden_states)
+        v = self.wv_conv(hidden_states)
+        q = q.permute(0, 3, 1, 2).squeeze(-1)
+        k = k.permute(0, 3, 1, 2).squeeze(-1)
+        v = v.permute(0, 3, 1, 2).squeeze(-1)
+        q = q.view(bsz, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
+        k = k.view(bsz, seq_len, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        v = v.view(bsz, seq_len, self.n_kv_heads, self.head_dim).transpose(1, 2)
+
+        if self.use_qk_norm and self.qk_norm_before_rope:
+            q = self.q_norm_fn(q)
+            k = self.k_norm_fn(k)
+
+        if self.use_rope:
+            q = self.apply_rope_emb(q, freqs_cos, freqs_sin)
+            k = self.apply_rope_emb(k, freqs_cos, freqs_sin)
+
+        if self.use_qk_norm and not self.qk_norm_before_rope:
+            q = self.q_norm_fn(q)
+            k = self.k_norm_fn(k)
+        if getattr(self.config, "enable_r3", False):
+            q = torch.matmul(q, self.r3_weight)
+            k = torch.matmul(k, self.r3_weight)
+        k = k.transpose(2, 3)
+
+        kh, vh = None, None
+        # kv cache mode
+        if self.use_kv_cache:
+            kh = torch.cat([k_caches, k], dim=-1)
+            vh = torch.cat([v_caches, v], dim=2)
+        # batch_prefill mode
+        else:
+            kh = k
+            vh = v
+
+        kh = repeat_kv(kh, self.num_key_value_groups)
+        vh = repeat_kv(vh, self.num_key_value_groups)
+
+        attn = q @ kh
+        attn = attn / self.scale
+        if self.enable_masked_softmax:
+            attn_min = torch.amin(attn, dim=-1, keepdim=True)
+            minus_value = -20
+            attn = torch.where(atten_mask == 0, attn, attn_min + minus_value)
+        else:
+            attn = attn + atten_mask
+        attn = self.attn_softmax(attn)
+        y = attn @ vh
+        y = y.transpose(1, 2)
+        y = y.reshape(bsz, seq_len, 1, -1).transpose(1, 3)
+        y = self.wo_conv(y)
+        y = y.transpose(1, 3)
+        y = y.reshape(bsz, seq_len, -1)
+
+        if self.output_new_cache_only:
+            return y, [k], [v]
+
+        return y, [kh], [vh]
+
     def forward(
         self,
         hidden_states: torch.Tensor,

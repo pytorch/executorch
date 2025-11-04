@@ -145,8 +145,7 @@ class ConvertMhaToSha(ExportPass):
         matmul = qkv[0][2]
         attn_output = matmul
         sha_axis = 1
-        remove_nodes = [permute, reshape]
-
+        remove_nodes = [permute]
         # the shape of attn_output should be [bhsd]
         shape = _shape(attn_output.args[0])
         heads = shape[sha_axis]

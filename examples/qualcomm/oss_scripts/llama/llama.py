@@ -638,6 +638,9 @@ def compile(
 
     for llama_instance in llama_instance_list:
         for layer in llama_instance.layers:
+            if getattr(layer.attention, "prepare_attention_conv", None):
+                layer.attention.prepare_attention_conv()
+
             if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
                 layer.feed_forward.prepare_feedfoward_conv()
 

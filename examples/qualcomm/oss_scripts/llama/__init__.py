@@ -369,7 +369,7 @@ class Qwen2_5_0_5B(LLMModelConfig):
     seq_mse_candidates = 0
     r1 = False
     r2 = False
-    r3 = False
+    r3 = True
     quant_recipe = Qwen2_5_0_5BQuantRecipe
 
 
@@ -388,7 +388,7 @@ class Qwen2_5_1_5B(LLMModelConfig):
     seq_mse_candidates = 0
     r1 = False
     r2 = False
-    r3 = False
+    r3 = True
     quant_recipe = Qwen2_5_1_5BQuantRecipe
 
 
@@ -445,7 +445,7 @@ class Smollm2_135M(LLMModelConfig):
     seq_mse_candidates = 0
     r1 = False
     r2 = False
-    r3 = False
+    r3 = True
     quant_recipe = Smollm2QuantRecipe
 
 
