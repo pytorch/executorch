@@ -80,12 +80,7 @@ class TestPasses(unittest.TestCase):
         mod = convert_linear_to_conv2d(LlamaAttention(0, args, True))
 
         # Prepare inputs
-        hidden_states = torch.randint(
-            low=0,
-            high=100,
-            size=(args.max_batch_size, args.ar_len, args.dim),
-            dtype=torch.float32,
-        )
+        hidden_states = torch.randn(args.max_batch_size, args.ar_len, args.dim)
         freqs_cos = torch.randn(args.ar_len, 1)
         freqs_sin = torch.randn(args.ar_len, 1)
         atten_mask = CausalAttentionMask(
@@ -112,6 +107,9 @@ class TestPasses(unittest.TestCase):
             k_cache,
             v_cache,
         )
+
+        # Run original module for reference
+        refs = mod(*sample_input)
 
         # Export the module and convert linear to conv2d
         edge_program = to_edge(torch.export.export(mod, sample_input))
@@ -140,6 +138,16 @@ class TestPasses(unittest.TestCase):
         ]
         # Check graph structure: WQ, WK, WV should be converted to SHA
         self.assertTrue(len(conv_nodes) == 25, "Convolution nodes should be splited")
+
+        # Execute new graph and compare with reference
+        outs = graph_module(
+            *new_ep.state_dict.values(), *new_ep.constants.values(), *sample_input
+        )
+        for i, (out, ref) in enumerate(zip(outs, refs)):
+            self.assertTrue(
+                torch.allclose(out, *ref, rtol=1e-6, atol=1e-6),
+                f"Output {i} mismatch: got {out}, expected {ref}",
+            )
 
 
 if __name__ == "__main__":
