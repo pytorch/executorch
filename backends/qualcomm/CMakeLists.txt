@@ -23,13 +23,34 @@ get_filename_component(
   _common_include_directories "${EXECUTORCH_SOURCE_DIR}/.." ABSOLUTE
 )
 
-if(NOT DEFINED QNN_SDK_ROOT)
-  message(
-    FATAL_ERROR
-      "Please define QNN_SDK_ROOT, e.g. cmake <..> -DQNN_SDK_ROOT=<...>"
+if(EXECUTORCH_BUILD_PYBIND)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  message(STATUS "QNN_SDK_ROOT not provided, downloading Qualcomm SDK")
+  execute_process(
+    COMMAND
+      ${Python3_EXECUTABLE}
+      ${EXECUTORCH_SOURCE_DIR}/backends/qualcomm/scripts/download_qnn_sdk.py
+      --print-sdk-path
+    WORKING_DIRECTORY ${EXECUTORCH_SOURCE_DIR}
+    RESULT_VARIABLE _qnn_sdk_download_result
+    OUTPUT_VARIABLE _qnn_sdk_download_output
+    ERROR_VARIABLE _qnn_sdk_download_error
+    OUTPUT_STRIP_TRAILING_WHITESPACE
   )
-elseif(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
-  message(FATAL_ERROR "ios is not supported by Qualcomm AI Engine Direct")
+  if(NOT _qnn_sdk_download_result EQUAL 0
+      OR _qnn_sdk_download_output STREQUAL "")
+    message(
+      FATAL_ERROR
+        "Failed to download Qualcomm SDK. stdout: ${_qnn_sdk_download_output}\n"
+        "stderr: ${_qnn_sdk_download_error}"
+    )
+  endif()
+  set(
+    QNN_SDK_ROOT
+    ${_qnn_sdk_download_output}
+    CACHE PATH "Qualcomm SDK root directory" FORCE
+  )
+  set(ENV{QNN_SDK_ROOT} ${QNN_SDK_ROOT})
 endif()
 
 message(STATUS "Using qnn sdk root ${QNN_SDK_ROOT}")
@@ -214,7 +235,9 @@ add_subdirectory(
 install(
   TARGETS qnn_executorch_backend
   EXPORT ExecuTorchTargets
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
+  RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
 )
 
 # QNN pybind
@@ -274,5 +297,11 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   add_subdirectory(
     ${QNN_EXECUTORCH_ROOT_DIR}/aot/python
     ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/python
+  )
+
+  install(
+    TARGETS PyQnnManagerAdaptor PyQnnWrapperAdaptor
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm/python
+    RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm/python
   )
 endif()
