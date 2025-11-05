@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 """Provide a partitioner for delegating subgraphs to the TOSA backend.
 
 Implement logic to identify and tag regions of an ``ExportedProgram`` that can
@@ -23,6 +22,7 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
+from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
@@ -89,7 +89,8 @@ def is_noop_to_dim_order_copy(node: torch.fx.node.Node) -> bool:
     if node.target != exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
         return False
     else:
-        return node.meta.get("dtype") == get_first_fake_tensor(node.args[0]).dtype  # type: ignore[arg-type]
+        input_node = ensure_type(torch.fx.Node, node.args[0])
+        return node.meta.get("dtype") == get_first_fake_tensor(input_node).dtype
 
 
 def is_noop_expand(node: torch.fx.node.Node) -> bool:
@@ -192,7 +193,7 @@ class TOSAPartitioner(Partitioner):
         """Tag nodes in a module, possibly a submodule, from the containing program.
 
         Args:
-            module: a GraphModule from `containing_program` to tag nodes in.
+            module: A GraphModule from `containing_program` to tag nodes in.
             containing_program: The ExportedProgram that contains the module.
             reporter: A reporter to report why nodes were rejected.
         Returns:
@@ -337,6 +338,7 @@ class TOSAPartitioner(Partitioner):
         ops_to_not_decompose_if_quant_op = [
             torch.ops.aten.hardsigmoid.default,
             torch.ops.aten.hardswish.default,
+            torch.ops.aten.linear.default,
         ]
 
         def filter_fn(node: torch.fx.Node) -> bool:
@@ -354,31 +356,45 @@ class TOSAPartitioner(Partitioner):
                 bool: True to keep the op intact; otherwise, False.
 
             """
-            dq = torch.ops.quantized_decomposed.dequantize_per_tensor.default
-            q = torch.ops.quantized_decomposed.quantize_per_tensor.default
+            dq = (
+                torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+                torch.ops.quantized_decomposed.dequantize_per_channel.default,
+            )
+            q = (
+                torch.ops.quantized_decomposed.quantize_per_tensor.default,
+                torch.ops.quantized_decomposed.quantize_per_channel.default,
+            )
 
             if node.target in ops_to_not_decompose_if_quant_op:
                 # Assume we should not decompose the operator (it is quantized)
-                should_not_decompose = True
+                correct_output_quant = True
+                correct_input_quant = True
 
                 input_nodes = node.all_input_nodes
-                ouput_nodes = node.users
+                output_nodes = node.users
 
                 for inp in input_nodes:
-                    if inp.target != dq:
-                        should_not_decompose = False
+                    if inp.target not in dq:
+                        correct_input_quant = False
 
-                for out in ouput_nodes:
-                    if out.target != q:
-                        should_not_decompose = False
+                for out in output_nodes:
+                    if out.target not in q:
+                        correct_output_quant = False
+                # In some cases, a linear is quantized together with its activation.
+                if (
+                    node.target == torch.ops.aten.linear.default
+                    and len(output_nodes) == 1
+                    and list(output_nodes)[0].target
+                    in (torch.ops.aten.relu.default, torch.ops.aten.hardtanh.default)
+                ):
+                    correct_output_quant = True
 
-                return should_not_decompose
+                return correct_input_quant and correct_output_quant
 
             # By default, do not decompose the operator
             return True
 
         ops_to_not_decompose = [
-            torch.ops.aten.linear.default,
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.logit.default,

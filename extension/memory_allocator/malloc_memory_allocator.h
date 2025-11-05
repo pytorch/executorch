@@ -58,9 +58,21 @@ class MallocMemoryAllocator : public executorch::runtime::MemoryAllocator {
       // To get higher alignments, allocate extra and then align the returned
       // pointer. This will waste an extra `alignment` bytes every time, but
       // this is the only portable way to get aligned memory from the heap.
+
+      // Check for overflow before adding alignment to size
+      if (size > SIZE_MAX - alignment) {
+        ET_LOG(
+            Error, "Size %zu + alignment %zu would overflow", size, alignment);
+        return nullptr;
+      }
       size += alignment;
     }
-    mem_ptrs_.emplace_back(std::malloc(size));
+    void* mem_ptr = std::malloc(size);
+    if (mem_ptr == nullptr) {
+      ET_LOG(Error, "Failed to allocate %zu bytes", size);
+      return nullptr;
+    }
+    mem_ptrs_.emplace_back(mem_ptr);
     return alignPointer(mem_ptrs_.back(), alignment);
   }
 

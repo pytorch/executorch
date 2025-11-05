@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 """Provide PyTorch-to-TOSA mapping helpers.
 
 Use these utilities to translate PyTorch dtypes and FX node metadata into
@@ -17,6 +16,8 @@ from typing import Any, Optional, Sequence
 import torch
 import tosa_serializer as ts
 from executorch.backends.arm.tosa.specification import TosaSpecification
+
+TOSA_TENSOR_NAME_META = "tosa_tensor_name"
 
 UNSUPPORTED_DTYPES = (
     torch.float64,
@@ -145,7 +146,7 @@ class TosaArg:
             argument (torch.fx.Node): FX node to inspect.
 
         """
-        self.name: str = argument.name
+        self.name = argument.name + argument.meta.get(TOSA_TENSOR_NAME_META, "")
         output_dtype, self.shape, self.dim_order = extract_tensor_meta(
             argument.meta, self.tosa_spec
         )

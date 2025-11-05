@@ -42,6 +42,7 @@ from .decompose_div_tensor_mode import DecomposeDivTensorModePass  # noqa
 from .decompose_elu_pass import DecomposeEluPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
+from .decompose_floor_divide_pass import DecomposeFloorDividePass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv import DecomposeGroupedConv  # noqa
@@ -58,6 +59,7 @@ from .decompose_masked_fill import DecomposeMaskedFill  # noqa
 from .decompose_maxpool2d_with_dilation import DecomposeMaxPool2DPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
+from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_sign_pass import DecomposeSignPass  # noqa
@@ -72,10 +74,10 @@ from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass 
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
     QuantizeOperatorArguments,
-    RetraceFoldedDtypesPass,
 )
 from .fuse_batchnorm2d_pass import FuseBatchnorm2DPass  # noqa
 from .fuse_constant_ops_pass import ComputeConstantOpsAOT, FuseConstantArgsPass  # noqa
+from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .insert_int32_casts_after_int64_placeholders import (  # noqa
@@ -88,8 +90,7 @@ from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
 from .remove_noop_pass import RemoveNoopPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
-    ReplaceScalarWithTensorArgPassTOSABI,
-    ReplaceScalarWithTensorArgPassTOSAMI,
+    ReplaceScalarWithTensorByProfilePass,
 )
 from .rewrite_conv2d_pass import RewriteConv2dPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa

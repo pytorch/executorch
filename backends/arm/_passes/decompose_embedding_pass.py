@@ -3,8 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
 
 import logging
 from math import prod
@@ -44,7 +42,7 @@ class DecomposeEmbeddingPass(ArmPass):
     def get_decomposition(self, op):
         if op in self.aten_ops:
             return (
-                torch.ops.aten.view_copy.default,
+                torch.ops.aten.reshape.default,
                 torch.ops.aten.index_select.default,
             )
 

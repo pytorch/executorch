@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Set, Type
 
@@ -23,6 +22,14 @@ class ConvertIntPowToMuls(ArmPass):
 
     def call_operator(self, op, args, kwargs, meta):
         if op != exir_ops.edge.aten.pow.Tensor_Scalar:
+            return super().call_operator(op, args, kwargs, meta)
+
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 
         x = args[0]
