@@ -28,7 +28,6 @@ from executorch.extension.export_util.utils import save_pte_program
 
 from torchao.quantization.granularity import PerAxis, PerGroup
 from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
-from torchao.utils import unwrap_tensor_subclass
 
 
 def main() -> None:
@@ -192,8 +191,6 @@ def main() -> None:
         cache_size=export_args.cache_size,
     )
     example_inputs = input_manager.get_inputs(tokens=[0])
-
-    model = unwrap_tensor_subclass(model)
 
     ep = torch.export.export(model, example_inputs, strict=True)
     print("Exported program")

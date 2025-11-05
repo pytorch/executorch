@@ -26,7 +26,6 @@ from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
     Quantizer as TorchAOPT2EQuantizer,
 )
-from torchao.utils import unwrap_tensor_subclass
 
 
 class PipelineArtifact:
@@ -344,7 +343,6 @@ class SourceTransformStage(Stage):
 
             ao_config = self._quantization_recipe.ao_quantization_configs[0]
             quantize_(model, ao_config.ao_base_config, ao_config.filter_fn)
-            unwrap_tensor_subclass(model)
 
         self._artifact = artifact.copy_with_new_data(self._transformed_models)
 

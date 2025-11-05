@@ -39,7 +39,6 @@ try:
         Int8DynamicActivationIntxWeightConfig,
         quantize_,
     )
-    from torchao.utils import unwrap_tensor_subclass
 
     torchao_installed = True
 except:
@@ -400,7 +399,6 @@ class TestLinear(unittest.TestCase):
                 weight_granularity=PerGroup(group_size),
             ),
         )
-        unwrap_tensor_subclass(mod)
         DynamicallyQuantizedPartitioner = XnnpackPartitioner(
             config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
             per_op_mode=True,

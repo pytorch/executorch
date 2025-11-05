@@ -122,7 +122,6 @@ def quantize(  # noqa C901
             Int8DynamicActivationIntxWeightConfig,
             quantize_,
         )
-        from torchao.utils import unwrap_tensor_subclass
 
         with torch.no_grad():
             # Computation dtype is fixed to fp32 in the implementation of quantize_, so
@@ -142,7 +141,6 @@ def quantize(  # noqa C901
                     ),
                 ),
             )
-            model = unwrap_tensor_subclass(model)
         if verbose:
             print("quantized model:", model)
         return model
@@ -156,7 +154,6 @@ def quantize(  # noqa C901
             quantize_,
         )
         from torchao.quantization.granularity import PerGroup
-        from torchao.utils import unwrap_tensor_subclass
 
         def filter_fn(m, fqn):
             is_linear = isinstance(m, nn.Linear)
@@ -181,8 +178,6 @@ def quantize(  # noqa C901
             filter_fn=filter_fn,
         )
 
-        model = unwrap_tensor_subclass(model)
-
         # TODO: deal with checkpoint / computation dtype decoupling.
 
         if verbose:
@@ -191,7 +186,6 @@ def quantize(  # noqa C901
     elif qmode == "4w":
         from torchao.quantization.granularity import PerGroup
         from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
-        from torchao.utils import unwrap_tensor_subclass
 
         q_group_size = 256 if group_size is None else group_size
         q_config = IntxWeightOnlyConfig(
@@ -204,7 +198,6 @@ def quantize(  # noqa C901
             ),
         )
         quantize_(model, q_config)
-        model = unwrap_tensor_subclass(model)
 
         return model
     else:

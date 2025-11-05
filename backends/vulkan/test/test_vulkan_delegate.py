@@ -43,7 +43,6 @@ from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from torchao.quantization.pt2e.quantizer import Quantizer
 from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
-from torchao.utils import unwrap_tensor_subclass
 
 try:
     ctypes.CDLL("libvulkan.so.1")
@@ -2363,7 +2362,6 @@ class TestVulkanBackend(unittest.TestCase):
                     granularity=self.quant_granularity,
                 )
                 quantize_(self, q_config)
-                unwrap_tensor_subclass(self)
                 return self
 
         # Test with GEMV pattern (batch_size=1, seq_len=1)
@@ -2686,7 +2684,6 @@ class TestVulkanBackend(unittest.TestCase):
                     quantize_,
                 )
                 from torchao.quantization.granularity import PerGroup
-                from torchao.utils import unwrap_tensor_subclass
 
                 quantize_(
                     self,
@@ -2694,7 +2691,6 @@ class TestVulkanBackend(unittest.TestCase):
                         weight_dtype=torch.int4, granularity=PerGroup(self.group_size)
                     ),
                 )
-                unwrap_tensor_subclass(self)
                 return self
 
         # Test with GEMV pattern (batch_size=1, seq_len=1)
