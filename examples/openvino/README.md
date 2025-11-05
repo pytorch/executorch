@@ -25,13 +25,6 @@ examples/openvino
 ## Environment Setup
 Follow the [instructions](../../backends/openvino/README.md) of **Prerequisites** and **Setup** in `backends/openvino/README.md` to set up the OpenVINO backend.
 
-## Example Requirements
-OpenVINO backend examples have dependencies that can be installed by running the `install_requirements.sh` script with `--example` argument in the Executorch root directory.
-
-```
-./install_requirements.sh --example
-```
-
 ## AOT step:
 
 The python script called `aot_optimize_and_infer.py` allows users to export deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to a openvino backend using **Executorch**. Users can dynamically specify the model, input shape, and target device.

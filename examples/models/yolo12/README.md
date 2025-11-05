@@ -31,13 +31,14 @@ To install ExecuTorch, follow this [guide](https://pytorch.org/executorch/stable
 
 ### Step 3: Install the demo requirements
 
-Python demo requirements:
+#### Python Demo Requirements
+The demo requires the `ultralytics` package, which depends on `torch` and `torchvision`. Since these packages are already installed as dev dependencies, use `--upgrade-strategy only-if-needed` to avoid version conflicts:
 
 ```bash
-python -m pip install -r examples/models/yolo12/requirements.txt
+python -m pip install --upgrade-strategy only-if-needed -r requirements.txt
 ```
 
-Demo infenrece dependency - OpenCV library:
+#### Demo Inference Dependency - OpenCV Library
 <https://opencv.org/get-started/>
 
 ### Step 4: Export the YOLO12 model to the ExecuTorch

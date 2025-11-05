@@ -64,7 +64,7 @@ build_python_enabled() {
     export CMAKE_BUILD_ARGS="--target openvino_backend"
 
     # Build the package
-    ./install_executorch.sh --minimal
+    ./install_executorch.sh
 }
 
 main() {
