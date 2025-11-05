@@ -14,9 +14,11 @@ from pprint import pformat
 from typing import (
     Any,
     Callable,
+    cast,
     Dict,
     Iterable,
     List,
+    no_type_check,
     Optional,
     Sequence,
     Tuple,
@@ -60,7 +62,14 @@ from executorch.backends.arm.vgf import VgfCompileSpec
 
 from executorch.backends.test.harness.error_statistics import ErrorStatistics
 from executorch.backends.test.harness.stages import Stage, StageType
-from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.test.tester import (
+    Partition as XnnpackPartitionStage,
+    Quantize as XnnpackQuantize,
+    Tester,
+    ToEdge as XnnpackToEdge,
+    ToEdgeTransformAndLower as XnnpackToEdgeTransformAndLower,
+    ToExecutorch as XnnpackToExecutorch,
+)
 from executorch.devtools.backend_debug import get_delegation_info
 
 from executorch.exir import (
@@ -71,11 +80,7 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.exir.backend.backend_api import validation_disabled
-from executorch.exir.backend.operator_support import (
-    DontPartition,
-    DontPartitionModule,
-    DontPartitionName,
-)
+from executorch.exir.backend.operator_support import OperatorSupportBase
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
@@ -84,7 +89,7 @@ from executorch.exir.program._program import (
     _copy_module,
     _update_exported_program_graph_module,
 )
-from tabulate import tabulate
+from tabulate import tabulate  # type: ignore[import-untyped]
 
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
@@ -94,9 +99,13 @@ logger = logging.getLogger(__name__)
 
 def _dump_lowered_modules_artifact(
     path_to_dump: Optional[str],
-    artifact: ExecutorchProgramManager,
-    graph_module: torch.fx.GraphModule,
-):
+    artifact: Union[EdgeProgramManager, ExecutorchProgramManager],
+    graph_module: torch.fx.GraphModule | None,
+) -> None:
+    if graph_module is None:
+        logger.warning("No graph module available to dump lowered modules.")
+        return
+
     output = "Formated Graph Signature:\n"
     output += _format_export_graph_signature(
         artifact.exported_program().graph_signature
@@ -117,7 +126,7 @@ def _dump_lowered_modules_artifact(
                 output += f"\nTOSA deserialized {node.name}: \n{to_print}\n"
             elif isinstance(compile_spec, EthosUCompileSpec):
                 vela_cmd_stream = lowered_module.processed_bytes
-                output += f"\nVela command stream {node.name}: \n{vela_cmd_stream}\n"
+                output += f"\nVela command stream {node.name}: \n{vela_cmd_stream!r}\n"
             else:
                 logger.warning(
                     f"No TOSA nor Vela compile spec found in compile specs of {node.name}."
@@ -134,7 +143,14 @@ def _dump_lowered_modules_artifact(
 class Partition(tester.Partition):
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
-        _dump_lowered_modules_artifact(path_to_dump, self.artifact, self.graph_module)
+        artifact = cast(Optional[EdgeProgramManager], self.artifact)
+        graph_module = cast(Optional[torch.fx.GraphModule], self.graph_module)
+        if artifact is None:
+            logger.warning(
+                "Partition stage artifact missing; skipping lowered module dump."
+            )
+            return
+        _dump_lowered_modules_artifact(path_to_dump, artifact, graph_module)
 
 
 class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
@@ -153,7 +169,14 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
 
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
-        _dump_lowered_modules_artifact(path_to_dump, self.artifact, self.graph_module)
+        artifact = cast(Optional[EdgeProgramManager], self.artifact)
+        graph_module = cast(Optional[torch.fx.GraphModule], self.graph_module)
+        if artifact is None:
+            logger.warning(
+                "ToEdgeTransformAndLower stage artifact missing; skipping lowered module dump."
+            )
+            return
+        _dump_lowered_modules_artifact(path_to_dump, artifact, graph_module)
 
     def run(
         self, artifact: ExportedProgram, inputs=None, generate_etrecord: bool = False
@@ -177,15 +200,18 @@ class ToExecutorch(tester.ToExecutorch):
 
 class RunPasses(tester.RunPasses):
 
+    @no_type_check
     def __init__(
         self,
-        pass_list: Optional[List[Type[ExportPass]]] = None,
+        pass_list: Optional[List[Type[PassType]]] = None,
         pass_functions: Optional[List[Callable]] = None,
         passes_with_exported_program: Optional[List[Type[ExportPass]]] = None,
     ):
         """Passes are run in the order they are passed: first pass_list, second pass_functions,
         and lastly passes_with_exported_program."""
-        self.pass_with_exported_program = passes_with_exported_program
+        self.pass_with_exported_program: Optional[List[Type[ExportPass]]] = (
+            passes_with_exported_program
+        )
 
         super().__init__(pass_list, pass_functions)
 
@@ -193,14 +219,15 @@ class RunPasses(tester.RunPasses):
         self, artifact: Union[EdgeProgramManager, ExportedProgram], inputs=None
     ) -> None:
         if self.pass_with_exported_program is not None:
-            self.pass_functions = self.pass_functions or []  # type: ignore
+            pass_functions = list(self.pass_functions or [])  # type: ignore[has-type]
 
             # pass_function list from superclass expects functions that take in
             # and return ExportedPrograms.
             # Create a wrapper to fit pass_with_exported_program into this.
             def wrap_ep_pass(ep_pass: Type[ExportPass]):
                 def wrapped_ep_pass(ep: ExportedProgram) -> ExportedProgram:
-                    pass_result = ep_pass(ep).call(ep.graph_module)
+                    pass_instance = ep_pass(ep)  # type: ignore[call-arg]
+                    pass_result = pass_instance.call(ep.graph_module)
                     with validation_disabled():
                         return _update_exported_program_graph_module(
                             ep, pass_result.graph_module
@@ -208,9 +235,10 @@ class RunPasses(tester.RunPasses):
 
                 return wrapped_ep_pass
 
-            self.pass_functions.extend(
+            pass_functions.extend(
                 [wrap_ep_pass(ep_pass) for ep_pass in self.pass_with_exported_program]
             )
+            self.pass_functions = pass_functions
         super().run(artifact, inputs)
 
 
@@ -243,7 +271,7 @@ class ArmTester(Tester):
     def __init__(
         self,
         model: torch.nn.Module,
-        example_inputs: Tuple,
+        example_inputs: Tuple[Any, ...],
         compile_spec: ArmCompileSpec,
         tosa_ref_model_path: str | None = None,
         dynamic_shapes: Optional[Tuple[Any]] = None,
@@ -272,15 +300,17 @@ class ArmTester(Tester):
         self.original_module.requires_grad_(False)
 
         # Initial model needs to be set as a *possible* but not yet added Stage, therefore add None entry.
-        self.stages[StageType.INITIAL_MODEL] = None
+        self.stages[StageType.INITIAL_MODEL] = cast(Stage, None)
         self._run_stage(InitialModel(self.original_module))
         self.use_portable_ops = use_portable_ops
         self.timeout = timeout
 
+    @no_type_check
     def quantize(
         self,
-        quantize_stage: Optional[tester.Quantize] = None,
+        quantize_stage: Optional[XnnpackQuantize] = None,
     ):
+        # Same stage type as parent but exposed via module alias
         if quantize_stage is None:
             quantizer = create_quantizer(self.compile_spec)
             quantize_stage = tester.Quantize(
@@ -289,11 +319,15 @@ class ArmTester(Tester):
             )
         return super().quantize(quantize_stage)
 
+    @no_type_check
     def to_edge(
         self,
-        to_edge_stage: Optional[tester.ToEdge] = None,
+        to_edge_stage: Optional[XnnpackToEdge] = None,
+        # Keep config keyword-only to avoid positional clashes with legacy calls.
+        *,
         config: Optional[EdgeCompileConfig] = None,
     ):
+        # Allow optional config override beyond base signature
         if to_edge_stage is None:
             to_edge_stage = tester.ToEdge(config)
         else:
@@ -302,25 +336,29 @@ class ArmTester(Tester):
 
         return super().to_edge(to_edge_stage)
 
-    def partition(self, partition_stage: Optional[Partition] = None):
+    @no_type_check
+    def partition(self, partition_stage: Optional[XnnpackPartitionStage] = None):
+        # Accept Arm-specific partition stage subclass
         if partition_stage is None:
             arm_partitioner = create_partitioner(self.compile_spec)
             partition_stage = Partition(arm_partitioner)
         return super().partition(partition_stage)
 
+    @no_type_check
     def to_edge_transform_and_lower(
         self,
-        to_edge_and_lower_stage: Optional[ToEdgeTransformAndLower] = None,
+        to_edge_and_lower_stage: Optional[XnnpackToEdgeTransformAndLower] = None,
+        generate_etrecord: bool = False,
+        # Force the optional tuning knobs to be keyword-only for readability/back-compat.
+        *,
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
-        additional_checks: Optional[
-            List[DontPartition | DontPartitionModule | DontPartitionName]
-        ] = None,
+        additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
-        generate_etrecord: bool = False,
     ):
+        # Arm flow exposes extra stage wiring knobs
         if transform_passes is not None:
             raise RuntimeError(
                 "transform passes are given to ArmTester at construction."
@@ -328,9 +366,10 @@ class ArmTester(Tester):
 
         if to_edge_and_lower_stage is None:
             if partitioners is None:
-                arm_partitioner = create_partitioner(
-                    self.compile_spec, additional_checks
+                operator_checks = (
+                    list(additional_checks) if additional_checks is not None else None
                 )
+                arm_partitioner = create_partitioner(self.compile_spec, operator_checks)
                 partitioners = [arm_partitioner]
             to_edge_and_lower_stage = ToEdgeTransformAndLower(
                 partitioners,
@@ -347,14 +386,20 @@ class ArmTester(Tester):
             to_edge_and_lower_stage, generate_etrecord=generate_etrecord
         )
 
-    def to_executorch(self, to_executorch_stage: Optional[ToExecutorch] | None = None):
+    @no_type_check
+    def to_executorch(self, to_executorch_stage: Optional[XnnpackToExecutorch] = None):
+        # Allow custom ExecuTorch stage subclass
         if to_executorch_stage is None:
             to_executorch_stage = ToExecutorch()
         return super().to_executorch(to_executorch_stage)
 
+    @no_type_check
     def serialize(
         self,
         serialize_stage: Optional[Serialize] = None,
+        # Keep timeout keyword-only so positional usage matches the base class.
+        *,
+        timeout: int = 480,
     ):
         if serialize_stage is None:
             serialize_stage = Serialize(
@@ -374,15 +419,17 @@ class ArmTester(Tester):
 
     def run_method_and_compare_outputs(
         self,
-        inputs: Optional[Tuple[torch.Tensor]] = None,
-        stage: Optional[str] = None,
-        num_runs=1,
-        atol=1e-03,
-        rtol=1e-03,
-        qtol=0,
-        error_callbacks=None,
-        run_eager_mode=False,
+        stage: Optional[StageType] = None,
+        inputs: Optional[Tuple[torch.Tensor, ...]] = None,
+        num_runs: int = 1,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 0,
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
+        # Preserve positional compatibility while keeping new flags keyword-only.
+        *,
+        error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
+        run_eager_mode: bool = False,
     ):
         """
         Compares the run_artifact output of 'stage' with the output of a reference stage.
@@ -398,6 +445,12 @@ class ArmTester(Tester):
             inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
                 The default is random data.
         """
+
+        # backward-compatible ordering (accept inputs as the first positional argument)
+        if inputs is None and isinstance(stage, tuple):
+            if all(isinstance(arg, torch.Tensor) for arg in stage):
+                inputs = cast(Tuple[torch.Tensor, ...], stage)
+                stage = None
 
         if not run_eager_mode:
             edge_stage = self.stages[StageType.TO_EDGE]
@@ -415,6 +468,8 @@ class ArmTester(Tester):
             ), "To compare outputs in eager mode, the model must be at Export stage"
 
         stage = stage or self.cur
+        if stage is None:
+            raise RuntimeError("No stage has been executed yet.")
         test_stage = self.stages[stage]
         is_quantized = self.is_quantized()
 
@@ -423,7 +478,8 @@ class ArmTester(Tester):
         else:
             reference_stage = self.stages[StageType.INITIAL_MODEL]
 
-        exported_program = self.stages[StageType.EXPORT].artifact
+        exported_stage = self.stages[StageType.EXPORT]
+        exported_program = cast(ExportedProgram, exported_stage.artifact)
         output_node = exported_program.graph_module.graph.output_node()
         output_qparams = get_output_quantization_params(output_node)
 
@@ -436,7 +492,9 @@ class ArmTester(Tester):
         )
 
         # Loop inputs and compare reference stage with the compared stage.
-        for run_iteration in range(num_runs):
+        number_of_runs = 1 if inputs is not None else num_runs
+
+        for run_iteration in range(number_of_runs):
             reference_input = inputs if inputs else next(self.generate_random_inputs())
 
             # Avoid issues with inplace operators
@@ -455,11 +513,10 @@ class ArmTester(Tester):
             )
             if run_eager_mode:
                 # Run exported module directly
-                test_outputs, _ = pytree.tree_flatten(
-                    self._calculate_reference_output(
-                        exported_program.module(), test_input
-                    )
+                eager_output, _ = self._calculate_reference_output(
+                    exported_program, test_input
                 )
+                test_outputs, _ = pytree.tree_flatten(eager_output)
             else:
                 # Run lowered model with target
                 test_outputs, _ = pytree.tree_flatten(
@@ -480,14 +537,17 @@ class ArmTester(Tester):
                     atol,
                     rtol,
                     qtol,
-                    error_callbacks,
+                    statistics_callback=statistics_callback,
+                    error_callbacks=error_callbacks,
                 )
 
         return self
 
-    def get_graph(self, stage: str | None = None) -> Graph:
+    def get_graph(self, stage: StageType | None = None) -> Graph:
         if stage is None:
             stage = self.cur
+        if stage is None:
+            raise RuntimeError("No stage has been executed yet.")
         artifact = self.get_artifact(stage)
         if (
             self.cur == StageType.TO_EDGE
@@ -527,8 +587,8 @@ class ArmTester(Tester):
             and print_table
         ):
             graph_module = self.get_artifact().exported_program().graph_module
+            delegation_info = get_delegation_info(graph_module)
             if print_table:
-                delegation_info = get_delegation_info(graph_module)
                 op_dist = delegation_info.get_operator_delegation_dataframe()
             else:
                 op_dist = dict(_get_operator_distribution(graph_module.graph))
@@ -572,6 +632,7 @@ class ArmTester(Tester):
         all_dtypes = set(dtype_dist_placeholders.keys()) | set(
             dtype_dirst_tensors.keys()
         )
+        dtype_dist: dict[str, Any]
         if print_table:
             dtype_dist = {
                 "Dtype": all_dtypes,
@@ -589,13 +650,14 @@ class ArmTester(Tester):
                 ],
             }
         else:
-            dtype_dist = dict(dtype_dist_placeholders + dtype_dirst_tensors)
+            combined_counts = dtype_dist_placeholders + dtype_dirst_tensors
+            dtype_dist = {key: combined_counts[key] for key in combined_counts}
         to_print += _format_dict(dtype_dist, print_table) + "\n"
         _dump_str(to_print, path_to_dump)
         return self
 
     def run_transform_for_annotation_pipeline(
-        self, stage: str | None = None
+        self, stage: StageType | None = None
     ) -> torch.fx.GraphModule:
         """Run transform_for_annotation_pipeline on exported program to ensure
         passes do not break the initial model before quantization.
@@ -609,6 +671,8 @@ class ArmTester(Tester):
 
         if stage is None:
             stage = self.cur
+        if stage is None:
+            raise RuntimeError("No stage has been executed yet.")
         # We need to clone the artifact in order to ensure that the state_dict is preserved after passes are run.
         artifact = self.get_artifact(stage)
         if self.cur == StageType.EXPORT:
@@ -622,8 +686,8 @@ class ArmTester(Tester):
 
     @staticmethod
     def _calculate_reference_output(
-        module: Union[torch.fx.GraphModule, torch.nn.Module], inputs
-    ) -> torch.Tensor:
+        program: ExportedProgram, inputs: Tuple[Any, ...]
+    ) -> Tuple[torch.Tensor, Optional[float]]:
         """
         Note: I'd prefer to use the base class method here, but since it use the
         exported program, I can't. The partitioner stage clears the state_dict
@@ -631,8 +695,10 @@ class ArmTester(Tester):
         module.
         """
 
-        return module.forward(*inputs)
+        module = program.module()
+        return module.forward(*inputs), None
 
+    @no_type_check
     def _compare_outputs(
         self,
         reference_output,
@@ -641,9 +707,12 @@ class ArmTester(Tester):
         atol=1e-03,
         rtol=1e-03,
         qtol=0,
-        error_callbacks=None,
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
+        # Extra debugging hooks are keyword-only to keep the signature stable.
+        *,
+        error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
     ):
+        # Accept extra error callback hook for debugging
         try:
             super()._compare_outputs(
                 reference_output,
@@ -655,14 +724,17 @@ class ArmTester(Tester):
                 statistics_callback=statistics_callback,
             )
         except AssertionError as e:
-            if error_callbacks is None:
-                error_callbacks = [print_error_diffs, dump_error_output]
-            for callback in error_callbacks:
+            callbacks = (
+                list(error_callbacks)
+                if error_callbacks is not None
+                else [print_error_diffs, dump_error_output]
+            )
+            for callback in callbacks:
                 callback(
                     self,
                     stage_output,
                     reference_output,
-                    quantization_scale=None,
+                    quantization_scale=quantization_scale,
                     atol=1e-03,
                     rtol=1e-03,
                     qtol=0,
@@ -680,12 +752,12 @@ class ArmTester(Tester):
 
 def _get_dtype_distribution(
     graph: Graph, tosa_spec: TosaSpecification
-) -> tuple[dict, dict]:
+) -> tuple[Counter[str], Counter[str]]:
     """Counts the occurences of placeholder and call_function dtypes in a graph.
     The result is a tuple of Counters (placeholder_distribution, call_function_distribution)
     """
-    placeholder_dtypes = []
-    call_function_dtypes = []
+    placeholder_dtypes: list[str] = []
+    call_function_dtypes: list[str] = []
     for node in graph.nodes:
         if node.op == "placeholder":
             placeholder_dtypes.append(str(node.meta["val"].dtype))
@@ -706,7 +778,7 @@ def _get_operator_distribution(graph: Graph) -> dict[str, int]:
 
 
 def _format_export_graph_signature(signature: ExportGraphSignature) -> str:
-    def specs_dict(specs: list[InputSpec | OutputSpec], title: str):
+    def specs_dict(specs: Sequence[InputSpec | OutputSpec], title: str):
         _dict: dict[str, list] = {title: [], "arg": [], "kind": [], "target": []}
         for i, spec in enumerate(specs):
             _dict[title].append(i)

@@ -5,6 +5,7 @@
 
 import logging
 import tempfile
+from typing import Any, cast, Sequence
 
 import torch
 from executorch.backends.arm.test.runner_utils import (
@@ -17,9 +18,30 @@ from executorch.backends.test.harness.stages import StageType
 logger = logging.getLogger(__name__)
 
 
-def _print_channels(result, reference, channels_close, C, H, W, rtol, atol):
+TensorLike = torch.Tensor | tuple[torch.Tensor, ...]
+
+
+def _ensure_tensor(value: TensorLike) -> torch.Tensor:
+    if isinstance(value, torch.Tensor):
+        return value
+    if value and isinstance(value[0], torch.Tensor):
+        return value[0]
+    raise TypeError("Expected a Tensor or a non-empty tuple of Tensors")
+
+
+def _print_channels(
+    result: torch.Tensor,
+    reference: torch.Tensor,
+    channels_close: Sequence[bool],
+    C: int,
+    H: int,
+    W: int,
+    rtol: float,
+    atol: float,
+) -> str:
 
     output_str = ""
+    exp = "000"
     booldata = False
     if reference.dtype == torch.bool or result.dtype == torch.bool:
         booldata = True
@@ -62,7 +84,15 @@ def _print_channels(result, reference, channels_close, C, H, W, rtol, atol):
     return output_str
 
 
-def _print_elements(result, reference, C, H, W, rtol, atol):
+def _print_elements(
+    result: torch.Tensor,
+    reference: torch.Tensor,
+    C: int,
+    H: int,
+    W: int,
+    rtol: float,
+    atol: float,
+) -> str:
     output_str = ""
     for y in range(H):
         res = "["
@@ -92,14 +122,16 @@ def _print_elements(result, reference, C, H, W, rtol, atol):
 
 
 def print_error_diffs(
-    tester,
-    result: torch.Tensor | tuple,
-    reference: torch.Tensor | tuple,
-    quantization_scale=None,
-    atol=1e-03,
-    rtol=1e-03,
-    qtol=0,
-):
+    tester_or_result: Any,
+    result_or_reference: TensorLike,
+    reference: TensorLike | None = None,
+    # Force remaining args to be keyword-only to keep the two positional call patterns unambiguous.
+    *,
+    quantization_scale: float | None = None,
+    atol: float = 1e-03,
+    rtol: float = 1e-03,
+    qtol: float = 0,
+) -> None:
     """
     Prints the error difference between a result tensor and a reference tensor in NCHW format.
     Certain formatting rules are applied to clarify errors:
@@ -130,15 +162,16 @@ def print_error_diffs(
 
 
     """
+    if reference is None:
+        result = _ensure_tensor(cast(TensorLike, tester_or_result))
+        reference_tensor = _ensure_tensor(result_or_reference)
+    else:
+        result = _ensure_tensor(result_or_reference)
+        reference_tensor = _ensure_tensor(reference)
 
-    if isinstance(reference, tuple):
-        reference = reference[0]
-    if isinstance(result, tuple):
-        result = result[0]
-
-    if not result.shape == reference.shape:
+    if result.shape != reference_tensor.shape:
         raise ValueError(
-            f"Output needs to be of same shape: {result.shape} != {reference.shape}"
+            f"Output needs to be of same shape: {result.shape} != {reference_tensor.shape}"
         )
     shape = result.shape
 
@@ -161,29 +194,29 @@ def print_error_diffs(
 
     # Reshape tensors to 4D NCHW format
     result = torch.reshape(result, (N, C, H, W))
-    reference = torch.reshape(reference, (N, C, H, W))
+    reference_tensor = torch.reshape(reference_tensor, (N, C, H, W))
 
     output_str = ""
     for n in range(N):
         output_str += f"BATCH {n}\n"
         result_batch = result[n, :, :, :]
-        reference_batch = reference[n, :, :, :]
+        reference_batch = reference_tensor[n, :, :, :]
 
         is_close = torch.allclose(result_batch, reference_batch, rtol, atol)
         if is_close:
             output_str += ".\n"
         else:
-            channels_close = [None] * C
+            channels_close: list[bool] = [False] * C
             for c in range(C):
                 result_hw = result[n, c, :, :]
-                reference_hw = reference[n, c, :, :]
+                reference_hw = reference_tensor[n, c, :, :]
 
                 channels_close[c] = torch.allclose(result_hw, reference_hw, rtol, atol)
 
             if any(channels_close) or len(channels_close) == 1:
                 output_str += _print_channels(
                     result[n, :, :, :],
-                    reference[n, :, :, :],
+                    reference_tensor[n, :, :, :],
                     channels_close,
                     C,
                     H,
@@ -193,7 +226,13 @@ def print_error_diffs(
                 )
             else:
                 output_str += _print_elements(
-                    result[n, :, :, :], reference[n, :, :, :], C, H, W, rtol, atol
+                    result[n, :, :, :],
+                    reference_tensor[n, :, :, :],
+                    C,
+                    H,
+                    W,
+                    rtol,
+                    atol,
                 )
         if reference_batch.dtype == torch.bool or result_batch.dtype == torch.bool:
             mismatches = (reference_batch != result_batch).sum().item()
@@ -201,9 +240,9 @@ def print_error_diffs(
             output_str += f"(BOOLEAN tensor) {mismatches} / {total} elements differ ({mismatches / total:.2%})\n"
 
     # Only compute numeric error metrics if tensor is not boolean
-    if reference.dtype != torch.bool and result.dtype != torch.bool:
-        reference_range = torch.max(reference) - torch.min(reference)
-        diff = torch.abs(reference - result).flatten()
+    if reference_tensor.dtype != torch.bool and result.dtype != torch.bool:
+        reference_range = torch.max(reference_tensor) - torch.min(reference_tensor)
+        diff = torch.abs(reference_tensor - result).flatten()
         diff = diff[diff.nonzero()]
         if not len(diff) == 0:
             diff_percent = diff / reference_range
@@ -230,14 +269,14 @@ def print_error_diffs(
 
 
 def dump_error_output(
-    tester,
-    reference_output,
-    stage_output,
-    quantization_scale=None,
-    atol=1e-03,
-    rtol=1e-03,
-    qtol=0,
-):
+    tester: Any,
+    reference_output: TensorLike,
+    stage_output: TensorLike,
+    quantization_scale: float | None = None,
+    atol: float = 1e-03,
+    rtol: float = 1e-03,
+    qtol: float = 0,
+) -> None:
     """
     Prints Quantization info and error tolerances, and saves the differing tensors to disc.
     """
