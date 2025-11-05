@@ -25,7 +25,7 @@ using executorch::aten::Tensor;
 using std::optional;
 using torch::executor::testing::TensorFactory;
 
-using OptTensorArrayRef = ArrayRef<std::optional<Tensor>>;
+using OptTensorArrayRef = ArrayRef<optional<Tensor>>;
 
 class OpIndexTensorOutTest : public OperatorTest {
  protected:

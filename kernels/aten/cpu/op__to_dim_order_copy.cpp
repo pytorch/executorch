@@ -22,11 +22,13 @@ using MemoryFormat = executorch::aten::MemoryFormat;
 template <typename T>
 using OptionalArrayRef = executorch::aten::OptionalArrayRef<T>;
 
+template <typename T>
+using Optional = std::optional<T>;
+
 namespace {
-std::optional<MemoryFormat> get_memory_format(
-    OptionalArrayRef<int64_t> dim_order) {
+Optional<MemoryFormat> get_memory_format(OptionalArrayRef<int64_t> dim_order) {
   if (!dim_order.has_value()) {
-    return std::nullopt;
+    return executorch::aten::nullopt;
   }
   if (is_contiguous_dim_order(
           dim_order.value().data(), dim_order.value().size())) {
@@ -103,7 +105,7 @@ Tensor& _to_dim_order_copy_out(
       InvalidArgument,
       out);
 
-  std::optional<MemoryFormat> memory_format = get_memory_format(dim_order);
+  Optional<MemoryFormat> memory_format = get_memory_format(dim_order);
   at::_to_copy_outf(self, non_blocking, memory_format, out);
 
   return out;

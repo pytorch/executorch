@@ -22,9 +22,9 @@ using ScalarType = executorch::aten::ScalarType;
 Tensor& mean_dim_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    std::optional<ArrayRef<int64_t>> dim_list,
+    optional<ArrayRef<int64_t>> dim_list,
     bool keepdim,
-    std::optional<ScalarType> dtype,
+    optional<ScalarType> dtype,
     Tensor& out) {
   (void)ctx;
 
@@ -78,7 +78,7 @@ Tensor& mean_dim_out(
 Tensor& mean_dtype_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    std::optional<ScalarType> dtype,
+    optional<ScalarType> dtype,
     Tensor& out) {
   return mean_dim_out(ctx, in, ArrayRef<int64_t>(), false, dtype, out);
 }
