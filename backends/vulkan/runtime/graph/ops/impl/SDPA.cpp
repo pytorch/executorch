@@ -575,9 +575,9 @@ void compute_attn_weight_with_kv_cache_impl(
 
   utils::StorageType cache_storage = graph.storage_type_of(q_projected);
   const ValueRef k_cache =
-      prepack_standard(graph, k_cache_data, cache_storage, utils::kWidthPacked);
+      graph.add_tensor_like(k_cache_data, cache_storage, utils::kWidthPacked);
   const ValueRef v_cache =
-      prepack_standard(graph, v_cache_data, cache_storage, utils::kWidthPacked);
+      graph.add_tensor_like(v_cache_data, cache_storage, utils::kWidthPacked);
 
   update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
   update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
