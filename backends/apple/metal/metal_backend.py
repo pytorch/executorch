@@ -24,7 +24,7 @@ class MetalBackend(AotiBackend):
 
     @staticmethod
     def get_device_name() -> str:
-        return "mps"
+        return "metal"
 
     @staticmethod
     def get_supported_fallback_kernels() -> Dict[str, Any]:
