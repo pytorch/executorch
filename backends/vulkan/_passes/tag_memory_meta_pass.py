@@ -138,7 +138,7 @@ class TagMemoryMetaPass(ExportPass):
 
         # Magic number to limit "lookahead" when tracing through users of an operator
         # to constrain the representation of its arguments/outputs.
-        self.max_trace_search_depth = 20
+        self.max_trace_search_depth = None
 
     def is_valid_op_node(self, node: Any) -> bool:
         """
