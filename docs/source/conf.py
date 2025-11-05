@@ -78,7 +78,7 @@ html_favicon = "_static/img/executorch-chip-logo.svg"
 
 # Import executorch version
 # Adopted from PyTorch docs pattern
-from executorch import version as et_version
+from executorch import version as et_version  # type: ignore[attr-defined]
 
 executorch_version = str(et_version.__version__)
 
