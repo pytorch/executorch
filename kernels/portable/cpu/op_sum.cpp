@@ -23,9 +23,9 @@ using ScalarType = executorch::aten::ScalarType;
 Tensor& sum_dim_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    std::optional<ArrayRef<int64_t>> dim_list,
+    optional<ArrayRef<int64_t>> dim_list,
     bool keepdim,
-    std::optional<ScalarType> dtype,
+    optional<ScalarType> dtype,
     Tensor& out) {
   (void)ctx;
 

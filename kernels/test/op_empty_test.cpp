@@ -28,7 +28,7 @@ class OpEmptyOutTest : public OperatorTest {
  protected:
   Tensor& op_empty_out(
       IntArrayRef size,
-      std::optional<MemoryFormat> memory_format,
+      optional<MemoryFormat> memory_format,
       Tensor& out) {
     return torch::executor::aten::empty_outf(
         context_, size, memory_format, out);
@@ -39,7 +39,7 @@ class OpEmptyOutTest : public OperatorTest {
     TensorFactory<DTYPE> tf;
     std::vector<int64_t> sizes(size_int32_t.begin(), size_int32_t.end());
     auto aref = executorch::aten::ArrayRef<int64_t>(sizes.data(), sizes.size());
-    std::optional<MemoryFormat> memory_format;
+    optional<MemoryFormat> memory_format;
     Tensor out = tf.ones(size_int32_t);
 
     op_empty_out(aref, memory_format, out);
@@ -60,7 +60,7 @@ TEST_F(OpEmptyOutTest, DynamicShapeUpperBoundSameAsExpected) {
 
   int64_t sizes[2] = {3, 2};
   auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
-  std::optional<MemoryFormat> memory_format;
+  optional<MemoryFormat> memory_format;
   Tensor out =
       tf.ones({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   op_empty_out(sizes_aref, memory_format, out);
@@ -71,7 +71,7 @@ TEST_F(OpEmptyOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   int64_t sizes[2] = {3, 2};
   auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
-  std::optional<MemoryFormat> memory_format;
+  optional<MemoryFormat> memory_format;
   Tensor out =
       tf.ones({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   op_empty_out(sizes_aref, memory_format, out);
@@ -85,7 +85,7 @@ TEST_F(OpEmptyOutTest, DynamicShapeUnbound) {
 
   int64_t sizes[2] = {3, 2};
   auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
-  std::optional<MemoryFormat> memory_format;
+  optional<MemoryFormat> memory_format;
   Tensor out =
       tf.ones({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   op_empty_out(sizes_aref, memory_format, out);

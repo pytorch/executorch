@@ -47,7 +47,7 @@ void test_dtype() {
   Tensor weight_scales = tf.make(
       /*sizes=*/{3},
       /*data=*/{0.2, 0.4, 0.5});
-  const std::optional<Tensor> opt_weight_zp{};
+  const optional<Tensor> opt_weight_zp{};
 
   Tensor out = tf.zeros({1, 2});
 

@@ -21,7 +21,7 @@ Tensor& as_strided_copy_out(
     const Tensor& in,
     ArrayRef<int64_t> size,
     ArrayRef<int64_t> stride,
-    std::optional<int64_t> storage_offset,
+    optional<int64_t> storage_offset,
     Tensor& out) {
   (void)ctx;
 

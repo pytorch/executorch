@@ -10,7 +10,6 @@
 
 #include <executorch/runtime/core/tensor_shape_dynamism.h> // @manual
 #include <executorch/runtime/platform/compiler.h>
-#include <optional>
 #ifdef USE_ATEN_LIB
 #include <ATen/Tensor.h> // @manual
 #include <c10/core/Device.h>
@@ -22,6 +21,7 @@
 #include <c10/util/BFloat16-math.h> // @manual
 #include <c10/util/BFloat16.h> // @manual
 #include <c10/util/Half.h> // @manual
+#include <c10/util/Optional.h> // @manual
 #include <c10/util/complex.h> // @manual
 #include <c10/util/qint32.h> // @manual
 #include <c10/util/qint8.h> // @manual
@@ -37,6 +37,7 @@
 #include <executorch/runtime/core/portable_type/complex.h> // @manual
 #include <executorch/runtime/core/portable_type/device.h> // @manual
 #include <executorch/runtime/core/portable_type/half.h> // @manual
+#include <executorch/runtime/core/portable_type/optional.h> // @manual
 #include <executorch/runtime/core/portable_type/qint_types.h> // @manual
 #include <executorch/runtime/core/portable_type/scalar.h> // @manual
 #include <executorch/runtime/core/portable_type/scalar_type.h> // @manual
@@ -152,7 +153,8 @@ using quint2x4 = torch::executor::quint2x4;
 using IntArrayRef = torch::executor::IntArrayRef;
 
 template <typename T>
-using OptionalArrayRef = std::optional<torch::executor::ArrayRef<T>>;
+using OptionalArrayRef =
+    torch::executor::optional<torch::executor::ArrayRef<T>>;
 using OptionalIntArrayRef = OptionalArrayRef<int64_t>;
 
 using torch::executor::compute_numel;

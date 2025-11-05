@@ -9,7 +9,6 @@
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-#include <optional>
 #include <random>
 #include <tuple>
 
@@ -18,7 +17,7 @@ std::tuple<Tensor&, Tensor&> native_dropout_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     double prob,
-    ::std::optional<bool> train,
+    torch::executor::optional<bool> train,
     Tensor& out,
     Tensor& mask) {
   std::tuple<Tensor&, Tensor&> ret(out, mask);

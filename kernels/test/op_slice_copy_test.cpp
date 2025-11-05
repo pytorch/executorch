@@ -28,8 +28,8 @@ class OpSliceCopyTensorOutTest : public OperatorTest {
   Tensor& op_slice_copy_tensor_out(
       const Tensor& self,
       int64_t dim,
-      std::optional<int64_t> start,
-      std::optional<int64_t> end,
+      optional<int64_t> start,
+      optional<int64_t> end,
       int64_t step,
       Tensor& out) {
     return torch::executor::aten::slice_copy_outf(
@@ -568,7 +568,7 @@ TEST_F(OpSliceCopyTensorOutTest, DefaultStartValSupported) {
   Tensor ret_default_start = op_slice_copy_tensor_out(
       input,
       /*dim=*/0,
-      /*start=*/std::nullopt,
+      /*start=*/executorch::aten::nullopt,
       /*end=*/2,
       /*step=*/1,
       out);
@@ -588,7 +588,7 @@ TEST_F(OpSliceCopyTensorOutTest, DefaultEndValSupported) {
       input,
       /*dim=*/0,
       /*start=*/0,
-      /*end=*/std::nullopt,
+      /*end=*/executorch::aten::nullopt,
       /*step=*/1,
       out);
   EXPECT_TENSOR_EQ(ret_default_end, out);

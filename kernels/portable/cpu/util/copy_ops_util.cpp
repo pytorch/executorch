@@ -42,7 +42,7 @@ bool check_as_strided_copy_args(
     const Tensor& in,
     ArrayRef<int64_t> size,
     ArrayRef<int64_t> stride,
-    std::optional<int64_t> storage_offset,
+    optional<int64_t> storage_offset,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_CHECK_OR_RETURN_FALSE(

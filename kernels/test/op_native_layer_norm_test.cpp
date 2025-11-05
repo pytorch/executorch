@@ -23,10 +23,10 @@
 using namespace ::testing;
 using executorch::aten::ArrayRef;
 using executorch::aten::IntArrayRef;
+using executorch::aten::nullopt;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::nullopt;
 using std::optional;
 using torch::executor::testing::TensorFactory;
 
@@ -37,8 +37,8 @@ class OpNativeLayerNormTest : public OperatorTest {
   ::std::tuple<Tensor&, Tensor&, Tensor&> op_native_layer_norm_out(
       const Tensor& input,
       IntArrayRef normalized_shape,
-      const std::optional<Tensor>& weight,
-      const std::optional<Tensor>& bias,
+      const optional<Tensor>& weight,
+      const optional<Tensor>& bias,
       double eps,
       Tensor& out0,
       Tensor& out1,
@@ -363,8 +363,8 @@ class OpNativeLayerNormTest : public OperatorTest {
          0.13203048706054688,
          0.30742281675338745,
          0.6340786814689636});
-    std::optional<Tensor> weight(tf.make({3}, {1.0, 1.0, 1.0}));
-    std::optional<Tensor> bias(tf.make({3}, {0.0, 0.0, 0.0}));
+    optional<Tensor> weight(tf.make({3}, {1.0, 1.0, 1.0}));
+    optional<Tensor> bias(tf.make({3}, {0.0, 0.0, 0.0}));
     Tensor expected = tf.make(
         {2, 3},
         {0.16205203533172607,

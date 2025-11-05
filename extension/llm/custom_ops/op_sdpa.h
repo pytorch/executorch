@@ -24,11 +24,11 @@ Tensor& sdpa_with_kv_cache_out(
     Tensor& value_cache,
     const int64_t start_pos,
     const int64_t seq_len,
-    const std::optional<Tensor>& attn_mask,
+    const optional<Tensor>& attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
+    const optional<double> scale,
     Tensor& output);
 
 Tensor& custom_sdpa_out(
@@ -37,11 +37,11 @@ Tensor& custom_sdpa_out(
     const Tensor& k,
     const Tensor& v,
     const int64_t start_pos,
-    const std::optional<Tensor>& attn_mask,
+    const optional<Tensor>& attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
+    const optional<double> scale,
     Tensor& output);
 
 Tensor& flash_attention_kernel_out(
@@ -49,11 +49,11 @@ Tensor& flash_attention_kernel_out(
     const Tensor& query,
     const Tensor& key,
     const Tensor& value,
-    const std::optional<Tensor>& attn_mask,
+    const optional<Tensor>& attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
+    const optional<double> scale,
     Tensor& output);
 
 Tensor& custom_quantized_sdpa_out(
@@ -62,17 +62,17 @@ Tensor& custom_quantized_sdpa_out(
     const Tensor& k,
     const Tensor& v,
     const int64_t start_pos,
-    const std::optional<Tensor>& attn_mask,
+    const optional<Tensor>& attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
-    const std::optional<Tensor>& q_zero_points,
-    const std::optional<Tensor>& q_scales,
-    const std::optional<Tensor>& k_zero_points,
-    const std::optional<Tensor>& k_scales,
-    const std::optional<Tensor>& v_zero_points,
-    const std::optional<Tensor>& v_scales,
+    const optional<double> scale,
+    const optional<Tensor>& q_zero_points,
+    const optional<Tensor>& q_scales,
+    const optional<Tensor>& k_zero_points,
+    const optional<Tensor>& k_scales,
+    const optional<Tensor>& v_zero_points,
+    const optional<Tensor>& v_scales,
     const bool is_seq_at_dim_1,
     Tensor& output);
 } // namespace native

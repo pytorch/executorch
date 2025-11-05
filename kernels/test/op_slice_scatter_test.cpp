@@ -29,8 +29,8 @@ class OpSliceScatterTensorOutTest : public OperatorTest {
       const Tensor& self,
       const Tensor& src,
       int64_t dim,
-      std::optional<int64_t> start,
-      std::optional<int64_t> end,
+      optional<int64_t> start,
+      optional<int64_t> end,
       int64_t step,
       Tensor& out) {
     return torch::executor::aten::slice_scatter_outf(
@@ -813,7 +813,7 @@ TEST_F(OpSliceScatterTensorOutTest, DefaultStartValSupported) {
       input,
       src,
       /*dim=*/0,
-      /*start=*/std::nullopt,
+      /*start=*/executorch::aten::nullopt,
       /*end=*/2,
       /*step=*/1,
       out);
@@ -835,7 +835,7 @@ TEST_F(OpSliceScatterTensorOutTest, DefaultEndValSupported) {
       src,
       /*dim=*/0,
       /*start=*/0,
-      /*end=*/std::nullopt,
+      /*end=*/executorch::aten::nullopt,
       /*step=*/1,
       out);
   EXPECT_TENSOR_EQ(ret_default_end, out);
@@ -857,7 +857,7 @@ TEST_F(OpSliceScatterTensorOutTest, DynamicShapeTest) {
       src,
       /*dim=*/0,
       /*start=*/0,
-      /*end=*/std::nullopt,
+      /*end=*/executorch::aten::nullopt,
       /*step=*/1,
       out);
   EXPECT_TENSOR_EQ(ret_default_end, out);

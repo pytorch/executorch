@@ -31,7 +31,7 @@ Tensor& op_prod_int_out(
     const Tensor& self,
     int64_t dim,
     bool keepdim,
-    std::optional<ScalarType> dtype,
+    optional<ScalarType> dtype,
     Tensor& out) {
   executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context{};
   return torch::executor::aten::prod_outf(
@@ -56,7 +56,7 @@ class OpProdOutTest : public ::testing::Test {
         tf_out;
 
     Tensor self = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
-    std::optional<ScalarType> dtype{};
+    optional<ScalarType> dtype{};
     Tensor out = tf_out.zeros({});
     Tensor out_expected =
         tf_out.make({}, {DTYPE == ScalarType::Bool ? 1 : 720});
@@ -80,7 +80,7 @@ class OpProdIntOutTest : public ::testing::Test {
     Tensor self = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
     int64_t dim = 0;
     bool keepdim = false;
-    std::optional<ScalarType> dtype{};
+    optional<ScalarType> dtype{};
     Tensor out = tf.zeros({3});
     Tensor out_expected = tf.make({3}, {4, 10, 18});
     op_prod_int_out(self, dim, keepdim, dtype, out);
@@ -106,7 +106,7 @@ TEST_F(OpProdIntOutTest, SmokeTestKeepdim) {
   Tensor self = tfFloat.make({2, 3}, {1, 2, 3, 4, 5, 6});
   int64_t dim = 0;
   bool keepdim = true;
-  std::optional<ScalarType> dtype{};
+  optional<ScalarType> dtype{};
   Tensor out = tfFloat.zeros({1, 3});
   Tensor out_expected = tfFloat.make({1, 3}, {4, 10, 18});
   op_prod_int_out(self, dim, keepdim, dtype, out);

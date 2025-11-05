@@ -35,11 +35,11 @@ at::Tensor quantize_affine_reference_impl(
     const at::Tensor& input_,
     const std::vector<int64_t>& block_size,
     const at::Tensor& scale,
-    const std::optional<at::Tensor>& zero_point_opt,
+    const c10::optional<at::Tensor>& zero_point_opt,
     int64_t quant_min,
     int64_t quant_max,
     at::ScalarType out_dtype,
-    std::optional<std::string> zero_point_domain_opt = std::string("INT")) {
+    c10::optional<std::string> zero_point_domain_opt = std::string("INT")) {
   constexpr float kEps = 1e-7f;
 
   const int64_t ndim = input_.dim();
@@ -138,11 +138,11 @@ at::Tensor dequantize_affine_reference_impl(
     const at::Tensor& input_,
     const std::vector<int64_t>& block_size,
     const at::Tensor& scale,
-    const std::optional<at::Tensor>& zero_point_opt,
+    const c10::optional<at::Tensor>& zero_point_opt,
     int64_t quant_min,
     int64_t quant_max,
     at::ScalarType out_dtype,
-    std::optional<std::string> zero_point_domain_opt = std::string("INT")) {
+    c10::optional<std::string> zero_point_domain_opt = std::string("INT")) {
   const int64_t ndim = input_.dim();
   _check_dims("input", block_size.size(), ndim);
 
@@ -252,7 +252,7 @@ at::Tensor quantize_affine_reference_impl(
       input,
       block_size,
       scale,
-      std::optional<at::Tensor>(zero_point),
+      c10::optional<at::Tensor>(zero_point),
       quant_min,
       quant_max,
       dtype,
@@ -272,7 +272,7 @@ at::Tensor dequantize_affine_reference_impl(
       input,
       block_size,
       scale,
-      std::optional<at::Tensor>(zero_point),
+      c10::optional<at::Tensor>(zero_point),
       quant_min,
       quant_max,
       dtype,

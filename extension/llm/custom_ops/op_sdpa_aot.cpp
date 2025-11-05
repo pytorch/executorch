@@ -27,11 +27,11 @@ Tensor& sdpa_with_kv_cache_out_no_context(
     const int64_t seq_len,
     // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<Tensor> attn_mask,
+    const optional<Tensor> attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
+    const optional<double> scale,
     Tensor& output);
 
 at::Tensor sdpa_with_kv_cache_aten(
@@ -57,11 +57,11 @@ Tensor& custom_sdpa_out_no_context(
     const int64_t start_pos,
     // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<Tensor> attn_mask,
+    const optional<Tensor> attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
+    const optional<double> scale,
     Tensor& output);
 
 at::Tensor custom_sdpa_aten(
@@ -84,17 +84,17 @@ Tensor& custom_quantized_sdpa_out_no_context(
     const int64_t start_pos,
     // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<Tensor> attn_mask,
+    const optional<Tensor> attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
-    const std::optional<Tensor> q_zero_points,
-    const std::optional<Tensor> q_scales,
-    const std::optional<Tensor> k_zero_points,
-    const std::optional<Tensor> k_scales,
-    const std::optional<Tensor> v_zero_points,
-    const std::optional<Tensor> v_scales,
+    const optional<double> scale,
+    const optional<Tensor> q_zero_points,
+    const optional<Tensor> q_scales,
+    const optional<Tensor> k_zero_points,
+    const optional<Tensor> k_scales,
+    const optional<Tensor> v_zero_points,
+    const optional<Tensor> v_scales,
     const bool is_seq_at_dim_2,
     Tensor& output);
 
@@ -153,11 +153,11 @@ Tensor& sdpa_with_kv_cache_out_no_context(
     const int64_t seq_len,
     // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<Tensor> attn_mask,
+    const optional<Tensor> attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
+    const optional<double> scale,
     Tensor& output) {
   executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::native::sdpa_with_kv_cache_out(
@@ -215,11 +215,11 @@ Tensor& custom_sdpa_out_no_context(
     const int64_t start_pos,
     // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<Tensor> attn_mask,
+    const optional<Tensor> attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
+    const optional<double> scale,
     Tensor& output) {
   executorch::aten::RuntimeContext context{};
   return torch::executor::native::custom_sdpa_out(
@@ -260,17 +260,17 @@ Tensor& custom_quantized_sdpa_out_no_context(
     const int64_t start_pos,
     // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<Tensor> attn_mask,
+    const optional<Tensor> attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
-    const std::optional<Tensor> q_zero_points,
-    const std::optional<Tensor> q_scales,
-    const std::optional<Tensor> k_zero_points,
-    const std::optional<Tensor> k_scales,
-    const std::optional<Tensor> v_zero_points,
-    const std::optional<Tensor> v_scales,
+    const optional<double> scale,
+    const optional<Tensor> q_zero_points,
+    const optional<Tensor> q_scales,
+    const optional<Tensor> k_zero_points,
+    const optional<Tensor> k_scales,
+    const optional<Tensor> v_zero_points,
+    const optional<Tensor> v_scales,
     const bool is_seq_at_dim_2,
     Tensor& output) {
   executorch::aten::RuntimeContext context{};
