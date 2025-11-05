@@ -290,7 +290,9 @@ if [[ $is_script_sourced -eq 0 ]]; then
     fi
 
     pushd tosa-tools
+    git fetch origin main
     git checkout 8468d041c50c6d806f3c1c18c66d7ef641e46580 # serialization lib pybindings
+    git cherry-pick 368f0cd745b2a1569bf36f077daeba95775de192 # perf fix for >2gb models
     if [[ ! -d "reference_model" ]]; then
         log_step "main" "[error] Missing reference_model directory in tosa-tools repo."
         exit 1

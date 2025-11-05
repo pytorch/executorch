@@ -133,7 +133,14 @@ class TOSABackend(BackendDetails):
         if not artifact_path:
             artifact_path = ""
 
-        tosa_graph = ts.TosaSerializer(artifact_path)
+        version = tosa_spec.version
+        tosa_graph = ts.TosaSerializer(
+            artifact_path,
+            targetMajor=version.major,
+            targetMinor=version.minor,
+            targetPatch=version.micro,
+            targetDraft=False,
+        )
 
         if not (
             tosa_spec.version.major == ts.TOSA_VERSION_MAJOR
