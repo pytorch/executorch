@@ -41,9 +41,10 @@ def _get_module_hierarchy(node: torch.fx.Node) -> str:
     Get the module hierarchy of the given node.
     """
     module_stack = node.meta.get("nn_module_stack")
-    if module_stack is not None:
+    if module_stack is not None and module_stack:
         module_values_list = list(module_stack.values())
-        return module_values_list[-1][0]
+        if module_values_list:
+            return module_values_list[-1][0]
     return ""
 
 
