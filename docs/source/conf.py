@@ -82,8 +82,10 @@ from executorch import version as et_version
 
 executorch_version = str(et_version.__version__)
 
-# Check if this is a release build
-RELEASE = os.environ.get("RELEASE", False)
+# Check if this is a release build from environment variable
+# The workflow sets RELEASE=true for tagged releases, RELEASE=false otherwise
+# We need to properly parse the string as a boolean (any non-empty string is truthy in Python)
+RELEASE = os.environ.get("RELEASE", "false").lower() == "true"
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
