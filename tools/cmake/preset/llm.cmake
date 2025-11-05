@@ -13,10 +13,19 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
-set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM ON)
+
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
-set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
+
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
+
+# Turn on the quantized and LLM kernels unless I'm on windows cuda build which
+# currently doesn't support this due to using msvc.
+if(NOT (EXECUTORCH_BUILD_CUDA AND (CMAKE_SYSTEM_NAME STREQUAL "Windows"
+                                   OR CMAKE_SYSTEM_NAME STREQUAL "WIN32"))
+)
+  set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
+  set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM ON)
+endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
@@ -29,12 +38,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )
-  # Windows-specific code: disable quantized and custom ops when building with
-  # CUDA
-  if(EXECUTORCH_BUILD_CUDA)
-    set(EXECUTORCH_BUILD_KERNELS_QUANTIZED OFF)
-    set(EXECUTORCH_BUILD_KERNELS_LLM OFF)
-  endif()
+
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
   # Android-specific code here
 else()
