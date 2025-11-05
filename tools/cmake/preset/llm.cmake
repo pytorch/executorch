@@ -13,9 +13,7 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
-
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
-
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 
 # Turn on the quantized and LLM kernels unless I'm on windows cuda build which
