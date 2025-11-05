@@ -34,6 +34,7 @@ if(EXECUTORCH_BUILD_PYBIND)
         ${_qnn_default_sdk_dir}
         CACHE PATH "Qualcomm SDK root directory" FORCE
     )
+<<<<<<< HEAD
   else()
     message(STATUS "Downloading Qualcomm SDK")
     execute_process(
@@ -55,6 +56,39 @@ if(EXECUTORCH_BUILD_PYBIND)
         FATAL_ERROR
           "Failed to download Qualcomm SDK. stdout: ${_qnn_sdk_download_output}\n"
           "stderr: ${_qnn_sdk_download_error}"
+=======
+      message(STATUS "Found cached Qualcomm SDK at ${_qnn_default_sdk_dir}")
+      set(QNN_SDK_ROOT
+          ${_qnn_default_sdk_dir}
+          CACHE PATH "Qualcomm SDK root directory" FORCE
+      )
+    else()
+      message(STATUS "QNN_SDK_ROOT not provided, downloading Qualcomm SDK")
+      execute_process(
+        COMMAND
+          ${PYTHON_EXECUTABLE}
+          ${EXECUTORCH_SOURCE_DIR}/backends/qualcomm/scripts/download_qnn_sdk.py
+          --dst-folder ${_qnn_default_sdk_dir}
+          --print-sdk-path
+        WORKING_DIRECTORY ${EXECUTORCH_SOURCE_DIR}
+        RESULT_VARIABLE _qnn_sdk_download_result
+        OUTPUT_VARIABLE _qnn_sdk_download_output
+        ERROR_VARIABLE _qnn_sdk_download_error
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+      )
+      if(NOT _qnn_sdk_download_result EQUAL 0 OR _qnn_sdk_download_output
+                                                 STREQUAL ""
+      )
+        message(
+          FATAL_ERROR
+            "Failed to download Qualcomm SDK. stdout: ${_qnn_sdk_download_output}\n"
+            "stderr: ${_qnn_sdk_download_error}"
+        )
+      endif()
+      set(QNN_SDK_ROOT
+          ${_qnn_sdk_download_output}
+          CACHE PATH "Qualcomm SDK root directory" FORCE
+>>>>>>> e13507fb51 (Retry)
       )
     endif()
     set(QNN_SDK_ROOT
