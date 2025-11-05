@@ -27,6 +27,8 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
     pad_v2_options,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+
+from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -40,9 +42,16 @@ class ConstantPadNDConverter(NodeConverter):
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         paddings = node.args[1]
-        if len(paddings) > 4 and paddings[4:6] != [0, 0]:
-            # Attempt to Pad channels dimension, which is not supported on Neutron.
-            return False
+        if node.meta[NXP_NODE_FORMAT].is_channels_first():
+            # Dim `1` will end up being the channels. It is padded by paddings[4:6].
+            if len(paddings) > 4 and paddings[4:6] != [0, 0]:
+                # Attempt to Pad channels dimension -> currently not supported
+                return False
+        else:
+            # Dim `-1` will end up being the channels. It is padded by paddings[:2].
+            if len(paddings) > 0 and paddings[:2] != [0, 0]:
+                # Attempt to Pad channels dimension -> currently not supported
+                return False
 
         return True
 
@@ -63,10 +72,6 @@ class ConstantPadNDConverter(NodeConverter):
             return False
 
         if not NodeConverter._has_shared_q_params_if_quantized(node):
-            return False
-
-        if len(paddings) > 4 and paddings[4:6] != [0, 0]:
-            # Attempt to Pad channels dimension -> currently not supported
             return False
 
         return True
