@@ -16,7 +16,6 @@ from torchao.quantization.pt2e.quantize_pt2e import (
 )
 from torchao.quantization.pt2e.quantizer import Quantizer
 from torchao.quantization.quant_api import quantize_
-from torchao.utils import unwrap_tensor_subclass
 
 
 class Quantize(Stage):
@@ -110,9 +109,6 @@ class Quantize_(Stage):
     ) -> None:
         # Apply quantize_ to the model
         quantize_(artifact, self.config, self.filter_fn)
-
-        # Unwrap tensor subclasses for export compatibility
-        unwrap_tensor_subclass(artifact)
 
         self.quantized_module = artifact
 

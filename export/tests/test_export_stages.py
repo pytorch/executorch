@@ -280,10 +280,7 @@ class TestSourceTransformStage(unittest.TestCase):
         self.assertEqual(result_artifact.data, self.models_dict)
 
     @patch("executorch.export.stages.quantize_")
-    @patch("executorch.export.stages.unwrap_tensor_subclass")
-    def test_run_with_ao_quantization_configs(
-        self, mock_unwrap: Mock, mock_quantize: Mock
-    ) -> None:
+    def test_run_with_ao_quantization_configs(self, mock_quantize: Mock) -> None:
         from torchao.core.config import AOBaseConfig
 
         mock_config = Mock(spec=AOBaseConfig)
@@ -307,9 +304,6 @@ class TestSourceTransformStage(unittest.TestCase):
         self.assertNotEqual(self.model, call_args[0])
         self.assertEqual(call_args[1], mock_config)
         self.assertEqual(call_args[2], mock_filter_fn)
-
-        # Verify unwrap_tensor_subclass was called once (with the copied model)
-        self.assertEqual(mock_unwrap.call_count, 1)
 
         # Verify that the original models_dict is unchanged
         self.assertEqual(models_dict, {"forward": self.model})
