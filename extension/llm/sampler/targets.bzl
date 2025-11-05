@@ -8,7 +8,6 @@ def define_common_targets():
             name = "sampler" + aten_suffix,
             exported_headers = [
                 "sampler.h",
-                "util.h",
             ],
             preprocessor_flags = [
                 "-DUSE_ATEN_LIB",
