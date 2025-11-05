@@ -23,7 +23,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-aten_op = "torch.ops.aten.avg_pool2d.default"
+aten_op = "avg_pool2d.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"
 
 input_t = Tuple[torch.Tensor]
@@ -32,6 +32,15 @@ input_t = Tuple[torch.Tensor]
 class AvgPool2d(torch.nn.modules.AvgPool2d):
     def forward(self, *args, **kwargs):
         return super().forward(*args, **kwargs)
+
+
+class BecomesMeanInToEdge(torch.nn.Module):
+    """This averagepool will be converted to mean when lowering to edge. This causes the decompose_meandim  pass to not
+    trigger until the backend pipeline, which requires extra care.
+    """
+
+    def forward(self, x: torch.Tensor):
+        return torch.nn.functional.adaptive_avg_pool2d(x, (1, 1))
 
 
 test_modules = {
@@ -110,6 +119,9 @@ test_modules = {
         AvgPool2d(3, (1, 3), 1, count_include_pad=False),
         (torch.rand(1, 16, 54, 54),),
     ),
+    "becomes_mean_rank3": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 8, 8),)),
+    "becomes_mean_rank4": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 2, 8, 8),)),
+    "becomes_mean_rank5": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 2, 8, 8),)),
 }
 
 
