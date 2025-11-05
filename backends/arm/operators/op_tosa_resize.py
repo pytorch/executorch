@@ -19,6 +19,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.specification import Tosa_1_00
 from executorch.backends.arm.tosa.utils import get_resize_parameters
 
 
@@ -39,33 +40,37 @@ class ResizeVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, [3, 4])
+        supported_input_dtypes = [ts.DType.INT8, ts.DType.FP32]
+        if isinstance(self.tosa_spec, Tosa_1_00) and self.tosa_spec.support_extension(
+            "int16"
+        ):
+            supported_input_dtypes.append(ts.DType.INT16)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0]],
+            supported_input_dtypes,
+            output.tosa_spec,
+        )
+        supported_output_dtypes = [ts.DType.FP32]
         if node.kwargs.get("resize_mode") == "bilinear":
             resize_mode = ts.ResizeMode.BILINEAR
             align_corners = bool(node.args[2])
+            supported_output_dtypes.append(ts.DType.INT32)
+            if isinstance(
+                self.tosa_spec, Tosa_1_00
+            ) and self.tosa_spec.support_extension("int16"):
+                supported_output_dtypes.append(ts.DType.INT48)
         else:
             resize_mode = ts.ResizeMode.NEAREST
             align_corners = False
             validate_same_dtype(self.target, [inputs[0], output], ts)
-
-        valid_dtypes = []
-        if self.tosa_spec.support_integer():
-            valid_dtypes.extend(
-                [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.INT48]
-            )
-
-        if self.tosa_spec.support_float():
-            valid_dtypes.extend(
-                [
-                    ts.DType.FP16,
-                    ts.DType.FP32,
-                ]
-            )
-
+            supported_output_dtypes.append(ts.DType.INT8)
+            if isinstance(
+                self.tosa_spec, Tosa_1_00
+            ) and self.tosa_spec.support_extension("int16"):
+                supported_output_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
-            self.target,
-            [inputs[0], output],
-            valid_dtypes,
-            output.tosa_spec,
+            self.target, [output], supported_output_dtypes, output.tosa_spec
         )
         # tosa_shape output is NHWC, take HW
         input_size_yx = tuple([inputs[0].shape[dim] for dim in inputs[0].dim_order])[

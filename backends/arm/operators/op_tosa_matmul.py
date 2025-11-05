@@ -25,6 +25,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
 )
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.specification import Tosa_1_00
 
 
 @register_node_visitor
@@ -51,16 +52,26 @@ class MatmulVisitor(NodeVisitor):
         """Define the TOSA ``MATMUL`` operator."""
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs], ts)
+        supported_input_dtypes = [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32]
+        if isinstance(self.tosa_spec, Tosa_1_00) and self.tosa_spec.support_extension(
+            "int16"
+        ):
+            supported_input_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
             self.target,
             [*inputs],
-            [ts.DType.INT8, ts.DType.INT16, ts.DType.FP32],
+            supported_input_dtypes,
             output.tosa_spec,
         )
+        supported_output_dtypes = [ts.DType.INT32, ts.DType.FP32]
+        if isinstance(self.tosa_spec, Tosa_1_00) and self.tosa_spec.support_extension(
+            "int16"
+        ):
+            supported_output_dtypes.append(ts.DType.INT48)
         validate_valid_dtype(
             self.target,
             [output],
-            [ts.DType.INT32, ts.DType.INT48, ts.DType.FP32],
+            supported_output_dtypes,
             output.tosa_spec,
         )
 
