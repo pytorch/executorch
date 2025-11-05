@@ -119,55 +119,27 @@ void main() {
   }
   // Otherwise, need to actually compute output tile
   else {
-    const bool dont_check_bounds = (S - s) >= TILE_M &&
-        (context_len - c) >= TILE_N;
+    for (int d4 = worker_id; d4 < D4; d4 += NUM_WORKERS_PER_OUT) {
+      load_q_projected_tile_with_checks(
+        q_tile,
+        d4,
+        s,
+        q_h,
+        D4,
+        Q_H,
+        S);
 
-    if (dont_check_bounds) {
-      for (int d4 = worker_id; d4 < D4; d4 += NUM_WORKERS_PER_OUT) {
-        load_q_projected_tile_no_checks(
-          q_tile,
-          d4,
-          s,
-          q_h,
-          D4,
-          Q_H,
-          S);
+      load_k_cache_tile_with_checks(
+        w_tile,
+        d4,
+        c,
+        kv_h,
+        D4,
+        context_len,
+        C,
+        KV_H);
 
-        load_k_cache_tile_no_checks(
-          w_tile,
-          d4,
-          c,
-          kv_h,
-          D4,
-          context_len,
-          C,
-          KV_H);
-
-        fp_accumulate_with_fp_weight(out_tile, q_tile, w_tile);
-      }
-    } else {
-      for (int d4 = worker_id; d4 < D4; d4 += NUM_WORKERS_PER_OUT) {
-        load_q_projected_tile_with_checks(
-          q_tile,
-          d4,
-          s,
-          q_h,
-          D4,
-          Q_H,
-          S);
-
-        load_k_cache_tile_with_checks(
-          w_tile,
-          d4,
-          c,
-          kv_h,
-          D4,
-          context_len,
-          C,
-          KV_H);
-
-        fp_accumulate_with_fp_weight(out_tile, q_tile, w_tile);
-      }
+      fp_accumulate_with_fp_weight(out_tile, q_tile, w_tile);
     }
   }
 
