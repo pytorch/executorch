@@ -420,75 +420,131 @@ def register_softmax_op():
     )
 
 
+def get_dims_reduced(node: torch.fx.Node) -> Union[int, List[int]]:
+    ndim = utils.ndim_of(node.args[0])
+    assert ndim is not None
+    dims_reduced = None
+    if len(node.args) >= 2:
+        dims_reduced = node.args[1]
+
+    # If dim_list is None, return a list containing all the dims of the tensor
+    if dims_reduced is None:
+        dims_reduced = list(range(ndim))
+
+        # Special case for reducing tensors with shape [1, N] - this is equivalent to
+        # reducing the last dim.
+        if utils.is_unsqueezed_vector(node) and ndim == 2:
+            dims_reduced = 1
+
+    if isinstance(dims_reduced, (list, tuple)) and len(dims_reduced) == 1:
+        dims_reduced = dims_reduced[0]
+
+    assert isinstance(dims_reduced, (int, list, tuple))
+    return utils.normalize_dims(dims_reduced, ndim)
+
+
+def get_keepdim_setting(node: torch.fx.Node) -> bool:
+    for arg in node.args:
+        if isinstance(arg, bool):
+            return arg
+
+    # Assume false by default
+    return False
+
+
+def is_reduce_node_supported_by_per_row_impl(node: torch.fx.Node) -> bool:
+    """
+    Checks if a reduction node is supported by the Vulkan backend's reduce per row
+    special case implementation.
+    """
+    input_ndim = utils.ndim_of(node.args[0])
+    assert input_ndim is not None
+    dims_reduced = get_dims_reduced(node)
+
+    return dims_reduced == input_ndim - 1
+
+
+def is_reduce_node_supported_by_general_impl(node: torch.fx.Node) -> bool:
+    dims_reduced = get_dims_reduced(node)
+    # Only 1D and 2D reductions are supported at the moment.
+    if isinstance(dims_reduced, (list, tuple)) and len(dims_reduced) > 2:
+        return False
+
+    keepdim = get_keepdim_setting(node)
+    # keepdim = False is not supported yet for general implementation
+    if isinstance(keepdim, bool) and not keepdim:
+        return False
+
+    return True
+
+
+def is_reduce_node_supported(node: torch.fx.Node) -> bool:
+    return is_reduce_node_supported_by_per_row_impl(
+        node
+    ) or is_reduce_node_supported_by_general_impl(node)
+
+
+def pick_storage_for_reduce(node: torch.fx.Node):
+    inputs_storage = utils.NO_STORAGE
+    outputs_storage = utils.NO_STORAGE
+
+    ndim = utils.ndim_of(node.args[0])
+    dim_list = get_dims_reduced(node)
+
+    if is_reduce_node_supported_by_general_impl(node):
+        inputs_storage = inputs_storage.make_union(utils.ANY_TEXTURE)
+        outputs_storage = inputs_storage
+
+    # For 1D reductions of the last dim, a special reduce per row case is implemented
+    # for buffer backed tensors.
+    if is_reduce_node_supported_by_per_row_impl(node):
+        inputs_storage = inputs_storage.make_union(utils.CONTIGUOUS_BUFFER)
+        outputs_storage = inputs_storage
+        return inputs_storage, outputs_storage
+
+    # For 2D reductions, the packed dimension cannot be one of the reduced dims
+    if isinstance(dim_list, (list, tuple)) and len(dim_list) == 2:
+        # pyre-ignore[6]
+        reduce_dim1_whcn = utils.nchw_dim_to_whcn_dim(dim_list[0], ndim)
+        # pyre-ignore[6]
+        reduce_dim2_whcn = utils.nchw_dim_to_whcn_dim(dim_list[1], ndim)
+
+        possible_packed_dims = {0, 1, 2}
+        possible_packed_dims.discard(reduce_dim1_whcn)
+        possible_packed_dims.discard(reduce_dim2_whcn)
+
+        packed_dim = possible_packed_dims.pop()
+        assert packed_dim in [0, 1, 2]
+
+        if packed_dim == 0:
+            inputs_storage = utils.WIDTH_PACKED_TEXTURE
+            outputs_storage = utils.WIDTH_PACKED_TEXTURE
+        elif packed_dim == 1:
+            inputs_storage = utils.HEIGHT_PACKED_TEXTURE
+            outputs_storage = utils.HEIGHT_PACKED_TEXTURE
+        else:
+            inputs_storage = utils.CHANNELS_PACKED_TEXTURE
+            outputs_storage = utils.CHANNELS_PACKED_TEXTURE
+
+    return inputs_storage, outputs_storage
+
+
 @update_features(
     [
         exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.sum.dim_IntList,
         exir_ops.edge.aten.amax.default,
         exir_ops.edge.aten.amin.default,
+        exir_ops.edge.aten.argmax.default,
+        exir_ops.edge.aten.argmin.default,
     ]
 )
 def register_reduce_op():
-    def check_reduce_node(node: torch.fx.Node) -> bool:
-        # Only one argument implies that the reduction is over the entire tensor, which
-        # is not supported yet.
-        if len(node.args) == 1:
-            return False
-
-        dim_list = node.args[1]
-        # Only 1D and 2D reductions are supported at the moment.
-        if isinstance(dim_list, list) and len(dim_list) > 2:
-            return False
-
-        def try_find_keepdim_arg(node: torch.fx.Node) -> bool:
-            for arg in node.args:
-                if isinstance(arg, bool):
-                    return arg
-
-            # Assume false by default
-            return False
-
-        keepdim = try_find_keepdim_arg(node)
-        if isinstance(keepdim, bool) and not keepdim:
-            return False
-
-        return True
-
-    def pick_io_storage_for_reduce(node: torch.fx.Node):
-        inputs_storage = utils.ANY_TEXTURE
-        outputs_storage = utils.ANY_TEXTURE
-
-        input_tensor = node.args[0]
-        ndim = input_tensor.meta["val"].ndim
-        dim_list = node.args[1]
-        if isinstance(dim_list, list) and len(dim_list) == 2:
-            reduce_dim1_whcn = utils.nchw_dim_to_whcn_dim(dim_list[0], ndim)
-            reduce_dim2_whcn = utils.nchw_dim_to_whcn_dim(dim_list[1], ndim)
-
-            possible_packed_dims = {0, 1, 2}
-            possible_packed_dims.discard(reduce_dim1_whcn)
-            possible_packed_dims.discard(reduce_dim2_whcn)
-
-            packed_dim = possible_packed_dims.pop()
-            assert packed_dim in [0, 1, 2]
-
-            if packed_dim == 0:
-                inputs_storage = utils.WIDTH_PACKED_TEXTURE
-                outputs_storage = utils.WIDTH_PACKED_TEXTURE
-            elif packed_dim == 1:
-                inputs_storage = utils.HEIGHT_PACKED_TEXTURE
-                outputs_storage = utils.HEIGHT_PACKED_TEXTURE
-            else:
-                inputs_storage = utils.CHANNELS_PACKED_TEXTURE
-                outputs_storage = utils.CHANNELS_PACKED_TEXTURE
-
-        return inputs_storage, outputs_storage
-
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_reduce_node,
-        pick_io_storage_fn=pick_io_storage_for_reduce,
+        are_node_inputs_supported_fn=is_reduce_node_supported,
+        pick_io_storage_fn=pick_storage_for_reduce,
     )
 
 
@@ -515,6 +571,7 @@ def register_2d_pool_op():
 def register_convolution_op():
     def check_conv_node(node: torch.fx.Node) -> bool:
         x = node.args[0]
+        assert isinstance(x, torch.fx.Node)
         x_shape = x.meta["val"].size()
         # 4-D input implies 2D convolution
         if len(x_shape) == 4:
