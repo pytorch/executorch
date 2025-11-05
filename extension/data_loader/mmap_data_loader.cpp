@@ -9,6 +9,7 @@
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 
@@ -94,8 +95,8 @@ Result<MmapDataLoader> MmapDataLoader::from(
   }
 
   // Cache the file size.
-  struct stat st;
-  int err = ::fstat(fd, &st);
+  size_t file_size;
+  int err = get_file_stat(fd, &file_size);
   if (err < 0) {
     ET_LOG(
         Error,
@@ -106,7 +107,6 @@ Result<MmapDataLoader> MmapDataLoader::from(
     ::close(fd);
     return Error::AccessFailed;
   }
-  size_t file_size = st.st_size;
 
   // Copy the filename so we can print better debug messages if reads fail.
   const char* file_name_copy = ::strdup(file_name);
@@ -167,12 +167,6 @@ Error MmapDataLoader::validate_input(size_t offset, size_t size) const {
       offset,
       size,
       file_size_);
-  ET_CHECK_OR_RETURN_ERROR(
-      // Recommended by a lint warning.
-      offset <= std::numeric_limits<off_t>::max(),
-      InvalidArgument,
-      "Offset %zu too large for off_t",
-      offset);
   return Error::Ok;
 }
 
@@ -207,13 +201,10 @@ Result<FreeableBuffer> MmapDataLoader::load(
 
   // Map the pages read-only. Use shared mappings so that other processes
   // can also map the same pages and share the same memory.
-  void* pages = ::mmap(
-      nullptr,
-      map_size,
-      PROT_READ,
-      MAP_SHARED,
-      fd_,
-      static_cast<off_t>(range.start));
+  const auto map_offset = get_mmap_offset(range.start);
+
+  void* pages =
+      ::mmap(nullptr, map_size, PROT_READ, MAP_SHARED, fd_, map_offset);
   ET_CHECK_OR_RETURN_ERROR(
       pages != MAP_FAILED,
       AccessFailed,
@@ -315,13 +306,10 @@ Error MmapDataLoader::load_into(
   // Map the pages read-only. MAP_PRIVATE vs. MAP_SHARED doesn't matter since
   // the data is read-only, but use PRIVATE just to further avoid accidentally
   // modifying the file.
-  void* pages = ::mmap(
-      nullptr,
-      map_size,
-      PROT_READ,
-      MAP_PRIVATE,
-      fd_,
-      static_cast<off_t>(range.start));
+  const auto map_offset = get_mmap_offset(range.start);
+
+  void* pages =
+      ::mmap(nullptr, map_size, PROT_READ, MAP_PRIVATE, fd_, map_offset);
   ET_CHECK_OR_RETURN_ERROR(
       pages != MAP_FAILED,
       AccessFailed,

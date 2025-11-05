@@ -103,6 +103,8 @@ std::string get_formatted_prompt(
   std::string formatted_prompt;
   switch (decoder_model_version) {
     case example::DecoderModelVersion::kLlama2:
+    case example::DecoderModelVersion::kQwen2_5:
+    case example::DecoderModelVersion::kCodegen:
       formatted_prompt.append(prompt);
       break;
     case example::DecoderModelVersion::kLlama3:
@@ -137,9 +139,6 @@ std::string get_formatted_prompt(
       formatted_prompt.append("<|user|>");
       formatted_prompt.append(prompt);
       formatted_prompt.append("<|end|><|assistant|>");
-      break;
-    case example::DecoderModelVersion::kQwen2_5:
-      formatted_prompt.append(prompt);
       break;
     case example::DecoderModelVersion::kQwen3:
       formatted_prompt.append("<|im_start|>user\n");

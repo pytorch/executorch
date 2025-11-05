@@ -27,7 +27,10 @@
 #include <limits>
 #include <type_traits>
 
+#include <c10/macros/Macros.h>
 #include <executorch/runtime/platform/assert.h>
+
+C10_DIAGNOSTIC_PUSH_AND_IGNORED_IF_DEFINED("-Wswitch-enum")
 
 #ifdef USE_ATEN_LIB
 // Note that a lot of the macros/functions defined in this ScalarTypeUtil.h file
@@ -910,21 +913,23 @@ struct promote_types {
   }
 #endif
 
-#define ET_INTERNAL_SWITCH(TYPE, CONTEXT, NAME, ...)           \
-  [&] {                                                        \
-    const auto& _st = TYPE;                                    \
-    constexpr const char* et_switch_name = NAME;               \
-    (void)et_switch_name; /* Suppress unused var */            \
-    switch (_st) {                                             \
-      __VA_ARGS__                                              \
-      default:                                                 \
-        CONTEXT.fail(torch::executor::Error::InvalidArgument); \
-        ET_LOG(                                                \
-            Error,                                             \
-            "Unhandled dtype %s for %s",                       \
-            ::executorch::runtime::toString(_st),              \
-            et_switch_name);                                   \
-    }                                                          \
+#define ET_INTERNAL_SWITCH(TYPE, CONTEXT, NAME, ...)            \
+  [&] {                                                         \
+    const auto& _st = TYPE;                                     \
+    constexpr const char* et_switch_name = NAME;                \
+    (void)et_switch_name; /* Suppress unused var */             \
+    C10_DIAGNOSTIC_PUSH_AND_IGNORED_IF_DEFINED("-Wswitch-enum") \
+    switch (_st) {                                              \
+      __VA_ARGS__                                               \
+      default:                                                  \
+        CONTEXT.fail(torch::executor::Error::InvalidArgument);  \
+        ET_LOG(                                                 \
+            Error,                                              \
+            "Unhandled dtype %s for %s",                        \
+            ::executorch::runtime::toString(_st),               \
+            et_switch_name);                                    \
+    }                                                           \
+    C10_DIAGNOSTIC_POP()                                        \
   }()
 
 #define ET_INTERNAL_SWITCH_CASE_INT_TYPES(CTYPE_ALIAS, ...)            \
@@ -1421,3 +1426,5 @@ using ::executorch::runtime::internal::U1;
 } // namespace internal
 } // namespace executor
 } // namespace torch
+
+C10_DIAGNOSTIC_POP()

@@ -24,7 +24,7 @@ void compute_variance(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out,
-    optional<ArrayRef<int64_t>> dim_list,
+    std::optional<ArrayRef<int64_t>> dim_list,
     const size_t num,
     const double denominator) {
   CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
@@ -62,7 +62,7 @@ void compute_variance(
 Tensor& var_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    optional<ArrayRef<int64_t>> dim_list,
+    std::optional<ArrayRef<int64_t>> dim_list,
     bool unbiased,
     bool keepdim,
     Tensor& out) {
@@ -105,8 +105,8 @@ Tensor& var_out(
 Tensor& var_correction_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    optional<ArrayRef<int64_t>> dim_list,
-    const optional<Scalar>& correction,
+    std::optional<ArrayRef<int64_t>> dim_list,
+    const std::optional<Scalar>& correction,
     bool keepdim,
     Tensor& out) {
   (void)ctx;

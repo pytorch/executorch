@@ -23,7 +23,7 @@ using executorch::aten::Tensor;
 using std::optional;
 using torch::executor::testing::TensorFactory;
 
-using OptTensorArrayRef = ArrayRef<optional<Tensor>>;
+using OptTensorArrayRef = ArrayRef<std::optional<Tensor>>;
 
 class OpIndexPutOutTest : public OperatorTest {
  protected:
@@ -72,14 +72,14 @@ class OpIndexPutOutTest : public OperatorTest {
     // First, index_put to make everything equal to 1
 
     // indices [0, 1, :], [1, 1, :], [2, 1, :]
-    optional<Tensor> indices[] = {
-        optional<Tensor>(tfl.make({1, 3}, {0, 1, 2})),
-        optional<Tensor>(tfl.make({1, 3}, {1, 1, 1})),
+    std::optional<Tensor> indices[] = {
+        std::optional<Tensor>(tfl.make({1, 3}, {0, 1, 2})),
+        std::optional<Tensor>(tfl.make({1, 3}, {1, 1, 1})),
     };
     // bool representation of the same index list
-    optional<Tensor> indices_bool[] = {
-        optional<Tensor>(tfb.make({3}, {true, true, true})),
-        optional<Tensor>(tfb.make({2}, {false, true})),
+    std::optional<Tensor> indices_bool[] = {
+        std::optional<Tensor>(tfb.make({3}, {true, true, true})),
+        std::optional<Tensor>(tfb.make({2}, {false, true})),
     };
 
     Tensor values = tf.ones({3, 4});
@@ -104,14 +104,14 @@ class OpIndexPutOutTest : public OperatorTest {
     // Then, index_put to make everything equal to 0
 
     // indices [0, 1, :], [1, 0, :], [2, 0, :]
-    optional<Tensor> indices_alt[] = {
-        optional<Tensor>(tfl.make({1, 3}, {0, 1, 2})),
-        optional<Tensor>(tfl.make({1, 3}, {0, 0, 0})),
+    std::optional<Tensor> indices_alt[] = {
+        std::optional<Tensor>(tfl.make({1, 3}, {0, 1, 2})),
+        std::optional<Tensor>(tfl.make({1, 3}, {0, 0, 0})),
     };
     // bool representation of the same index list
-    optional<Tensor> indices_alt_bool[] = {
-        optional<Tensor>(tfb.make({3}, {true, true, true})),
-        optional<Tensor>(tfb.make({2}, {true, false})),
+    std::optional<Tensor> indices_alt_bool[] = {
+        std::optional<Tensor>(tfb.make({3}, {true, true, true})),
+        std::optional<Tensor>(tfb.make({2}, {true, false})),
     };
 
     Tensor values_alt = tf.zeros({3, 4});
@@ -177,10 +177,10 @@ class OpIndexPutOutTest : public OperatorTest {
          0.518521785736084,    0.6976675987243652,  0.800011396408081,
          0.16102945804595947,  0.28226858377456665, 0.6816085577011108,
          0.9151939749717712,   0.39709991216659546, 0.8741558790206909});
-    optional<Tensor> indices[] = {
-        optional<Tensor>(tf_indices.make({1}, {1})),
-        optional<Tensor>(tf_indices.make({1}, {0})),
-        optional<Tensor>(tf_indices.make({2}, {1, 2}))};
+    std::optional<Tensor> indices[] = {
+        std::optional<Tensor>(tf_indices.make({1}, {1})),
+        std::optional<Tensor>(tf_indices.make({1}, {0})),
+        std::optional<Tensor>(tf_indices.make({2}, {1, 2}))};
     Tensor values = tf.make({2}, {0.41940832138061523, 0.5529070496559143});
     Tensor expected = tf.make(
         {2, 3, 4},
@@ -412,30 +412,30 @@ TEST_F(OpIndexPutOutTest, PutFrontDimAllIndexes) {
   // [1, 0, 1], [1, 0, 2]. This is expressed in various ways to test different
   // indexing expressions.
 
-  optional<Tensor> indices_long[] = {
-      optional<Tensor>(tfl.make({1}, {1})),
-      optional<Tensor>(tfl.make({1}, {0})),
-      optional<Tensor>(tfl.make({2}, {1, 2}))};
+  std::optional<Tensor> indices_long[] = {
+      std::optional<Tensor>(tfl.make({1}, {1})),
+      std::optional<Tensor>(tfl.make({1}, {0})),
+      std::optional<Tensor>(tfl.make({2}, {1, 2}))};
 
-  optional<Tensor> indices_int[] = {
-      optional<Tensor>(tfi.make({1}, {1})),
-      optional<Tensor>(tfi.make({1}, {0})),
-      optional<Tensor>(tfi.make({2}, {1, 2}))};
+  std::optional<Tensor> indices_int[] = {
+      std::optional<Tensor>(tfi.make({1}, {1})),
+      std::optional<Tensor>(tfi.make({1}, {0})),
+      std::optional<Tensor>(tfi.make({2}, {1, 2}))};
 
-  optional<Tensor> indices_negative[] = {
-      optional<Tensor>(tfl.make({1}, {-1})),
-      optional<Tensor>(tfl.make({1}, {0})),
-      optional<Tensor>(tfl.make({2}, {-3, -2}))};
+  std::optional<Tensor> indices_negative[] = {
+      std::optional<Tensor>(tfl.make({1}, {-1})),
+      std::optional<Tensor>(tfl.make({1}, {0})),
+      std::optional<Tensor>(tfl.make({2}, {-3, -2}))};
 
-  optional<Tensor> indices_bool[] = {
-      optional<Tensor>(tfb.make({2}, {false, true})),
-      optional<Tensor>(tfb.make({3}, {true, false, false})),
-      optional<Tensor>(tfl.make({2}, {-3, -2}))};
+  std::optional<Tensor> indices_bool[] = {
+      std::optional<Tensor>(tfb.make({2}, {false, true})),
+      std::optional<Tensor>(tfb.make({3}, {true, false, false})),
+      std::optional<Tensor>(tfl.make({2}, {-3, -2}))};
 
-  optional<Tensor> indices_mixed[] = {
-      optional<Tensor>(tfb.make({2}, {false, true})),
-      optional<Tensor>(tfl.make({1}, {0})),
-      optional<Tensor>(tfl.make({2}, {-3, -2}))};
+  std::optional<Tensor> indices_mixed[] = {
+      std::optional<Tensor>(tfb.make({2}, {false, true})),
+      std::optional<Tensor>(tfl.make({1}, {0})),
+      std::optional<Tensor>(tfl.make({2}, {-3, -2}))};
 
   // clang-format off
   Tensor values = tf.make(
@@ -503,10 +503,10 @@ TEST_F(OpIndexPutOutTest, PutTwoValuesAtSameIndex) {
   // clang-format on
 
   // Try to select the value at the same index
-  optional<Tensor> indices[] = {
-      optional<Tensor>(tfl.make({1, 2}, {0, 0})),
-      optional<Tensor>(tfl.make({1, 2}, {1, 1})),
-      optional<Tensor>(tfl.make({1, 2}, {2, 2}))};
+  std::optional<Tensor> indices[] = {
+      std::optional<Tensor>(tfl.make({1, 2}, {0, 0})),
+      std::optional<Tensor>(tfl.make({1, 2}, {1, 1})),
+      std::optional<Tensor>(tfl.make({1, 2}, {2, 2}))};
 
   // clang-format off
   Tensor values = tf.make(
@@ -575,13 +575,13 @@ TEST_F(OpIndexPutOutTest, IndicesFewerThanInputDimSupported) {
   // [1, 0, :], [1, 1, :]. This is expressed in various ways to test different
   // indexing expressions.
 
-  optional<Tensor> indices_long[] = {
-      optional<Tensor>(tfl.make({1}, {1})),
-      optional<Tensor>(tfl.make({2}, {0, 1}))};
+  std::optional<Tensor> indices_long[] = {
+      std::optional<Tensor>(tfl.make({1}, {1})),
+      std::optional<Tensor>(tfl.make({2}, {0, 1}))};
 
-  optional<Tensor> indices_mixed[] = {
-      optional<Tensor>(tfi.make({1}, {-1})),
-      optional<Tensor>(tfb.make({3}, {true, true, false}))};
+  std::optional<Tensor> indices_mixed[] = {
+      std::optional<Tensor>(tfi.make({1}, {-1})),
+      std::optional<Tensor>(tfb.make({3}, {true, true, false}))};
 
   // clang-format off
   Tensor values = tf.make(
@@ -650,9 +650,9 @@ TEST_F(OpIndexPutOutTest, IndicesFewerThanInputDimSupportedSameValue) {
 
   // Try to select the input value at indices
   // [1, 0, :], [1, 1, :]
-  optional<Tensor> indices[] = {
-      optional<Tensor>(tfl.make({1}, {1})),
-      optional<Tensor>(tfl.make({2}, {0, 1}))};
+  std::optional<Tensor> indices[] = {
+      std::optional<Tensor>(tfl.make({1}, {1})),
+      std::optional<Tensor>(tfl.make({2}, {0, 1}))};
 
   // clang-format off
   Tensor values = tf.make(
@@ -912,9 +912,9 @@ TEST_F(OpIndexPutOutTest, InvalidIndicesDtypeDies) {
 
   Tensor x = tf.zeros({2, 4, 7, 5});
   // clang-format off
-  optional<Tensor> indices[] = {
-      optional<Tensor>(tff.make({3}, {1, 1, 1,})),
-      optional<Tensor>(tff.make({2}, {1, 2}))};
+  std::optional<Tensor> indices[] = {
+      std::optional<Tensor>(tff.make({3}, {1, 1, 1,})),
+      std::optional<Tensor>(tff.make({2}, {1, 2}))};
   // clang-format on
 
   Tensor out = tf.ones({2, 4, 7, 5});
@@ -938,9 +938,9 @@ TEST_F(OpIndexPutOutTest, InvalidIndicesShapesDies) {
 
   Tensor x = tf.zeros({2, 4, 7, 5});
   // clang-format off
-  optional<Tensor> indices[] = {
-      optional<Tensor>(tfl.make({3}, {1, 1, 1,})),
-      optional<Tensor>(tfl.make({2}, {1, 2}))};
+  std::optional<Tensor> indices[] = {
+      std::optional<Tensor>(tfl.make({3}, {1, 1, 1,})),
+      std::optional<Tensor>(tfl.make({2}, {1, 2}))};
 
   Tensor out = tf.ones({2, 4, 7, 5});
   // clang-format on
@@ -964,9 +964,9 @@ TEST_F(OpIndexPutOutTest, NonLinearIndices) {
 
   Tensor x = tf.zeros({4, 4});
   // clang-format off
-  optional<Tensor> indices[] = {
-      optional<Tensor>(tfl.make({2, 2}, {1, 1, 1, 1,})),
-      optional<Tensor>(tfl.make({1, 2}, {3, 0,}))};
+  std::optional<Tensor> indices[] = {
+      std::optional<Tensor>(tfl.make({2, 2}, {1, 1, 1, 1,})),
+      std::optional<Tensor>(tfl.make({1, 2}, {3, 0,}))};
 
   Tensor out = tf.ones({4, 4});
   // clang-format on
@@ -1052,9 +1052,9 @@ class OpIndexPutInplaceTest : public OperatorTest {
          });
     // clang-format on
 
-    optional<Tensor> indices[] = {
-        optional<Tensor>(),
-        optional<Tensor>(tfl.make({2}, {0, 2})),
+    std::optional<Tensor> indices[] = {
+        std::optional<Tensor>(),
+        std::optional<Tensor>(tfl.make({2}, {0, 2})),
     };
 
     // clang-format off

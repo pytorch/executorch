@@ -6,7 +6,6 @@
 
 # pyre-strict
 
-
 import logging
 from dataclasses import dataclass, field
 from typing import cast, List, Optional, Sequence, Set, Type
@@ -20,6 +19,7 @@ from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     get_arg,
     register_cadence_pass,
+    RemoveOrReplacePassInterface,
     set_arg,
 )
 
@@ -186,33 +186,27 @@ class RemoveZeroSizedConstantPadNd(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class RemoveNopSliceOrViewOpPass(ExportPass):
+class RemoveNopSliceOrViewOpPass(RemoveOrReplacePassInterface):
     """
     Remove slice ops that are more like views, and view ops that do not change the shape
     """
 
-    def call_operator(
-        self,
-        op,  # pyre-ignore
-        args: tuple[Argument, ...],
-        kwargs: dict[str, Argument],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
-        if op not in {
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
             exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.view_copy.default,
-        }:
-            return super().call_operator(op, args, kwargs, meta)
+        ]
 
-        arg0 = cast(ProxyValue, args[0])
-        out_shape = meta["val"].shape
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        changed = False
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        if input_node.meta["val"].shape == node.meta["val"].shape:
+            node.replace_all_uses_with(input_node)
+            changed = True
 
-        # If both arg_shape and out_shape are the same, this slice is a nop
-        return (
-            arg0
-            if arg0.to_tensor().shape == out_shape
-            else super().call_operator(op, args, kwargs, meta)
-        )
+        return changed
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
