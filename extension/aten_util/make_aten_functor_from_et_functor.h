@@ -67,12 +67,12 @@ struct type_map<torch::executor::Tensor> final {
 
 // Optional.
 template <class T>
-struct type_map<torch::executor::optional<T>> final {
+struct type_map<std::optional<T>> final {
   using type = std::optional<typename type_map<T>::type>;
 };
 
 template <class T>
-struct type_map<torch::executor::optional<T>&> final {
+struct type_map<std::optional<T>&> final {
   using type = std::optional<typename type_map<T>::type>&;
 };
 
@@ -166,7 +166,7 @@ struct type_convert<
                 typename remove_const_ref<AOptional>::type::value_type>> &&
         std::is_same_v<
             typename remove_const_ref<EOptional>::type,
-            torch::executor::optional<
+            std::optional<
                 typename remove_const_ref<EOptional>::type::value_type>>>>
     final {
  public:

@@ -18,7 +18,7 @@ BoxedEvalueList<std::optional<executorch::aten::Tensor>>::get() const {
        i < wrapped_vals_.size();
        i++) {
     if (wrapped_vals_[i] == nullptr) {
-      unwrapped_vals_[i] = executorch::aten::nullopt;
+      unwrapped_vals_[i] = std::nullopt;
     } else {
       unwrapped_vals_[i] =
           wrapped_vals_[i]->to<std::optional<executorch::aten::Tensor>>();

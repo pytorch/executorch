@@ -30,7 +30,7 @@ class OpFullLikeTest : public OperatorTest {
   Tensor& op_full_like_out(
       const Tensor& self,
       const Scalar& fill_value,
-      optional<MemoryFormat> memory_format,
+      std::optional<MemoryFormat> memory_format,
       Tensor& out) {
     return torch::executor::aten::full_like_outf(
         context_, self, fill_value, memory_format, out);
@@ -73,7 +73,7 @@ class OpFullLikeTest : public OperatorTest {
     const std::vector<int32_t> sizes = {2, 2};
     Tensor in = tf.zeros(sizes);
     Tensor out = tf.zeros(sizes);
-    optional<MemoryFormat> memory_format;
+    std::optional<MemoryFormat> memory_format;
 
     ET_EXPECT_KERNEL_FAILURE(
         context_, op_full_like_out(in, bad_value, memory_format, out));
@@ -203,7 +203,7 @@ TEST_F(OpFullLikeTest, DynamicShapeUnbound) {
 
 TEST_F(OpFullLikeTest, HalfSupport) {
   TensorFactory<ScalarType::Half> tf;
-  optional<MemoryFormat> memory_format;
+  std::optional<MemoryFormat> memory_format;
   Tensor in = tf.ones({2, 3});
   Tensor out = tf.zeros({2, 3});
 

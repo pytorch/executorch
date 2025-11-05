@@ -26,7 +26,7 @@ class OpCloneTest : public OperatorTest {
  protected:
   Tensor& op_clone_out(
       const Tensor& self,
-      optional<MemoryFormat> memory_format,
+      std::optional<MemoryFormat> memory_format,
       Tensor& out) {
     return torch::executor::aten::clone_outf(
         context_, self, memory_format, out);
@@ -44,7 +44,7 @@ class OpCloneTest : public OperatorTest {
     // nullopt or MemoryFormat::Contiguous.
     Tensor out_nullopt_ret = op_clone_out(
         /*self=*/input,
-        /*memory_format=*/executorch::aten::nullopt,
+        /*memory_format=*/std::nullopt,
         /*out=*/out_nullopt);
     Tensor out_contiguous_ret = op_clone_out(
         /*self=*/input,
@@ -65,7 +65,7 @@ class OpCloneTest : public OperatorTest {
     TensorFactory<DTYPE> tf;
     Tensor input = tf.make(/*sizes=*/{3, 0, 1, 2}, /*data=*/{});
     Tensor out = tf.zeros({3, 0, 1, 2});
-    op_clone_out(input, /*memory_format=*/executorch::aten::nullopt, out);
+    op_clone_out(input, /*memory_format=*/std::nullopt, out);
     // check a and out share same value, but are different object
     EXPECT_TENSOR_EQ(input, out);
   }
@@ -95,8 +95,7 @@ TEST_F(OpCloneTest, MismatchedSizesDie) {
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros({3, 2, 1, 1});
   ET_EXPECT_KERNEL_FAILURE(
-      context_,
-      op_clone_out(input, /*memory_format=*/executorch::aten::nullopt, out));
+      context_, op_clone_out(input, /*memory_format=*/std::nullopt, out));
 }
 
 TEST_F(OpCloneTest, MismatchedTypesDie) {
@@ -106,8 +105,7 @@ TEST_F(OpCloneTest, MismatchedTypesDie) {
       tf_in.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf_out.zeros({3, 1, 1, 2});
   ET_EXPECT_KERNEL_FAILURE(
-      context_,
-      op_clone_out(input, /*memory_format=*/executorch::aten::nullopt, out));
+      context_, op_clone_out(input, /*memory_format=*/std::nullopt, out));
 }
 
 // Only contiguous memory is supported, the memory type other than nullopt or

@@ -191,7 +191,7 @@ TEST(OpQuantizeAddTest, ConsitencyWithReferencePattern) {
   Tensor qinput2 = tfo.zeros({3, 5});
   Tensor qoutput = tfo.zeros({3, 5});
 
-  optional<ScalarType> out_dtype = optional<ScalarType>();
+  std::optional<ScalarType> out_dtype = std::optional<ScalarType>();
 
   KernelRuntimeContext context{};
   // q -> qadd -> dq
