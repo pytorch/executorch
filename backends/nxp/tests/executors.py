@@ -20,10 +20,11 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+
+from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
 from torch.export import ExportedProgram
 from torch.fx import Node
 from torch.fx.graph import Graph
-
 
 # If executed on i.MX platform, there is no tensorflow module. And typically the intention is to use the tflite python
 # interpreter available in tflite_runtime
@@ -308,6 +309,7 @@ def convert_run_compare(
 ) -> (TFLiteExecutor, EdgeProgramExecutor):
 
     if tfl_model is None:
+        NodeFormatInference(edge_program).identify_node_formats()
         tfl_model, _ = EdgeProgramToIRConverter().convert_program(
             edge_program, conversion_config
         )
