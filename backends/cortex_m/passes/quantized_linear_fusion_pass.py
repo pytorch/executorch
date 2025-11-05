@@ -66,7 +66,7 @@ class QuantizedLinearFusionPass(XNNPACKPass):
 
         return kernel_sum_offset
 
-    def _get_linear_replacement(self, args, meta, node) -> int:
+    def _get_linear_replacement(self, args, meta, node):
         input_scale = meta["input_qparams"][0].scale
         input_zp = meta["input_qparams"][0].zp
         weight_scale = meta["input_qparams"][1].scale

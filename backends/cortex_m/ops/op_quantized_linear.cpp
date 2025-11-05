@@ -42,7 +42,7 @@ Tensor& quantized_linear_out(
   int8_t* output_data = out.mutable_data_ptr<int8_t>();
 
   cmsis_nn_context ctx;
-  ctx.size = 2;
+  ctx.size = 0; // Not used in CMSIS-NN
   ctx.buf = kernel_sum_data;
 
   // Setup CMSIS-NN parameters

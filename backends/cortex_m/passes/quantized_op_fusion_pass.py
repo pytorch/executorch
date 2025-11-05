@@ -29,7 +29,7 @@ class QuantizedOpFusionPass(ExportPass):
     Supports multiple binary operations with backward compatibility for add.
     """
 
-    def _get_add_replacement(self, args, meta) -> int:
+    def _get_add_replacement(self, args, meta):
 
         # Extract values
         scale1 = meta["input_qparams"][0].scale
