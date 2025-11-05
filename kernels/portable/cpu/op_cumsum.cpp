@@ -90,7 +90,7 @@ Tensor& cumsum_out(
     KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t dim,
-    optional<ScalarType> enforced_dtype,
+    std::optional<ScalarType> enforced_dtype,
     Tensor& out) {
   (void)ctx;
 
