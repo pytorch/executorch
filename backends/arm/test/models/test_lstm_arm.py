@@ -51,7 +51,9 @@ def test_lstm_tosa_FP():
         exir_op=[],
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", get_test_inputs(), atol=3e-1)
+    pipeline.change_args(
+        "run_method_and_compare_outputs", inputs=get_test_inputs(), atol=3e-1
+    )
     pipeline.run()
 
 
@@ -64,7 +66,10 @@ def test_lstm_tosa_INT():
         use_to_edge_transform_and_lower=True,
     )
     pipeline.change_args(
-        "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
+        "run_method_and_compare_outputs",
+        inputs=get_test_inputs(),
+        atol=3e-1,
+        qtol=1.0,
     )
     pipeline.run()
 
@@ -79,7 +84,10 @@ def test_lstm_u55_INT():
         use_to_edge_transform_and_lower=True,
     )
     pipeline.change_args(
-        "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
+        "run_method_and_compare_outputs",
+        inputs=get_test_inputs(),
+        atol=3e-1,
+        qtol=1.0,
     )
     pipeline.run()
 
@@ -94,7 +102,10 @@ def test_lstm_u85_INT():
         use_to_edge_transform_and_lower=True,
     )
     pipeline.change_args(
-        "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
+        "run_method_and_compare_outputs",
+        inputs=get_test_inputs(),
+        atol=3e-1,
+        qtol=1.0,
     )
     pipeline.run()
 
