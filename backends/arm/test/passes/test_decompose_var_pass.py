@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
+from typing import cast, Dict, Protocol, Tuple
 
 import torch
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
@@ -15,6 +15,10 @@ from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 input_t = Tuple[torch.Tensor]  # Input x
 
 
+class ModuleWithInputs(Protocol):
+    def get_inputs(self) -> input_t: ...
+
+
 class VarDim(torch.nn.Module):
     """
     Basic variance model using torch.Tensor.var function.
@@ -24,7 +28,7 @@ class VarDim(torch.nn.Module):
         super(VarDim, self).__init__()
         self.keepdim = keepdim
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x.var(dim=-1, keepdim=self.keepdim)
 
     def get_inputs(self) -> input_t:
@@ -40,14 +44,14 @@ class VarCorrection(torch.nn.Module):
         super(VarCorrection, self).__init__()
         self.keepdim = keepdim
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.var(x, -1, keepdim=self.keepdim)
 
     def get_inputs(self) -> input_t:
         return (torch.rand(4, 4),)
 
 
-modules = {
+modules: Dict[str, ModuleWithInputs] = {
     "vardim_keepdim": VarDim(True),
     "vardim_no_keepdim": VarDim(False),
     "varcorrection_keepdim": VarCorrection(True),
@@ -56,9 +60,10 @@ modules = {
 
 
 @common.parametrize("module", modules)
-def test_decompose_var_tosa_FP(module):
+def test_decompose_var_tosa_FP(module: ModuleWithInputs) -> None:
+    nn_module = cast(torch.nn.Module, module)
     pipeline = PassPipeline[input_t](
-        module,
+        nn_module,
         module.get_inputs(),
         quantize=False,
         ops_before_pass={

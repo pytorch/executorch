@@ -1,5 +1,4 @@
 # Copyright 2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree
@@ -27,18 +26,19 @@ from torch.fx import Node
 
 
 @register_node_visitor
-class ClampVisitor_INT(NodeVisitor):
+class ClampVisitor(NodeVisitor):
     target = "aten.clamp.default"
 
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
     def __init__(self, *args):
         super().__init__(*args)
 
     def _get_min_max_arguments(
-        self, node: Node, dtype_min: int | float, dtype_max: int | float
+        self, node: Node, dtype: torch.dtype
     ) -> Tuple[int | float, int | float]:
 
         def cast_type(value: Any) -> int | float:
@@ -47,6 +47,13 @@ class ClampVisitor_INT(NodeVisitor):
             else:
                 # Attempt to cast to float
                 return float(value)
+
+        if dtype.is_floating_point:
+            dtype_min = torch.finfo(dtype).min
+            dtype_max = torch.finfo(dtype).max
+        else:
+            dtype_min = torch.iinfo(dtype).min
+            dtype_max = torch.iinfo(dtype).max
 
         min_arg = dtype_min
         max_arg = dtype_max
@@ -88,38 +95,16 @@ class ClampVisitor_INT(NodeVisitor):
             output.tosa_spec,
         )
 
-        attr = ts.TosaSerializerAttribute()
-        match inputs[0].dtype:
-            case ts.DType.FP16:
-                min_f, max_f = self._get_min_max_arguments(
-                    node,
-                    torch.finfo(torch.float16).min,
-                    torch.finfo(torch.float16).max,
-                )
-                min_bytes = np.frombuffer(
-                    np.float16(min_f).tobytes(), dtype=np.uint8
-                ).tolist()
-                max_bytes = np.frombuffer(
-                    np.float16(max_f).tobytes(), dtype=np.uint8
-                ).tolist()
-            case ts.DType.FP32:
-                min_f, max_f = self._get_min_max_arguments(
-                    node,
-                    torch.finfo(torch.float32).min,
-                    torch.finfo(torch.float32).max,
-                )
-                min_bytes = np.frombuffer(
-                    np.float32(min_f).tobytes(), dtype=np.uint8
-                ).tolist()
-                max_bytes = np.frombuffer(
-                    np.float32(max_f).tobytes(), dtype=np.uint8
-                ).tolist()
-            case _:
-                raise RuntimeError(
-                    f"Internal error: Unsupported dtype {inputs[0].dtype} in {self.target}"
-                )
+        node_input_dtype = node.meta["val"].dtype
+        # NOTE: Quantization of the min/max arguments is handled by QuantizeOperatorArguments
+        min_val, max_val = self._get_min_max_arguments(node, node_input_dtype)
 
-        attr.ClampAttribute(min_bytes, max_bytes, ts.NanPropagationMode.PROPAGATE)
+        attr = ts.TosaSerializerAttribute()
+        attr.ClampAttribute(
+            self._to_bytes(min_val, node_input_dtype),
+            self._to_bytes(max_val, node_input_dtype),
+            nan_mode=ts.NanPropagationMode.PROPAGATE,
+        )
 
         self._serialize_operator(
             node,

@@ -33,6 +33,7 @@ class AvgPool2dVisitor(NodeVisitor):
 
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
     def __init__(self, *args):
@@ -126,12 +127,13 @@ class AvgPool2dVisitor(NodeVisitor):
             input_qargs = get_input_qparams(node)
             input_zp = input_qargs[0].get_zp_per_tensor()
 
-        if inputs[0].dtype == ts.DType.FP32:
+            output_qargs = get_output_qparams(node)
+            output_zp = output_qargs[0].get_zp_per_tensor()
+        else:
             accumulator_type = ts.DType.FP32
-            # Initilize zero point to zero.
             input_zp = 0
             output_zp = 0
 
-            self._build_generic_avgpool2d(
-                node, tosa_graph, inputs, output, input_zp, output_zp, accumulator_type
-            )
+        self._build_generic_avgpool2d(
+            node, tosa_graph, inputs, output, input_zp, output_zp, accumulator_type
+        )

@@ -161,6 +161,18 @@ def get_args_and_kwargs_layer_norm(
             {"dtype": torch.float32},
         )
         if len(inputs_inputs) > 0:
+            if "val" in inputs_inputs[0].meta:
+                fake_mode = inputs_inputs[0].meta["val"].fake_mode
+                if fake_mode is not None:
+                    with fake_mode:
+                        fake_weight = torch.full(
+                            other_inputs[0], 1, dtype=torch.float32
+                        )
+                    weight.meta["val"] = fake_weight
+                else:
+                    weight.meta["val"] = torch.full(
+                        other_inputs[0], 1, dtype=torch.float32
+                    )
             copy_node_metadata(weight, inputs_inputs[0])
 
     bias = other_inputs[2] if len(other_inputs) > 2 else None
@@ -175,6 +187,16 @@ def get_args_and_kwargs_layer_norm(
             {"dtype": torch.float32},
         )
         if len(inputs_inputs) > 0:
+            if "val" in inputs_inputs[0].meta:
+                fake_mode = inputs_inputs[0].meta["val"].fake_mode
+                if fake_mode is not None:
+                    with fake_mode:
+                        fake_bias = torch.full(other_inputs[0], 0, dtype=torch.float32)
+                    bias.meta["val"] = fake_bias
+                else:
+                    bias.meta["val"] = torch.full(
+                        other_inputs[0], 0, dtype=torch.float32
+                    )
             copy_node_metadata(bias, inputs_inputs[0])
 
     # Make the args and kwargs for the replacement op
@@ -352,6 +374,14 @@ def get_args_and_kwargs_softmax(
         {"dtype": torch.int32},
     )
     if len(inputs_inputs) > 0:
+        if "val" in inputs_inputs[0].meta:
+            fake_mode = inputs_inputs[0].meta["val"].fake_mode
+            if fake_mode is not None:
+                with fake_mode:
+                    fake_mask = torch.full(mask_shape, 0.0, dtype=torch.int32)
+                mask_tensor.meta["val"] = fake_mask
+            else:
+                mask_tensor.meta["val"] = torch.full(mask_shape, 0.0, dtype=torch.int32)
         copy_node_metadata(mask_tensor, inputs_inputs[0])
     # Make the scale and zero_point tensors
     in_scale = dequants_inputs[0].args[1]

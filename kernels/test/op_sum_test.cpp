@@ -28,9 +28,9 @@ class OpSumOutTest : public OperatorTest {
  protected:
   Tensor& op_sum_intlist_out(
       const Tensor& self,
-      optional<ArrayRef<int64_t>> dim,
+      std::optional<ArrayRef<int64_t>> dim,
       bool keepdim,
-      optional<ScalarType> dtype,
+      std::optional<ScalarType> dtype,
       Tensor& out) {
     return torch::executor::aten::sum_outf(
         context_, self, dim, keepdim, dtype, out);
@@ -55,11 +55,12 @@ class OpSumOutTest : public OperatorTest {
       });
     // clang-format on
     Tensor out = tf_out.zeros({2, 3, 1});
-    optional<ScalarType> dtype = OUT_DTYPE;
+    std::optional<ScalarType> dtype = OUT_DTYPE;
 
     // out-of-bound dim in dim list
     int64_t dims_1[1] = {3};
-    optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         op_sum_intlist_out(
@@ -95,9 +96,10 @@ class OpSumOutTest : public OperatorTest {
 
     // dimension size mismatch when keepdim is true
     Tensor out = tf_out.zeros({2, 4});
-    optional<ScalarType> dtype = OUT_DTYPE;
+    std::optional<ScalarType> dtype = OUT_DTYPE;
     int64_t dims_1[1] = {1};
-    optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         op_sum_intlist_out(
@@ -142,8 +144,8 @@ class OpSumOutTest : public OperatorTest {
             CTYPE(0, 0),
         });
     int64_t dims_1[1] = {2};
-    optional<ArrayRef<int64_t>> dim_list1{ArrayRef<int64_t>{dims_1, 1}};
-    optional<ScalarType> dtype = DTYPE;
+    std::optional<ArrayRef<int64_t>> dim_list1{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ScalarType> dtype = DTYPE;
 
     op_sum_intlist_out(self, dim_list1, true, dtype, out1);
 
@@ -168,7 +170,7 @@ class OpSumOutTest : public OperatorTest {
             CTYPE(0, 0),
         });
     int64_t dims_2[1] = {1};
-    optional<ArrayRef<int64_t>> dim_list2{ArrayRef<int64_t>{dims_2, 1}};
+    std::optional<ArrayRef<int64_t>> dim_list2{ArrayRef<int64_t>{dims_2, 1}};
 
     op_sum_intlist_out(self, dim_list2, true, dtype, out2);
 
@@ -181,7 +183,7 @@ class OpSumOutTest : public OperatorTest {
         {
             CTYPE(0, 0),
         });
-    optional<ArrayRef<int64_t>> null_dim_list;
+    std::optional<ArrayRef<int64_t>> null_dim_list;
 
     op_sum_intlist_out(self, null_dim_list, true, dtype, out3);
 
@@ -211,8 +213,9 @@ class OpSumOutTest : public OperatorTest {
     // keepdim=true should work
     Tensor out = tf_out.zeros({2, 3, 1});
     int64_t dims_1[1] = {2};
-    optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
-    optional<ScalarType> dtype = OUT_DTYPE;
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ScalarType> dtype = OUT_DTYPE;
     op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
     // clang-format off
     EXPECT_TENSOR_CLOSE(out, tf_out.make(
@@ -289,11 +292,11 @@ class OpSumOutTest : public OperatorTest {
       });
     // clang-format on
     out = tf_out.zeros({1, 1, 1});
-    optional<ArrayRef<int64_t>> null_dim_list;
+    std::optional<ArrayRef<int64_t>> null_dim_list;
     op_sum_intlist_out(self, null_dim_list, /*keepdim=*/true, dtype, out);
     EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 1, 1}, {56}));
 
-    optional<ArrayRef<int64_t>> empty_dim_list{ArrayRef<int64_t>{}};
+    std::optional<ArrayRef<int64_t>> empty_dim_list{ArrayRef<int64_t>{}};
     op_sum_intlist_out(self, empty_dim_list, /*keepdim=*/true, dtype, out);
     EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 1, 1}, {56}));
 
@@ -365,8 +368,9 @@ TEST_F(OpSumOutTest, MismatchedDTypesDies) {
 
   Tensor out = tf_float.zeros({2, 3, 1});
   int64_t dims_1[1] = {2};
-  optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
-  optional<ScalarType> dtype = ScalarType::Double;
+  std::optional<ArrayRef<int64_t>> optional_dim_list{
+      ArrayRef<int64_t>{dims_1, 1}};
+  std::optional<ScalarType> dtype = ScalarType::Double;
 
   // out tensor should be of the same dtype with dtype when dtype is specified
   ET_EXPECT_KERNEL_FAILURE(
@@ -407,8 +411,9 @@ TEST_F(OpSumOutTest, TypeConversionTest) {
   // clang-format on
 
   int64_t dims_1[1] = {2};
-  optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
-  optional<ScalarType> dtype;
+  std::optional<ArrayRef<int64_t>> optional_dim_list{
+      ArrayRef<int64_t>{dims_1, 1}};
+  std::optional<ScalarType> dtype;
 
   // int -> bool conversion should work
   Tensor out = tf_bool.zeros({2, 3, 1});
@@ -473,8 +478,9 @@ TEST_F(OpSumOutTest, InfinityAndNANTest) {
 
   Tensor out = tf_float.zeros({2, 3, 1});
   int64_t dims[1] = {-1};
-  optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims, 1}};
-  optional<ScalarType> dtype;
+  std::optional<ArrayRef<int64_t>> optional_dim_list{
+      ArrayRef<int64_t>{dims, 1}};
+  std::optional<ScalarType> dtype;
   op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_float.make(

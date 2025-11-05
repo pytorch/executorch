@@ -25,7 +25,7 @@ class OpNativeDropoutTest : public OperatorTest {
   void op_native_dropout_out(
       const Tensor& self,
       double prob,
-      executorch::aten::optional<bool> train,
+      ::std::optional<bool> train,
       Tensor& out,
       Tensor& mask) {
     torch::executor::aten::native_dropout_outf(
