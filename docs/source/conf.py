@@ -255,12 +255,6 @@ html_context = {
     "display_version": True,
 }
 
-# Control the noindex meta tag based on version
-# Only add noindex for main branch (not stable releases)
-if not RELEASE:
-    html_meta = {
-        "robots": "noindex",
-    }
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

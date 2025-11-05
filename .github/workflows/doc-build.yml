@@ -75,7 +75,11 @@ jobs:
         cp -rf executorch_android/build/intermediates/java_doc_dir/release/javaDocReleaseGeneration "${RUNNER_DOCS_DIR}/javadoc"
         cd ../..
 
-        # Note: noindex meta tag is automatically added by conf.py for non-stable releases (main, dev versions)
+        # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
+        echo "GitHub Ref: ${GITHUB_REF}"
+        if [[ "${{ github.ref }}" == 'refs/heads/main' ]]; then
+          find docs/_build/html/ -name "*.html" -print0 | xargs -0 sed -i '/<head>/a \ \ <meta name="robots" content="noindex">';
+        fi
 
         cp -rf docs/_build/html/* "${RUNNER_DOCS_DIR}"
 
