@@ -12,7 +12,6 @@ import conftest
 
 import torch
 
-from executorch.backends.arm.quantizer import arm_quantizer
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
     TOSAQuantizer,
