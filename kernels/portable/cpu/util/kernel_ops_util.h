@@ -432,7 +432,7 @@ void get_convolution_out_target_size(
 bool check_cumsum_args(
     const Tensor& self,
     int64_t dim,
-    optional<ScalarType> enforced_dtype,
+    std::optional<ScalarType> enforced_dtype,
     Tensor& out);
 
 bool check_max_pool2d_with_indices_args(
