@@ -34,7 +34,7 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import TOSA_TENSOR_NAME_META
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph, GraphModule, Node
 
@@ -278,6 +278,9 @@ class TOSABackend(BackendDetails):
 
         """
         tosa_spec = compile_spec.tosa_spec
+        output_node = graph_module.graph.output_node()
+        if isinstance(output_node.args[0], Node):
+            output_node.update_arg(0, [output_node.args[0]])
         node_to_id_map = _annotate_external_ids(graph_module.graph)
         artifact_path = compile_spec.get_intermediate_path()
 
@@ -307,7 +310,9 @@ class TOSABackend(BackendDetails):
                 if node.op == "call_function":
                     process_call_function(node, tosa_graph, node_visitors, tosa_spec)
                 elif node.op == "placeholder":
-                    if len(node.users) == 0:
+                    if len(node.users) == 0 and submodule_name is None:
+                        # In top level module, we don't need to handle unused placeholders.
+                        # In submodules, we do need to handle them to preserve call signature.
                         continue
                     process_placeholder(
                         node,
@@ -340,7 +345,7 @@ class TOSABackend(BackendDetails):
                 raise
 
         # Recursively preprocess controlflow submodules.
-        for name, submodule, _ in get_control_flow_submodules(graph_module):
+        for name, submodule, _ in get_cond_while_submodules(graph_module):
             TOSABackend._preprocess_module(
                 submodule,
                 edge_program,

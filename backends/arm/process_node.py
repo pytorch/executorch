@@ -15,7 +15,7 @@ from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa.mapping import TosaArg, TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.backends.arm.tosa.utils import tosa_shape
-from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.graph_module import get_cond_while_submodules
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -196,7 +196,7 @@ def _is_submodule_input(
     if node.op != "placeholder":
         return False
 
-    for _, _, submodule_node in get_control_flow_submodules(containing_graph_module):
+    for _, _, submodule_node in get_cond_while_submodules(containing_graph_module):
         args = cast(list[torch.fx.Node], submodule_node.args[-1])
         for arg in args:
             if isinstance(arg.target, str):
@@ -216,8 +216,19 @@ def _submodule_has_user_input(
     containing_graph_module: torch.fx.GraphModule, edge_program: ExportedProgram
 ):
     # If argument is a user input, there is no such guarantee. We need to to a heuristic match.
-    for _, _, submodule_node in get_control_flow_submodules(containing_graph_module):
-        args = cast(list[torch.fx.Node], submodule_node.args[-1])
+    for _, _, control_flow_node in get_cond_while_submodules(containing_graph_module):
+        match control_flow_node.target:
+            case torch.ops.higher_order.cond:
+                args = control_flow_node.args[-1]
+            case torch.ops.higher_order.while_loop:
+                args = cast(list, control_flow_node.args[-2]) + cast(
+                    list, control_flow_node.args[-1]
+                )
+            case _:
+                raise RuntimeError(
+                    f"Unexpected control flow target: {control_flow_node.target}"
+                )
+        args = cast(list[torch.fx.Node], args)
         for arg in args:
             if (
                 isinstance(arg.target, str)

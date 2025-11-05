@@ -24,7 +24,7 @@ from executorch.backends.arm.common.arm_compile_spec import (
     ArmCompileSpec,
 )  # isort: skip
 from executorch.backends.arm.vgf import VgfCompileSpec
-from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.graph_module import get_cond_while_submodules
 
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
@@ -512,12 +512,12 @@ class TOSAQuantizer(Quantizer):
         prepare_fn = prepare_qat_pt2e if is_qat else prepare_pt2e
 
         prepared = prepare_fn(model, self)
-        for name, submodule, _ in get_control_flow_submodules(prepared):
+        for name, submodule, _ in get_cond_while_submodules(prepared):
             prepared.set_submodule(name, prepare_fn(submodule, self), strict=True)
         for inp in calibration_samples:
             prepared(*inp)
 
-        for name, submodule, _ in get_control_flow_submodules(prepared):
+        for name, submodule, _ in get_cond_while_submodules(prepared):
             prepared.set_submodule(name, convert_pt2e(submodule), strict=True)
         converted = convert_pt2e(prepared)
         return converted
