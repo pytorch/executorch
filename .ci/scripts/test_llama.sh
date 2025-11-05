@@ -55,7 +55,7 @@ PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
 
 # Default maximum export time. 
-MAX_EXPORT_TIME=${MAX_EXPORT_TIME:500}
+MAX_EXPORT_TIME=${MAX_EXPORT_TIME:-500}
 
 # Argument validation is done individually below for each required parameter
 if [[ -z "${MODEL_NAME:-}" ]]; then
