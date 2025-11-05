@@ -66,7 +66,7 @@ TEST_F(MallocMemoryAllocatorTest, SimpleAllocateSucceeds) {
   EXPECT_ALIGNED(p, kDefaultAlignment);
 
   auto p2 = allocator.allocate(16);
-  EXPECT_NE(p, nullptr);
+  EXPECT_NE(p2, nullptr);
   EXPECT_NE(p2, p);
   EXPECT_ALIGNED(p2, kDefaultAlignment);
 
