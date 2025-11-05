@@ -38,9 +38,6 @@ The demo requires the `ultralytics` package, which depends on `torch` and `torch
 python -m pip install --upgrade-strategy only-if-needed -r requirements.txt
 ```
 
-#### Demo Inference Dependency - OpenCV Library
-<https://opencv.org/get-started/>
-
 ### Step 4: Export the YOLO12 model to the ExecuTorch
 
 OpenVINO:
