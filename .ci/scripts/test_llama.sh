@@ -54,9 +54,6 @@ PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
 # Default CMake Build Type to release mode
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
 
-# Default maximum export time. 
-MAX_EXPORT_TIME=${MAX_EXPORT_TIME:-500}
-
 # Argument validation is done individually below for each required parameter
 if [[ -z "${MODEL_NAME:-}" ]]; then
   echo "Missing model name, exiting..."
@@ -139,6 +136,51 @@ else
   QNN=OFF
   QNN_SDK_ROOT=""
 fi
+
+# Set dynamic max export times
+PLATFORM="x86"
+if [[ "$(uname)" == "Darwin" ]]; then
+    PLATFORM="macos"
+elif [[ "$(uname -m)" == "aarch64" ]] || [[ "$(uname -m)" == "arm64" ]]; then
+    PLATFORM="arm64"
+fi
+
+# Lookup threshold based on platform:dtype:mode
+case "${PLATFORM}:${DTYPE}:${MODE}" in
+    # Linux x86 configurations
+    "x86:fp32:portable")                        MAX_EXPORT_TIME=100 ;;  # actual: 72s
+    "x86:fp32:xnnpack+custom")                  MAX_EXPORT_TIME=360 ;;  # actual: 276s
+    "x86:fp32:xnnpack+custom+qe")               MAX_EXPORT_TIME=360 ;;
+    "x86:fp32:xnnpack+custom+quantize_kv")      MAX_EXPORT_TIME=400 ;;
+    "x86:fp32:xnnpack+quantize_kv")             MAX_EXPORT_TIME=400 ;;
+    "x86:bf16:portable")                        MAX_EXPORT_TIME=100 ;;  # actual: 75s
+    "x86:bf16:custom")                          MAX_EXPORT_TIME=130 ;;
+
+    # Linux ARM64 configurations
+    "arm64:fp32:portable")                      MAX_EXPORT_TIME=162 ;;  # actual: 124s
+    "arm64:fp32:xnnpack+custom")                MAX_EXPORT_TIME=630 ;;  # actual: 483s
+    "arm64:fp32:xnnpack+custom+qe")             MAX_EXPORT_TIME=630 ;;
+    "arm64:fp32:xnnpack+custom+quantize_kv")    MAX_EXPORT_TIME=680 ;;
+    "arm64:fp32:xnnpack+quantize_kv")           MAX_EXPORT_TIME=680 ;;
+    "arm64:bf16:portable")                      MAX_EXPORT_TIME=162 ;;  # actual: 118s
+    "arm64:bf16:custom")                        MAX_EXPORT_TIME=133 ;;  # actual: 102s
+
+    # macOS configurations
+    "macos:fp32:mps")                           MAX_EXPORT_TIME=60  ;;  # actual: 30s
+    "macos:fp32:coreml")                        MAX_EXPORT_TIME=80  ;;  # actual: 61s
+    "macos:fp32:xnnpack+custom+quantize_kv")    MAX_EXPORT_TIME=170 ;;  # actual: 133s
+    "macos:fp32:xnnpack+custom")                MAX_EXPORT_TIME=150 ;;
+    "macos:fp32:portable")                      MAX_EXPORT_TIME=80  ;;
+    "macos:bf16:portable")                      MAX_EXPORT_TIME=80  ;;
+    "macos:bf16:custom")                        MAX_EXPORT_TIME=100 ;;
+
+    # Default fallback for unknown configurations
+    *)
+        MAX_EXPORT_TIME=500
+        echo "Warning: No threshold defined for ${PLATFORM}:${DTYPE}:${MODE}, using default: ${MAX_EXPORT_TIME}s"
+        ;;
+esac
+
 
 echo "QNN option ${QNN}"
 echo "QNN_SDK_ROOT: ${QNN_SDK_ROOT}"
@@ -259,7 +301,6 @@ if [[ "${QUANTIZE_KV_CACHE}" == "ON" ]]; then
 fi
 
 # Display the time
-echo "Starting model export at $(date +"%Y-%m-%d %H:%M:%S")"
 echo "Configuration: MODE=${MODE}, DTYPE=${DTYPE}, MODEL=${MODEL_NAME}"
 EXPORT_START_TIME=$(date +%s)
 
@@ -276,7 +317,7 @@ if [ $EXPORT_DURATION -gt $MAX_EXPORT_TIME ]; then
     exit 1
 fi
 
-echo "Successl Export time check passed: ${EXPORT_DURATION}s <= ${MAX_EXPORT_TIME}s"
+echo "Success; Export time check passed: ${EXPORT_DURATION}s <= ${MAX_EXPORT_TIME}s"
 
 
 # Create tokenizer.bin.
