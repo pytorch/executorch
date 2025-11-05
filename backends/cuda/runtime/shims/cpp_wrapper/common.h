@@ -67,7 +67,6 @@ class RAIIPyObject {
 #include <executorch/backends/cuda/runtime/shims/aoti_runtime/utils.h>
 using namespace torch::aot_inductor;
 
-#include <c10/util/generic_math.h>
 #include <executorch/backends/cuda/runtime/shims/aoti_runtime/scalar_to_tensor.h>
 
 // Round up to the nearest multiple of 64
