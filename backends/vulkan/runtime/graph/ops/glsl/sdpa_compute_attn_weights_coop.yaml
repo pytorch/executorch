@@ -12,10 +12,14 @@ sdpa_compute_attn_weights_coop:
     TILE_K4: 1
     TILE_N4: 1
   generate_variant_forall:
+    combination:
+      parameter_names: [IO_STORAGE, K_CACHE_STORAGE]
+      combos:
+        - parameter_values: [texture3d, texture3d]
+        - parameter_values: [buffer, texture3d]
+        - parameter_values: [buffer, buffer]
     DTYPE:
       - VALUE: float
       - VALUE: half
   shader_variants:
-    - NAME: sdpa_compute_attn_weights_coop_texture3d_texture3d
-    - NAME: sdpa_compute_attn_weights_coop_buffer_texture3d
-      IO_STORAGE: buffer
+    - NAME: sdpa_compute_attn_weights_coop
