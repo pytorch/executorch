@@ -526,10 +526,11 @@ void sdpa_with_kv_cache_impl(
 
   (void)sequence_len;
 
-  const ValueRef k_cache = prepack_standard(
-      graph, k_cache_data, utils::kTexture3D, utils::kWidthPacked);
-  const ValueRef v_cache = prepack_standard(
-      graph, v_cache_data, utils::kTexture3D, utils::kWidthPacked);
+  utils::StorageType cache_storage = graph.storage_type_of(q_projected);
+  const ValueRef k_cache =
+      prepack_standard(graph, k_cache_data, cache_storage, utils::kWidthPacked);
+  const ValueRef v_cache =
+      prepack_standard(graph, v_cache_data, cache_storage, utils::kWidthPacked);
 
   update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
   update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
@@ -547,10 +548,51 @@ void sdpa_with_kv_cache_impl(
        out});
 }
 
+void compute_attn_weight_with_kv_cache_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int arg_idx = 0;
+  const ValueRef q_projected = args[arg_idx++];
+  const ValueRef k_projected = args[arg_idx++];
+  const ValueRef v_projected = args[arg_idx++];
+  const ValueRef k_cache_data = args[arg_idx++];
+  const ValueRef v_cache_data = args[arg_idx++];
+  const ValueRef input_pos_symint = args[arg_idx++];
+  const ValueRef sequence_len = args[arg_idx++];
+  const ValueRef attn_mask = args[arg_idx++];
+  (void)attn_mask;
+  const ValueRef dropout_p = args[arg_idx++];
+  (void)dropout_p;
+  const ValueRef is_causal = args[arg_idx++];
+  (void)is_causal;
+  const ValueRef scale = args[arg_idx++];
+  (void)scale;
+
+  // Output tensors
+  const ValueRef out = args[arg_idx++];
+
+  (void)sequence_len;
+
+  utils::StorageType cache_storage = graph.storage_type_of(q_projected);
+  const ValueRef k_cache =
+      prepack_standard(graph, k_cache_data, cache_storage, utils::kWidthPacked);
+  const ValueRef v_cache =
+      prepack_standard(graph, v_cache_data, cache_storage, utils::kWidthPacked);
+
+  update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
+  update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
+
+  add_sdpa_compute_attn_weights_node(
+      graph, q_projected, k_cache, input_pos_symint, out);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(sdpa_with_kv_cache.default, sdpa_with_kv_cache_impl);
   VK_REGISTER_OP(update_cache.default, update_cache_impl);
   VK_REGISTER_OP(llama.custom_sdpa.default, sdpa_impl);
+  VK_REGISTER_OP(
+      testing.compute_attn_weight_with_kv_cache.default,
+      compute_attn_weight_with_kv_cache_impl);
 }
 
 } // namespace vkcompute

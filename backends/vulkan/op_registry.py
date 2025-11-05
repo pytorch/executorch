@@ -687,7 +687,7 @@ def register_dequantize_for_conv2d_op():
 @update_features("llama::sdpa_with_kv_cache")
 def register_sdpa_with_kv_cache_op():
     return OpFeatures(
-        inputs_storage=utils.WIDTH_PACKED_TEXTURE,
+        inputs_storage=utils.CONTIGUOUS_ANY,
         supports_resize=True,
         supports_prepacking=True,
     )
