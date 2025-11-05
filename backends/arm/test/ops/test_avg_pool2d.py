@@ -12,6 +12,11 @@ import conftest
 
 import torch
 
+from executorch.backends.arm.quantizer import arm_quantizer
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+    TOSAQuantizer,
+)
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -22,6 +27,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.xnnpack.test.tester import Quantize
 
 aten_op = "torch.ops.aten.avg_pool2d.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"
@@ -230,5 +237,99 @@ def test_avg_pool2d_u55_INT_not_delegated(reject_module):
         n_expected_delegates=0,
         quantize=True,
         u55_subset=True,
+    )
+    pipeline.run()
+
+
+def get_symmetric_a16w8_avg_pool2d_quantizer(per_channel_quantization=False):
+    tosa_version = conftest.get_option("tosa_version")
+    tosa_profiles = {
+        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
+    }
+
+    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+    quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
+    )
+
+    return Quantize(
+        quantizer,
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization
+        ),
+    )
+
+
+@common.parametrize("test_module", test_modules)
+def test_avg_pool2d_16a8w_tosa_INT(test_module):
+    """Test avg_pool2d operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    model, input_tensor = test_module()
+    per_channel_quantization = False
+
+    pipeline = TosaPipelineINT[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        tosa_extensions=["int16"],
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_avg_pool2d_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.XfailIfNoCorstone300
+def test_avg_pool2d_16a8w_u55_INT16(test_module):
+    """Test avg_pool2d operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    model, input_tensor = test_module()
+    per_channel_quantization = False
+
+    pipeline = EthosU55PipelineINT[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_avg_pool2d_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.XfailIfNoCorstone320
+def test_avg_pool2d_16a8w_u85_INT16(test_module):
+    """Test avg_pool2d operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    model, input_tensor = test_module()
+    per_channel_quantization = False
+
+    pipeline = EthosU85PipelineINT[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_avg_pool2d_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
     )
     pipeline.run()
