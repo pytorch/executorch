@@ -11,9 +11,6 @@
 /// Forked from pytorch/c10/util/TypeList.h
 /// \brief Utilities for working with type lists.
 #pragma once
-#if __cplusplus < 201703L
-#error "This header requires C++17"
-#endif
 
 #include <algorithm>
 #include <cstddef>
