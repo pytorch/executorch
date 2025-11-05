@@ -17,7 +17,7 @@ html-stable:
 	# Stable differs from 'make html' in that it shows the release version
 	# instead of "main (version)" in the docs and version switcher.
 	# See conf.py for more details.
-	RELEASE=1 $(MAKE) html
+	RELEASE=true $(MAKE) html
 
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
