@@ -50,7 +50,7 @@ void resize_compute_attn_weights_node(
   std::vector<int64_t> out_sizes = {
       1, // batch
       num_q_heads,
-      seq_len,
+      utils::align_up_4(seq_len),
       utils::align_up_4(context_len)};
 
   graph->virtual_resize(attn_weights, out_sizes);
