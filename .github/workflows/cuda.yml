@@ -87,8 +87,10 @@ jobs:
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
         PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
 
-  export-voxtral-cuda-artifact:
-    name: export-voxtral-cuda-artifact
+  export-model-cuda-artifact:
+    name: export-model-cuda-artifact
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -96,6 +98,24 @@ jobs:
     secrets: inherit
     strategy:
       fail-fast: false
+      matrix:
+        model:
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "openai"
+            name: "whisper-small"
+          - repo: "google"
+            name: "gemma-3-4b-it"
+        quant:
+          - "non-quantized"
+          - "quantized-int4-tile-packed"
+          - "quantized-int4-weight-only"
+        exclude:
+          # TODO: enable int4-weight-only on gemma3.
+          - model:
+              repo: "google"
+              name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -104,7 +124,7 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      upload-artifact: voxtral-cuda-export
+      upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -114,51 +134,39 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
-        pip install -U "huggingface_hub[cli]" accelerate
+        pip install -U "huggingface_hub[cli]<1.0" accelerate
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
-        pip install mistral-common librosa
-        pip list
         echo "::endgroup::"
 
-        echo "::group::Export Voxtral"
-        optimum-cli export executorch \
-            --model "mistralai/Voxtral-Mini-3B-2507" \
-            --task "multimodal-text-to-text" \
-            --recipe "cuda" \
-            --dtype bfloat16 \
-            --device cuda \
-            --max_seq_len 1024 \
-            --output_dir ./
-        python -m executorch.extension.audio.mel_spectrogram \
-            --feature_size 128 \
-            --stack_output \
-            --max_audio_len 300 \
-            --output_file voxtral_preprocessor.pte
+        source .ci/scripts/export_model_cuda_artifact.sh "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
-        test -f model.pte
-        test -f aoti_cuda_blob.ptd
-        test -f voxtral_preprocessor.pte
-        echo "::endgroup::"
-
-        echo "::group::Store Voxtral Artifacts"
-        mkdir -p "${RUNNER_ARTIFACT_DIR}"
-        cp model.pte "${RUNNER_ARTIFACT_DIR}/"
-        cp aoti_cuda_blob.ptd "${RUNNER_ARTIFACT_DIR}/"
-        cp voxtral_preprocessor.pte "${RUNNER_ARTIFACT_DIR}/"
-        ls -al "${RUNNER_ARTIFACT_DIR}"
-        echo "::endgroup::"
-
-  benchmark-voxtral-cuda:
-    name: benchmark-voxtral-cuda
-    needs: export-voxtral-cuda-artifact
+  benchmark-model-cuda:
+    name: benchmark-model-cuda
+    needs: export-model-cuda-artifact
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
+      matrix:
+        model:
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "google"
+            name: "gemma-3-4b-it"
+        quant:
+          - "non-quantized"
+          - "quantized-int4-tile-packed"
+          - "quantized-int4-weight-only"
+        exclude:
+          # TODO: enable int4-weight-only on gemma3.
+          - model:
+              repo: "google"
+              name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -166,23 +174,23 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      download-artifact: voxtral-cuda-export
+      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
 
         echo "::group::Setup ExecuTorch Requirements"
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_requirements.sh
+        ./install_requirements.sh
         pip list
         echo "::endgroup::"
 
-        echo "::group::Prepare Voxtral Artifacts"
+        echo "::group::Prepare ${{ matrix.model }} Artifacts"
         cp "${RUNNER_ARTIFACT_DIR}/model.pte" .
         cp "${RUNNER_ARTIFACT_DIR}/aoti_cuda_blob.ptd" .
         ls -al model.pte aoti_cuda_blob.ptd
         echo "::endgroup::"
 
-        echo "::group::Build Voxtral Benchmark"
+        echo "::group::Build ${{ matrix.model }} Benchmark"
         cmake -DCMAKE_BUILD_TYPE=Release \
               -DEXECUTORCH_BUILD_CUDA=ON \
               -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
@@ -190,25 +198,43 @@ jobs:
               -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
               -DEXECUTORCH_BUILD_TESTS=ON \
               -Bcmake-out .
-        cmake --build cmake-out -j$(( $(nproc) - 1 )) --target voxtral_runner
+        cmake --build cmake-out -j$(nproc) --target multimodal_benchmark
         echo "::endgroup::"
 
-        echo "::group::Run Voxtral Benchmark"
+        echo "::group::Run ${{ matrix.model.name }} Benchmark"
 
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        cmake-out/backends/cuda/voxtral_runner model.pte aoti_cuda_blob.ptd
+        cmake-out/backends/cuda/multimodal_benchmark ${{ matrix.model.name }} model.pte aoti_cuda_blob.ptd
 
         echo "::endgroup::"
 
-  test-voxtral-cuda-e2e:
-    name: test-voxtral-cuda-e2e
-    needs: export-voxtral-cuda-artifact
+  test-model-cuda-e2e:
+    name: test-model-cuda-e2e
+    needs: export-model-cuda-artifact
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
+      matrix:
+        model:
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "openai"
+            name: "whisper-small"
+          - repo: "google"
+            name: "gemma-3-4b-it"
+        quant:
+          - "non-quantized"
+          - "quantized-int4-tile-packed"
+          - "quantized-int4-weight-only"
+        exclude:
+          # TODO: enable int4-weight-only on gemma3.
+          - model:
+              repo: "google"
+              name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -216,67 +242,7 @@ jobs:
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
-      download-artifact: voxtral-cuda-export
+      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        set -eux
-
-        echo "::group::Setup ExecuTorch Requirements"
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_requirements.sh
-        pip list
-        echo "::endgroup::"
-
-        echo "::group::Prepare Voxtral Artifacts"
-        cp "${RUNNER_ARTIFACT_DIR}/model.pte" .
-        cp "${RUNNER_ARTIFACT_DIR}/aoti_cuda_blob.ptd" .
-        cp "${RUNNER_ARTIFACT_DIR}/voxtral_preprocessor.pte" .
-        TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main/tekken.json"
-        curl -L $TOKENIZER_URL -o tekken.json
-        ls -al model.pte aoti_cuda_blob.ptd voxtral_preprocessor.pte tekken.json
-        echo "::endgroup::"
-
-        echo "::group::Download Test Audio File"
-        AUDIO_URL="https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
-        curl -L $AUDIO_URL -o poem.wav
-        echo "::endgroup::"
-
-        echo "::group::Build Voxtral Runner"
-        cmake --preset llm \
-              -DEXECUTORCH_BUILD_CUDA=ON \
-              -DCMAKE_INSTALL_PREFIX=cmake-out \
-              -DCMAKE_BUILD_TYPE=Release \
-              -Bcmake-out -S.
-        cmake --build cmake-out -j$(( $(nproc) - 1 )) --target install --config Release
-
-        cmake -DEXECUTORCH_BUILD_CUDA=ON \
-              -DCMAKE_BUILD_TYPE=Release \
-              -Sexamples/models/voxtral \
-              -Bcmake-out/examples/models/voxtral/
-        cmake --build cmake-out/examples/models/voxtral --target voxtral_runner --config Release
-        echo "::endgroup::"
-
-        echo "::group::Run Voxtral Runner"
-        set +e
-        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        OUTPUT=$(cmake-out/examples/models/voxtral/voxtral_runner \
-              --model_path model.pte \
-              --data_path aoti_cuda_blob.ptd \
-              --tokenizer_path tekken.json \
-              --audio_path poem.wav \
-              --processor_path voxtral_preprocessor.pte \
-              --temperature 0 2>&1)
-        EXIT_CODE=$?
-        set -e
-
-        echo "$OUTPUT"
-
-        if ! echo "$OUTPUT" | grep -iq "poem"; then
-          echo "Expected output 'poem' not found in output"
-          exit 1
-        fi
-
-        if [ $EXIT_CODE -ne 0 ]; then
-          echo "Unexpected exit code: $EXIT_CODE"
-          exit $EXIT_CODE
-        fi
-        echo "::endgroup::"
+        source .ci/scripts/test_model_cuda_e2e.sh "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"

@@ -448,7 +448,7 @@ Please help update following table if you are contributing new operators:
 | Pack | &check; |
 | Pad | &check; |
 | PoolAvg2d | &check; |
-| PoolAvg3d | &cross; |
+| PoolAvg3d | &check; |
 | PoolMax2d | &check; |
 | Prelu | &check; |
 | Quantize | &check; |

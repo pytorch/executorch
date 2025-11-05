@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 #
 # Main implementation of AoT flow to partition and preprocess for Arm target
@@ -11,11 +10,12 @@
 # JIT compiler flows.
 #
 import logging
+import tempfile
 from collections import deque
 from itertools import count
 from typing import cast, Dict, final, List, Set
 
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_serializer as ts
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
 from executorch.backends.arm.debug.schema import DebugHook
@@ -25,10 +25,12 @@ from executorch.backends.arm.process_node import (
     process_placeholder,
 )
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.mapping import TOSA_TENSOR_NAME_META
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.graph_module import get_control_flow_submodules
 from torch.export.exported_program import ExportedProgram
-from torch.fx import Graph, Node
+from torch.fx import Graph, GraphModule, Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
@@ -53,11 +55,37 @@ def _annotate_external_ids(ep_graph: Graph) -> Dict[str, int]:
             # Walk backwards so we touch every producer
             q.extend(n.all_input_nodes)
 
-    out = next(n for n in ep_graph.nodes if n.op == "output")
+    out = ep_graph.output_node()
+    # First argument of output node is tuple of outputs
+    output_list = cast(tuple, out.args[0])
     seen: Set[Node] = set()
-    for idx, val in enumerate(out.args[0]):
+    for idx, val in enumerate(output_list):
         bfs_mark([val], idx, seen)
     return node2external_id
+
+
+def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
+    def _external_id(n: Node, node_2_id, fallback: int) -> int:
+        return node_2_id.get(n.name, fallback)
+
+    out_node = graph_module.graph.output_node()
+    out_list = cast(tuple, out_node.args[0])
+    _counter = count()
+
+    # sort nodes by the key that is id
+    def _sort_key(t: Node) -> int:
+        return _external_id(t, node_to_id_map, next(_counter))
+
+    orig_ord = tuple(sorted(out_list, key=_sort_key))
+
+    current_order = tuple(out_list)
+    if orig_ord != current_order:
+        replacement = list(orig_ord) if isinstance(out_node.args[0], list) else orig_ord
+        out_node.args = (replacement,)
+        graph_module.graph.lint()
+        graph_module.recompile()
+
+    return graph_module
 
 
 def arm_get_first_delegation_tag(graph_module) -> str:
@@ -94,15 +122,25 @@ class TOSABackend(BackendDetails):
         artifact_path = compile_spec.get_intermediate_path()
         tosa_spec = compile_spec.tosa_spec
         dump_debug_info = compile_spec.tosa_debug_mode
-
-        # Assign to every node external id
-        node_2_id = _annotate_external_ids(edge_program.graph)
+        debug_hook = None
+        if dump_debug_info is not None:
+            debug_hook = DebugHook(dump_debug_info)
 
         logger.info(f"Converting ExportedProgram to TOSA: {tosa_spec}")
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
-        tosa_graph = ts.TosaSerializer(artifact_path)
+        if not artifact_path:
+            artifact_path = ""
+
+        version = tosa_spec.version
+        tosa_graph = ts.TosaSerializer(
+            artifact_path,
+            targetMajor=version.major,
+            targetMinor=version.minor,
+            targetPatch=version.micro,
+            targetDraft=False,
+        )
 
         if not (
             tosa_spec.version.major == ts.TOSA_VERSION_MAJOR
@@ -114,45 +152,71 @@ class TOSABackend(BackendDetails):
                 f"doesn't match specification {tosa_spec}"
             )
 
+        TOSABackend._preprocess_module(
+            edge_program.graph_module,
+            edge_program,
+            compile_spec,
+            tosa_graph,
+            debug_hook,
+        )
+        # Serialize and return the TOSA flatbuffer.
+        binary = tosa_graph.serialize()
+
+        if artifact_path:
+            tag = arm_get_first_delegation_tag(edge_program.graph_module)
+
+            # Only dump TOSA if we are not saving to temporary folder.
+            if len(
+                tempdir := tempfile.gettempdir()
+            ) > 0 and not artifact_path.startswith(tempdir):
+                debug_tosa_dump(
+                    binary,
+                    artifact_path,
+                    suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),
+                )
+
+            if debug_hook is not None:
+                if debug_hook.mode == ArmCompileSpec.DebugMode.JSON:
+                    json_output = debug_hook.serialize()
+                    with open(f"{artifact_path}/debug.json", "w") as f:
+                        f.write(json_output)
+
+        return PreprocessResult(processed_bytes=binary)
+
+    @staticmethod
+    def _preprocess_module(  # noqa: C901
+        graph_module: GraphModule,
+        edge_program: ExportedProgram,
+        compile_spec: TosaCompileSpec,
+        tosa_graph: ts.TosaSerializer,
+        debug_hook: DebugHook | None,
+        submodule_name: str | None = None,
+    ):
+        """Convert 'graph_module' to a tosa_graph"""
+        tosa_spec = compile_spec.tosa_spec
+        node_to_id_map = _annotate_external_ids(graph_module.graph)
+        artifact_path = compile_spec.get_intermediate_path()
+
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
 
         graph_module = ArmPassManager(tosa_spec).transform_to_backend_pipeline(  # type: ignore
-            exported_program=edge_program
+            exported_program=edge_program, graph_module=graph_module
         )
-
-        debug_hook = None
-        if dump_debug_info is not None:
-            debug_hook = DebugHook(dump_debug_info)
 
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm.operators.node_visitor import get_node_visitors
 
         node_visitors = get_node_visitors(edge_program, tosa_spec, debug_hook)
+        graph_module = _sort_outputs(graph_module, node_to_id_map)
 
-        # Re-shuffle output nodes to preserve author's order
-        def _external_id(n: Node, node_2_id, fallback: int) -> int:
-            return node_2_id.get(n.name, fallback)
+        if submodule_name is not None:
+            tosa_graph.startRegion(submodule_name)
+            tosa_graph.currRegion.addBasicBlock(submodule_name)
+            suffix = f"_{submodule_name}"
+            for loop_node in graph_module.graph.nodes:
+                loop_node.meta[TOSA_TENSOR_NAME_META] = suffix
 
-        out_node = next(n for n in graph_module.graph.nodes if n.op == "output")
-        _counter = count()
-
-        # sort nodes by the key that is id
-        def _sort_key(t: Node) -> int:
-            return _external_id(t, node_2_id, next(_counter))
-
-        orig_ord = tuple(sorted(out_node.args[0], key=_sort_key))
-
-        current_order = tuple(out_node.args[0])
-        if orig_ord != current_order:
-            replacement = (
-                list(orig_ord) if isinstance(out_node.args[0], list) else orig_ord
-            )
-            out_node.args = (replacement,)
-            graph_module.graph.lint()
-            graph_module.recompile()
-
-        input_count = 0
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
             try:
@@ -162,10 +226,8 @@ class TOSABackend(BackendDetails):
                     if len(node.users) == 0:
                         continue
                     process_placeholder(node, tosa_graph, edge_program, tosa_spec)
-                    if node.name in edge_program.graph_signature.user_inputs:
-                        input_count += 1
                 elif node.op == "output":
-                    process_output(node, tosa_graph)
+                    process_output(node, tosa_graph, tosa_spec)
                 else:
                     # This will only happen if an unpartitioned graph is passed without
                     # any checking of compatibility.
@@ -174,24 +236,16 @@ class TOSABackend(BackendDetails):
                 debug_fail(node, graph_module, tosa_graph, artifact_path)
                 raise
 
-        if artifact_path:
-            tag = arm_get_first_delegation_tag(graph_module)
-            debug_tosa_dump(
+        # Recursively preprocess controlflow submodules.
+        for name, submodule, _ in get_control_flow_submodules(graph_module):
+            TOSABackend._preprocess_module(
+                submodule,
+                edge_program,
+                compile_spec,
                 tosa_graph,
-                artifact_path,
-                suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),
+                debug_hook,
+                submodule_name=name,
             )
-
-            if debug_hook is not None:
-                if debug_hook.mode == ArmCompileSpec.DebugMode.JSON:
-                    json_output = debug_hook.serialize()
-                    with open(f"{artifact_path}/debug.json", "w") as f:
-                        f.write(json_output)
-
-        # Serialize and return the TOSA flatbuffer.
-        binary = bytes(tosa_graph.serialize())
-
-        return PreprocessResult(processed_bytes=binary)
 
     @staticmethod
     def filter_tosa_compile_specs(

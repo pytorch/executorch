@@ -7,8 +7,11 @@
  */
 package org.pytorch.executorch
 
+import java.nio.ByteOrder
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
@@ -182,6 +185,65 @@ class TensorTest {
     assertEquals(data[1].toLong(), tensor.dataAsUnsignedByteArray[1].toLong())
     assertEquals(data[2].toLong(), tensor.dataAsUnsignedByteArray[2].toLong())
     assertEquals(data[3].toLong(), tensor.dataAsUnsignedByteArray[3].toLong())
+  }
+
+  @Test
+  fun testHalfTensorFromShortArrayAndBuffer() {
+    val data =
+        shortArrayOf(
+            0x3C00.toShort(), // 1.0
+            0xC000.toShort(), // -2.0
+            0x0000.toShort(), // 0.0
+            0x7C00.toShort(), // +inf
+        )
+    val shape = longArrayOf(2, 2)
+    var tensor = Tensor.fromBlob(data, shape)
+    assertEquals(DType.HALF, tensor.dtype())
+    assertEquals(shape[0], tensor.shape()[0])
+    assertEquals(shape[1], tensor.shape()[1])
+    assertEquals(4, tensor.numel())
+    assertArrayEquals(data, tensor.dataAsShortArray)
+    val floats = tensor.dataAsFloatArray
+    assertEquals(1.0f.toDouble(), floats[0].toDouble(), 1e-6)
+    assertEquals((-2.0f).toDouble(), floats[1].toDouble(), 1e-6)
+    assertEquals(0.0f.toDouble(), floats[2].toDouble(), 1e-6)
+    assertEquals(Float.POSITIVE_INFINITY.toDouble(), floats[3].toDouble(), 0.0)
+
+    val buffer = Tensor.allocateHalfBuffer(data.size)
+    assertTrue(buffer.isDirect)
+    assertEquals(ByteOrder.nativeOrder(), buffer.order())
+    buffer.put(data)
+    buffer.rewind()
+
+    tensor = Tensor.fromBlob(buffer, longArrayOf(data.size.toLong()))
+    assertEquals(DType.HALF, tensor.dtype())
+    assertEquals(data.size.toLong(), tensor.shape()[0])
+    assertEquals(data.size.toLong(), tensor.numel())
+    assertArrayEquals(data, tensor.dataAsShortArray)
+    val raw = tensor.rawDataBuffer as java.nio.ShortBuffer
+    assertTrue(raw === buffer)
+  }
+
+  @Test
+  fun testHalfTensorSerializationRoundTrip() {
+    val data =
+        shortArrayOf(
+            0x0000.toShort(),
+            0x0400.toShort(),
+            0x3C00.toShort(),
+            0x7BFF.toShort(),
+        )
+    val shape = longArrayOf(2, 2)
+    val tensor = Tensor.fromBlob(data, shape)
+    val serialized = tensor.toByteArray()
+    val deserialized = Tensor.fromByteArray(serialized)
+
+    assertEquals(DType.HALF, deserialized.dtype())
+    assertEquals(shape[0], deserialized.shape()[0])
+    assertEquals(shape[1], deserialized.shape()[1])
+    assertEquals(4, deserialized.numel())
+    assertArrayEquals(data, deserialized.dataAsShortArray)
+    assertEquals(1.0f.toDouble(), deserialized.dataAsFloatArray[2].toDouble(), 1e-6)
   }
 
   @Test
