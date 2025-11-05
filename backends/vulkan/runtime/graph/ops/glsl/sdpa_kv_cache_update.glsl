@@ -14,6 +14,10 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
+#define DEBUG_MODE
+
+#extension GL_EXT_debug_printf : enable
+
 #include "common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_cache", DTYPE, OUTPUT_STORAGE, is_scalar_array=False)}
@@ -80,13 +84,17 @@ void main() {
   const int S = projected_sizes.z;
   const int H = projected_sizes.y;
 
-  if (d4 >= D4 || s >= S || h >= H) {
+  const int c = s + input_pos; // idx along max_context_len dim
+  const int C = cache_sizes.z;
+
+  if (d4 >= D4 || c >= C || h >= H) {
     return;
   }
 
-  const int c = s + input_pos; // idx along max_context_len dim
-  const int C = cache_sizes.y;
+  IN_VEC4_T in_texel = IN_VEC4_T(0.0);
+  if (s < S) {
+    in_texel = read_projected_d4(d4, h, s, D4, H, S);
+  }
 
-  IN_VEC4_T in_texel = read_projected_d4(d4, h, s, D4, H, S);
   write_cache_d4(in_texel, d4, c, h, D4, C, H);
 }
