@@ -3,14 +3,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import os
 import random
 from typing import Any
 
 import pytest
-
-logger = logging.getLogger(__name__)
 
 """
 This file contains the pytest hooks, fixtures etc. for the Arm test suite.
@@ -97,7 +94,7 @@ def set_random_seed():
                 "ARM_TEST_SEED env variable must be integers or the string RANDOM"
             )
 
-    logger.info(f"ARM_TEST_SEED={seed}")
+    print(f" ARM_TEST_SEED={seed} ", end=" ")
 
 
 # ==== End of Pytest fixtures =====
