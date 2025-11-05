@@ -148,7 +148,6 @@ runtime.python_library(
         ":fuse_quantized_ops",
         ":insert_prepack_nodes",
         ":remove_asserts",
-        ":remove_local_scalar_dense",
         ":remove_redundant_ops",
         ":replace_qdq",
         ":squeeze_unsqueeze_inputs",
