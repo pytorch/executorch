@@ -233,6 +233,14 @@ def texel_component_type(dtype: str) -> str:
     raise AssertionError(f"Invalid vec4 type: {vec4_type}")
 
 
+def accum_vec_type(dtype: str) -> str:
+    return texel_type(dtype)
+
+
+def accum_scalar_type(dtype: str) -> str:
+    return texel_component_type(dtype)
+
+
 def texel_load_type(dtype: str, storage_type: str) -> str:
     if storage_type.lower() == "buffer":
         return buffer_gvec_type(dtype, 4)
@@ -455,6 +463,8 @@ UTILITY_FNS: Dict[str, Any] = {
     "buffer_gvec_type": buffer_gvec_type,
     "texel_type": texel_type,
     "gvec_type": gvec_type,
+    "accum_vec_type": accum_vec_type,
+    "accum_scalar_type": accum_scalar_type,
     "texel_component_type": texel_component_type,
     "texel_load_type": texel_load_type,
     "texel_load_component_type": texel_load_component_type,
