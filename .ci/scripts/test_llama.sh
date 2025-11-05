@@ -150,18 +150,11 @@ case "${PLATFORM}:${DTYPE}:${MODE}" in
     # Linux x86 configurations
     "x86:fp32:portable")                        MAX_EXPORT_TIME=100 ;;  # actual: 72s
     "x86:fp32:xnnpack+custom")                  MAX_EXPORT_TIME=360 ;;  # actual: 276s
-    "x86:fp32:xnnpack+custom+qe")               MAX_EXPORT_TIME=360 ;;
-    "x86:fp32:xnnpack+custom+quantize_kv")      MAX_EXPORT_TIME=400 ;;
-    "x86:fp32:xnnpack+quantize_kv")             MAX_EXPORT_TIME=400 ;;
     "x86:bf16:portable")                        MAX_EXPORT_TIME=100 ;;  # actual: 75s
-    "x86:bf16:custom")                          MAX_EXPORT_TIME=130 ;;
 
     # Linux ARM64 configurations
     "arm64:fp32:portable")                      MAX_EXPORT_TIME=162 ;;  # actual: 124s
     "arm64:fp32:xnnpack+custom")                MAX_EXPORT_TIME=630 ;;  # actual: 483s
-    "arm64:fp32:xnnpack+custom+qe")             MAX_EXPORT_TIME=630 ;;
-    "arm64:fp32:xnnpack+custom+quantize_kv")    MAX_EXPORT_TIME=680 ;;
-    "arm64:fp32:xnnpack+quantize_kv")           MAX_EXPORT_TIME=680 ;;
     "arm64:bf16:portable")                      MAX_EXPORT_TIME=162 ;;  # actual: 118s
     "arm64:bf16:custom")                        MAX_EXPORT_TIME=133 ;;  # actual: 102s
 
@@ -169,10 +162,6 @@ case "${PLATFORM}:${DTYPE}:${MODE}" in
     "macos:fp32:mps")                           MAX_EXPORT_TIME=60  ;;  # actual: 30s
     "macos:fp32:coreml")                        MAX_EXPORT_TIME=80  ;;  # actual: 61s
     "macos:fp32:xnnpack+custom+quantize_kv")    MAX_EXPORT_TIME=170 ;;  # actual: 133s
-    "macos:fp32:xnnpack+custom")                MAX_EXPORT_TIME=150 ;;
-    "macos:fp32:portable")                      MAX_EXPORT_TIME=80  ;;
-    "macos:bf16:portable")                      MAX_EXPORT_TIME=80  ;;
-    "macos:bf16:custom")                        MAX_EXPORT_TIME=100 ;;
 
     # Default fallback for unknown configurations
     *)
