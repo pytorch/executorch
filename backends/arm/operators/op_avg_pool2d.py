@@ -33,6 +33,7 @@ class AvgPool2dVisitor(NodeVisitor):
 
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
     def __init__(self, *args):
@@ -115,43 +116,6 @@ class AvgPool2dVisitor(NodeVisitor):
         validate_num_inputs(self.target, inputs, [3, 4, 5, 6, 7])
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
-            self.target, [inputs[0], output], ts.DType.INT8, output.tosa_spec
-        )
-
-        accumulator_type = ts.DType.INT32
-
-        input_qargs = get_input_qparams(node)
-        input_zp = input_qargs[0].get_zp_per_tensor()
-
-        output_qargs = get_output_qparams(node)
-        output_zp = output_qargs[0].get_zp_per_tensor()
-
-        self._build_generic_avgpool2d(
-            node, tosa_graph, inputs, output, input_zp, output_zp, accumulator_type
-        )
-
-
-@register_node_visitor
-class AvgPool2dVisitor_FP(AvgPool2dVisitor):
-    target = "aten.avg_pool2d.default"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-1.0+FP"),
-    ]
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: torch.fx.Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        validate_num_inputs(self.target, inputs, [3, 4, 5, 6, 7])
-        validate_same_dtype(self.target, [inputs[0], output], ts)
-        validate_valid_dtype(
             self.target,
             [inputs[0], output],
             [ts.DType.INT8, ts.DType.FP32],
@@ -159,14 +123,17 @@ class AvgPool2dVisitor_FP(AvgPool2dVisitor):
         )
 
         if inputs[0].dtype == ts.DType.INT8:
-            super().define_node(node, tosa_graph, inputs, output)
+            accumulator_type = ts.DType.INT32
+            input_qargs = get_input_qparams(node)
+            input_zp = input_qargs[0].get_zp_per_tensor()
 
-        if inputs[0].dtype == ts.DType.FP32:
+            output_qargs = get_output_qparams(node)
+            output_zp = output_qargs[0].get_zp_per_tensor()
+        else:
             accumulator_type = ts.DType.FP32
-            # Initilize zero point to zero.
             input_zp = 0
             output_zp = 0
 
-            self._build_generic_avgpool2d(
-                node, tosa_graph, inputs, output, input_zp, output_zp, accumulator_type
-            )
+        self._build_generic_avgpool2d(
+            node, tosa_graph, inputs, output, input_zp, output_zp, accumulator_type
+        )

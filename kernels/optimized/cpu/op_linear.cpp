@@ -74,7 +74,7 @@ Tensor& opt_linear_out(
     RuntimeContext& ctx,
     const Tensor& in,
     const Tensor& mat2,
-    const optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     Tensor& out) {
   ET_KERNEL_CHECK(ctx, check_linear_args(in, mat2, out), InvalidArgument, out);
 

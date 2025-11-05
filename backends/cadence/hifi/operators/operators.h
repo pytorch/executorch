@@ -67,7 +67,7 @@ void quantized_linear_out(
     const ::executorch::aten::Tensor& out_multiplier,
     const ::executorch::aten::Tensor& out_shift,
     int64_t out_zero_point,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
+    const ::std::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
 void quantized_linear_per_tensor_out(
@@ -80,7 +80,7 @@ void quantized_linear_per_tensor_out(
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
+    const ::std::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
 void quantized_conv2d_nhwc_out(
