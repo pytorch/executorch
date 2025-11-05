@@ -891,9 +891,10 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
   # Set RPATH to find PyTorch and backend libraries relative to the installation
-  # location. This goes from executorch/extension/pybindings up to site-packages,
-  # then to torch/lib. If QNN is enabled, also add backends/qualcomm/.
-  # Don't do this to APPLE, as it will error out on the following error:
+  # location. This goes from executorch/extension/pybindings up to
+  # site-packages, then to torch/lib. If QNN is enabled, also add
+  # backends/qualcomm/. Don't do this to APPLE, as it will error out on the
+  # following error:
   #
   if(APPLE)
     # Skip setting @loader_path for APPLE, since it causes error like ld:
