@@ -300,8 +300,6 @@ if [[ "${QUANTIZE_KV_CACHE}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} model.quantize_kv_cache=true"
 fi
 
-# Display the time
-echo "Configuration: MODE=${MODE}, DTYPE=${DTYPE}, MODEL=${MODEL_NAME}"
 EXPORT_START_TIME=$(date +%s)
 
 # Add dynamically linked library location
