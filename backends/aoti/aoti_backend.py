@@ -39,13 +39,13 @@ class AotiBackend(BackendDetails, ABC):
     Base backend class for AOTInductor-based backends.
 
     This class provides common functionality for compiling models using AOTInductor
-    with different device targets (CUDA, Metal/MPS, etc.).
+    with different device targets (CUDA, Metal, etc.).
     """
 
     @staticmethod
     @abstractmethod
     def get_device_name() -> str:
-        """Return the device name for this backend (e.g., 'cuda', 'mps')."""
+        """Return the device name for this backend (e.g., 'cuda', 'metal')."""
         pass
 
     @staticmethod
