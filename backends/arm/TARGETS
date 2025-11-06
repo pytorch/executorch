@@ -20,6 +20,7 @@ runtime.python_library(
     srcs = [
         "common/__init__.py",
         "common/debug.py",
+        "common/type.py",
     ],
     deps = [
         "fbsource//third-party/tosa_tools:serializer",

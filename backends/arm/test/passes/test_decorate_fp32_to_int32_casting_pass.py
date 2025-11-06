@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
+from typing import Callable, Dict, Tuple
 
 import torch
 from executorch.backends.arm.test import common, conftest
@@ -17,15 +17,15 @@ input_t1 = Tuple[torch.Tensor]  # Input x
 
 
 class FP32ToINT32Casting(torch.nn.Module):
-    def __init__(self, target_dtype):
+    def __init__(self, target_dtype: torch.dtype) -> None:
         super().__init__()
         self.target_dtype = target_dtype
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x.to(self.target_dtype)
 
 
-test_data_fp32_input = {
+test_data_fp32_input: Dict[str, Callable[[], Tuple[torch.Tensor, torch.dtype]]] = {
     "fp32_input_rank1": lambda: (
         torch.rand((4), dtype=torch.float32),
         torch.int32,
@@ -46,7 +46,9 @@ test_data_fp32_input = {
 
 
 @common.parametrize("test_data", test_data_fp32_input)
-def test_decorate_fp32_to_int32_casting_tosa_FP(test_data: Tuple):
+def test_decorate_fp32_to_int32_casting_tosa_FP(
+    test_data: Callable[[], Tuple[torch.Tensor, torch.dtype]]
+) -> None:
     test_tensor, target_dtype = test_data()
     module = FP32ToINT32Casting(target_dtype)
 
@@ -61,7 +63,9 @@ def test_decorate_fp32_to_int32_casting_tosa_FP(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_fp32_input)
-def test_decorate_fp32_to_int32_casting_tosa_INT(test_data: Tuple):
+def test_decorate_fp32_to_int32_casting_tosa_INT(
+    test_data: Callable[[], Tuple[torch.Tensor, torch.dtype]]
+) -> None:
     """
     Casting operation involving floating-point dtypes will be rejected in INT/INT profile.
     Therefore, the DecorateFp32toInt32CastingPass is not required in this profile.

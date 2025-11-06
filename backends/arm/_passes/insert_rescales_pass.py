@@ -140,16 +140,17 @@ class InsertRescaleInt32Pass(ArmPass):
             min_scale = min(
                 [qp.get_scale_per_tensor() for qp in input_qparams.values()]
             )
-            qparams = {
-                i: self._int32_qargs(min_scale) for i in range(len(input_qparams))
-            }
+            qparams = {i: self._int32_qargs(min_scale) for i in input_qparams.keys()}
         elif target in [
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.sub.Tensor,
         ]:
-            if input_qparams[0].dtype != input_qparams[1].dtype:
+            keys = list(input_qparams)
+            if len(keys) < 2:
+                raise ValueError(f"Expected two input qparams, got: {input_qparams}.")
+            if input_qparams[keys[0]].dtype != input_qparams[keys[1]].dtype:
                 raise ValueError(
-                    "Mismatch in dtype args: {input_qparams[0].dtype} != {input_qparams[1].dtype}"
+                    f"Mismatch in dtype args: {input_qparams[keys[0]].dtype} != {input_qparams[keys[1]].dtype}"
                 )
 
             # We are handling two INT8 or two INT16 numbers. For INT8, if the
@@ -167,10 +168,10 @@ class InsertRescaleInt32Pass(ArmPass):
             max_scale_2x = 2 * max(lhs_scale, rhs_scale)
 
             # Select shift based on input dtype.
-            shift_bits = 12 if input_qparams[0].dtype == torch.int16 else 20
+            shift_bits = 12 if input_qparams[keys[0]].dtype == torch.int16 else 20
 
             scale = max_scale_2x / (1 << shift_bits)
-            qparams = {i: self._int32_qargs(scale) for i in range(len(input_qparams))}
+            qparams = {i: self._int32_qargs(scale) for i in input_qparams.keys()}
         elif target in [
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.sum.dim_IntList,
@@ -178,8 +179,8 @@ class InsertRescaleInt32Pass(ArmPass):
             # The input scales do not need to be adjusted for these ops; they
             # can remain the same.
             qparams = {
-                i: self._int32_qargs(input_qparams[i].get_scale_per_tensor())
-                for i in range(len(input_qparams))
+                i: self._int32_qargs(qp.get_scale_per_tensor())
+                for i, qp in input_qparams.items()
             }
         else:
             raise ValueError(f"Not a valid target: {target}")

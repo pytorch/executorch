@@ -38,6 +38,10 @@ test_data_suite = {
     "rank_4": lambda: (torch.rand(1, 5, 1, 10), [0, 2, 3, 1]),
     "rank_4_2": lambda: (torch.rand(1, 2, 5, 10), [1, 0, 2, 3]),
     "rank_4_3": lambda: (torch.rand(1, 10, 10, 5), [2, 0, 1, 3]),
+    "rank_4_large": lambda: (torch.rand(2, 8, 64, 65), [0, 2, 3, 1]),
+    "rank_3_large": lambda: (torch.rand(16, 64, 65), [1, 2, 0]),
+    "reshape_large_1": lambda: (torch.rand(1, 1, 65537), [0, 2, 1]),
+    "reshape_large_2": lambda: (torch.rand(65537, 1, 1), [1, 2, 0]),
 }
 
 
@@ -76,11 +80,7 @@ def test_permute_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    test_data_suite,
-    xfails={"rank_4_3": "MLETORCH-955 : Permutation numerical diff for u55"},
-)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_permute_u55_INT(test_data):
     test_data, dims = test_data()

@@ -8,8 +8,6 @@
 # such a Softplus that is decompsed into many other ops without
 # surrounding q/dq nodes.
 
-from typing import Tuple
-
 import torch
 from executorch.backends.arm.test import common
 
@@ -18,7 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
 )
 
-input_t1 = Tuple[torch.Tensor]
+input_t1 = tuple[torch.Tensor, ...]
 softplus_aten_op: list[str] = [
     "torch.ops.aten.add.Tensor",
     "torch.ops.aten.softplus.default",
@@ -44,7 +42,7 @@ linear_residual_exir_op: list[str] = [
 ]
 
 
-test_data: dict[input_t1] = {
+test_data: dict[str, input_t1] = {
     "3d_rand": (torch.rand(1, 5, 5),),
 }
 

@@ -374,10 +374,69 @@ class DeiTTinyEvaluator(GenericModelEvaluator):
         return output
 
 
+class ResNet18Evaluator(GenericModelEvaluator):
+    REQUIRES_CONFIG = True
+
+    def __init__(
+        self,
+        model_name: str,
+        fp32_model: Module,
+        int8_model: Module,
+        example_input: Tuple[torch.Tensor],
+        tosa_output_path: str | None,
+        batch_size: int,
+        validation_dataset_path: str,
+    ) -> None:
+        super().__init__(
+            model_name, fp32_model, int8_model, example_input, tosa_output_path
+        )
+        self.__batch_size = batch_size
+        self.__validation_set_path = validation_dataset_path
+
+    @staticmethod
+    def __load_dataset(directory: str) -> datasets.ImageFolder:
+        return _load_imagenet_folder(directory)
+
+    @staticmethod
+    def get_calibrator(training_dataset_path: str) -> DataLoader:
+        dataset = ResNet18Evaluator.__load_dataset(training_dataset_path)
+        return _build_calibration_loader(dataset, 1000)
+
+    @classmethod
+    def from_config(
+        cls,
+        model_name: str,
+        fp32_model: Module,
+        int8_model: Module,
+        example_input: Tuple[torch.Tensor],
+        tosa_output_path: str | None,
+        config: dict[str, Any],
+    ) -> "ResNet18Evaluator":
+        return cls(
+            model_name,
+            fp32_model,
+            int8_model,
+            example_input,
+            tosa_output_path,
+            batch_size=config["batch_size"],
+            validation_dataset_path=config["validation_dataset_path"],
+        )
+
+    def evaluate(self) -> dict[str, Any]:
+        dataset = ResNet18Evaluator.__load_dataset(self.__validation_set_path)
+        top1, top5 = GenericModelEvaluator.evaluate_topk(
+            self.int8_model, dataset, self.__batch_size, topk=5
+        )
+        output = super().evaluate()
+        output["metrics"]["accuracy"] = {"top-1": top1, "top-5": top5}
+        return output
+
+
 evaluators: dict[str, type[GenericModelEvaluator]] = {
     "generic": GenericModelEvaluator,
     "mv2": MobileNetV2Evaluator,
     "deit_tiny": DeiTTinyEvaluator,
+    "resnet18": ResNet18Evaluator,
 }
 
 
@@ -394,16 +453,12 @@ def evaluator_calibration_data(
         with config_path.open() as f:
             config = json.load(f)
 
-        if evaluator is MobileNetV2Evaluator:
-            return evaluator.get_calibrator(
-                training_dataset_path=config["training_dataset_path"]
-            )
-        if evaluator is DeiTTinyEvaluator:
-            return evaluator.get_calibrator(
-                training_dataset_path=config["training_dataset_path"]
-            )
-        else:
-            raise RuntimeError(f"Unknown evaluator: {evaluator_name}")
+        # All current evaluators exposing calibration implement a uniform
+        # static method signature: get_calibrator(training_dataset_path: str)
+        # so we can call it generically without enumerating classes.
+        return evaluator.get_calibrator(
+            training_dataset_path=config["training_dataset_path"]
+        )
 
 
 def evaluate_model(
