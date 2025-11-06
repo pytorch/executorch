@@ -14,15 +14,19 @@ ExecuteNode::ExecuteNode(
     const ResizeFunction& resize_fn,
     const std::vector<ValueRef>& resize_args,
     const std::vector<ArgGroup>& args,
-    const std::string& name)
+    const std::string& name,
+    const bool has_data_dependent_shape)
     : resize_fn_(resize_fn),
       resize_args_(resize_args),
       args_(args),
-      name_(name) {}
+      name_(name),
+      has_data_dependent_shape_(has_data_dependent_shape) {}
 
 bool ExecuteNode::trigger_resize(ComputeGraph* graph) {
   bool any_arg_updated = was_any_arg_updated(graph);
-  if (resize_fn_ && (any_arg_updated || graph->graphconfig().force_resize)) {
+  if (resize_fn_ &&
+      (any_arg_updated || graph->graphconfig().force_resize ||
+       has_data_dependent_shape_)) {
     resize_fn_(graph, args_, resize_args_);
     any_arg_updated = true;
   }
