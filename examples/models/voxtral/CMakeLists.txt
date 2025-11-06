@@ -39,18 +39,16 @@ executorch_target_link_options_shared_lib(executorch)
 set(link_libraries executorch gflags)
 set(_srcs multimodal.cpp)
 
-list(
-  APPEND
-  link_libraries
-  optimized_native_cpu_ops_lib
-  quantized_ops_lib
-  custom_ops
-  cpublas
-  eigen_blas
-)
+# Common ops for all builds
+list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
 executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
-executorch_target_link_options_shared_lib(quantized_ops_lib)
-executorch_target_link_options_shared_lib(custom_ops)
+
+# CPU-only builds need quantized and custom ops
+if(NOT EXECUTORCH_BUILD_CUDA AND MSVC)
+  list(APPEND link_libraries quantized_ops_lib custom_ops)
+  executorch_target_link_options_shared_lib(quantized_ops_lib)
+  executorch_target_link_options_shared_lib(custom_ops)
+endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
@@ -104,8 +102,18 @@ list(APPEND link_libraries tokenizers::tokenizers)
 add_executable(voxtral_runner ${_srcs})
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(voxtral_runner)
-  if(NOT APPLE)
+  if(NOT APPLE AND NOT MSVC)
     target_link_options(voxtral_runner PRIVATE "LINKER:-s")
+  endif()
+endif()
+
+# Link CUDA backend
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  list(APPEND link_libraries aoti_cuda)
+  if(NOT MSVC)
+    # On non-MSVC, use shared lib options
+    executorch_target_link_options_shared_lib(aoti_cuda)
   endif()
 endif()
 
