@@ -373,6 +373,18 @@ def find_quant_user(node: torch.fx.Node) -> Optional[torch.fx.Node]:
     return None
 
 
+def node_has_target(node: Any, target: str):
+    if not hasattr(node, "target"):
+        return False
+
+    if isinstance(node.target, str):
+        return node.target == target
+    elif hasattr(node.target, "name"):
+        return node.target.name() == target
+
+    return False
+
+
 ##
 ## Memory Layout, Storage Type Determination
 ##
