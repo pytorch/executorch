@@ -312,11 +312,8 @@ def dump_error_output(
 
 
 if __name__ == "__main__":
-    import sys
 
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-
-    """ This is expected to produce the example output of print_diff"""
+    """This is expected to produce the example output of print_diff"""
     torch.manual_seed(0)
     a = torch.rand(3, 3, 2, 2) * 0.01
     b = a.clone().detach()
