@@ -44,23 +44,19 @@ $(info "HEXAGON_SDK_ROOT is [${HEXAGON_SDK_ROOT}]")
 HEXAGON_SDK_ROOT_V68 := $(HEXAGON_SDK_BASE)/hexagon-sdk-4.2.0
 HEXAGON_SDK_ROOT_V69 := $(HEXAGON_SDK_BASE)/hexagon-sdk-4.3.0
 HEXAGON_SDK_ROOT_V73 := $(HEXAGON_SDK_BASE)/hexagon-sdk-5.4.0
-# HEXAGON_SDK_ROOT_V75 := $(HEXAGON_SDK_BASE)/hexagon-sdk-5.4.0
-HEXAGON_SDK_ROOT_V75 := $(HEXAGON_SDK_BASE)
-# HEXAGON_SDK_ROOT_V79 := $(HEXAGON_SDK_BASE)/hexagon-sdk-6.0.0
-HEXAGON_SDK_ROOT_V79 := $(HEXAGON_SDK_BASE)
+HEXAGON_SDK_ROOT_V75 := $(HEXAGON_SDK_BASE)/hexagon-sdk-5.4.0
+HEXAGON_SDK_ROOT_V79 := $(HEXAGON_SDK_BASE)/hexagon-sdk-6.0.0
 
 #Updated to point to latest sdk to match with libQnnHtp.so
-HEXAGON_SDK_ROOT_X86 := $(HEXAGON_SDK_BASE)
+HEXAGON_SDK_ROOT_X86 := $(HEXAGON_SDK_BASE)/hexagon-sdk-6.0.0
 HEXAGON_TOOLS_VERSION_V68 := 8.4.09
 HEXAGON_TOOLS_VERSION_V69 := 8.5.03
 HEXAGON_TOOLS_VERSION_V73 := 8.6.02
 HEXAGON_TOOLS_VERSION_V75 := 8.7.03
-# HEXAGON_TOOLS_VERSION_V79 := 8.8.02
-HEXAGON_TOOLS_VERSION_V79 := 8.8.06
+HEXAGON_TOOLS_VERSION_V79 := 8.8.02
 
 #Updated to point to latest sdk to match with libQnnHtp.so
-# HEXAGON_TOOLS_VERSION_X86 := 8.8.02
-HEXAGON_TOOLS_VERSION_X86 := 8.8.06
+HEXAGON_TOOLS_VERSION_X86 := 8.8.02
 
 ifndef ANDROID_NDK_ROOT
 ifeq ($(MAKECMDGOALS),htp_aarch64)
@@ -90,8 +86,6 @@ COMMON_CXX_FLAGS += -Werror -Wno-format -Wno-unused-command-line-argument -fvisi
 COMMON_CXX_FLAGS += -DQNN_API="__attribute__((visibility(\"default\")))"  -D__QAIC_HEADER_EXPORT="__attribute__((visibility(\"default\")))"
 
 X86_LIBNATIVE_RELEASE_DIR := $(HEXAGON_SDK_ROOT_X86)/tools/HEXAGON_Tools/$(HEXAGON_TOOLS_VERSION_X86)/Tools
-
-$(info "HEXAGON_SDK_ROOT_X86 is [${HEXAGON_SDK_ROOT_X86}]")
 
 # Ensure hexagon sdk tool version can be retrieved
 ifeq ($(wildcard $(X86_LIBNATIVE_RELEASE_DIR)/.),)
@@ -124,8 +118,6 @@ ifeq ($(wildcard $(HEXAGON_SDK_ROOT_V75)),)
 $(error "ERROR: HEXAGON_SDK_ROOT_V75 is set incorrectly. Cannot retrieve $(HEXAGON_SDK_ROOT_V75)")
 endif
 endif
-
-$(info "HEXAGON_SDK_ROOT_V79 is [${HEXAGON_SDK_ROOT_V79}]")
 
 #Check tools for hexagon_v79 are present.
 ifeq ($(MAKECMDGOALS),htp_v79)
@@ -173,7 +165,6 @@ ifeq ($(shell $(X86_CXX) -v 2>&1 | grep -c "clang version"), 0)
   X86_CXX := clang++
 endif
 X86_LDFLAGS:= -Wl,--whole-archive -L$(X86_LIBNATIVE_RELEASE_DIR)/libnative/lib -lnative -Wl,--no-whole-archive -lpthread
-
 X86_C_FLAGS := -D__HVXDBL__ -I$(X86_LIBNATIVE_RELEASE_DIR)/libnative/include -ffast-math -DUSE_OS_LINUX
 X86_CXX_FLAGS = $(COMMON_CXX_FLAGS) $(X86_C_FLAGS) -fomit-frame-pointer -Wno-invalid-offsetof
 linux_objs =
@@ -187,55 +178,12 @@ HEXAGON_CXX_FLAGS_V73 := $(HEXAGON_CXX_FLAGS) -mv73 -I$(HEXAGON_SDK_ROOT_V73)/rt
 HEXAGON_CXX_FLAGS_V75 := $(HEXAGON_CXX_FLAGS) -mv75 -I$(HEXAGON_SDK_ROOT_V75)/rtos/qurt/computev75/include/qurt -I$(HEXAGON_SDK_ROOT_V75)/rtos/qurt/computev75/include/posix -I$(HEXAGON_SDK_ROOT_V75)/incs -I$(HEXAGON_SDK_ROOT_V75)/incs/stddef
 HEXAGON_CXX_FLAGS_V79 := $(HEXAGON_CXX_FLAGS) -mv79 -I$(HEXAGON_SDK_ROOT_V79)/rtos/qurt/computev79/include/qurt -I$(HEXAGON_SDK_ROOT_V79)/rtos/qurt/computev79/include/posix -I$(HEXAGON_SDK_ROOT_V79)/incs -I$(HEXAGON_SDK_ROOT_V79)/incs/stddef
 
-QHL_HVX_DIR := $(HEXAGON_SDK_ROOT)/libs/qhl_hvx
-QHL_HVX_INC_DIRS := \
-  $(QHL_HVX_DIR)/inc/internal \
-  $(QHL_HVX_DIR)/inc/qhdsp_hvx \
-  $(QHL_HVX_DIR)/inc/qhblas_hvx \
-  $(QHL_HVX_DIR)/inc/qhmath_hvx
-
-HEXAGON_CXX_FLAGS_V79 += $(addprefix -I,$(QHL_HVX_INC_DIRS))
-
-QHL_DIR := $(HEXAGON_SDK_ROOT)/libs/qhl
-QHL_INC_DIRS := \
-  $(QHL_DIR)/inc/qhmath \
-  $(QHL_DIR)/inc/qhcomplex \
-  $(QHL_DIR)/inc/qhdsp \
-  $(QHL_DIR)/inc/qhblas
-
-QHL_LIBS := \
-  $(HEXAGON_SDK_ROOT)/libs/qhl/prebuilt/hexagon_toolv88_v79/libqhblas.a \
-  $(HEXAGON_SDK_ROOT)/libs/qhl/prebuilt/hexagon_toolv88_v79/libqhdsp.a \
-  $(HEXAGON_SDK_ROOT)/libs/qhl/prebuilt/hexagon_toolv88_v79/libqhmath.a \
-  $(HEXAGON_SDK_ROOT)/libs/qhl/prebuilt/hexagon_toolv88_v79/libqhcomplex.a \
-  $(HEXAGON_SDK_ROOT)/libs/qhl_hvx/prebuilt/hexagon_toolv88_v79/libqhdsp_hvx.a \
-  $(HEXAGON_SDK_ROOT)/libs/qhl_hvx/prebuilt/hexagon_toolv88_v79/libqhblas_hvx.a
-
-HEXAGON_CXX_FLAGS_V79 += $(addprefix -I,$(QHL_INC_DIRS))
-
-$(info "HEXAGON_TOOLS_VERSION_V68 is [${HEXAGON_TOOLS_VERSION_V68}]")
-$(info "HEXAGON_TOOLS_VERSION_V69 is [${HEXAGON_TOOLS_VERSION_V69}]")
-$(info "HEXAGON_TOOLS_VERSION_V73 is [${HEXAGON_TOOLS_VERSION_V73}]")
-$(info "HEXAGON_TOOLS_VERSION_V75 is [${HEXAGON_TOOLS_VERSION_V75}]")
-$(info "HEXAGON_TOOLS_VERSION_V79 is [${HEXAGON_TOOLS_VERSION_V79}]")
-
-$(info "HEXAGON_SDK_ROOT_V68 is [${HEXAGON_SDK_ROOT_V68}]")
-$(info "HEXAGON_SDK_ROOT_V69 is [${HEXAGON_SDK_ROOT_V69}]")
-$(info "HEXAGON_SDK_ROOT_V73 is [${HEXAGON_SDK_ROOT_V73}]")
-$(info "HEXAGON_SDK_ROOT_V75 is [${HEXAGON_SDK_ROOT_V75}]")
-$(info "HEXAGON_SDK_ROOT_V79 is [${HEXAGON_SDK_ROOT_V79}]")
-
 HEXAGON_CXX_V68 := $(HEXAGON_SDK_ROOT_V68)/tools/HEXAGON_Tools/$(HEXAGON_TOOLS_VERSION_V68)/Tools/bin/hexagon-clang++
 HEXAGON_CXX_V69 := $(HEXAGON_SDK_ROOT_V69)/tools/HEXAGON_Tools/$(HEXAGON_TOOLS_VERSION_V69)/Tools/bin/hexagon-clang++
 HEXAGON_CXX_V73 := $(HEXAGON_SDK_ROOT_V73)/tools/HEXAGON_Tools/$(HEXAGON_TOOLS_VERSION_V73)/Tools/bin/hexagon-clang++
 HEXAGON_CXX_V75 := $(HEXAGON_SDK_ROOT_V75)/tools/HEXAGON_Tools/$(HEXAGON_TOOLS_VERSION_V75)/Tools/bin/hexagon-clang++
 HEXAGON_CXX_V79 := $(HEXAGON_SDK_ROOT_V79)/tools/HEXAGON_Tools/$(HEXAGON_TOOLS_VERSION_V79)/Tools/bin/hexagon-clang++
 
-$(info "HEXAGON_CXX_V68[2] is [${HEXAGON_CXX_V68}]")
-$(info "HEXAGON_CXX_V69[2] is [${HEXAGON_CXX_V69}]")
-$(info "HEXAGON_CXX_V73[2] is [${HEXAGON_CXX_V73}]")
-$(info "HEXAGON_CXX_V75[2] is [${HEXAGON_CXX_V75}]")
-$(info "HEXAGON_CXX_V79[2] is [${HEXAGON_CXX_V79}]")
 
 HEX_LDFLAGS =
 hexagon_objs =
@@ -277,6 +225,7 @@ HEXAGON_BUILD_V73:  $(WORK)/hexagon-v73/$(LIBRARY_NAME)
 HEXAGON_BUILD_V75:  $(WORK)/hexagon-v75/$(LIBRARY_NAME)
 
 HEXAGON_BUILD_V79:  $(WORK)/hexagon-v79/$(LIBRARY_NAME)
+
 
 
 X86_BUILD: $(WORK)/x86_64-linux-clang/$(LIBRARY_NAME)
@@ -391,11 +340,8 @@ $(WORK)/hexagon-v79/ops/%.o: $(OP_SRC_DIR)/%.cpp | $(WORK)/hexagon-v79
 $(WORK)/hexagon-v79/ops/%.o: $(OP_SRC_DIR)/v79_asm/%.S | $(WORK)/hexagon-v79
 	$(HEXAGON_CXX_V79) $(HEXAGON_CXX_FLAGS_V79) -DTHIS_PKG_NAME=$(PACKAGE_NAME) -MMD -c $< -o $@
 
-# $(WORK)/hexagon-v79/$(LIBRARY_NAME): $(hexagon-v79_objs) | $(HFILES)
-# 	$(HEXAGON_CXX_V79) -fPIC -std=c++17 -g -shared -o $@ $^ $(HEX_LDFLAGS)
-
-$(WORK)/hexagon-v79/$(LIBRARY_NAME): $(hexagon-v79_objs)
-	$(HEXAGON_CXX_V79) -fPIC -std=c++17 -g -shared -o $@ $^ $(QHL_LIBS) $(HEX_LDFLAGS)
+$(WORK)/hexagon-v79/$(LIBRARY_NAME): $(hexagon-v79_objs) | $(HFILES)
+	$(HEXAGON_CXX_V79) -fPIC -std=c++17 -g -shared -o $@ $^ $(HEX_LDFLAGS)
 
 
 

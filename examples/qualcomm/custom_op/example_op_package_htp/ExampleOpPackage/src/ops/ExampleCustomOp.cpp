@@ -3,16 +3,11 @@
 //==============================================================================
 
 #include "HTP/core/constraints.h"
-#include "HTP/core/intrinsics.h"
 #include "HTP/core/op_package_feature_support.h"
 #include "HTP/core/op_register_ext.h"
 #include "HTP/core/optimize.h"
 #include "HTP/core/simple_reg.h"
 #include "QnnOpPackage.h"
-#include "hexagon_protos.h"
-#include "hexagon_types.h"
-#include "hvx_hexagon_protos.h"
-
 #ifdef __hexagon__
 #include "HAP_farf.h"
 #else /* __hexagon__ */
@@ -165,48 +160,21 @@ GraphStatus examplecustomopImpl(TensorType& out_0, const TensorType& in_0)
   if (input_intfc.dtype == DType::Float32) {
     const float* p_input = static_cast<const float*>(in_0.raw_data_const());
     float* p_output = static_cast<float*>(out_0.raw_data());
-    const size_t N = in_0.total_storage_elements();
+    const int multiplier = 3;
+    for (size_t i = 0; i < input_num_elements; ++i) {
+      p_output[i] = multiplier * p_input[i];
 
-    // Allocate temporary FP16 buffers on stack or heap
-    std::vector<Float16> tmp_in(N);
-    std::vector<Float16> tmp_out(N);
-
-    // 1. Convert FP32 -> FP16
-    for (size_t i = 0; i < N; ++i) {
-      tmp_in[i] = static_cast<Float16>(p_input[i]);
+      FARF(
+          ALWAYS,
+          "[QNN ExecuTorch Op Package test]"
+          "input0[%zu]=%f, multiplier=%d, output[%zu]=%f",
+          i,
+          p_input[i],
+          multiplier,
+          i,
+          p_output[i]);
     }
-
-#ifdef __hexagon__
-    // 2. Run HVX multiply (FP16 domain)
-    union {
-      Float16 f16;
-      uint16_t bits;
-    } f3 = {static_cast<Float16>(3.0f)};
-    HVX_Vector v_mul = Q6_Vh_vsplat_R(f3.bits);
-
-    const int vector_bytes = 128;
-    const int elems_per_vec = vector_bytes / sizeof(Float16);
-
-    for (size_t i = 0; i < N; i += elems_per_vec) {
-      HVX_Vector vin = q6op_V_vldu_A(&tmp_in[i]);
-      HVX_Vector vout = Q6_Vhf_vmpy_VhfVhf(vin, v_mul);
-      q6op_vstu_AV(&tmp_out[i], vout);
-    }
-#else
-    // 2. Fallback scalar multiply
-    for (size_t i = 0; i < N; ++i) {
-      tmp_out[i] = static_cast<Float16>(tmp_in[i] * static_cast<Float16>(3.0f));
-    }
-#endif
-
-    // 3. Convert FP16 -> FP32
-    for (size_t i = 0; i < N; ++i) {
-      p_output[i] = static_cast<float>(tmp_out[i]);
-    }
-
-    return GraphStatus::Success;
   } else if (input_intfc.dtype == DType::QUInt8) {
-    // printf("[QNN ExecuTorch Op Package test] input is QUInt8\n");
     const uint8_t* p_input = static_cast<const uint8_t*>(in_0.raw_data_const());
     uint8_t* p_output = static_cast<uint8_t*>(out_0.raw_data());
     const int multiplier = 3 * input_intfc.scale / out_intfc.scale;

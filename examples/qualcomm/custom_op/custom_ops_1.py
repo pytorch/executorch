@@ -69,13 +69,16 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
     This function is specific for custom op.
     The source_fn of the rewritten nn module turns out to be "my_ops.mul3.default"
     """
-    from executorch.backends.qualcomm.quantizer.annotators import _is_annotated
+    from executorch.backends.qualcomm.quantizer.annotators import (
+        _is_annotated,
+        QUANT_ANNOTATION_KEY,
+    )
+
     from executorch.backends.qualcomm.quantizer.qconfig import (
         get_ptq_per_channel_quant_config,
     )
     from torch.fx import Node
     from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
-    from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
     quantization_config = get_ptq_per_channel_quant_config()
     for node in gm.graph.nodes:
@@ -92,7 +95,7 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
         input_spec = quantization_config.input_activation
         input_qspec_map[input_act] = input_spec
 
-        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -177,8 +180,7 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    # quant_dtype: Literal[QuantDtype.use_16a16w] = QuantDtype.use_16a16w
-    quant_dtype: Literal[QuantDtype.use_16a16w] = QuantDtype.use_8a8w
+    quant_dtype = QuantDtype.use_8a8w
     if args.use_fp16:
         quant_dtype = None
 
@@ -195,11 +197,9 @@ def main(args):
         soc_info.htp_info.htp_arch,
         args.build_op_package,
     )
-    quantizer = None
-    if not args.use_fp16:
-        quantizer = make_quantizer(
-            quant_dtype=quant_dtype, custom_annotations=(annotate_custom,)
-        )
+    quantizer = make_quantizer(
+        quant_dtype=quant_dtype, custom_annotations=(annotate_custom,)
+    )
 
     build_executorch_binary(
         instance,
@@ -228,14 +228,13 @@ def main(args):
 
         runner_cmd = " ".join(
             [
-                f"export QNN_FARF_LEVEL=4 && export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
+                f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
                 f"./{args.build_folder}/examples/qualcomm/executor_runner/qnn_executor_runner",
                 f"--model_path {args.artifact}/{pte_filename}.pte",
                 f"--input_list_path {args.artifact}/{input_list_filename}",
                 f"--output_folder_path {output_data_folder}",
             ]
         )
-
         subprocess.run(
             runner_cmd,
             # stdout=subprocess.PIPE,
@@ -259,7 +258,6 @@ def main(args):
             device_id=args.device,
             host_id=args.host,
             soc_model=args.model,
-            shared_buffer=args.shared_buffer,
         )
         adb.push(inputs=sample_input, files=op_package_paths)
         adb.execute()
