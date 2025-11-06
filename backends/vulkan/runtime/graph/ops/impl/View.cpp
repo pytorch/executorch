@@ -201,6 +201,11 @@ void to_dim_order_copy(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   VK_CHECK_COND(graph.is_buffer_storage(in) && graph.is_buffer_storage(out));
 
+  if (graph.dtype_of(in) == graph.dtype_of(out)) {
+    return add_view_copy_buffer_node(
+        graph, in, out, {}, resize_to_dim_order_copy_node);
+  }
+
   return add_view_copy_convert_buffer_node(
       graph, in, out, {}, resize_to_dim_order_copy_node);
 }

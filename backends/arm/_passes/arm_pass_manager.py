@@ -27,6 +27,7 @@ from executorch.backends.arm._passes import (
     ConvertIntPowToMuls,
     ConvertMinMaxPass,
     ConvertMmToBmmPass,
+    ConvertPermuteSingletonToViewPass,
     ConvertSplitToSlicePass,
     ConvertSqueezesToViewPass,
     ConvertToClampPass,
@@ -234,6 +235,7 @@ class ArmPassManager(PassManager):
         self.add_pass(CastToInt32Pass())
         self.add_pass(BroadcastArgsPass())
 
+        self.add_pass(ConvertPermuteSingletonToViewPass())
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
         self.add_pass(DecomposeConv2dWithInt16ActivationPass())

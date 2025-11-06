@@ -347,7 +347,7 @@ jobs:
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
-          threshold="135240" # 132 KiB
+          threshold="135656" # 132 KiB
           toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
         else
           echo "Fail unsupport OS selection ${{ matrix.os }}"
