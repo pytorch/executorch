@@ -2,7 +2,11 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Declare operator support for ``aten.slice_copy`` in TOSA.
 
+Support slicing with unit step only; emit a warning and reject otherwise.
+
+"""
 
 import logging
 
@@ -19,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 @register_tosa_support_check
 class SliceCopySupported(SupportedTOSAOperatorCheck):
+    """Provide TOSA support check for ``aten.slice_copy``."""
+
     targets = [exir_ops.edge.aten.slice_copy.Tensor]
 
     tosa_specs = [
@@ -26,7 +32,15 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
-    def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification) -> bool:  # type: ignore[override, misc]
+    def is_node_tosa_supported(
+        self, node: fx.Node, tosa_spec: TosaSpecification
+    ) -> bool:  # type: ignore[override, misc]
+        """Return True if the node is supported by TOSA.
+
+        Accept slice_copy when the step is 1 (or unspecified). Warn and reject
+        non-unit step sizes.
+
+        """
         if tosa_spec not in self.tosa_specs:
             return False
 
