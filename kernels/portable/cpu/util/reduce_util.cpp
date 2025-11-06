@@ -319,9 +319,9 @@ Error resize_reduction_out(
  */
 bool check_reduction_args(
     const Tensor& in,
-    const std::optional<ArrayRef<int64_t>>& dim_list,
+    const optional<ArrayRef<int64_t>>& dim_list,
     bool keepdim,
-    std::optional<ScalarType> dtype,
+    optional<ScalarType> dtype,
     Tensor& out) {
   if (dtype.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
@@ -339,9 +339,9 @@ bool check_reduction_args(
  */
 bool check_reduction_args_single_dim(
     const Tensor& in,
-    std::optional<int64_t> dim,
+    optional<int64_t> dim,
     bool keepdim,
-    std::optional<ScalarType> dtype,
+    optional<ScalarType> dtype,
     Tensor& out,
     bool allow_empty_dim) {
   if (dtype.has_value()) {
@@ -369,9 +369,9 @@ bool check_reduction_args_single_dim(
 
 bool check_mean_dim_args(
     const Tensor& in,
-    std::optional<ArrayRef<int64_t>> dim_list,
+    optional<ArrayRef<int64_t>> dim_list,
     bool keepdim,
-    std::optional<ScalarType> dtype,
+    optional<ScalarType> dtype,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(
       check_reduction_args(in, dim_list, keepdim, dtype, out));
@@ -402,7 +402,7 @@ bool check_amin_amax_args(
 
 bool check_argmin_argmax_args(
     const Tensor& in,
-    std::optional<int64_t> dim,
+    optional<int64_t> dim,
     bool keepdim,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(
@@ -432,7 +432,7 @@ bool check_min_max_args(
 
 bool check_prod_out_args(
     const Tensor& in,
-    std::optional<ScalarType> dtype,
+    optional<ScalarType> dtype,
     Tensor& out) {
   if (dtype.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());

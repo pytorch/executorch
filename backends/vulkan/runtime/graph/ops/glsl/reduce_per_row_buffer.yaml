@@ -1,0 +1,42 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+reduce_per_row_buffer:
+  parameter_names_with_default_values:
+    DTYPE: float
+    INIT_ACCUM_FN: init_accum
+    UPDATE_ACCUM_FN: update_accum_sum
+    MERGE_ACCUM_FN: merge_accum_sum
+    POSTPROCESS_ACCUM_FN: none
+    OOB_INIT_MODE: zero
+    OUTPUT_IS_INDICES: false
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+      - VALUE: int32
+  shader_variants:
+    - NAME: sum_per_row_buffer
+    - NAME: mean_per_row_buffer
+      POSTPROCESS_ACCUM_FN: postprocess_accum_mean
+    - NAME: amax_per_row_buffer
+      UPDATE_ACCUM_FN: update_accum_amax
+      MERGE_ACCUM_FN: merge_accum_amax
+      OOB_INIT_MODE: first_element
+    - NAME: amin_per_row_buffer
+      UPDATE_ACCUM_FN: update_accum_amin
+      MERGE_ACCUM_FN: merge_accum_amin
+      OOB_INIT_MODE: first_element
+    - NAME: argmax_per_row_buffer
+      UPDATE_ACCUM_FN: update_accum_amax
+      MERGE_ACCUM_FN: merge_accum_amax
+      OOB_INIT_MODE: first_element
+      OUTPUT_IS_INDICES: true
+    - NAME: argmin_per_row_buffer
+      UPDATE_ACCUM_FN: update_accum_amin
+      MERGE_ACCUM_FN: merge_accum_amin
+      OOB_INIT_MODE: first_element
+      OUTPUT_IS_INDICES: true
