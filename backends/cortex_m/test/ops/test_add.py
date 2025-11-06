@@ -104,11 +104,11 @@ test_cases = {
     ),
     "tensor_scalar": McuTestCase(
         CortexMScalarAdd(),
-        (torch.ones(2, 2), 1.0),
+        (torch.ones(1), 1.1),
     ),
     "scalar_tensor": McuTestCase(
         CortexMScalarAdd(),
-        (1000.0, torch.ones(2, 2)),
+        (1000.1, torch.ones(1)),
     ),
     "tensor_tensor": McuTestCase(
         CortexMTensorAdd(),
@@ -148,26 +148,6 @@ dialect_xfails = {
         "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
         AttributeError,
     ),
-    "tensor_scalar": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "scalar_tensor": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_1": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_2": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_3": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
     "alpha": (
         "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
         AssertionError,
@@ -192,24 +172,16 @@ implementation_xfails = {
         "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
         AttributeError,
     ),
-    "tensor_scalar": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "scalar_tensor": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
-        RuntimeError,
-    ),
     "broadcast_1": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
+        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
         RuntimeError,
     ),
     "broadcast_2": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
+        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
         RuntimeError,
     ),
     "broadcast_3": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
+        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
         RuntimeError,
     ),
     "alpha": (

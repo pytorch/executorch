@@ -20,7 +20,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-from torchaudio import models
+from torchaudio import models  # type: ignore[import-untyped]
 
 input_t = Tuple[torch.Tensor]  # Input x
 
