@@ -20,7 +20,6 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-#define DEBUG_MODE
 #include "common.glslh"
 #include "indexing.glslh"
 
