@@ -25,7 +25,7 @@ using std::optional;
 Tensor& argmax_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    std::optional<int64_t> dim,
+    optional<int64_t> dim,
     bool keepdim,
     Tensor& out) {
   (void)ctx;

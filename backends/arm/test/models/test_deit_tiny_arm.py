@@ -7,7 +7,7 @@ import logging
 
 from typing import Tuple
 
-import timm
+import timm  # type: ignore[import-untyped]
 
 import torch
 
@@ -19,11 +19,13 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-from timm.data import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
-from torchvision import transforms
+from timm.data import (  # type: ignore[import-untyped]
+    IMAGENET_INCEPTION_MEAN,
+    IMAGENET_INCEPTION_STD,
+)
+from torchvision import transforms  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 deit_tiny = timm.models.deit.deit_tiny_patch16_224(pretrained=True)
