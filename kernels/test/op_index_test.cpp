@@ -947,3 +947,56 @@ TEST_F(OpIndexTensorOutTest, FastPathEmptyInput) {
 
   EXPECT_TENSOR_EQ(out, expected);
 }
+
+TEST_F(OpIndexTensorOutTest, FastPathNegativeIndex) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  // clang-format off
+  Tensor x = tf.make(
+    {2, 3, 4},
+    {
+        // [0, :, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+
+        // [1, :, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -5.,  -6.,  -7.,  -8., // [1, 1, :]
+       -9., -10., -11., -12., // [1, 2, :]
+    });
+  // clang-format on
+
+  // Use negative indices in the first dimension: -1, 0, -2
+  std::array<optional<Tensor>, 3> indices = {
+      optional<Tensor>(tfl.make({3}, {-1, 0, -2})),
+      optional<Tensor>(),
+      optional<Tensor>()};
+
+  Tensor out = tf.zeros({3, 3, 4});
+  // clang-format off
+  Tensor expected = tf.make(
+    {3, 3, 4},
+    {
+        // [1, :, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -5.,  -6.,  -7.,  -8., // [1, 1, :]
+       -9., -10., -11., -12., // [1, 2, :]
+
+        // [0, :, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+
+        // [0, :, :] again (since -2 wraps to 0)
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+    });
+  // clang-format on
+
+  op_index_tensor_out(x, indices, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
