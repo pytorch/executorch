@@ -76,6 +76,7 @@ void main() {
   const int Q_H = q_projected_sizes.y;
   // sequence length
   const int S = q_projected_sizes.z;
+  const int S_aligned = align_up_4(S);
   // manually determine size of the context_len dim of the attention weight.
   // The "actual" tensor sizes may have been aligned to a multiple of 4 to allow
   // memory loads to be aligned to texel boundaries.
@@ -96,7 +97,7 @@ void main() {
   // number of threads in the work group.
   for (int c4 = worker_id; c4 < C4_limit; c4 += NUM_WORKERS_PER_WG) {
     VEC4_T in_texel = load_attn_weights_c4(
-        c4, s, q_h, context_texel_len, S, Q_H);
+        c4, s, q_h, context_texel_len, S_aligned, Q_H);
 
     for (int comp = 0; comp < 4; comp++) {
       local_exp_sum += exp(in_texel[comp]);
@@ -108,7 +109,7 @@ void main() {
     for (int c4 = C4_limit; c4 < context_texel_len; ++c4) {
       const int c_base = mul_4(c4);
       VEC4_T in_texel = load_attn_weights_c4(
-          c4, s, q_h, context_texel_len, S, Q_H);
+          c4, s, q_h, context_texel_len, S_aligned, Q_H);
 
       [[unroll]] for (int comp = 0; comp < 4; comp++) {
         if (c_base + comp < context_len) {
@@ -138,11 +139,11 @@ void main() {
   // Now go back through each element in the row and normalize
   for (int c4 = worker_id; c4 < C4_limit; c4 += NUM_WORKERS_PER_WG) {
     VEC4_T in_texel = load_attn_weights_c4(
-        c4, s, q_h, context_texel_len, S, Q_H);
+        c4, s, q_h, context_texel_len, S_aligned, Q_H);
 
     VEC4_T out_texel = exp(in_texel) / local_exp_sum;
     store_attn_weights_softmax_c4(
-        out_texel, c4, s, q_h, context_texel_len, S, Q_H);
+        out_texel, c4, s, q_h, context_texel_len, S_aligned, Q_H);
   }
   // First thread in the work group responsible for handling last texel if it
   // contains any padded elements
@@ -150,7 +151,7 @@ void main() {
     for (int c4 = C4_limit; c4 < context_texel_len; ++c4) {
       const int c_base = mul_4(c4);
       VEC4_T in_texel = load_attn_weights_c4(
-          c4, s, q_h, context_texel_len, S, Q_H);
+          c4, s, q_h, context_texel_len, S_aligned, Q_H);
 
       // Ensure that padding elements are set to 0.
       VEC4_T out_texel = VEC4_T(0);
@@ -160,7 +161,7 @@ void main() {
         }
       }
       store_attn_weights_softmax_c4(
-          out_texel, c4, s, q_h, context_texel_len, S, Q_H);
+          out_texel, c4, s, q_h, context_texel_len, S_aligned, Q_H);
     }
   }
 }

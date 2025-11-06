@@ -33,7 +33,7 @@ bool validate_flash_attention_args(
     const Tensor& query,
     const Tensor& key,
     const Tensor& value,
-    const std::optional<Tensor>& attn_mask) {
+    const optional<Tensor>& attn_mask) {
   ET_CHECK_OR_RETURN_FALSE(query.dim() == 4, "query must be a 4D tensor");
   ET_CHECK_OR_RETURN_FALSE(key.dim() == 4, "key must be a 4D tensor");
   ET_CHECK_OR_RETURN_FALSE(value.dim() == 4, "value must be a 4D tensor");
@@ -245,11 +245,11 @@ Tensor& flash_attention_kernel_out(
     const Tensor& query,
     const Tensor& key,
     const Tensor& value,
-    const std::optional<Tensor>& attn_mask,
+    const optional<Tensor>& attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
+    const optional<double> scale,
     Tensor& output) {
   (void)ctx;
   ET_KERNEL_CHECK(
@@ -281,12 +281,12 @@ Tensor& flash_attention_kernel_out(
               is_causal,
               attn_mask,
               scale,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt);
+              nullopt,
+              nullopt,
+              nullopt,
+              nullopt,
+              nullopt,
+              nullopt);
         } else if (seq_len >= 192) {
           sdpa::impl::cpu_flash_attention<CTYPE, 64, 512>(
               output,
@@ -297,12 +297,12 @@ Tensor& flash_attention_kernel_out(
               is_causal,
               attn_mask,
               scale,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt);
+              nullopt,
+              nullopt,
+              nullopt,
+              nullopt,
+              nullopt,
+              nullopt);
         } else {
           sdpa::impl::cpu_flash_attention<CTYPE, 32, 512>(
               output,
@@ -313,12 +313,12 @@ Tensor& flash_attention_kernel_out(
               is_causal,
               attn_mask,
               scale,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt);
+              nullopt,
+              nullopt,
+              nullopt,
+              nullopt,
+              nullopt,
+              nullopt);
         }
       });
   return output;
@@ -330,18 +330,18 @@ Tensor& custom_sdpa_out_impl(
     const Tensor& k,
     const Tensor& v,
     const int64_t start_pos,
-    const std::optional<Tensor>& attn_mask,
+    const optional<Tensor>& attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
+    const optional<double> scale,
     Tensor& output,
-    const std::optional<Tensor>& q_zero_points = std::nullopt,
-    const std::optional<Tensor>& q_scales = std::nullopt,
-    const std::optional<Tensor>& k_zero_points = std::nullopt,
-    const std::optional<Tensor>& k_scales = std::nullopt,
-    const std::optional<Tensor>& v_zero_points = std::nullopt,
-    const std::optional<Tensor>& v_scales = std::nullopt,
+    const optional<Tensor>& q_zero_points = nullopt,
+    const optional<Tensor>& q_scales = nullopt,
+    const optional<Tensor>& k_zero_points = nullopt,
+    const optional<Tensor>& k_scales = nullopt,
+    const optional<Tensor>& v_zero_points = nullopt,
+    const optional<Tensor>& v_scales = nullopt,
     bool is_seq_at_dim_2 = false) {
   ET_KERNEL_CHECK_MSG(
       ctx,
@@ -484,17 +484,17 @@ Tensor& custom_quantized_sdpa_out(
     const Tensor& k,
     const Tensor& v,
     const int64_t start_pos,
-    const std::optional<Tensor>& attn_mask,
+    const optional<Tensor>& attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
-    const std::optional<Tensor>& q_zero_points,
-    const std::optional<Tensor>& q_scales,
-    const std::optional<Tensor>& k_zero_points,
-    const std::optional<Tensor>& k_scales,
-    const std::optional<Tensor>& v_zero_points,
-    const std::optional<Tensor>& v_scales,
+    const optional<double> scale,
+    const optional<Tensor>& q_zero_points,
+    const optional<Tensor>& q_scales,
+    const optional<Tensor>& k_zero_points,
+    const optional<Tensor>& k_scales,
+    const optional<Tensor>& v_zero_points,
+    const optional<Tensor>& v_scales,
     const bool is_seq_at_dim_2,
     Tensor& output) {
   return custom_sdpa_out_impl(
@@ -538,11 +538,11 @@ Tensor& custom_sdpa_out(
     const Tensor& k,
     const Tensor& v,
     const int64_t start_pos,
-    const std::optional<Tensor>& attn_mask,
+    const optional<Tensor>& attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
+    const optional<double> scale,
     Tensor& output) {
   return custom_sdpa_out_impl(
       ctx, q, k, v, start_pos, attn_mask, dropout_p, is_causal, scale, output);
@@ -572,11 +572,11 @@ Tensor& sdpa_with_kv_cache_out(
     Tensor& value_cache,
     const int64_t start_pos,
     const int64_t seq_len,
-    const std::optional<Tensor>& attn_mask,
+    const optional<Tensor>& attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<double> scale,
+    const optional<double> scale,
     Tensor& output) {
   (void)ctx;
   ET_KERNEL_CHECK(
