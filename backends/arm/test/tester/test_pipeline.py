@@ -41,8 +41,40 @@ from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
 
 logger = logging.getLogger(__name__)
-T = TypeVar("T")
+T = TypeVar("T", bound=Tuple[Any, ...])
 """ Generic type used for test data in the pipeline. Depends on which type the operator expects."""
+
+
+def _require_tosa_version() -> str:
+    version = conftest.get_option("tosa_version")
+    if not isinstance(version, str):
+        raise TypeError(f"TOSA version option must be a string, got {type(version)}.")
+    return version
+
+
+class PipelineStage:
+    """Container for a pipeline stage (callable plus arguments)."""
+
+    def __init__(self, func: Callable, id: str, *args, **kwargs):
+        self.id: str = id
+        self.func: Callable = func
+        self.args = args
+        self.kwargs = kwargs
+        self.is_called = False
+
+    def __call__(self):
+        if not self.is_called:
+            self.func(*self.args, **self.kwargs)
+        else:
+            raise RuntimeError(f"{self.id} called twice.")
+        self.is_called = True
+
+    def update(self, *args, **kwargs):
+        if not self.is_called:
+            self.args = args
+            self.kwargs = kwargs
+        else:
+            raise RuntimeError(f"{self.id} args updated after being called.")
 
 
 class BasePipelineMaker(Generic[T]):
@@ -65,46 +97,21 @@ class BasePipelineMaker(Generic[T]):
                 tester.to_edge().check(exir_ops).partition()
     """
 
-    class PipelineStage:
-        """
-        Helper class to store a pipeline stage as a function call + args for calling later on.
-
-        Attributes:
-            id: name of the function to be called, used for refering to stages in the pipeline.
-            func: handle to the function to be called.
-            args: args used when called.
-            kwargs: kwargs used when called.
-            is_called: keeps track of if the function has been called.
-        """
-
-        def __init__(self, func: Callable, id: str, *args, **kwargs):
-            self.id: str = id
-            self.func: Callable = func
-            self.args = args
-            self.kwargs = kwargs
-            self.is_called = False
-
-        def __call__(self):
-            if not self.is_called:
-                self.func(*self.args, **self.kwargs)
-            else:
-                raise RuntimeError(f"{self.id} called twice.")
-            self.is_called = True
-
-        def update(self, *args, **kwargs):
-            if not self.is_called:
-                self.args = args
-                self.kwargs = kwargs
-            else:
-                raise RuntimeError(f"{self.id} args updated after being called.")
+    @staticmethod
+    def _normalize_ops(ops: str | Sequence[str] | None) -> list[str]:
+        if ops is None:
+            return []
+        if isinstance(ops, str):
+            return [ops]
+        return list(ops)
 
     def __init__(
         self,
         module: torch.nn.Module,
         test_data: T,
-        aten_ops: str | List[str],
+        aten_ops: str | Sequence[str] | None,
         compile_spec: ArmCompileSpec,
-        exir_ops: Optional[str | List[str]] = None,
+        exir_ops: str | Sequence[str] | None = None,
         use_to_edge_transform_and_lower: bool = True,
         dynamic_shapes: Optional[Tuple[Any]] = None,
         transform_passes: Optional[
@@ -120,15 +127,10 @@ class BasePipelineMaker(Generic[T]):
             transform_passes=transform_passes,
         )
 
-        self.aten_ops = aten_ops if isinstance(aten_ops, list) else [aten_ops]
-        if exir_ops is None:
-            self.exir_ops = []
-        elif isinstance(exir_ops, list):
-            self.exir_ops = exir_ops
-        else:
-            self.exir_ops = [exir_ops]
+        self.aten_ops = self._normalize_ops(aten_ops)
+        self.exir_ops = self._normalize_ops(exir_ops)
         self.test_data = test_data
-        self._stages = []
+        self._stages: list[PipelineStage] = []
 
         self.add_stage(self.tester.export)
         self.add_stage(self.tester.check, self.aten_ops, suffix="aten")
@@ -203,7 +205,7 @@ class BasePipelineMaker(Generic[T]):
                 if stage_id in id_list:
                     raise ValueError("Suffix must be unique in pipeline")
 
-        pipeline_stage = self.PipelineStage(func, stage_id, *args, **kwargs)
+        pipeline_stage = PipelineStage(func, stage_id, *args, **kwargs)
         self._stages.insert(pos, pipeline_stage)
 
         logger.debug(f"Added stage {stage_id} to {type(self).__name__}")
@@ -217,6 +219,8 @@ class BasePipelineMaker(Generic[T]):
         elif isinstance(identifier, str):
             pos = self.find_pos(identifier)
             stage = self._stages.pop(pos)
+        else:
+            raise TypeError("identifier must be an int or str")
 
         logger.debug(f"Removed stage {stage.id} from {type(self).__name__}")
 
@@ -244,19 +248,19 @@ class BasePipelineMaker(Generic[T]):
         self.add_stage(func, *args, **kwargs)
         return self
 
-    def dump_artifact(self, stage_id: str, suffix: str = None):
+    def dump_artifact(self, stage_id: str, suffix: str | None = None):
         """Adds a dump_artifact stage after the given stage id."""
         self.add_stage_after(stage_id, self.tester.dump_artifact, suffix=suffix)
         return self
 
-    def dump_operator_distribution(self, stage_id: str, suffix: str = None):
+    def dump_operator_distribution(self, stage_id: str, suffix: str | None = None):
         """Adds a dump_operator_distribution stage after the given stage id."""
         self.add_stage_after(
             stage_id, self.tester.dump_operator_distribution, suffix=suffix
         )
         return self
 
-    def visualize(self, stage_id: str, suffix: str = None):
+    def visualize(self, stage_id: str, suffix: str | None = None):
         """Adds a dump_operator_distribution stage after the given stage id."""
         self.add_stage_after(stage_id, self.tester.visualize, suffix=suffix)
         return self
@@ -289,7 +293,7 @@ class TOSAPipelineMaker(BasePipelineMaker, Generic[T]):
         # Not all deployments of ET have the TOSA reference model available.
         # Make sure we don't try to use it if it's not available.
         try:
-            import tosa_reference_model
+            import tosa_reference_model  # type: ignore[import-not-found, import-untyped]
 
             # Check if the module has content
             return bool(dir(tosa_reference_model))
@@ -338,7 +342,7 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
-        custom_path: str = None,
+        custom_path: str | None = None,
         tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
@@ -348,12 +352,12 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
     ):
         if tosa_extensions is None:
             tosa_extensions = []
-        tosa_profiles = {
+        tosa_profiles: dict[str, TosaSpecification] = {
             "1.0": TosaSpecification.create_from_string(
                 "TOSA-1.0+INT" + "".join([f"+{ext}" for ext in tosa_extensions])
             ),
         }
-        tosa_version = conftest.get_option("tosa_version")
+        tosa_version = _require_tosa_version()
 
         compile_spec = common.get_tosa_compile_spec(
             tosa_profiles[tosa_version],
@@ -443,7 +447,7 @@ class TosaPipelineFP(TOSAPipelineMaker, Generic[T]):
         exir_op: Optional[str | List[str]] = None,
         run_on_tosa_ref_model: bool = True,
         use_to_edge_transform_and_lower: bool = True,
-        custom_path: str = None,
+        custom_path: str | None = None,
         tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
@@ -456,12 +460,12 @@ class TosaPipelineFP(TOSAPipelineMaker, Generic[T]):
     ):
         if tosa_extensions is None:
             tosa_extensions = []
-        tosa_profiles = {
+        tosa_profiles: dict[str, TosaSpecification] = {
             "1.0": TosaSpecification.create_from_string(
                 "TOSA-1.0+FP" + "".join([f"+{ext}" for ext in tosa_extensions])
             ),
         }
-        tosa_version = conftest.get_option("tosa_version")
+        tosa_version = _require_tosa_version()
 
         compile_spec = common.get_tosa_compile_spec(
             tosa_profiles[tosa_version],
@@ -524,7 +528,7 @@ class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
-        custom_path: str = None,
+        custom_path: str | None = None,
         tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
@@ -610,12 +614,12 @@ class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
         module: torch.nn.Module,
         test_data: T,
         aten_ops: str | List[str],
-        exir_ops: str | List[str] = None,
+        exir_ops: str | List[str] | None = None,
         run_on_fvp: bool = True,
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
-        custom_path: str = None,
+        custom_path: str | None = None,
         tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
@@ -715,20 +719,20 @@ class PassPipeline(TOSAPipelineMaker, Generic[T]):
         pass_list: Optional[List[Type[PassType]]] = None,
         pass_functions: Optional[List[Callable]] = None,
         passes_with_exported_program: Optional[List[Type[ExportPass]]] = None,
-        custom_path: str = None,
+        custom_path: str | None = None,
         tosa_extensions: Optional[List[str]] = None,
     ):
         if tosa_extensions is None:
             tosa_extensions = []
-        tosa_profiles = {
+        tosa_profiles: dict[str, TosaSpecification] = {
             "1.0": TosaSpecification.create_from_string(
                 "TOSA-1.0+"
                 + ("INT" if quantize else "FP")
                 + "".join([f"+{ext}" for ext in tosa_extensions]),
             ),
         }
-        tosa_version = conftest.get_option("tosa_version")
-        self.tosa_spec = tosa_profiles[tosa_version]
+        tosa_version = _require_tosa_version()
+        self.tosa_spec: TosaSpecification = tosa_profiles[tosa_version]
 
         compile_spec = common.get_tosa_compile_spec(
             self.tosa_spec, custom_path=custom_path
@@ -758,9 +762,9 @@ class PassPipeline(TOSAPipelineMaker, Generic[T]):
             self.add_stage(self.tester.check_count, ops_before_pass, suffix="before")
         if ops_not_before_pass:
             self.add_stage(self.tester.check_not, ops_not_before_pass, suffix="before")
-        test_pass_stage = RunPasses(
-            pass_list, pass_functions, passes_with_exported_program
-        )
+        test_pass_stage = RunPasses(  # type: ignore[arg-type]
+            pass_list, pass_functions, passes_with_exported_program  # type: ignore[arg-type]
+        )  # Legacy pass APIs expose callable classes rather than ExportPass subclasses
 
         self.add_stage(self.tester.run_passes, test_pass_stage)
 
@@ -791,17 +795,17 @@ class TransformAnnotationPassPipeline(TOSAPipelineMaker, Generic[T]):
         self,
         module: torch.nn.Module,
         test_data: T,
-        custom_path: str = None,
+        custom_path: str | None = None,
         tosa_extensions: Optional[List[str]] = None,
     ):
         if tosa_extensions is None:
             tosa_extensions = []
-        tosa_profiles = {
+        tosa_profiles: dict[str, TosaSpecification] = {
             "1.0": TosaSpecification.create_from_string(
                 "TOSA-1.0+INT" + "".join([f"+{ext}" for ext in tosa_extensions]),
             ),
         }
-        tosa_version = conftest.get_option("tosa_version")
+        tosa_version = _require_tosa_version()
 
         compile_spec = common.get_tosa_compile_spec(
             tosa_profiles[tosa_version], custom_path=custom_path
@@ -852,14 +856,14 @@ class OpNotSupportedPipeline(TOSAPipelineMaker, Generic[T]):
         test_data: T,
         non_delegated_ops: Dict[str, int],
         n_expected_delegates: int = 0,
-        custom_path: str = None,
+        custom_path: str | None = None,
         quantize: Optional[bool] = False,
         u55_subset: Optional[bool] = False,
         tosa_extensions: Optional[List[str]] = None,
     ):
         if tosa_extensions is None:
             tosa_extensions = []
-        tosa_profiles = {
+        tosa_profiles: dict[str, TosaSpecification] = {
             "1.0": TosaSpecification.create_from_string(
                 "TOSA-1.0+"
                 + ("INT" if quantize else "FP")
@@ -867,7 +871,7 @@ class OpNotSupportedPipeline(TOSAPipelineMaker, Generic[T]):
                 + "".join([f"+{ext}" for ext in tosa_extensions]),
             ),
         }
-        tosa_version = conftest.get_option("tosa_version")
+        tosa_version = _require_tosa_version()
 
         tosa_spec = tosa_profiles[tosa_version]
 
@@ -928,7 +932,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
-        custom_path: str = None,
+        custom_path: str | None = None,
         tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,

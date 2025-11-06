@@ -37,7 +37,7 @@ namespace {
 bool check_linear_scratch_example_args(
     const Tensor& input,
     const Tensor& weight,
-    const std::optional<Tensor>& bias,
+    const optional<Tensor>& bias,
     Tensor& out,
     Tensor& scratch) {
   ET_CHECK_OR_RETURN_FALSE(
@@ -75,7 +75,7 @@ bool check_linear_scratch_example_args(
 Tensor& linear_scratch_example(
     const Tensor& input,
     const Tensor& weight,
-    const std::optional<Tensor>& bias,
+    const optional<Tensor>& bias,
     Tensor& out,
     Tensor& scratch) {
   size_t M, N, K;
@@ -135,7 +135,7 @@ Tensor& linear_scratch_example(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
-    const std::optional<Tensor>& bias,
+    const optional<Tensor>& bias,
     Tensor& out,
     Tensor& scratch) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
