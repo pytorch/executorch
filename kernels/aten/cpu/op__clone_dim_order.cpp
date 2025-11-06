@@ -28,7 +28,7 @@ using Optional = std::optional<T>;
 namespace {
 Optional<MemoryFormat> get_memory_format(OptionalArrayRef<int64_t> dim_order) {
   if (!dim_order.has_value()) {
-    return std::nullopt;
+    return executorch::aten::nullopt;
   }
   if (is_contiguous_dim_order(
           dim_order.value().data(), dim_order.value().size())) {
