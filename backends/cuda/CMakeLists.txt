@@ -74,7 +74,6 @@ set(_aoti_cuda_shim_sources
     runtime/guard.cpp
     runtime/shims/cuda_guard.cpp
     runtime/shims/int4mm.cu
-    runtime/platform/platform.cpp
     ${EXECUTORCH_ROOT}/backends/aoti/common_shims.cpp
 )
 
@@ -124,7 +123,7 @@ install(
 )
 
 # CUDA backend implementation
-set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp)
+set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp runtime/platform/platform.cpp)
 
 # CUDA backend implementation
 add_library(aoti_cuda_backend STATIC ${_aoti_cuda_backend_sources})
