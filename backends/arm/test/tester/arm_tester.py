@@ -832,7 +832,7 @@ def _dump_str(to_print: str, path_to_dump: Optional[str] = None):
         with open(path_to_dump, "a") as fp:
             fp.write(to_print)
     else:
-        logger.info(to_print)
+        print(to_print)
 
 
 def _format_dict(to_print: dict, print_table: bool = True) -> str:
