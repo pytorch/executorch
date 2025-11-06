@@ -6,6 +6,8 @@
 
 from typing import Any, Optional
 
+import executorch.backends.vulkan.utils as utils
+
 import torch
 
 from executorch.backends.vulkan.patterns.pattern_registry import (
@@ -15,31 +17,18 @@ from executorch.backends.vulkan.patterns.pattern_registry import (
 )
 
 from executorch.exir import ExportedProgram
-from executorch.exir.dialects._ops import ops as exir_ops
 
 
 def is_update_cache_node(node: Any) -> bool:
-    if not hasattr(node, "target"):
-        return False
+    return utils.node_has_target(node, "llama::update_cache")
 
-    if isinstance(node.target, str):
-        return node.target == "llama::update_cache"
-    elif hasattr(node.target, "name"):
-        return node.target.name() == "llama::update_cache"
-    else:
-        return False
+
+def is_custom_sdpa_node(node: Any) -> bool:
+    return utils.node_has_target(node, "llama::custom_sdpa")
 
 
 def is_sdpa_with_kv_cache_node(node: Any) -> bool:
-    if not hasattr(node, "target"):
-        return False
-
-    if isinstance(node.target, str):
-        return "sdpa_with_kv_cache" in node.target
-    elif hasattr(node.target, "name"):
-        return "sdpa_with_kv_cache" in node.target.name()
-    else:
-        return False
+    return utils.node_has_target(node, "llama::sdpa_with_kv_cache")
 
 
 class CausalSDPAMatch(PatternMatch):
@@ -97,7 +86,7 @@ class CausalSDPAMatch(PatternMatch):
 def find_causal_sdpa_patterns(
     node: torch.fx.Node,
 ) -> Optional[CausalSDPAMatch]:
-    if node.target != exir_ops.edge.llama.custom_sdpa.default:
+    if not is_custom_sdpa_node(node):
         return None
 
     matched_pattern = CausalSDPAMatch(node)
