@@ -50,14 +50,7 @@ def fast_gelu_impl(x: torch.Tensor) -> torch.Tensor:
 
 
 # registering the out variant.
-my_op_lib.define(
-    "fast_gelu.out(Tensor input, *, Tensor(a!) output) -> Tensor(a!)"
-)  # should print 'fast_gelu.out'
-
-
-# ------------------------------------------------------------------------------
-# 2. Simple model using custom op
-# ------------------------------------------------------------------------------
+my_op_lib.define("fast_gelu.out(Tensor input, *, Tensor(a!) output) -> Tensor(a!)")
 
 
 class Model(torch.nn.Module):
@@ -65,9 +58,39 @@ class Model(torch.nn.Module):
         return torch.ops.my_ops.fast_gelu.default(a)
 
 
-# ------------------------------------------------------------------------------
-# 3. Build + register custom op package
-# ------------------------------------------------------------------------------
+def annotate_custom(gm: torch.fx.GraphModule) -> None:
+    """
+    This function is specific for custom op.
+    The source_fn of the rewritten nn module turns out to be "my_ops.fast_gelu.default"
+    """
+    from executorch.backends.qualcomm.quantizer.annotators import _is_annotated
+    from executorch.backends.qualcomm.quantizer.qconfig import (
+        get_ptq_per_channel_quant_config,
+    )
+    from torch.fx import Node
+    from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
+    from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+
+    quantization_config = get_ptq_per_channel_quant_config()
+    for node in gm.graph.nodes:
+        if node.target != torch.ops.my_ops.fast_gelu.default:
+            continue
+
+        # skip annotation if it is already annotated
+        if _is_annotated([node]):
+            continue
+
+        input_qspec_map = {}
+        input_act = node.args[0]
+        assert isinstance(input_act, Node)
+        input_spec = quantization_config.input_activation
+        input_qspec_map[input_act] = input_spec
+
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
 
 
 def _run(cmd, cwd=None):
@@ -135,11 +158,6 @@ def prepare_op_package(
     return op_package_options, op_package_paths
 
 
-# ------------------------------------------------------------------------------
-# 4. Entrypoint — same pattern as custom_ops_1.py
-# ------------------------------------------------------------------------------
-
-
 def main(args):
     if args.build_op_package:
         if "HEXAGON_SDK_ROOT" not in os.environ:
@@ -158,7 +176,7 @@ def main(args):
         quant_dtype = None
 
     instance = Model()
-    sample_input = (torch.randn(1, 128),)
+    sample_input = (torch.randn(1, 16384),)
     pte_filename = "fastgelu_model"
     workspace = f"/data/local/tmp/executorch/{pte_filename}"
     soc_info: SocInfo = _soc_info_table[getattr(QcomChipset, args.model)]
@@ -169,9 +187,14 @@ def main(args):
         soc_info.htp_info.htp_arch,
         args.build_op_package,
     )
-    # quantizer = make_quantizer(
-    #     quant_dtype=quant_dtype, custom_annotations=(annotate_custom,)
-    # )
+    quant_dtype: Literal[QuantDtype.use_16a16w] = QuantDtype.use_8a8w
+    if args.use_fp16:
+        quant_dtype = None
+    quantizer = None
+    if not args.use_fp16:
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype, custom_annotations=(annotate_custom,)
+        )
 
     build_executorch_binary(
         instance,
@@ -180,8 +203,8 @@ def main(args):
         f"{args.artifact}/{pte_filename}",
         sample_input,
         op_package_options=op_package_options,
-        # quant_dtype=quant_dtype,
-        # custom_quantizer=quantizer,
+        quant_dtype=quant_dtype,
+        custom_quantizer=quantizer,
     )
 
     if args.compile_only:
@@ -203,6 +226,7 @@ def main(args):
     adb.pull(output_path=args.artifact)
 
     # Compare results
+    model = Model()
     x86_golden = model(*sample_input)
     import numpy as np
 
@@ -211,10 +235,14 @@ def main(args):
             os.path.join(output_data_folder, "output_0_0.raw"), dtype=np.float32
         )
     ).reshape(x86_golden.size())
+    result = torch.all(torch.isclose(x86_golden, device_output, atol=1e-2)).item()
     print(
         "is_close?",
-        torch.all(torch.isclose(x86_golden, device_output, atol=1e-2)).item(),
+        result,
     )
+    if not result:
+        print(f"x86_golden {x86_golden}")
+        print(f"device_out {device_output}")
 
 
 if __name__ == "__main__":
