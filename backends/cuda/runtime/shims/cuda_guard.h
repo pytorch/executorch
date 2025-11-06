@@ -10,6 +10,7 @@
 
 #include <cuda_runtime.h>
 #include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/aoti/export.h>
 #include <executorch/backends/cuda/runtime/guard.h>
 #include <cstdint>
 
@@ -33,7 +34,7 @@ using CUDAStreamGuardHandle = CUDAStreamGuard*;
  * @return AOTITorchError error code (Error::Ok on success, or an error code on
  * failure)
  */
-AOTITorchError aoti_torch_create_cuda_guard(
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_cuda_guard(
     int32_t device_index,
     CUDAGuardHandle* ret_guard);
 
@@ -44,7 +45,7 @@ AOTITorchError aoti_torch_create_cuda_guard(
  * @return AOTITorchError error code (Error::Ok on success, or an error code on
  * failure)
  */
-AOTITorchError aoti_torch_delete_cuda_guard(CUDAGuardHandle guard);
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_delete_cuda_guard(CUDAGuardHandle guard);
 
 /**
  * Sets the CUDA device to a new index for an existing guard.
@@ -54,7 +55,7 @@ AOTITorchError aoti_torch_delete_cuda_guard(CUDAGuardHandle guard);
  * @return AOTITorchError error code (Error::Ok on success, or an error code on
  * failure)
  */
-AOTITorchError aoti_torch_cuda_guard_set_index(
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_guard_set_index(
     CUDAGuardHandle guard,
     int32_t device_index);
 
@@ -69,7 +70,7 @@ AOTITorchError aoti_torch_cuda_guard_set_index(
  * @return AOTITorchError error code (Error::Ok on success, or an error code on
  * failure)
  */
-AOTITorchError aoti_torch_create_cuda_stream_guard(
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_cuda_stream_guard(
     void* stream,
     int32_t device_index,
     CUDAStreamGuardHandle* ret_guard);
@@ -81,7 +82,7 @@ AOTITorchError aoti_torch_create_cuda_stream_guard(
  * @return AOTITorchError error code (Error::Ok on success, or an error code on
  * failure)
  */
-AOTITorchError aoti_torch_delete_cuda_stream_guard(CUDAStreamGuardHandle guard);
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_delete_cuda_stream_guard(CUDAStreamGuardHandle guard);
 
 /**
  * Gets the current CUDA stream for a specified device.
@@ -91,7 +92,7 @@ AOTITorchError aoti_torch_delete_cuda_stream_guard(CUDAStreamGuardHandle guard);
  * @return AOTITorchError error code (Error::Ok on success, or an error code on
  * failure)
  */
-AOTITorchError aoti_torch_get_current_cuda_stream(
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_get_current_cuda_stream(
     int32_t device_index,
     void** ret_stream);
 

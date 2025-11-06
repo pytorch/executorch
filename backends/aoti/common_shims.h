@@ -8,19 +8,13 @@
 
 #pragma once
 
+#include <executorch/backends/aoti/export.h>
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
-
-#if defined(EXPORT_AOTI_FUNCTIONS)
-#include <executorch/backends/cuda/runtime/export.h>
-#define AOTI_SHIM_EXPORT AOTI_CUDA_EXPORT
-#else
-#define AOTI_SHIM_EXPORT
-#endif
 
 namespace executorch {
 namespace backends {
