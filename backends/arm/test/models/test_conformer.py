@@ -18,7 +18,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-from torchaudio.models import Conformer
+from torchaudio.models import Conformer  # type: ignore[import-untyped]
 
 input_t = Tuple[torch.Tensor, torch.IntTensor]  # Input x, y
 

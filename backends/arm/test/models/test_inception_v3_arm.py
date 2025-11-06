@@ -5,10 +5,11 @@
 
 from typing import Tuple
 
-import common
 import pytest
 
 import torch
+
+from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -18,7 +19,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-from torchvision import models, transforms
+from torchvision import models, transforms  # type: ignore[import-untyped]
 
 ic3 = models.inception_v3(weights=models.Inception_V3_Weights)
 ic3 = ic3.eval()

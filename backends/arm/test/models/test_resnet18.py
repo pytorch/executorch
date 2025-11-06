@@ -17,7 +17,10 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 from torchvision import transforms  # type: ignore[import-untyped]
-from torchvision.models import resnet18, ResNet18_Weights
+from torchvision.models import (  # type: ignore[import-untyped]
+    resnet18,
+    ResNet18_Weights,
+)
 
 model = resnet18(weights=ResNet18_Weights)
 model = model.eval()
