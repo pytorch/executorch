@@ -22,7 +22,6 @@ from executorch.backends.vulkan._passes import (
     FoldQDQPass,
     FuseQuantizedOpsTransform,
     insert_prepack_nodes,
-    RemoveLocalScalarDenseOpsTransform,
     RemoveRedundantOpsTransform,
     ReplaceQDQPass,
     SqueezeUnsqueezeInputs,
@@ -193,9 +192,6 @@ class VulkanBackend(BackendDetails):
             program,
             [
                 RemoveAssertsTransform(),
-                # Since this pass may replace a scalar argument with a tensor argument,
-                # this pass may result in a non ATen compliant graph structure.
-                RemoveLocalScalarDenseOpsTransform(),
                 insert_prepack_nodes,
             ],
         )

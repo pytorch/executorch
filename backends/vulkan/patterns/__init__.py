@@ -14,6 +14,8 @@ import executorch.backends.vulkan.patterns.quantized_linear  # noqa
 
 import executorch.backends.vulkan.patterns.rope  # noqa
 
+import executorch.backends.vulkan.patterns.select_as_symint  # noqa
+
 import torch
 
 from executorch.backends.vulkan.patterns.pattern_registry import (

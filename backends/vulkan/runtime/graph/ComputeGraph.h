@@ -824,6 +824,8 @@ class ComputeGraph final {
     inputs_.push_back({idx, kDummyValueRef});
   }
 
+  ValueRef staging_of(const ValueRef idx);
+
   inline void set_val_as_output(const ValueRef idx) {
     outputs_.push_back({idx, kDummyValueRef});
   }
@@ -1079,6 +1081,14 @@ class ComputeGraph final {
 
   inline bool can_use_int8_dot_product() const {
     return can_use_int8_dot_product_;
+  }
+
+  inline void set_has_data_dependent_shapes() {
+    config_.has_data_dependent_shapes = true;
+  }
+
+  inline bool has_data_dependent_shapes() const {
+    return config_.has_data_dependent_shapes;
   }
 
   /*
