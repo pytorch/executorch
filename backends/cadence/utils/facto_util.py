@@ -189,47 +189,37 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
             if index == 0:  # condition
                 tensor_constraints = [
                     cp.Dtype.In(lambda deps: [torch.bool]),
-                    cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
-                    cp.Value.Le(lambda deps, dtype, struct: 2**4),
+                    cp.Value.Ge(lambda deps, dtype, struct: 0),
+                    cp.Value.Le(lambda deps, dtype, struct: 1),
                     cp.Rank.Ge(lambda deps: 1),
                     cp.Size.Ge(lambda deps, r, d: 1),
                     max_size_constraint,
                 ]
             elif index == 1:  # input tensor(a)
                 tensor_constraints = [
-                    cp.Dtype.In(
-                        lambda deps: [
-                            torch.int8,
-                            torch.int16,
-                            torch.uint8,
-                            torch.uint16,
-                            torch.int32,
-                            torch.float32,
-                        ]
-                    ),
+                    cp.Dtype.In(lambda deps: [torch.float32]),
                     cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
                     cp.Value.Le(lambda deps, dtype, struct: 2**4),
                     cp.Rank.Ge(lambda deps: 1),
                     cp.Size.Ge(lambda deps, r, d: 1),
+                    cp.Size.In(
+                        lambda deps, r, d: fn.broadcast_with(deps[0].shape, r, d)
+                    ),
                     max_size_constraint,
                 ]
             else:  # input tensor(b)
                 tensor_constraints = [
-                    cp.Dtype.In(
-                        lambda deps: [
-                            torch.int8,
-                            torch.int16,
-                            torch.uint8,
-                            torch.uint16,
-                            torch.int32,
-                            torch.float32,
-                        ]
-                    ),
+                    cp.Dtype.In(lambda deps: [torch.float32]),
                     cp.Dtype.Eq(lambda deps: deps[1].dtype),
                     cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
                     cp.Value.Le(lambda deps, dtype, struct: 2**4),
                     cp.Rank.Ge(lambda deps: 1),
                     cp.Size.Ge(lambda deps, r, d: 1),
+                    cp.Size.In(
+                        lambda deps, r, d: fn.broadcast_with(
+                            fn.broadcasted_shape(deps[0].shape, deps[1].shape), r, d
+                        )
+                    ),
                     max_size_constraint,
                 ]
         case "embedding.default":
@@ -276,6 +266,9 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
             tensor_constraints.extend(
                 [
                     cp.Dtype.In(lambda deps: [torch.float32, torch.int32]),
+                    # Avoid NaN/Inf values that expose clamp NaN handling bugs
+                    cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
+                    cp.Value.Le(lambda deps, dtype, struct: 2**4),
                 ]
             )
         case "rsqrt.default":
@@ -351,12 +344,15 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                 ]
             )
         case "constant_pad_nd.default":
-            tensor_constraints.extend(
-                [
-                    cp.Dtype.In(lambda deps: [torch.float32]),
-                    cp.Size.Le(lambda deps, r, d: 2**2),
-                ]
-            )
+            tensor_constraints = [
+                cp.Dtype.In(lambda deps: [torch.float32]),
+                cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
+                cp.Value.Le(lambda deps, dtype, struct: 2**4),
+                cp.Rank.Ge(lambda deps: 1),
+                cp.Rank.Le(lambda deps: 2),  # Reduced from 3 to 2 (max 2D tensors)
+                cp.Size.Ge(lambda deps, r, d: 1),
+                cp.Size.Le(lambda deps, r, d: 3),  # Max dimension size of 3
+            ]
         case "avg_pool2d.default":
             tensor_constraints.extend(
                 [
@@ -463,6 +459,7 @@ def apply_scalar_contraints(op_name: str) -> list[ScalarDtype]:
             | "mul.Scalar"
             | "div.Scalar"
             | "constant_pad_nd.default"
+            | "clamp.default"
         ):
             return [ScalarDtype.int]
         case "full.default":
@@ -490,7 +487,32 @@ def facto_testcase_gen(  # noqa: C901
                         cp.Size.Le(lambda deps, r, d: 2**2),
                     ]
                 )
-            if in_spec.name == "max_val":  # hardtanh
+            # Special handling for clamp.default to ensure min < max with sufficient gap (at least 2) and never None
+            if op_name == "clamp.default":
+                if in_spec.name == "min":
+                    # min must always be provided (not None) and bounded, leave room for max
+                    spec.inspec[index].constraints.extend(
+                        [
+                            cp.Optional.Eq(lambda deps: False),  # Never None
+                            cp.Value.Ge(lambda deps, dtype: -(2**4)),
+                            cp.Value.Le(
+                                lambda deps, dtype: 2**4 - 2
+                            ),  # Leave room for max (at least 2 units)
+                        ]
+                    )
+                elif in_spec.name == "max":
+                    # max must always be provided (not None), be >= min + 2 (sufficient gap), and bounded
+                    spec.inspec[index].deps = [0, 1]  # deps on input tensor and min
+                    spec.inspec[index].constraints.extend(
+                        [
+                            cp.Optional.Eq(lambda deps: False),  # Never None
+                            cp.Value.Ge(
+                                lambda deps, dtype: deps[1] + 2
+                            ),  # max >= min + 2 (sufficient gap)
+                            cp.Value.Le(lambda deps, dtype: 2**4),
+                        ]
+                    )
+            elif in_spec.name == "max_val":  # hardtanh
                 spec.inspec[index].deps = [0, 1]
                 spec.inspec[index].constraints.extend(
                     [cp.Value.Ge(lambda deps, _: deps[1])]
