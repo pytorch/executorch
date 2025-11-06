@@ -169,7 +169,7 @@ case "${PLATFORM}:${DTYPE}:${MODE}" in
     # Default fallback for unknown configurations
     *)
         ACT_EXPORT_TIME=450
-        echo "Warning: No threshold defined for ${PLATFORM}:${DTYPE}:${MODE}, using default: ${MAX_EXPORT_TIME}s"
+        echo "Warning: No threshold defined for ${PLATFORM}:${DTYPE}:${MODE}, using default: $((ACT_EXPORT_TIME + BUFFER_TIME))s"
         ;;
 esac
 
@@ -304,7 +304,7 @@ echo "Model export completed at $(date +"%Y-%m-%d %H:%M:%S") - Duration: ${EXPOR
 
 # Check export time against threshold. Default is 500 seconds.
 if [ $EXPORT_DURATION -gt $MAX_EXPORT_TIME ]; then
-    echo "Failure; Export took ${EXPORT_DURATION} seconds, exceeding threshold of ${MAX_EXPORT_TIME} seconds"
+    echo "Failure: Export took ${EXPORT_DURATION}s (threshold: ${MAX_EXPORT_TIME}s). This PR may have regressed export time — review changes or bump the threshold if appropriate."
     exit 1
 fi
 
