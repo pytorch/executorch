@@ -92,7 +92,7 @@ RELEASE = os.environ.get("RELEASE", "false").lower() == "true"
 # built documents.
 #
 # The short X.Y version.
-version = "main (" + executorch_version + " )"
+version = "main"
 # The full version, including alpha/beta/rc tags.
 release = "main"
 
