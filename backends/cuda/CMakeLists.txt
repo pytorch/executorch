@@ -76,8 +76,27 @@ set(_aoti_cuda_sources
     runtime/shims/cuda_guard.cpp
     runtime/shims/int4mm.cu
     runtime/platform/platform.cpp
+    ${EXECUTORCH_ROOT}/backends/aoti/common_shims.cpp
 )
-add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
+# Build as SHARED library (.dll) on Windows MSVC, otherwise STATIC
+if(MSVC)
+  add_library(aoti_cuda SHARED ${_aoti_cuda_sources})
+
+  # Define export macros for Windows DLL
+  target_compile_definitions(
+    aoti_cuda PRIVATE EXPORT_AOTI_FUNCTIONS
+  )
+
+  # Ensure proper DLL import/export library naming on Windows with
+  # config-specific paths
+  set_target_properties(
+    aoti_cuda
+    PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF
+  )
+else()
+  add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
+endif()
+
 target_include_directories(
   aoti_cuda
   PUBLIC ${CUDAToolkit_INCLUDE_DIRS} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
@@ -95,11 +114,12 @@ target_link_options(
 # Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and PyTorch
 # CUDA libraries
 target_link_libraries(
-  aoti_cuda PUBLIC aoti_common cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
+  aoti_cuda PUBLIC extension_tensor cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
 )
-# If you need other CUDA libraries, link them similarly:
-# target_link_libraries(aoti_cuda PUBLIC CUDA::cublas CUDA::cufft ...)
-executorch_target_link_options_shared_lib(aoti_cuda)
+
+if(NOT MSVC)
+  executorch_target_link_options_shared_lib(aoti_cuda)
+endif()
 
 if(BUILD_TESTING)
   add_executable(multimodal_benchmark tests/multimodal_benchmark.cpp)
