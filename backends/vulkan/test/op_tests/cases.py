@@ -1557,6 +1557,21 @@ def get_reduce_inputs(is_softmax: bool = False):
     ]
 
 
+def get_reduce_per_row_inputs():
+    inputs = [
+        ((5, 10), 1, False),
+        ((5, 16), -1, True),
+        ((5, 16), -1, False),
+        ((7, 21), -1, True),
+        ((7, 21), -1, False),
+        ((3, 7, 280), -1, True),
+        ((3, 7, 280), -1, False),
+        ((3, 17, 77), -1, True),
+        ((3, 17, 77), -1, False),
+    ]
+    return inputs
+
+
 @register_test_suite(["aten._softmax.default", "aten._log_softmax.default"])
 def get_softmax_inputs():
     test_suite = VkTestSuite(get_reduce_inputs(is_softmax=True))
@@ -1576,6 +1591,20 @@ def get_reduce_op_inputs():
         "utils::kChannelsPacked",
         "utils::kWidthPacked",
     ]
+
+    per_row_suite = VkTestSuite(get_reduce_per_row_inputs())
+    per_row_suite.layouts = ["utils::kWidthPacked"]
+    per_row_suite.storage_types = ["utils::kBuffer"]
+    per_row_suite.test_name_suffix = "per_row"
+    return [test_suite, per_row_suite]
+
+
+@register_test_suite(["aten.argmin.default", "aten.argmax.default"])
+def get_reduce_arg_op_inputs():
+    test_suite = VkTestSuite(get_reduce_per_row_inputs())
+    test_suite.layouts = ["utils::kWidthPacked"]
+    test_suite.storage_types = ["utils::kBuffer"]
+    test_suite.dtypes = ["at::kFloat"]
     return test_suite
 
 

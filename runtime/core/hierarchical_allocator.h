@@ -9,13 +9,10 @@
 #pragma once
 
 #include <c10/util/irange.h>
+
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
-#include <executorch/runtime/platform/assert.h>
-#include <executorch/runtime/platform/compiler.h>
-#include <executorch/runtime/platform/log.h>
-#include <cstdint>
 
 namespace executorch {
 namespace runtime {
