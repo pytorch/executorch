@@ -460,7 +460,7 @@ void get_convolution_out_target_size(
 bool check_cumsum_args(
     const Tensor& in,
     int64_t dim,
-    std::optional<ScalarType> dtype,
+    optional<ScalarType> dtype,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, in.dim()));
 
