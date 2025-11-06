@@ -779,11 +779,13 @@ void cpu_flash_attention(
   // Lets align size_per_thread_qdq_vec to 64 bytes, for coalesced cache reads,
   // by padding with right number of per thread elements
   constexpr int64_t kAlignment = 32;
-  size_per_thread_qdq_vec = (size_per_thread_qdq_vec + kAlignment - 1) & (-(kAlignment - 1));
-  int64_t size_per_thread_qdq_bytes = size_per_thread_qdq_vec * query.element_size();
+  size_per_thread_qdq_vec =
+      (size_per_thread_qdq_vec + kAlignment - 1) & (-(kAlignment - 1));
+  int64_t size_per_thread_qdq_bytes = size_per_thread_qdq_vec * sizeof(accum_t);
   int64_t size_qdq_bytes = size_per_thread_qdq_bytes * num_thread;
   std::vector<char> scratch_for_quant_dequant_vec(size_qdq_bytes);
-  accum_t* scratch_for_quant_dequant = reinterpret_cast<accum_t*>(scratch_for_quant_dequant_vec.data());
+  accum_t* scratch_for_quant_dequant =
+      reinterpret_cast<accum_t*>(scratch_for_quant_dequant_vec.data());
 
   // Data ptrs
   const scalar_t* q_data = query.const_data_ptr<scalar_t>();
@@ -808,7 +810,8 @@ void cpu_flash_attention(
     scalar_t* qk_reduced_data = is_reduced_type
         ? buf_reduced_data + ompIdx * qSplitSize * kvSplitSize
         : nullptr;
-    accum_t* buf_qdq_ptr = scratch_for_quant_dequant + ompIdx * size_per_thread_qdq_vec;
+    accum_t* buf_qdq_ptr =
+        scratch_for_quant_dequant + ompIdx * size_per_thread_qdq_vec;
 
     for (int64_t z = begin; z < end; z++) {
       int64_t m = k * qSplitSize;
