@@ -17,7 +17,8 @@ size_t get_alignment_adjusted_size(size_t size, size_t alignment) {
 }
 } // namespace
 
-CPUCachingAllocator::CPUCachingAllocator(uint32_t max_size) : MemoryAllocator(0, nullptr) {
+CPUCachingAllocator::CPUCachingAllocator(uint32_t max_size)
+    : MemoryAllocator(0, nullptr) {
   max_size_ = max_size;
   current_size_ = 0;
 }

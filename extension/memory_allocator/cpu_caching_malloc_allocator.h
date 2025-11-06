@@ -34,10 +34,10 @@ using SmallVector = std::vector<T>;
 #endif
 
 #ifdef USE_C10_FLAT_HASH_MAP
-template<typename KeyType, typename ValueType>
+template <typename KeyType, typename ValueType>
 using FlatHashMap = ska::flat_hash_map<KeyType, ValueType>;
 #else
-template<typename KeyType, typename ValueType>
+template <typename KeyType, typename ValueType>
 using FlatHashMap = std::unordered_map<KeyType, ValueType>;
 #endif
 
