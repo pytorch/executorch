@@ -149,7 +149,8 @@ target_link_options(
 
 # Link against shims library and other dependencies
 target_link_libraries(
-  aoti_cuda_backend PUBLIC aoti_cuda_shims extension_tensor cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
+  aoti_cuda_backend PRIVATE aoti_cuda_shims
+                    PUBLIC extension_tensor cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
 )
 
 executorch_target_link_options_shared_lib(aoti_cuda_backend)
