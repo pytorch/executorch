@@ -36,7 +36,7 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    std::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out);
 
 Tensor& dequantize_per_token_out(
@@ -57,7 +57,7 @@ Tensor& dequantize_per_channel_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    std::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out);
 
 Tensor& dequantize_per_tensor_tensor_args_out(
@@ -67,7 +67,7 @@ Tensor& dequantize_per_tensor_tensor_args_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    std::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out);
 
 // Wrapper function for dequantize_per_tensor_out without context
@@ -78,7 +78,7 @@ Tensor& dequantize_per_tensor_out_no_context(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    std::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   return torch::executor::native::dequantize_per_tensor_out(
       input, scale, zero_point, quant_min, quant_max, dtype, out_dtype, out);
@@ -107,7 +107,7 @@ Tensor& dequantize_per_channel_out_no_context(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    std::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   return torch::executor::native::dequantize_per_channel_out(
       input,
@@ -129,7 +129,7 @@ Tensor& dequantize_per_tensor_tensor_args_out_no_context(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    std::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   return torch::executor::native::dequantize_per_tensor_tensor_args_out(
       input, scale, zero_point, quant_min, quant_max, dtype, out_dtype, out);
@@ -149,7 +149,7 @@ at::Tensor dequantize_per_tensor_aten(
   ScalarType et_dtype = at_scalartype_to_et_scalartype(dtype);
   ScalarType et_out_dtype = at_scalartype_to_et_scalartype(out_dtype);
 
-  std::optional<ScalarType> opt_et_out_dtype(et_out_dtype);
+  executorch::aten::optional<ScalarType> opt_et_out_dtype(et_out_dtype);
 
   WRAP_TO_ATEN(dequantize_per_tensor_out_no_context, 7)
   (input,
@@ -204,7 +204,7 @@ at::Tensor dequantize_per_channel_aten(
   ScalarType et_dtype = at_scalartype_to_et_scalartype(dtype);
   ScalarType et_out_dtype = at_scalartype_to_et_scalartype(out_dtype);
 
-  std::optional<ScalarType> opt_et_out_dtype(et_out_dtype);
+  executorch::aten::optional<ScalarType> opt_et_out_dtype(et_out_dtype);
 
   WRAP_TO_ATEN(dequantize_per_channel_out_no_context, 8)
   (input,
@@ -233,7 +233,7 @@ at::Tensor dequantize_per_tensor_tensor_args_aten(
   ScalarType et_dtype = at_scalartype_to_et_scalartype(dtype);
   ScalarType et_out_dtype = at_scalartype_to_et_scalartype(out_dtype);
 
-  std::optional<ScalarType> opt_et_out_dtype(et_out_dtype);
+  executorch::aten::optional<ScalarType> opt_et_out_dtype(et_out_dtype);
 
   WRAP_TO_ATEN(dequantize_per_tensor_tensor_args_out_no_context, 7)
   (input,
