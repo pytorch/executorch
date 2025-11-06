@@ -135,6 +135,21 @@ class TestQNNFloatingPointOperator(TestQNN):
                 with self.subTest(i=i):
                     self.lower_module_and_test_output(module, sample_inputs[j])
 
+    def test_qnn_backend_adaptive_max_pool2d(self):
+        sample_input = (torch.randn(1, 512, 24, 24),)
+        # NOTE: Currently, we only support the return_indices is False and default is False.
+        # NOTE: Currently, we only support the case mod(in_w, out_w)=0 and mod(in_h, out_h)=0.
+        modules = [
+            AdaptiveMaxPool2D((1, 1), False),  # noqa: F405
+            AdaptiveMaxPool2D((4, 4)),  # noqa: F405
+            AdaptiveMaxPool2D((24, 24)),  # noqa: F405
+            AdaptiveMaxPool2D((None, 4)),  # noqa: F405
+            AdaptiveMaxPool2D((12, None)),  # noqa: F405
+        ]
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_alias(self):
         module = Alias()  # noqa: F405
         sample_input = (torch.randn(1, 10),)
@@ -858,6 +873,29 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = Gelu()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_grid_sampler(self):
+        # NOTE: The grid_sampler 3d version is not supported in fp16.
+        modes = ["bilinear", "nearest"]
+        padding_modes = ["zeros", "border", "reflection"]
+        align_corners = [False, True]
+        grid_samples = [
+            GridSample(mode, pad, align)  # noqa: F405
+            for mode, pad, align in itertools.product(
+                modes, padding_modes, align_corners
+            )
+        ]
+        sample_inputs = [
+            (
+                torch.randn(1, 12, 14, 14),
+                torch.randn(1, 3, 3, 2),
+            ),  # for grid_sampler 2d
+        ]
+
+        for j in range(len(sample_inputs)):
+            for i, module in enumerate(grid_samples):
+                with self.subTest(i=i, j=j, module=module):
+                    self.lower_module_and_test_output(module, sample_inputs[j])
 
     def test_qnn_backend_glu(self):
         modules = [torch.nn.GLU(), torch.nn.GLU(dim=0)]
@@ -2092,6 +2130,22 @@ class TestQNNQuantizedOperator(TestQNN):
                     module = self.get_qdq_module(module, sample_inputs[j])
                     self.lower_module_and_test_output(module, sample_inputs[j])
 
+    def test_qnn_backend_adaptive_max_pool2d(self):
+        sample_input = (torch.randn(1, 512, 24, 24),)
+        # NOTE: Currently, we only support the return_indices is False and default is False.
+        # NOTE: Currently, we only support the case mod(in_w, out_w)=0 and mod(in_h, out_h)=0.
+        modules = [
+            AdaptiveMaxPool2D((1, 1), False),  # noqa: F405
+            AdaptiveMaxPool2D((4, 4)),  # noqa: F405
+            AdaptiveMaxPool2D((24, 24)),  # noqa: F405
+            AdaptiveMaxPool2D((None, 4)),  # noqa: F405
+            AdaptiveMaxPool2D((12, None)),  # noqa: F405
+        ]
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module_one = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module_one, sample_input)
+
     def test_qnn_backend_alias(self):
         module = Alias()  # noqa: F405
         sample_input = (torch.randn(1, 10),)
@@ -2909,6 +2963,34 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn(2, 5, 1, 3),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_grid_sampler(self):
+        modes = ["bilinear", "nearest"]
+        padding_modes = ["zeros", "border", "reflection"]
+        align_corners = [False, True]
+        grid_samples = [
+            GridSample(mode, pad, align)  # noqa: F405
+            for mode, pad, align in itertools.product(
+                modes, padding_modes, align_corners
+            )
+        ]
+        sample_inputs = [
+            (
+                torch.randn(1, 12, 14, 14),
+                torch.randn(1, 3, 3, 2),
+            ),  # for grid_sampler 2d
+            (
+                torch.randn(1, 15, 9, 17, 33),
+                torch.randn(1, 7, 8, 9, 3),
+            ),  # for grid_sampler 3d
+        ]
+        for j in range(len(sample_inputs)):
+            for i, module in enumerate(grid_samples):
+                with self.subTest(i=i, j=j, module=module):
+                    module = self.get_qdq_module(
+                        module, sample_inputs[j], quant_dtype=QuantDtype.use_16a16w
+                    )
+                    self.lower_module_and_test_output(module, sample_inputs[j])
 
     def test_qnn_backend_glu(self):
         modules = [torch.nn.GLU(), torch.nn.GLU(dim=0)]

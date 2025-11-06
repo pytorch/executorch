@@ -41,6 +41,19 @@ class Abs(torch.nn.Module):
         return torch.abs(x)
 
 
+class AdaptiveMaxPool2D(torch.nn.Module):
+    def __init__(self, output_size, return_indices=False):
+        super().__init__()
+        self.output_size = output_size
+        self.return_indices = return_indices
+
+    def forward(self, x):
+        adaptive_max_pool = torch.nn.AdaptiveMaxPool2d(
+            self.output_size, self.return_indices
+        )
+        return adaptive_max_pool(x)
+
+
 class AdaptiveAvgPool1D(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1096,6 +1109,20 @@ class GreaterThanConstant(torch.nn.Module):
 
     def forward(self, x):
         return x > self.constant
+
+
+class GridSample(torch.nn.Module):
+    def __init__(self, mode, padding_mode, align_corners):
+        super().__init__()
+        self.mode = mode
+        self.align_corners = align_corners
+        self.padding_mode = padding_mode
+
+    def forward(self, x, grid):
+        grid_sample = torch.nn.functional.grid_sample(
+            x, grid, self.mode, self.padding_mode, self.align_corners
+        )
+        return grid_sample
 
 
 class GroupNorm(torch.nn.Module):
