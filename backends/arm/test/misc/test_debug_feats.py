@@ -23,7 +23,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 from executorch.backends.test.harness.stages import StageType
 
-
 input_t1 = Tuple[torch.Tensor]  # Input x
 
 
@@ -261,14 +260,14 @@ def test_dump_tosa_debug_tosa(test_data: input_t1):
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_dump_tosa_ops(caplog, test_data: input_t1):
+def test_dump_tosa_ops(capsys, test_data: input_t1):
     aten_ops: list[str] = []
     exir_ops: list[str] = []
     pipeline = TosaPipelineINT[input_t1](Linear(), test_data, aten_ops, exir_ops)
     pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.dump_operator_distribution("to_edge_transform_and_lower")
     pipeline.run()
-    assert "TOSA operators:" in caplog.text
+    assert "TOSA operators:" in capsys.readouterr().out
 
 
 class Add(torch.nn.Module):
@@ -282,7 +281,7 @@ class Add(torch.nn.Module):
 
 @common.parametrize("test_data", Add.inputs)
 @common.XfailIfNoCorstone300
-def test_fail_dump_tosa_ops(caplog, test_data: input_t1):
+def test_fail_dump_tosa_ops(capsys, test_data: input_t1):
     aten_ops: list[str] = []
     exir_ops: list[str] = []
     pipeline = EthosU55PipelineINT[input_t1](
@@ -290,4 +289,7 @@ def test_fail_dump_tosa_ops(caplog, test_data: input_t1):
     )
     pipeline.dump_operator_distribution("to_edge_transform_and_lower")
     pipeline.run()
-    assert "Can not get operator distribution for Vela command stream." in caplog.text
+    assert (
+        "Can not get operator distribution for Vela command stream."
+        in capsys.readouterr().out
+    )

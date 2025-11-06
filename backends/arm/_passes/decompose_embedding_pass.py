@@ -17,7 +17,6 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from .arm_pass_utils import create_node, get_first_fake_tensor
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
 
 
 class DecomposeEmbeddingPass(ArmPass):

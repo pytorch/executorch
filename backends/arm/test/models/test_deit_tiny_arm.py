@@ -23,7 +23,6 @@ from timm.data import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
 from torchvision import transforms
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 deit_tiny = timm.models.deit.deit_tiny_patch16_224(pretrained=True)

@@ -3,10 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import os
 import random
-import sys
 from typing import Any
 
 import pytest
@@ -28,8 +26,6 @@ def pytest_configure(config):
     pytest._test_options["tosa_version"] = "1.0"  # type: ignore[attr-defined]
     if config.option.arm_run_tosa_version:
         pytest._test_options["tosa_version"] = config.option.arm_run_tosa_version
-
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
 def pytest_collection_modifyitems(config, items):
