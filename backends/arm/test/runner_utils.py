@@ -763,11 +763,11 @@ def run_tosa_graph(
     if isinstance(tosa_version, Tosa_1_00):
         import tosa_reference_model as reference_model  # type: ignore[import-untyped]
 
-        debug_mode = "ALL" if logger.level <= logging.DEBUG else None
+        debug_mode = "ALL" if logger.getEffectiveLevel() <= logging.DEBUG else None
         outputs_np, status = reference_model.run(
             graph,
             inputs_np,
-            verbosity=_tosa_refmodel_loglevel(logger.level),
+            verbosity=_tosa_refmodel_loglevel(logger.getEffectiveLevel()),
             initialize_variable_tensor_from_numpy=True,
             debug_mode=debug_mode,
         )

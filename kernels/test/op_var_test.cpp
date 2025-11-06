@@ -42,7 +42,7 @@ class OpVarOutTest : public OperatorTest {
  protected:
   Tensor& op_var_out(
       const Tensor& self,
-      std::optional<ArrayRef<int64_t>> dim,
+      optional<ArrayRef<int64_t>> dim,
       bool unbiased,
       bool keepdim,
       Tensor& out) {
@@ -69,12 +69,11 @@ class OpVarOutTest : public OperatorTest {
       });
     // clang-format on
     Tensor out = tf_out.zeros({2, 3, 1});
-    std::optional<ScalarType> dtype = OUT_DTYPE;
+    optional<ScalarType> dtype = OUT_DTYPE;
 
     // out-of-bound dim in dim list
     int64_t dims_1[1] = {3};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{
-        ArrayRef<int64_t>{dims_1, 1}};
+    optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         op_var_out(
@@ -118,10 +117,9 @@ class OpVarOutTest : public OperatorTest {
 
     // dimension size mismatch when keepdim is true
     Tensor out = tf_out.zeros({2, 4});
-    std::optional<ScalarType> dtype = OUT_DTYPE;
+    optional<ScalarType> dtype = OUT_DTYPE;
     int64_t dims_1[1] = {1};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{
-        ArrayRef<int64_t>{dims_1, 1}};
+    optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         op_var_out(
@@ -164,9 +162,8 @@ class OpVarOutTest : public OperatorTest {
     // keepdim=true should work
     Tensor out = tf_out.zeros({2, 3, 1});
     int64_t dims_1[1] = {2};
-    std::optional<ArrayRef<int64_t>> optional_dim_list{
-        ArrayRef<int64_t>{dims_1, 1}};
-    std::optional<ScalarType> dtype = OUT_DTYPE;
+    optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    optional<ScalarType> dtype = OUT_DTYPE;
     op_var_out(
         self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
     // clang-format off
@@ -241,11 +238,11 @@ class OpVarOutTest : public OperatorTest {
 
     // empty/null dim list should work
     out = tf_out.zeros({1, 1, 1});
-    std::optional<ArrayRef<int64_t>> null_dim_list;
+    optional<ArrayRef<int64_t>> null_dim_list;
     op_var_out(self, null_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
     expect_tensor_close_with_increased_tol(out, tf_out.make({1, 1, 1}, {50.0}));
 
-    std::optional<ArrayRef<int64_t>> empty_dim_list{ArrayRef<int64_t>{}};
+    optional<ArrayRef<int64_t>> empty_dim_list{ArrayRef<int64_t>{}};
     op_var_out(self, empty_dim_list, /*unbiased=*/false, /*keepdim=*/true, out);
     expect_tensor_close_with_increased_tol(
         out, tf_out.make({1, 1, 1}, {47.916668}));
@@ -263,8 +260,8 @@ class OpVarCorrectionOutTest : public OperatorTest {
  protected:
   Tensor& op_var_correction_out(
       const Tensor& self,
-      std::optional<ArrayRef<int64_t>> dim,
-      std::optional<Scalar>& correction,
+      optional<ArrayRef<int64_t>> dim,
+      optional<Scalar>& correction,
       bool keepdim,
       Tensor& out) {
     return torch::executor::aten::var_outf(
@@ -277,7 +274,7 @@ class OpVarCorrectionOutTest : public OperatorTest {
 
     Tensor x = tf.make({2, 3}, {4.9, 4.0, 5.6, 3.8, 4.9, 5.6});
     Tensor expected = tf.make({2}, {0.72693, 0.93032});
-    std::optional<Scalar> correction(1.23);
+    optional<Scalar> correction(1.23);
     Tensor out = tf.zeros({2});
 
     op_var_correction_out(
@@ -346,8 +343,7 @@ TEST_F(OpVarOutTest, InvalidDTypeDies) {
   // keepdim=true should work
   Tensor out = tf_float.zeros({2, 3, 1});
   int64_t dims_1[1] = {2};
-  std::optional<ArrayRef<int64_t>> optional_dim_list{
-      ArrayRef<int64_t>{dims_1, 1}};
+  optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
 
   ET_EXPECT_KERNEL_FAILURE(
       context_,
@@ -409,9 +405,8 @@ TEST_F(OpVarOutTest, InfinityAndNANTest) {
 
   Tensor out = tf_float.zeros({2, 3, 1});
   int64_t dims[1] = {-1};
-  std::optional<ArrayRef<int64_t>> optional_dim_list{
-      ArrayRef<int64_t>{dims, 1}};
-  std::optional<ScalarType> dtype;
+  optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims, 1}};
+  optional<ScalarType> dtype;
   op_var_out(self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_float.make(
