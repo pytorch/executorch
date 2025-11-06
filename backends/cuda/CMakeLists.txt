@@ -94,11 +94,8 @@ install(
 
 # CUDA-specific AOTI shim symbols (dynamically linked)
 set(_aoti_cuda_shim_sources
-    runtime/shims/memory.cpp
-    runtime/shims/tensor_attribute.cpp
-    runtime/guard.cpp
-    runtime/shims/cuda_guard.cpp
-    runtime/shims/int4mm.cu
+    runtime/shims/memory.cpp runtime/shims/tensor_attribute.cpp
+    runtime/guard.cpp runtime/shims/cuda_guard.cpp runtime/shims/int4mm.cu
     ${EXECUTORCH_ROOT}/backends/aoti/common_shims.cpp
 )
 
@@ -131,7 +128,8 @@ target_link_options(
   aoti_cuda_shims PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
 )
 
-# Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and platform utilities
+# Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and
+# platform utilities
 target_link_libraries(
   aoti_cuda_shims
   PRIVATE cuda_platform
