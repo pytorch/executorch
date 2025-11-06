@@ -141,7 +141,7 @@ AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
 
 // Function to clear all tensors from internal storage
-void clear_all_tensors();
+AOTI_SHIM_EXPORT void clear_all_tensors();
 } // extern "C"
 
 } // namespace executorch::backends::cuda
