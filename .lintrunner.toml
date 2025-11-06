@@ -449,3 +449,24 @@ command = [
   "--",
   "@{{PATHSFILE}}",
 ]
+
+[[linter]]
+code = 'ETVKNODEBUG'
+include_patterns = [
+    "backends/vulkan/**/*.glsl",
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=((DEBUG_MODE)|(GL_EXT_debug_printf))',
+    '--linter-name=ETVKNODEBUG',
+    '--error-name=Using DEBUG_MODE or GL_EXT_debug_printf in Vulkan shader',
+    """--error-description=\
+        #define DEBUG_MODE or #extension GL_EXT_debug_printf should only be used during development!
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]

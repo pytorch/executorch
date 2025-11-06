@@ -278,8 +278,6 @@ TextureElementIndex tensor_idx_to_texture_element_idx_simple(
 
 #ifdef DEBUG_MODE
 
-#extension GL_EXT_debug_printf : enable
-
 void printTensorIndex(const TensorIndex tidx) {
     debugPrintfEXT(
         "TensorIndex: tidx=[%u %u %u %u %u %u %u %u]\\n",

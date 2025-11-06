@@ -9,6 +9,10 @@
 #ifndef COMMON_GLSLH
 #define COMMON_GLSLH
 
+#ifdef DEBUG_MODE
+#extension GL_EXT_debug_printf : enable
+#endif
+
 #define mul_2(x) ((x) << 1)
 #define mul_4(x) ((x) << 2)
 #define mul_8(x) ((x) << 3)
