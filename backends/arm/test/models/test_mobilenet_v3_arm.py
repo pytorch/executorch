@@ -5,10 +5,11 @@
 
 from typing import Tuple
 
-import common
 import pytest
 
 import torch
+
+from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -18,7 +19,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-from torchvision import models, transforms
+from torchvision import models, transforms  # type: ignore[import-untyped]
 
 mv3 = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights)
 mv3 = mv3.eval()

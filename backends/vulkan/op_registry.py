@@ -7,17 +7,12 @@
 # pyre-unsafe
 
 import operator
-
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import executorch.backends.vulkan.custom_ops_lib  # noqa
-
 import executorch.backends.vulkan.utils as utils
-
 import torch
-
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch._subclasses.fake_tensor import FakeTensor
 

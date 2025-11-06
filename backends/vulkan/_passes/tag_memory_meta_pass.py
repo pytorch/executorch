@@ -6,22 +6,16 @@
 
 import logging
 import operator
-
 from typing import Any
 
 import executorch.backends.vulkan.utils as utils
-
 import torch
-
 from executorch.backends.vulkan.op_registry import get_op_features, has_impl, OpFeatures
-
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
     VkStorageType,
 )
-
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.tensor import TensorSpec
 

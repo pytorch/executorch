@@ -412,7 +412,7 @@ struct EValue {
   template <typename T>
   inline std::optional<T> toOptional() const {
     if (this->isNone()) {
-      return std::nullopt;
+      return executorch::aten::nullopt;
     }
     return this->to<T>();
   }
