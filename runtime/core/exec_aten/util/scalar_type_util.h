@@ -913,21 +913,23 @@ struct promote_types {
   }
 #endif
 
-#define ET_INTERNAL_SWITCH(TYPE, CONTEXT, NAME, ...)           \
-  [&] {                                                        \
-    const auto& _st = TYPE;                                    \
-    constexpr const char* et_switch_name = NAME;               \
-    (void)et_switch_name; /* Suppress unused var */            \
-    switch (_st) {                                             \
-      __VA_ARGS__                                              \
-      default:                                                 \
-        CONTEXT.fail(torch::executor::Error::InvalidArgument); \
-        ET_LOG(                                                \
-            Error,                                             \
-            "Unhandled dtype %s for %s",                       \
-            ::executorch::runtime::toString(_st),              \
-            et_switch_name);                                   \
-    }                                                          \
+#define ET_INTERNAL_SWITCH(TYPE, CONTEXT, NAME, ...)            \
+  [&] {                                                         \
+    const auto& _st = TYPE;                                     \
+    constexpr const char* et_switch_name = NAME;                \
+    (void)et_switch_name; /* Suppress unused var */             \
+    C10_DIAGNOSTIC_PUSH_AND_IGNORED_IF_DEFINED("-Wswitch-enum") \
+    switch (_st) {                                              \
+      __VA_ARGS__                                               \
+      default:                                                  \
+        CONTEXT.fail(torch::executor::Error::InvalidArgument);  \
+        ET_LOG(                                                 \
+            Error,                                              \
+            "Unhandled dtype %s for %s",                        \
+            ::executorch::runtime::toString(_st),               \
+            et_switch_name);                                    \
+    }                                                           \
+    C10_DIAGNOSTIC_POP()                                        \
   }()
 
 #define ET_INTERNAL_SWITCH_CASE_INT_TYPES(CTYPE_ALIAS, ...)            \
