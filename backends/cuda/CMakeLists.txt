@@ -82,14 +82,11 @@ add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
 
 # Define export macros for shared library
 if(MSVC)
-  target_compile_definitions(
-    aoti_cuda_shims PRIVATE EXPORT_AOTI_FUNCTIONS
-  )
+  target_compile_definitions(aoti_cuda_shims PRIVATE EXPORT_AOTI_FUNCTIONS)
 
   # Ensure proper DLL import/export library naming on Windows
   set_target_properties(
-    aoti_cuda_shims
-    PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF
+    aoti_cuda_shims PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF
   )
 endif()
 
@@ -100,19 +97,20 @@ target_include_directories(
 )
 
 target_compile_options(
-  aoti_cuda_shims PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
-                         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+  aoti_cuda_shims
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
 )
 
 # Ensure symbols are exported properly
 target_link_options(
-  aoti_cuda_shims PUBLIC
-  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
+  aoti_cuda_shims PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
 )
 
 # Link against CUDA::cudart, common AOTI library, cuda_tensor_maker
 target_link_libraries(
-  aoti_cuda_shims PUBLIC extension_tensor cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
+  aoti_cuda_shims PUBLIC extension_tensor cuda_tensor_maker CUDA::cudart
+                         ${CMAKE_DL_LIBS}
 )
 
 if(NOT MSVC)
@@ -126,9 +124,7 @@ install(
 )
 
 # CUDA backend implementation
-set(_aoti_cuda_backend_sources
-    runtime/cuda_backend.cpp
-)
+set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp)
 
 # CUDA backend implementation
 add_library(aoti_cuda_backend STATIC ${_aoti_cuda_backend_sources})
@@ -139,18 +135,21 @@ target_include_directories(
          $<INSTALL_INTERFACE:include>
 )
 target_compile_options(
-  aoti_cuda_backend PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
-                           $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+  aoti_cuda_backend
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
 )
 # Ensure symbols are exported properly
 target_link_options(
-  aoti_cuda_backend PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
+  aoti_cuda_backend PUBLIC
+  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
 )
 
 # Link against shims library and other dependencies
 target_link_libraries(
-  aoti_cuda_backend PRIVATE aoti_cuda_shims
-                    PUBLIC extension_tensor cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
+  aoti_cuda_backend
+  PRIVATE aoti_cuda_shims
+  PUBLIC extension_tensor cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
 )
 
 executorch_target_link_options_shared_lib(aoti_cuda_backend)
