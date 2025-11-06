@@ -110,7 +110,7 @@ endif()
 # Link CUDA backend
 if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
-  list(APPEND link_libraries aoti_cuda)
+  list(APPEND link_libraries aoti_cuda_backend)
   if(NOT MSVC)
     # On non-MSVC, use shared lib options
     executorch_target_link_options_shared_lib(aoti_cuda)
