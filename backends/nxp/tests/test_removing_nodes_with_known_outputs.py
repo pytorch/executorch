@@ -17,6 +17,7 @@ from executorch.backends.nxp.aten_passes.remove_nodes_with_known_outputs import 
 from executorch.backends.nxp.aten_passes.split_gru_based_on_num_layers import (
     SplitGRUBasedOnNumLayers,
 )
+from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from parameterized import parameterized
 from torch import nn
@@ -57,7 +58,9 @@ class TestRemovingNodesWithKnownOutputs(unittest.TestCase):
         outputs_before = [o.detach().numpy() for o in exir_program_aten(*example_input)]
 
         # Apply the optimization.
-        NeutronAtenPassManager([RemoveNodesWithKnownOutputs()])(exir_program_aten)
+        NeutronAtenPassManager(neutron_target_spec, [RemoveNodesWithKnownOutputs()])(
+            exir_program_aten
+        )
 
         # Make sure the `aten.zeros` is no longer in the model.
         assert not graph_contains_any_of_ops(
@@ -81,7 +84,9 @@ class TestRemovingNodesWithKnownOutputs(unittest.TestCase):
         exir_program_aten = torch.export.export(model, example_input).module()
 
         # Apply the pass to split the `aten.gru.input` into multiple instances, and add a `split` node.
-        NeutronAtenPassManager([SplitGRUBasedOnNumLayers()])(exir_program_aten)
+        NeutronAtenPassManager(neutron_target_spec, [SplitGRUBasedOnNumLayers()])(
+            exir_program_aten
+        )
 
         # Make sure the `aten.zeros` and `torch.split` are in the model.
         assert graph_contains_any_of_ops(
@@ -93,7 +98,9 @@ class TestRemovingNodesWithKnownOutputs(unittest.TestCase):
         outputs_before = [o.detach().numpy() for o in exir_program_aten(*example_input)]
 
         # Apply the optimization.
-        NeutronAtenPassManager([RemoveNodesWithKnownOutputs()])(exir_program_aten)
+        NeutronAtenPassManager(neutron_target_spec, [RemoveNodesWithKnownOutputs()])(
+            exir_program_aten
+        )
 
         # Make sure the `aten.zeros` and `torch.split` are no longer in the model.
         assert not graph_contains_any_of_ops(

@@ -13,6 +13,7 @@ import torch
 from executorch.backends.nxp.quantizer.utils import get_bias_qparams
 from torch import fx
 from torch._ops import OpOverload
+from torch.fx import Node
 from torchao.quantization.pt2e import PerChannelMinMaxObserver
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
@@ -20,6 +21,7 @@ from torchao.quantization.pt2e.quantizer import (
     QuantizationSpec,
     SharedQuantizationSpec,
 )
+
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
@@ -199,7 +201,6 @@ class AddmmPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors:
-        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         addmm_node = fused_partition[0].nodes[-1]
 
         bias_qspec = DerivedQuantizationSpec(
@@ -744,4 +745,148 @@ class TanhInPlacePattern(QuantizationPattern):
     ) -> PartitionAnchors:
         return get_anchors_for_fixed_quant_specs(
             fused_partition, scale=1.0 / 128.0, zero_point=0
+        )
+
+
+class ActivationsConcatClusterPattern(QuantizationPattern):
+    """
+    Quantizer for activations concat cluster pattern.
+
+    The quantizer matches a pattern where concat node is preceded by activation nodes preceded by Conv 2D or Linear.
+    All activation nodes quantization parameters must be the same. Only activations, that have support for fusion
+    to preceding compute node on Neutron are allowed. This cluster is usually produced by MoveActivationBeforeConcat
+    pass. Cluster schema:
+
+            │                     │
+     ┌──────▼──────┐       ┌──────▼──────┐
+     │ aten.conv2d │  ...  │ aten.conv2d │
+     └──────┬──────┘       └──────┬──────┘
+            │                     │
+      ┌─────▼─────┐         ┌─────▼─────┐
+      │ aten.relu │   ...   │ aten.relu │
+      └─────┬─────┘         └─────┬─────┘
+            └───────┐     ┌───────┘
+                 ┌──▼─────▼─┐
+                 │ aten.cat │
+                 └────┬─────┘
+                      │
+    """
+
+    def __init__(self, neutron_quantizer):
+        self.neutron_quantizer = neutron_quantizer
+        self.neutron_target_info = (
+            self.neutron_quantizer.neutron_target_spec.neutron_target_info
+        )
+
+    @staticmethod
+    def _all_activations_are_equal(activations: list[Node]) -> bool:
+        first_input_node = activations[0]
+        hardtanh_t = [
+            torch.ops.aten.hardtanh.default,
+            torch.ops.aten.hardtanh_.default,
+        ]
+        relu_t = [
+            torch.ops.aten.relu.default,
+            torch.ops.aten.relu_.default,
+        ]
+        tanh_t = [
+            torch.ops.aten.tanh.default,
+            torch.ops.aten.tanh_.default,
+        ]
+
+        def _activations_are_equal(activation1: Node, activation2: Node) -> bool:
+            if (  # Targets are equal also with their inplace variants
+                (activation1.target in hardtanh_t and activation2.target in hardtanh_t)
+                or (activation1.target in relu_t and activation2.target in relu_t)
+                or (activation1.target in tanh_t and activation2.target in tanh_t)
+                or (
+                    activation1.target == torch.ops.aten.sigmoid.default
+                    and activation2.target == torch.ops.aten.sigmoid.default
+                )
+            ):
+                return True
+            elif (  # Hardtanh with min_val 0 and max_val 'inf' is equal to Relu
+                activation1.target in hardtanh_t
+                and activation1.args[1:] == (0.0, float("inf"))
+                and activation2.target in relu_t
+            ) or (
+                activation1.target in relu_t
+                and activation2.target in hardtanh_t
+                and activation2.args[1:] == (0.0, float("inf"))
+            ):
+                return True
+            else:
+                return False
+
+        return all(
+            _activations_are_equal(activation, first_input_node)
+            for activation in activations
+        )
+
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.cat.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        cat_node = fused_partition[0].nodes[-1]
+
+        # Check all cat inputs are supported activations
+        if not all(
+            self.neutron_target_info.is_supported_fused_activation__aten(input_node)
+            for input_node in cat_node.all_input_nodes
+        ):
+            return None
+
+        # Check all cat inputs are equal activations
+        if not self._all_activations_are_equal(cat_node.all_input_nodes):
+            return None
+
+        # Check compute nodes are Conv 2D or Linear
+        if not all(
+            self.neutron_target_info.is_fusable_conv_or_linear__aten(compute_node)
+            for input_node in cat_node.all_input_nodes
+            for compute_node in input_node.all_input_nodes
+        ):
+            return None
+
+        # Annotate compute nodes
+        for input_node in cat_node.all_input_nodes:
+            for compute_node in input_node.all_input_nodes:
+                if compute_node.target not in self.neutron_quantizer.op_to_quantizer:
+                    return None
+                compute_node_quantizer = self.neutron_quantizer.op_to_quantizer[
+                    compute_node.target
+                ]
+                compute_node_quantizer.annotate(gm)
+                del compute_node.meta["quantization_annotation"].output_qspec
+
+        # Annotate activations
+        for input_node in cat_node.all_input_nodes:
+            if input_node.target not in self.neutron_quantizer.op_to_quantizer:
+                return None
+            activation_quantizer = self.neutron_quantizer.op_to_quantizer[
+                input_node.target
+            ]
+            activation_quantizer.annotate(gm)
+            input_node.meta["quantization_annotation"].input_qspec_map = {}
+
+        # Annotate cat node
+        inputs = []
+        first_input_node = cat_node.all_input_nodes[0]
+        for idx in range(len(cat_node.all_input_nodes)):
+            inputs.append(
+                (
+                    cat_node,
+                    NodeArgsIdx(0, idx),
+                    SharedQuantizationSpec(first_input_node),
+                )
+            )
+        outputs = [(cat_node, SharedQuantizationSpec(first_input_node))]
+
+        return PartitionAnchors(
+            inputs=inputs,
+            weights=[],
+            biases=[],
+            output=outputs,
         )
