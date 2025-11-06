@@ -520,6 +520,29 @@ def annotate_full(node: Node, quantization_config: QuantizationConfig) -> None:
         )
 
 
+@register_annotator([torch.ops.aten.grid_sampler.default])
+def annotate_grid_sampler(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+    input_act_qsec = quantization_config.input_activation
+    output_act_qsec = quantization_config.output_activation
+
+    input_qspec_map = {}
+    input_act0 = node.args[0]
+    if isinstance(input_act0, Node):
+        input_qspec_map[input_act0] = input_act_qsec
+
+    input_act1 = node.args[1]
+    if isinstance(input_act1, Node):
+        input_qspec_map[input_act1] = input_act_qsec
+
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=output_act_qsec,
+        _annotated=True,
+    )
+
+
 @register_annotator(
     [torch.ops.aten.hardswish.default, torch.ops.aten.hardswish_.default]
 )
@@ -561,6 +584,27 @@ def annotate_neg(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.adaptive_max_pool2d.default])
+def annotate_adaptive_max_pool2d(
+    node: Node, quantization_config: QuantizationConfig
+) -> None:
+    if _is_annotated([node]):
+        return
+    input_act_qsec = quantization_config.input_activation
+    output_act_qsec = quantization_config.output_activation
+
+    input_qspec_map = {}
+    input_act0 = node.args[0]
+    if isinstance(input_act0, Node):
+        input_qspec_map[input_act0] = input_act_qsec
+
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=output_act_qsec,
+        _annotated=True,
+    )
+
+
 @register_annotator(
     [
         torch.ops.aten.adaptive_avg_pool1d.default,
@@ -575,6 +619,18 @@ def annotate_adaptive_avgpool(
 
 @register_annotator([torch.ops.aten.avg_pool2d.default])
 def annotate_avgpool2d(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.avg_pool3d.default])
+def annotate_avgpool3d(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.adaptive_avg_pool3d.default])
+def annotate_adaptive_avgpool3d(
+    node: Node, quantization_config: QuantizationConfig
+) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
