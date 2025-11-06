@@ -178,6 +178,8 @@ class TestQNN(unittest.TestCase):
     dump_intermediate_outputs: bool = False
     inference_speed: float = 0.0
     inference_speed_output_path = "outputs/inference_speed.txt"
+    model_name: str = ""
+    oss_repo: str = ""
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))

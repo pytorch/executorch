@@ -81,7 +81,7 @@ elif [[ "${TASK_NAME}" == "stories_260k_bc" ]]; then
     fi
 
 elif [[ "${TASK_NAME}" == "smollm2_135m" ]]; then
-    $PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_static_smollm2 --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir ./static_smollm2 --enable_x86_64
+    $PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_static_llm_model --model_name smollm2_135m --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir ./static_smollm2 --enable_x86_64
     exit_code1=$?
     if [ $exit_code1 -ne 0 ]; then
         exit 1
