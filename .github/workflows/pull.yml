@@ -315,7 +315,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
-        pip install -U "huggingface_hub[cli]" accelerate
+        pip install -U "huggingface_hub[cli]<1.0" accelerate
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
@@ -566,6 +566,8 @@ jobs:
       id-token: write
       contents: read
     strategy:
+      matrix:
+        task: [stories_110m, stories_260k_bc]
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -589,8 +591,7 @@ jobs:
         # Setup install_requirements for llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
 
-        # Test static llama weight sharing and accuracy
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }}
 
   test-qnn-models-linux:
     name: test-qnn-models-linux
@@ -635,7 +636,7 @@ jobs:
         echo "::group::Setup ExecuTorch"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
         echo "::endgroup::"
-                
+
         echo "::group::Setup requirements"
         # install phi-3-mini requirements
         bash examples/models/phi-3-mini/install_requirements.sh
@@ -908,6 +909,8 @@ jobs:
 
   test-samsung-models-linux:
     name: test-samsung-models-linux
+    # Skip this job if the pull request is from a fork (secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write

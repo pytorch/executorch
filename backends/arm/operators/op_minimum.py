@@ -3,11 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -42,7 +41,6 @@ class MinVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        from tosa.NanPropagationMode import NanPropagationMode  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
@@ -54,13 +52,12 @@ class MinVisitor(NodeVisitor):
         )
 
         attr_minimum = ts.TosaSerializerAttribute()
-        # Set to PROPAGATE as default
-        attr_minimum.MinimumAttribute(nan_mode=NanPropagationMode.PROPAGATE)
+        attr_minimum.MinimumAttribute(nan_mode=ts.NanPropagationMode.PROPAGATE)
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().MINIMUM,
+            ts.Op.MINIMUM,
             [
                 inputs[0].name,
                 inputs[1].name,

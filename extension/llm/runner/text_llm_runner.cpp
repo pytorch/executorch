@@ -175,11 +175,6 @@ Error TextLLMRunner::generate(
   stats_->first_token_ms = time_in_ms();
   stats_->prompt_eval_end_ms = time_in_ms();
 
-  RUNNER_ET_LOG(
-      config.warming,
-      "RSS after prompt prefill: %f MiB (0 if unsupported)",
-      get_rss_bytes() / 1024.0 / 1024.0);
-
   // print the first token from prefill. No prev_token so use cur_token for it.
   auto decode_result = tokenizer_->decode(cur_token, cur_token);
   if (!decode_result.ok()) {
@@ -190,6 +185,10 @@ Error TextLLMRunner::generate(
     return ::executorch::runtime::Error::InvalidArgument;
   }
   wrapped_callback(std::move(*decode_result));
+  RUNNER_ET_LOG(
+      config.warming,
+      "RSS after prompt prefill: %f MiB (0 if unsupported)",
+      get_rss_bytes() / 1024.0 / 1024.0);
 
   // start the main loop
   prompt_tokens.push_back(cur_token);
@@ -248,7 +247,7 @@ Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
   Error err = generate(prompt, config);
 
   // Reset stats after warmup, not resetting the std::unique_ptr!
-  stats_->reset();
+  reset();
   return err;
 }
 

@@ -4,6 +4,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+from typing import Callable
+
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -342,5 +344,45 @@ def test_mean_dim_vgf_INT(test_data):
         [],  # Might be sum, avgpool, or both
         symmetric_io_quantization=True,
         tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+mean_input_t = tuple[torch.Tensor, bool]
+
+
+class MeanDefault(torch.nn.Module):
+    def forward(self, tensor: torch.Tensor, keepdim: bool):
+        return tensor.mean()
+
+    test_data_suite: dict[str, Callable[[], mean_input_t]] = {
+        "rank1": lambda: (
+            torch.rand(
+                1,
+            ),
+            False,
+        ),
+        "rank2": lambda: (torch.rand(5, 5), True),
+        "rank4": lambda: (torch.rand(5, 1, 10, 1), False),
+    }
+
+
+@common.parametrize("test_data", MeanDefault.test_data_suite)
+def test_mean_tosa_FP(test_data):
+    pipeline = TosaPipelineFP[mean_input_t](
+        MeanDefault(),
+        test_data(),
+        [],  # Might be sum, avgpool, or both
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDefault.test_data_suite)
+def test_mean_tosa_INT(test_data):
+    pipeline = TosaPipelineINT[mean_input_t](
+        MeanDefault(),
+        test_data(),
+        [],  # Might be sum, avgpool, or both
+        symmetric_io_quantization=True,
     )
     pipeline.run()

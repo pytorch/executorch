@@ -3,12 +3,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
-
 import torch.fx
+
+import tosa_serializer as ts
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -81,11 +80,13 @@ class NegVisitor(NodeVisitor):
         output_zp_tensor = tosa_graph.addConst(
             (1,), output.dtype, [output_zp], name=output.name + "_output_zp"
         )
-
+        attr = ts.TosaSerializerAttribute()
+        attr.NegateAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().NEGATE,
+            ts.Op.NEGATE,
             [inputs[0].name, input_zp_tensor.name, output_zp_tensor.name],
             [output.name],
+            attr,
         )

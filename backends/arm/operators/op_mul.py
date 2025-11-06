@@ -3,12 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -49,8 +49,13 @@ class MulVisitor(NodeVisitor):
         )
 
         tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{node.name}_shift")
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().MUL,
+        attr = ts.TosaSerializerAttribute()
+        attr.MulAttribute()
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.Op.MUL,
             [inputs[0].name, inputs[1].name, f"{node.name}_shift"],
             [output.name],
+            attr,
         )

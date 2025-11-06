@@ -3,13 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Any, List
 
-import serializer.tosa_serializer as ts
-
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -100,10 +99,13 @@ class ConstantPadNDVisitor(NodeVisitor):
             shape=[1], dtype=pad_const_dtype, vals=[pad_const_val]
         )
 
+        attr = ts.TosaSerializerAttribute()
+        attr.PadAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().PAD,
+            ts.Op.PAD,
             [inputs[0].name, padding.name, pad_const.name],
             [output.name],
+            attr,
         )

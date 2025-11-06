@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 #
 # Main implementation of AoT flow to partition and preprocess for Arm target
@@ -51,11 +50,20 @@ class EthosUBackend(BackendDetails):
                 "compile_flags are required in the CompileSpec list for EthosUBackend"
             )
 
+        # Vela tooling only supports flatbuffers up to 2 GiB.
+        max_flatbuffer_size = 2 * 1024 * 1024 * 1024
+        flatbuffer_size = len(tosa_flatbuffer)
+        if flatbuffer_size > max_flatbuffer_size:
+            raise RuntimeError(
+                "TOSA flatbuffer is too large for Vela "
+                f"({flatbuffer_size} bytes > {max_flatbuffer_size} bytes limit)."
+            )
+
         # Pass on the TOSA flatbuffer to the vela compiler.
         binary = vela_compile(
             tosa_flatbuffer,
             compile_flags,
-            verbose=logger.getEffectiveLevel() == logging.INFO,
+            verbose=logger.getEffectiveLevel() <= logging.INFO,
             intermediate_path=compile_spec.get_intermediate_path(),
         )
         return binary

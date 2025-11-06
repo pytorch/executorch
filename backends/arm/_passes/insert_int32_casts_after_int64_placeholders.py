@@ -3,8 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
 
 import logging
 
@@ -38,6 +36,8 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
     # Key: op overload; Value: zero-based indices of positional args that must be i64.
     I64_INPUT_ARG_POSITIONS = {
         torch.ops.aten.one_hot.default: (0,),
+        torch.ops.aten.index_copy_.default: (2,),
+        torch.ops.aten.index_copy.default: (2,),
     }
 
     def _insert_callsite_i32_to_i64_casts(self, graph_module: torch.fx.GraphModule):

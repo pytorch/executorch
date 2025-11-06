@@ -3,10 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 from typing import Any, cast, List
 
-import serializer.tosa_serializer as ts
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (  # type: ignore
     NodeVisitor,
@@ -55,7 +54,7 @@ class AnyVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().REDUCE_ANY,
+            ts.Op.REDUCE_ANY,
             [inputs[0].name],
             [output.name],
             attr,
