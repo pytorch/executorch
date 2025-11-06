@@ -59,6 +59,17 @@ class CortexMTensorAdd(Model):
     }
 
 
+class CortexMTensorAddBroadcast(Model):
+    # TODO: Quantize and accelerate broadcasted adds
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
+    }
+
+
 class CortexMAlphaAdd(ModelAlpha):
     ops_before_transforms = {
         "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
@@ -115,15 +126,15 @@ test_cases = {
         (torch.rand(2, 2) * 10, torch.rand(2, 2)),
     ),
     "broadcast_1": McuTestCase(
-        CortexMTensorAdd(),
+        CortexMTensorAddBroadcast(),
         (torch.ones(1), torch.ones(2, 2, 2, 2)),
     ),
     "broadcast_2": McuTestCase(
-        CortexMTensorAdd(),
+        CortexMTensorAddBroadcast(),
         (torch.ones((2, 1, 1, 1)), torch.ones(1)),
     ),
     "broadcast_3": McuTestCase(
-        CortexMTensorAdd(),
+        CortexMTensorAddBroadcast(),
         (
             ramp_tensor(-2, 2, (2, 1, 2, 1)),
             ramp_tensor(-5, 5, (1, 2, 1, 2)),
@@ -171,18 +182,6 @@ implementation_xfails = {
     "scalar_scalar": (
         "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
         AttributeError,
-    ),
-    "broadcast_1": (
-        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
-        RuntimeError,
-    ),
-    "broadcast_2": (
-        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
-        RuntimeError,
-    ),
-    "broadcast_3": (
-        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
-        RuntimeError,
     ),
     "alpha": (
         "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
