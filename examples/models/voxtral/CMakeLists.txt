@@ -90,7 +90,7 @@ if(EXECUTORCH_BUILD_CUDA)
   list(APPEND link_libraries aoti_cuda_backend)
   if(NOT MSVC)
     # On non-MSVC, use shared lib options
-    executorch_target_link_options_shared_lib(aoti_cuda)
+    executorch_target_link_options_shared_lib(aoti_cuda_backend)
   endif()
 endif()
 
