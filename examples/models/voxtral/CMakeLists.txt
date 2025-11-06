@@ -87,8 +87,11 @@ list(
 # Link CUDA backend
 if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
-  list(APPEND link_libraries aoti_cuda)
-  executorch_target_link_options_shared_lib(aoti_cuda)
+  list(APPEND link_libraries aoti_cuda_backend)
+  if(NOT MSVC)
+    # On non-MSVC, use shared lib options
+    executorch_target_link_options_shared_lib(aoti_cuda)
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_METAL)
@@ -104,16 +107,6 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(voxtral_runner)
   if(NOT APPLE AND NOT MSVC)
     target_link_options(voxtral_runner PRIVATE "LINKER:-s")
-  endif()
-endif()
-
-# Link CUDA backend
-if(EXECUTORCH_BUILD_CUDA)
-  find_package(CUDAToolkit REQUIRED)
-  list(APPEND link_libraries aoti_cuda_backend)
-  if(NOT MSVC)
-    # On non-MSVC, use shared lib options
-    executorch_target_link_options_shared_lib(aoti_cuda)
   endif()
 endif()
 
