@@ -145,31 +145,35 @@ elif [[ "$(uname -m)" == "aarch64" ]] || [[ "$(uname -m)" == "arm64" ]]; then
     PLATFORM="arm64"
 fi
 
+BUFFER_TIME=50
+
 # Lookup threshold based on platform:dtype:mode
 case "${PLATFORM}:${DTYPE}:${MODE}" in
+
     # Linux x86 configurations
-    "x86:fp32:portable")                        MAX_EXPORT_TIME=100 ;;  # actual: 72s
-    "x86:fp32:xnnpack+custom")                  MAX_EXPORT_TIME=360 ;;  # actual: 276s
-    "x86:bf16:portable")                        MAX_EXPORT_TIME=100 ;;  # actual: 75s
+    "x86:fp32:portable")                        ACT_EXPORT_TIME=72 ;;
+    "x86:fp32:xnnpack+custom")                  ACT_EXPORT_TIME=276 ;;
+    "x86:bf16:portable")                        ACT_EXPORT_TIME=75 ;;
 
     # Linux ARM64 configurations
-    "arm64:fp32:portable")                      MAX_EXPORT_TIME=162 ;;  # actual: 124s
-    "arm64:fp32:xnnpack+custom")                MAX_EXPORT_TIME=630 ;;  # actual: 483s
-    "arm64:bf16:portable")                      MAX_EXPORT_TIME=162 ;;  # actual: 118s
-    "arm64:bf16:custom")                        MAX_EXPORT_TIME=133 ;;  # actual: 102s
+    "arm64:fp32:portable")                      ACT_EXPORT_TIME=124 ;;
+    "arm64:fp32:xnnpack+custom")                ACT_EXPORT_TIME=483 ;;
+    "arm64:bf16:portable")                      ACT_EXPORT_TIME=118 ;;
+    "arm64:bf16:custom")                        ACT_EXPORT_TIME=102 ;;
 
     # macOS configurations
-    "macos:fp32:mps")                           MAX_EXPORT_TIME=60  ;;  # actual: 30s
-    "macos:fp32:coreml")                        MAX_EXPORT_TIME=80  ;;  # actual: 61s
-    "macos:fp32:xnnpack+custom+quantize_kv")    MAX_EXPORT_TIME=170 ;;  # actual: 133s
+    "macos:fp32:mps")                           ACT_EXPORT_TIME=30  ;;
+    "macos:fp32:coreml")                        ACT_EXPORT_TIME=61  ;;
+    "macos:fp32:xnnpack+custom+quantize_kv")    ACT_EXPORT_TIME=133 ;;
 
     # Default fallback for unknown configurations
     *)
-        MAX_EXPORT_TIME=500
+        ACT_EXPORT_TIME=450
         echo "Warning: No threshold defined for ${PLATFORM}:${DTYPE}:${MODE}, using default: ${MAX_EXPORT_TIME}s"
         ;;
 esac
 
+MAX_EXPORT_TIME=$((ACT_EXPORT_TIME + BUFFER_TIME))
 
 echo "QNN option ${QNN}"
 echo "QNN_SDK_ROOT: ${QNN_SDK_ROOT}"
