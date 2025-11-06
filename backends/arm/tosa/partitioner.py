@@ -110,8 +110,8 @@ def is_noop_expand(node: torch.fx.node.Node) -> bool:
     if node.target != exir_ops.edge.aten.expand_copy.default:
         return False
     else:
-        multiples = calculate_multiples(node.args)
-    return all(m == 1 for m in multiples)
+        multiples, changes_rank = calculate_multiples(node.args)
+    return all(m == 1 for m in multiples) and not changes_rank
 
 
 def is_partitioned(
