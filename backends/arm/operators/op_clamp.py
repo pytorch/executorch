@@ -74,6 +74,8 @@ class ClampVisitor(NodeVisitor):
             return np.frombuffer(np.float16(value).tobytes(), dtype=np.uint8).tolist()
         elif dtype == torch.int8:
             return np.frombuffer(np.int8(value).tobytes(), dtype=np.uint8).tolist()
+        elif dtype == torch.int16:
+            return np.frombuffer(np.int16(value).tobytes(), dtype=np.uint8).tolist()
         else:
             raise ValueError(f"Unsupported dtype for to_bytes: {dtype}")
 
@@ -89,7 +91,7 @@ class ClampVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.FP16, ts.DType.FP32],
             output.tosa_spec,
         )
 

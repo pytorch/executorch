@@ -85,6 +85,22 @@ def test_clamp_tosa_INT(test_data):
 
 
 @common.parametrize("test_data", test_data_suite)
+def test_clamp_tosa_INT_a16w8(test_data):
+    """Test clamp operation with int16 I/O quantization for TOSA INT."""
+    input_tensor, min_val, max_val = test_data()
+    model = Clamp(min_val, max_val)
+    pipeline = TosaPipelineINT[input_t](
+        model,
+        (input_tensor,),
+        aten_op,
+        exir_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_clamp_u55_INT(test_data):
 
@@ -98,6 +114,25 @@ def test_clamp_u55_INT(test_data):
         exir_op,
     )
 
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
+def test_clamp_16a8w_u55_INT16(test_data):
+    """Test clamp operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    input_tensor, min_val, max_val = test_data()
+    model = Clamp(min_val, max_val)
+    pipeline = EthosU55PipelineINT[input_t](
+        model,
+        (input_tensor,),
+        aten_op,
+        exir_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
@@ -117,6 +152,25 @@ def test_clamp_u85_INT(test_data):
     )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
 
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_clamp_16a8w_u85_INT16(test_data):
+    """Test clamp operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    input_tensor, min_val, max_val = test_data()
+    model = Clamp(min_val, max_val)
+    pipeline = EthosU85PipelineINT[input_t](
+        model,
+        (input_tensor,),
+        aten_op,
+        exir_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 

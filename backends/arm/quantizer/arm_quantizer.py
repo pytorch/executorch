@@ -51,6 +51,7 @@ __all__ = [
     "TOSAQuantizer",
     "EthosUQuantizer",
     "VgfQuantizer",
+    "get_symmetric_a16w8_quantization_config",
     "get_symmetric_quantization_config",
 ]
 
