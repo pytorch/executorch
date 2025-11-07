@@ -138,6 +138,9 @@ def quantized_add_meta(
     output_multiplier: int,
     output_shift: int,
 ) -> torch.Tensor:
+    assert (
+        self.shape == other.shape
+    ), "Broadcasting not yet supported in Cortex-M backend."
     broadcasted_shape = torch.broadcast_shapes(self.shape, other.shape)
     return torch.empty(broadcasted_shape, dtype=torch.int8, device=self.device)
 
@@ -156,6 +159,9 @@ def quantized_add_impl(
     output_multiplier: int,
     output_shift: int,
 ) -> torch.Tensor:
+    assert (
+        self.shape == other.shape
+    ), "Broadcasting not yet supported in Cortex-M backend."
     self_shifted = (self.to(torch.int32) - self_zero_point) << SHIFT_INT8
     self_fp = requantize_cmsis(self_shifted, self_multiplier, self_shift)
 
@@ -197,6 +203,9 @@ def quantized_mul_meta(
     output_shift: int,
 ) -> torch.Tensor:
     # Broadcast to output shape
+    assert (
+        self.shape == other.shape
+    ), "Broadcasting not yet supported in Cortex-M backend."
     broadcasted_shape = torch.broadcast_shapes(self.shape, other.shape)
     return torch.empty(broadcasted_shape, dtype=torch.int8, device=self.device)
 
@@ -214,6 +223,9 @@ def quantized_mul_impl(
     # CMSIS-NN kernel multiplies raw int8 tensors (after zero-point offset) and
     # only uses the output multiplier/shift for rescaling. Mirror that here to
     # keep the composite implementation numerically aligned with the backend.
+    assert (
+        self.shape == other.shape
+    ), "Broadcasting not yet supported in Cortex-M backend."
     self_int = self.to(torch.int32) - self_zero_point
     other_int = other.to(torch.int32) - other_zero_point
     result_fp = self_int * other_int

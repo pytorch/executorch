@@ -59,16 +59,6 @@ class CortexMTensorMul(Model):
     }
 
 
-class CortexMTensorMulBroadCast(Model):
-    ops_before_transforms = {
-        "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
-    }
-
-    ops_after_transforms = {
-        "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
-    }
-
-
 test_cases = {
     "self_scalar": McuTestCase(
         CortexMSelfMul(),
@@ -107,15 +97,15 @@ test_cases = {
         (1000.0, torch.ones(1)),
     ),
     "broadcast_1": McuTestCase(
-        CortexMTensorMulBroadCast(),
+        CortexMTensorMul(),
         (torch.ones(1), torch.ones(2, 2, 2, 2)),
     ),
     "broadcast_2": McuTestCase(
-        CortexMTensorMulBroadCast(),
+        CortexMTensorMul(),
         (torch.ones((2, 1, 1, 1)), torch.ones(1)),
     ),
     "broadcast_3": McuTestCase(
-        CortexMTensorMulBroadCast(),
+        CortexMTensorMul(),
         (
             ramp_tensor(-2, 2, (2, 1, 2, 1)),
             ramp_tensor(-5, 5, (1, 2, 1, 2)),
@@ -125,8 +115,17 @@ test_cases = {
 
 
 xfail_cases = {
-    "self_scalar": "lift_constant_tensor_pass assumes fake tensors for scalars",
-    "scalar_scalar": "lift_constant_tensor_pass assumes fake tensors for scalars",
+    "self_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "scalar_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "broadcast_1": "Broadcasting not yet supported in Cortex-M backend",
+    "broadcast_2": "Broadcasting not yet supported in Cortex-M backend",
+    "broadcast_3": "Broadcasting not yet supported in Cortex-M backend",
 }
 
 
