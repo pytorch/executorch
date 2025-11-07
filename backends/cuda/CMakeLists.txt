@@ -183,9 +183,6 @@ install(
   DESTINATION lib
 )
 
-# Alias for backward compatibility
-add_library(aoti_cuda ALIAS aoti_cuda_backend)
-
 if(BUILD_TESTING)
   add_executable(multimodal_benchmark tests/multimodal_benchmark.cpp)
   target_link_libraries(
