@@ -477,32 +477,35 @@ void ComputePipelineCache::create_pipelines(
   for (auto& key : descriptors) {
     map_entries.push_back(key.specialization_constants.generate_map_entries());
 
-    specialization_infos.push_back(VkSpecializationInfo{
-        key.specialization_constants.size(), // mapEntryCount
-        map_entries.back().data(), // pMapEntries
-        key.specialization_constants.data_nbytes(), // dataSize
-        key.specialization_constants.data(), // pData
-    });
+    specialization_infos.push_back(
+        VkSpecializationInfo{
+            key.specialization_constants.size(), // mapEntryCount
+            map_entries.back().data(), // pMapEntries
+            key.specialization_constants.data_nbytes(), // dataSize
+            key.specialization_constants.data(), // pData
+        });
 
-    shader_stage_create_infos.push_back(VkPipelineShaderStageCreateInfo{
-        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, // sType
-        nullptr, // pNext
-        0u, // flags
-        VK_SHADER_STAGE_COMPUTE_BIT, // stage
-        key.shader_module, // module
-        "main", // pName
-        &specialization_infos.back(), // pSpecializationInfo
-    });
+    shader_stage_create_infos.push_back(
+        VkPipelineShaderStageCreateInfo{
+            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, // sType
+            nullptr, // pNext
+            0u, // flags
+            VK_SHADER_STAGE_COMPUTE_BIT, // stage
+            key.shader_module, // module
+            "main", // pName
+            &specialization_infos.back(), // pSpecializationInfo
+        });
 
-    create_infos.push_back(VkComputePipelineCreateInfo{
-        VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, // sType
-        nullptr, // pNext
-        0u, // flags
-        shader_stage_create_infos.back(), // stage
-        key.pipeline_layout, // layout
-        VK_NULL_HANDLE, // basePipelineHandle
-        0u, // basePipelineIndex
-    });
+    create_infos.push_back(
+        VkComputePipelineCreateInfo{
+            VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, // sType
+            nullptr, // pNext
+            0u, // flags
+            shader_stage_create_infos.back(), // stage
+            key.pipeline_layout, // layout
+            VK_NULL_HANDLE, // basePipelineHandle
+            0u, // basePipelineIndex
+        });
   }
 
   VK_CHECK(vkCreateComputePipelines(
