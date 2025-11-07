@@ -31,6 +31,7 @@ from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
 from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.backends.arm.vgf.model_converter import find_model_converter_binary
 from executorch.exir import ExecutorchProgramManager, ExportedProgram
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch.fx.node import Node
@@ -678,11 +679,15 @@ def corstone320_installed() -> bool:
 
 
 def model_converter_installed() -> bool:
-    cmd = ["model-converter", "--version"]
-    try:
-        _run_cmd(cmd, check=True)
-    except:
+    model_converter = find_model_converter_binary()
+    if model_converter is None:
         return False
+
+    try:
+        _run_cmd([model_converter, "--version"], check=True)
+    except Exception:
+        return False
+
     return True
 
 

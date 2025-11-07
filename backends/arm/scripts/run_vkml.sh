@@ -50,9 +50,14 @@ if [[ -z ${model} ]]; then echo "Model name needs to be provided"; exit 1; fi
 
 source ${setup_path_script}
 
-# basic checks before we get started
-hash ${converter} \
-    || { echo "Could not find ${converter} on PATH, ${_setup_msg}"; exit 1; }
+if ! command -v "${converter}" >/dev/null 2>&1; then
+    if command -v model_converter >/dev/null 2>&1; then
+        converter="model_converter"
+    fi
+fi
+
+command -v "${converter}" >/dev/null 2>&1 \
+    || { echo "Could not find a model converter executable (tried model-converter, model_converter). ${_setup_msg}"; exit 1; }
 
 
 
