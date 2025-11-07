@@ -317,6 +317,34 @@ class ET_EXPERIMENTAL CudaBackend final
           i);
     }
 
+    // ET_LOG(Info, "# output: %d", n_outputs);
+
+    // ET_LOG(Info, "scalartype of first output is %d", static_cast<int>(args[n_inputs]->toTensor().scalar_type()));
+
+    // ET_LOG(
+    //   Info,
+    //   "Cuda backend output first 10 values: %f %f %f %f %f %f %f %f %f %f",
+    //   static_cast<float>(
+    //       args[n_inputs]->toTensor().mutable_data_ptr<float>()[0]),
+    //   static_cast<float>(
+    //       args[n_inputs]->toTensor().mutable_data_ptr<float>()[1]),
+    //   static_cast<float>(
+    //       args[n_inputs]->toTensor().mutable_data_ptr<float>()[2]),
+    //   static_cast<float>(
+    //       args[n_inputs]->toTensor().mutable_data_ptr<float>()[3]),
+    //   static_cast<float>(
+    //       args[n_inputs]->toTensor().mutable_data_ptr<float>()[4]),
+    //   static_cast<float>(
+    //       args[n_inputs]->toTensor().mutable_data_ptr<float>()[5]),
+    //   static_cast<float>(
+    //       args[n_inputs]->toTensor().mutable_data_ptr<float>()[6]),
+    //   static_cast<float>(
+    //       args[n_inputs]->toTensor().mutable_data_ptr<float>()[7]),
+    //   static_cast<float>(
+    //       args[n_inputs]->toTensor().mutable_data_ptr<float>()[8]),
+    //   static_cast<float>(
+    //       args[n_inputs]->toTensor().mutable_data_ptr<float>()[9]));
+
     return Error::Ok;
   }
 

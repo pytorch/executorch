@@ -139,6 +139,13 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
       static_cast<size_t>(preprocessed_features->size(1)),
       static_cast<size_t>(preprocessed_features->size(2)));
 
+  ET_LOG(
+      Info,
+      "Preprocessed first value: %f",
+      static_cast<float>(
+          preprocessed_features
+              -> mutable_data_ptr<::executorch::aten::BFloat16>()[0]));
+
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
@@ -225,7 +232,7 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
       "Encoder first value: %f",
       static_cast<float>(
           encoder_output_tensor
-              .mutable_data_ptr<::executorch::aten::BFloat16>()[0]));
+              .mutable_data_ptr<float>()[0]));
 
   auto encoder_output_ptr = std::make_shared<::executorch::aten::Tensor>(
       std::move(encoder_output_tensor));

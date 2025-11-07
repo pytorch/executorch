@@ -18,6 +18,7 @@ Arguments:
               Supported models:
                 - mistralai/Voxtral-Mini-3B-2507
                 - openai/whisper-small
+                - openai/whisper-large-v2
                 - google/gemma-3-4b-it
 
   quant_name  Quantization type (required)
@@ -91,17 +92,19 @@ case "$HF_MODEL" in
     AUDIO_FILE="poem.wav"
     IMAGE_PATH=""
     ;;
-  openai/whisper-small)
+  openai/whisper-*)
     MODEL_NAME="whisper"
     RUNNER_TARGET="whisper_runner"
     RUNNER_PATH="whisper"
     EXPECTED_OUTPUT="Mr. Quilter is the apostle of the middle classes"
     PREPROCESSOR="whisper_preprocessor.pte"
-    TOKENIZER_URL="https://huggingface.co/openai/whisper-small/resolve/main" # @lint-ignore
+    TOKENIZER_URL="https://huggingface.co/${HF_MODEL}/resolve/main" # @lint-ignore
     TOKENIZER_FILE=""
     AUDIO_URL=""
     AUDIO_FILE="output.wav"
     IMAGE_PATH=""
+    # Extract model name from HF_MODEL (e.g., openai/whisper-small -> small)
+    WHISPER_MODEL_NAME="${HF_MODEL#openai/whisper-}"
     ;;
   google/gemma-3-4b-it)
     MODEL_NAME="gemma3"
@@ -117,7 +120,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-small, google/gemma-3-4b-it"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-small, openai/whisper-large-v2, google/gemma-3-4b-it"
     exit 1
     ;;
 esac
@@ -156,11 +159,13 @@ cmake --preset llm \
       -DEXECUTORCH_BUILD_CUDA=ON \
       -DCMAKE_INSTALL_PREFIX=cmake-out \
       -DCMAKE_BUILD_TYPE=Release \
+      -DEXECUTORCH_ENABLE_LOGGING=ON \
       -Bcmake-out -S.
 cmake --build cmake-out -j$(nproc) --target install --config Release
 
 cmake -DEXECUTORCH_BUILD_CUDA=ON \
       -DCMAKE_BUILD_TYPE=Release \
+      -DEXECUTORCH_ENABLE_LOGGING=ON \
       -Sexamples/models/$RUNNER_PATH \
       -Bcmake-out/examples/models/$RUNNER_PATH/
 cmake --build cmake-out/examples/models/$RUNNER_PATH --target $RUNNER_TARGET --config Release
@@ -180,7 +185,7 @@ case "$MODEL_NAME" in
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR"
     ;;
   whisper)
-    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR"
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR --model_name ${WHISPER_MODEL_NAME}"
     ;;
   gemma3)
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --image_path $IMAGE_PATH"
