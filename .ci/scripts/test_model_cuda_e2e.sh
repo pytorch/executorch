@@ -18,6 +18,7 @@ Arguments:
               Supported models:
                 - mistralai/Voxtral-Mini-3B-2507
                 - openai/whisper-small
+                - openai/whisper-large
                 - google/gemma-3-4b-it
 
   quant_name  Quantization type (required)
@@ -103,6 +104,18 @@ case "$HF_MODEL" in
     AUDIO_FILE="output.wav"
     IMAGE_PATH=""
     ;;
+  openai/whisper-large)
+    MODEL_NAME="whisper"
+    RUNNER_TARGET="whisper_runner"
+    RUNNER_PATH="whisper"
+    EXPECTED_OUTPUT="Mr. Quilter is the apostle of the middle classes"
+    PREPROCESSOR="whisper_preprocessor.pte"
+    TOKENIZER_URL="https://huggingface.co/openai/whisper-large/resolve/main" # @lint-ignore
+    TOKENIZER_FILE=""
+    AUDIO_URL=""
+    AUDIO_FILE="output.wav"
+    IMAGE_PATH=""
+    ;;
   google/gemma-3-4b-it)
     MODEL_NAME="gemma3"
     RUNNER_TARGET="gemma3_e2e_runner"
@@ -117,7 +130,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-small, google/gemma-3-4b-it"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-small, openai/whisper-large, google/gemma-3-4b-it"
     exit 1
     ;;
 esac
