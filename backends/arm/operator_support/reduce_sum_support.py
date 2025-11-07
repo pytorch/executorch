@@ -2,7 +2,11 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Declare operator support for ``aten.sum.dim_IntList`` in TOSA.
 
+Provide shape constraints for U55 subsets; otherwise allow reductions.
+
+"""
 from typing import cast
 
 import torch.fx as fx
@@ -16,6 +20,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 @register_tosa_support_check
 class SumSupported(SupportedTOSAOperatorCheck):
+    """Provide TOSA support check for sum over dimensions."""
+
     targets = [exir_ops.edge.aten.sum.dim_IntList]
 
     tosa_specs = [
@@ -23,7 +29,16 @@ class SumSupported(SupportedTOSAOperatorCheck):
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
-    def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
+    def is_node_tosa_supported(
+        self, node: fx.Node, tosa_spec: TosaSpecification
+    ) -> bool:
+        """Return True if the node is supported by TOSA.
+
+        On U55 subsets, enforce bounds on the reduced dimension and the products
+        of sizes before/after the reduction axis. On other targets, accept the
+        operation unconditionally.
+
+        """
         if not tosa_spec.is_U55_subset:
             return True
 
