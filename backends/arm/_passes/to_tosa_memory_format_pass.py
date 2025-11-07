@@ -299,6 +299,8 @@ class ToTosaMemoryFormatPass(ArmPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
+            if "val" not in node.meta:
+                continue
             node_data = get_first_fake_tensor(node).data
 
             self.remove_dim_order_kwargs(graph_module, node)

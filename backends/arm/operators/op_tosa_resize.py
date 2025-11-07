@@ -84,15 +84,15 @@ class ResizeVisitor(NodeVisitor):
             scale_d_vals[1],
         ]
         scales_tensor = tosa_graph.addConst(
-            [len(scales)], ts.DType.SHAPE, scales, node.name + "_scales"
+            [len(scales)], ts.DType.SHAPE, scales, output.name + "_scales"
         )
         offset = [int(v) for v in offset_yx.tolist()]
         offset_tensor = tosa_graph.addConst(
-            [len(offset)], ts.DType.SHAPE, offset, node.name + "_offset"
+            [len(offset)], ts.DType.SHAPE, offset, output.name + "_offset"
         )
         border = [int(v) for v in border_yx.tolist()]
         border_tensor = tosa_graph.addConst(
-            [len(border)], ts.DType.SHAPE, border, node.name + "_border"
+            [len(border)], ts.DType.SHAPE, border, output.name + "_border"
         )
         attr = ts.TosaSerializerAttribute()
         attr.ResizeAttribute(resize_mode)

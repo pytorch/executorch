@@ -16,6 +16,7 @@ from . import (  # noqa
     op_cat,
     op_ceil,
     op_clamp,
+    op_cond_if,
     op_constant_pad_nd,
     op_cos,
     op_eq,

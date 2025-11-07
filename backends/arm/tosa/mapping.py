@@ -147,15 +147,16 @@ class TosaArg:
 
         """
         self.name = argument.name + argument.meta.get(TOSA_TENSOR_NAME_META, "")
-        output_dtype, self.shape, self.dim_order = extract_tensor_meta(
-            argument.meta, self.tosa_spec
-        )
 
-        # Handle special case of types not representable in torch (i.e. i48_t)
-        if special_type := argument.meta.get(TosaSpecialDtype.meta_key(), None):
-            output_dtype = special_type.get_tosa_dtype()
+        if "val" in argument.meta:
+            output_dtype, self.shape, self.dim_order = extract_tensor_meta(
+                argument.meta, self.tosa_spec
+            )
+            # Handle special case of types not representable in torch (i.e. i48_t)
+            if special_type := argument.meta.get(TosaSpecialDtype.meta_key(), None):
+                output_dtype = special_type.get_tosa_dtype()
 
-        self.dtype = output_dtype
+            self.dtype = output_dtype
 
     def __process_list(self, argument):
         """Capture a sequence argument as ``special``.

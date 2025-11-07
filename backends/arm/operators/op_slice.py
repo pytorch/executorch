@@ -120,7 +120,7 @@ class SliceVisitor(NodeVisitor):
             (starts_len,),
             ts.DType.SHAPE,
             starts,
-            node.name + "_start_shape",
+            output.name + "_start_shape",
         )
 
         sizes = [size if i == dim else shape[i] for i in input_node.dim_order]
@@ -130,7 +130,7 @@ class SliceVisitor(NodeVisitor):
             sizes_len = 1
             sizes = [0]
         sizes_tensor = tosa_graph.addConst(
-            (sizes_len,), ts.DType.SHAPE, sizes, node.name + "_sizes_shape"
+            (sizes_len,), ts.DType.SHAPE, sizes, output.name + "_sizes_shape"
         )
 
         attr = ts.TosaSerializerAttribute()

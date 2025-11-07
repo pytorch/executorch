@@ -56,7 +56,7 @@ class RepeatVisitor(NodeVisitor):
             (len(multiples),),
             ts.DType.SHAPE,
             list(tosa_shape(multiples, output.dim_order)),
-            name=node.name + "_multiples",
+            name=output.name + "_multiples",
         )
 
         attr = ts.TosaSerializerAttribute()

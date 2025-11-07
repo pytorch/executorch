@@ -66,7 +66,7 @@ class ViewVisitor(NodeVisitor):
             shape_len,
             ts.DType.SHAPE,
             shape_data,
-            name=node.name + "_shape",
+            name=output.name + "_shape",
         )
 
         attr = ts.TosaSerializerAttribute()
