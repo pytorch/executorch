@@ -269,6 +269,19 @@ class TOSABackend(BackendDetails):
                     process_placeholder(node, tosa_graph, edge_program, tosa_spec)
                 elif node.op == "output":
                     process_output(node, tosa_graph, tosa_spec)
+                elif node.op == "get_attr":
+                    attr = getattr(graph_module, str(node.target), None)
+                    if attr is None:
+                        raise RuntimeError(
+                            "get_attr node is not targeting anything in graph module."
+                        )
+                    if not isinstance(attr, GraphModule):
+                        raise RuntimeError(
+                            "get_attr node is not targeting a GraphModule."
+                        )
+
+                    # If the above conditions are ok, we don't need to handle this node here.
+                    # Only the string value of node.target is important.
                 else:
                     # This will only happen if an unpartitioned graph is passed without
                     # any checking of compatibility.
