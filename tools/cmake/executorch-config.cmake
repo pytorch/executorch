@@ -68,7 +68,6 @@ set(optional_lib_list
     qnn_executorch_backend
     portable_ops_lib
     custom_ops
-    extension_asr_runner
     extension_evalue_util
     extension_llm_runner
     extension_module
