@@ -18,6 +18,7 @@ Arguments:
               Supported models:
                 - mistralai/Voxtral-Mini-3B-2507
                 - openai/whisper-small
+                - openai/whisper-large-v2
                 - google/gemma-3-4b-it
 
   quant_name  Quantization type (required)
@@ -91,13 +92,13 @@ case "$HF_MODEL" in
     AUDIO_FILE="poem.wav"
     IMAGE_PATH=""
     ;;
-  openai/whisper-small)
-    MODEL_NAME="whisper"
+  openai/whisper-*)
+    MODEL_NAME="${HF_MODEL#openai/}"
     RUNNER_TARGET="whisper_runner"
     RUNNER_PATH="whisper"
     EXPECTED_OUTPUT="Mr. Quilter is the apostle of the middle classes"
     PREPROCESSOR="whisper_preprocessor.pte"
-    TOKENIZER_URL="https://huggingface.co/openai/whisper-small/resolve/main" # @lint-ignore
+    TOKENIZER_URL="https://huggingface.co/${HF_MODEL}/resolve/main" # @lint-ignore
     TOKENIZER_FILE=""
     AUDIO_URL=""
     AUDIO_FILE="output.wav"
@@ -117,7 +118,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-small, google/gemma-3-4b-it"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-small, openai/whisper-large-v2, google/gemma-3-4b-it"
     exit 1
     ;;
 esac
@@ -142,7 +143,7 @@ fi
 # Download test files
 if [ "$AUDIO_URL" != "" ]; then
   curl -L $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
-elif [ "$MODEL_NAME" = "whisper" ]; then
+elif [[ "$MODEL_NAME" == *whisper* ]]; then
   conda install -y -c conda-forge "ffmpeg<8"
   pip install datasets soundfile torchcodec
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
@@ -180,7 +181,7 @@ case "$MODEL_NAME" in
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR"
     ;;
   whisper)
-    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR"
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR --model_name ${WHISPER_MODEL_NAME}"
     ;;
   gemma3)
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --image_path $IMAGE_PATH"

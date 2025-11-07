@@ -18,6 +18,7 @@ Arguments:
                Supported models:
                  - mistralai/Voxtral-Mini-3B-2507
                  - openai/whisper-small
+                 - openai/whisper-large-v2
                  - google/gemma-3-4b-it
 
   quant_name   Quantization type (optional, default: non-quantized)
@@ -62,7 +63,7 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE="128"
     PREPROCESSOR_OUTPUT="voxtral_preprocessor.pte"
     ;;
-  openai/whisper-small)
+  openai/whisper-*)
     MODEL_NAME="whisper"
     TASK="automatic-speech-recognition"
     MAX_SEQ_LEN=""
@@ -80,7 +81,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-small, google/gemma-3-4b-it"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-small, openai/whisper-large-v2, google/gemma-3-4b-it"
     exit 1
     ;;
 esac
