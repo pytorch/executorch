@@ -168,12 +168,20 @@ target_link_options(
   $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
 )
 
-# Link against shims library and other dependencies
+# Link against shims library and other dependencies On Windows (MSVC), use
+# PRIVATE linkage for aoti_cuda_shims since the DLL is copied to the executable
+# directory. On other platforms, use PUBLIC so the dependency propagates to
+# consumers.
 target_link_libraries(
-  aoti_cuda_backend
-  PRIVATE aoti_cuda_shims cuda_platform
-  PUBLIC extension_tensor cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
+  aoti_cuda_backend PUBLIC cuda_platform extension_tensor cuda_tensor_maker
+                           CUDA::cudart ${CMAKE_DL_LIBS}
 )
+
+if(MSVC)
+  target_link_libraries(aoti_cuda_backend PRIVATE aoti_cuda_shims)
+else()
+  target_link_libraries(aoti_cuda_backend PUBLIC aoti_cuda_shims)
+endif()
 
 executorch_target_link_options_shared_lib(aoti_cuda_backend)
 
