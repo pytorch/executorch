@@ -147,6 +147,20 @@ struct TensorIndex4D {
   ivec4 data;
 };
 
+TensorIndex4D zero_tensor4d_idx() {
+  TensorIndex4D tidx;
+  tidx.data = ivec4(0);
+  return tidx;
+}
+
+bool out_of_bounds(const TensorIndex4D tidx, const BufferMetadata meta) {
+  return any(greaterThanEqual(tidx.data, meta.sizes[0]));
+}
+
+bool out_of_bounds(const TensorIndex4D tidx, const TextureMetadata meta) {
+  return any(greaterThanEqual(tidx.data, meta.sizes));
+}
+
 //
 // TextureElementIndex
 //
@@ -245,15 +259,9 @@ void clamp_tensor_idx(const BufferMetadata meta, inout TensorIndex tidx) {
   tidx.data[1] = min(tidx.data[1], meta.sizes[1] - 1);
 }
 
-TensorIndex4D zero_tensor4d_idx() {
-  TensorIndex4D tidx;
-  tidx.data = ivec4(0);
-  return tidx;
-}
-
 // Does not account for axis mapping or batches
-TensorIndex4D texture_pos_to_tensor_idx_simple(
-    const ivec3 pos, const TextureMetadata meta) {
+TensorIndex4D texture_pos_to_tensor4d_idx_simple(
+    const TextureMetadata meta, const ivec3 pos) {
   TensorIndex4D tidx;
   tidx.data.xyz = pos;
   tidx.data.w = 0;
@@ -262,14 +270,36 @@ TensorIndex4D texture_pos_to_tensor_idx_simple(
 }
 
 // Does not account for axis mapping or batches
-TextureElementIndex tensor_idx_to_texture_element_idx_simple(
-    const TensorIndex4D tidx, const TextureMetadata meta) {
+ivec3 tensor4d_idx_to_texel_pos_simple(
+    const TextureMetadata meta, const TensorIndex4D tidx) {
+  ivec3 texel_pos;
+
+  const int packed_dim_idx = tidx.data[meta.packed_dim];
+
+  texel_pos = tidx.data.xyz;
+  texel_pos[meta.packed_dim] = div_4(packed_dim_idx);
+  return texel_pos;
+}
+
+// Does not account for axis mapping or batches
+TextureElementIndex tensor4d_idx_to_texture_element_idx_simple(
+    const TextureMetadata meta, const TensorIndex4D tidx) {
   const int packed_dim_idx = tidx.data[meta.packed_dim];
   TextureElementIndex tex_idx;
   tex_idx.pos = tidx.data.xyz;
   tex_idx.pos[meta.packed_dim] = div_4(packed_dim_idx);
   tex_idx.comp = mod_4(packed_dim_idx);
   return tex_idx;
+}
+
+uint tensor4d_idx_to_linear_idx(
+    const BufferMetadata meta,
+    const TensorIndex4D tidx) {
+  uint lin_idx = 0;
+  for (int d = 0; d < 4; ++d) {
+    lin_idx += meta.strides[0][d] * tidx.data[d];
+  }
+  return lin_idx;
 }
 
 //
