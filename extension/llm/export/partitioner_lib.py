@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional
+from typing import List, Optional
 
 
 def get_xnnpack_partitioner(dynamic_quant_only_partitioner: bool = True):
@@ -255,3 +255,14 @@ def get_ethosu_partitioner(target: str):
     compile_spec = EthosUCompileSpec(target)
 
     return EthosUPartitioner(compile_spec)
+
+
+def get_vgf_partitioner(
+    compile_spec: Optional[str], compiler_flags: Optional[List[str]]
+):
+    from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
+    from executorch.backends.arm.vgf.partitioner import VgfPartitioner
+
+    compile_spec_obj = VgfCompileSpec(compile_spec, compiler_flags)
+
+    return VgfPartitioner(compile_spec_obj)

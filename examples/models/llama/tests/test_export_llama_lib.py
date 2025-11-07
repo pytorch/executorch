@@ -10,6 +10,7 @@ import unittest
 from executorch.backends.arm.quantizer.arm_quantizer import (
     EthosUQuantizer,
     TOSAQuantizer,
+    VgfQuantizer,
 )
 
 from executorch.devtools.backend_debug import get_delegation_info
@@ -83,3 +84,18 @@ class ExportLlamaLibTest(unittest.TestCase):
         self.assertIsNone(quant_dtype)
         self.assertEqual(len(quantizers), 1)
         self.assertIsInstance(quantizers[0], EthosUQuantizer)
+
+    def test_get_quantizer_and_quant_params_returns_vgf_quantizer(self):
+        llm_config = LlmConfig()
+        llm_config.backend.vgf.enabled = True
+        llm_config.backend.vgf.compile_spec = "TOSA-1.0+INT"
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.vgf_8a8w
+
+        pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
+            llm_config
+        )
+
+        self.assertIsNone(pt2e_quant_params)
+        self.assertIsNone(quant_dtype)
+        self.assertEqual(len(quantizers), 1)
+        self.assertIsInstance(quantizers[0], VgfQuantizer)

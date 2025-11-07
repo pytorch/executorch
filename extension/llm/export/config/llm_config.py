@@ -291,6 +291,7 @@ class Pt2eQuantize(str, Enum):
     vulkan_8w = "vulkan_8w"
     tosa_8a8w = "tosa_8a8w"
     ethosu_8a8w = "ethosu_8a8w"
+    vgf_8a8w = "vgf_8a8w"
 
 
 class SpinQuant(str, Enum):
@@ -500,6 +501,17 @@ class EthosUConfig:
 
 
 @dataclass
+class VgfConfig:
+    """
+    Configures the VGF backend.
+    """
+
+    enabled: bool = False
+    compile_spec: Optional[str] = "TOSA-1.0+INT"
+    compiler_flags: List[str] = field(default_factory=list)
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -515,6 +527,7 @@ class BackendConfig:
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
     tosa: TosaConfig = field(default_factory=TosaConfig)
     ethosu: EthosUConfig = field(default_factory=EthosUConfig)
+    vgf: VgfConfig = field(default_factory=VgfConfig)
 
 
 ################################################################################
