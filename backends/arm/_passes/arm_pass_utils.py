@@ -31,11 +31,25 @@ from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
 
 
+def is_submodule_node(node: torch.fx.Node):
+    if node.op not in ("get_attr", "placeholder"):
+        return False
+    try:
+        node.graph.owning_module.get_submodule(node.target)
+    except AttributeError:
+        return False
+    return True
+
+
 def is_get_attr_node(node: torch.fx.Node) -> bool:
     """
-    Returns true if the given node is a get attr node for a tensor of the model
+    Returns true if the given node is a get attr node for a tensor of the model.
     """
-    return isinstance(node, torch.fx.Node) and node.op == "get_attr"
+    return (
+        isinstance(node, torch.fx.Node)
+        and node.op == "get_attr"
+        and not is_submodule_node(node)
+    )
 
 
 def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
