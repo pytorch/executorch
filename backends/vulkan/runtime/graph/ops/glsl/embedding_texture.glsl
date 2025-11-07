@@ -38,8 +38,8 @@ int load_embedding_idx(const TensorIndex4D out_tidx) {
   indices_tidx.data.xyz = out_tidx.data.yzw;
   indices_tidx.data.w = 0;
 
-  TextureElementIndex elem_pos = tensor_idx_to_texture_element_idx_simple(
-    indices_tidx, indices);
+  TextureElementIndex elem_pos = tensor4d_idx_to_texture_element_idx_simple(
+    indices, indices_tidx);
 
   const ivec4 in_texel = texelFetch(t_indices, elem_pos.pos, 0);
   return in_texel[elem_pos.comp];
@@ -61,7 +61,7 @@ void main() {
     return;
   }
 
-  TensorIndex4D out_tidx = texture_pos_to_tensor_idx_simple(out_pos, outp);
+  TensorIndex4D out_tidx = texture_pos_to_tensor4d_idx_simple(outp, out_pos);
   const int embedding_idx = load_embedding_idx(out_tidx);
 
   const VEC4_T weight_texel = load_weight_texel(embedding_idx, out_tidx.data.x);

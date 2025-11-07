@@ -7,11 +7,9 @@
 # pyre-strict
 
 from functools import partial
-
 from typing import Any, Callable, Dict, final, List
 
 import executorch.backends.vulkan.utils as utils
-
 from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
@@ -29,7 +27,6 @@ from executorch.backends.vulkan._passes import (
 )
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
-
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
@@ -39,7 +36,6 @@ from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
 )
 from executorch.backends.xnnpack._passes import FuseBatchNormPass
-
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
@@ -47,18 +43,12 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
-
 from executorch.exir.memory_planning import greedy, MemoryPlanningAlgorithmSuite
 from executorch.exir.pass_base import ExportPass, PassBase
-
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
-
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-
 from executorch.exir.program._program import _transform
-
 from torch._export.verifier import Verifier
-
 from torch.export._remove_auto_functionalized_pass import (
     unsafe_remove_auto_functionalized_pass,
 )
@@ -209,6 +199,7 @@ class VulkanBackend(BackendDetails):
                         texture_limits,
                         default_storage_type=default_storage_type,
                         default_memory_layout=default_memory_layout,
+                        force_fp16=force_fp16,
                     ),
                 ],
             )
