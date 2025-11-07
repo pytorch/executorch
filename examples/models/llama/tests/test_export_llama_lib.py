@@ -7,7 +7,10 @@
 
 import unittest
 
-from executorch.backends.arm.quantizer.arm_quantizer import TOSAQuantizer
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    EthosUQuantizer,
+    TOSAQuantizer,
+)
 
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.examples.models.llama.export_llama_lib import (
@@ -66,3 +69,17 @@ class ExportLlamaLibTest(unittest.TestCase):
         self.assertIsNone(quant_dtype)
         self.assertEqual(len(quantizers), 1)
         self.assertIsInstance(quantizers[0], TOSAQuantizer)
+
+    def test_get_quantizer_and_quant_params_returns_ethosu_quantizer(self):
+        llm_config = LlmConfig()
+        llm_config.backend.ethosu.enabled = True
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.ethosu_8a8w
+
+        pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
+            llm_config
+        )
+
+        self.assertIsNone(pt2e_quant_params)
+        self.assertIsNone(quant_dtype)
+        self.assertEqual(len(quantizers), 1)
+        self.assertIsInstance(quantizers[0], EthosUQuantizer)
