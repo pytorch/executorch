@@ -5,8 +5,8 @@
 namespace executorch::backends::cuda::slim {
 
 // The returned SlimTensor does not own the underlying storage
-inline SlimTensor from_blob(void *data, executorch::backends::cuda::c10::IntArrayRef sizes,
-                            executorch::backends::cuda::c10::IntArrayRef strides,
+inline SlimTensor from_blob(void *data, executorch::aten::IntArrayRef sizes,
+                            executorch::aten::IntArrayRef strides,
                             executorch::backends::cuda::c10::ScalarType dtype,
                             const executorch::backends::cuda::c10::Device &device = CPU_DEVICE,
                             int64_t storage_offset = 0) {
@@ -19,13 +19,13 @@ inline SlimTensor from_blob(void *data, executorch::backends::cuda::c10::IntArra
   return SlimTensor(std::move(storage), sizes, strides, dtype, storage_offset);
 }
 
-inline SlimTensor from_blob(void *data, executorch::backends::cuda::c10::IntArrayRef sizes,
+inline SlimTensor from_blob(void *data, executorch::aten::IntArrayRef sizes,
                             executorch::backends::cuda::c10::ScalarType dtype,
-                            const executorch::backends::cuda::c10::Device &device = CPU_DEVICE,
-                            int64_t storage_offset = 0) {
+                            const executorch::backends::cuda::c10::Device& device,
+                            int64_t storage_offset) {
   std::vector<int64_t> contig_strides =
-      executorch::backends::cuda::slim::compute_contiguous_strides(sizes);
-  return from_blob(data, sizes, contig_strides, dtype, device, storage_offset);
+      executorch::backends::cuda::slim::compute_contiguous_strides(et_to_c10(sizes));
+  return from_blob(data, sizes, vec_to_et(contig_strides), dtype, device, storage_offset);
 }
 
 } // namespace executorch::backends::cuda::slim

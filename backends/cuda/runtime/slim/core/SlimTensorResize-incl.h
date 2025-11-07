@@ -37,13 +37,15 @@ SlimTensor::empty_tensor_restride(executorch::backends::cuda::c10::MemoryFormat 
   case executorch::backends::cuda::c10::MemoryFormat::ChannelsLast: {
     STANDALONE_CHECK(dim() == 4,
                      "required rank 4 tensor to use channels_last format");
-    set_sizes_and_strides(sizes(), get_channels_last_strides_2d(sizes()));
+    std::vector<int64_t> strides = executorch::backends::cuda::c10::get_channels_last_strides_2d(et_to_c10(sizes()));
+    set_sizes_and_strides(sizes(), vec_to_et(strides));
     break;
   }
   case executorch::backends::cuda::c10::MemoryFormat::ChannelsLast3d: {
     STANDALONE_CHECK(dim() == 5,
                      "required rank 5 tensor to use channels_last_3d format");
-    set_sizes_and_strides(sizes(), get_channels_last_strides_3d(sizes()));
+    std::vector<int64_t> strides = executorch::backends::cuda::c10::get_channels_last_strides_3d(et_to_c10(sizes()));
+    set_sizes_and_strides(sizes(), vec_to_et(strides));
     break;
   }
   case executorch::backends::cuda::c10::MemoryFormat::Preserve:
@@ -114,8 +116,8 @@ inline void _maybe_resize_storage(SlimTensor *self, int64_t new_size_bytes) {
 }
 
 inline SlimTensor *
-_resize_impl_(SlimTensor *self, executorch::backends::cuda::c10::IntArrayRef sizes,
-              std::optional<executorch::backends::cuda::c10::IntArrayRef> strides,
+_resize_impl_(SlimTensor *self, executorch::aten::IntArrayRef sizes,
+              std::optional<executorch::aten::IntArrayRef> strides,
               bool resize_storage) {
   if (self->sizes() == sizes &&
       (!strides || self->strides() == strides.value())) {
@@ -143,7 +145,7 @@ _resize_impl_(SlimTensor *self, executorch::backends::cuda::c10::IntArrayRef siz
 }
 
 inline SlimTensor
-SlimTensor::resize_(executorch::backends::cuda::c10::IntArrayRef sizes,
+SlimTensor::resize_(executorch::aten::IntArrayRef sizes,
                     std::optional<c10::MemoryFormat> optional_memory_format) {
   _resize_impl_(this, sizes, /*stride=*/std::nullopt, true);
 

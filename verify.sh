@@ -192,12 +192,21 @@ echo "Running bf16 Gemma3 model test..."
   --image_path docs/source/_static/img/et-logo.png \
   --temperature 0
 
-# echo ""
-# echo "Running quantized Gemma3 model test..."
+echo ""
+# echo "Running int4-tile Gemma3 model test..."
 # ./cmake-out/examples/models/gemma3/gemma3_e2e_runner \
 #   --model_path /home/gasoonjia/gemma/cuda/int4/model.pte \
 #   --data_path /home/gasoonjia/gemma/cuda/int4/aoti_cuda_blob.ptd \
-#   --tokenizer_path /home/gasoonjia/gemma/cuda/int4/tokenizer.json \
+#   --tokenizer_path /home/gasoonjia/gemma/cuda/tokenizer.json \
+#   --image_path docs/source/_static/img/et-logo.png \
+#   --temperature 0
+
+# echo ""
+# echo "Running int4 weight only Gemma3 model test..."
+# ./cmake-out/examples/models/gemma3/gemma3_e2e_runner \
+#   --model_path /home/gasoonjia/gemma/cuda/int4-2/model.pte \
+#   --data_path /home/gasoonjia/gemma/cuda/int4-2/aoti_cuda_blob.ptd \
+#   --tokenizer_path /home/gasoonjia/gemma/cuda/tokenizer.json \
 #   --image_path docs/source/_static/img/et-logo.png \
 #   --temperature 0
 

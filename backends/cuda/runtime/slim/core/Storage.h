@@ -256,8 +256,8 @@ private:
 
 using Storage = SharedPtr<MaybeOwningStorage>;
 
-inline Storage new_storage(executorch::backends::cuda::c10::IntArrayRef sizes,
-                           executorch::backends::cuda::c10::IntArrayRef strides,
+inline Storage new_storage(executorch::aten::IntArrayRef sizes,
+                           executorch::aten::IntArrayRef strides,
                            executorch::backends::cuda::c10::ScalarType dtype,
                            const executorch::backends::cuda::c10::Device &device = CPU_DEVICE) {
   size_t nbytes = compute_storage_nbytes(

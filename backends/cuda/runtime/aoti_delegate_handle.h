@@ -17,7 +17,6 @@ namespace backends {
 namespace cuda {
 
 using executorch::runtime::Error;
-using executorch::runtime::etensor::Tensor;
 
 extern "C" {
 

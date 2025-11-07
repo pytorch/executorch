@@ -17,6 +17,7 @@
 #include <executorch/backends/cuda/runtime/c10/util/safe_numerics.h>
 #include <executorch/backends/cuda/runtime/slim/core/Storage.h>
 #include <executorch/backends/cuda/runtime/slim/util/SizeUtil.h>
+#include <executorch/backends/cuda/runtime/slim/util/ArrayRefUtil.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 namespace executorch::backends::cuda::slim {
@@ -55,8 +56,8 @@ class SlimTensor {
  public:
   SlimTensor(
       Storage&& storage,
-      executorch::backends::cuda::c10::IntArrayRef sizes,
-      executorch::backends::cuda::c10::IntArrayRef strides,
+      executorch::aten::IntArrayRef sizes,
+      executorch::aten::IntArrayRef strides,
       executorch::backends::cuda::c10::ScalarType dtype,
       int64_t storage_offset = 0)
       : storage_(std::move(storage)),
@@ -99,14 +100,11 @@ class SlimTensor {
 
     // Create a non-owning storage that wraps the ETensor's data
     // ETensor is guaranteed to be on CPU
-    Storage storage(new MaybeOwningStorage(
-        CPU_DEVICE,
-        data_ptr,
-        etensor->nbytes()
-        ));
+    Storage storage(
+        new MaybeOwningStorage(CPU_DEVICE, data_ptr, etensor->nbytes()));
 
     // Initialize the SlimTensor with the wrapped storage
-    *this = SlimTensor(std::move(storage), sizes, strides, slim_dtype, 0);
+    *this = SlimTensor(std::move(storage), vec_to_et(sizes), vec_to_et(strides), slim_dtype, 0);
   }
 
   SlimTensor(const SlimTensor&) = default;
@@ -134,8 +132,8 @@ class SlimTensor {
     return executorch::backends::cuda::c10::elementSize(dtype_);
   }
 
-  executorch::backends::cuda::c10::IntArrayRef sizes() const {
-    return sizes_and_strides_.sizes_arrayref();
+  executorch::aten::IntArrayRef sizes() const {
+    return c10_to_et(sizes_and_strides_.sizes_arrayref());
   }
 
   int64_t size(int64_t dim) const {
@@ -144,8 +142,8 @@ class SlimTensor {
     return sizes_and_strides_.size_at(static_cast<size_t>(wrapped_dim));
   }
 
-  executorch::backends::cuda::c10::IntArrayRef strides() const {
-    return sizes_and_strides_.strides_arrayref();
+  executorch::aten::IntArrayRef strides() const {
+    return c10_to_et(sizes_and_strides_.strides_arrayref());
   }
 
   int64_t stride(int64_t dim) const {
@@ -213,8 +211,8 @@ class SlimTensor {
   }
 
   void set_sizes_and_strides(
-      executorch::backends::cuda::c10::IntArrayRef sizes,
-      executorch::backends::cuda::c10::IntArrayRef strides,
+      executorch::aten::IntArrayRef sizes,
+      executorch::aten::IntArrayRef strides,
       std::optional<int64_t> storage_offset = std::nullopt) {
     const int64_t new_dim = static_cast<int64_t>(sizes.size());
     STANDALONE_CHECK(
@@ -225,8 +223,8 @@ class SlimTensor {
         strides.size(),
         ")");
 
-    std::vector<int64_t> new_sizes = sizes.vec();
-    std::vector<int64_t> new_strides = strides.vec();
+    std::vector<int64_t> new_sizes = to_vec(sizes);
+    std::vector<int64_t> new_strides = to_vec(strides);
 
     // stride calculation logic
     bool overflowed = false;
@@ -259,8 +257,7 @@ class SlimTensor {
     refresh_contiguous();
   }
 
-  void set_sizes_contiguous(
-      executorch::backends::cuda::c10::IntArrayRef new_size) {
+  void set_sizes_contiguous(executorch::aten::IntArrayRef new_size) {
     sizes_and_strides_.set_sizes(new_size);
     refresh_numel();
     empty_tensor_restride(
@@ -271,7 +268,7 @@ class SlimTensor {
       executorch::backends::cuda::c10::MemoryFormat memory_format);
 
   SlimTensor resize_(
-      executorch::backends::cuda::c10::IntArrayRef sizes,
+      executorch::aten::IntArrayRef sizes,
       std::optional<c10::MemoryFormat> optional_memory_format);
 
   // Conversion operations
@@ -283,8 +280,8 @@ class SlimTensor {
     Storage new_storage(new MaybeOwningStorage(storage_->clone(device)));
     return SlimTensor(
         std::move(new_storage),
-        sizes_and_strides_.sizes_arrayref(),
-        sizes_and_strides_.strides_arrayref(),
+        c10_to_et(sizes_and_strides_.sizes_arrayref()),
+        c10_to_et(sizes_and_strides_.strides_arrayref()),
         dtype_,
         storage_offset_);
   }
@@ -525,34 +522,32 @@ class SlimTensor {
         executorch::backends::cuda::slim::compute_contiguous_strides(
             this->sizes());
     return _clone_impl(
-        this->sizes(), contig_strides, this->dtype(), this->device());
+        this->sizes(), vec_to_et(contig_strides), this->dtype(), this->device());
   }
 
   // View operations
   SlimTensor as_strided(
-      executorch::backends::cuda::c10::IntArrayRef sizes,
-      executorch::backends::cuda::c10::IntArrayRef strides,
+      executorch::aten::IntArrayRef sizes,
+      executorch::aten::IntArrayRef strides,
       int64_t storage_offset) const;
   SlimTensor as_strided_(
-      executorch::backends::cuda::c10::IntArrayRef sizes,
-      executorch::backends::cuda::c10::IntArrayRef strides,
+      executorch::aten::IntArrayRef sizes,
+      executorch::aten::IntArrayRef strides,
       int64_t storage_offset);
 
-  SlimTensor permute(executorch::backends::cuda::c10::IntArrayRef dims) const;
+  SlimTensor permute(executorch::aten::IntArrayRef dims) const;
 
   // Transpose operations
   SlimTensor transpose() const;
   SlimTensor transpose(int64_t dim0, int64_t dim1) const;
   SlimTensor t() const;
 
-  SlimTensor reshape(
-      executorch::backends::cuda::c10::IntArrayRef proposed_shape) const;
+  SlimTensor reshape(executorch::aten::IntArrayRef proposed_shape) const;
 
   SlimTensor narrow(int64_t dim, int64_t start, int64_t length) const;
 
   // Generic element access returning SlimTensor
-  SlimTensor operator[](
-      executorch::backends::cuda::c10::IntArrayRef indices) const {
+  SlimTensor operator[](executorch::aten::IntArrayRef indices) const {
     STANDALONE_CHECK(
         indices.size() <= this->dim(),
         "Number of indices (",
@@ -597,8 +592,8 @@ class SlimTensor {
       int64_t new_storage_offset = this->storage_offset_ + offset_adjustment;
       return SlimTensor(
           Storage(this->storage_),
-          new_sizes,
-          new_strides,
+          vec_to_et(new_sizes),
+          vec_to_et(new_strides),
           this->dtype_,
           new_storage_offset);
     }
@@ -606,12 +601,12 @@ class SlimTensor {
 
   // Convenience overload for single index
   SlimTensor operator[](int64_t index) const {
-    return (*this)[executorch::backends::cuda::c10::IntArrayRef{index}];
+    return (*this)[executorch::aten::IntArrayRef{index}];
   }
 
   // Convenience overloads for common multi-dimensional cases
   SlimTensor operator[](std::initializer_list<int64_t> indices) const {
-    return (*this)[executorch::backends::cuda::c10::IntArrayRef(indices)];
+    return (*this)[initlist_to_et(indices)];
   }
 
   // Extract scalar value from 0-dimensional tensor
@@ -667,8 +662,8 @@ class SlimTensor {
 
  private:
   SlimTensor _clone_impl(
-      executorch::backends::cuda::c10::IntArrayRef sizes,
-      executorch::backends::cuda::c10::IntArrayRef strides,
+      executorch::aten::IntArrayRef sizes,
+      executorch::aten::IntArrayRef strides,
       executorch::backends::cuda::c10::ScalarType dtype,
       const executorch::backends::cuda::c10::Device& device) const {
     Storage storage = new_storage(sizes, strides, dtype, device);
@@ -679,7 +674,7 @@ class SlimTensor {
   }
 
   void refresh_numel() {
-    numel_ = compute_numel(sizes_and_strides_.sizes_arrayref());
+    numel_ = compute_numel(c10_to_et(sizes_and_strides_.sizes_arrayref()));
   }
 
   bool compute_is_contiguous() const {

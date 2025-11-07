@@ -5,18 +5,19 @@
 #include <executorch/backends/cuda/runtime/c10/core/WrapDimMinimal.h>
 #include <executorch/backends/cuda/runtime/c10/util/ArrayRef.h>
 #include <executorch/backends/cuda/runtime/slim/util/SizeUtil.h>
+#include <executorch/backends/cuda/runtime/slim/util/ArrayRefUtil.h>
 
 namespace executorch::backends::cuda::slim {
-inline SlimTensor SlimTensor::as_strided(executorch::backends::cuda::c10::IntArrayRef sizes,
-                                         executorch::backends::cuda::c10::IntArrayRef strides,
+inline SlimTensor SlimTensor::as_strided(executorch::aten::IntArrayRef sizes,
+                                         executorch::aten::IntArrayRef strides,
                                          int64_t storage_offset) const {
   SlimTensor result = *this;
   result.as_strided_(sizes, strides, storage_offset);
   return result;
 }
 
-inline SlimTensor SlimTensor::as_strided_(executorch::backends::cuda::c10::IntArrayRef sizes,
-                                          executorch::backends::cuda::c10::IntArrayRef strides,
+inline SlimTensor SlimTensor::as_strided_(executorch::aten::IntArrayRef sizes,
+                                          executorch::aten::IntArrayRef strides,
                                           int64_t storage_offset) {
   STANDALONE_CHECK(sizes.size() == strides.size(),
                    "as_strided: number of sizes (", sizes.size(),
@@ -33,15 +34,15 @@ inline SlimTensor SlimTensor::as_strided_(executorch::backends::cuda::c10::IntAr
   return *this;
 }
 
-inline SlimTensor SlimTensor::permute(executorch::backends::cuda::c10::IntArrayRef dims) const {
+inline SlimTensor SlimTensor::permute(executorch::aten::IntArrayRef dims) const {
   const size_t ndim = this->dim();
   STANDALONE_CHECK(ndim == static_cast<size_t>(dims.size()),
                    "permute: dims length must be equal to tensor.dim()")
 
-  executorch::backends::cuda::c10::ArrayRef old_sizes = this->sizes();
-  executorch::backends::cuda::c10::ArrayRef old_strides = this->strides();
-  std::vector<int64_t> new_sizes = old_sizes.vec();
-  std::vector<int64_t> new_strides = old_strides.vec();
+  executorch::aten::IntArrayRef old_sizes = this->sizes();
+  executorch::aten::IntArrayRef old_strides = this->strides();
+  std::vector<int64_t> new_sizes = to_vec(old_sizes);
+  std::vector<int64_t> new_strides = to_vec(old_strides);
   std::vector<bool> seen_dims(ndim, false);
 
   for (size_t i = 0; i < ndim; i++) {
@@ -53,13 +54,14 @@ inline SlimTensor SlimTensor::permute(executorch::backends::cuda::c10::IntArrayR
   }
 
   SlimTensor result = *this;
-  result.as_strided_(new_sizes, new_strides, this->storage_offset());
+  result.as_strided_(vec_to_et(new_sizes), vec_to_et(new_strides), this->storage_offset());
   return result;
 }
 
 inline SlimTensor SlimTensor::transpose() const {
   STANDALONE_CHECK(dim() == 2, "transpose() can only be called on 2D tensors");
-  return permute({1, 0});
+  std::vector<int64_t> dims = {1, 0};
+  return permute(vec_to_et(dims));
 }
 
 inline SlimTensor SlimTensor::transpose(int64_t dim0, int64_t dim1) const {
@@ -74,25 +76,25 @@ inline SlimTensor SlimTensor::transpose(int64_t dim0, int64_t dim1) const {
   dim1 = executorch::backends::cuda::c10::maybe_wrap_dim(dim1, ndim);
   std::swap(dims[dim0], dims[dim1]);
 
-  return permute(dims);
+  return permute(vec_to_et(dims));
 }
 
 inline SlimTensor SlimTensor::t() const { return transpose(); }
 
 inline SlimTensor
-SlimTensor::reshape(executorch::backends::cuda::c10::IntArrayRef proposed_shape) const {
+SlimTensor::reshape(executorch::aten::IntArrayRef proposed_shape) const {
   std::vector<int64_t> final_shape_vec =
       infer_size(proposed_shape, this->numel());
 
   // `compute_stride` return the proper strides to use if this
   // `reshape` can be just a view.
   std::optional<std::vector<int64_t>> new_strides_opt =
-      compute_stride(this->sizes(), this->strides(), final_shape_vec);
+      compute_stride(this->sizes(), this->strides(), vec_to_et(final_shape_vec));
 
   // create a view if possible
   if (new_strides_opt.has_value()) {
     SlimTensor result = *this;
-    result.as_strided_(final_shape_vec, new_strides_opt.value(),
+    result.as_strided_(vec_to_et(final_shape_vec), vec_to_et(new_strides_opt.value()),
                        this->storage_offset());
     return result;
   }
@@ -102,7 +104,7 @@ SlimTensor::reshape(executorch::backends::cuda::c10::IntArrayRef proposed_shape)
   // after cloning, the tensor is already contiguous. We just need to update
   // its metadata to reflect the new shape. This is effectively a view of
   // the new contiguous clone
-  contiguous_clone.set_sizes_contiguous(final_shape_vec);
+  contiguous_clone.set_sizes_contiguous(vec_to_et(final_shape_vec));
   return contiguous_clone;
 }
 
@@ -123,9 +125,9 @@ inline SlimTensor SlimTensor::narrow(int64_t dim, int64_t start,
   SlimTensor result = *this;
   int64_t new_storage_offset =
       this->storage_offset() + start * this->stride(dim);
-  std::vector<int64_t> new_sizes = this->sizes().vec();
+  std::vector<int64_t> new_sizes = to_vec(this->sizes());
   new_sizes[dim] = length;
-  result.as_strided_(new_sizes, this->strides(), new_storage_offset);
+  result.as_strided_(vec_to_et(new_sizes), this->strides(), new_storage_offset);
   return result;
 }
 

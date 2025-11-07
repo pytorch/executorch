@@ -10,6 +10,7 @@
 #include <executorch/backends/cuda/runtime/c10/util/accumulate.h>
 #include <executorch/backends/cuda/runtime/c10/util/irange.h>
 #include <executorch/backends/cuda/runtime/c10/util/safe_numerics.h>
+#include <executorch/backends/cuda/runtime/slim/util/ArrayRefUtil.h>
 
 namespace executorch::backends::cuda::slim {
 #ifndef STANDALONE_MOBILE
@@ -28,16 +29,17 @@ inline constexpr uint64_t storage_max() {
  * tensor. Catches integer overflow that may occur when a tensor
  * using a sparse layout has multiple dimensions with large sizes.
  */
-inline int64_t safe_compute_numel(executorch::backends::cuda::c10::IntArrayRef sizes) {
+inline int64_t safe_compute_numel(executorch::aten::IntArrayRef sizes) {
   uint64_t n = 1;
-  bool overflowed = executorch::backends::cuda::c10::safe_multiplies_u64(sizes, &n);
+  bool overflowed =
+      executorch::backends::cuda::c10::safe_multiplies_u64(sizes, &n);
   overflowed |= (n > storage_max());
   STANDALONE_CHECK(!overflowed, "numel: integer multiplication overflow");
   return static_cast<int64_t>(n);
 }
 
-inline std::vector<int64_t>
-safe_compute_contiguous_strides(c10::IntArrayRef sizes) {
+inline std::vector<int64_t> safe_compute_contiguous_strides(
+    c10::IntArrayRef sizes) {
   int64_t ndim = static_cast<int64_t>(sizes.size());
   std::vector<int64_t> strides(ndim);
   if (ndim > 0) {
@@ -52,14 +54,14 @@ safe_compute_contiguous_strides(c10::IntArrayRef sizes) {
         stride = new_stride;
       }
     }
-    STANDALONE_CHECK(!overflowed,
-                     "contiguous_strides: stride multiplication overflow");
+    STANDALONE_CHECK(
+        !overflowed, "contiguous_strides: stride multiplication overflow");
   }
   return strides;
 }
 #endif // STANDALONE_MOBILE
 
-inline int64_t compute_numel(executorch::backends::cuda::c10::IntArrayRef sizes) {
+inline int64_t compute_numel(executorch::aten::IntArrayRef sizes) {
 #ifndef STANDALONE_MOBILE
   // Use overflow checks if supported by the compiler
   return safe_compute_numel(sizes);
@@ -69,19 +71,22 @@ inline int64_t compute_numel(executorch::backends::cuda::c10::IntArrayRef sizes)
 }
 
 // named computeStorageNbytesContiguous in c10
-inline size_t
-compute_storage_nbytes_contiguous(executorch::backends::cuda::c10::IntArrayRef sizes,
-                                  size_t itemsize_bytes,
-                                  size_t storage_offset) {
+inline size_t compute_storage_nbytes_contiguous(
+    executorch::aten::IntArrayRef sizes,
+    size_t itemsize_bytes,
+    size_t storage_offset) {
 // Ignore overflow checks on mobile
 #ifndef STANDALONE_MOBILE
   uint64_t size = 1;
-  bool overflowed = executorch::backends::cuda::c10::safe_multiplies_u64(sizes, &size);
-  overflowed |= executorch::backends::cuda::c10::add_overflows(size, storage_offset, &size);
-  overflowed |= executorch::backends::cuda::c10::mul_overflows(size, itemsize_bytes, &size);
+  bool overflowed =
+      executorch::backends::cuda::c10::safe_multiplies_u64(sizes, &size);
+  overflowed |= executorch::backends::cuda::c10::add_overflows(
+      size, storage_offset, &size);
+  overflowed |= executorch::backends::cuda::c10::mul_overflows(
+      size, itemsize_bytes, &size);
   overflowed |= size > storage_max();
-  STANDALONE_CHECK(!overflowed,
-                   "Storage size calculation overflowed with sizes=", sizes);
+  STANDALONE_CHECK(
+      !overflowed, "Storage size calculation overflowed with sizes");
   return static_cast<size_t>(size);
 #else
   const auto numel = multiply_integers(sizes);
@@ -90,13 +95,18 @@ compute_storage_nbytes_contiguous(executorch::backends::cuda::c10::IntArrayRef s
 }
 
 // named computeStorageNbytes in c10
-inline size_t compute_storage_nbytes(executorch::backends::cuda::c10::IntArrayRef sizes,
-                                     executorch::backends::cuda::c10::IntArrayRef strides,
-                                     size_t itemsize_bytes,
-                                     size_t storage_offset) {
-  STANDALONE_CHECK(sizes.size() == strides.size(), "dimensionality of sizes (",
-                   sizes.size(), ") must match dimensionality of strides (",
-                   strides.size(), ")");
+inline size_t compute_storage_nbytes(
+    executorch::aten::IntArrayRef sizes,
+    executorch::aten::IntArrayRef strides,
+    size_t itemsize_bytes,
+    size_t storage_offset) {
+  STANDALONE_CHECK(
+      sizes.size() == strides.size(),
+      "dimensionality of sizes (",
+      sizes.size(),
+      ") must match dimensionality of strides (",
+      strides.size(),
+      ")");
 
 // Ignore overflow checks on mobile
 #ifndef STANDALONE_MOBILE
@@ -110,15 +120,18 @@ inline size_t compute_storage_nbytes(executorch::backends::cuda::c10::IntArrayRe
     }
 
     uint64_t strided_size = 0;
-    overflowed |=
-        executorch::backends::cuda::c10::mul_overflows(strides[i], sizes[i] - 1, &strided_size);
-    overflowed |= executorch::backends::cuda::c10::add_overflows(size, strided_size, &size);
+    overflowed |= executorch::backends::cuda::c10::mul_overflows(
+        strides[i], sizes[i] - 1, &strided_size);
+    overflowed |= executorch::backends::cuda::c10::add_overflows(
+        size, strided_size, &size);
   }
-  overflowed |= executorch::backends::cuda::c10::mul_overflows(size, itemsize_bytes, &size);
+  overflowed |= executorch::backends::cuda::c10::mul_overflows(
+      size, itemsize_bytes, &size);
   overflowed |= size > storage_max();
-  STANDALONE_CHECK(!overflowed,
-                   "Storage size calculation overflowed with sizes=", sizes,
-                   " and strides=", strides);
+  // STANDALONE_CHECK(!overflowed,
+  //                  "Storage size calculation overflowed with sizes=", sizes,
+  //                  " and strides=", strides);
+  STANDALONE_CHECK(!overflowed, "Storage size calculation overflowed");
   return static_cast<size_t>(size);
 #else
   // size of the underlying storage is 1 bigger than the offset
@@ -156,8 +169,9 @@ inline std::vector<int64_t> compute_contiguous_strides(c10::IntArrayRef sizes) {
 
 // calculates the final concrete shape by also filling in at most one '-1'
 // dimension.
-inline std::vector<int64_t> infer_size(executorch::backends::cuda::c10::IntArrayRef shape,
-                                       int64_t numel) {
+inline std::vector<int64_t> infer_size(
+    executorch::aten::IntArrayRef shape,
+    int64_t numel) {
   int64_t new_size = 1;
   std::optional<int64_t> infer_dim;
   std::vector<int64_t> result_shape;
@@ -167,28 +181,29 @@ inline std::vector<int64_t> infer_size(executorch::backends::cuda::c10::IntArray
   bool overflowed = false;
   for (size_t dim = 0; dim < ndim; dim++) {
     if (shape[dim] == -1) {
-      STANDALONE_CHECK(!infer_dim.has_value(),
-                       "only one dimension can be inferred");
+      STANDALONE_CHECK(
+          !infer_dim.has_value(), "only one dimension can be inferred");
       infer_dim = dim;
       result_shape.push_back(-1); // placeholder
     } else {
       STANDALONE_CHECK(shape[dim] >= 0, "invalid shape dimension ", shape[dim]);
-      overflowed |=
-          executorch::backends::cuda::c10::mul_overflows(new_size, shape[dim], &new_size);
+      overflowed |= executorch::backends::cuda::c10::mul_overflows(
+          new_size, shape[dim], &new_size);
       result_shape.push_back(shape[dim]);
     }
   }
   STANDALONE_CHECK(!overflowed, "shape calculation overflowed");
 
   if (infer_dim.has_value()) {
-    STANDALONE_CHECK(new_size != 0,
-                     "cannot reshape tensor of 0 elements into shape with -1");
-    STANDALONE_CHECK(numel % new_size == 0, "shape is invalid for input size ",
-                     numel);
+    STANDALONE_CHECK(
+        new_size != 0,
+        "cannot reshape tensor of 0 elements into shape with -1");
+    STANDALONE_CHECK(
+        numel % new_size == 0, "shape is invalid for input size ", numel);
     result_shape[*infer_dim] = numel / new_size;
   } else {
-    STANDALONE_CHECK(numel == new_size, "shape is invalid for input of size ",
-                     numel);
+    STANDALONE_CHECK(
+        numel == new_size, "shape is invalid for input of size ", numel);
   }
   return result_shape;
 }
@@ -196,10 +211,10 @@ inline std::vector<int64_t> infer_size(executorch::backends::cuda::c10::IntArray
 // it determines if a reshape is possible as a view.
 // If so, it returns the new strides
 // If not, it returns an empty optional
-inline std::optional<std::vector<int64_t>>
-compute_stride(executorch::backends::cuda::c10::IntArrayRef old_sizes,
-               executorch::backends::cuda::c10::IntArrayRef old_strides,
-               executorch::backends::cuda::c10::IntArrayRef new_sizes) {
+inline std::optional<std::vector<int64_t>> compute_stride(
+    executorch::aten::IntArrayRef old_sizes,
+    executorch::aten::IntArrayRef old_strides,
+    executorch::aten::IntArrayRef new_sizes) {
   if (old_sizes.empty()) {
     return std::vector<int64_t>(new_sizes.size(), 1);
   }
@@ -211,7 +226,7 @@ compute_stride(executorch::backends::cuda::c10::IntArrayRef old_sizes,
   // didn't seem worth it.
   size_t numel = compute_numel(old_sizes);
   if (numel == 0 && old_sizes == new_sizes) {
-    return old_strides.vec();
+    return to_vec(old_strides);
   }
 
   int64_t new_sizes_len = static_cast<int64_t>(new_sizes.size());
@@ -222,7 +237,7 @@ compute_stride(executorch::backends::cuda::c10::IntArrayRef old_sizes,
         new_strides[view_d] = 1;
       } else {
         new_strides[view_d] = std::max<int64_t>(new_sizes[view_d + 1], 1) *
-                              new_strides[view_d + 1];
+            new_strides[view_d + 1];
       }
     }
     return new_strides;
@@ -234,14 +249,14 @@ compute_stride(executorch::backends::cuda::c10::IntArrayRef old_sizes,
   int64_t view_numel = 1;
   bool overflowed = false;
   for (int64_t tensor_d = static_cast<int64_t>(old_sizes.size()) - 1;
-       tensor_d >= 0; tensor_d--) {
+       tensor_d >= 0;
+       tensor_d--) {
     // TODO: ask if this could lead to overflow by any chance?
     // even if so, overflow is not handled in the aten implementation
     overflowed |= executorch::backends::cuda::c10::mul_overflows(
         tensor_numel, old_sizes[tensor_d], &tensor_numel);
 
-    bool is_chunk_end =
-        (tensor_d == 0) ||
+    bool is_chunk_end = (tensor_d == 0) ||
         (old_sizes[tensor_d - 1] != 1 &&
          old_strides[tensor_d - 1] != tensor_numel * chunk_base_stride);
 

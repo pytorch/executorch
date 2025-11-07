@@ -4,7 +4,7 @@
 
 namespace executorch::backends::cuda::slim {
 inline SlimTensor zeros(executorch::aten::IntArrayRef sizes,
-                        executorch::backends::cuda::c10::ScalarType dtype,
+                          executorch::backends::cuda::c10::ScalarType dtype,
                         const executorch::backends::cuda::c10::Device &device = CPU_DEVICE) {
   SlimTensor tensor = empty(sizes, dtype, device);
   tensor.fill_(executorch::backends::cuda::c10::Scalar(0));
@@ -16,7 +16,7 @@ inline SlimTensor zeros_like(const SlimTensor &other) {
 }
 
 inline SlimTensor ones(executorch::aten::IntArrayRef sizes,
-                       executorch::backends::cuda::c10::ScalarType dtype,
+                         executorch::backends::cuda::c10::ScalarType dtype,
                        const executorch::backends::cuda::c10::Device &device = CPU_DEVICE) {
   SlimTensor tensor = empty(sizes, dtype, device);
   tensor.fill_(executorch::backends::cuda::c10::Scalar(1));

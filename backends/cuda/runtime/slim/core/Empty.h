@@ -10,21 +10,21 @@
 namespace executorch::backends::cuda::slim {
 // The returned SlimTensor owns the underlying storage
 inline SlimTensor
-empty_strided(executorch::backends::cuda::c10::IntArrayRef sizes,
-              executorch::backends::cuda::c10::IntArrayRef strides,
+empty_strided(executorch::aten::IntArrayRef sizes,
+              executorch::aten::IntArrayRef strides,
               executorch::backends::cuda::c10::ScalarType dtype,
               const executorch::backends::cuda::c10::Device &device = CPU_DEVICE) {
   Storage storage = new_storage(sizes, strides, dtype, device);
   return SlimTensor(std::move(storage), sizes, strides, dtype, 0);
 }
 
-inline SlimTensor empty(executorch::backends::cuda::c10::IntArrayRef sizes,
-                        executorch::backends::cuda::c10::ScalarType dtype,
-                        const executorch::backends::cuda::c10::Device &device = CPU_DEVICE) {
+inline SlimTensor empty(executorch::aten::IntArrayRef sizes,
+                       executorch::backends::cuda::c10::ScalarType dtype,
+                       const executorch::backends::cuda::c10::Device& device) {
   std::vector<int64_t> contig_strides =
-      executorch::backends::cuda::slim::compute_contiguous_strides(sizes);
-  Storage storage = new_storage(sizes, contig_strides, dtype, device);
-  return SlimTensor(std::move(storage), sizes, contig_strides, dtype, 0);
+      executorch::backends::cuda::slim::compute_contiguous_strides(et_to_c10(sizes));
+  Storage storage = new_storage(sizes, vec_to_et(contig_strides), dtype, device);
+  return SlimTensor(std::move(storage), sizes, vec_to_et(contig_strides), dtype, 0);
 }
 
 inline SlimTensor empty_like(const SlimTensor &other) {
