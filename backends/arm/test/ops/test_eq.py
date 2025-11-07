@@ -174,14 +174,7 @@ def test_eq_scalar_u55_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_module",
-    test_data_tensor,
-    xfails={
-        "eq_tensor_rank4_randn": "MLETORCH-847: Boolean eq result unstable on U85",
-    },
-    strict=False,
-)
+@common.parametrize("test_module", test_data_tensor)
 @common.XfailIfNoCorstone320
 def test_eq_scalar_u85_INT_tensor(test_module):
     pipeline = EthosU85PipelineINT[input_t](
@@ -193,14 +186,7 @@ def test_eq_scalar_u85_INT_tensor(test_module):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_module",
-    test_data_scalar,
-    xfails={
-        "eq_scalar_rank4_randn": "MLETORCH-847: Boolean eq result unstable on U85",
-    },
-    strict=False,
-)
+@common.parametrize("test_module", test_data_scalar)
 @common.XfailIfNoCorstone320
 def test_eq_scalar_u85_INT(test_module):
     pipeline = EthosU85PipelineINT[input_t](
