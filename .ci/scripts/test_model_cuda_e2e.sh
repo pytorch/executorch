@@ -17,7 +17,7 @@ Arguments:
   hf_model    HuggingFace model ID (required)
               Supported models:
                 - mistralai/Voxtral-Mini-3B-2507
-                 - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
+                - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                 - google/gemma-3-4b-it
 
   quant_name  Quantization type (required)
