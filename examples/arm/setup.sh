@@ -26,7 +26,6 @@ enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
 enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
-enable_mlsdk_pip_install=0  # This is a temporary option that will soon be the default
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -52,7 +51,6 @@ OPTION_LIST=(
   "--enable-emulation-layer Enable MLSDK Vulkan emulation layer"
   "--disable-ethos-u-deps Do not setup what is needed for Ethos-U"
   "--enable-mlsdk-deps Setup what is needed for MLSDK"
-  "--install-mlsdk-deps-with-pip Use MLSDK PyPi package instead of building from source"
   "--mlsdk-manifest-url URL to the MLSDK manifest for vulkan."
   "--help Display help"
 )
@@ -142,10 +140,6 @@ function check_options() {
                 enable_vela=0
                 shift
                 ;;
-            --install-mlsdk-deps-with-pip)
-                enable_mlsdk_pip_install=1
-                shift
-                ;;
             --enable-mlsdk-deps)
                 enable_model_converter=1
                 enable_vgf_lib=1
@@ -182,21 +176,11 @@ function setup_ethos_u_tools() {
     CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
 }
 
-function setup_mlsdk_dependencies() {
-    log_step "mlsdk" "Installing MLSDK dependencies from pip"
-    pip install -r $et_dir/backends/arm/requirements-arm-vgf.txt
-}
-
 function create_setup_path(){
     cd "${root_dir}"
 
     clear_setup_path
     log_step "path" "Generating setup path scripts at ${setup_path_script}"
-
-    local use_mlsdk_pip=0
-    if use_mlsdk_pip_package; then
-        use_mlsdk_pip=1
-    fi
 
     if [[ "${enable_fvps}" -eq 1 ]]; then
         setup_path_fvp
@@ -210,48 +194,19 @@ function create_setup_path(){
         setup_path_vulkan
     fi
 
-    if [[ "${enable_model_converter}" -eq 1 && "${use_mlsdk_pip}" -eq 0 ]]; then
+    if [[ "${enable_model_converter}" -eq 1 ]]; then
         setup_path_model_converter
     fi
 
-    if [[ "${enable_vgf_lib}" -eq 1 && "${use_mlsdk_pip}" -eq 0 ]]; then
+    if [[ "${enable_vgf_lib}" -eq 1 ]]; then
         setup_path_vgf_lib
     fi
 
     if [[ "${enable_emulation_layer}" -eq 1 ]]; then
-        if [[ "${use_mlsdk_pip}" -eq 0 ]]; then
-            setup_path_emulation_layer
-        else
-            setup_path_emulation_layer_from_pip
-        fi
+        setup_path_emulation_layer
     fi
 
-   log_step "path" "Update PATH by sourcing ${setup_path_script}.{sh|fish}"
-}
-
-function use_mlsdk_pip_package() {
-    os=$(uname -s)
-    arch=$(uname -m)
-
-    if [[ "${enable_mlsdk_pip_install}" -eq 0 ]]; then
-        return 1
-    fi
-
-    if [[ "$os" == "Darwin" ]]; then
-        if [[ "${enable_mlsdk_pip_install}" -eq 1 ]]; then
-            log_step "mlsdk" "[error] MLSDK pip install not yet supported on MacOS"
-            exit 1
-        fi
-    fi
-
-    if [[ "$arch" == "arm64" || "$arch" == "aarch64" ]]; then
-        if [[ "${enable_mlsdk_pip_install}" -eq 1 ]]; then
-            log_step "mlsdk" "[error] MLSDK pip install not yet supported on aarch64"
-            exit 1
-        fi
-    fi
-
-    return 0
+    log_step "path" "Update PATH by sourcing ${setup_path_script}.{sh|fish}"
 }
 
 
@@ -269,7 +224,6 @@ if [[ $is_script_sourced -eq 0 ]]; then
     source $et_dir/backends/arm/scripts/fvp_utils.sh
     source $et_dir/backends/arm/scripts/toolchain_utils.sh
     source $et_dir/backends/arm/scripts/vulkan_utils.sh
-    source $et_dir/backends/arm/scripts/mlsdk_utils.sh
 
     log_step "main" "Checking platform and OS"
     check_platform_support
@@ -285,12 +239,8 @@ if [[ $is_script_sourced -eq 0 ]]; then
         mlsdk_manifest_dir="${root_dir}/${mlsdk_manifest_dir}"
     fi
 
-    log_step "options" \
-             "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}, mlsdk-dir=${mlsdk_manifest_dir}"
-    log_step "options" \
-             "ethos-u: fvps=${enable_fvps}, toolchain=${enable_baremetal_toolchain}, vela=${enable_vela} | " \
-             "mlsdk: model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, " \
-                    "emu-layer=${enable_emulation_layer}, vulkan-sdk=${enable_vulkan_sdk}"
+    log_step "options" "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}, mlsdk-dir=${mlsdk_manifest_dir}"
+    log_step "options" "ethos-u: fvps=${enable_fvps}, toolchain=${enable_baremetal_toolchain}, vela=${enable_vela} | mlsdk: model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, emu-layer=${enable_emulation_layer}, vulkan-sdk=${enable_vulkan_sdk}"
 
     # Setup toolchain
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
@@ -317,18 +267,13 @@ if [[ $is_script_sourced -eq 0 ]]; then
     if [[ "${enable_model_converter}" -eq 1 || \
           "${enable_vgf_lib}" -eq 1 || \
           "${enable_emulation_layer}" -eq 1 ]]; then
-        log_step "mlsdk" "Configuring MLSDK components (model-converter=${enable_model_converter}, " \
-                         "vgf-lib=${enable_vgf_lib}, emu-layer=${enable_emulation_layer})"
-        if use_mlsdk_pip_package; then
-            setup_mlsdk_dependencies
-        else
-            log_step "mlsdk" "Installing MLSDK dependencies from source"
-            setup_mlsdk ${root_dir} \
-                        ${mlsdk_manifest_dir} \
-                        ${enable_model_converter} \
-                        ${enable_vgf_lib} \
-                        ${enable_emulation_layer}
-        fi
+        log_step "mlsdk" "Configuring MLSDK components (model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, emu-layer=${enable_emulation_layer})"
+        source $et_dir/backends/arm/scripts/mlsdk_utils.sh
+        setup_mlsdk "${root_dir}" \
+                    "${mlsdk_manifest_dir}" \
+                    "${enable_model_converter}" \
+                    "${enable_vgf_lib}" \
+                    "${enable_emulation_layer}"
     fi
 
     # Create the setup_path.sh used to create the PATH variable for shell
