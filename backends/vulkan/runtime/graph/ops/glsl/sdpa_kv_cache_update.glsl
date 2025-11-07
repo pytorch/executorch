@@ -14,10 +14,6 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-#define DEBUG_MODE
-
-#extension GL_EXT_debug_printf : enable
-
 #include "common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_cache", DTYPE, OUTPUT_STORAGE, is_scalar_array=False)}
