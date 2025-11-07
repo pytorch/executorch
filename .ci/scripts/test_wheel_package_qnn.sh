@@ -136,10 +136,10 @@ run_core_tests () {
   local PIPBIN="$2"     # path to pip
   local LABEL="$3"      # label to print (conda/venv)
 
-  echo "=== [$LABEL] Installing wheel & deps ==="
+ 
   "$PIPBIN" install --upgrade pip
   "$PIPBIN" install "$WHEEL_FILE"
-  "$PIPBIN" install torch=="2.9.0"
+  "$PIPBIN" install torch=="2.9.1"
   "$PIPBIN" install --pre torchao --index-url "https://download.pytorch.org/whl/nightly/cpu"
 
   echo "=== [$LABEL] Import smoke tests ==="
