@@ -58,13 +58,14 @@ fi
 
 if [[ "$FLOW" == *arm* ]]; then
 
-    if [[ "$FLOW" == *vgf* ]]; then
-        # Setup Vulkan SDK which is required for VGF backend
-        source .ci/scripts/setup-vulkan-linux-deps.sh
-    fi
-
     # Setup ARM deps.
-    .ci/scripts/setup-arm-baremetal-tools.sh
+    if [[ "$FLOW" == *vgf* ]]; then
+        # Vulkan-SDK required for VGF backend
+        source .ci/scripts/setup-vulkan-linux-deps.sh
+        .ci/scripts/setup-arm-baremetal-tools.sh --enable-mlsdk-deps --install-mlsdk-deps-with-pip
+    else
+        .ci/scripts/setup-arm-baremetal-tools.sh
+    fi
     source examples/arm/ethos-u-scratch/setup_path.sh
 
     if [[ "$FLOW" == *ethos_u* ]]; then
