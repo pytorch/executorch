@@ -42,7 +42,7 @@ DEFINE_string(
 DEFINE_string(
     model_name,
     "base",
-    "Whisper model name (base, small, medium, large, large-v2, large-v3, turbo).");
+    "Whisper model name (base, small, medium, large, large-v2, large-v3, large-v3-turbo).");
 DEFINE_double(
     temperature,
     0.0,
@@ -116,7 +116,7 @@ int main(int argc, char** argv) {
 
   // Set decoder_start_token_id based on model version
   if (FLAGS_model_name == "large-v2" || FLAGS_model_name == "large-v3" ||
-      FLAGS_model_name == "turbo") {
+      FLAGS_model_name == "large-v3-turbo") {
     config.decoder_start_token_id = 50258;
     ET_LOG(
         Info,
