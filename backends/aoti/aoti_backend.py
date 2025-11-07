@@ -17,11 +17,7 @@ from executorch.backends.aoti.passes.replace_view_copy_with_view import (
 )
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
-from executorch.exir.backend.backend_details import (
-    BackendDetails,
-    ExportedProgram,
-    PreprocessResult,
-)
+from executorch.exir.backend.backend_details import ExportedProgram, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch.export.passes import move_to_device_pass
@@ -34,12 +30,16 @@ class COMPILE_SPEC_KEYS(Enum):
 @experimental(
     "This API and all of aoti-driven backend related functionality are experimental."
 )
-class AotiBackend(BackendDetails, ABC):
+class AotiBackend(ABC):
     """
-    Base backend class for AOTInductor-based backends.
+    Base mixin class for AOTInductor-based backends.
 
     This class provides common functionality for compiling models using AOTInductor
     with different device targets (CUDA, Metal, etc.).
+
+    This is a mixin class, not an actual backend object, for aoti-driven backens.
+    Concrete backends (e.g., CudaBackend, MetalBackend) should inherit from both
+    BackendDetails and AotiBackend to get the full functionality.
     """
 
     @staticmethod
