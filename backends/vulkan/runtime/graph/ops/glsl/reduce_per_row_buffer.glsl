@@ -57,8 +57,6 @@ $else:
 $if OUTPUT_IS_INDICES:
   #define OUTPUT_IS_INDICES
 
-#extension GL_EXT_debug_printf : require
-
 void main() {
   const uint out_bufi = gl_GlobalInvocationID.y;
 
