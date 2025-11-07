@@ -46,13 +46,27 @@ class ResizeVisitor(NodeVisitor):
             resize_mode = ts.ResizeMode.NEAREST
             align_corners = False
             validate_same_dtype(self.target, [inputs[0], output], ts)
+
+        valid_dtypes = []
+        if self.tosa_spec.support_integer():
+            valid_dtypes.extend(
+                [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.INT48]
+            )
+
+        if self.tosa_spec.support_float():
+            valid_dtypes.extend(
+                [
+                    ts.DType.FP16,
+                    ts.DType.FP32,
+                ]
+            )
+
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP16, ts.DType.FP32],
+            valid_dtypes,
             output.tosa_spec,
         )
-
         # tosa_shape output is NHWC, take HW
         input_size_yx = tuple([inputs[0].shape[dim] for dim in inputs[0].dim_order])[
             1:3
