@@ -1,8 +1,0 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
-ai_ml_emulation_layer_for_vulkan == 0.7.0
-ai_ml_sdk_model_converter == 0.7.0
-ai_ml_sdk_vgf_library == 0.7.0
