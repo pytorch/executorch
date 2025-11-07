@@ -154,12 +154,20 @@ case "${PLATFORM}:${DTYPE}:${MODE}" in
     "x86:fp32:portable")                        ACT_EXPORT_TIME=72 ;;
     "x86:fp32:xnnpack+custom")                  ACT_EXPORT_TIME=276 ;;
     "x86:bf16:portable")                        ACT_EXPORT_TIME=75 ;;
+    "x86:bf16:custom")                          ACT_EXPORT_TIME=65 ;;
+    "x86:fp32:xnnpack+custom+qe")               ACT_EXPORT_TIME=285 ;; 
+    "x86:fp32:xnnpack+custom+quantize_kv")      ACT_EXPORT_TIME=295 ;;
+    "x86:fp32:xnnpack+quantize_kv")             ACT_EXPORT_TIME=356 ;;
+    "x86:fp32:qnn")                             ACT_EXPORT_TIME=334 ;;
 
     # Linux ARM64 configurations
     "arm64:fp32:portable")                      ACT_EXPORT_TIME=124 ;;
     "arm64:fp32:xnnpack+custom")                ACT_EXPORT_TIME=483 ;;
     "arm64:bf16:portable")                      ACT_EXPORT_TIME=118 ;;
     "arm64:bf16:custom")                        ACT_EXPORT_TIME=102 ;;
+    "arm64:fp32:xnnpack+custom+qe")             ACT_EXPORT_TIME=486 ;;
+    "arm64:fp32:xnnpack+custom+quantize_kv")    ACT_EXPORT_TIME=521 ;;
+    "arm64:fp32:xnnpack+quantize_kv")           ACT_EXPORT_TIME=514 ;;
 
     # macOS configurations
     "macos:fp32:mps")                           ACT_EXPORT_TIME=30  ;;
