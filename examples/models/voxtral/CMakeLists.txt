@@ -113,3 +113,15 @@ endif()
 target_include_directories(voxtral_runner PUBLIC ${_common_include_directories})
 target_link_libraries(voxtral_runner PUBLIC ${link_libraries})
 target_compile_options(voxtral_runner PUBLIC ${_common_compile_options})
+
+# On Windows, copy required DLLs to the executable directory
+if(MSVC AND EXECUTORCH_BUILD_CUDA)
+  add_custom_command(
+    TARGET voxtral_runner
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:aoti_cuda_shims>
+            $<TARGET_FILE_DIR:voxtral_runner>
+    COMMENT "Copying aoti_cuda_shims.dll to voxtral_runner directory"
+  )
+endif()
