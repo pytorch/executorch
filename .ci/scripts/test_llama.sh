@@ -145,39 +145,40 @@ elif [[ "$(uname -m)" == "aarch64" ]] || [[ "$(uname -m)" == "arm64" ]]; then
     PLATFORM="arm64"
 fi
 
-BUFFER_TIME=50
+BUFFER_TIME=25
 
 # Lookup threshold based on platform:dtype:mode
-case "${PLATFORM}:${DTYPE}:${MODE}" in
+case "${PLATFORM}:${DTYPE}:${MODE}:${PT2E_QUANTIZE}" in
 
     # Linux x86 configurations
-    "x86:fp32:portable")                        ACT_EXPORT_TIME=72 ;;
-    "x86:fp32:xnnpack+custom")                  ACT_EXPORT_TIME=276 ;;
-    "x86:bf16:portable")                        ACT_EXPORT_TIME=75 ;;
-    "x86:bf16:custom")                          ACT_EXPORT_TIME=65 ;;
-    "x86:fp32:xnnpack+custom+qe")               ACT_EXPORT_TIME=285 ;; 
-    "x86:fp32:xnnpack+custom+quantize_kv")      ACT_EXPORT_TIME=295 ;;
-    "x86:fp32:xnnpack+quantize_kv")             ACT_EXPORT_TIME=356 ;;
-    "x86:fp32:qnn")                             ACT_EXPORT_TIME=334 ;;
+    "x86:fp32:portable:")                        ACT_EXPORT_TIME=72 ;;
+    "x86:fp32:xnnpack+custom:")                  ACT_EXPORT_TIME=276 ;;
+    "x86:bf16:portable:")                        ACT_EXPORT_TIME=75 ;;
+    "x86:bf16:custom:")                          ACT_EXPORT_TIME=65 ;;
+    "x86:fp32:xnnpack+custom+qe:")               ACT_EXPORT_TIME=285 ;; 
+    "x86:fp32:xnnpack+custom+quantize_kv:")      ACT_EXPORT_TIME=295 ;;
+    "x86:fp32:xnnpack+quantize_kv:")             ACT_EXPORT_TIME=356 ;;
+    "x86:fp32:qnn:16a16w")                      ACT_EXPORT_TIME=334 ;;
+    "x86:fp32:qnn:8a8w")                        ACT_EXPORT_TIME=81 ;;
 
     # Linux ARM64 configurations
-    "arm64:fp32:portable")                      ACT_EXPORT_TIME=124 ;;
-    "arm64:fp32:xnnpack+custom")                ACT_EXPORT_TIME=483 ;;
-    "arm64:bf16:portable")                      ACT_EXPORT_TIME=118 ;;
-    "arm64:bf16:custom")                        ACT_EXPORT_TIME=102 ;;
-    "arm64:fp32:xnnpack+custom+qe")             ACT_EXPORT_TIME=486 ;;
-    "arm64:fp32:xnnpack+custom+quantize_kv")    ACT_EXPORT_TIME=521 ;;
-    "arm64:fp32:xnnpack+quantize_kv")           ACT_EXPORT_TIME=514 ;;
+    "arm64:fp32:portable:")                      ACT_EXPORT_TIME=124 ;;
+    "arm64:fp32:xnnpack+custom:")                ACT_EXPORT_TIME=483 ;;
+    "arm64:bf16:portable:")                      ACT_EXPORT_TIME=118 ;;
+    "arm64:bf16:custom:")                        ACT_EXPORT_TIME=102 ;;
+    "arm64:fp32:xnnpack+custom+qe:")             ACT_EXPORT_TIME=486 ;;
+    "arm64:fp32:xnnpack+custom+quantize_kv:")    ACT_EXPORT_TIME=521 ;;
+    "arm64:fp32:xnnpack+quantize_kv:")           ACT_EXPORT_TIME=514 ;;
 
     # macOS configurations
-    "macos:fp32:mps")                           ACT_EXPORT_TIME=30  ;;
-    "macos:fp32:coreml")                        ACT_EXPORT_TIME=61  ;;
-    "macos:fp32:xnnpack+custom+quantize_kv")    ACT_EXPORT_TIME=133 ;;
+    "macos:fp32:mps:")                           ACT_EXPORT_TIME=30  ;;
+    "macos:fp32:coreml:")                        ACT_EXPORT_TIME=61  ;;
+    "macos:fp32:xnnpack+custom+quantize_kv:")    ACT_EXPORT_TIME=133 ;;
 
     # Default fallback for unknown configurations
     *)
         ACT_EXPORT_TIME=450
-        echo "Warning: No threshold defined for ${PLATFORM}:${DTYPE}:${MODE}, using default: $((ACT_EXPORT_TIME + BUFFER_TIME))s"
+        echo "Warning: No threshold defined for ${PLATFORM}:${DTYPE}:${MODE}:${PT2E_QUANTIZE}, using default: $((ACT_EXPORT_TIME + BUFFER_TIME))s"
         ;;
 esac
 
