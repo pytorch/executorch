@@ -124,11 +124,13 @@ class TagMemoryMetaPass(ExportPass):
         texture_limits: utils.ImageExtents,
         default_storage_type: VkStorageType = VkStorageType.TEXTURE_3D,
         default_memory_layout: VkMemoryLayout = VkMemoryLayout.TENSOR_WIDTH_PACKED,
+        force_fp16: bool = False,
     ):
         super().__init__()
         self.default_storage: VkStorageType = default_storage_type
         self.default_layout: VkMemoryLayout = default_memory_layout
         self.texture_limits = texture_limits
+        self.force_fp16 = force_fp16
 
         # Magic number to limit "lookahead" when tracing through users of an operator
         # to constrain the representation of its arguments/outputs.
@@ -355,6 +357,12 @@ class TagMemoryMetaPass(ExportPass):
         2. Then, try to trace through the users of the argument to find a representation
            that can be used for as long as possible without needing a transition.
         """
+        # If forcing fp16, then try to use texture storage whenever possible. This is
+        # a temporary stopgap measure until all buffer implementations properly account
+        # for potential overflow of fp16 representation range when doing math in fp16.
+        if self.force_fp16:
+            op_repsets.try_constrain_with_arg_repset(arg_i, utils.ANY_TEXTURE)
+
         arg_source_repset = self.get_arg_tensor_source_repset(op_repsets.op_node, arg_i)
         op_repsets.try_constrain_with_arg_repset(arg_i, arg_source_repset)
 
