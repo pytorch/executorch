@@ -117,7 +117,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-small, openai/whisper-large-v2, google/gemma-3-4b-it"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it"
     exit 1
     ;;
 esac

@@ -105,7 +105,7 @@ jobs:
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
-            name: "whisper-large-v2"
+            name: "whisper-large-v3-turbo"
           - repo: "google"
             name: "gemma-3-4b-it"
         quant:
