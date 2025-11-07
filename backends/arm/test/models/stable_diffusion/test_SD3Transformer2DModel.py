@@ -7,7 +7,9 @@
 from typing import Tuple
 
 import torch
-from diffusers.models.transformers import SD3Transformer2DModel
+from diffusers.models.transformers import (  # type: ignore[import-not-found]
+    SD3Transformer2DModel,
+)
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.stable_diffusion.stable_diffusion_module_test_configs import (
