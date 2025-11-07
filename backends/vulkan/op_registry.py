@@ -687,7 +687,7 @@ def register_sdpa_ops():
 @update_features(exir_ops.edge.et_vk.apply_rotary_emb.default)
 def register_rotary_emb_op():
     return OpFeatures(
-        inputs_storage=utils.WIDTH_PACKED_TEXTURE,
+        inputs_storage=utils.CONTIGUOUS_ANY,
         supports_resize=True,
     )
 
