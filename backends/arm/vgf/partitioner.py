@@ -14,6 +14,14 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 @final
 class VgfPartitioner(TOSAPartitioner):
+    """
+    Partitions subgraphs supported by the Arm Vgf backend.
+
+    Args:
+        compile_spec: The Vgf compilation specification.
+        additional_checks: Optional sequence of additional operator support checks.
+    """
+
     def __init__(
         self,
         compile_spec: VgfCompileSpec,

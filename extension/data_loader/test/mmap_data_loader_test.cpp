@@ -9,6 +9,7 @@
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 
 #include <cstring>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -428,4 +429,61 @@ TEST_F(MmapDataLoaderTest, LoadIntoCopiesOffsetCorrectly) {
 
   // Verify memory copied correctly.
   EXPECT_EQ(0, std::memcmp(dst, contents + offset, size));
+}
+
+// Tests that the loader can handle files requiring 64-bit file systems.
+// This test verifies that offsets and sizes beyond 32-bit limits are handled
+// correctly by creating a sparse file with data at a large offset.
+TEST_F(MmapDataLoaderTest, LargeFileOffsetSupport) {
+// We run some 32 bit tests on Linux so we need to skip this
+// test.
+#ifndef _WIN32
+  if (sizeof(off_t) <= 8) {
+    return;
+  }
+#endif
+  // Create a sparse file with a marker at an offset beyond 2GB (32-bit limit).
+  // We use 3GB to ensure we're testing 64-bit offset handling.
+  const size_t large_offset = 3ULL * 1024 * 1024 * 1024; // 3GB
+  const std::string test_marker = "TEST_MARKER_AT_LARGE_OFFSET";
+
+  // Use TempFile sparse file API to create a 3GB+ file
+  TempFile tf(large_offset, test_marker, large_offset + test_marker.size());
+
+  // Now try to load the data using MmapDataLoader.
+  Result<MmapDataLoader> mdl = MmapDataLoader::from(tf.path().c_str());
+  ASSERT_EQ(mdl.error(), Error::Ok)
+      << "Failed to create MmapDataLoader for large sparse file";
+
+  // Verify the file size is reported correctly (should be > 3GB).
+  Result<size_t> file_size = mdl->size();
+  ASSERT_EQ(file_size.error(), Error::Ok);
+  EXPECT_GT(*file_size, large_offset)
+      << "File size should be larger than the large offset";
+  EXPECT_EQ(*file_size, large_offset + test_marker.size())
+      << "File size should match offset + marker size";
+
+  // Try to load the marker data from the large offset.
+  Result<FreeableBuffer> fb = mdl->load(
+      large_offset,
+      test_marker.size(),
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  ASSERT_EQ(fb.error(), Error::Ok) << "Failed to load data from large offset";
+
+  EXPECT_EQ(fb->size(), test_marker.size());
+  EXPECT_EQ(0, std::memcmp(fb->data(), test_marker.data(), test_marker.size()))
+      << "Data at large offset does not match expected marker";
+
+  // Test load_into as well.
+  std::vector<uint8_t> buffer(test_marker.size());
+  Error err = mdl->load_into(
+      large_offset,
+      test_marker.size(),
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+      buffer.data());
+  ASSERT_EQ(err, Error::Ok) << "load_into failed for large offset";
+
+  EXPECT_EQ(
+      0, std::memcmp(buffer.data(), test_marker.data(), test_marker.size()))
+      << "load_into data at large offset does not match expected marker";
 }
