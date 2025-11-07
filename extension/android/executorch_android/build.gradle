@@ -10,7 +10,15 @@
 plugins {
     id "com.android.library" version "8.9.0"
     id "com.vanniktech.maven.publish" version "0.31.0"
+    id 'com.diffplug.spotless' version '8.0.0'
     alias(libs.plugins.jetbrains.kotlin.android)
+}
+
+spotless {
+    kotlin {
+        target '**/*.kt'
+        ktfmt()
+    }
 }
 
 def qnnVersion = System.properties['qnnVersion']
@@ -37,7 +45,7 @@ android {
             jniLibs.srcDirs = ['../../../cmake-out-android-so/']
         }
         androidTest {
-            resources.srcDirs += [ 'src/androidTest/resources' ]
+            resources.srcDirs += ['src/androidTest/resources']
         }
     }
     kotlinOptions {
@@ -46,7 +54,7 @@ android {
 }
 
 task copyTestRes(type: Exec) {
-  commandLine 'bash', 'android_test_setup.sh'
+    commandLine 'bash', 'android_test_setup.sh'
 }
 
 dependencies {
@@ -67,36 +75,36 @@ dependencies {
 }
 
 mavenPublishing {
-  publishToMavenCentral()
-  signAllPublications()
+    publishToMavenCentral()
+    signAllPublications()
 
-  coordinates("org.pytorch", "executorch-android" + (flavor ? "-" + flavor : ""), execuTorchVersion ? execuTorchVersion : "1.0.0-SNAPSHOT")
+    coordinates("org.pytorch", "executorch-android" + (flavor ? "-" + flavor : ""), execuTorchVersion ? execuTorchVersion : "1.0.0-SNAPSHOT")
 
-  pom {
-    name = "ExecuTorch Android"
-    description = "ExecuTorch Android API"
-    inceptionYear = "2025"
-    url = "https://github.com/pytorch/executorch/"
-    licenses {
-      license {
-        name = "BSD 3-Clause"
-        url = "https://github.com/pytorch/executorch/blob/main/LICENSE"
-        distribution = "https://github.com/pytorch/executorch/blob/main/LICENSE"
-      }
-    }
-    developers {
-      developer {
-        id = "pytorch"
-        name = "pytorch"
+    pom {
+        name = "ExecuTorch Android"
+        description = "ExecuTorch Android API"
+        inceptionYear = "2025"
         url = "https://github.com/pytorch/executorch/"
-      }
+        licenses {
+            license {
+                name = "BSD 3-Clause"
+                url = "https://github.com/pytorch/executorch/blob/main/LICENSE"
+                distribution = "https://github.com/pytorch/executorch/blob/main/LICENSE"
+            }
+        }
+        developers {
+            developer {
+                id = "pytorch"
+                name = "pytorch"
+                url = "https://github.com/pytorch/executorch/"
+            }
+        }
+        scm {
+            url = "https://github.com/pytorch/executorch.git"
+            connection = "scm:git:https://github.com/pytorch/executorch"
+            developerConnection = "scm:git:git@github.com:pytorch/executorch.git"
+        }
     }
-    scm {
-      url = "https://github.com/pytorch/executorch.git"
-      connection = "scm:git:https://github.com/pytorch/executorch"
-      developerConnection = "scm:git:git@github.com:pytorch/executorch.git"
-    }
-  }
 
 }
 

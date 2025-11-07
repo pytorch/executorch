@@ -3,15 +3,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from copy import copy
 from typing import cast, Dict, Optional, Set, Tuple, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node, set_node_arg
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_output_qparams,
 )
+
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -19,7 +22,7 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
 
-class InsertRescalePass(ExportPass):
+class InsertRescalePass(ArmPass):
     """Finds patterns of dq -> q, and replaces them
     with backend dialect tosa::RESCALE op.
 
@@ -43,7 +46,7 @@ class InsertRescalePass(ExportPass):
                 (
                     node.all_input_nodes[0],
                     q_args.dtype,
-                    new_scale,
+                    [new_scale],
                     dq_args.zp,
                     q_args.zp,
                 ),
@@ -73,19 +76,23 @@ class InsertRescalePass(ExportPass):
 
 
 class InsertRescaleInt32Pass(ArmPass):
-    """
-    Numerous TOSA ops require inputs and outputs to be 32-bit integers in their
+    """Numerous TOSA ops require inputs and outputs to be 32-bit integers in their
     quantized implementations. This pass treats such operator nodes by
-    inserting rescale ops before and after them if needed. Note that extra logic
-    that handles the scales and zero points must be in place because the affected
-    TOSA have naive implementations that do not account for the quantization
-    parameters.
+    inserting rescale ops before and after them if needed. Note that extra
+    logic that handles the scales and zero points are in place here because the
+    affected TOSA ops have naive implementations that do not account for the
+    quantization parameters.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    # SUM must be decomposed after this pass to prevent insertion of RESCALE
+    # nodes between each subsequent SUM node after decomposition. RESCALE nodes
+    # should only be inserted before and after the SUM node prior to its
+    # decomposition.
+    _passes_required_after: Set[Type[ExportPass]] = {DecomposeSumPass}
 
     included_targets = [
         exir_ops.edge.aten.abs.default,
+        exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.ge.Tensor,
         exir_ops.edge.aten.gt.Tensor,
@@ -93,6 +100,9 @@ class InsertRescaleInt32Pass(ArmPass):
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.maximum.default,
         exir_ops.edge.aten.minimum.default,
+        exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.sub.Tensor,
+        exir_ops.edge.aten.sum.dim_IntList,
     ]
 
     def _int32_qargs(self, s):
@@ -130,8 +140,47 @@ class InsertRescaleInt32Pass(ArmPass):
             min_scale = min(
                 [qp.get_scale_per_tensor() for qp in input_qparams.values()]
             )
+            qparams = {i: self._int32_qargs(min_scale) for i in input_qparams.keys()}
+        elif target in [
+            exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.sub.Tensor,
+        ]:
+            keys = list(input_qparams)
+            if len(keys) < 2:
+                raise ValueError(f"Expected two input qparams, got: {input_qparams}.")
+            if input_qparams[keys[0]].dtype != input_qparams[keys[1]].dtype:
+                raise ValueError(
+                    f"Mismatch in dtype args: {input_qparams[keys[0]].dtype} != {input_qparams[keys[1]].dtype}"
+                )
+
+            # We are handling two INT8 or two INT16 numbers. For INT8, if the
+            # zero point is non-null, the result will be in the range [-255;
+            # 255], therefore we need 9 bits for the result. We have a 32-bit
+            # accumulator, so we can divide the scale by (1 << 20) which is
+            # equivalent to shifting the INT8 operands 20 bits to the left
+            # before rescaling them both to 2 * max(lhs, rhs).
+            #
+            # For INT16, similary logic can be applied, but we instead end up
+            # with a left shift of 12.
+            lhs_scale, rhs_scale = (
+                qp.get_scale_per_tensor() for qp in input_qparams.values()
+            )
+            max_scale_2x = 2 * max(lhs_scale, rhs_scale)
+
+            # Select shift based on input dtype.
+            shift_bits = 12 if input_qparams[keys[0]].dtype == torch.int16 else 20
+
+            scale = max_scale_2x / (1 << shift_bits)
+            qparams = {i: self._int32_qargs(scale) for i in input_qparams.keys()}
+        elif target in [
+            exir_ops.edge.aten.mul.Tensor,
+            exir_ops.edge.aten.sum.dim_IntList,
+        ]:
+            # The input scales do not need to be adjusted for these ops; they
+            # can remain the same.
             qparams = {
-                i: self._int32_qargs(min_scale) for i in range(len(input_qparams))
+                i: self._int32_qargs(qp.get_scale_per_tensor())
+                for i, qp in input_qparams.items()
             }
         else:
             raise ValueError(f"Not a valid target: {target}")
@@ -148,6 +197,9 @@ class InsertRescaleInt32Pass(ArmPass):
             exir_ops.edge.aten.abs.default,
             exir_ops.edge.aten.maximum.default,
             exir_ops.edge.aten.minimum.default,
+            exir_ops.edge.aten.sum.dim_IntList,
+            exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.sub.Tensor,
         ]:
             # The op has not altered the scale; the output scale is equal to
             # the operands' scales.
@@ -161,6 +213,20 @@ class InsertRescaleInt32Pass(ArmPass):
         ]:
             # Output is bool for these ops and thus no qparams are present
             return None
+        elif target in [exir_ops.edge.aten.mul.Tensor]:
+            # Mul will cause the scales to also multiply; refer to the formula
+            # where we compute the output scale S_2:
+            #
+            # (Q_2 - ZP_2) * S_2 == ((Q_0 - ZP_0) * S_0) * ((Q_1 - ZP_1) * S_1)
+            #
+            # yields:
+            #
+            # (Q_2 - ZP_2) == (Q_0 - ZP_0) * (Q_1 - ZP_1)
+            # S_2 = S_0 * S_1
+            output_scale = math.prod(
+                (qp.get_scale_per_tensor() for qp in inputs_qparams.values())
+            )
+            return self._int32_qargs(output_scale)
         else:
             raise ValueError(f"Not a valid target: {target}")
 
@@ -187,7 +253,7 @@ class InsertRescaleInt32Pass(ArmPass):
         modified = False
         for i in qargs:
             qp = qargs[i]
-            if qp.dtype != torch.int8:
+            if qp.dtype not in (torch.int8, torch.int16):
                 continue
 
             arg_node = args_copy[i]
@@ -202,10 +268,10 @@ class InsertRescaleInt32Pass(ArmPass):
                     (
                         arg_node,
                         torch.int32,
-                        qp.get_scale_per_tensor()
-                        / rescale_qargs[
-                            i
-                        ].get_scale_per_tensor(),  # Old scale / new scale
+                        [
+                            qp.get_scale_per_tensor()
+                            / rescale_qargs[i].get_scale_per_tensor()
+                        ],  # [Old scale / new scale]
                         qp.get_zp_per_tensor(),  # Old zero point
                         rescale_qargs[i].get_zp_per_tensor(),  # New zero point
                     ),
@@ -226,7 +292,7 @@ class InsertRescaleInt32Pass(ArmPass):
         assert rescale_qargs is not None
 
         qarg = qargs[0]
-        if qarg.dtype != torch.int8:
+        if qarg.dtype not in (torch.int8, torch.int16):
             return False
 
         users_copy = list(node.users)
@@ -237,9 +303,11 @@ class InsertRescaleInt32Pass(ArmPass):
                 exir_ops.backend.tosa.RESCALE.default,
                 (
                     node,
-                    torch.int8,
-                    rescale_qargs.get_scale_per_tensor()
-                    / qarg.get_scale_per_tensor(),  # Old scale / new scale
+                    qarg.dtype,
+                    [
+                        rescale_qargs.get_scale_per_tensor()
+                        / qarg.get_scale_per_tensor()
+                    ],  # [Old scale / new scale]
                     rescale_qargs.get_zp_per_tensor(),  # Old zero point
                     qarg.get_zp_per_tensor(),  # New zero point
                 ),

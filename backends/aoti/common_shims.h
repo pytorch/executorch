@@ -59,7 +59,11 @@ int32_t aoti_torch_device_type_cpu();
 int32_t aoti_torch_layout_strided();
 int32_t aoti_torch_dtype_float32();
 int32_t aoti_torch_dtype_bfloat16();
+int32_t aoti_torch_dtype_int8();
+int32_t aoti_torch_dtype_int16();
+int32_t aoti_torch_dtype_int32();
 int32_t aoti_torch_dtype_int64();
+int32_t aoti_torch_dtype_bool();
 
 // Dtype utility function needed by Metal backend
 size_t aoti_torch_dtype_element_size(int32_t dtype);

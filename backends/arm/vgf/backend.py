@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 #
 # Main implementation of AoT flow to partition and preprocess for VGF target
@@ -18,13 +17,24 @@ import subprocess
 import tempfile
 from typing import final, List
 
-from executorch.backends.arm.tosa.backend import (
+from executorch.backends.arm.tosa.backend import (  # type: ignore[import-not-found]
     arm_get_first_delegation_tag,
     TOSABackend,
 )
-from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
-from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
-from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+from executorch.backends.arm.vgf.compile_spec import (  # type: ignore[import-not-found]
+    VgfCompileSpec,
+)
+from executorch.backends.arm.vgf.model_converter import (  # type: ignore[import-not-found]
+    require_model_converter_binary,
+)
+from executorch.exir.backend.backend_details import (  # type: ignore[import-not-found]
+    BackendDetails,
+    PreprocessResult,
+)
+from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
+    CompileSpec,
+)
 from torch.export.exported_program import ExportedProgram
 
 # debug functionality
@@ -97,9 +107,10 @@ def vgf_compile(
             f.write(tosa_flatbuffer)
 
         additional_flags = " ".join(compile_flags)
+        converter_binary = require_model_converter_binary()
         vgf_path = tosa_path + ".vgf"
         conversion_command = (
-            f"model-converter {additional_flags} -i {tosa_path} -o {vgf_path}"
+            f"{converter_binary} {additional_flags} -i {tosa_path} -o {vgf_path}"
         )
         try:
             subprocess.run(
@@ -112,7 +123,7 @@ def vgf_compile(
                 Stdout:\n{process_error.stdout.decode()}"
             )
 
-        if artifact_path is not None:
+        if artifact_path:
             logger.info(f"Emitting debug output to: {vgf_path=}")
             os.makedirs(artifact_path, exist_ok=True)
             cp = f"cp {vgf_path} {artifact_path}"

@@ -17,7 +17,10 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 from torchvision import transforms  # type: ignore[import-untyped]
-from torchvision.models import resnet18, ResNet18_Weights
+from torchvision.models import (  # type: ignore[import-untyped]
+    resnet18,
+    ResNet18_Weights,
+)
 
 model = resnet18(weights=ResNet18_Weights)
 model = model.eval()
@@ -79,9 +82,6 @@ def test_resnet_u55_INT(per_channel_quantization):
 
 
 @pytest.mark.slow
-@pytest.mark.xfail(
-    reason="For resnet18 for Ethos-U85, the SRAM memory footprint is very high. The compiler team is investigating."
-)
 @common.XfailIfNoCorstone320
 @common.parametrize("per_channel_quantization", quant_test_data)
 def test_resnet_u85_INT(per_channel_quantization):

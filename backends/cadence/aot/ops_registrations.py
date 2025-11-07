@@ -7,7 +7,7 @@
 # pyre-strict
 
 from math import prod
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 import torch
 from executorch.backends.cadence.aot.utils import (
@@ -20,6 +20,67 @@ from torch._meta_registrations import _linalg_svd_meta
 from torch.library import Library, register_fake
 
 lib = Library("cadence", "DEF")
+
+# Track meta kernels that have been registered
+_REGISTERED_META_KERNELS: set[str] = set()
+
+
+# Original register_fake function to use for registrations
+_register_fake_original = register_fake
+
+_OUTPUTS_TYPE = torch.Tensor | tuple[torch.Tensor, ...]
+
+
+def _validate_ref_impl_exists() -> None:
+    """
+    Validates that all registered meta kernels have corresponding reference implementations.
+    This is called at module initialization time after both files have been imported.
+    """
+
+    # Import here after module initialization to ensure ref_implementations has been loaded
+    from executorch.backends.cadence.aot.ref_implementations import (
+        get_registered_ref_implementations,
+    )
+
+    # If reference implementation should not be in
+    # executorch.backends.cadence.aot.ref_implementations, add here
+    _SKIP_OPS = {
+        "cadence::roi_align_box_processor",
+    }
+
+    ref_impls = get_registered_ref_implementations()
+    error_impls = []
+    for op_name in _REGISTERED_META_KERNELS:
+        # Strip the namespace prefix if present (e.g., "cadence::" -> "")
+        op_name_clean = op_name.split("::")[-1] if "::" in op_name else op_name
+
+        if op_name_clean not in ref_impls:
+            if op_name not in _SKIP_OPS:
+                error_impls.append(op_name)
+
+    if error_impls:
+        error_msg = (
+            f"The following {len(error_impls)} meta kernel registrations are missing reference implementations:\n"
+            + "\n".join(f"  - {op}" for op in error_impls)
+            + "\n\nPlease add reference implementations in ref_implementations.py using "
+            + "@impl_tracked(m, '<op_name>')."
+        )
+
+        raise RuntimeError(error_msg)
+
+
+# Wrap register_fake to track all registrations
+def register_fake(
+    op_name: str,
+) -> Callable[[Callable[..., _OUTPUTS_TYPE]], Callable[..., _OUTPUTS_TYPE]]:
+    """
+    Wrapped version of register_fake that tracks all meta kernel registrations.
+    This enables validation that all meta kernels have reference implementations.
+    """
+    global _REGISTERED_META_KERNELS
+    _REGISTERED_META_KERNELS.add(op_name)
+    return _register_fake_original(op_name)
+
 
 lib.define(
     "quantize_per_tensor(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
@@ -340,7 +401,6 @@ lib.define(
     "im2row.per_tensor(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, "
     "int in_zero_point, bool channel_last=False) -> (Tensor out)"
 )
-lib.define("linalg_vector_norm(Tensor X) -> (Tensor Y)")
 lib.define(
     "linalg_svd(Tensor A, bool full_matrices=False, bool compute_uv=True, str? driver=None) -> (Tensor U, Tensor S, Tensor Vh)"
 )
@@ -496,7 +556,6 @@ lib.define(
 lib.define(
     "fully_connected.out(Tensor input, Tensor weight, Tensor? bias=None, *, Tensor(a!) out) -> Tensor(a!)"
 )
-lib.define("linalg_vector_norm.out(Tensor X, *, Tensor(a!) out) -> Tensor(a!)")
 lib.define(
     "quantized_fully_connected.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
@@ -558,10 +617,10 @@ lib.define(
     "int sampling_ratio, bool aligned) -> (Tensor out)"
 )
 lib.define(
-    "_softmax_f32_f32(Tensor self, int dim, bool? half_to_float) -> (Tensor out)"
+    "_softmax_f32_f32(Tensor self, int dim, bool? half_to_float = None) -> (Tensor out)"
 )
 lib.define(
-    "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float, *, Tensor(a!) out) -> Tensor(a!)"
+    "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float = None, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -1900,15 +1959,6 @@ def im2row_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-# Define the abstract implementations of the operators as required
-@register_fake("cadence::linalg_vector_norm")
-def linalg_vector_norm_meta(
-    X: torch.Tensor,
-) -> torch.Tensor:
-    # Output of norm is a scalar, so we return a [] tensor
-    return X.new_empty([], dtype=X.dtype)
-
-
 @register_fake("cadence::linalg_svd")
 def linalg_svd_meta(
     A: torch.Tensor,
@@ -2406,7 +2456,9 @@ def idma_load_impl(
     task_num: int = 0,
     channel: int = 0,
 ) -> torch.Tensor:
-    return copy_idma_copy_impl(src, task_num, channel)
+    res = copy_idma_copy_impl(src, task_num, channel)
+    assert isinstance(res, torch.Tensor)
+    return res
 
 
 @register_fake("cadence::idma_store")
@@ -2415,7 +2467,9 @@ def idma_store_impl(
     task_num: int = 0,
     channel: int = 0,
 ) -> torch.Tensor:
-    return copy_idma_copy_impl(src, task_num, channel)
+    res = copy_idma_copy_impl(src, task_num, channel)
+    assert isinstance(res, torch.Tensor)
+    return res
 
 
 @register_fake("cadence::roi_align_box_processor")
@@ -2575,12 +2629,13 @@ def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_meta(
 
 @register_fake("cadence::_softmax_f32_f32")
 def softmax_f32_f32_meta(
-    self: torch.Tensor,
+    input_tensor: torch.Tensor,
     dim: int,
-    dtype: torch.dtype,
     half_to_float: Optional[bool] = None,
 ) -> torch.Tensor:
-    return self.new_empty(self.size(), dtype=self.dtype)
+    assert input_tensor.dtype == torch.float32, "input_tensor must be float32"
+    assert not half_to_float, "half_to_float is not supported"
+    return input_tensor.new_empty(input_tensor.size(), dtype=torch.float32)
 
 
 @register_fake("cadence::quantized_softmax")
@@ -2622,6 +2677,9 @@ def quantized_w8a32_linear_meta(
     # output comes in empty with shape [leading_dims, out_dim]
     src_shape = list(src.shape)
     weight_shape = weight.shape
+    assert (src_shape[-1] % 4) == 0
+    if len(src_shape) >= 2:
+        assert src_shape[-2] == 1
     assert len(weight_shape) == 2
     assert src_shape[-1] == weight_shape[-1]
     src_shape[-1] = weight_shape[0]
@@ -2636,12 +2694,15 @@ def quantized_w8a32_conv_meta(
     bias: torch.Tensor,
     b_scale: float,
 ) -> torch.Tensor:
-    # src comes in shape [batch, in_channel, in_length]
-    # weight comes in shape [out_ch, in_ch, kernel_dim]
+    # src comes in shape [batch, in_length, in_channels]
+    # weight comes in shape [kernel_dim, out_ch, in_ch]
     # output comes in empty with shape [batch, out_ch, in_length - kernel_dim + 1]
     assert len(src.shape) == 3
 
     kernel_size, out_channels, in_channels = weight.shape
+    assert kernel_size == 3
+    assert (out_channels % 4) == 0
+    assert (in_channels % 4) == 0
     assert in_channels == src.shape[-1]
 
     # Compute the output tensor size
@@ -2670,4 +2731,9 @@ def quantized_w8a32_gru_meta(
     bias_hidden: torch.Tensor,
     b_h_scale: float,
 ) -> torch.Tensor:
-    return inputs.new_empty((2, hidden.shape[-1]), dtype=inputs.dtype)
+    return hidden.new_empty((2, hidden.shape[-1]), dtype=torch.float32)
+
+
+# Validate that all meta kernels have reference implementations
+# This is called at module import time to catch missing implementations early
+_validate_ref_impl_exists()

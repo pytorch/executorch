@@ -5,12 +5,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
 )
+
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.quantizer.patterns import (
     AbsPattern,
+    ActivationsConcatClusterPattern,
     AdaptiveAvgPoolPattern,
     AddmmPattern,
     AddTensorPattern,
@@ -181,7 +183,8 @@ bias_qspec = None
 
 
 class NeutronQuantizer(ComposableQuantizer):
-    def __init__(self):
+    def __init__(self, neutron_target_spec: NeutronTargetSpec):
+        self.neutron_target_spec = neutron_target_spec
         static_qconfig = QuantizationConfig(act_qspec, act_qspec, wgt_qspec, None)
         static_fc_qconfig = QuantizationConfig(act_qspec, act_qspec, wgt_fc_qspec, None)
         super().__init__(
@@ -189,19 +192,19 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(AbsPattern(), static_qconfig),
                 NeutronAtenQuantizer(AdaptiveAvgPoolPattern(), static_qconfig),
                 NeutronAtenQuantizer(AddTensorPattern(), static_qconfig),
-                NeutronAtenQuantizer(AddmmPattern(), static_fc_qconfig),
+                NeutronAtenQuantizer(AddmmPattern(self), static_fc_qconfig),
                 NeutronAtenQuantizer(AvgPoolPattern(), static_qconfig),
                 NeutronAtenQuantizer(CatPattern(), static_qconfig),
                 NeutronAtenQuantizer(Conv1dPattern(), static_qconfig),
-                NeutronAtenQuantizer(Conv2dPattern(), static_qconfig),
+                NeutronAtenQuantizer(Conv2dPattern(self), static_qconfig),
                 NeutronAtenQuantizer(DropoutPattern(), static_qconfig),
                 NeutronAtenQuantizer(FlattenPattern(), static_qconfig),
                 NeutronAtenQuantizer(HardTanhPattern(), static_qconfig),
                 NeutronAtenQuantizer(HardTanhInPlacePattern(), static_qconfig),
-                NeutronAtenQuantizer(LinearPattern(), static_fc_qconfig),
+                NeutronAtenQuantizer(LinearPattern(self), static_fc_qconfig),
                 NeutronAtenQuantizer(MaxPoolPattern(), static_qconfig),
                 NeutronAtenQuantizer(MeanDimPattern(), static_qconfig),
-                NeutronAtenQuantizer(MmPattern(), static_qconfig),
+                NeutronAtenQuantizer(MmPattern(self), static_qconfig),
                 NeutronAtenQuantizer(PadPattern(), static_qconfig),
                 NeutronAtenQuantizer(PermutePattern(), static_qconfig),
                 NeutronAtenQuantizer(ReluPattern(), static_qconfig),
@@ -223,13 +226,16 @@ class NeutronQuantizer(ComposableQuantizer):
         self.op_to_applied_quantizer = {
             pt: False for q in self.quantizers for pt in q.pattern.partition_types()
         }
+        self.cluster_quantizers = [
+            NeutronAtenQuantizer(ActivationsConcatClusterPattern(self), static_qconfig)
+        ]
 
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
         model.graph.eliminate_dead_code()  # Remove dead code to simplify the graph for the passes.
 
-        model = NeutronAtenPassManager()(model).graph_module
+        model = NeutronAtenPassManager(self.neutron_target_spec)(model).graph_module
 
         model.graph.eliminate_dead_code()  # Remove dead code again, in case it was created by the passes.
 
@@ -237,6 +243,10 @@ class NeutronQuantizer(ComposableQuantizer):
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
         self._annotate_inputs(model)
+
+        # Annotate node clusters in model
+        for cluster_quantizer in self.cluster_quantizers:
+            cluster_quantizer.annotate(model)
 
         nodes = list(model.graph.nodes)
         for node in nodes:

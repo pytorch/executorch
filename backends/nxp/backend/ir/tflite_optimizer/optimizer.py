@@ -11,12 +11,6 @@ from typing import Callable
 
 from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_activation_functions import (
-    FuseActivationFunctions,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.move_relu_before_concat import (
-    MoveActivationBeforeConcatenation,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.permute_fully_connected_weights_after_reshape import (
     PermuteFullyConnectedWeightsAfterReshape,
 )
@@ -27,14 +21,10 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_tra
 
 
 class Optimization(Enum):
-    FUSE_ACTIVATION_FUNCTIONS = 1
-
     FUSE_TRANSPOSE_OPERATORS = 5
     REMOVE_IDENTITY_TRANSPOSE_OPERATORS = 6
 
     PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE = 12
-
-    MOVE_ACTIVATION_BEFORE_CONCAT = 15
 
 
 class Optimizer:
@@ -64,9 +54,6 @@ class Optimizer:
         self._builder = builder
 
         self.optimization_map = {
-            Optimization.FUSE_ACTIVATION_FUNCTIONS: FuseActivationFunctions(
-                builder, conversion_config
-            ),
             Optimization.FUSE_TRANSPOSE_OPERATORS: FuseTransposeOperators(
                 builder, conversion_config
             ),
@@ -74,9 +61,6 @@ class Optimizer:
                 builder, conversion_config
             ),
             Optimization.PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE: PermuteFullyConnectedWeightsAfterReshape(
-                builder, conversion_config
-            ),
-            Optimization.MOVE_ACTIVATION_BEFORE_CONCAT: MoveActivationBeforeConcatenation(
                 builder, conversion_config
             ),
         }

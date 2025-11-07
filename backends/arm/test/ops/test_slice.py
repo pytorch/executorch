@@ -7,7 +7,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
@@ -77,13 +76,7 @@ def test_slice_tensor_tosa_INT_nhwc(test_data: torch.Tensor):
     pipeline.run()
 
 
-x_fails = {
-    "ones_slice_3": "MLETORCH-1402: Slice operator has incorrect number of inputs",
-    "ones_slice_4": "MLETORCH-1402: Slice operator has incorrect number of inputs",
-}
-
-
-@common.parametrize("test_data", test_data_suite, x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_slice_tensor_u55_INT(test_data: torch.Tensor):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -95,7 +88,7 @@ def test_slice_tensor_u55_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite, x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_slice_tensor_u85_INT(test_data: torch.Tensor):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -153,9 +146,6 @@ def get_symmetric_a16w8_slice_quantizer(per_channel_quantization=False):
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.xfail(
-    reason="missing int16 slice ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13976"
-)
 def test_slice_tensor_16a8w_tosa_INT(test_data: torch.Tensor):
     """Test slice operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -181,9 +171,6 @@ def test_slice_tensor_16a8w_tosa_INT(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 slice operations"
-)
 def test_slice_tensor_16a8w_u55_INT16(test_data: torch.Tensor):
     """Test slice operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -208,9 +195,6 @@ def test_slice_tensor_16a8w_u55_INT16(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 slice operations"
-)
 def test_slice_tensor_16a8w_u85_INT16(test_data: torch.Tensor):
     """Test slice operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False

@@ -3,9 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Any, List
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -41,24 +42,23 @@ class GreaterEqualVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, inputs, ts)
         validate_valid_dtype(
             self.target,
             inputs,
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.FP32],
             output.tosa_spec,
         )
         validate_valid_dtype(self.target, output, ts.DType.BOOL, output.tosa_spec)
 
+        attr = ts.TosaSerializerAttribute()
+        attr.GreaterEqualAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().GREATER_EQUAL,
+            ts.Op.GREATER_EQUAL,
             [inputs[0].name, inputs[1].name],
             [output.name],
-            None,
+            attr,
         )

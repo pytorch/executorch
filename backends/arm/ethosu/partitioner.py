@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import final, Optional, Sequence
 
@@ -18,7 +17,7 @@ class EthosUPartitioner(TOSAPartitioner):
     """
     Partitions subgraphs supported by the Arm Ethos-U backend.
 
-    Attributes:
+    Args:
         compile_spec: List of CompileSpec objects for Ethos-U backend.
         additional_checks: Optional sequence of additional operator support checks.
     """

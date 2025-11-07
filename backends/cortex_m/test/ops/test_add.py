@@ -104,11 +104,15 @@ test_cases = {
     ),
     "tensor_scalar": McuTestCase(
         CortexMScalarAdd(),
-        (torch.ones(2, 2), 1.0),
+        (torch.ones(1), 1.1),
     ),
     "scalar_tensor": McuTestCase(
         CortexMScalarAdd(),
-        (1000.0, torch.ones(2, 2)),
+        (1000.1, torch.ones(1)),
+    ),
+    "tensor_tensor": McuTestCase(
+        CortexMTensorAdd(),
+        (torch.rand(2, 2) * 10, torch.rand(2, 2)),
     ),
     "broadcast_1": McuTestCase(
         CortexMTensorAdd(),
@@ -136,15 +140,18 @@ test_cases = {
 
 
 dialect_xfails = {
-    "self_scalar": ("'float' object has no attribute 'fake_mode'", AttributeError),
-    "self_rank_1": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_2_pos": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_3_neg": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_4_small": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_5": ("Output 0 does not match reference output", AssertionError),
-    "scalar_scalar": ("'float' object has no attribute 'fake_mode'", AttributeError),
-    "broadcast_3": ("Output 0 does not match reference output", AssertionError),
-    "alpha": ("Expecting kwargs for aten op IR to be empty", AssertionError),
+    "self_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "scalar_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "alpha": (
+        "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
+        AssertionError,
+    ),
 }
 
 
@@ -157,19 +164,30 @@ def test_dialect_add(test_case):
 
 
 implementation_xfails = {
-    "self_scalar": ("'float' object has no attribute 'fake_mode'", AttributeError),
-    "self_rank_1": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_2_pos": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_3_neg": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_4_small": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_5": ("Output 0 does not match reference output", AssertionError),
-    "scalar_scalar": ("'float' object has no attribute 'fake_mode'", AttributeError),
-    "tensor_scalar": ("Output 0 does not match reference output", AssertionError),
-    "scalar_tensor": ("Output 0 does not match reference output", AssertionError),
-    "broadcast_1": ("Output 0 does not match reference output", AssertionError),
-    "broadcast_2": ("Output 0 does not match reference output", AssertionError),
-    "broadcast_3": ("Output 0 does not match reference output", AssertionError),
-    "alpha": ("Expecting kwargs for aten op IR to be empty", AssertionError),
+    "self_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "scalar_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "broadcast_1": (
+        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
+        RuntimeError,
+    ),
+    "broadcast_2": (
+        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
+        RuntimeError,
+    ),
+    "broadcast_3": (
+        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
+        RuntimeError,
+    ),
+    "alpha": (
+        "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
+        AssertionError,
+    ),
 }
 
 

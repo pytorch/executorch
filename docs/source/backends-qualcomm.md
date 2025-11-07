@@ -53,7 +53,7 @@ For more details and troubleshooting, refer to the official Microsoft WSL instal
 👉 [Install WSL | Microsoft Learn](https://learn.microsoft.com/en-us/windows/wsl/install)
 
 ### Hardware:
-You will need an Android smartphone with adb-connected running on one of below Qualcomm SoCs:
+You will need an Android / Linux device with adb-connected running on one of below Qualcomm SoCs:
  - SA8295
  - SM8450 (Snapdragon 8 Gen 1)
  - SM8475 (Snapdragon 8 Gen 1+)
@@ -62,7 +62,7 @@ You will need an Android smartphone with adb-connected running on one of below Q
  - SM8750 (Snapdragon 8 Elite)
  - SSG2115P
  - SSG2125P
- - SXR1230P
+ - SXR1230P (Linux Embedded)
  - SXR2230P
  - SXR2330P
 
@@ -73,6 +73,7 @@ This example is verified with SM8550 and SM8450.
  - Follow ExecuTorch recommended Python version.
  - A compiler to compile AOT parts, e.g., the GCC compiler comes with Ubuntu LTS.
  - [Android NDK](https://developer.android.com/ndk). This example is verified with NDK 26c.
+ - (Optional) Target toolchain for linux embedded platform.
  - [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
    - Click the "Get Software" button to download the latest version of the QNN SDK.
    - Although newer versions are available, we have verified and recommend using QNN 2.37.0 for stability.
@@ -130,8 +131,11 @@ The above script is actively used. It is updated more frequently than this tutor
 An example usage is
 ```bash
 cd $EXECUTORCH_ROOT
+# android target
 ./backends/qualcomm/scripts/build.sh
-# or
+# (optional) linux embedded target
+./backends/qualcomm/scripts/build.sh --enable_linux_embedded
+# for release build
 ./backends/qualcomm/scripts/build.sh --release
 ```
 
@@ -272,7 +276,10 @@ I 00:00:00.364875 executorch:qnn_executor_runner.cpp:425] Write etdump to etdump
 The model is merely executed. If we want to feed real inputs and get model outputs, we can use
 ```bash
 cd $EXECUTORCH_ROOT
+# android
 python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8550 --download -s <device_serial>
+# (optional) linux embedded
+python -m examples.qualcomm.scripts.deeplab_v3 -b build-oe-linux -m SXR1230P --download -s <device_serial> -t aarch64-oe-linux-gcc-9.3
 ```
 The `<device_serial>` can be found by `adb devices` command.
 
@@ -285,6 +292,13 @@ The model, inputs, and output location are passed to `qnn_executorch_runner` by 
 ## Supported model list
 
 Please refer to `$EXECUTORCH_ROOT/examples/qualcomm/scripts/` and `$EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/` to the list of supported models.
+
+Each script demonstrates:
+- Model export (torch.export)
+- Quantization (PTQ/QAT)
+- Lowering and compilation to QNN delegate
+
+Deployment on device or HTP emulator
 
 ## How to Support a Custom Model in HTP Backend
 
@@ -389,12 +403,86 @@ with open(model_name, "wb") as f:
 print(f"Model successfully exported to {model_name}")
 ```
 
-## What is coming?
+## Deep Dive
 
- - Improve the performance for llama3-8B-Instruct and support batch prefill.
- - We will support pre-compiled binaries from [Qualcomm AI Hub](https://aihub.qualcomm.com/).
+### Partitioner API
+
+The **QnnPartitioner** identifies and groups supported subgraphs for execution on the QNN backend.  
+It uses `QnnOperatorSupport` to check node-level compatibility with the Qualcomm backend via QNN SDK APIs.
+
+The partitioner tags supported nodes with a `delegation_tag` and handles constants, buffers, and mutable states appropriately.
+Please checkout [QNNPartitioner](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/partition/qnn_partitioner.py#L125) for the latest changes. It mostly supports the following 4 inputs, and only compile spec is required
+```python
+class QnnPartitioner(Partitioner):
+    """
+    QnnPartitioner identifies subgraphs that can be lowered to QNN backend, by tagging nodes for delegation,
+    and manages special cases such as mutable buffers and consumed constants.
+    """
+
+    def __init__(
+        self,
+        compiler_specs: List[CompileSpec],
+        skip_node_id_set: set = None,
+        skip_node_op_set: set = None,
+        skip_mutable_buffer: bool = False,
+    ):
+        ...
+```
+
+### Quantization
+Quantization in the QNN backend supports multiple data bit-widths and training modes (PTQ/QAT).
+The QnnQuantizer defines quantization configurations and annotations compatible with Qualcomm hardware.
+
+Supported schemes include:
+- 8a8w (default)
+- 16a16w
+- 16a8w
+- 16a4w
+- 16a4w_block
+
+
+Highlights:
+- QuantDtype enumerates bit-width combinations for activations and weights.
+- ModuleQConfig manages per-layer quantization behavior and observers.
+- QnnQuantizer integrates with PT2E prepare/convert flow to annotate and quantize models.
+
+Supports:
+
+- Per-channel and per-block quantization
+
+- Custom quant annotation via custom_quant_annotations
+
+- Skipping specific nodes or ops
+
+- Per-module customization via submodule_qconfig_list
+
+For details, see: backends/qualcomm/quantizer/quantizer.py
+
+### Operator Support
+[The full operator support matrix](https://github.com/pytorch/executorch/tree/f32cdc3de6f7176d70a80228f1a60bcd45d93437/backends/qualcomm/builders#operator-support-status is tracked and frequently updated in the ExecuTorch repository.
+
+It lists:
+- Supported PyTorch ops (aten.*, custom ops)
+- Planned ops
+- Deprecated ops
+
+This matrix directly corresponds to the implementations in: [executorch/backends/qualcomm/builders/node_visitors/*.py](https://github.com/pytorch/executorch/tree/main/backends/qualcomm/builders)
+
+### Custom Ops Support
+
+You can extend QNN backend support for your own operators.
+Follow the [tutorial](https://github.com/pytorch/executorch/tree/f32cdc3de6f7176d70a80228f1a60bcd45d93437/examples/qualcomm/custom_op#custom-operator-support):
+
+It covers:
+- Writing new NodeVisitor for your op
+- Registering via @register_node_visitor
+- Creating and linking libQnnOp*.so for the delegate
+- Testing and verifying custom kernels on HTP
 
 ## FAQ
 
 If you encounter any issues while reproducing the tutorial, please file a github
 [issue](https://github.com/pytorch/executorch/issues) on ExecuTorch repo and tag use `#qcom_aisw` tag
+
+ ### Debugging tips
+ - Before trying any complicated models, try out [a simple model example](https://github.com/pytorch/executorch/tree/f32cdc3de6f7176d70a80228f1a60bcd45d93437/examples/qualcomm#simple-examples-to-verify-the-backend-is-working) and see it if works one device.

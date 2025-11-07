@@ -10,7 +10,6 @@ Ethos-U55 subset of TOSA.
 
 """
 
-# pyre-unsafe
 
 import typing
 from typing import cast
@@ -19,6 +18,9 @@ import torch
 import torch.fx as fx
 
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.convert_permute_singleton_to_view_pass import (
+    is_singleton_permutation,
+)
 from executorch.backends.arm._passes.insert_table_ops import TableOps
 from executorch.backends.arm.operators.op_permute import transform_permutation_vector
 from executorch.backends.arm.tosa.utils import tosa_shape
@@ -114,9 +116,9 @@ class EthosU55DtypeSupport(OperatorSupportBase):
                 return False
 
         if node.target in self.target_ops_i8:
-            if dtype not in (torch.int8,):
+            if dtype not in (torch.int8, torch.int16):
                 self.reporter.report_reject(
-                    node, f"Unsupported dtype {dtype} (Supports i8)."
+                    node, f"Unsupported dtype {dtype} (Supports i8, i16)."
                 )
                 return False
 
@@ -431,10 +433,17 @@ class EthosU55TransposeCheck(OperatorSupportBase):
     ) -> bool:
         """Return True if permutation meets i8/i16 constraints."""
         N, H, W, C = nhwc_shape
+
+        if is_singleton_permutation(nhwc_shape, permutation):
+            return True
+
         match permutation:
             case (0, 1, 2, 3):  # NHWC -> NHWC
                 return True
-            case (0, 2, 1, 3) | (0, 1, 3, 2) | (0, 3, 1, 2):  # NHWC -> NWHC, NHCW, NCWH
+            case (
+                (0, 2, 1, 3) | (0, 1, 3, 2) | (0, 3, 1, 2) | (0, 2, 3, 1) | (0, 3, 2, 1)
+            ):
+                # NHWC -> NWHC, NHCW, NCWH, NCHW, NCHW -> NHWC
                 return N * H <= 65536 and W <= 65536 and C <= 65536
             case _:
                 return self.axes_product(nhwc_shape) <= 65536

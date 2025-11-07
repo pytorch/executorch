@@ -3,13 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
 
 import logging
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -19,7 +18,7 @@ INT32_MIN = torch.iinfo(torch.int32).min
 INT32_MAX = torch.iinfo(torch.int32).max
 
 
-class ConvertInt64ConstOpsToInt32Pass(ExportPass):
+class ConvertInt64ConstOpsToInt32Pass(ArmPass):
     """
     Rewrite constant ops that produce int64 to int32 where safe.
 

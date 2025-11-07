@@ -4,12 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 """Provide a visitor for lowering batched matmul (BMM) to TOSA."""
 
 from typing import Any, List
 
 import torch
+import tosa_serializer as ts
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -49,8 +49,6 @@ class MatmulVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         """Define the TOSA ``MATMUL`` operator."""
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs], ts)
         validate_valid_dtype(
@@ -74,16 +72,19 @@ class MatmulVisitor(NodeVisitor):
         else:
             input0_zp, input1_zp = 0, 0
 
-        input_A_ZP_name = f"{node.name}_A_ZP"
-        input_B_ZP_name = f"{node.name}_B_ZP"
+        input_A_ZP_name = f"{output.name}_A_ZP"
+        input_B_ZP_name = f"{output.name}_B_ZP"
         tosa_graph.addConst([1], inputs[0].dtype, [input0_zp], name=input_A_ZP_name)
         tosa_graph.addConst([1], inputs[1].dtype, [input1_zp], name=input_B_ZP_name)
 
         # Add the MATMUL to the TOSA graph.
+        attr = ts.TosaSerializerAttribute()
+        attr.MatMulAttribute()
+
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().MATMUL,
+            ts.Op.MATMUL,
             [
                 inputs[0].name,
                 inputs[1].name,
@@ -91,4 +92,5 @@ class MatmulVisitor(NodeVisitor):
                 input_B_ZP_name,
             ],
             [output.name],
+            attr,
         )
