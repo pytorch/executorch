@@ -153,14 +153,22 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 if len(n.users) == 0:
                     graph_module.graph.erase_node(n)
 
-    def _handle_cond_node(self, node: Node, graph_module: GraphModule):
+    def _handle_control_flow_node(self, node: Node, graph_module: GraphModule):
         """Fold outmost quant nodes inside submodule.
         placeholders => qs => dqs => ... => qs => dqs => output
         becomes
         placeholders => dqs => ... => qs => output,
         With output_qparams meta in the placeholders, and input_qparams meta in the output node.
         """
-        submodule_nodes = cast(list[Node], node.args[1:3])
+        match node.target:
+            case torch.ops.higher_order.cond:
+                submodule_nodes = cast(list[Node], node.args[1:3])
+                args = cast(list[Node], node.args[-1])
+            case torch.ops.higher_order.while_loop:
+                submodule_nodes = cast(list[Node], node.args[0:2])
+                args = cast(list[Node], node.args[-2])
+            case _:
+                raise ValueError(f"Unhandled target {node.target}")
         submodules = (
             graph_module.get_submodule(str(submodule_node.target))
             for submodule_node in submodule_nodes
@@ -170,7 +178,9 @@ class FoldAndAnnotateQParamsPass(ArmPass):
             output_node = submodule.graph.output_node()
             output_node.meta["input_qparams"] = {}
             nodes_to_remove = []
+            arg_id = 0
             for submodule_node in submodule.graph.nodes:
+                # Remove initial q nodes and ending dq nodes in the module.
                 submodule_node = cast(Node, submodule_node)
                 if (
                     submodule_node.target in Q_OPS
@@ -185,21 +195,37 @@ class FoldAndAnnotateQParamsPass(ArmPass):
 
                     submodule_node.replace_all_uses_with(input_node)
                     nodes_to_remove.append(submodule_node)
-                if (
-                    submodule_node.target in DQ_OPS
-                    and list(submodule_node.users)[0].op == "output"
-                ):
-                    input_node = cast(Node, submodule_node.args[0])
-                    arg_index = cast(list[Node], output_node.args[0]).index(
-                        submodule_node
-                    )
-                    quant_args = QuantArgs.from_operator(
-                        submodule_node.target, submodule_node.args
-                    )
-                    output_node.meta["input_qparams"][arg_index] = quant_args
+                if submodule_node.target in DQ_OPS:
+                    has_non_output_user = False
+                    for user in copy.copy(submodule_node.users):
+                        if user.op != "output":
+                            has_non_output_user = True
+                        else:
+                            input_node = cast(Node, submodule_node.args[0])
+                            submodule_node.replace_all_uses_with(input_node)
+                            arg_index = cast(list[Node], output_node.args[0]).index(
+                                input_node
+                            )
+                            quant_args = QuantArgs.from_operator(
+                                submodule_node.target, submodule_node.args
+                            )
+                            output_node.meta["input_qparams"][arg_index] = quant_args
 
-                    submodule_node.replace_all_uses_with(input_node)
-                    nodes_to_remove.append(submodule_node)
+                    # Remove dq node if it only has the output node as its user.
+                    if not has_non_output_user:
+                        nodes_to_remove.append(submodule_node)
+                # Placeholders without users won't be retraced with correct dtype, do it manually.
+                # Control flow node input is matched to placeholder nodes in the submodule by index.
+                # This means it will break if another pass inserts a placeholder before this pass.
+                if submodule_node.op == "placeholder":
+                    if len(submodule_node.users) == 0:
+                        submodule_node.meta["val"] = args[arg_id].meta["val"]
+                    arg_id += 1
+                    if arg_id > len(args):
+                        raise RuntimeError(
+                            "Submodule had more placeholders than calling node had inputs."
+                            " This is probably due to a placeholder being inserted in a pass."
+                        )
             for node_to_remove in nodes_to_remove:
                 submodule.graph.erase_node(node_to_remove)
         return
@@ -233,8 +259,8 @@ class FoldAndAnnotateQParamsPass(ArmPass):
             n.meta["input_qparams"] = {}
             n.meta["output_qparams"] = {}
             for i, arg in enumerate(n.args):
-                if isinstance(arg, list):
-                    self.fold_and_annotate_arg(graph_module, n, arg, i)
+                if isinstance(arg, (list, tuple)):
+                    self.fold_and_annotate_arg(graph_module, n, arg, i)  # type: ignore
 
                 elif isinstance(arg, Node):
                     self.fold_and_annotate_arg(graph_module, n, [arg], i)
@@ -263,8 +289,11 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 output_dtype = output_qparams[0].dtype
                 set_node_arg(n, "dtype", output_dtype)
 
-            if n.target == torch.ops.higher_order.cond:
-                self._handle_cond_node(n, graph_module)
+            if n.target in (
+                torch.ops.higher_order.cond,
+                torch.ops.higher_order.while_loop,
+            ):
+                self._handle_control_flow_node(n, graph_module)
 
         # retrace the graph to update the fake tensor types
         graph_module = super().call(graph_module).graph_module

@@ -371,7 +371,7 @@ class InsertRescaleInt32Pass(ArmPass):
         return PassResult(graph_module, modified)
 
 
-class InsertCondRescalesPass(ArmPass):
+class InsertControlFlowRescalesPass(ArmPass):
     """The quantization parameters for tensors going into and coming out of a submodule are not guaranteed to
     match the quantization parameters for the corresponding tensors inside the submodule. For example, cond has
     different annotation on input and output, while the entire graph inside the submodule could be using shared
@@ -439,6 +439,8 @@ class InsertCondRescalesPass(ArmPass):
         input_nodes = self._get_input_nodes(submodule)
         for qargs_index in input_qparams_map:
             input_node = input_nodes[qargs_index]
+            if len(input_node.users) == 0:
+                continue
             if len(out_qparams_map := input_node.meta.get("output_qparams", {})) != 1:
                 raise ValueError(
                     f"Expected submodule input {input_node} to have exactly one output qparam, got {out_qparams_map}"
@@ -504,35 +506,61 @@ class InsertCondRescalesPass(ArmPass):
         del output_node.meta["input_qparams"]
         return modified
 
-    def _rescale_control_flow(self, node: Node, graph_module: GraphModule) -> bool:
-        modified = False
-        if_graph: GraphModule = cast(GraphModule, graph_module.get_submodule(node.args[1].target))  # type: ignore
-        else_graph: GraphModule = cast(GraphModule, graph_module.get_submodule(node.args[2].target))  # type: ignore
+    def _get_input_qparams_map(self, node: Node, idx: int):
         input_qparams_meta = cast(
             dict[int, QuantArgs], node.meta.get("input_qparams", None)
         )
         if input_qparams_meta:
-            input_qparams = cast(QuantArgs, input_qparams_meta.get(3, None))
+            input_qparams = cast(QuantArgs, input_qparams_meta.get(idx, None))
             if not input_qparams:
                 raise ValueError(
-                    f"Expected entry with key 3 in input_qparams meta, got {input_qparams_meta}"
+                    f"Expected entry with key {idx} in input_qparams meta, got {input_qparams_meta}"
                 )
-            num_inputs = len(cast(list, node.args[3]))
+            num_inputs = len(cast(list, node.args[idx]))
 
             # Currently, infra only supports one set of qparams for a list of inputs
             # Map all inputs to the same qparams.
             input_qparams_map = {i: input_qparams for i in range(num_inputs)}
-            modified |= self._rescale_submodule_inputs(if_graph, input_qparams_map)
-            modified |= self._rescale_submodule_inputs(else_graph, input_qparams_map)
+            return input_qparams_map
+        return None
 
+    def _get_output_qparams_map(self, node: Node):
         output_qparams_map: dict[int, QuantArgs] = {}
         for getitem_node in node.users:
             idx = cast(int, getitem_node.args[1])
             qparam = getitem_node.meta.get("output_qparams", None)
             if qparam:
                 output_qparams_map[idx] = cast(QuantArgs, qparam[0])
-        modified |= self._rescale_submodule_outputs(if_graph, output_qparams_map)
-        modified |= self._rescale_submodule_outputs(else_graph, output_qparams_map)
+        return output_qparams_map
+
+    def _rescale_cond_submodules(self, node: Node, graph_module: GraphModule) -> bool:
+        modified = False
+        if_graph: GraphModule = cast(GraphModule, graph_module.get_submodule(node.args[1].target))  # type: ignore
+        else_graph: GraphModule = cast(GraphModule, graph_module.get_submodule(node.args[2].target))  # type: ignore
+        input_qparams_map = self._get_input_qparams_map(node, 3)
+        if input_qparams_map:
+            modified |= self._rescale_submodule_inputs(if_graph, input_qparams_map)
+            modified |= self._rescale_submodule_inputs(else_graph, input_qparams_map)
+
+        output_qparams_map = self._get_output_qparams_map(node)
+        if output_qparams_map:
+            modified |= self._rescale_submodule_outputs(if_graph, output_qparams_map)
+            modified |= self._rescale_submodule_outputs(else_graph, output_qparams_map)
+        return modified
+
+    def _rescale_while_submodules(self, node: Node, graph_module: GraphModule):
+        modified = False
+        cond_graph: GraphModule = cast(GraphModule, graph_module.get_submodule(node.args[0].target))  # type: ignore
+        body_graph: GraphModule = cast(GraphModule, graph_module.get_submodule(node.args[1].target))  # type: ignore
+
+        input_qparams_map = self._get_input_qparams_map(node, 2)
+        if input_qparams_map:
+            modified |= self._rescale_submodule_inputs(cond_graph, input_qparams_map)
+            modified |= self._rescale_submodule_inputs(body_graph, input_qparams_map)
+
+        output_qparams_map = self._get_output_qparams_map(node)
+        if output_qparams_map:
+            modified |= self._rescale_submodule_outputs(body_graph, output_qparams_map)
         return modified
 
     def call(self, graph_module: GraphModule) -> PassResult:
@@ -540,10 +568,13 @@ class InsertCondRescalesPass(ArmPass):
 
         for node in list(graph_module.graph.nodes):
             node = cast(Node, node)
-            if node.op != "call_function" or node.target != torch.ops.higher_order.cond:
+            if node.op != "call_function":
                 continue
 
-            modified = self._rescale_control_flow(node, graph_module)
+            if node.target == torch.ops.higher_order.cond:
+                modified = self._rescale_cond_submodules(node, graph_module)
+            if node.target == torch.ops.higher_order.while_loop:
+                modified = self._rescale_while_submodules(node, graph_module)
 
         if modified:
             # Retrace the graph to update the fake tensor types

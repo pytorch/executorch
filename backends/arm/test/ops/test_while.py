@@ -128,7 +128,7 @@ def _dual_input_case(
     module_factory: Callable[[], torch.nn.Module],
 ) -> Callable[[], Tuple[torch.nn.Module, input_double]]:
     def _create() -> Tuple[torch.nn.Module, input_double]:
-        return module_factory(), (torch.zeros(2, 3), torch.full((2, 3), 2.0))
+        return module_factory(), (torch.zeros(2, 3), torch.full((2, 3), -2.0))
 
     return _create
 
@@ -156,7 +156,6 @@ def test_while_loop_tosa_FP(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
         example_inputs,
         "torch.ops.higher_order.while_loop",
         tosa_extensions=["cf"],
-        custom_path="tosa/while",
     )
     pipeline.run()
 
@@ -165,7 +164,8 @@ def test_while_loop_tosa_FP(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
     "case",
     test_cases,
     xfails={
-        name: "Quantization not implemented for while_loop." for name in test_cases
+        "additional_arg": "Support not implemented.",
+        "two_in_one_captured_out": "When only one output is used, the second one is removed, which is not allowed in TOSA.",
     },
 )
 def test_while_loop_tosa_INT(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):

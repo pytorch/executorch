@@ -89,7 +89,7 @@ from .insert_int32_casts_after_int64_placeholders import (  # noqa
     InsertInt32CastsAfterInt64PlaceholdersPass,
 )
 from .insert_rescales_pass import (  # noqa
-    InsertCondRescalesPass,
+    InsertControlFlowRescalesPass,
     InsertRescaleInt32Pass,
     InsertRescalePass,
 )

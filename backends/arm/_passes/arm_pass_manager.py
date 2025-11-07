@@ -85,7 +85,7 @@ from executorch.backends.arm._passes import (
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
     FuseViewCopyTransformPass,
-    InsertCondRescalesPass,
+    InsertControlFlowRescalesPass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescaleInt32Pass,
     InsertRescalePass,
@@ -196,7 +196,7 @@ class ArmPassManager(PassManager):
                 # Ticket: MLETORCH-1539
                 DecomposeLinearPass(),
                 InsertRescaleInt32Pass(),
-                InsertCondRescalesPass(),
+                InsertControlFlowRescalesPass(),
             ]
         )
 
