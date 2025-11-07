@@ -307,6 +307,9 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
+        # Install Vulkan-SDK for MLSDK deps
+        source .ci/scripts/setup-vulkan-linux-deps.sh
+
         .ci/scripts/setup-arm-baremetal-tools.sh --enable-mlsdk-deps --install-mlsdk-deps-with-pip
 
         # Increase number of files user can monitor to bypass buck failures.

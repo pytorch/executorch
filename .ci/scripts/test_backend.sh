@@ -57,6 +57,12 @@ if [[ "$FLOW" == *vulkan* ]]; then
 fi
 
 if [[ "$FLOW" == *arm* ]]; then
+
+    if [[ "$FLOW" == *vgf* ]]; then
+        # Setup Vulkan SDK which is required for VGF backend
+        source .ci/scripts/setup-vulkan-linux-deps.sh
+    fi
+
     # Setup ARM deps.
     .ci/scripts/setup-arm-baremetal-tools.sh
     source examples/arm/ethos-u-scratch/setup_path.sh
@@ -66,6 +72,7 @@ if [[ "$FLOW" == *arm* ]]; then
         backends/arm/scripts/build_executorch.sh
         backends/arm/test/setup_testing.sh
     fi
+
     if [[ "$FLOW" == *vgf* ]]; then
         # Prepare a test runner binary for VKML runtime
         backends/arm/test/setup_testing_vkml.sh
