@@ -37,6 +37,7 @@ enum QcomChipset: int {
   SM8450 = 36,
   SM8475 = 42,
   SM8550 = 43,
+  SA8255 = 52,
   SM8650 = 57,
   SM8750 = 69,
   SSG2115P = 46,
