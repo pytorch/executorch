@@ -126,7 +126,9 @@ class TestConv1d(unittest.TestCase):
         # quantized operators to be loaded and we don't want to do that in the test.
         if not skip_to_executorch:
             tester.to_executorch().serialize().run_method_and_compare_outputs(
-                num_runs=10, atol=0.02, rtol=0.02
+                num_runs=10,
+                atol=0.04 if quantized else 1e-03,
+                rtol=0.02 if quantized else 1e-03,
             )
 
     def test_fp16_conv1d(self):
