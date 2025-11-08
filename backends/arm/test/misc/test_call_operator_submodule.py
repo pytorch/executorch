@@ -9,7 +9,7 @@ import torch
 
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
-from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -58,7 +58,7 @@ def test_call_operator_runs_once_for_cond_submodules() -> None:
     graph_module = exported.graph_module
 
     recording_pass = _DepthRecordingPass(graph_module)
-    pass_manager = ArmPassManager(TosaSpecification.create_from_string("TOSA-1.00+FP"))
+    pass_manager = ArmPassManager(TosaCompileSpec("TOSA-1.00+FP"))
     pass_manager.add_pass(recording_pass)
     pass_manager._transform(graph_module)
 

@@ -8,6 +8,7 @@ from typing import List, Set, Type
 
 import pytest
 from executorch.backends.arm._passes.arm_pass_manager import ArmPass, ArmPassManager
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir.pass_base import ExportPass
 
@@ -30,7 +31,8 @@ class IndependentPass(ArmPass):
 
 def _setup_pass_manager(passes: List[ArmPass] | None = None):
     tosa_spec = TosaSpecification.create_from_string("TOSA-1.00+INT")
-    pass_manager = ArmPassManager(tosa_spec)
+    compile_spec = TosaCompileSpec(tosa_spec)
+    pass_manager = ArmPassManager(compile_spec)
     if passes is not None:
         for p in passes:
             pass_manager.add_pass(p)
