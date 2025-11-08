@@ -294,7 +294,7 @@ jobs:
           - test_arm_baremetal: test_model_smollm2-135M
       fail-fast: false
     with:
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

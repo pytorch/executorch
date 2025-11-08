@@ -60,8 +60,6 @@ if [[ "$FLOW" == *arm* ]]; then
 
     # Setup ARM deps.
     if [[ "$FLOW" == *vgf* ]]; then
-        # Vulkan-SDK required for VGF backend
-        source .ci/scripts/setup-vulkan-linux-deps.sh
         .ci/scripts/setup-arm-baremetal-tools.sh --enable-mlsdk-deps --install-mlsdk-deps-with-pip
     else
         .ci/scripts/setup-arm-baremetal-tools.sh
