@@ -281,13 +281,13 @@ class TestProgram(unittest.TestCase):
         )
 
         # Convert back.
-        program2 = deserialize_pte_binary(pte_data)
+        deserialized = deserialize_pte_binary(pte_data)
         # Programs are the same besides constant_buffer, as deserialization
         # does not preserve constant segment; padding may be added
         # during serialization.
-        self.assertEqual(program2.execution_plan, program.execution_plan)
+        self.assertEqual(deserialized.program.execution_plan, program.execution_plan)
         # Number of constant tensors should be the same.
-        self.assertEqual(len(program2.constant_buffer), len(program.constant_buffer))
+        self.assertEqual(len(deserialized.program.constant_buffer), len(program.constant_buffer))
 
     def test_canonicalize_delegate_indices(self) -> None:
         def make_execution_plan(
@@ -426,10 +426,9 @@ class TestProgram(unittest.TestCase):
         self.assertIsNone(eh)
 
         # Convert back.
-        program2 = deserialize_pte_binary(pte_data)
-
+        deserialized = deserialize_pte_binary(pte_data)
         # Programs should be the same.
-        self.assert_programs_equal(program, program2)
+        self.assert_programs_equal(program, deserialized.program)
 
     def test_round_trip_large_buffer_sizes(self) -> None:
         """Tests that when the non_const_buffer_sizes contains integers
@@ -439,7 +438,7 @@ class TestProgram(unittest.TestCase):
         program = get_test_program()
         program.execution_plan[0].non_const_buffer_sizes = [0, 2**48]
         flatbuffer_from_py = bytes(serialize_pte_binary(program))
-        self.assert_programs_equal(program, deserialize_pte_binary(flatbuffer_from_py))
+        self.assert_programs_equal(program, deserialize_pte_binary(flatbuffer_from_py).program)
 
     def test_round_trip_no_segments_and_no_header(self) -> None:
         """Tests that a Program serialized with extract_delegate_segments=True
@@ -463,10 +462,10 @@ class TestProgram(unittest.TestCase):
         self.assertEqual(program_with_segments.segments, [])
 
         # Convert back.
-        program2 = deserialize_pte_binary(pte_data)
+        deserialized = deserialize_pte_binary(pte_data)
 
         # Programs should be the same.
-        self.assert_programs_equal(program, program2)
+        self.assert_programs_equal(program, deserialized.program)
 
     @staticmethod
     def gen_blob_data(size: int, pattern: bytes) -> bytes:
@@ -598,8 +597,8 @@ class TestProgram(unittest.TestCase):
         # meaning that the segments were moved back to inline. This also
         # demonstrates that the contents of all segments survived, and weren't
         # truncated or corrupted.
-        program2 = deserialize_pte_binary(pte_data)
-        self.assert_programs_equal(program, program2)
+        deserialized = deserialize_pte_binary(pte_data)
+        self.assert_programs_equal(program, deserialized.program)
 
     def test_no_constants(self) -> None:
         program = get_test_program()
@@ -884,13 +883,13 @@ class TestProgram(unittest.TestCase):
         )
 
         # Convert back.
-        program2 = deserialize_pte_binary(pte_data)
+        deserialized = deserialize_pte_binary(pte_data)
         # Programs are the same besides constant_buffer, as deserialization
         # does not preserve constant segment; padding may be added
         # during serialization.
-        self.assertEqual(program2.execution_plan, program.execution_plan)
+        self.assertEqual(deserialized.program.execution_plan, program.execution_plan)
         # Number of constant tensors should be the same.
-        self.assertEqual(len(program2.constant_buffer), len(program.constant_buffer))
+        self.assertEqual(len(deserialized.program.constant_buffer), len(program.constant_buffer))
 
     def test_named_data_segments(self) -> None:
         # Set segment alignment to 12 to test the padding.
