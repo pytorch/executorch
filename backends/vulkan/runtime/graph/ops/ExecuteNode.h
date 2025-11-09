@@ -57,7 +57,8 @@ class ExecuteNode {
       const ResizeFunction& resize_fn = nullptr,
       const std::vector<ValueRef>& resize_args = {},
       const std::vector<ArgGroup>& args = {},
-      const std::string& name = "Graph Node");
+      const std::string& name = "Graph Node",
+      const bool has_data_dependent_shape = false);
 
   virtual ~ExecuteNode() = default;
 
@@ -87,6 +88,7 @@ class ExecuteNode {
   const std::vector<ValueRef> resize_args_;
   const std::vector<ArgGroup> args_;
   const std::string name_;
+  bool has_data_dependent_shape_ = false;
 };
 
 } // namespace vkcompute

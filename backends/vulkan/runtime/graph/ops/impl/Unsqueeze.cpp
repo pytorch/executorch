@@ -67,6 +67,18 @@ void resize_unsqueeze_node(
 
   std::vector<int64_t> out_sizes = graph->sizes_of(in);
 
+  std::vector<int64_t> unsqueezed_dims;
+
+  if (graph->val_is_int_list(dims_ref)) {
+    const IntListPtr dims = graph->get_int_list(dims_ref);
+    for (int64_t d : *dims) {
+      unsqueezed_dims.push_back(d);
+    }
+  } else {
+    const int64_t dim = graph->extract_scalar<int64_t>(dims_ref);
+    unsqueezed_dims.push_back(dim);
+  }
+
   // Insert singleton dimensions at the specified positions
   for (auto dim : dims_vec) {
     int64_t d = dim;

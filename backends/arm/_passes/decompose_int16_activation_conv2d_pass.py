@@ -44,9 +44,7 @@ class DecomposeConv2dWithInt16ActivationPass(ExportPass):
                     "int16 activation for convolution requires TOSA int16 extension"
                 )
         else:
-            raise NotImplementedError(
-                "Decomposition to conv+add only implemented for activation of int16 type"
-            )
+            return super().call_operator(op, args, kwargs, meta)
 
         # convolution with bias and activation is int16
         bias = args[2]

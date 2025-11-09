@@ -29,6 +29,7 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 from torch.nn import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
 from executorch.backends.nxp.nxp_backend import NeutronBackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -372,6 +373,10 @@ class NeutronPartitioner(Partitioner):
             ),
             allows_single_node_partition=True,
         )
+
+        # Identify the format (NCHW/NHWC/...) for all nodes in the graph, and store it in the `node.meta`.
+        # This format will be used by the `CapabilityBasedPartitioner` to determine which nodes will be delegated.
+        NodeFormatInference(exported_program).identify_node_formats()
 
         iteration_limit = len(exported_program.graph.nodes)
         for _ in range(iteration_limit):
