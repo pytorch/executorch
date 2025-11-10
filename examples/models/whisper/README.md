@@ -61,6 +61,7 @@ This command generates:
 Export a preprocessor to convert raw audio to mel-spectrograms:
 
 ```bash
+# Use --feature_size 128 for whisper-large-v3 and whisper-large-v3-turbo
 python -m executorch.extension.audio.mel_spectrogram \
     --feature_size 80 \
     --stack_output \
@@ -90,12 +91,20 @@ optimum-cli export executorch \
 
 ### Download Tokenizer
 
-Download the tokenizer files required for inference:
+Download the tokenizer files required for inference according to your model version:
 
+**For Whisper Small:**
 ```bash
 curl -L https://huggingface.co/openai/whisper-small/resolve/main/tokenizer.json -o tokenizer.json
 curl -L https://huggingface.co/openai/whisper-small/resolve/main/tokenizer_config.json -o tokenizer_config.json
 curl -L https://huggingface.co/openai/whisper-small/resolve/main/special_tokens_map.json -o special_tokens_map.json
+```
+
+**For Whisper Large v2:**
+```bash
+curl -L https://huggingface.co/openai/whisper-large-v2/resolve/main/tokenizer.json -o tokenizer.json
+curl -L https://huggingface.co/openai/whisper-large-v2/resolve/main/tokenizer_config.json -o tokenizer_config.json
+curl -L https://huggingface.co/openai/whisper-large-v2/resolve/main/special_tokens_map.json -o special_tokens_map.json
 ```
 
 ### Prepare Audio

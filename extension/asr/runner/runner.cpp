@@ -192,8 +192,7 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
           Info,
           "Conversion complete, first value = %f",
           static_cast<float>(
-              preprocessed_features
-                  ->mutable_data_ptr<::executorch::aten::BFloat16>()[0]));
+              preprocessed_features->mutable_data_ptr<float>()[0]));
     }
   }
 
@@ -223,9 +222,7 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
   ET_LOG(
       Info,
       "Encoder first value: %f",
-      static_cast<float>(
-          encoder_output_tensor
-              .mutable_data_ptr<::executorch::aten::BFloat16>()[0]));
+      static_cast<float>(encoder_output_tensor.mutable_data_ptr<float>()[0]));
 
   auto encoder_output_ptr = std::make_shared<::executorch::aten::Tensor>(
       std::move(encoder_output_tensor));

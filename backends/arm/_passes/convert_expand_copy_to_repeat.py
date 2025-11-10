@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_multiples(args):
+    """Returns expand args converted to repeat args, and whether the expand changes the rank"""
     input_node_or_tensor = args[0]
 
     if isinstance(input_node_or_tensor, torch.fx.node.Node):
@@ -45,7 +46,7 @@ def calculate_multiples(args):
         multiples[i] if multiples[i] != -1 and extended_shape[i] == 1 else 1
         for i in range(expanded_rank)
     ]
-    return multiples
+    return multiples, expanded_rank != len(input_shape)
 
 
 class ConvertExpandCopyToRepeatPass(ArmPass):
@@ -62,9 +63,9 @@ class ConvertExpandCopyToRepeatPass(ArmPass):
         if op != self.expand_copy:
             return super().call_operator(op, args, kwargs, meta)
 
-        multiples = calculate_multiples(args)
+        multiples, changes_rank = calculate_multiples(args)
 
-        if all((x == 1 for x in multiples)):
+        if all((x == 1 for x in multiples)) and not changes_rank:
             # All dimensions/repetitions occur only once. Remove node
             # altogether since it's in practice just a copy.
             logger.warning("Found redundant expand node (no-op). Removing it.")

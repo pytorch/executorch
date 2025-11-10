@@ -22,6 +22,7 @@ using Tensor = torch::executor::Tensor;
 using ScalarType = executorch::aten::ScalarType;
 using Scalar = torch::executor::Scalar;
 using Error = executorch::runtime::Error;
+using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
 
 // From arm_nn_math_types.h
 #define ARM_NN_Q31_MAX ((int32_t)(0x7FFFFFFFL))
