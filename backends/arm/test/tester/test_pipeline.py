@@ -25,6 +25,7 @@ from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
+    get_symmetric_a16w8_quantization_config,
     get_symmetric_quantization_config,
     TOSAQuantizer,
     VgfQuantizer,
@@ -366,9 +367,15 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
         )
 
         quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-        quantization_config = get_symmetric_quantization_config(
-            is_per_channel=per_channel_quantization
-        )
+        # choose 16A8W quantization config when int16 extension is requested
+        if "int16" in tosa_extensions:
+            quantization_config = get_symmetric_a16w8_quantization_config(
+                is_per_channel=per_channel_quantization
+            )
+        else:
+            quantization_config = get_symmetric_quantization_config(
+                is_per_channel=per_channel_quantization
+            )
         if symmetric_io_quantization:
             quantizer.set_io(quantization_config)
         quant_stage = Quantize(quantizer, quantization_config)
@@ -527,6 +534,7 @@ class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
         run_on_fvp: bool = True,
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
+        a16w8_quantization: bool = False,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str | None = None,
         tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
@@ -539,9 +547,15 @@ class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
             tosa_debug_mode=tosa_debug_mode,
         )
         quantizer = EthosUQuantizer(compile_spec)
-        quantization_config = get_symmetric_quantization_config(
-            is_per_channel=per_channel_quantization
-        )
+        # choose int8 or int16 activation quantization
+        if a16w8_quantization:
+            quantization_config = get_symmetric_a16w8_quantization_config(
+                is_per_channel=per_channel_quantization
+            )
+        else:
+            quantization_config = get_symmetric_quantization_config(
+                is_per_channel=per_channel_quantization
+            )
         if symmetric_io_quantization:
             quantizer.set_io(quantization_config)
         quant_stage = Quantize(quantizer, quantization_config)
@@ -618,6 +632,7 @@ class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
         run_on_fvp: bool = True,
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
+        a16w8_quantization: bool = False,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str | None = None,
         tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
@@ -630,9 +645,15 @@ class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
             tosa_debug_mode=tosa_debug_mode,
         )
         quantizer = EthosUQuantizer(compile_spec)
-        quantization_config = get_symmetric_quantization_config(
-            is_per_channel=per_channel_quantization
-        )
+        # choose int8 or int16 activation quantization
+        if a16w8_quantization:
+            quantization_config = get_symmetric_a16w8_quantization_config(
+                is_per_channel=per_channel_quantization
+            )
+        else:
+            quantization_config = get_symmetric_quantization_config(
+                is_per_channel=per_channel_quantization
+            )
         if symmetric_io_quantization:
             quantizer.set_io(quantization_config)
         quant_stage = Quantize(quantizer, quantization_config)
