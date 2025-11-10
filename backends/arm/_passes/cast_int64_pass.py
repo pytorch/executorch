@@ -41,6 +41,8 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         for node in graph_module.graph.nodes:
             if len(node.users) == 0:
                 continue
+            if "val" not in node.meta:
+                continue
             fake_tensor = node.meta["val"]
             if not isinstance(fake_tensor, torch._subclasses.fake_tensor.FakeTensor):
                 continue
