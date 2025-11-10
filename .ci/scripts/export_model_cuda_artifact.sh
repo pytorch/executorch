@@ -17,7 +17,7 @@ Arguments:
   hf_model     HuggingFace model ID (required)
                Supported models:
                  - mistralai/Voxtral-Mini-3B-2507
-                 - openai/whisper-small
+                 - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                  - google/gemma-3-4b-it
 
   quant_name   Quantization type (optional, default: non-quantized)
@@ -62,13 +62,17 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE="128"
     PREPROCESSOR_OUTPUT="voxtral_preprocessor.pte"
     ;;
-  openai/whisper-small)
+  openai/whisper-*)
     MODEL_NAME="whisper"
     TASK="automatic-speech-recognition"
     MAX_SEQ_LEN=""
     EXTRA_PIP="librosa"
-    PREPROCESSOR_FEATURE_SIZE="80"
     PREPROCESSOR_OUTPUT="whisper_preprocessor.pte"
+    if [[ "$HF_MODEL" == *"large-v3"* ]]; then
+      PREPROCESSOR_FEATURE_SIZE="128"
+    else
+      PREPROCESSOR_FEATURE_SIZE="80"
+    fi
     ;;
   google/gemma-3-4b-it)
     MODEL_NAME="gemma3"
@@ -80,7 +84,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-small, google/gemma-3-4b-it"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it"
     exit 1
     ;;
 esac
