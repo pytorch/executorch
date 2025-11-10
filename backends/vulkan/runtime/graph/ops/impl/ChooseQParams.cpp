@@ -161,11 +161,13 @@ void choose_qparams_affine_impl(
   int arg_idx = 0;
   const ValueRef input = args[arg_idx++];
   const ValueRef mapping_type = args[arg_idx++];
+  (void)mapping_type;
   const ValueRef block_size = args[arg_idx++];
   const ValueRef target_dtype = args[arg_idx++];
   const ValueRef quant_min = args[arg_idx++];
   const ValueRef quant_max = args[arg_idx++];
   const ValueRef eps = args[arg_idx++];
+  (void)eps;
   const ValueRef scale_dtype = args[arg_idx++];
   const ValueRef zero_point_dtype = args[arg_idx++];
   const ValueRef out_tuple_ref = args[arg_idx++];
