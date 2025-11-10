@@ -714,7 +714,9 @@ def assert_elf_path_exists(elf_path):
         )
 
 
-def get_elf_path(target_board: str, use_portable_ops: bool = False):
+def get_elf_path(target_board: str, use_portable_ops: bool = False) -> str:
+    elf_path = ""
+
     if target_board not in VALID_TARGET:
         raise ValueError(f"Unsupported target: {target_board}")
 
@@ -729,14 +731,13 @@ def get_elf_path(target_board: str, use_portable_ops: bool = False):
             f"arm_semihosting_executor_runner_{portable_ops_str}{target_board}",
             "arm_executor_runner",
         )
-        assert_elf_path_exists(elf_path)
     elif target_board == "vkml_emulation_layer":
         elf_path = os.path.join(
             f"arm_test/arm_executor_runner_{portable_ops_str}vkml",
             "executor_runner",
         )
-        assert_elf_path_exists(elf_path)
 
+    assert_elf_path_exists(elf_path)
     return elf_path
 
 
@@ -763,11 +764,11 @@ def run_tosa_graph(
     if isinstance(tosa_version, Tosa_1_00):
         import tosa_reference_model as reference_model  # type: ignore[import-untyped]
 
-        debug_mode = "ALL" if logger.level <= logging.DEBUG else None
+        debug_mode = "ALL" if logger.getEffectiveLevel() <= logging.DEBUG else None
         outputs_np, status = reference_model.run(
             graph,
             inputs_np,
-            verbosity=_tosa_refmodel_loglevel(logger.level),
+            verbosity=_tosa_refmodel_loglevel(logger.getEffectiveLevel()),
             initialize_variable_tensor_from_numpy=True,
             debug_mode=debug_mode,
         )
