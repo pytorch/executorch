@@ -39,6 +39,10 @@ DEFINE_string(
     audio_path,
     "",
     "Path to input audio file. Accepts .wav or raw float .bin.");
+DEFINE_string(
+    model_name,
+    "base",
+    "Whisper model name (base, small, medium, large, large-v2, large-v3, large-v3-turbo).");
 DEFINE_double(
     temperature,
     0.0,
@@ -109,7 +113,22 @@ int main(int argc, char** argv) {
   executorch::extension::asr::AsrTranscribeConfig config;
   config.max_new_tokens = FLAGS_max_new_tokens;
   config.temperature = static_cast<float>(FLAGS_temperature);
-  config.decoder_start_token_id = 50257;
+
+  // Set decoder_start_token_id based on model version
+  if (FLAGS_model_name == "large-v2" || FLAGS_model_name == "large-v3" ||
+      FLAGS_model_name == "large-v3-turbo") {
+    config.decoder_start_token_id = 50258;
+    ET_LOG(
+        Info,
+        "Using decoder_start_token_id=50258 for model: %s",
+        FLAGS_model_name.c_str());
+  } else {
+    config.decoder_start_token_id = 50257;
+    ET_LOG(
+        Info,
+        "Using decoder_start_token_id=50257 for model: %s",
+        FLAGS_model_name.c_str());
+  }
 
   auto result =
       runner.transcribe(features, config, [&](const std::string& piece) {
