@@ -64,6 +64,7 @@ from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
+from .decompose_sdpa_pass import DecomposeScaledDotProductAttention  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_sign_pass import DecomposeSignPass  # noqa
 from .decompose_silu_pass import DecomposeSiluPass  # noqa
@@ -83,6 +84,7 @@ from .fuse_constant_ops_pass import ComputeConstantOpsAOT, FuseConstantArgsPass 
 from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
+from .fuse_view_copy_transform_pass import FuseViewCopyTransformPass  # noqa
 from .insert_int32_casts_after_int64_placeholders import (  # noqa
     InsertInt32CastsAfterInt64PlaceholdersPass,
 )
@@ -91,6 +93,8 @@ from .insert_table_ops import InsertTableOpsPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
+from .remove_getitem_pass import RemoveGetItemPass  # noqa
+from .remove_graph_asserts_pass import RemoveGraphAssertsPass  # noqa
 from .remove_noop_pass import RemoveNoopPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,

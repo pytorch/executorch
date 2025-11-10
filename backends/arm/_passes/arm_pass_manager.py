@@ -66,6 +66,7 @@ from executorch.backends.arm._passes import (
     DecomposeNotEqualPass,
     DecomposeRemainderPass,
     DecomposeRoundPass,
+    DecomposeScaledDotProductAttention,
     DecomposeSelectPass,
     DecomposeSignPass,
     DecomposeSiluPass,
@@ -82,6 +83,7 @@ from executorch.backends.arm._passes import (
     FuseDuplicateUsersPass,
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
+    FuseViewCopyTransformPass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescaleInt32Pass,
     InsertRescalePass,
@@ -89,6 +91,8 @@ from executorch.backends.arm._passes import (
     MatchArgDtypePass,
     MatchArgRanksPass,
     QuantizeOperatorArguments,
+    RemoveGetItemPass,
+    RemoveGraphAssertsPass,
     RemoveNoopPass,
     ReplaceInfValues,
     ReplaceScalarWithTensorByProfilePass,
@@ -107,14 +111,8 @@ from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
-from executorch.backends.transforms.decompose_sdpa import (
-    DecomposeScaledDotProductAttention,
-)
-from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
-from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
-from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.nn.modules import Module
@@ -258,7 +256,7 @@ class ArmPassManager(PassManager):
         self.add_pass(CastToInt32Pass())
         self.add_pass(BroadcastArgsPass())
         self.add_pass(ConvertPermuteSingletonToViewPass())
-        self.add_pass(FuseViewCopyTransform())
+        self.add_pass(FuseViewCopyTransformPass())
         self.add_pass(DecomposeConv2dWithInt16ActivationPass())
         self.add_pass(DecomposeSumPass())
         self.add_pass(InsertTableOpsPass(exported_program))
