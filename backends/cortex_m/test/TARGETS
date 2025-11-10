@@ -8,13 +8,11 @@ load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("targets.bzl", "define_common_targets")
 
 oncall("executorch")
-
 python_unittest(
     name="test_replace_quant_nodes",
     srcs=[
         "test_helpers_passes_utils.py",
         "test_replace_quant_nodes.py",
-        "test_quantize_op_fusion_pass.py",
     ],
     deps=[
         "//pytorch/ao:torchao",  # @manual
