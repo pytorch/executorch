@@ -7,6 +7,7 @@ from executorch.exir.dialects.edge.spec.utils import SAMPLE_INPUT
 # Add edge ops which we lower but which are not included in exir/dialects/edge/edge.yaml here.
 CUSTOM_EDGE_OPS = [
     "linspace.default",
+    "cond.default",
     "eye.default",
     "expm1.default",
     "vector_norm.default",

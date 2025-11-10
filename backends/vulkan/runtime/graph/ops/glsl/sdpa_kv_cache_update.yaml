@@ -10,10 +10,14 @@ sdpa_kv_cache_update:
     INPUT_STORAGE: texture3d
     OUTPUT_STORAGE: texture3d
   generate_variant_forall:
+    combination:
+      parameter_names: [OUTPUT_STORAGE, INPUT_STORAGE]
+      combos:
+        - parameter_values: [texture3d, texture3d]
+        - parameter_values: [texture3d, buffer]
+        - parameter_values: [buffer, buffer]
     DTYPE:
       - VALUE: half
       - VALUE: float
   shader_variants:
-    - NAME: sdpa_kv_cache_update_texture3d
-    - NAME: sdpa_kv_cache_update_buffer
-      INPUT_STORAGE: buffer
+    - NAME: sdpa_kv_cache_update

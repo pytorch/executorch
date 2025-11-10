@@ -50,6 +50,7 @@ class ConstantPadNDVisitor(NodeVisitor):
             [inputs[0], output],
             [
                 ts.DType.INT8,
+                ts.DType.INT16,
                 ts.DType.INT32,
                 ts.DType.FP32,
                 ts.DType.BOOL,
@@ -62,6 +63,11 @@ class ConstantPadNDVisitor(NodeVisitor):
             qargs = input_qparams[0]
             pad_const_val = qargs.quantize_value(inputs[2].number).item()
             pad_const_dtype = ts.DType.INT8
+        elif inputs[0].dtype == ts.DType.INT16:
+            input_qparams = get_input_qparams(node)
+            qargs = input_qparams[0]
+            pad_const_val = qargs.quantize_value(inputs[2].number).item()
+            pad_const_dtype = ts.DType.INT16
         else:
             pad_const_val = inputs[2].number
             pad_const_dtype = inputs[0].dtype
