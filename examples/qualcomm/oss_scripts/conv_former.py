@@ -7,20 +7,14 @@
 import json
 import logging
 import os
+
 import sys
 from multiprocessing.connection import Client
 
 import numpy as np
 import timm
 import torch
-from executorch.backends.qualcomm._passes.expand_broadcast_tensor_shape import (
-    ExpandBroadcastTensorShape,
-)
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     get_imagenet_dataset,
@@ -37,12 +31,6 @@ def main(args):
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
-
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
 
     data_num = 100
     if args.ci:
@@ -64,8 +52,6 @@ def main(args):
     model = model.eval()
 
     # lower to QNN
-    passes_job = get_capture_program_passes()
-    passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
     build_executorch_binary(
         model,
         inputs[0],
@@ -73,7 +59,8 @@ def main(args):
         f"{args.artifact}/{pte_filename}",
         inputs,
         quant_dtype=QuantDtype.use_8a8w,
-        passes_job=passes_job,
+        skip_node_id_set=skip_node_id_set,
+        skip_node_op_set=skip_node_op_set,
     )
 
     if args.compile_only:
@@ -88,6 +75,7 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
     )
     adb.push(inputs=inputs)
     adb.execute()
@@ -140,6 +128,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

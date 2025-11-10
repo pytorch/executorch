@@ -3,19 +3,32 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
 
+from executorch.backends.arm._passes.arm_pass import ArmPass
+
+from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class CastToInt32Pass(ExportPass):
+class CastToInt32Pass(ArmPass):
     """Casts the input to int32 if it is not already and casts back the output to the original input dtype."""
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     targeted_ops = {
         exir_ops.edge.aten.bitwise_left_shift.Tensor,
         exir_ops.edge.aten.bitwise_right_shift.Tensor,
     }
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        tosa_spec = get_context_spec()
+        if not tosa_spec.is_U55_subset:
+            return PassResult(graph_module, False)
+        return super().call(graph_module)
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.targeted_ops:

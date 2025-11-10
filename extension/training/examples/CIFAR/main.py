@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     Parse command line arguments for the CIFAR-10 training script.
 
     This function sets up an argument parser with various configuration options
-    for training a CIFAR-10 model with ExecutorTorch, including data paths,
+    for training a CIFAR-10 model with ExecuTorch, including data paths,
     training hyperparameters, and model save locations.
 
     Returns:

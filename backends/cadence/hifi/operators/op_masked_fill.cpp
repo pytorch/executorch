@@ -24,7 +24,6 @@ using torch::executor::resize_to_broadcast_target_size;
 using torch::executor::native::utils::extract_scalar;
 using torch::executor::native::utils::get_scalar_dtype;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -76,4 +75,3 @@ Tensor& masked_fill_Scalar_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

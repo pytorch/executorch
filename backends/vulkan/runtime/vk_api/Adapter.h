@@ -225,6 +225,14 @@ class Adapter final {
     return physical_device_.supports_int16_shader_types;
   }
 
+  inline bool supports_int64_shader_types() {
+    return physical_device_.supports_int64_shader_types;
+  }
+
+  inline bool supports_float64_shader_types() {
+    return physical_device_.supports_float64_shader_types;
+  }
+
   inline bool has_full_float16_buffers_support() {
     return supports_16bit_storage_buffers() && supports_float16_shader_types();
   }

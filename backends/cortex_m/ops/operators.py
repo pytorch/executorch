@@ -1,13 +1,16 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from math import prod
+
 import torch
 from executorch.backends.cortex_m.passes.passes_utils import (
-    dequantize_per_tensor_cmsis,
-    quantize_per_tensor_cmsis,
+    requantize_cmsis,
+    SHIFT_INT8,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -111,6 +114,15 @@ lib.define(
     "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift) -> Tensor"
 )
 
+# Define the operator schema with multipliers and shifts (11 args + out tensor)
+lib.define(
+    "quantized_add.out("
+    "Tensor self, Scalar self_zero_point, Scalar self_multiplier, Scalar self_shift, "
+    "Tensor other, Scalar other_zero_point, Scalar other_multiplier, Scalar other_shift, "
+    "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
 
 @register_fake("cortex_m::quantized_add")
 def quantized_add_meta(
@@ -144,82 +156,126 @@ def quantized_add_impl(
     output_multiplier: int,
     output_shift: int,
 ) -> torch.Tensor:
-    self_fp = dequantize_per_tensor_cmsis(
-        self, self_zero_point, self_multiplier, self_shift
-    )
-    other_fp = dequantize_per_tensor_cmsis(
-        other, other_zero_point, other_multiplier, other_shift
-    )
+    self_shifted = (self.to(torch.int32) - self_zero_point) << SHIFT_INT8
+    self_fp = requantize_cmsis(self_shifted, self_multiplier, self_shift)
+
+    other_shifted = (other.to(torch.int32) - other_zero_point) << SHIFT_INT8
+    other_fp = requantize_cmsis(other_shifted, other_multiplier, other_shift)
+
     result_fp = self_fp + other_fp
-    result_quantized = quantize_per_tensor_cmsis(
-        result_fp, output_zero_point, output_multiplier, output_shift
-    )
-    return result_quantized
+    result_quantized = requantize_cmsis(result_fp, output_multiplier, output_shift)
+    result = torch.clamp(result_quantized + output_zero_point, -128, 127).to(torch.int8)
+    return result
 
 
-# Define the operator schema with multipliers and shifts (11 args + out tensor)
+# ===================================================================
+# QUANTIZED LINEAR OPERATION DEFINITION
+# ===================================================================
+
 lib.define(
-    "quantized_add.out("
-    "Tensor self, Scalar self_zero_point, Scalar self_multiplier, Scalar self_shift, "
-    "Tensor other, Scalar other_zero_point, Scalar other_multiplier, Scalar other_shift, "
-    "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift, "
-    "*, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_linear.out("
+    "Tensor input,  "
+    "Tensor weights, "
+    "Tensor? bias, "
+    "Tensor? kernel_sum, "
+    "Scalar input_offset, "
+    "Scalar filter_offset, "
+    "Scalar output_offset, "
+    "int[] requantize_multipliers, "
+    "int[] requantize_shifts, "
+    "Scalar activation_max, "
+    "Scalar activation_min, "
+    "*, Tensor(a!) out"
+    ") -> Tensor(a!)"
+)
+
+# Define functional variant (non-out version)
+lib.define(
+    "quantized_linear("
+    "Tensor input,  "
+    "Tensor weights, "
+    "Tensor? bias, "
+    "Tensor? kernel_sum, "
+    "Scalar input_offset, "
+    "Scalar filter_offset, "
+    "Scalar output_offset, "
+    "int[] requantize_multipliers, "
+    "int[] requantize_shifts, "
+    "Scalar activation_max, "
+    "Scalar activation_min"
+    ") -> Tensor"
 )
 
 
-# Fake meta function for shape and dtype inference during compilation
-@register_fake("cortex_m::quantized_add.out")
-def quantized_add_out_meta(
-    self: torch.Tensor,
-    self_zero_point: int,
-    self_multiplier: int,
-    self_shift: int,
-    other: torch.Tensor,
-    other_zero_point: int,
-    other_multiplier: int,
-    other_shift: int,
-    output_zero_point: int,
-    output_multiplier: int,
-    output_shift: int,
-    out: torch.Tensor,
+# Fake meta function for shape inference (functional variant)
+@register_fake("cortex_m::quantized_linear")
+def quantized_linear_meta(
+    input,
+    weights,
+    bias,
+    kernel_sum,
+    input_offset,
+    filter_offset,
+    output_offset,
+    requantize_multipliers,
+    requantize_shifts,
+    activation_max,
+    activation_min,
 ) -> torch.Tensor:
-    # Validate against correct broadcasted shape
-    expected_shape = torch.broadcast_shapes(self.shape, other.shape)
-    assert (
-        out.shape == expected_shape
-    ), f"Output shape {out.shape} must match broadcasted shape {expected_shape}"
-    return out
+
+    shape = (*input.shape[:-1], weights.shape[0])
+    return torch.empty(shape, dtype=input.dtype, device=input.device)
 
 
-# Actual implementation delegating to backend or custom kernel
-@impl(lib, "quantized_add.out", "CompositeExplicitAutograd")
-def quantized_add_out_impl(
-    self: torch.Tensor,
-    self_zero_point: int,
-    self_multiplier: int,
-    self_shift: int,
-    other: torch.Tensor,
-    other_zero_point: int,
-    other_multiplier: int,
-    other_shift: int,
-    output_zero_point: int,
-    output_multiplier: int,
-    output_shift: int,
-    *,
-    out: torch.Tensor,
+# Functional variant implementation
+@impl(lib, "quantized_linear", "CompositeExplicitAutograd")
+def quantized_linear_impl(
+    input: torch.Tensor,
+    weights: torch.Tensor,
+    bias: torch.Tensor,
+    kernel_sum: torch.Tensor,
+    input_offset: int,
+    filter_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_max: int,
+    activation_min: int,
 ) -> torch.Tensor:
-    self_fp = dequantize_per_tensor_cmsis(
-        self, self_zero_point, self_multiplier, self_shift
-    )
-    other_fp = dequantize_per_tensor_cmsis(
-        other, other_zero_point, other_multiplier, other_shift
-    )
-    result_fp = self_fp + other_fp
-    result_quantized = quantize_per_tensor_cmsis(
-        result_fp, output_zero_point, output_multiplier, output_shift
-    )
+    """
+    Functional variant - creates output tensor and calls out variant
+    """
 
-    # Write into the provided output tensor
-    out.copy_(result_quantized)
+    # Leaving both implementations for debugging purposes.
+    compute_using_kernel_sum = True
 
-    return out
+    if compute_using_kernel_sum:
+        weights_int32 = weights.to(torch.int32)
+
+        input_int32 = input.to(torch.int32)
+        new_shape = (prod(input.shape[:-1]), input.shape[-1])
+        input_reshaped = input_int32.reshape(new_shape)
+
+        lhs_sum = torch.sum(input_reshaped, dim=-1, keepdim=True) * filter_offset
+        output = torch.mm(input_reshaped, weights_int32.T) + lhs_sum + kernel_sum
+        output_shape = (*input.shape[:-1], output.shape[-1])
+        output_reshaped = output.reshape(output_shape)
+    else:
+        weights_int32 = weights.to(torch.int32) + filter_offset
+
+        input_int32 = input.to(torch.int32) + input_offset
+        new_shape = (prod(input.shape[:-1]), input.shape[-1])
+        input_reshaped = input_int32.reshape(new_shape)
+
+        output = torch.mm(input_reshaped, weights_int32.T)
+        if bias is not None:
+            output = output + bias
+        output_shape = (*input.shape[:-1], output.shape[-1])
+        output_reshaped = output.reshape(output_shape)
+
+    output = requantize_cmsis(
+        output_reshaped, requantize_multipliers[0], requantize_shifts[0]
+    )
+    output += output_offset
+    output = torch.clamp(output, activation_min, activation_max).to(torch.int8)
+    return output

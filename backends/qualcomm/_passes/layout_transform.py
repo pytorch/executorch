@@ -42,8 +42,13 @@ class LayoutTransform(ExportPass):
 
     layout_sensitive_ops = {
         exir_ops.edge.aten.adaptive_avg_pool2d.default,
+        exir_ops.edge.aten._adaptive_avg_pool3d.default,
+        exir_ops.edge.aten.adaptive_max_pool2d.default,
         exir_ops.edge.aten.avg_pool2d.default,
+        exir_ops.edge.aten.avg_pool3d.default,
         exir_ops.edge.aten.convolution.default,
+        exir_ops.edge.aten.grid_sampler_2d.default,
+        exir_ops.edge.aten.grid_sampler_3d.default,
         exir_ops.edge.aten.instance_norm.default,
         exir_ops.edge.aten.max_pool2d_with_indices.default,
         exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
@@ -93,6 +98,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.le.Tensor,
         exir_ops.edge.aten.linear.default,
         exir_ops.edge.aten.log.default,
+        exir_ops.edge.aten.logical_and.default,
         exir_ops.edge.aten.logical_not.default,
         exir_ops.edge.aten.lt.Scalar,
         exir_ops.edge.aten.lt.Tensor,

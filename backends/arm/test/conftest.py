@@ -25,15 +25,11 @@ def pytest_configure(config):
     if getattr(config.option, "llama_inputs", False) and config.option.llama_inputs:
         pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
 
-    pytest._test_options["fast_fvp"] = False  # type: ignore[attr-defined]
-    if getattr(config.option, "fast_fvp", False):
-        pytest._test_options["fast_fvp"] = config.option.fast_fvp  # type: ignore[attr-defined]
-
     pytest._test_options["tosa_version"] = "1.0"  # type: ignore[attr-defined]
     if config.option.arm_run_tosa_version:
         pytest._test_options["tosa_version"] = config.option.arm_run_tosa_version
 
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+    logging.basicConfig(stream=sys.stdout)
 
 
 def pytest_collection_modifyitems(config, items):
@@ -49,7 +45,6 @@ def pytest_addoption(parser):
 
     try_addoption("--arm_quantize_io", action="store_true", help="Deprecated.")
     try_addoption("--arm_run_corstoneFVP", action="store_true", help="Deprecated.")
-    try_addoption("--fast_fvp", action="store_true")
     try_addoption(
         "--llama_inputs",
         nargs="+",
@@ -118,7 +113,7 @@ def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
       a RuntimeError instead of returning False.
     """
 
-    if option in pytest._test_options and pytest._test_options[option]:  # type: ignore[attr-defined]
+    if hasattr(pytest, "_test_options") and option in pytest._test_options and pytest._test_options[option]:  # type: ignore[attr-defined]
         return True
     else:
         if fail_if_not_enabled:

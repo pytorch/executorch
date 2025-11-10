@@ -5,7 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 #
 # Quantizer for Arm backend
@@ -14,21 +13,17 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
+from executorch.backends.arm.ethosu import EthosUCompileSpec
 
 from executorch.backends.arm.quantizer import QuantizationConfig
 from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.arm.tosa.specification import get_tosa_spec
-
-from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
-from .quantization_annotator import annotate_graph
-from executorch.backends.arm.arm_backend import (
-    is_ethosu,
-    is_vgf,
-)  # usort: skip
-from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.backends.arm.common.arm_compile_spec import (
+    ArmCompileSpec,
+)  # isort: skip
+from executorch.backends.arm.vgf import VgfCompileSpec
 
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
@@ -49,10 +44,14 @@ from torchao.quantization.pt2e.quantizer import (
     Quantizer,
 )
 
+from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
+from .quantization_annotator import annotate_graph
+
 __all__ = [
     "TOSAQuantizer",
     "EthosUQuantizer",
     "VgfQuantizer",
+    "get_symmetric_a16w8_quantization_config",
     "get_symmetric_quantization_config",
 ]
 
@@ -105,14 +104,26 @@ def get_symmetric_quantization_config(
     # Determine the right observer/fake-quant constructor
     if is_qat:
         if is_per_channel:
-            weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+            weight_observer_or_fake_quant_ctr = FakeQuantize.with_args(
+                observer=PerChannelMinMaxObserver,
+                quant_min=weight_qmin,
+                quant_max=weight_qmax,
+                dtype=torch.qint8,
+                qscheme=torch.per_channel_symmetric,
+                reduce_range=False,
+                ch_axis=0,
+                **extra_args,
+            )
         else:
             # Set plain fake-quant with true min/max
-            weight_observer_or_fake_quant_ctr = FakeQuantize
+            weight_observer_or_fake_quant_ctr = FakeQuantize.with_args(**extra_args)
     else:
         # PTQ: set min/max observer
         weight_observer_or_fake_quant_ctr = (
             PerChannelMinMaxObserver if is_per_channel else MinMaxObserver
+        )
+        weight_observer_or_fake_quant_ctr = weight_observer_or_fake_quant_ctr.with_args(
+            **extra_args,
         )
 
     weight_quantization_spec = QuantizationSpec(
@@ -122,9 +133,7 @@ def get_symmetric_quantization_config(
         qscheme=weight_qscheme,
         ch_axis=0,
         is_dynamic=False,
-        observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr.with_args(
-            **extra_args
-        ),
+        observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
     )
 
     bias_quantization_spec = None
@@ -152,6 +161,7 @@ def get_symmetric_a16w8_quantization_config(
     is_dynamic: bool = False,
     weight_qmin: int = -127,
     weight_qmax: int = 127,
+    epsilon: float = 2**-12,
 ):
     """
     16A8W quantization config: 16-bit activations, 8-bit weights.
@@ -165,11 +175,12 @@ def get_symmetric_a16w8_quantization_config(
         is_dynamic: Whether to use dynamic quantization
         weight_qmin: Minimum quantization value for weights
         weight_qmax: Maximum quantization value for weights
+        epsilon: Value used to pad observed [qmin, qmax] before initial zero point and scale calculation
 
     Returns:
         QuantizationConfig with 16-bit activations and 8-bit weights
     """
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    extra_args: Dict[str, Any] = {"eps": epsilon}
 
     # Setup observer/fake-quant for 16-bit activations
     if is_qat:
@@ -300,27 +311,16 @@ def _get_not_module_type_or_name_filter(
 class TOSAQuantizer(Quantizer):
 
     def __init__(
-        self, compile_spec_or_tosa_spec: Union[TosaSpecification, List[CompileSpec]]
+        self, compile_spec_or_tosa_spec: TosaSpecification | ArmCompileSpec
     ) -> None:
 
         super().__init__()
         if isinstance(compile_spec_or_tosa_spec, TosaSpecification):
             self.tosa_spec = compile_spec_or_tosa_spec
             self.compile_spec = None
-        elif isinstance(compile_spec_or_tosa_spec, list):
+        elif isinstance(compile_spec_or_tosa_spec, ArmCompileSpec):
             self.compile_spec = compile_spec_or_tosa_spec
-            # find entry that is 'tosa_spec'
-            for cs in compile_spec_or_tosa_spec:
-                if cs.key == "tosa_spec":
-                    spec_val = (
-                        cs.value.decode() if isinstance(cs.value, bytes) else cs.value
-                    )
-                    self.tosa_spec = TosaSpecification.create_from_string(spec_val)
-                    break
-            else:
-                raise ValueError(
-                    "compile_spec list did not contain a 'tosa_spec' entry"
-                )
+            self.tosa_spec = self.compile_spec.tosa_spec
         else:
             raise TypeError(
                 f"TOSAQuantizer constructor expects "
@@ -334,16 +334,26 @@ class TOSAQuantizer(Quantizer):
         self.module_name_config: Dict[str, Optional[QuantizationConfig]] = {}
 
     def set_global(self, quantization_config: QuantizationConfig) -> TOSAQuantizer:
-        """Set quantization_config for submodules that are not already annotated by name or type filters."""
+        """
+        Set quantization_config for submodules that are not already annotated by name or type filters.
+
+        Args:
+            quantization_config: The QuantizationConfig to set as global configuration.
+        """
         self.global_config = quantization_config
         return self
 
     def set_module_type(
         self, module_type: Callable, quantization_config: QuantizationConfig
     ) -> TOSAQuantizer:
-        """Set quantization_config for a submodule with type: `module_type`, for example:
+        """
+        Set quantization_config for a submodule with type: `module_type`, for example:
         quantizer.set_module_name(Sub) or quantizer.set_module_name(nn.Linear), it will quantize all supported operator/operator
-        patterns in the submodule with this module type with the given `quantization_config`
+        patterns in the submodule with this module type with the given `quantization_config`.
+
+        Args:
+            module_type: The type of the submodule to set the quantization config for.
+            quantization_config: The QuantizationConfig to set for the submodule.
         """
         self.module_type_config[module_type] = quantization_config
         return self
@@ -351,9 +361,14 @@ class TOSAQuantizer(Quantizer):
     def set_module_name(
         self, module_name: str, quantization_config: Optional[QuantizationConfig]
     ) -> TOSAQuantizer:
-        """Set quantization_config for a submodule with name: `module_name`, for example:
+        """
+        Set quantization_config for a submodule with name: `module_name`, for example:
         quantizer.set_module_name("blocks.sub"), it will quantize all supported operator/operator
         patterns in the submodule with this module name with the given `quantization_config`
+
+        Args:
+            module_name: The name of the submodule to set the quantization config for.
+            quantization_config: The QuantizationConfig to set for the submodule.
         """
         # Validate that quantization_config is provided
         if quantization_config is None:
@@ -361,20 +376,31 @@ class TOSAQuantizer(Quantizer):
         self.module_name_config[module_name] = quantization_config
         return self
 
-    def set_io(self, quantization_config):
-        """Set quantization_config for input and output nodes."""
+    def set_io(self, quantization_config: QuantizationConfig) -> TOSAQuantizer:
+        """
+        Set quantization_config for input and output nodes.
+
+        Args:
+            quantization_config: The QuantizationConfig to set for input and output nodes.
+        """
         self.io_config = quantization_config
         return self
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
-        """An initial pass for transforming the graph to prepare it for annotation.
+        """
+        An initial pass for transforming the graph to prepare it for annotation.
         Currently transforms scalar values to tensor attributes.
+
+        Args:
+            model: The model to transform.
+        Returns:
+            The transformed model.
         """
 
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
 
-        return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(  # type: ignore[arg-type]
+        return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(
             graph_module=model
         )
 
@@ -466,18 +492,24 @@ class TOSAQuantizer(Quantizer):
 
 
 class EthosUQuantizer(TOSAQuantizer):
-    def __init__(self, compile_spec: list[CompileSpec]) -> None:
-        if not is_ethosu(compile_spec):
-            raise RuntimeError("compile spec is not targeting Ethos-U")
+    """
+    Quantizer supported by the Arm Ethos-U backend.
 
-        tosa_spec = get_tosa_spec(compile_spec)
-        super().__init__(tosa_spec)
+    Args:
+        compile_spec: A EthosUCompileSpec instance.
+    """
+
+    def __init__(self, compile_spec: EthosUCompileSpec) -> None:
+        super().__init__(compile_spec)
 
 
 class VgfQuantizer(TOSAQuantizer):
-    def __init__(self, compile_spec: list[CompileSpec]) -> None:
-        if not is_vgf(compile_spec):
-            raise RuntimeError("compile spec is not targeting VGF")
+    """
+    Quantizer supported by the Arm Vgf backend.
 
-        tosa_spec = get_tosa_spec(compile_spec)
-        super().__init__(tosa_spec)
+    Args:
+        compile_spec: A VgfCompileSpec instance.
+    """
+
+    def __init__(self, compile_spec: VgfCompileSpec) -> None:
+        super().__init__(compile_spec)

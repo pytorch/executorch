@@ -24,22 +24,17 @@ if(NOT EXECUTORCH_ROOT)
   message("WARNING: EXECUTORCH_ROOT is not set! A failure is likely imminent.")
 endif()
 
-if(ANDROID)
-  if(NOT ANDROID_NDK)
-    message(FATAL_ERROR "ANDROID_NDK not set")
-  endif()
+find_program(GLSLC_PATH glslc PATHS $ENV{PATH})
 
-  if(NOT GLSLC_PATH)
-    set(GLSLC_PATH
-        "${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME}/glslc"
-    )
-  endif()
-else()
-  find_program(GLSLC_PATH glslc PATHS $ENV{PATH})
-
-  if(NOT GLSLC_PATH)
-    message(FATAL_ERROR "USE_VULKAN glslc not found")
-  endif()
+if(NOT GLSLC_PATH)
+  message(
+    FATAL_ERROR
+      "glslc from the Vulkan SDK must be installed to build the Vulkan backend. "
+      "Please install the Vulkan SDK 1.4.321.0 or newer from "
+      "https://vulkan.lunarg.com/sdk/home and ensure that the glslc binary is in your PATH. "
+      "Note that the glslc distributed with the Android NDK is not compatible since it "
+      "does not support the GL_EXT_integer_dot_product extension. "
+  )
 endif()
 
 # Required to enable linking with --whole-archive

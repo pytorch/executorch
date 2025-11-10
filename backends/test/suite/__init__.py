@@ -11,6 +11,7 @@ import logging
 import os
 
 import executorch.backends.test.suite.flow
+import torch
 
 from executorch.backends.test.suite.flow import TestFlow
 from executorch.backends.test.suite.runner import runner_main
@@ -53,6 +54,11 @@ def get_test_flows() -> dict[str, TestFlow]:
         }
 
     return _ALL_TEST_FLOWS
+
+
+def dtype_to_str(dtype: torch.dtype) -> str:
+    # Strip off "torch."
+    return str(dtype)[6:]
 
 
 def load_tests(loader, suite, pattern):

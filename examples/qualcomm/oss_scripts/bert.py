@@ -13,7 +13,6 @@ from multiprocessing.connection import Client
 import evaluate
 import numpy as np
 import torch
-
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
@@ -87,6 +86,8 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
     )
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
@@ -139,6 +140,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

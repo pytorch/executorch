@@ -41,6 +41,8 @@ scratch_dir_set=false
 toolchain=arm-none-eabi-gcc
 select_ops_list="aten::_softmax.out"
 qdq_fusion_op=false
+model_explorer=false
+perf_overlay=false
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -53,7 +55,7 @@ function help() {
     echo "  --no_quantize                          Do not quantize the model (can't override builtin models)"
     echo "  --portable_kernels=<OPS>               TO BE DEPRECATED: Alias to select_ops_list."
     echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"
-    echo "                                           NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
+    echo "                                           NOTE: This is only used when building for semihosting."
     echo "                                           See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
     echo "  --output=<FOLDER>                      Target build output folder Default: ${output_folder}"
@@ -71,6 +73,8 @@ function help() {
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
     echo "  --qdq_fusion_op                        Enable QDQ fusion op"
+    echo "  --model_explorer                       Enable model explorer to visualize TOSA graph."
+    echo "  --perf_overlay                         With --model_explorer, include performance data from FVP PMU trace."
     exit 0
 }
 
@@ -99,10 +103,17 @@ for arg in "$@"; do
       --et_build_root=*) et_build_root="${arg#*=}";;
       --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
       --qdq_fusion_op) qdq_fusion_op=true;;
+      --model_explorer) model_explorer=true ;;
+      --perf_overlay) perf_overlay=true ;;
       *)
       ;;
     esac
 done
+
+if [ "$perf_overlay" = true ] && [ "$model_explorer" != true ]; then
+    echo "Error: --perf_overlay requires --model_explorer" >&2
+    exit 1
+fi
 
 if ! [[ ${pte_placement} == "elf" ]]; then
     if ! [[ "$pte_placement" =~ ^0x[0-9a-fA-F]{1,16}$ ]]; then
@@ -201,6 +212,7 @@ bundleio_flag=""
 etrecord_flag=""
 et_dump_flag=""
 qdq_fusion_op_flag=""
+fvp_pmu_flag=""
 if [ "$build_with_etdump" = true ] ; then
     et_dump_flag="--etdump"
     etrecord_flag="--etrecord"
@@ -222,7 +234,6 @@ if [[ -z "$model_name" ]]; then
     test_model=(
         "softmax"   # 0
         "add"       # 1
-        "add3"      # 2
         "qadd"      # 3
         "qadd2"     # 4
         "qops"      # 5
@@ -231,7 +242,6 @@ if [[ -z "$model_name" ]]; then
     model_compiler_flags=(
         ""                      # 0 softmax
         "--delegate"            # 1 add
-        "--delegate"            # 2 add3
         "--delegate --quantize" # 3 qadd
         "--delegate --quantize" # 4 qadd2
         "--delegate --quantize" # 5 qops
@@ -272,6 +282,11 @@ for i in "${!test_model[@]}"; do
         output_folder=${et_build_root}/${model_short_name}
     fi
 
+    if [ "$perf_overlay" = true ] ; then
+        model_compiler_flags+="--enable_debug_mode tosa"
+        fvp_pmu_flag="--trace_file=${output_folder}/pmu_trace.gz"
+    fi
+
     mkdir -p ${output_folder}
     output_folder=$(realpath ${output_folder})
     pte_file="${output_folder}/${model_filename_ext}"
@@ -288,6 +303,12 @@ for i in "${!test_model[@]}"; do
     ${ARM_AOT_CMD} 1>&2
 
     pte_file=$(realpath ${pte_file})
+
+    if [ "${etrecord_flag}" != "" ] ; then
+        etrecord_filename="${output_folder}/${model_filename}_etrecord.bin"
+        etrecord_filename=$(realpath ${etrecord_filename})
+        etrecord_flag="--etrecord=${etrecord_filename}"
+    fi
 
     [[ -f ${pte_file} ]] || { >&2 echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "pte_data_size: $(wc -c ${pte_file})"
@@ -322,9 +343,19 @@ for i in "${!test_model[@]}"; do
         backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file_or_mem}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
-            backends/arm/scripts/run_fvp.sh --elf=${elf_file} ${model_data} --target=$target
+
+            backends/arm/scripts/run_fvp.sh --elf=${elf_file} ${model_data} --target=$target ${etrecord_flag} ${fvp_pmu_flag}
         fi
         set +x
+    fi
+
+    if [ "$model_explorer" = true ]; then
+        tosa_flatbuffer_path=$(find ${output_folder} -name "*TOSA*.tosa" | head -n 1)
+        perf_flags=""
+        if [ "$perf_overlay" = true ]; then
+            perf_flags+="--trace ${output_folder}/pmu_trace.gz --tables ${output_folder}/output/out_debug.xml"
+        fi
+        python3 ${script_dir}/visualize.py --model_path ${tosa_flatbuffer_path} ${perf_flags}
     fi
 done
 

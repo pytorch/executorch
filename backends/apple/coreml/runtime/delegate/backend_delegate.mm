@@ -45,40 +45,15 @@ MLModelConfiguration *get_model_configuration(const std::unordered_map<std::stri
     return configuration;
 }
 
-NSURL * _Nullable create_directory_if_needed(NSURL *url,
-                                             NSFileManager *fileManager,
-                                             NSError * __autoreleasing *error) {
-    if (![fileManager fileExistsAtPath:url.path] &&
-        ![fileManager createDirectoryAtURL:url withIntermediateDirectories:YES attributes:@{} error:error]) {
-        return nil;
-    }
-    
-    return url;
-}
-
 ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory_path,
                                                       NSString *trash_directory_path,
                                                       NSString *database_directory_path,
                                                       NSString *database_name,
                                                       NSInteger max_assets_size_in_bytes,
                                                       NSError * __autoreleasing *error) {
-    NSFileManager *fm  = [[NSFileManager alloc] init];
-    
     NSURL *assets_directory_url = [NSURL fileURLWithPath:assets_directory_path];
-    if (!create_directory_if_needed(assets_directory_url, fm, error)) {
-        return nil;
-    }
-    
     NSURL *trash_directory_url = [NSURL fileURLWithPath:trash_directory_path];
-    if (!create_directory_if_needed(trash_directory_url, fm, error)) {
-        return nil;
-    }
-    
     NSURL *database_directory_url = [NSURL fileURLWithPath:database_directory_path];
-    if (!create_directory_if_needed(database_directory_url, fm, error)) {
-        return nil;
-    }
-    
     NSURL *database_url = [database_directory_url URLByAppendingPathComponent:database_name];
     ETCoreMLAssetManager *manager = [[ETCoreMLAssetManager alloc] initWithDatabaseURL:database_url
                                                                    assetsDirectoryURL:assets_directory_url

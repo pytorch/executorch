@@ -13,7 +13,7 @@
 
 #include <xa_nnlib_kernels_api.h>
 
-#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
+#include <executorch/backends/cadence/common/xt_macros.h>
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
 #include <executorch/kernels/portable/cpu/vec_ops.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -25,7 +25,6 @@ using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
 using std::optional;
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -292,4 +291,3 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

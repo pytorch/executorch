@@ -60,7 +60,7 @@ void main() {
     int num_steps = ((-ipos.y) + dilation.y - 1) / dilation.y;
     start.y = ipos.y + num_steps * dilation.y;
   }
-  const ivec2 end = min(ipos + overlay_region.xy, ivec2(in_sizes.xy));
+  const ivec2 end = min(ipos + overlay_region.xy, in_sizes.xy);
   // Compute the start of the kernel based on how far we are skipping ahead when
   // reading the input. Note that these are "canonical" indices.
   ivec2 kstart = (start - ipos) / dilation;

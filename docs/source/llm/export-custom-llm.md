@@ -41,7 +41,7 @@ import torch
 
 from executorch.exir import EdgeCompileConfig, to_edge
 from torch.nn.attention import sdpa_kernel, SDPBackend
-from torch.export import export, export_for_training
+from torch.export import export
 
 from model import GPT
 
@@ -66,7 +66,7 @@ dynamic_shape = (
 # Trace the model, converting it to a portable intermediate representation.
 # The torch.no_grad() call tells PyTorch to exclude training-specific logic.
 with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-    m = export_for_training(model, example_inputs, dynamic_shapes=dynamic_shape).module()
+    m = export(model, example_inputs, dynamic_shapes=dynamic_shape).module()
     traced_model = export(m, example_inputs, dynamic_shapes=dynamic_shape)
 
 # Convert the model into a runnable ExecuTorch program.
@@ -81,7 +81,7 @@ with open("nanogpt.pte", "wb") as file:
 
 To export, run the script with `python export_nanogpt.py` (or python3, as appropriate for your environment). It will generate a `nanogpt.pte` file in the current directory.
 
-For more information, see [Exporting to ExecuTorch](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial) and
+For more information, see [Exporting to ExecuTorch](../tutorials/export-to-executorch-tutorial) <!-- @lint-ignore --> and
 [torch.export](https://pytorch.org/docs/stable/export.html).
 
 ## Backend delegation
@@ -125,7 +125,7 @@ from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 import torch
 from torch.export import export
 from torch.nn.attention import sdpa_kernel, SDPBackend
-from torch.export import export_for_training
+from torch.export import export
 
 from model import GPT
 
@@ -143,7 +143,7 @@ example_inputs = (
 # long as they adhere to the rules specified in the dynamic shape configuration.
 # Here we set the range of 0th model input's 1st dimension as
 # [0, model.config.block_size].
-# See https://pytorch.org/executorch/main/concepts.html#dynamic-shapes
+# See ../concepts.html#dynamic-shapes
 # for details about creating dynamic shapes.
 dynamic_shape = (
     {1: torch.export.Dim("token_dim", max=model.config.block_size - 1)},
@@ -152,7 +152,7 @@ dynamic_shape = (
 # Trace the model, converting it to a portable intermediate representation.
 # The torch.no_grad() call tells PyTorch to exclude training-specific logic.
 with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-    m = export_for_training(model, example_inputs, dynamic_shapes=dynamic_shape).module()
+    m = export(model, example_inputs, dynamic_shapes=dynamic_shape).module()
     traced_model = export(m, example_inputs, dynamic_shapes=dynamic_shape)
 
 # Convert the model into a runnable ExecuTorch program.
@@ -209,7 +209,7 @@ xnnpack_quant_config = get_symmetric_quantization_config(
 xnnpack_quantizer = XNNPACKQuantizer()
 xnnpack_quantizer.set_global(xnnpack_quant_config)
 
-m = export_for_training(model, example_inputs).module()
+m = export(model, example_inputs).module()
 
 # Annotate the model for quantization. This prepares the model for calibration.
 m = prepare_pt2e(m, xnnpack_quantizer)

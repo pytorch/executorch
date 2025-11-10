@@ -34,6 +34,7 @@ class CanonicalizeConv(ExportPass):
         self.transpose_conv_set = {
             torch.ops.aten.conv_transpose1d.default,
             torch.ops.aten.conv_transpose2d.input,
+            torch.ops.aten.conv_transpose3d.input,
         }
 
     def dilate(self, tensor, dilation):

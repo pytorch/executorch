@@ -11,8 +11,8 @@ In this tutorial, you will learn how to export an XNNPACK lowered Model and run 
 :::{grid-item-card}  Before you begin it is recommended you go through the following:
 :class-card: card-prerequisites
 * [Setting up ExecuTorch](getting-started-setup.rst)
-* [Model Lowering Tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial)
-* [ExecuTorch XNNPACK Delegate](backends-xnnpack.md)
+* [Model Lowering Tutorial](tutorials/export-to-executorch-tutorial) <!-- @lint-ignore -->
+* [ExecuTorch XNNPACK Delegate](backends/xnnpack/xnnpack-overview.md)
 :::
 ::::
 
@@ -74,16 +74,16 @@ After lowering to the XNNPACK Program, we can then prepare it for executorch and
 
 
 ## Lowering a Quantized Model to XNNPACK
-The XNNPACK delegate can also execute symmetrically quantized models. To understand the quantization flow and learn how to quantize models, refer to [Custom Quantization](quantization-custom-quantization.md) note. For the sake of this tutorial, we will leverage the `quantize()` python helper function conveniently added to the `executorch/executorch/examples` folder.
+The XNNPACK delegate can also execute symmetrically quantized models. To understand the quantization flow and learn how to quantize models, refer to [Quantization Overview](quantization-overview.md). For the sake of this tutorial, we will leverage the `quantize()` python helper function conveniently added to the `executorch/executorch/examples` folder.
 
 ```python
-from torch.export import export_for_training
+from torch.export import export
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 
 mobilenet_v2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
 sample_inputs = (torch.randn(1, 3, 224, 224), )
 
-mobilenet_v2 = export_for_training(mobilenet_v2, sample_inputs).module() # 2-stage export for quantization path
+mobilenet_v2 = export(mobilenet_v2, sample_inputs).module() # 2-stage export for quantization path
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
@@ -110,7 +110,7 @@ def quantize(model, example_inputs):
 quantized_mobilenetv2 = quantize(mobilenet_v2, sample_inputs)
 ```
 
-Quantization requires a two stage export. First we use the `export_for_training` API to capture the model before giving it to `quantize` utility function. After performing the quantization step, we can now leverage the XNNPACK delegate to lower the quantized exported model graph. From here, the procedure is the same as for the non-quantized model lowering to XNNPACK.
+Quantization requires a two stage export. First we use the `export` API to capture the model before giving it to `quantize` utility function. After performing the quantization step, we can now leverage the XNNPACK delegate to lower the quantized exported model graph. From here, the procedure is the same as for the non-quantized model lowering to XNNPACK.
 
 ```python
 # Continued from earlier...

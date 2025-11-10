@@ -223,7 +223,7 @@ def gen_eval_wrapper(
         )
     else:
         # TODO: use manager.pre_autograd_graph_module for the eval to remove the if-else branch
-        # for quantizers. Currently export_for_training only works with --kv_cache, but
+        # for quantizers. Currently export only works with --kv_cache, but
         # fails without the kv_cache mode
         model = (
             manager.model.eval().to(device="cuda")

@@ -647,9 +647,10 @@ class ET_EXPERIMENTAL JsModule final {
   val_array<val> execute(const std::string& method, val js_inputs) {
     std::vector<EValue> inputs;
     if (js_inputs.isArray()) {
-      inputs.reserve(js_inputs["length"].as<size_t>());
-      for (val v : js_inputs) {
-        inputs.push_back(to_evalue(v));
+      size_t len = js_inputs["length"].as<size_t>();
+      inputs.reserve(len);
+      for (int i = 0; i < len; i++) {
+        inputs.push_back(to_evalue(js_inputs[i]));
       }
     } else {
       inputs.push_back(to_evalue(js_inputs));

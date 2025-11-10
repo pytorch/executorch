@@ -22,6 +22,7 @@ input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x
 
 class MatMul(torch.nn.Module):
     test_data_generators = {
+        "rand_rand_2d": lambda: (torch.rand(5, 5), torch.rand(5, 2)),
         "rand_rand_3d": lambda: (torch.rand(2, 3, 5), torch.rand(2, 5, 2)),
         "rand_rand_4d": lambda: (torch.rand(1, 2, 3, 5), torch.rand(1, 2, 5, 2)),
     }
@@ -32,6 +33,7 @@ class MatMul(torch.nn.Module):
 
 class MatMulSingleInput(torch.nn.Module):
     test_data_generators = {
+        "rand_2d": lambda: (torch.rand(5, 5),),
         "rand_3d": lambda: (torch.rand(2, 5, 5),),
         "rand_4d": lambda: (torch.rand(1, 2, 5, 5),),
     }
@@ -42,6 +44,11 @@ class MatMulSingleInput(torch.nn.Module):
 
 class MatMulCombo(torch.nn.Module):
     test_data_generators = {
+        "rand_rand_rand_2d": lambda: (
+            torch.rand(5, 5),
+            torch.rand(5, 2),
+            torch.rand(2, 5),
+        ),
         "rand_rand_rand_3d": lambda: (
             torch.rand(2, 5, 5),
             torch.rand(2, 5, 2),
@@ -122,13 +129,18 @@ def test_matmul_u55_INT(test_data: input_t1):
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", MatMulSingleInput.test_data_generators)
+@common.parametrize(
+    "test_data",
+    MatMulSingleInput.test_data_generators,
+    xfails={
+        "rand_4d": "MLBEDSW-11228: Matmul output diff between 1 input vs 2 identical inputs"
+    },
+)
 @common.XfailIfNoCorstone300
 def test_matmul_single_input_u55_INT(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -136,13 +148,18 @@ def test_matmul_single_input_u55_INT(test_data: input_t1):
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", MatMulCombo.test_data_generators)
+@common.parametrize(
+    "test_data",
+    MatMulCombo.test_data_generators,
+    xfails={
+        "rand_rand_rand_4d": "MLBEDSW-11228: Matmul output diff between 1 input vs 2 identical inputs"
+    },
+)
 @common.XfailIfNoCorstone300
 def test_matmul_combo_u55_INT(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -150,7 +167,6 @@ def test_matmul_combo_u55_INT(test_data: input_t1):
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -164,13 +180,18 @@ def test_matmul_u85_INT(test_data: input_t1):
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", MatMulSingleInput.test_data_generators)
+@common.parametrize(
+    "test_data",
+    MatMulSingleInput.test_data_generators,
+    xfails={
+        "rand_4d": "MLBEDSW-11228: Matmul output diff between 1 input vs 2 identical inputs"
+    },
+)
 @common.XfailIfNoCorstone320
 def test_matmul_single_input_u85_INT(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -178,13 +199,18 @@ def test_matmul_single_input_u85_INT(test_data: input_t1):
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", MatMulCombo.test_data_generators)
+@common.parametrize(
+    "test_data",
+    MatMulCombo.test_data_generators,
+    xfails={
+        "rand_rand_rand_4d": "MLBEDSW-11228: Matmul output diff between 1 input vs 2 identical inputs"
+    },
+)
 @common.XfailIfNoCorstone320
 def test_matmul_combo_u85_INT(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -192,7 +218,6 @@ def test_matmul_combo_u85_INT(test_data: input_t1):
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

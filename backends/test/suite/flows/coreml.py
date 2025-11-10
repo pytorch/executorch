@@ -19,6 +19,7 @@ def _create_coreml_flow(
             CoreMLTester, minimum_deployment_target=minimum_deployment_target
         ),
         quantize=quantize,
+        skip_patterns=["test_argmin", "test_argmax"],
     )
 
 

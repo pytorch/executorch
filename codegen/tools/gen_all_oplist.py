@@ -10,7 +10,7 @@ import re
 import sys
 from functools import reduce
 from pathlib import Path
-from typing import Any, List
+from typing import Any, Dict, List
 
 import yaml
 from torchgen.selective_build.selector import (
@@ -72,6 +72,19 @@ def _raise_if_check_prim_ops_fail(options):
             raise Exception(error)
 
 
+def _selected_ops_model_dict_is_empty(model_dict: Dict[str, Any]) -> bool:
+    return (
+        not model_dict.get("build_features", [])
+        and not model_dict.get("custom_classes", [])
+        and not model_dict.get("et_kernel_metadata", None)
+        and not model_dict.get("include_all_non_op_selectives", False)
+        and not model_dict.get("include_all_operators", False)
+        and not model_dict.get("kernel_metadata", {})
+        and not model_dict.get("operators", {})
+    )
+
+
+# flake8: noqa: C901
 def main(argv: List[Any]) -> None:
     """This binary generates 3 files:
 
@@ -171,6 +184,11 @@ def main(argv: List[Any]) -> None:
                 ), f"{model_file_name} is not a valid file path. This is likely a BUCK issue."
                 with open(model_file_name, "rb") as model_file:
                     model_dict = yaml.safe_load(model_file)
+                    # It is possible that we created an empty yaml file.
+                    # This is because et_operator_library may only contain prim ops.
+                    # In that case selected_operators.yaml will be empty.
+                    if _selected_ops_model_dict_is_empty(model_dict):
+                        continue
                     resolved = resolve_model_file_path_to_buck_target(model_file_name)
                     for op in model_dict["operators"]:
                         model_dict["operators"][op]["debug_info"] = [resolved]

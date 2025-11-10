@@ -32,8 +32,13 @@ void add_squeeze_copy_dims_node(
   // 2. Squeeze outter most dim
   // For these cases, just pass input to output via clone.
   for (int i = 0; i < dims.size(); ++i) {
-    if (dims.at(i) != 0 && in_sizes.at(dims.at(i)) == 1) {
-      squeeze_dims.push_back(dims.at(i));
+    // adjust negative dims
+    int64_t dim_val = dims.at(i);
+    if (dim_val < 0) {
+      dim_val += in_dim;
+    }
+    if (dims.at(i) != 0 && in_sizes.at(dim_val) == 1) {
+      squeeze_dims.push_back(dim_val);
     }
   }
   if (squeeze_dims.size() == 0) {

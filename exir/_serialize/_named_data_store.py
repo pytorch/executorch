@@ -7,42 +7,33 @@
 # pyre-strict
 
 import hashlib
-import math
+
 from dataclasses import dataclass
+from typing import Dict, List, Optional, Union
 
-# from dataclasses import dataclass
-from typing import Dict, List, Optional
+import torch
 
-
-@dataclass
-class BufferEntry:
-    """A class to hold the buffer entries for serialization.
-
-    Attributes:
-        buffer: The buffer bytes.
-        alignment: The alignment of the buffer.
-    """
-
-    buffer: bytes
-    alignment: int
+from executorch.exir._serialize.data_serializer import DataEntry
+from executorch.exir.tensor_layout import TensorLayout
 
 
 @dataclass
 class NamedDataStoreOutput:
     """
-    Holds named data for serialization.
+    Holds named data for serialization. Note: a DataEntry contains the index into
+    `buffers`, the alignment and a tensor layout, if applicable.
 
     Attributes:
         buffers: A list of unique buffer entries.
         pte_data: Contains data that is stored inside the PTE file. A mapping from
-            {key: buffer_index}.
+            {key: DataEntry}.
         external_data: Contains data that is stored external to the PTE. A mapping
-            from {filename: {key: buffer_index}}.
+            from {filename: {key: DataEntry}}.
     """
 
-    buffers: List[BufferEntry]
-    pte_data: Dict[str, int]
-    external_data: Dict[str, Dict[str, int]]
+    buffers: List[bytes]
+    pte_data: Dict[str, DataEntry]
+    external_data: Dict[str, Dict[str, DataEntry]]
 
 
 class NamedDataStore:
@@ -61,12 +52,12 @@ class NamedDataStore:
     """
 
     # List of unique blobs.
-    buffers: List[BufferEntry]
-    # Named data stored inside the PTE file. Map of {key: buffer_index}.
-    pte_data: Dict[str, int]
+    buffers: List[bytes]
+    # Named data stored inside the PTE file. Map of {key: DataEntry}.
+    pte_data: Dict[str, DataEntry]
     # Named data stored outside of the PTE file.
-    # Map of {filename: {key: buffer_index}}.
-    external_data: Dict[str, Dict[str, int]]
+    # Map of {filename: {key: DataEntry}}.
+    external_data: Dict[str, Dict[str, DataEntry]]
 
     # Cache of the data hash for deduplication.
     # Use a hash instead of the data as a key because a sha256 collision is
@@ -93,7 +84,8 @@ class NamedDataStore:
         key: str,
         data: bytes,
         alignment: int,
-        local_key_to_buffer_idx: Dict[str, int],
+        local_key_to_buffer_idx: Dict[str, DataEntry],
+        tensor_layout: Optional[TensorLayout] = None,
     ) -> None:
         """
         Add data to a map and update the alignment. Ensure that the key-data
@@ -116,49 +108,49 @@ class NamedDataStore:
 
         # Check if the key exists.
         buffer_idx = self.key_to_buffer_idx.get(key, -1)
-        if buffer_idx != -1:
-            # If the key exists, the corresponding data must be identical.
-            if self.data_hash_to_buffer_idx.get(hashed, -1) != buffer_idx:
-                raise ValueError(
-                    f"Duplicate key {key} with different data. "
-                    f"Existing data: {self.buffers[buffer_idx].buffer}. "
-                    f"New data: {data}."
-                )
-            self.buffers[buffer_idx].alignment = math.lcm(
-                self.buffers[buffer_idx].alignment, alignment
+        # If the key exists, the corresponding data must be identical.
+        if (
+            buffer_idx != -1
+            and self.data_hash_to_buffer_idx.get(hashed, -1) != buffer_idx
+        ):
+            raise ValueError(
+                f"Duplicate key {key} with different data. "
+                f"Existing data: {self.buffers[buffer_idx]}. "
+                f"New data: {data}."
             )
         else:
             # Key doesn't exist; check if the data exists.
             buffer_idx = self.data_hash_to_buffer_idx.get(hashed, -1)
-            if buffer_idx != -1:
-                # The data exists; update the alignment.
-                self.buffers[buffer_idx].alignment = math.lcm(
-                    self.buffers[buffer_idx].alignment, alignment
-                )
-            else:
+            if buffer_idx == -1:
                 # The data doesn't exist; add it to the data store.
                 buffer_idx = len(self.buffers)
-                self.buffers.append(BufferEntry(data, alignment))
+                self.buffers.append(data)
                 self.data_hash_to_buffer_idx[hashed] = buffer_idx
 
             # Add key to the map and the key cache.
-            local_key_to_buffer_idx[key] = buffer_idx
+            local_key_to_buffer_idx[key] = DataEntry(
+                buffer_index=buffer_idx,
+                alignment=alignment,
+                tensor_layout=tensor_layout,
+            )
             self.key_to_buffer_idx[key] = buffer_idx
 
     def add_named_data(
         self,
         key: str,
-        data: bytes,
+        data: Union[bytes, torch.Tensor],
         alignment: Optional[int] = 1,
         external_tag: Optional[str] = None,
+        tensor_layout: Optional[TensorLayout] = None,
     ) -> None:
         """
         Adds a named blob to the NamedDataStore.
         Args:
             key (str): key associated with the data.
-            data (bytes): Bytes being requested to be serialized.
+            data (Union[bytes, torch.Tensor]): Union of bytes, or torch.Tensor to serialize. Note: if a tensor is passed, it must have contiguous memory layout. The tensor_layout will be inferred from the tensor and should not be passed in.
             alignment (int): alignment for bytes to be serialized with.
             external (Optional[str]): the external filename that this data is saved to.
+            tensor_layout (Optional[TensorLayout]): layout of the tensor, if applicable.
         Raises:
             ValueError: when the key exists in the store, and corresponding data
                 is different.
@@ -170,11 +162,28 @@ class NamedDataStore:
         if alignment <= 0:
             raise ValueError(f"Alignment must be greater than 0, received {alignment}.")
 
+        if isinstance(data, torch.Tensor):
+            real_tensor_layout = TensorLayout.from_tensor(data)
+            if tensor_layout is not None and not (real_tensor_layout == tensor_layout):
+                raise ValueError(
+                    f"Tensor {key} is a torch.Tensor, with tensor_layout {real_tensor_layout}. The provided tensor layout {tensor_layout} does not match."
+                )
+            tensor_layout = real_tensor_layout
+            byte_data = bytes(data.untyped_storage())
+        else:
+            byte_data = data
+
         if external_tag is None:
-            self._add_named_data_to_map(key, data, alignment, self.pte_data)
+            self._add_named_data_to_map(
+                key, byte_data, alignment, self.pte_data, tensor_layout
+            )
         else:
             self._add_named_data_to_map(
-                key, data, alignment, self.external_data.setdefault(external_tag, {})
+                key,
+                byte_data,
+                alignment,
+                self.external_data.setdefault(external_tag, {}),
+                tensor_layout,
             )
 
     def get_named_data_store_output(self) -> NamedDataStoreOutput:
@@ -192,19 +201,22 @@ class NamedDataStore:
                 data is different between them.
         """
         # Merge the pte_data.
-        for key, buffer_idx in other.pte_data.items():
+        for key, data_entry in other.pte_data.items():
             self.add_named_data(
                 key,
-                other.buffers[buffer_idx].buffer,
-                other.buffers[buffer_idx].alignment,
+                other.buffers[data_entry.buffer_index],
+                data_entry.alignment,
+                external_tag=None,
+                tensor_layout=data_entry.tensor_layout,
             )
 
         # Merge the external_data.
-        for filename, key_to_buffer_idx in other.external_data.items():
-            for key, buffer_idx in key_to_buffer_idx.items():
+        for filename, key_to_data_entry in other.external_data.items():
+            for key, data_entry in key_to_data_entry.items():
                 self.add_named_data(
                     key,
-                    other.buffers[buffer_idx].buffer,
-                    other.buffers[buffer_idx].alignment,
+                    other.buffers[data_entry.buffer_index],
+                    data_entry.alignment,
                     external_tag=filename,
+                    tensor_layout=data_entry.tensor_layout,
                 )

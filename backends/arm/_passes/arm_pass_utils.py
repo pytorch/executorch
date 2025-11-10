@@ -5,7 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import traceback
 from inspect import isclass
@@ -14,8 +13,10 @@ from typing import Optional, Sequence
 import torch
 import torch.fx
 from executorch.backends.arm.common.debug import get_node_debug_info
+from executorch.backends.arm.common.type import ensure_type
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from torch._export.utils import (
     get_buffer,
@@ -30,11 +31,25 @@ from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
 
 
+def is_submodule_node(node: torch.fx.Node):
+    if node.op not in ("get_attr", "placeholder"):
+        return False
+    try:
+        node.graph.owning_module.get_submodule(node.target)
+    except AttributeError:
+        return False
+    return True
+
+
 def is_get_attr_node(node: torch.fx.Node) -> bool:
     """
-    Returns true if the given node is a get attr node for a tensor of the model
+    Returns true if the given node is a get attr node for a tensor of the model.
     """
-    return isinstance(node, torch.fx.Node) and node.op == "get_attr"
+    return (
+        isinstance(node, torch.fx.Node)
+        and node.op == "get_attr"
+        and not is_submodule_node(node)
+    )
 
 
 def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
@@ -82,17 +97,18 @@ def get_param_tensor(
     elif is_lifted_tensor_constant(exp_prog, node):
         return get_lifted_tensor_constant(exp_prog, node)
     elif is_get_attr_node(node):
+        target_node = ensure_type(str, node.target)
         # This is a hack to support both lifted and unlifted graph
         try:
-            return getattr(node.graph.owning_module, node.target)  # type: ignore[arg-type]
+            return getattr(node.graph.owning_module, target_node)
         except AttributeError:
-            return getattr(exp_prog.graph_module, node.target)  # type: ignore[arg-type]
+            return getattr(exp_prog.graph_module, target_node)
     raise RuntimeError(f"unsupported param type, {node.op}.")
 
 
 def create_node(
     graph: torch.fx.Graph,
-    op_target: OpOverload,
+    op_target: OpOverload | EdgeOpOverload,
     args: tuple = (),
     kwargs: Optional[dict] = None,
     quantize: bool = False,
@@ -235,3 +251,8 @@ def set_node_arg(node: torch.fx.Node, i: int | str, value):
         node.kwargs = kwargs
     else:
         raise RuntimeError("Invalid type")
+
+
+def get_output_dim_orders(graph_module):
+    output_node = graph_module.graph.output_node()
+    return [get_first_fake_tensor(node).dim_order() for node in output_node.args[0]]

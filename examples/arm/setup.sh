@@ -26,9 +26,6 @@ enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
 enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
-mlsdk_manifest_url="https://github.com/arm/ai-ml-sdk-manifest.git"
-vulkan_sdk_version="1.4.321.1"
-vulkan_sdk_base_dir="vulkan_sdk"
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -38,23 +35,9 @@ toolchain_url=""
 toolchain_dir=""
 toolchain_md5_checksum=""
 
-if [[ "${ARCH}" == "x86_64" ]]; then
-    # Vulkan SDK
-    vulkan_sdk_url="https://sdk.lunarg.com/sdk/download/${vulkan_sdk_version}/linux/vulkansdk-linux-x86_64-${vulkan_sdk_version}.tar.xz"
-    vulkan_sdk_sha256="f22a3625bd4d7a32e7a0d926ace16d5278c149e938dac63cecc00537626cbf73"
+# Load logging helpers early so option parsing can emit status messages.
+source "$et_dir/backends/arm/scripts/utils.sh"
 
-elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
-    # Vulkan SDK
-    vulkan_sdk_url="https://github.com/jakoch/vulkan-sdk-arm/releases/download/1.4.321.1/vulkansdk-ubuntu-22.04-arm-1.4.321.1.tar.xz"
-    vulkan_sdk_sha256="c57e318d0940394d3a304034bb7ddabda788b5b0b54638e80e90f7264efe9f84"
-
-else
-    echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
-fi
-
-# MLSDK dependencies
-mlsdk_manifest_dir="ml-sdk-for-vulkan-manifest"
-vulkan_sdk_bin_dir="${vulkan_sdk_base_dir}/${vulkan_sdk_version}/${ARCH}/bin"
 
 # List of supported options and their descriptions
 OPTION_LIST=(
@@ -164,19 +147,8 @@ function check_options() {
                 enable_vulkan_sdk=1
                 shift
                 ;;
-            --mlsdk-manifest-url)
-                # Ensure that there is a url provided.
-                if [[ -n "$2" && "${2:0:1}" != "-" ]]; then
-                    mlsdk_manifest_url="$2"
-                    shift 2
-                else
-                    echo "Error: --mlsdk-manifest-url requires a URL argument."
-                    print_usage "$@"
-                    exit 1
-                fi
-                ;;
             --setup-test-dependency)
-                echo "Installing test dependency..."
+                log_step "deps" "Installing test dependency..."
                 source $et_dir/backends/arm/scripts/install_models_for_test.sh
                 exit 0
                 ;;
@@ -193,101 +165,48 @@ function check_options() {
 }
 
 function setup_root_dir() {
-    mkdir -p ${root_dir}
-    root_dir=$(realpath ${root_dir})
+    mkdir -p "${root_dir}"
+    root_dir=$(realpath "${root_dir}")
+    log_step "main" "Prepared root dir at ${root_dir}"
     setup_path_script="${root_dir}/setup_path"
 }
 
-function setup_vulkan_sdk() {
-
-    if command -v vulkaninfo > /dev/null 2>&1; then
-        echo "[${FUNCNAME[0]}] Vulkan SDK already installed..."
-        enable_vulkan_sdk=0
-        return
-    fi
-
-    cd "${root_dir}"
-
-    vulkan_sdk_tar_file="${vulkan_sdk_url##*/}"
-    if [[ ! -e "${vulkan_sdk_tar_file}" ]]; then
-        echo "[${FUNCNAME[0]}] Downloading Vulkan SDK - ${vulkan_sdk_url}.."
-        curl -L --output "${vulkan_sdk_tar_file}" "${vulkan_sdk_url}"
-        echo "${vulkan_sdk_sha256} ${vulkan_sdk_tar_file}" | sha256sum -c -
-        rm -fr ${vulkan_sdk_base_dir}
-    fi
-
-    mkdir -p ${vulkan_sdk_base_dir}
-    tar -C ${vulkan_sdk_base_dir} -xJf "${vulkan_sdk_tar_file}"
-
-    vulkan_sdk_bin_path="$(cd ${vulkan_sdk_bin_dir} && pwd)"
-    if ${vulkan_sdk_bin_path}/vulkaninfo > /dev/null 2>&1; then
-        echo "[${FUNCNAME[0]}] Vulkan SDK OK"
-    else
-        echo "[${FUNCNAME[0]}] Vulkan SDK NOK - perhaps need manual install of swifthshader or mesa-vulkan driver?"
-        exit 1
-    fi
-}
-
 function setup_ethos_u_tools() {
+    log_step "ethos-u-tools" "Installing Ethos-U Python tooling"
     CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
-}
-
-function prepend_env_in_setup_path() {
-    echo "export $1=$2:\${$1-}" >> ${setup_path_script}.sh
-    echo "set --path -pgx $1 $2" >> ${setup_path_script}.fish
-}
-
-function append_env_in_setup_path() {
-    echo "export $1=\${$1-}:$2" >> ${setup_path_script}.sh
-    echo "set --path -agx $1 $2" >> ${setup_path_script}.fish
 }
 
 function create_setup_path(){
     cd "${root_dir}"
 
-    # Clear setup_path_script
-    echo "" > "${setup_path_script}.sh"
-    echo "" > "${setup_path_script}.fish"
+    clear_setup_path
+    log_step "path" "Generating setup path scripts at ${setup_path_script}"
 
     if [[ "${enable_fvps}" -eq 1 ]]; then
         setup_path_fvp
     fi
 
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
-        toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
-        append_env_in_setup_path PATH ${toolchain_bin_path}
+        setup_path_toolchain
     fi
 
     if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
-        cd "${root_dir}"
-        vulkan_sdk_bin_path="$(cd ${vulkan_sdk_bin_dir} && pwd)"
-        append_env_in_setup_path PATH ${vulkan_sdk_bin_path}
+        setup_path_vulkan
     fi
 
     if [[ "${enable_model_converter}" -eq 1 ]]; then
-        cd "${root_dir}"
-        model_converter_bin_path="$(cd ${mlsdk_manifest_dir}/sw/model-converter/build && pwd)"
-        append_env_in_setup_path PATH ${model_converter_bin_path}
+        setup_path_model_converter
     fi
 
-    # Add Path for vgf-lib and emulation-layer
     if [[ "${enable_vgf_lib}" -eq 1 ]]; then
-        cd "${root_dir}"
-        model_vgf_path="$(cd ${mlsdk_manifest_dir}/sw/vgf-lib/deploy && pwd)"
-        append_env_in_setup_path PATH ${model_vgf_path}/bin
-        append_env_in_setup_path LD_LIBRARY_PATH "${model_vgf_path}/lib"
-        append_env_in_setup_path DYLD_LIBRARY_PATH "${model_vgf_path}/lib"
+        setup_path_vgf_lib
     fi
 
     if [[ "${enable_emulation_layer}" -eq 1 ]]; then
-        cd "${root_dir}"
-        model_emulation_layer_path="$(cd ${mlsdk_manifest_dir}/sw/emulation-layer/ && pwd)"
-        prepend_env_in_setup_path LD_LIBRARY_PATH "${model_emulation_layer_path}/deploy/lib"
-        prepend_env_in_setup_path DYLD_LIBRARY_PATH "${model_emulation_layer_path}/deploy/lib"
-        prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Tensor_Emulation
-        prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Graph_Emulation
-        prepend_env_in_setup_path VK_ADD_LAYER_PATH "${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d"
+        setup_path_emulation_layer
     fi
+
+    log_step "path" "Update PATH by sourcing ${setup_path_script}.{sh|fish}"
 }
 
 
@@ -302,11 +221,11 @@ if [[ $is_script_sourced -eq 0 ]]; then
     check_options "$@"
 
     # Import utils
-    source $et_dir/backends/arm/scripts/utils.sh
     source $et_dir/backends/arm/scripts/fvp_utils.sh
     source $et_dir/backends/arm/scripts/toolchain_utils.sh
+    source $et_dir/backends/arm/scripts/vulkan_utils.sh
 
-    echo "[main]: Checking platform and os"
+    log_step "main" "Checking platform and OS"
     check_platform_support
     check_os_support
 
@@ -315,20 +234,17 @@ if [[ $is_script_sourced -eq 0 ]]; then
     # Setup the root dir
     setup_root_dir
     cd "${root_dir}"
-    echo "[main] Using root dir ${root_dir} and options:"
-    echo "enable-fvps=${enable_fvps}"
-    echo "target-toolchain=${target_toolchain}"
-    echo "enable-baremetal-toolchain=${enable_baremetal_toolchain}"
-    echo "enable-model-converter=${enable_model_converter}"
-    echo "enable-vgf-lib=${enable_vgf_lib}"
-    echo "enable-emulation-layer=${enable_emulation_layer}"
-    echo "enable-vulkan-sdk=${enable_vulkan_sdk}"
-    echo "enable-vela=${enable_vela}"
-    echo "mlsdk-manifest-url=${mlsdk_manifest_url}"
 
+    if [[ "${mlsdk_manifest_dir}" != /* ]]; then
+        mlsdk_manifest_dir="${root_dir}/${mlsdk_manifest_dir}"
+    fi
+
+    log_step "options" "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}, mlsdk-dir=${mlsdk_manifest_dir}"
+    log_step "options" "ethos-u: fvps=${enable_fvps}, toolchain=${enable_baremetal_toolchain}, vela=${enable_vela} | mlsdk: model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, emu-layer=${enable_emulation_layer}, vulkan-sdk=${enable_vulkan_sdk}"
 
     # Setup toolchain
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
+        log_step "toolchain" "Configuring baremetal toolchain (${target_toolchain:-gnu})"
         # Select appropriate toolchain
         select_toolchain
         setup_toolchain
@@ -336,6 +252,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
 
     # Setup FVP
     if [[ "${enable_fvps}" -eq 1 ]]; then
+        log_step "fvp" "Setting up Arm Fixed Virtual Platforms"
         check_fvp_eula
         setup_fvp
         install_fvp
@@ -343,33 +260,66 @@ if [[ $is_script_sourced -eq 0 ]]; then
 
     # Setup Vulkan SDK
     if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
+        log_step "vulkan" "Setting up Vulkan SDK"
         setup_vulkan_sdk
     fi
 
     if [[ "${enable_model_converter}" -eq 1 || \
           "${enable_vgf_lib}" -eq 1 || \
           "${enable_emulation_layer}" -eq 1 ]]; then
-        source $et_dir/backends/arm/scripts/mlsdk_utils.sh -u "${mlsdk_manifest_url}"
-        setup_model_converter ${root_dir} ${mlsdk_manifest_dir} ${enable_model_converter} ${enable_vgf_lib} ${enable_emulation_layer}
+        log_step "mlsdk" "Configuring MLSDK components (model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, emu-layer=${enable_emulation_layer})"
+        source $et_dir/backends/arm/scripts/mlsdk_utils.sh
+        setup_mlsdk "${root_dir}" \
+                    "${mlsdk_manifest_dir}" \
+                    "${enable_model_converter}" \
+                    "${enable_vgf_lib}" \
+                    "${enable_emulation_layer}"
     fi
 
-    # Create new setup_path script
-    if [[ "${enable_baremetal_toolchain}" -eq 1 || \
-           "${enable_fvps}" -eq 1 || \
-           "${enable_vulkan_sdk}" -eq 1 || \
-          "${enable_model_converter}" -eq 1 ]]; then
-        create_setup_path
+    # Create the setup_path.sh used to create the PATH variable for shell
+    create_setup_path
+
+    # Setup the TOSA reference model and serialization dependencies
+    log_step "deps" "Installing TOSA reference model dependencies"
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        pip install --no-dependencies -r "$et_dir/backends/arm/requirements-arm-tosa.txt"
+
+    pushd "$root_dir"
+    if [[ ! -d "tosa-tools" ]]; then
+        git clone https://git.gitlab.arm.com/tosa/tosa-tools.git
     fi
 
-    # Setup the tosa_reference_model and dependencies
-    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-tosa.txt
+    pushd tosa-tools
+    git fetch origin main
+    git checkout 8468d041c50c6d806f3c1c18c66d7ef641e46580 # serialization lib pybindings
+    git cherry-pick 368f0cd745b2a1569bf36f077daeba95775de192 # perf fix for >2gb models
+    if [[ ! -d "reference_model" ]]; then
+        log_step "main" "[error] Missing reference_model directory in tosa-tools repo."
+        exit 1
+    fi
+    if [[ ! -d "serialization" ]]; then
+        log_step "main" "[error] Missing serialization directory in tosa-tools repo."
+        exit 1
+    fi
+
+
+    export CMAKE_BUILD_PARALLEL_LEVEL="$(get_parallel_jobs)"
+
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        BUILD_PYBIND=1 \
+        pip install --no-dependencies ./reference_model
+
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        BUILD_PYBIND=1 \
+        pip install --no-dependencies ./serialization
+    popd
+    popd
 
     if [[ "${enable_vela}" -eq 1 ]]; then
+        log_step "deps" "Installing Ethos-U Vela compiler"
         setup_ethos_u_tools
     fi
 
-    echo "[main] Update path by running 'source ${setup_path_script}.sh'"
-    hash fish 2>/dev/null && echo >&2 "[main] Or for fish shell use 'source ${setup_path_script}.fish'"
-    echo "[main] success!"
+    log_step "main" "Setup complete"
     exit 0
 fi

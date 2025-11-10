@@ -99,28 +99,6 @@ announce_configured_options(CCACHE_PROGRAM)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Setup RPATH. See
-# https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling
-# Use separate rpaths during build and install phases
-set(CMAKE_SKIP_BUILD_RPATH OFF)
-# Don't use the install-rpath during the build phase
-set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
-# Automatically add all linked folders that are NOT in the build directory to
-# the rpath (per library?)
-#
-# TODO: Doesn't work for us right now because we are not installing .so's into
-# the correct locations. For example we have libcustom_ops_aot_lib.so depending
-# on _portable_lib.so, which was eventually put under
-# <site-packages>/executorch/extension/pybindings/ but this rpath is not
-# automatically added because at build time it seems `portable_lib` is being
-# built under the same directory, so no extra rpath is being added. To properly
-# fix this we need to install `portable_lib` into the correct path.
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
-# ------------------------------ OPTIONS -------------------------------------
-# WARNING: Please don't add example specific options in this CMakeLists.txt.
-# Instead please use `find_package(executorch REQUIRED)` in the example
-# directory and add a new executable in the example `CMakeLists.txt`.
-
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   # Avoid pulling in the logging strings, which can be large. Note that this
   # will set the compiler flag for all targets in this directory, and for all
@@ -143,9 +121,13 @@ endif()
 
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol.
-set(CMAKE_CXX_FLAGS_RELEASE
-    "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
-)
+if(WIN32)
+  set(CMAKE_CXX_FLAGS_RELEASE "/Gy /Gw ${CMAKE_CXX_FLAGS_RELEASE}")
+else()
+  set(CMAKE_CXX_FLAGS_RELEASE
+      "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
+  )
+endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
@@ -222,7 +204,7 @@ if(EXECUTORCH_BUILD_CPUINFO)
   install(
     TARGETS cpuinfo
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES
     DESTINATION ${_common_include_directories}
   )
@@ -262,10 +244,22 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   executorch_move_interface_include_directories_to_build_time_only(
     pthreadpool_interface
   )
+
+  if(APPLE)
+    # Use hidden visibility for pthreadpool on Apple platforms to avoid issues
+    # with pthreadpool symbols from libtorch_cpu taking precedence over the ones
+    # from the pthreadpool library statically linked in _portable_lib. The
+    # pthreadpool public APIs are marked as weak by default on some Apple
+    # platforms, so setting to hidden visibility works around this by not
+    # putting the symbol in the indirection table. See
+    # https://github.com/pytorch/executorch/issues/14321 for more details.
+    target_compile_options(pthreadpool PRIVATE -fvisibility=hidden)
+  endif()
+
   install(
     TARGETS pthreadpool pthreadpool_interface fxdiv
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES
     DESTINATION ${_common_include_directories}
   )
@@ -280,7 +274,10 @@ if(EXECUTORCH_BUILD_TESTS)
 endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+)
 
 # Let files say "include <executorch/path/to/header.h>".
 # TODO(#6475): This requires/assumes that the repo lives in a directory named
@@ -571,6 +568,11 @@ if(EXECUTORCH_BUILD_QNN)
   list(APPEND _executorch_backends qnn_executorch_backend)
 endif()
 
+if(EXECUTORCH_BUILD_ENN)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/samsung)
+  list(APPEND _executorch_backends enn_backend)
+endif()
+
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
   list(APPEND _executorch_backends xnnpack_backend)
@@ -578,6 +580,25 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
+  list(APPEND _executorch_backends coretex_m_backend)
+endif()
+
+# Build common AOTI functionality if needed by CUDA or Metal backends
+if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_METAL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/aoti)
+endif()
+
+if(EXECUTORCH_BUILD_CUDA)
+  # Build CUDA-specific AOTI functionality
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cuda)
+  # Add aoti_cuda_backend to backends - it transitively includes aoti_cuda_shims
+  # and cuda_platform
+  list(APPEND _executorch_backends aoti_cuda_backend)
+endif()
+
+if(EXECUTORCH_BUILD_METAL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/metal)
+  list(APPEND _executorch_backends metal_backend)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
@@ -621,6 +642,11 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   list(APPEND _executorch_extensions extension_module_static)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/named_data_map)
+  list(APPEND _executorch_extensions extension_named_data_map)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
   if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
     set(SUPPORT_REGEX_LOOKAHEAD ON)
@@ -639,15 +665,6 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
     )
   endif()
   list(APPEND _executorch_extensions tokenizers)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
-  list(APPEND _executorch_extensions extension_llm_runner)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -699,9 +716,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
       ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
       ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
   )
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental
-  )
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/csrc/cpu)
   unset(EXECUTORCH_INCLUDE_DIRS)
 
   executorch_target_link_options_shared_lib(torchao_ops_executorch)
@@ -710,7 +725,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   install(
     TARGETS torchao_ops_executorch torchao_kernels_aarch64
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES
     DESTINATION ${_common_include_directories}
   )
@@ -721,7 +736,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
     install(
       TARGETS kleidiai
       EXPORT ExecuTorchTargets
-      DESTINATION lib
+      DESTINATION ${CMAKE_INSTALL_LIBDIR}
       INCLUDES
       DESTINATION ${_common_include_directories}
     )
@@ -731,9 +746,6 @@ endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
 
-  # Add codegen tools subdirectory for selective_build pybind module
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
-
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()
@@ -741,6 +753,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   if(NOT EXECUTORCH_BUILD_DEVTOOLS)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
   endif()
+
+  # Add codegen tools subdirectory for selective_build pybind module
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
 
   # Create bundled_module target only for pybindings when bundled_program exists
   # This target has hard dependencies on devtools generated headers
@@ -762,7 +777,10 @@ if(EXECUTORCH_BUILD_PYBIND)
       bundled_module PUBLIC ${_common_include_directories}
     )
     target_compile_options(
-      bundled_module PUBLIC -Wno-deprecated-declarations -fPIC
+      bundled_module
+      PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations
+             -fPIC>
     )
   endif()
 
@@ -819,6 +837,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs qnn_executorch_backend)
   endif()
 
+  if(EXECUTORCH_BUILD_ENN)
+    list(APPEND _dep_libs enn_backend)
+  endif()
+
   if(EXECUTORCH_BUILD_XNNPACK)
     # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
     # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
@@ -830,8 +852,14 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   # compile options for pybind
-  set(_pybind_compile_options -Wno-deprecated-declarations -fPIC -frtti
-                              -fexceptions
+  set(_pybind_compile_options
+      $<$<CXX_COMPILER_ID:MSVC>:/EHsc
+      /GR
+      /wd4996>
+      $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations
+      -fPIC
+      -frtti
+      -fexceptions>
   )
 
   # util lib
@@ -858,6 +886,22 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
+  # Set RPATH to find PyTorch libraries relative to the installation location
+  # This goes from executorch/extension/pybindings up to site-packages, then to
+  # torch/lib. Don't do this to APPLE, as it will error out on the following
+  # error:
+  #
+  if(APPLE)
+    # Skip setting @loader_path for APPLE, since it causes error like ld:
+    # duplicate LC_RPATH '@loader_path' in '<site-packages>/torch/lib/
+    # libtorch_cpu.dylib'
+  else()
+    set_target_properties(
+      portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"
+                              INSTALL_RPATH "$ORIGIN/../../../torch/lib"
+    )
+  endif()
+
   install(
     TARGETS portable_lib
     EXPORT ExecuTorchTargets
@@ -876,6 +920,20 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
   list(APPEND _executorch_extensions extension_training)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
+  list(APPEND _executorch_extensions extension_llm_runner)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/asr/runner)
+  list(APPEND _executorch_extensions extension_asr_runner)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_LLM)
@@ -919,6 +977,19 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
    OR NOT EXECUTORCH_SELECT_OPS_LIST STREQUAL ""
    OR NOT EXECUTORCH_SELECT_OPS_MODEL STREQUAL ""
 )
+  # Use optimized kernels when available.
+  if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+    set(_selected_kernel_functions_yaml
+        ${CMAKE_CURRENT_BINARY_DIR}/configurations/merged.yaml
+    )
+    set(_selected_kernel_libs "optimized_kernels" "optimized_portable_kernels")
+  else()
+    set(_selected_kernel_functions_yaml
+        ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+    )
+    set(_selected_kernel_libs "portable_kernels")
+  endif()
+
   gen_selected_ops(
     LIB_NAME
     "executorch_selected_kernels"
@@ -938,7 +1009,7 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
     LIB_NAME
     "executorch_selected_kernels"
     FUNCTIONS_YAML
-    ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+    ${_selected_kernel_functions_yaml}
     CUSTOM_OPS_YAML
     ""
     DTYPE_SELECTIVE_BUILD
@@ -949,13 +1020,19 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
     LIB_NAME
     "executorch_selected_kernels"
     KERNEL_LIBS
-    "portable_kernels"
+    ${_selected_kernel_libs}
     DEPS
     executorch_core
     DTYPE_SELECTIVE_BUILD
     "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
   )
   list(APPEND _executorch_kernels executorch_selected_kernels)
+
+  install(
+    TARGETS executorch_selected_kernels
+    EXPORT ExecuTorchTargets
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
 else()
   # No selective build - link the full library.
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
@@ -975,6 +1052,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   set(_executor_runner_libs executorch extension_evalue_util
                             extension_runner_util gflags executorch_backends
   )
+
+  if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
+    list(APPEND _executor_runner_libs extension_flat_tensor)
+  endif()
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)

@@ -17,7 +17,6 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
     quantize_int8,
@@ -27,6 +26,9 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
     pad_options,
     pad_v2_options,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+
+from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -35,22 +37,23 @@ class ConstantPadNDConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
         node: Node,
-        target: Target,
+        neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        match target:
-            case Target.RT700:
-                # TODO: Consider different tensor formats (dim-order)
-                paddings = node.args[1]
-                if len(paddings) > 4 and paddings[4:6] != [0, 0]:
-                    # Attempt to Pad channels dimension, which is not supported on Neutron.
-                    return False
-
-                return True
-
-            case _:
+        paddings = node.args[1]
+        if node.meta[NXP_NODE_FORMAT].is_channels_first():
+            # Dim `1` will end up being the channels. It is padded by paddings[4:6].
+            if len(paddings) > 4 and paddings[4:6] != [0, 0]:
+                # Attempt to Pad channels dimension -> currently not supported
                 return False
+        else:
+            # Dim `-1` will end up being the channels. It is padded by paddings[:2].
+            if len(paddings) > 0 and paddings[:2] != [0, 0]:
+                # Attempt to Pad channels dimension -> currently not supported
+                return False
+
+        return True
 
     @staticmethod
     def _is_supported_in_IR(
@@ -69,10 +72,6 @@ class ConstantPadNDConverter(NodeConverter):
             return False
 
         if not NodeConverter._has_shared_q_params_if_quantized(node):
-            return False
-
-        if len(paddings) > 4 and paddings[4:6] != [0, 0]:
-            # Attempt to Pad channels dimension -> currently not supported
             return False
 
         return True

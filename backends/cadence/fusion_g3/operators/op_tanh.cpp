@@ -12,7 +12,7 @@
 
 #include <xa_nnlib_kernels_api.h>
 
-#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
+#include <executorch/backends/cadence/common/xt_macros.h>
 #include <executorch/kernels/portable/cpu/pattern/pattern.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -22,7 +22,6 @@ using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -63,4 +62,3 @@ Tensor& tanh_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

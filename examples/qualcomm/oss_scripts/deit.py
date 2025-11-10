@@ -8,6 +8,7 @@ import getpass
 import json
 import logging
 import os
+
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -95,6 +96,8 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
     )
     adb.push(inputs=inputs)
     adb.execute()
@@ -147,6 +150,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

@@ -6,6 +6,8 @@
 
 # pyre-unsafe
 
+import unittest
+
 import torch
 from executorch.backends.test.suite.flow import TestFlow
 
@@ -31,20 +33,32 @@ class TestSqrt(OperatorTest):
         # Test with different dtypes
         model = SqrtModel().to(dtype)
         # Use non-negative values only for sqrt
-        self._test_op(model, (torch.rand(10, 10).to(dtype),), flow)
+        self._test_op(
+            model,
+            (torch.rand(10, 10).to(dtype),),
+            flow,
+            generate_random_test_inputs=False,
+        )
 
     def test_sqrt_shapes(self, flow: TestFlow) -> None:
         # Test with different tensor shapes
 
         # 1D tensor
-        self._test_op(SqrtModel(), (torch.rand(20),), flow)
+        self._test_op(
+            SqrtModel(), (torch.rand(20),), flow, generate_random_test_inputs=False
+        )
 
         # 2D tensor
-        self._test_op(SqrtModel(), (torch.rand(5, 10),), flow)
+        self._test_op(
+            SqrtModel(), (torch.rand(5, 10),), flow, generate_random_test_inputs=False
+        )
 
         # 3D tensor
-        self._test_op(SqrtModel(), (torch.rand(3, 4, 5),), flow)
+        self._test_op(
+            SqrtModel(), (torch.rand(3, 4, 5),), flow, generate_random_test_inputs=False
+        )
 
+    @unittest.skip("NaN and Inf are not enforced for backends.")
     def test_sqrt_edge_cases(self, flow: TestFlow) -> None:
         # Test edge cases
 

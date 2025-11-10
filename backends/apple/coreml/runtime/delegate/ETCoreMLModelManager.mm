@@ -447,15 +447,13 @@ NSString *raw_model_identifier(NSString *identifier) {
     // Handle based on the type of the model asset.
     switch (modelAssetType.value()) {
         case ModelAssetType::CompiledModel: {
-            // The model is already compiled; no further action needed.
-            // Return the existing model URL.
+            // Model is already compiled.
             ETCoreMLLogInfo("The model in the pte file is pre-compiled.  Skipping compilation.");
             return modelURL;
         }
 
         case ModelAssetType::Model: {
-            // The model is not compiled yet.
-            // Compile the model at the specified URL with a maximum wait time of 5 minutes.
+            // Compile the model.
             ETCoreMLLogInfo("The model in the pte file is not pre-compiled.  Compiling with a 5 min timeout.");
             NSURL *compiledModelURL = [ETCoreMLModelCompiler compileModelAtURL:modelURL
                                                           maxWaitTimeInSeconds:(5 * 60)
@@ -474,28 +472,43 @@ NSString *raw_model_identifier(NSString *identifier) {
     __block ETCoreMLAsset *compiledModelAsset = [self assetWithIdentifier:identifier];
     if (compiledModelAsset) {
         ETCoreMLLogInfo("Cache Hit: Successfully retrieved compiled model with identifier=%@ from the models cache.", identifier);
-    } else {
-        ETCoreMLLogInfo("Cache Miss: Compiled Model with identifier=%@ was not found in the models cache.", identifier);
+        return compiledModelAsset;
     }
-
+    
+    ETCoreMLLogInfo("Cache Miss: Compiled Model with identifier=%@ was not found in the models cache.", identifier);
+    __block NSURL *compiledModelURL;
     [self.assetManager withTemporaryDirectory:^(NSURL * _Nonnull directoryURL) {
-        if (compiledModelAsset) {
-            return;
-        }
-
         // The directory specified by `directoryURL` is unique and will be automatically cleaned up
         // once the enclosing block completes.
-        NSURL *compiledModelURL = [self compiledModelURLWithIdentifier:identifier
+        compiledModelURL = [self compiledModelURLWithIdentifier:identifier
                                                               modelURL:modelURL
                                                             inMemoryFS:inMemoryFS
                                                                 dstURL:directoryURL
                                                                  error:error];
         if (compiledModelURL) {
             // Move the compiled model to the asset manager to transfer ownership.
-            ETCoreMLLogInfo("Storing compiled asset with identifier=%@ in the asset manager.", identifier);
+            ETCoreMLLogInfo("Successfully got compiled model with identifier=%@.  Transferring ownership to assetManager.", identifier);
             compiledModelAsset = [self.assetManager storeAssetAtURL:compiledModelURL withIdentifier:identifier error:error];
         }
     }];
+
+    if (!compiledModelAsset) {
+        ETCoreMLLogInfo("Failed to transfer ownership of asset with identifier=%@ to assetManager", identifier);
+        if (compiledModelURL && [self.fileManager fileExistsAtPath:compiledModelURL.path]) {
+            // Log what error was since we now attempt backup path, and previous error is overwritten
+            if (error && *error) {
+                ETCoreMLLogInfo("error=%@", (*error).localizedDescription);
+                *error = nil;
+            }
+            ETCoreMLLogInfo("Attempting to fall back by loading model without transferring ownership");
+            auto backingAsset = Asset::make(compiledModelURL, identifier, self.assetManager.fileManager, error);
+            if (backingAsset) {
+                compiledModelAsset = [[ETCoreMLAsset alloc] initWithBackingAsset:backingAsset.value()];
+            }
+        }
+    }
+
+    // compiledModelAsset can still be nil if our backup path failed
 
     return compiledModelAsset;
 }
@@ -585,10 +598,9 @@ NSString *raw_model_identifier(NSString *identifier) {
         return nil;
     }
 
-    ETCoreMLModel *model = [ETCoreMLModelLoader loadModelWithContentsOfURL:compiledModelAsset.contentURL
+    ETCoreMLModel *model = [ETCoreMLModelLoader loadModelWithCompiledAsset:compiledModelAsset
                                                              configuration:configuration
                                                                   metadata:metadata
-                                                              assetManager:self.assetManager
                                                                      error:error];
     if (!model) {
         return nil;

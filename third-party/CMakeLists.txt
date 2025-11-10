@@ -29,7 +29,8 @@ endif()
 # Otherwise, flatc will target the project's toolchain (i.e. iOS, or Android).
 ExternalProject_Add(
   flatbuffers_ep
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatc_proj
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatc_ep
+  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatc_ep/src/build
   SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatbuffers
   CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
              -DFLATBUFFERS_INSTALL=ON
@@ -82,6 +83,7 @@ ExternalProject_Add(
   flatcc_ep
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep
   SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatcc
+  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep/src/build
   CMAKE_ARGS -DFLATCC_RTONLY=OFF
              -DFLATCC_TEST=OFF
              -DFLATCC_REFLECTION=OFF

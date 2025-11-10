@@ -34,7 +34,7 @@ function ExportModel-Xnnpack {
         [bool]$quantize
     )
 
-    if $(quantize) {
+    if ($quantize) {
         python -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --quantize | Write-Host
         $modelFile = "$($modelName)_xnnpack_q8.pte"
     } else {

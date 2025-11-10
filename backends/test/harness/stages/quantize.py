@@ -1,4 +1,4 @@
-from typing import Any, Optional, Sequence, Tuple
+from typing import Any, Callable, Optional, Sequence, Tuple
 
 import torch
 
@@ -7,7 +7,7 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
 
-from torch.export import export_for_training
+from torch.export import export
 
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
@@ -15,6 +15,8 @@ from torchao.quantization.pt2e.quantize_pt2e import (
     prepare_qat_pt2e,
 )
 from torchao.quantization.pt2e.quantizer import Quantizer
+from torchao.quantization.quant_api import quantize_
+from torchao.utils import unwrap_tensor_subclass
 
 
 class Quantize(Stage):
@@ -47,7 +49,7 @@ class Quantize(Stage):
         assert inputs is not None
         if self.is_qat:
             artifact.train()
-        captured_graph = export_for_training(artifact, inputs, strict=True).module()
+        captured_graph = export(artifact, inputs, strict=True).module()
 
         assert isinstance(captured_graph, torch.fx.GraphModule)
 
@@ -79,3 +81,48 @@ class Quantize(Stage):
 
     def run_artifact(self, inputs):
         return self.converted_graph.forward(*inputs)
+
+
+class Quantize_(Stage):
+    """
+    TorchAO quantization stage using the quantize_ API.
+    """
+
+    def __init__(
+        self,
+        config: Any,
+        filter_fn: Optional[Callable[[torch.nn.Module, str], bool]] = None,
+    ):
+        """
+        Args:
+            config: TorchAO quantization config (e.g., Int4WeightOnlyConfig, Int8DynamicActivationInt8WeightConfig)
+            filter_fn: Optional filter function to select which modules to quantize
+        """
+        self.config = config
+        self.filter_fn = filter_fn
+        self.quantized_module = None
+
+    def stage_type(self) -> str:
+        return StageType.QUANTIZE
+
+    def run(
+        self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
+    ) -> None:
+        # Apply quantize_ to the model
+        quantize_(artifact, self.config, self.filter_fn)
+
+        # Unwrap tensor subclasses for export compatibility
+        unwrap_tensor_subclass(artifact)
+
+        self.quantized_module = artifact
+
+    @property
+    def artifact(self) -> torch.nn.Module:
+        return self.quantized_module
+
+    @property
+    def graph_module(self) -> torch.nn.Module:
+        return self.quantized_module
+
+    def run_artifact(self, inputs):
+        return self.quantized_module.forward(*inputs)

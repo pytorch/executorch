@@ -69,6 +69,7 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
                 recipe_type, activation_dtype=torch.float32, **kwargs
             )
         elif recipe_type == CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_CHANNEL:
+            self._validate_and_set_deployment_target(kwargs, ct.target.iOS18, "torchao")
             return self._build_torchao_quantized_recipe(
                 recipe_type,
                 weight_dtype=torch.int4,
@@ -77,6 +78,7 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
             )
         elif recipe_type == CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP:
             group_size = kwargs.pop("group_size", 32)
+            self._validate_and_set_deployment_target(kwargs, ct.target.iOS18, "torchao")
             return self._build_torchao_quantized_recipe(
                 recipe_type,
                 weight_dtype=torch.int4,
@@ -85,11 +87,14 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
                 **kwargs,
             )
         elif recipe_type == CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_CHANNEL:
+            self._validate_and_set_deployment_target(kwargs, ct.target.iOS16, "torchao")
             return self._build_torchao_quantized_recipe(
                 recipe_type, weight_dtype=torch.int8, is_per_channel=True, **kwargs
             )
         elif recipe_type == CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP:
             group_size = kwargs.pop("group_size", 32)
+            # override minimum_deployment_target to ios18 for torchao (GH issue #13122)
+            self._validate_and_set_deployment_target(kwargs, ct.target.iOS18, "torchao")
             return self._build_torchao_quantized_recipe(
                 recipe_type,
                 weight_dtype=torch.int8,
@@ -312,8 +317,6 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
             ao_quantization_configs=[config],
         )
 
-        # override minimum_deployment_target to ios18 for torchao (GH issue #13122)
-        self._validate_and_set_deployment_target(kwargs, ct.target.iOS18, "torchao")
         lowering_recipe = self._get_coreml_lowering_recipe(**kwargs)
 
         return ExportRecipe(

@@ -22,6 +22,7 @@ from executorch.extension.pybindings.test.make_test import (
     ModuleAddWithAttributes,
     ModuleChannelsLast,
     ModuleChannelsLastInDefaultOut,
+    ModuleLinear,
     ModuleMulti,
 )
 from torch.export import export
@@ -623,3 +624,112 @@ class PybindingsTest(unittest.TestCase):
         self.assertEqual(output_tensor.is_memory_planned(), True)
         self.assertEqual(output_tensor.nbytes(), 16)
         self.assertEqual(str(output_tensor), tensor_info)
+
+    def test_program_data_separation(self) -> None:
+        eager_module = ModuleLinear()
+        inputs = eager_module.get_inputs()
+        exported_program = export(eager_module, inputs, strict=True)
+        exec_program = to_edge(exported_program).to_executorch(
+            config=ExecutorchBackendConfig(
+                # Move all tensor data to '_default_external_constant' file.
+                external_constants=True,
+            )
+        )
+        program_buffer = exec_program.buffer
+        assert len(exec_program._tensor_data) == 1
+        data_buffer = bytes(exec_program._tensor_data.pop("_default_external_constant"))
+
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pte_file = os.path.join(tmpdir, "linear.pte")
+            with open(pte_file, "wb") as f:
+                f.write(program_buffer)
+            ptd_file = os.path.join(tmpdir, "linear.ptd")
+            with open(ptd_file, "wb") as ptd:
+                ptd.write(data_buffer)
+            expected = eager_module(inputs[0])
+            # Test 1: File-based loading with external data file
+            executorch_module_file = self.runtime._load_for_executorch(
+                pte_file, ptd_file
+            )
+            executorch_output_file = executorch_module_file.forward(inputs)[0]
+            self.assertTrue(torch.allclose(expected, executorch_output_file))
+
+        # Test 2: Buffer-based loading with external data buffer
+        executorch_module_buffer = self.load_fn(program_buffer, data_buffer)
+        executorch_output_buffer = executorch_module_buffer.forward(inputs)[0]
+        self.assertTrue(torch.allclose(expected, executorch_output_buffer))
+
+        # Test 3: Buffer-based loading without external data file (should fail or work differently)
+        # This should fail because the program expects external data
+        executorch_module_no_data = self.load_fn(program_buffer)
+        with self.assertRaises(RuntimeError):
+            executorch_module_no_data.forward(inputs)
+
+        # Test 4: Test with invalid data buffer (should fail)
+        invalid_bytes = b"invalid bytes"
+        executorch_module_invalid_data = self.load_fn(program_buffer, invalid_bytes)
+        with self.assertRaises(RuntimeError):
+            executorch_module_invalid_data.forward(inputs)
+
+        # Test 5: Test bundled program loading with external data
+        # First create a bundled program with external constants
+        from executorch.devtools.bundled_program.config import (
+            MethodTestCase,
+            MethodTestSuite,
+        )
+        from executorch.devtools.bundled_program.core import BundledProgram
+        from executorch.devtools.bundled_program.serialize import (
+            serialize_from_bundled_program_to_flatbuffer,
+        )
+
+        method_test_suites = [
+            MethodTestSuite(
+                method_name="forward",
+                test_cases=[
+                    MethodTestCase(
+                        inputs=input,
+                        expected_outputs=expected,
+                    )
+                    for input in inputs
+                ],
+            ),
+        ]
+        bundled_program = BundledProgram(exec_program, method_test_suites)
+        bundled_buffer = serialize_from_bundled_program_to_flatbuffer(bundled_program)
+        bundled_module = self.runtime._load_bundled_program_from_buffer(bundled_buffer)
+
+        # Load module from bundled program with external data buffer
+        executorch_module_bundled = (
+            self.runtime._load_for_executorch_from_bundled_program(
+                bundled_module, data_buffer
+            )
+        )
+        executorch_output_bundled = executorch_module_bundled.forward(inputs)[0]
+        self.assertTrue(torch.allclose(expected, executorch_output_bundled))
+
+        # Load module from bundled program with external data file
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ptd_file = os.path.join(tmpdir, "linear.ptd")
+            with open(ptd_file, "wb") as ptd:
+                ptd.write(data_buffer)
+            executorch_module_bundled_data_file = (
+                self.runtime._load_for_executorch_from_bundled_program(
+                    bundled_module, ptd_file
+                )
+            )
+            executorch_output_bundled_data_file = (
+                executorch_module_bundled_data_file.forward(inputs)[0]
+            )
+            self.assertTrue(
+                torch.allclose(expected, executorch_output_bundled_data_file)
+            )
+
+        # Test 6: Bundled program without external data should fail
+        executorch_module_bundled_no_data = (
+            self.runtime._load_for_executorch_from_bundled_program(bundled_module)
+        )
+        with self.assertRaises(RuntimeError):
+            executorch_module_bundled_no_data.forward(inputs)

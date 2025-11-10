@@ -156,7 +156,8 @@ class MethodMeta:
 
 @experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch(
-    path: str,
+    program_path: str,
+    data_path: Optional[str] = None,
     enable_etdump: bool = False,
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.InternalConsistency,
@@ -168,7 +169,8 @@ def _load_for_executorch(
         This API is experimental and subject to change without notice.
 
     Args:
-        path: File path to the ExecuTorch program as a string.
+        program_path: File path to the ExecuTorch program as a string.
+        data_path: File path to a .ptd file containing data used by the program.
         enable_etdump: If true, enables an ETDump which can store profiling information.
             See documentation at https://pytorch.org/executorch/main/etdump
             for how to use it.
@@ -183,6 +185,7 @@ def _load_for_executorch(
 @experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch_from_buffer(
     buffer: bytes,
+    data_map_buffer: Optional[bytes] = None,
     enable_etdump: bool = False,
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.InternalConsistency,
@@ -197,7 +200,10 @@ def _load_for_executorch_from_buffer(
 
 @experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch_from_bundled_program(
-    module: BundledModule, enable_etdump: bool = False, debug_buffer_size: int = 0
+    module: BundledModule,
+    data_map_buffer: Optional[bytes] = None,
+    enable_etdump: bool = False,
+    debug_buffer_size: int = 0,
 ) -> ExecuTorchModule:
     """Same as _load_for_executorch, but takes a bundled program instead of a file path.
 

@@ -3,10 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
+
+from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 
 class ConvertIntPowToMuls(ArmPass):
@@ -16,8 +18,18 @@ class ConvertIntPowToMuls(ArmPass):
     Needs to be run before doing scalar to tensor conversion.
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     def call_operator(self, op, args, kwargs, meta):
         if op != exir_ops.edge.aten.pow.Tensor_Scalar:
+            return super().call_operator(op, args, kwargs, meta)
+
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 
         x = args[0]

@@ -17,7 +17,6 @@ on:
       - scripts/build_apple_llm_demo.sh
       - scripts/create_frameworks.sh
       - .ci/scripts/test_ios_ci.sh
-      - examples/demo-apps/apple_ios/**
       - extension/apple/**
       - extension/benchmark/apple/**
       - extension/module/**
@@ -39,7 +38,7 @@ jobs:
         id: set_version
         shell: bash
         run: |
-          VERSION="0.8.0.$(TZ='PST8PDT' date +%Y%m%d)"
+          VERSION="1.1.0.$(TZ='PST8PDT' date +%Y%m%d)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build-demo-ios:
