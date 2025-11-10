@@ -631,3 +631,18 @@ class ConvActivationModule(torch.nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return self.activation(x)
+
+
+class MLP(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.sequential = torch.nn.Sequential(
+            torch.nn.Linear(1, 10),
+            torch.nn.ReLU(),
+            torch.nn.Linear(10, 10),
+            torch.nn.ReLU(),
+            torch.nn.Linear(10, 1),
+        )
+
+    def forward(self, x):
+        return self.sequential(x)
