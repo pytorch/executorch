@@ -921,7 +921,7 @@ setup(
         BuiltFile(
             src_dir="backends/cuda/runtime/",
             src_name="aoti_cuda_shims.lib",
-            dst="executorch/data/bin/",
+            dst="executorch/data/lib/",
             dependent_cmake_flags=[],
         ),
     ],
