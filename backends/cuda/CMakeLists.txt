@@ -16,6 +16,9 @@
 #
 cmake_minimum_required(VERSION 3.29)
 
+# Enable CUDA language support
+enable_language(CUDA)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 17)
@@ -30,52 +33,15 @@ endif()
 
 find_package(CUDAToolkit REQUIRED)
 
-# Use ExecutorTorch's standard way to find PyTorch libraries for AOTI
+# Use ExecuTorch's standard way to find PyTorch libraries for AOTI
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
-find_package_torch()
-
-# CUDA tensor maker for backends that support incontiguous tensors
-set(_tensor_maker_sources runtime/tensor/tensor_maker.cpp)
-add_library(cuda_tensor_maker STATIC ${_tensor_maker_sources})
-target_include_directories(
-  cuda_tensor_maker
-  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
-         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
-)
-target_compile_options(
-  cuda_tensor_maker
-  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
-         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
-)
-# Ensure symbols are exported properly
-if(APPLE)
-  target_link_options(cuda_tensor_maker PUBLIC -Wl,-export_dynamic)
-else()
-  target_link_options(
-    cuda_tensor_maker PUBLIC
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
-  )
-endif()
-
-# Link against ExecuTorch core libraries
-target_link_libraries(cuda_tensor_maker PUBLIC executorch ${CMAKE_DL_LIBS})
-executorch_target_link_options_shared_lib(cuda_tensor_maker)
-
-install(
-  TARGETS cuda_tensor_maker
-  EXPORT ExecuTorchTargets
-  DESTINATION lib
-)
+find_package_torch_headers()
 
 # CUDA-specific AOTI functionality
 set(_aoti_cuda_sources
     runtime/cuda_backend.cpp
-    runtime/shims/memory.cpp
-    runtime/shims/tensor_attribute.cpp
-    runtime/guard.cpp
-    runtime/shims/cuda_guard.cpp
-    runtime/shims/int4mm.cu
     runtime/platform/platform.cpp
+    # runtime/slim/cuda/int4mm.cu
 )
 add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
 target_include_directories(
@@ -87,15 +53,20 @@ target_compile_options(
   aoti_cuda PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
                    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
 )
+# Define EXPORT_AOTI_FUNCTIONS to export AOTI shim symbols
+target_compile_definitions(aoti_cuda PUBLIC EXPORT_AOTI_FUNCTIONS)
+
+# Define USE_CUDA to enable CUDA-specific functionality
+target_compile_definitions(aoti_cuda PUBLIC USE_CUDA)
+
 # Ensure symbols are exported properly
 target_link_options(
   aoti_cuda PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
 )
 
-# Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and PyTorch
-# CUDA libraries
+# Link against CUDA::cudart and PyTorch CUDA libraries
 target_link_libraries(
-  aoti_cuda PUBLIC aoti_common cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
+  aoti_cuda PUBLIC executorch CUDA::cudart ${CMAKE_DL_LIBS}
 )
 # If you need other CUDA libraries, link them similarly:
 # target_link_libraries(aoti_cuda PUBLIC CUDA::cublas CUDA::cufft ...)
