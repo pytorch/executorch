@@ -117,7 +117,7 @@ class CudaBackend(BackendDetails):
     """
 
     @staticmethod
-    def preprocess(
+    def preprocess(  # noqa: C901
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
@@ -173,10 +173,8 @@ class CudaBackend(BackendDetails):
 
         assert platform == "linux" or platform == "windows"
         if platform == "windows" and shim_library_path is None:
-            lib_path = resources.files("executorch").joinpath(
-                "data/lib/aoti_cuda_shims.lib"
-            )
-            shim_library_path = str(lib_path)
+            lib_dir = resources.files("executorch").joinpath("data/lib")
+            shim_library_path = str(lib_dir)
         if platform == "linux":
             assert shim_library_path is None
 
