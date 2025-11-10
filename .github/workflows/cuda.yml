@@ -104,6 +104,8 @@ jobs:
             name: "Voxtral-Mini-3B-2507"
           - repo: "openai"
             name: "whisper-small"
+          - repo: "openai"
+            name: "whisper-large-v3-turbo"
           - repo: "google"
             name: "gemma-3-4b-it"
         quant:
@@ -223,6 +225,8 @@ jobs:
             name: "Voxtral-Mini-3B-2507"
           - repo: "openai"
             name: "whisper-small"
+          - repo: "openai"
+            name: "whisper-large-v3-turbo"
           - repo: "google"
             name: "gemma-3-4b-it"
         quant:
