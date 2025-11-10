@@ -8,8 +8,8 @@ import typing
 from typing import Any, Dict, final
 
 from executorch.backends.aoti.aoti_backend import AotiBackend
-from executorch.exir.backend.backend_details import BackendDetails
 from executorch.exir._warnings import experimental
+from executorch.exir.backend.backend_details import BackendDetails
 
 
 @final
