@@ -5,19 +5,21 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Test CUDA model end-to-end, need to run .ci/scripts/export_model_cuda_artifact.sh first
+# Test CUDA/Metal model end-to-end, need to run .ci/scripts/export_model_artifact.sh first
 
 show_help() {
   cat << EOF
-Usage: test_model_cuda_e2e.sh <hf_model> <quant_name> [model_dir]
+Usage: test_model_e2e.sh <device> <hf_model> <quant_name> [model_dir]
 
-Build and run end-to-end tests for CUDA models.
+Build and run end-to-end tests for CUDA/Metal models.
 
 Arguments:
+  device      cuda or metal (required)
+
   hf_model    HuggingFace model ID (required)
               Supported models:
                 - mistralai/Voxtral-Mini-3B-2507
-                - openai/whisper-small
+                - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                 - google/gemma-3-4b-it
 
   quant_name  Quantization type (required)
@@ -27,12 +29,12 @@ Arguments:
                 - quantized-int4-weight-only
 
   model_dir   Directory containing model artifacts (optional, default: current directory)
-              Expected files: model.pte, aoti_cuda_blob.ptd
+              Expected files: model.pte, aoti_cuda_blob.ptd/aoti_metal_blob.ptd
               Tokenizers and test files will be downloaded to this directory
 
 Examples:
-  test_model_cuda_e2e.sh "openai/whisper-small" "non-quantized"
-  test_model_cuda_e2e.sh "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed" "./model_output"
+  test_model_e2e.sh metal "openai/whisper-small" "non-quantized"
+  test_model_e2e.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed" "./model_output"
 EOF
 }
 
@@ -55,20 +57,21 @@ fi
 
 set -eux
 
-HF_MODEL="$1"
-QUANT_NAME="$2"
+DEVICE="$1"
+HF_MODEL="$2"
+QUANT_NAME="$3"
 # Download tokenizers, audio, and image files to this directory
-MODEL_DIR="${3:-.}"
+MODEL_DIR="${4:-.}"
 
 echo "Testing model: $HF_MODEL (quantization: $QUANT_NAME)"
 
-# Make sure model.pte and aoti_cuda_blob.ptd exist
+# Make sure model.pte and aoti_${DEVICE}_blob.ptd exist
 if [ ! -f "$MODEL_DIR/model.pte" ]; then
   echo "Error: model.pte not found in $MODEL_DIR"
   exit 1
 fi
-if [ ! -f "$MODEL_DIR/aoti_cuda_blob.ptd" ]; then
-  echo "Error: aoti_cuda_blob.ptd not found in $MODEL_DIR"
+if [ ! -f "$MODEL_DIR/aoti_${DEVICE}_blob.ptd" ]; then
+  echo "Error: aoti_${DEVICE}_blob.ptd not found in $MODEL_DIR"
   exit 1
 fi
 # Locate EXECUTORCH_ROOT from the directory of this script
@@ -91,13 +94,13 @@ case "$HF_MODEL" in
     AUDIO_FILE="poem.wav"
     IMAGE_PATH=""
     ;;
-  openai/whisper-small)
-    MODEL_NAME="whisper"
+  openai/whisper-*)
+    MODEL_NAME="${HF_MODEL#openai/}"
     RUNNER_TARGET="whisper_runner"
     RUNNER_PATH="whisper"
     EXPECTED_OUTPUT="Mr. Quilter is the apostle of the middle classes"
     PREPROCESSOR="whisper_preprocessor.pte"
-    TOKENIZER_URL="https://huggingface.co/openai/whisper-small/resolve/main" # @lint-ignore
+    TOKENIZER_URL="https://huggingface.co/${HF_MODEL}/resolve/main" # @lint-ignore
     TOKENIZER_FILE=""
     AUDIO_URL=""
     AUDIO_FILE="output.wav"
@@ -117,7 +120,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-small, google/gemma-3-4b-it"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it"
     exit 1
     ;;
 esac
@@ -142,7 +145,7 @@ fi
 # Download test files
 if [ "$AUDIO_URL" != "" ]; then
   curl -L $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
-elif [ "$MODEL_NAME" = "whisper" ]; then
+elif [[ "$MODEL_NAME" == *whisper* ]]; then
   conda install -y -c conda-forge "ffmpeg<8"
   pip install datasets soundfile torchcodec
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
@@ -152,14 +155,24 @@ ls -al
 echo "::endgroup::"
 
 echo "::group::Build $MODEL_NAME Runner"
+
+if [ "$DEVICE" = "cuda" ]; then
+  BUILD_BACKEND="EXECUTORCH_BUILD_CUDA"
+elif [ "$DEVICE" = "metal" ]; then
+  BUILD_BACKEND="EXECUTORCH_BUILD_METAL"
+else
+  echo "Error: Unsupported device '$DEVICE'. Must be 'cuda' or 'metal'."
+  exit 1
+fi
+
 cmake --preset llm \
-      -DEXECUTORCH_BUILD_CUDA=ON \
+      -D${BUILD_BACKEND}=ON \
       -DCMAKE_INSTALL_PREFIX=cmake-out \
       -DCMAKE_BUILD_TYPE=Release \
       -Bcmake-out -S.
 cmake --build cmake-out -j$(nproc) --target install --config Release
 
-cmake -DEXECUTORCH_BUILD_CUDA=ON \
+cmake -D${BUILD_BACKEND}=ON \
       -DCMAKE_BUILD_TYPE=Release \
       -Sexamples/models/$RUNNER_PATH \
       -Bcmake-out/examples/models/$RUNNER_PATH/
@@ -168,19 +181,21 @@ echo "::endgroup::"
 
 echo "::group::Run $MODEL_NAME Runner"
 set +e
-export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+if [ "$DEVICE" = "cuda" ]; then
+  export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+fi
 
 # Build runner command with common arguments
 RUNNER_BIN="cmake-out/examples/models/$RUNNER_PATH/$RUNNER_TARGET"
-RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd --temperature 0"
+RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --data_path ${MODEL_DIR}/aoti_${DEVICE}_blob.ptd --temperature 0"
 
 # Add model-specific arguments
 case "$MODEL_NAME" in
   voxtral)
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR"
     ;;
-  whisper)
-    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR"
+  whisper-*)
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR --model_name ${MODEL_NAME}"
     ;;
   gemma3)
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --image_path $IMAGE_PATH"

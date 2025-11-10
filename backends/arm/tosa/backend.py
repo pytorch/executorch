@@ -2,13 +2,19 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Provide TOSA backend entry points for the Arm ExecuTorch integration.
 
+Implement the Ahead-of-Time (AoT) preprocessing path that lowers an
+``ExportedProgram`` to a TOSA flatbuffer using Arm's lowering pipeline. Use
+this module either as a standalone backend that produces a TOSA artifact or as
+part of a composed pipeline for hardware backends that consume TOSA as an
+intermediate form.
 
-#
-# Main implementation of AoT flow to partition and preprocess for Arm target
-# backends. Converts via TOSA as an intermediate form supported by AoT and
-# JIT compiler flows.
-#
+Use ``TOSABackend.preprocess`` to return the serialized TOSA flatbuffer that
+subsequent stages (for example, JIT or hardware-specific compilers) consume.
+
+"""
+
 import logging
 import tempfile
 from collections import deque
@@ -89,7 +95,16 @@ def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
 
 
 def arm_get_first_delegation_tag(graph_module) -> str:
-    """Get the first delegation tag from the graph_module or return empty string."""
+    """Return the first delegation tag from the FX graph.
+
+    Args:
+        graph_module: FX GraphModule produced by the Arm passes.
+
+    Returns:
+        str: The first non-empty delegation tag found on any node, or an empty
+        string if none is present.
+
+    """
     for node in graph_module.graph.nodes:
         tag = node.meta.get("delegation_tag")
         if tag:
@@ -101,10 +116,11 @@ def arm_get_first_delegation_tag(graph_module) -> str:
 
 @final
 class TOSABackend(BackendDetails):
-    """
-    BackendDetails subclass for lowering to TOSA.
-    Is used either by itself to get to a TOSA representation, or with composition
-    to be used as a separate step to target TOSA compliant hardware.
+    """Provide a backend for lowering programs to TOSA.
+
+    Use this class standalone to produce a TOSA representation, or as part of a
+    composed pipeline for hardware backends that consume TOSA.
+
     """
 
     @staticmethod
@@ -118,6 +134,31 @@ class TOSABackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_spec: TosaCompileSpec,
     ) -> PreprocessResult:
+        """Lower an exported program to a TOSA flatbuffer.
+
+        Apply Arm transformation passes to ``edge_program``, then walk the
+        transformed FX graph to emit a TOSA graph via the serializer. When
+        requested in ``compile_spec``, write additional debug artifacts.
+
+        Args:
+            edge_program (ExportedProgram): Program to lower to TOSA.
+            compile_spec (List[CompileSpec]): Backend options. Recognized keys:
+                - output_format: Must be "tosa".
+                - tosa_spec: Target TOSA version/capabilities.
+                - debug_artifact_path: Directory for debug outputs.
+                - compile_flags: Optional backend flags.
+                - dump_debug_info: Enable extra debug JSON dump.
+
+        Returns:
+            PreprocessResult: Result containing processed_bytes with the
+            serialized TOSA flatbuffer.
+
+        Raises:
+            ValueError: If output_format is not "tosa" or the TOSA
+                specification is missing from compile_spec.
+            RuntimeError: If an unsupported FX node type is encountered.
+
+        """
         # if a debug/test build capture output files from TOSA stage
         artifact_path = compile_spec.get_intermediate_path()
         tosa_spec = compile_spec.tosa_spec
@@ -133,7 +174,14 @@ class TOSABackend(BackendDetails):
         if not artifact_path:
             artifact_path = ""
 
-        tosa_graph = ts.TosaSerializer(artifact_path)
+        version = tosa_spec.version
+        tosa_graph = ts.TosaSerializer(
+            artifact_path,
+            targetMajor=version.major,
+            targetMinor=version.minor,
+            targetPatch=version.micro,
+            targetDraft=False,
+        )
 
         if not (
             tosa_spec.version.major == ts.TOSA_VERSION_MAJOR
@@ -221,6 +269,19 @@ class TOSABackend(BackendDetails):
                     process_placeholder(node, tosa_graph, edge_program, tosa_spec)
                 elif node.op == "output":
                     process_output(node, tosa_graph, tosa_spec)
+                elif node.op == "get_attr":
+                    attr = getattr(graph_module, str(node.target), None)
+                    if attr is None:
+                        raise RuntimeError(
+                            "get_attr node is not targeting anything in graph module."
+                        )
+                    if not isinstance(attr, GraphModule):
+                        raise RuntimeError(
+                            "get_attr node is not targeting a GraphModule."
+                        )
+
+                    # If the above conditions are ok, we don't need to handle this node here.
+                    # Only the string value of node.target is important.
                 else:
                     # This will only happen if an unpartitioned graph is passed without
                     # any checking of compatibility.
@@ -251,6 +312,15 @@ class TOSABackend(BackendDetails):
         the TOSA flatbuffer representation as an intermediate step. The TOSA
         flatbuffer can then be consumed by the backend targetting specific
         hardware.
+
+        Args:
+            compile_spec (ArmCompileSpec): Compile specification that may
+                include both TOSA and hardware-specific options.
+
+        Returns:
+            TosaCompileSpec: TOSA-only specification ready for
+                ``TOSABackend.preprocess``.
+
         """
 
         return (

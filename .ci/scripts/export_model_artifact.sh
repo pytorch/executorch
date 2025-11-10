@@ -5,19 +5,21 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Export model to CUDA format with optional quantization
+# Export model to CUDA/Metal format with optional quantization
 
 show_help() {
   cat << EOF
-Usage: export_model_cuda_artifact.sh <hf_model> [quant_name] [output_dir]
+Usage: export_model_artifact.sh <device> <hf_model> [quant_name] [output_dir]
 
-Export a HuggingFace model to CUDA format with optional quantization.
+Export a HuggingFace model to CUDA/Metal format with optional quantization.
 
 Arguments:
+  device       cuda or metal (required)
+
   hf_model     HuggingFace model ID (required)
                Supported models:
                  - mistralai/Voxtral-Mini-3B-2507
-                 - openai/whisper-small
+                 - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                  - google/gemma-3-4b-it
 
   quant_name   Quantization type (optional, default: non-quantized)
@@ -29,9 +31,9 @@ Arguments:
   output_dir   Output directory for artifacts (optional, default: current directory)
 
 Examples:
-  export_model_cuda_artifact.sh "openai/whisper-small"
-  export_model_cuda_artifact.sh "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed"
-  export_model_cuda_artifact.sh "google/gemma-3-4b-it" "non-quantized" "./output"
+  export_model_artifact.sh metal "openai/whisper-small"
+  export_model_artifact.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed"
+  export_model_artifact.sh cuda "google/gemma-3-4b-it" "non-quantized" "./output"
 EOF
 }
 
@@ -48,9 +50,22 @@ fi
 
 set -eux
 
-HF_MODEL="$1"
-QUANT_NAME="${2:-non-quantized}"
-OUTPUT_DIR="${3:-.}"
+DEVICE="$1"
+HF_MODEL="$2"
+QUANT_NAME="${3:-non-quantized}"
+OUTPUT_DIR="${4:-.}"
+
+case "$DEVICE" in
+  cuda)
+    ;;
+  metal)
+    ;;
+  *)
+    echo "Error: Unsupported device '$DEVICE'"
+    echo "Supported devices: cuda, metal"
+    exit 1
+    ;;
+esac
 
 # Determine model configuration based on HF model ID
 case "$HF_MODEL" in
@@ -62,15 +77,23 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE="128"
     PREPROCESSOR_OUTPUT="voxtral_preprocessor.pte"
     ;;
-  openai/whisper-small)
+  openai/whisper-*)
     MODEL_NAME="whisper"
     TASK="automatic-speech-recognition"
     MAX_SEQ_LEN=""
     EXTRA_PIP="librosa"
-    PREPROCESSOR_FEATURE_SIZE="80"
     PREPROCESSOR_OUTPUT="whisper_preprocessor.pte"
+    if [[ "$HF_MODEL" == *"large-v3"* ]]; then
+      PREPROCESSOR_FEATURE_SIZE="128"
+    else
+      PREPROCESSOR_FEATURE_SIZE="80"
+    fi
     ;;
   google/gemma-3-4b-it)
+    if [ "$DEVICE" = "metal" ]; then
+      echo "Error: Export for device 'metal' is not yet tested for model '$HF_MODEL'"
+      exit 1
+    fi
     MODEL_NAME="gemma3"
     TASK="multimodal-text-to-text"
     MAX_SEQ_LEN="64"
@@ -80,7 +103,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-small, google/gemma-3-4b-it"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it"
     exit 1
     ;;
 esac
@@ -91,9 +114,17 @@ case "$QUANT_NAME" in
     EXTRA_ARGS=""
     ;;
   quantized-int4-tile-packed)
+    if [ "$DEVICE" = "metal" ]; then
+      echo "Error: Metal backend does not yet support quantization '$QUANT_NAME'"
+      exit 1
+    fi
     EXTRA_ARGS="--qlinear 4w --qlinear_encoder 4w --qlinear_packing_format tile_packed_to_4d --qlinear_encoder_packing_format tile_packed_to_4d"
     ;;
   quantized-int4-weight-only)
+    if [ "$DEVICE" = "metal" ]; then
+      echo "Error: Metal backend does not yet support quantization '$QUANT_NAME'"
+      exit 1
+    fi
     EXTRA_ARGS="--qlinear_encoder 4w"
     ;;
   *)
@@ -114,12 +145,18 @@ MAX_SEQ_LEN_ARG=""
 if [ -n "$MAX_SEQ_LEN" ]; then
   MAX_SEQ_LEN_ARG="--max_seq_len $MAX_SEQ_LEN"
 fi
+
+DEVICE_ARG=""
+if [ "$DEVICE" = "cuda" ]; then
+  DEVICE_ARG="--device cuda"
+fi
+
 optimum-cli export executorch \
     --model "$HF_MODEL" \
     --task "$TASK" \
-    --recipe "cuda" \
+    --recipe "$DEVICE" \
     --dtype bfloat16 \
-    --device cuda \
+    ${DEVICE_ARG} \
     ${MAX_SEQ_LEN_ARG} \
     ${EXTRA_ARGS} \
     --output_dir ./
@@ -133,7 +170,7 @@ if [ -n "$PREPROCESSOR_OUTPUT" ]; then
 fi
 
 test -f model.pte
-test -f aoti_cuda_blob.ptd
+test -f aoti_${DEVICE}_blob.ptd
 if [ -n "$PREPROCESSOR_OUTPUT" ]; then
   test -f $PREPROCESSOR_OUTPUT
 fi
@@ -141,10 +178,10 @@ echo "::endgroup::"
 
 echo "::group::Store $MODEL_NAME Artifacts"
 mkdir -p "${OUTPUT_DIR}"
-cp model.pte "${OUTPUT_DIR}/"
-cp aoti_cuda_blob.ptd "${OUTPUT_DIR}/"
+mv model.pte "${OUTPUT_DIR}/"
+mv aoti_${DEVICE}_blob.ptd "${OUTPUT_DIR}/"
 if [ -n "$PREPROCESSOR_OUTPUT" ]; then
-  cp $PREPROCESSOR_OUTPUT "${OUTPUT_DIR}/"
+  mv $PREPROCESSOR_OUTPUT "${OUTPUT_DIR}/"
 fi
 ls -al "${OUTPUT_DIR}"
 echo "::endgroup::"
