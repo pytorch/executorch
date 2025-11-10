@@ -1,8 +1,8 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "tracer",
     srcs = [
         "tracer.py",
@@ -20,7 +20,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "graph",
     srcs = [
         "graph.py",
@@ -31,7 +31,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "graph_module",
     srcs = [
         "graph_module.py",
@@ -41,14 +41,14 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "scalar_type",
     srcs = [
         "scalar_type.py",
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "schema",
     srcs = [
         "schema.py",
@@ -59,14 +59,14 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "version",
     srcs = [
         "version.py",
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "tensor",
     srcs = [
         "tensor.py",
@@ -79,7 +79,18 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
+    name = "tensor_layout",
+    srcs = [
+        "tensor_layout.py",
+    ],
+    deps = [
+        ":scalar_type",
+        ":tensor",
+    ]
+)
+
+runtime.python_library(
     name = "memory",
     srcs = [
         "memory.py",
@@ -92,7 +103,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "control_flow",
     srcs = [
         "control_flow.py",
@@ -105,7 +116,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "delegate",
     srcs = [
         "delegate.py",
@@ -116,7 +127,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "lowered_backend_module",
     srcs = [
         "lowered_backend_module.py",
@@ -135,7 +146,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "lib",
     srcs = [
         "__init__.py",
@@ -150,7 +161,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "memory_planning",
     srcs = [
         "memory_planning.py",
@@ -167,7 +178,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "common",
     srcs = [
         "common.py",
@@ -177,7 +188,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "error",
     srcs = [
         "error.py",
@@ -185,7 +196,7 @@ python_library(
     deps = [],
 )
 
-python_library(
+runtime.python_library(
     name = "types",
     srcs = [
         "types.py",
@@ -196,7 +207,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "wrap",
     srcs = [
         "wrap.py",
@@ -208,7 +219,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "print_program",
     srcs = [
         "print_program.py",
@@ -220,14 +231,14 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "dynamic_shape",
     srcs = [
         "dynamic_shape.py",
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "pass_base",
     srcs = [
         "pass_base.py",
@@ -241,7 +252,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "pass_manager",
     srcs = [
         "pass_manager.py",
@@ -253,7 +264,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "sym_util",
     srcs = ["sym_util.py"],
     deps = [
@@ -262,7 +273,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "dim_order_utils",
     srcs = ["dim_order_utils.py"],
     deps = [
@@ -270,7 +281,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "_warnings",
     srcs = ["_warnings.py"],
     deps = [
@@ -278,7 +289,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "debug_handle_utils",
     srcs = ["debug_handle_utils.py"],
     deps = [

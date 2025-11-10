@@ -8,8 +8,6 @@
 
 #version 450 core
 
-#extension GL_EXT_debug_printf : enable
-
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, INPUT_STORAGE)}
 #define T ${texel_load_component_type(DTYPE, INPUT_STORAGE)}

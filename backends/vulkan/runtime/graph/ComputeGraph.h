@@ -449,6 +449,18 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().buffer_meta_ubo();
   }
 
+  inline vkapi::BufferBindInfo texture_meta_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().texture_meta_ubo();
+  }
+
+  inline vkapi::BufferBindInfo meta_ubo(const ValueRef idx) {
+    if (is_buffer_storage(idx)) {
+      return buffer_meta_ubo(idx);
+    } else {
+      return texture_meta_ubo(idx);
+    }
+  }
+
   inline vkapi::BufferBindInfo strides_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().strides_ubo();
   }
@@ -627,6 +639,10 @@ class ComputeGraph final {
 
   bool device_name_contains(const char* substr);
 
+  int64_t max_buffer_numel() {
+    return static_cast<int64_t>(context_->adapter_ptr()->max_buffer_numel());
+  }
+
   //
   // Graph Building
   //
@@ -771,7 +787,16 @@ class ComputeGraph final {
    */
   ValueRef get_or_add_value_for_int(const int64_t val);
 
+  ValueRef set_input_tensor(
+      const ValueRef idx,
+      vkapi::ScalarType staging_dtype);
+
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
+
+  ValueRef set_output_tensor(
+      const ValueRef idx,
+      vkapi::ScalarType staging_dtype);
+
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
   ValueRef set_output_value(const ValueRef idx);
@@ -802,6 +827,8 @@ class ComputeGraph final {
   inline void set_val_as_input(const ValueRef idx) {
     inputs_.push_back({idx, kDummyValueRef});
   }
+
+  ValueRef staging_of(const ValueRef idx);
 
   inline void set_val_as_output(const ValueRef idx) {
     outputs_.push_back({idx, kDummyValueRef});
@@ -947,7 +974,20 @@ class ComputeGraph final {
 
   void
   copy_into_staging(const ValueRef idx, const void* data, const size_t numel);
+
+  void maybe_cast_and_copy_into_staging(
+      const ValueRef idx,
+      const void* data,
+      const size_t numel,
+      const vkapi::ScalarType src_data_dtype);
+
   void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
+
+  void maybe_cast_and_copy_from_staging(
+      const ValueRef idx,
+      void* data,
+      const size_t numel,
+      const vkapi::ScalarType dst_data_dtype);
 
  protected:
   // Command Buffer Management
@@ -1045,6 +1085,14 @@ class ComputeGraph final {
 
   inline bool can_use_int8_dot_product() const {
     return can_use_int8_dot_product_;
+  }
+
+  inline void set_has_data_dependent_shapes() {
+    config_.has_data_dependent_shapes = true;
+  }
+
+  inline bool has_data_dependent_shapes() const {
+    return config_.has_data_dependent_shapes;
   }
 
   /*

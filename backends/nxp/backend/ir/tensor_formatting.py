@@ -1,13 +1,12 @@
-#
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2024 NXP
+# Copyright 2023-2025 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
 #
 from enum import Enum
 
-from executorch.backends.nxp.backend.node_format_inference import NodeFormat
+from executorch.backends.nxp.backend.node_format import NodeFormat
 
 
 class TensorFormat(Enum):
@@ -26,7 +25,7 @@ class TensorFormat(Enum):
     TRANSPOSE_CONV_2D_WEIGHT_FORMAT = 13
 
     # No special format (matrices, vectors, shapes etc.). All tensors with the FORMATLESS format MUST have EXACTLY
-    #  the same shape and data in the TFLite model and in the ONNX model.
+    #  the same shape and data in the NeutronIR model and in the ExecuTorch model.
     FORMATLESS = 20
 
     NONE = 30  # Format has not been identified

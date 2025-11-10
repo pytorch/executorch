@@ -51,7 +51,7 @@ class TestQuantization(unittest.TestCase):
             m = torchvision.models.resnet18().eval()
             m_copy = copy.deepcopy(m)
             # program capture
-            m = torch.export.export_for_training(
+            m = torch.export.export(
                 m, copy.deepcopy(example_inputs), strict=True
             ).module()
 

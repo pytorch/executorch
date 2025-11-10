@@ -182,6 +182,7 @@ def define_common_targets():
         ],
         visibility = [
             "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             "//caffe2:torch",
@@ -253,5 +254,6 @@ def define_common_targets():
             "//caffe2:torch",
             "//executorch/exir:lib",
             ":remove_clone_ops",
+            "//executorch/exir/tests:test_memory_format_ops_pass_utils",
         ],
     )

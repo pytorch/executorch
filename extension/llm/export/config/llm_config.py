@@ -215,9 +215,10 @@ class ExportConfig:
         so_library: Shared library to specify custom quantized operators.
         export_only: Whether to stop right after torch.export() and
             just save the exported .pt2 graph file.
-        foundation_weights_file: configure the foundation weights of a model
-            to be placed in a separate file, external to the PTE. Pass the
-            intended file name here.
+        foundation_weights_file: place the foundation weights of the model into
+            a separate file, external to the PTE. Pass the file name here.
+        lora_weights_file: place the lora weights of the model into a
+            separate file, external to the PTE. Pass the file name here.
     """
 
     max_seq_length: int = 128
@@ -227,6 +228,7 @@ class ExportConfig:
     so_library: Optional[str] = None
     export_only: bool = False
     foundation_weights_file: Optional[str] = None
+    lora_weights_file: Optional[str] = None
 
     def __post_init__(self):
         if self.max_context_length < self.max_seq_length:
@@ -279,6 +281,8 @@ class Pt2eQuantize(str, Enum):
 
     xnnpack_dynamic = "xnnpack_dynamic"
     xnnpack_dynamic_qc4 = "xnnpack_dynamic_qc4"
+    openvino_4wo = "openvino_4wo"
+    openvino_8wo = "openvino_8wo"
     qnn_8a8w = "qnn_8a8w"
     qnn_16a16w = "qnn_16a16w"
     qnn_16a4w = "qnn_16a4w"
@@ -323,7 +327,6 @@ class QuantizationConfig:
         "int8",
         "8da4w",
         "8da4w-gptq",
-        "vulkan_4w",
         "4w",
     ]
     AO_QUANT_PATTERNS: ClassVar[List[str]] = [
@@ -427,6 +430,7 @@ class VulkanConfig:
     """
 
     enabled: bool = False
+    force_fp16: bool = False
 
 
 @dataclass
@@ -453,6 +457,28 @@ class MPSConfig:
 
 
 @dataclass
+class OpenvinoConfig:
+    """
+    Configures the QNN backend.
+    """
+
+    enabled: bool = False
+    device: str = "CPU"
+    nncf_compression: bool = False
+    nncf_compression_group_size: int = 32
+
+
+@dataclass
+class TorchAOKernelsConfig:
+    """
+    Configures the torchao-kernels backend.
+    """
+
+    use_torchao_kernels_linear: bool = False
+    use_torchao_kernels_tied_embedding: bool = False
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -464,6 +490,8 @@ class BackendConfig:
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
     mps: MPSConfig = field(default_factory=MPSConfig)
+    openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
+    torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
 
 
 ################################################################################
@@ -561,6 +589,8 @@ class LlmConfig:
             llm_config.export.export_only = args.export_only
         if hasattr(args, "foundation_weights_file"):
             llm_config.export.foundation_weights_file = args.foundation_weights_file
+        if hasattr(args, "lora_weights_file"):
+            llm_config.export.lora_weights_file = args.lora_weights_file
 
         # QuantizationConfig
         if hasattr(args, "quantization_mode"):
@@ -611,6 +641,8 @@ class LlmConfig:
         # Vulkan
         if hasattr(args, "vulkan"):
             llm_config.backend.vulkan.enabled = args.vulkan
+        if hasattr(args, "vulkan_force_fp16"):
+            llm_config.backend.vulkan.force_fp16 = args.vulkan_force_fp16
 
         # QNN
         if hasattr(args, "qnn"):
@@ -629,6 +661,38 @@ class LlmConfig:
         # MPS
         if hasattr(args, "mps"):
             llm_config.backend.mps.enabled = args.mps
+
+        # Openvino
+        if hasattr(args, "openvino"):
+            llm_config.backend.openvino.enabled = args.openvino
+        if hasattr(args, "openvino_device"):
+            llm_config.backend.openvino.device = args.openvino_device
+        if hasattr(args, "nncf_compression"):
+            llm_config.backend.openvino.nncf_compression = args.nncf_compression
+        if hasattr(args, "group_size") and args.group_size:
+            llm_config.backend.openvino.nncf_compression_group_size = args.group_size
+
+        # TorchAoKernels
+        if any(
+            hasattr(args, a)
+            for a in [
+                "use_torchao_kernels",
+                "use_torchao_kernels_linear",
+                "use_torchao_kernels_tied_embedding",
+            ]
+        ):
+            if hasattr(args, "use_torchao_kernels") and args.use_torchao_kernels:
+                # Enable all conversions if torchao_kernels is specified
+                llm_config.backend.torchao.use_torchao_kernels_linear = True
+                llm_config.backend.torchao.use_torchao_kernels_tied_embedding = True
+            else:
+                # Otherwise, only enable the conversions that are specified
+                llm_config.backend.torchao.use_torchao_kernels_linear = getattr(
+                    args, "use_torchao_kernels_linear", False
+                )
+                llm_config.backend.torchao.use_torchao_kernels_tied_embedding = getattr(
+                    args, "use_torchao_kernels_tied_embedding", False
+                )
 
         # DebugConfig
         if hasattr(args, "profile_memory"):

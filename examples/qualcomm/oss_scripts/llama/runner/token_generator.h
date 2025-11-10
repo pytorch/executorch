@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h>
@@ -30,6 +31,8 @@ class TokenGenerator {
     int32_t ar_len;
     int32_t vocab_size;
     bool use_int64_token;
+    int sliding_window;
+    CacheMode cache_mode;
   };
   TokenGenerator(
       tokenizers::Tokenizer* tokenizer,
@@ -73,8 +76,13 @@ class TokenGenerator {
       std::function<void(const std::string&)> token_callback,
       bool dump_logits);
   inline const size_t total_token_generator_io_size_in_bytes() const {
-    return input_toks_.size + input_pos_.size + attention_mask_.size +
-        logits_.size;
+    if (metadata_.cache_mode == CacheMode::HybridCache) {
+      return input_toks_.size + input_pos_.size + attention_mask_.size +
+          window_attention_mask_.size + logits_.size;
+    } else {
+      return input_toks_.size + input_pos_.size + attention_mask_.size +
+          logits_.size;
+    }
   }
 
  protected:
@@ -88,6 +96,7 @@ class TokenGenerator {
   TensorStruct<int64_t> input_toks_;
   TensorStruct<int32_t> input_pos_;
   TensorStruct<uint16_t> attention_mask_;
+  TensorStruct<uint16_t> window_attention_mask_;
   TensorStruct<uint16_t> logits_;
 
   // layer -> head -> TensorImpl

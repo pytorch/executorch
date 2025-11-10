@@ -8,6 +8,8 @@
  */
 
 #include <gflags/gflags.h>
+#include <sstream>
+#include <vector>
 
 #include <executorch/examples/models/llama/runner/runner.h>
 
@@ -21,7 +23,10 @@ DEFINE_string(
     "llama2.pte",
     "Model serialized in flatbuffer format.");
 
-DEFINE_string(data_path, "", "Data file for the model.");
+DEFINE_string(
+    data_paths,
+    "",
+    "Data files for the model. If multiple files are provided, they should be comma separated.");
 
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
@@ -35,7 +40,12 @@ DEFINE_double(
 DEFINE_int32(
     seq_len,
     128,
-    "Total number of tokens to generate (prompt + output). Defaults to max_seq_len. If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
+    "DEPRECATED: Please use max_seq_len instead. Total number of tokens to generate (prompt + output). Defaults to max_seq_len. If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
+
+DEFINE_int32(
+    max_new_tokens,
+    -1,
+    "Total number of tokens to generate, excluding the prompt, will be capped by max_seq_len - # prompt tokens.");
 
 DEFINE_int32(
     cpu_threads,
@@ -54,6 +64,26 @@ DEFINE_int32(
 
 DEFINE_bool(warmup, false, "Whether to run a warmup run.");
 
+// Helper function to parse comma-separated string lists
+std::vector<std::string> parseStringList(const std::string& input) {
+  std::vector<std::string> result;
+  if (input.empty()) {
+    return result;
+  }
+
+  std::stringstream ss(input);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    // Trim whitespace
+    item.erase(0, item.find_first_not_of(" \t"));
+    item.erase(item.find_last_not_of(" \t") + 1);
+    if (!item.empty()) {
+      result.push_back(item);
+    }
+  }
+  return result;
+}
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -62,10 +92,7 @@ int32_t main(int32_t argc, char** argv) {
   // and users can create their own DataLoaders to load from arbitrary sources.
   const char* model_path = FLAGS_model_path.c_str();
 
-  std::optional<std::string> data_path = std::nullopt;
-  if (!FLAGS_data_path.empty()) {
-    data_path = FLAGS_data_path.c_str();
-  }
+  std::vector<std::string> data_paths = parseStringList(FLAGS_data_paths);
 
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
 
@@ -92,7 +119,7 @@ int32_t main(int32_t argc, char** argv) {
 #endif
   // create llama runner
   std::unique_ptr<::executorch::extension::llm::TextLLMRunner> runner =
-      example::create_llama_runner(model_path, tokenizer_path, data_path);
+      example::create_llama_runner(model_path, tokenizer_path, data_paths);
 
   if (runner == nullptr) {
     ET_LOG(Error, "Failed to create llama runner");
@@ -100,7 +127,10 @@ int32_t main(int32_t argc, char** argv) {
   }
 
   if (warmup) {
-    auto error = runner->warmup(prompt, /*max_new_tokens=*/seq_len);
+    int32_t warmup_max_new_tokens =
+        FLAGS_max_new_tokens != -1 ? FLAGS_max_new_tokens : seq_len;
+    auto error =
+        runner->warmup(prompt, /*max_new_tokens=*/warmup_max_new_tokens);
     if (error != executorch::runtime::Error::Ok) {
       ET_LOG(Error, "Failed to warmup llama runner");
       return 1;
@@ -108,10 +138,22 @@ int32_t main(int32_t argc, char** argv) {
   }
   // generate
   executorch::extension::llm::GenerationConfig config{
-      .seq_len = seq_len, .temperature = temperature};
+      .temperature = temperature};
+
+  if (FLAGS_max_new_tokens != -1) {
+    config.max_new_tokens = FLAGS_max_new_tokens;
+  } else {
+    ET_LOG(
+        Info,
+        "max_new_tokens not provided, falling back to seq_len=%d. "
+        "Consider using --max_new_tokens instead of --seq_len for specifying generation length.",
+        seq_len);
+    config.seq_len = seq_len;
+  }
+
   auto error = runner->generate(prompt, config);
   if (error != executorch::runtime::Error::Ok) {
-    ET_LOG(Error, "Failed to warmup llama runner");
+    ET_LOG(Error, "Failed to run llama runner");
     return 1;
   }
 

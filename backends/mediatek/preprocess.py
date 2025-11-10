@@ -26,7 +26,7 @@ EXTRACT_SHARED_BLOB_KEY = "ExtractSharedBlobKey"
 HEADER_SIZE = 13
 HEADER_VERSION = 1
 REQUIRED_COMPILE_SPEC_KEYS = {"platform-config"}
-SUPPORTED_PLATFORM_CONFIGS = {"mt6989", "mt6991"}
+SUPPORTED_PLATFORM_CONFIGS = {"mt6989", "mt6991", "mt6993"}
 
 
 def assert_default_dim_order(edge_graph_module: torch.fx.GraphModule) -> None:

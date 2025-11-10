@@ -35,7 +35,7 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten
-from torch.export import export, export_for_training
+from torch.export import export
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -50,11 +50,16 @@ class QuantizationMode(Enum):
 def get_exported_graph(
     model,
     sample_inputs,
+    sample_kwargs=None,
     dynamic_shapes=None,
     qmode=QuantizationMode.NONE,
 ) -> torch.fx.GraphModule:
-    export_training_graph = export_for_training(
-        model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
+    export_training_graph = export(
+        model,
+        sample_inputs,
+        kwargs=sample_kwargs,
+        dynamic_shapes=dynamic_shapes,
+        strict=True,
     ).module()
 
     if qmode == QuantizationMode.NONE:
@@ -82,6 +87,7 @@ def random_uniform_tensor(shape, low=0.0, high=1.0, device=None, dtype=None):
 def export_model_to_vulkan(
     model,
     sample_inputs,
+    sample_kwargs=None,
     dynamic_shapes=None,
     operator_blocklist=None,
     operator_allowlist=None,
@@ -90,10 +96,17 @@ def export_model_to_vulkan(
     qmode=QuantizationMode.NONE,
 ):
     compile_options = {}
-    exported_graph = get_exported_graph(model, sample_inputs, qmode=qmode)
+    exported_graph = get_exported_graph(
+        model,
+        sample_inputs,
+        sample_kwargs=sample_kwargs,
+        dynamic_shapes=dynamic_shapes,
+        qmode=qmode,
+    )
     program = export(
         exported_graph,
         sample_inputs,
+        kwargs=sample_kwargs,
         dynamic_shapes=dynamic_shapes,
         strict=True,
     )
@@ -303,13 +316,13 @@ def run_and_check_output(
     Returns:
         bool: True if outputs match within tolerance, False otherwise
     """
-    # Load the ExecutorTorch program
+    # Load the ExecuTorch program
     executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
 
     # Flatten inputs for execution
     inputs_flattened, _ = tree_flatten(sample_inputs)
 
-    # Run the ExecutorTorch program
+    # Run the ExecuTorch program
     model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
 
     # Generate reference outputs using the reference model
@@ -420,6 +433,7 @@ def save_bundled_program(
     sample_inputs: Tuple[torch.Tensor],
     output_path: str,
     method_name: str = "forward",
+    sample_kwargs=None,
     et_program: Optional[ExecutorchProgramManager] = None,
     dynamic_shapes=None,
 ) -> str:
@@ -439,13 +453,21 @@ def save_bundled_program(
     """
     # If no ExecutorchProgramManager provided, export to Vulkan
     if et_program is None:
-        et_program = export_model_to_vulkan(model, sample_inputs, dynamic_shapes)
+        et_program = export_model_to_vulkan(
+            model,
+            sample_inputs,
+            sample_kwargs=sample_kwargs,
+            dynamic_shapes=dynamic_shapes,
+        )
+
+    if sample_kwargs is None:
+        sample_kwargs = {}
 
     # Generate expected outputs by running the model
-    expected_outputs = [getattr(model, method_name)(*sample_inputs)]
+    expected_outputs = [getattr(model, method_name)(*sample_inputs, **sample_kwargs)]
 
     # Flatten sample inputs to match expected format
-    inputs_flattened, _ = tree_flatten(sample_inputs)
+    inputs_flattened, _ = tree_flatten((sample_inputs, sample_kwargs))
 
     # Create test suite with the sample inputs and expected outputs
     test_suites = [
@@ -590,9 +612,7 @@ def op_ablation_test(  # noqa: C901
     logger.info("Starting fast binary search operator ablation test...")
 
     # Step 1: Export model to get edge_program and extract operators
-    export_training_graph = export_for_training(
-        model, sample_inputs, strict=True
-    ).module()
+    export_training_graph = export(model, sample_inputs, strict=True).module()
     program = export(
         export_training_graph,
         sample_inputs,

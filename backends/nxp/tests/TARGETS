@@ -1,9 +1,9 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "models",
     srcs = [
         "models.py",
@@ -13,7 +13,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "executorch_pipeline",
     srcs = [
         "executorch_pipeline.py",

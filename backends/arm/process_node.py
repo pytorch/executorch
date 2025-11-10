@@ -4,15 +4,14 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-# pyre-unsafe
 from typing import Any, cast, Dict
 
 import numpy as np
-import serializer.tosa_serializer as ts
 import torch
 import torch.fx
+import tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
-from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg, TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.backends.arm.tosa.utils import tosa_shape
 from torch._export.utils import (
@@ -70,13 +69,6 @@ def process_inputs(
     tosa_spec: TosaSpecification,
 ):
     """Serialize an input node"""
-    # inputs need to be in default dim_order (contiguous memory format)
-    meta = node.meta["val"]
-    if meta.dim_order() != tuple(range(meta.dim())):
-        raise RuntimeError(
-            f"Arm backend only supports contiguous memory format for inputs. "
-            f"Expected dim_order: {tuple(range(meta.dim()))}, but got: {meta.dim_order()} for node {node.name}"
-        )
     try:
         tosa_arg = TosaArg(node, tosa_spec)
     except ValueError as e:
@@ -92,7 +84,6 @@ def process_inputs(
         tosa_shape(input_shape, input_dim_order),
         tosa_arg.dtype,
         data=None,
-        placeholderFilename=tosa_arg.name + ".npy",
     )
     tosa_graph.addInputTensor(tensor)
 
@@ -113,16 +104,28 @@ def process_inputs_to_parameters(
         ) from e
     parameter_data = get_param(edge_program, node)
 
-    assert isinstance(parameter_data, torch.Tensor), "Expect Attr to be tensor"
+    if not isinstance(parameter_data, torch.Tensor):
+        raise TypeError(
+            f"Expected parameter '{node.name}' to be a torch.Tensor, got "
+            f"{type(parameter_data).__name__}"
+        )
     parameter_values = parameter_data.detach().numpy()
 
     if tosa_arg.dtype == torch.float32:
-        assert tosa_spec.support_float(), f"{tosa_spec} doesn't support float"
+        if not tosa_spec.support_float():
+            raise ValueError(f"{tosa_spec} doesn't support float operations")
+
+    # Handle special case for INT48 tensors
+    special_type = node.meta.get(TosaSpecialDtype.meta_key(), None)
+    if isinstance(special_type, TosaSpecialDtype):
+        tosa_dtype = special_type.get_tosa_dtype()
+    else:
+        tosa_dtype = tosa_arg.dtype
 
     parameter_values = np.transpose(parameter_values, tosa_arg.dim_order)
 
     tosa_graph.addConst(
-        parameter_values.shape, tosa_arg.dtype, parameter_values, name=tosa_arg.name
+        parameter_values.shape, tosa_dtype, parameter_values, name=tosa_arg.name
     )
 
 
@@ -142,7 +145,11 @@ def process_inputs_to_buffers(
         ) from e
     buffer_data = get_buffer(edge_program, node)
 
-    assert isinstance(buffer_data, torch.Tensor), "Expect Attr to be tensor"
+    if not isinstance(buffer_data, torch.Tensor):
+        raise TypeError(
+            f"Expected buffer '{node.name}' to be a torch.Tensor, got "
+            f"{type(buffer_data).__name__}"
+        )
     buffer_values = buffer_data.detach().numpy()
 
     # TODO: fragile code for temporary fix
@@ -151,7 +158,7 @@ def process_inputs_to_buffers(
     buffer_values = np.transpose(buffer_values, tosa_arg.dim_order)
 
     tosa_graph.addConst(
-        buffer_values.shape, tosa_arg.dtype, buffer_values, name=node.name
+        buffer_values.shape, tosa_arg.dtype, buffer_values, name=tosa_arg.name
     )
 
 
@@ -183,8 +190,12 @@ def process_placeholder(
     tosa_spec: TosaSpecification,
 ):
     """Wrapper for processing and serializing all types of placeholders"""
-    assert node.name == node.target, "Expect placeholder name and target to match"
-    assert 0 == len(node.args), "Can't handle default input values"
+    if node.name != node.target:
+        raise ValueError(
+            f"Placeholder name '{node.name}' does not match target '{node.target}'"
+        )
+    if len(node.args) != 0:
+        raise ValueError(f"Placeholder '{node.name}' must not have default values")
 
     if node.name in edge_program.graph_signature.user_inputs:
         process_inputs(node, tosa_graph, tosa_spec)
@@ -204,11 +215,9 @@ def process_placeholder(
         raise RuntimeError(f"Placeholder '{node.name}' is of unknown type.")
 
 
-def process_output(
-    node: torch.fx.Node,
-    tosa_graph: Any,
-):
+def process_output(node: torch.fx.Node, tosa_graph: Any, tosa_spec: TosaSpecification):
     for output in cast(tuple[torch.fx.Node, ...], node.args[0]):
+        output_arg = TosaArg(output, tosa_spec)
         tosa_graph.addOutputTensor(
-            tosa_graph.currRegion.currBasicBlock.tensors[output.name]
+            tosa_graph.currRegion.currBasicBlock.tensors[output_arg.name]
         )

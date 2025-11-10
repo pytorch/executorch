@@ -43,7 +43,8 @@ TextLLMRunner::TextLLMRunner(
       io_manager_(std::move(io_manager)),
       text_token_generator_(std::move(text_token_generator)),
       stats_(std::move(stats)),
-      temperature_(temperature) {
+      temperature_(temperature),
+      pos_(0) {
   // Note: This constructor assumes that text_prefiller and text_token_generator
   // already have references to the Module and TextDecoderRunner they need
 }
@@ -70,9 +71,8 @@ Error TextLLMRunner::load() {
     ET_LOG(Info, format, __VA_ARGS__);     \
   }
 
-Error TextLLMRunner::generate_from_pos(
+Error TextLLMRunner::generate(
     const std::string& prompt,
-    ET_UNUSED int64_t start_pos,
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
@@ -116,8 +116,14 @@ Error TextLLMRunner::generate_from_pos(
       /*bos=*/config.num_bos,
       /*eos=*/config.num_eos);
 
-  ET_CHECK_TK_OK_OR_RETURN_ERROR(
-      encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
+  if (!encode_res.ok()) {
+    ET_LOG(
+        Error,
+        "Failed to encode prompt %s. Tokenizers error code %d",
+        prompt.c_str(),
+        static_cast<uint32_t>(encode_res.error()));
+    return Error::InvalidArgument;
+  }
 
   // encode the (string) prompt into tokens sequence
   std::vector<uint64_t> prompt_tokens = encode_res.get();
@@ -170,8 +176,15 @@ Error TextLLMRunner::generate_from_pos(
   stats_->prompt_eval_end_ms = time_in_ms();
 
   // print the first token from prefill. No prev_token so use cur_token for it.
-  wrapped_callback(
-      ET_UNWRAP_TOKENIZER(tokenizer_->decode(cur_token, cur_token)));
+  auto decode_result = tokenizer_->decode(cur_token, cur_token);
+  if (!decode_result.ok()) {
+    ET_LOG(
+        Error,
+        "Tokenizers error code %d",
+        static_cast<uint32_t>(decode_result.error()));
+    return ::executorch::runtime::Error::InvalidArgument;
+  }
+  wrapped_callback(std::move(*decode_result));
   RUNNER_ET_LOG(
       config.warming,
       "RSS after prompt prefill: %f MiB (0 if unsupported)",
@@ -181,12 +194,18 @@ Error TextLLMRunner::generate_from_pos(
   prompt_tokens.push_back(cur_token);
 
   // Generate max_new_tokens - 1 because prefill already generated 1 token.
-  int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
+  auto generate_result = text_token_generator_->generate(
       prompt_tokens,
-      num_prompt_tokens,
+      pos_,
       max_new_tokens - 1,
       temperature_ == -1.0f ? config.temperature : temperature_,
-      wrapped_callback));
+      wrapped_callback);
+  if (!generate_result.ok()) {
+    return generate_result.error();
+  }
+  int64_t num_generated_tokens = generate_result.get();
+
+  pos_ += num_generated_tokens;
 
   stats_->inference_end_ms = time_in_ms();
   if (!config.warming) {
@@ -217,25 +236,18 @@ Error TextLLMRunner::generate_from_pos(
   return Error::Ok;
 }
 
-Error TextLLMRunner::generate(
-    const std::string& prompt,
-    const GenerationConfig& config,
-    std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
-  pos_ = 0;
-  return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
-}
-
 Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
   // Create a GenerationConfig for warmup
-  GenerationConfig config{
-      .echo = false, .max_new_tokens = max_new_tokens, .warming = true};
+  GenerationConfig config;
+  config.echo = false;
+  config.max_new_tokens = max_new_tokens;
+  config.warming = true;
 
   // Call generate with the warmup config
   Error err = generate(prompt, config);
 
   // Reset stats after warmup, not resetting the std::unique_ptr!
-  stats_->reset();
+  reset();
   return err;
 }
 

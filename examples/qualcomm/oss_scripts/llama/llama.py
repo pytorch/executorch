@@ -62,6 +62,7 @@ from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
 )
 from executorch.examples.qualcomm.oss_scripts.llama import (
+    LLM_VARIANT_ARCHS,
     LLMModelConfig,
     SUPPORTED_LLM_MODELS,
 )
@@ -137,14 +138,14 @@ class SingleLlama:
         self.llama_meta = self.decoder_model.get_metadata()
         self.has_quant_io = False
         self.pte_filename = pte_filename
-        if self.llama_meta["get_use_kv_cache"]:
-            tokens, atten_mask, pos_ids, k_caches, v_caches = self.get_example_inputs(
-                use_kv_cache=True
-            )
-            self.inputs = (tokens, atten_mask, pos_ids, *k_caches, *v_caches)
-        else:
-            tokens, atten_mask = self.get_example_inputs(use_kv_cache=False)
-            self.inputs = (tokens, atten_mask)
+        inputs = self.get_example_inputs(self.llama_meta["get_use_kv_cache"])
+        self.inputs = (
+            inputs[0],  # tokens
+            *inputs[1],  # attn_mask
+            *((inputs[2],) if self.llama_meta["get_use_kv_cache"] else []),  # pos_ids
+            *(inputs[3] if self.llama_meta["get_use_kv_cache"] else []),  # k_caches
+            *(inputs[4] if self.llama_meta["get_use_kv_cache"] else []),  # v_caches
+        )
         self.llama_graph_module = decoder_model
         self.io_shape = {
             # logit output
@@ -222,12 +223,12 @@ class SingleLlama:
         custom_annotations=(),
         scales_state_dict=None,
         chat_template=None,
+        lookahead_config=None,
     ):
         self.quant_dtype = quant_dtype
         quantizer = make_custom_quantizer(
             quant_dtype, args.range_setting, custom_annotations
         )
-
         self.has_quant_io = True
         fx_graph_module = None
         with torch.no_grad():
@@ -268,6 +269,7 @@ class SingleLlama:
                 num_fewshot=args.num_fewshot,
                 use_i64_token=args.embedding_quantize is not None,
                 event_name="prepare_pt2e_tasks",
+                seq_mse_candidates=self.decoder_model_config.seq_mse_candidates,
             )
 
         # Check user's prompt, helps calibrate special token
@@ -289,8 +291,8 @@ class SingleLlama:
             prompt=prompt,
             use_i64_token=args.embedding_quantize is not None,
             event_name="prepare_pt2e_prompt",
+            lookahead_config=lookahead_config,
         )
-
         if scales_state_dict:
             set_scales(
                 fx_graph_module, scales_state_dict, self.llama_graph_module.head_dim
@@ -325,6 +327,13 @@ class SingleLlama:
                     chat_template, args.prompt[0], args.system_prompt
                 )
             )
+
+            # Gemma may produce unexpected output if the prompt contains an extra <bos> token.
+            # This can happen after applying a prompt template, which might inject <bos> unintentionally.
+            # To prevent decoding issues, we explicitly remove <bos> token
+            if chat_template and args.decoder_model in {"gemma-2b", "gemma3-1b"}:
+                prompt = prompt.replace("<bos>", "")
+
             graph_module_inference(
                 use_kv_cache=self.llama_meta["get_use_kv_cache"],
                 get_example_inputs=self.get_example_inputs,
@@ -336,6 +345,7 @@ class SingleLlama:
                 prompt=prompt,
                 use_i64_token=args.embedding_quantize is not None,
                 event_name="convert_pt2e_prompt",
+                lookahead_config=lookahead_config,
             )
 
     def save_logits_quant_attrs(self):
@@ -451,39 +461,53 @@ def compile(
 
     llama_instance_list = []
     use_i64_token = args.embedding_quantize is not None
+    extra_kwargs = {}
+    if args.decoder_model == "gemma3-1b":
+        from transformers import Gemma3Config
+
+        hf_config = Gemma3Config.from_pretrained(decoder_model_config.repo_id)
+        extra_kwargs["layer_types"] = hf_config.text_config.layer_types
+        extra_kwargs["rope_local_base_freq"] = (
+            hf_config.text_config.rope_local_base_freq
+        )
+        extra_kwargs["sliding_window"] = hf_config.sliding_window
+
     with torch.device("meta"):
         if args.model_mode == "kv":
             llama_instance_list.append(
-                LlamaModel(
+                LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     kv_config,
                     ar_len=1,
                     output_new_cache_only=True,
                     output_cache=True,
                     use_i64_token=use_i64_token,
+                    **extra_kwargs,
                 )
             )
         elif args.model_mode == "hybrid":
             llama_instance_list.append(
-                LlamaModel(
+                LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     kv_config,
                     ar_len=1,
                     output_new_cache_only=True,
                     output_cache=True,
                     use_i64_token=use_i64_token,
+                    **extra_kwargs,
                 )
             )
             llama_instance_list.append(
-                LlamaModel(
+                LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     prefill_config,
                     ar_len=args.prefill_ar_len,
                     output_new_cache_only=True,
                     output_cache=True,
                     use_i64_token=use_i64_token,
+                    **extra_kwargs,
                 )
             )
         elif args.model_mode == "lookahead":
             llama_instance_list.append(
-                LlamaModel(
+                LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     kv_config,
                     # To get better performance, we round up to the nearest power of 2.
                     ar_len=next_power_of_two(
@@ -492,15 +516,17 @@ def compile(
                     output_new_cache_only=True,
                     output_cache=True,
                     use_i64_token=use_i64_token,
+                    **extra_kwargs,
                 )
             )
             llama_instance_list.append(
-                LlamaModel(
+                LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     prefill_config,
                     ar_len=args.prefill_ar_len,
                     output_new_cache_only=True,
                     output_cache=True,
                     use_i64_token=use_i64_token,
+                    **extra_kwargs,
                 )
             )
         else:
@@ -514,6 +540,13 @@ def compile(
         state_dict = torch.load(
             checkpoint, weights_only=True, map_location="cpu", mmap=True
         )
+        if args.decoder_model in {"gemma-2b", "gemma3-1b"}:
+            for k, v in state_dict.items():
+                if "norm" not in k:
+                    continue
+                # Llama does x.to(float16) * w whilst Gemma3 is (x * w).to(float16)
+                # See https://github.com/huggingface/transformers/pull/29402
+                state_dict[k] = v.float() + torch.ones(v.shape, dtype=torch.float32)
     else:
         state_dict = torch.load(
             args.checkpoint, weights_only=True, map_location="cpu", mmap=True
@@ -527,25 +560,32 @@ def compile(
 
     if decoder_model_config.transform_weight:
         # Change to HuggingFace weight to improve the performance of RoPE in HTP backend.
-        def permute(w, heads):
+        def permute(w, heads, partial_rotary_dim):
             dim_0 = w.size(0)
             dim_1 = w.size(1)
-            return (
-                w.view(heads, dim_0 // heads // 2, 2, dim_1)
-                .transpose(1, 2)
+            transformed_weight = (
+                w.view(heads, -1, dim_0 // heads // 2 // partial_rotary_dim, 2, dim_1)
+                .transpose(2, 3)
                 .reshape(dim_0, dim_1)
             )
+            return transformed_weight
 
         n_heads = llama_instance_list[0].n_heads
         n_kv_heads = llama_instance_list[0].n_kv_heads
         n_layers = llama_instance_list[0].n_layers
-
+        partial_rotary_dim = int(
+            1 // kv_config.partial_rotary_factor
+        )  # TODO Handle cases where input size isn't divisible.
         for layer_i in range(n_layers):
             state_dict[f"layers.{layer_i}.attention.wq.weight"] = permute(
-                state_dict[f"layers.{layer_i}.attention.wq.weight"], n_heads
+                state_dict[f"layers.{layer_i}.attention.wq.weight"],
+                n_heads,
+                partial_rotary_dim,
             )
             state_dict[f"layers.{layer_i}.attention.wk.weight"] = permute(
-                state_dict[f"layers.{layer_i}.attention.wk.weight"], n_kv_heads
+                state_dict[f"layers.{layer_i}.attention.wk.weight"],
+                n_kv_heads,
+                partial_rotary_dim,
             )
 
     for llama_instance in llama_instance_list:
@@ -591,9 +631,13 @@ def compile(
             model.to(torch.float)
             ar_len, model.ar_len = model.ar_len, model.max_seq_len
             tokens, atten_mask = model.get_example_inputs(use_kv_cache=False)
-            atten_mask.to(torch.float)
+            atten_mask.mask.to(torch.float)
             wrapped_model = WrappedLlamaModel(
-                model, atten_mask, model.use_kv_cache, args.max_seq_len, args.device
+                model,
+                atten_mask.mask,
+                model.use_kv_cache,
+                args.max_seq_len,
+                args.device,
             )
             act_bits, weight_bits = {
                 QuantDtype.use_8a8w: (8, 8),
@@ -610,6 +654,7 @@ def compile(
         for layer in llama_instance.layers:
             if getattr(layer.attention, "prepare_sha", None):
                 layer.attention.prepare_sha()
+
             if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
                 layer.feed_forward.prepare_feedfoward_conv()
 
@@ -651,17 +696,21 @@ def compile(
         llama_instance_list[i] = SingleLlama(
             llama_instance_list[i].eval(), decoder_model_config, pte_filename
         )
-
         if args.embedding_quantize:
             llama_instance_list[i].passes_job[I64toI32][
                 QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY
             ]["skip_node"] = {"tokens"}
+
     if decoder_model_config.ptq:
         start_quantize_ts = time.time()
         custom_annotations = decoder_model_config.custom_annotation
-        logging.info(f"Custom annotations applied: {custom_annotations}")
         kv_quant_attrs = {}
         for i, llama_instance in enumerate(llama_instance_list):
+            lookahead_config = (
+                (args.window, args.ngram, args.gcap)
+                if i == 0 and args.model_mode == "lookahead"
+                else None
+            )
             llama_instance.quantize(
                 quant_dtype=quant_dtype,
                 args=args,
@@ -669,6 +718,7 @@ def compile(
                 custom_annotations=custom_annotations,
                 scales_state_dict=scales_state_dict,
                 chat_template=chat_template,
+                lookahead_config=lookahead_config,
             )
             # If hybrid and lookahead mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
             if i == 0 and args.model_mode in ["hybrid", "lookahead"]:
@@ -689,6 +739,48 @@ def compile(
             llama_instance.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
                 "get_quant_io_dtype_fn"
             ] = partial(llama_instance._tag_ios, fixed_point_type=fixed_point_type)
+
+        # force overriding frozen parameters here for model quantizing under seq mse scenario
+        # this will make weight sharing work properly
+        if decoder_model_config.seq_mse_candidates != 0 and args.model_mode in [
+            "hybrid",
+            "lookahead",
+        ]:
+            decode, prompt = [
+                instance.llama_graph_module for instance in llama_instance_list
+            ]
+            override_nodes = {
+                str(node.meta["nn_module_stack"].values()): node
+                for node in prompt.graph.nodes
+                if node.target == torch.ops.aten.conv2d.default
+            }
+            indices_map = {
+                # (affine_tensor, group_size, scales, zero_points, dtype, min, max)
+                torch.ops.torchao.dequantize_affine: [0, 2, 3],
+                # (per_channel_tensor, scales, zero_points, dim, dtype, min, max)
+                torch.ops.quantized_decomposed.dequantize_per_channel.default: [
+                    0,
+                    1,
+                    2,
+                ],
+                # should not need to worry about per-tensor case
+            }
+            for node in decode.graph.nodes:
+                if node.target == torch.ops.aten.conv2d.default:
+                    if target_node := override_nodes.get(
+                        str(node.meta["nn_module_stack"].values())
+                    ):
+                        # arguments of conv: (input, weight, bias)
+                        for i, dq_node in enumerate(node.args[1:]):
+                            for index in indices_map[dq_node.target]:
+                                setattr(
+                                    prompt,
+                                    target_node.args[i + 1].args[index].target,
+                                    getattr(decode, dq_node.args[index].target),
+                                )
+                    else:
+                        raise RuntimeError("failed to override quantization attribute")
+
         end_quantize_ts = time.time()
         logging.info(f"Time for quantizing: {end_quantize_ts - start_quantize_ts}")
 
@@ -807,7 +899,6 @@ def inference(
             pte_path=pte_path,
             tokenizer=tokenizer,
             runtime_tokenizer_path=runtime_tokenizer_path,
-            max_seq_length=args.max_seq_len,
         )
 
         # Evaluate the model
@@ -928,13 +1019,14 @@ def inference(
             host_id=args.host,
             soc_model=args.model,
             shared_buffer=args.shared_buffer,
+            target=args.target,
             runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
         )
         # No pregen inputs, input_list is not required
         adb.push(inputs=[], files=[runtime_tokenizer_path])
         adb.execute(custom_runner_cmd=runner_cmd)
-
         adb.pull(output_path=args.artifact, callback=post_process)
+
     if args.ip and args.port != -1:
         inference_speed = 0
         with open(
@@ -1069,12 +1161,6 @@ def _build_parser():
     )
 
     parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated llama in the given directory.",
-        type=str,
-    )
-
-    parser.add_argument(
         "--model_mode",
         help="Export and inference kv mode, hybrid mode, or lookahead decoding mode",
         default="hybrid",
@@ -1155,6 +1241,7 @@ def export_llama(args) -> None:
         args.decoder_model in SUPPORTED_LLM_MODELS
     ), f"Unknown decoder_model: {args.decoder_model}."
     decoder_model_config = SUPPORTED_LLM_MODELS[args.decoder_model]
+    logging.info(f"*** {args.decoder_model} ***\n%s", str(decoder_model_config))
 
     if args.model_mode == "kv":
         pte_filename = "kv_llama_qnn"
@@ -1189,7 +1276,7 @@ def export_llama(args) -> None:
             args.tokenizer_bin is not None
         ), "Please provide tokenizer_bin for stories."
         runtime_tokenizer_path = args.tokenizer_bin
-    elif args.decoder_model == "llama3_2":
+    elif "llama3_2" in args.decoder_model:
         tokenizer = get_tokenizer(args.tokenizer_model)
         assert isinstance(
             tokenizer, TiktokenTokenizer
@@ -1206,11 +1293,20 @@ def export_llama(args) -> None:
         )
         tokenizer_artifacts = tokenizer.save_pretrained(args.artifact)
         tokenizer_config = tokenizer_artifacts[0]
-        runtime_tokenizer_path = tokenizer_artifacts[-1]
+        if args.decoder_model == "gemma-2b":
+            # For Gemma, use tokenizer.model as it doesn't provide pre_tokenizer in tokenizer.json.
+            runtime_tokenizer_path = tokenizer_artifacts[-3]
+        else:
+            runtime_tokenizer_path = tokenizer_artifacts[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path, tokenizer_config)
 
+    if args.decoder_model == "codegen2_1b":
+        # Override the default BOS and EOS token IDs for codegen2_1b
+        tokenizer.bos_id = 1
+        tokenizer.eos_id = 2
+
     # TODO: Remove this once error is resolved.
-    if args.decoder_model == "phi_4_mini":
+    elif args.decoder_model == "phi_4_mini":
         with open(runtime_tokenizer_path, "r+") as file:
             data = json.load(file)
             # TODO: Encountered the following error during runtime, so switched behavior for now.

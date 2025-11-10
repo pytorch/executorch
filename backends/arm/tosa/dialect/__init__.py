@@ -4,7 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
+    conv2d,
+    depthwise_conv2d,
+    matmul,
     rescale,
+    resize,
     table,
     transpose,
 )

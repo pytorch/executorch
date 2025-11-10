@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 #
 # Main implementation of AoT flow to partition and preprocess for Arm target
@@ -126,7 +125,8 @@ class ArmCompileSpec(ABC):
 
     def to_list(self):
         """Get the ArmCompileSpec in list form."""
-        assert self.tosa_spec
+        if not self.tosa_spec:
+            raise ValueError("tosa_spec must be set before calling to_list()")
 
         # Always supply a TOSA version
         compile_spec = [
@@ -173,18 +173,30 @@ class ArmCompileSpec(ABC):
         return compile_spec
 
     def get_intermediate_path(self) -> str | None:
+        """
+        Gets the path used for dumping intermediate results such as tosa and pte.
+
+        Returns:
+            Path where intermediate results are saved.
+        """
         return self.path_for_intermediates
 
     def dump_intermediate_artifacts_to(self, output_path: str | None):
         """
         Sets a path for dumping intermediate results during such as tosa and pte.
+
+        Args:
+            output_path: Path to dump intermediate results to.
         """
         self.path_for_intermediates = output_path
         return self
 
     def dump_debug_info(self, debug_mode: DebugMode | None):
         """
-        Dump debugging information into the intermediates path
+        Dump debugging information into the intermediates path.
+
+        Args:
+            debug_mode: The debug mode to use for dumping debug information.
         """
         self.tosa_debug_mode = debug_mode
         return self

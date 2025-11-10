@@ -629,7 +629,6 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             return_offsets_mapping=return_offsets_mapping,
             return_length=return_length,
             verbose=verbose,
-            **kwargs,
         )
 
         # Return tensor is None, then we can remove the leading batch axis

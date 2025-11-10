@@ -3,12 +3,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import operator
+from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 # We'll decompose only the EXIR edge max_pool2d ops when dilation > 1
 EDGE_MAXPOOL2D = (
@@ -21,6 +23,10 @@ class DecomposeMaxPool2DPass(ArmPass):
     """
     Decompose dilated max_pool2d (EXIR edge ops) into space-to-batch -> maxpool -> batch-to-space.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        SizeAdjustInputPass,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         # Only intercept EXIR edge max_pool2d ops

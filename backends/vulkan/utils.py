@@ -128,7 +128,7 @@ def is_param_node(program: ExportedProgram, node: torch.fx.Node) -> bool:
         is_get_attr_node(node)
         or is_param(program, node)
         or is_buffer(program, node)
-        or is_constant(program, node)
+        or is_lifted_tensor_constant(program, node)
     )
 
 
@@ -206,6 +206,8 @@ def is_tensor_arg_node(node: Any) -> bool:
     if isinstance(node, torch.fx.Node):
         return is_tensor_node(node)
     elif isinstance(node, (list, tuple)):
+        if len(node) == 0:
+            return False
         return all(is_tensor_node(n) for n in node)
 
     return False
@@ -254,6 +256,47 @@ def tensor_node_is_bool(node: torch.fx.Node) -> bool:
             if isinstance(fake_tensor, FakeTensor):
                 if fake_tensor.dtype == torch.bool:
                     return True
+    return False
+
+
+def ndim_of(node: Any) -> Optional[int]:
+    """
+    Returns the number of dimensions of the tensor produced by the given node
+    """
+    if not is_single_tensor_node(node):
+        return None
+
+    return node.meta["val"].ndim
+
+
+def is_unsqueezed_vector(node: torch.fx.Node) -> bool:
+    """
+    Returns True if the node's tensor has all dimensions equal to 1 except for the last dimension.
+    """
+    if not is_single_tensor_node(node):
+        return False
+
+    tensor = node.meta["val"]
+    assert isinstance(tensor, FakeTensor)
+
+    if len(tensor.shape) < 1:
+        return False
+    # All dims except last are 1, last can be any size
+    return all(dim == 1 for dim in tensor.shape[:-1])
+
+
+def op_contains_bool_tensor(node: torch.fx.Node) -> bool:
+    """
+    Returns true if the operator used to compute the given node contains a bool tensor
+    """
+    if is_tensor_node(node) and tensor_node_is_bool(node):
+        return True
+
+    for arg_node in node.args:
+        # pyre-ignore[6]
+        if is_tensor_node(arg_node) and tensor_node_is_bool(arg_node):
+            return True
+
     return False
 
 
@@ -330,6 +373,18 @@ def find_quant_user(node: torch.fx.Node) -> Optional[torch.fx.Node]:
     return None
 
 
+def node_has_target(node: Any, target: str):
+    if not hasattr(node, "target"):
+        return False
+
+    if isinstance(node.target, str):
+        return node.target == target
+    elif hasattr(node.target, "name"):
+        return node.target.name() == target
+
+    return False
+
+
 ##
 ## Memory Layout, Storage Type Determination
 ##
@@ -348,6 +403,8 @@ all_memory_layouts: Set[VkMemoryLayout] = {
     VkMemoryLayout.TENSOR_WIDTH_PACKED,
     VkMemoryLayout.TENSOR_HEIGHT_PACKED,
     VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+    VkMemoryLayout.PACKED_INT8_4W4C,
+    VkMemoryLayout.PACKED_INT8_4H4W,
 }
 
 MemoryLayoutSet = Set[VkMemoryLayout]
@@ -400,6 +457,12 @@ def required_image_extents(sizes: torch.Size, layout: VkMemoryLayout) -> ImageEx
         height = (height + 3) // 4
     elif layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED:
         channels = (channels + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_4W4C:
+        width = (width + 3) // 4
+        channels = (channels + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_4H4W:
+        height = (height + 3) // 4
+        width = (width + 3) // 4
     else:
         raise RuntimeError(f"Unsupported memory layout {layout}")
 
@@ -558,6 +621,16 @@ class TensorRepSet:
             self.valid_texture_layouts & other.valid_texture_layouts,
         )
 
+    def make_union(self, other: "TensorRepSet") -> "TensorRepSet":
+        """
+        Merge this TensorRepSet with another TensorRepSet, returning a new TensorRepSet
+        with the union of the two.
+        """
+        return TensorRepSet(
+            self.valid_buffer_layouts | other.valid_buffer_layouts,
+            self.valid_texture_layouts | other.valid_texture_layouts,
+        )
+
     def is_compatible(self, storage: TensorRepr) -> bool:
         """
         Check if this TensorRepr is compatible with the given TensorRepSet.
@@ -683,14 +756,12 @@ def make_filtered_tensor_repset(
     if len(tensor_val.shape) > 4:
         return TensorRepSet(tensor_repset.valid_buffer_layouts, set())
 
-    # Bool tensors are currently not supported
-    if tensor_val.dtype == torch.bool:
-        return NO_STORAGE
-
     return TensorRepSet(tensor_repset.valid_buffer_layouts, valid_texture_layouts)
 
 
 ## Convenience TensorRepSet definitions
+
+PACKED_INT8_4W4C_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W4C}, set())
 
 CONTIGUOUS_ANY = TensorRepSet(
     {VkMemoryLayout.TENSOR_WIDTH_PACKED}, {VkMemoryLayout.TENSOR_WIDTH_PACKED}
@@ -698,6 +769,7 @@ CONTIGUOUS_ANY = TensorRepSet(
 CONTIGUOUS_BUFFER = TensorRepSet({VkMemoryLayout.TENSOR_WIDTH_PACKED}, set())
 
 WIDTH_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_WIDTH_PACKED})
+HEIGHT_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_HEIGHT_PACKED})
 CHANNELS_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_CHANNELS_PACKED})
 
 ANY_TEXTURE = TensorRepSet(set(), all_memory_layouts)
@@ -1218,6 +1290,36 @@ def is_in_8bit_range(tensor: torch.Tensor) -> bool:
 ##
 
 
+def normalize_dims(dims: Union[int, List[int]], ndim: int) -> Union[int, List[int]]:
+    """
+    Normalize dimension indices to be non-negative and within [0, ndim).
+    Accepts a single int or a list of ints.
+    """
+    if isinstance(dims, int):
+        if dims < 0:
+            dims += ndim
+
+        return dims
+
+    normalized = []
+    for d in dims:
+        if d < 0:
+            d += ndim
+        normalized.append(d)
+
+    return normalized
+
+
+def nchw_dim_to_whcn_dim(nchw_dim: int, ndim: int) -> int:
+    # Handle negative indices for nchw_dim
+    if nchw_dim < 0:
+        nchw_dim += ndim
+
+    assert nchw_dim >= 0 and nchw_dim < ndim
+    whcn_dim = (ndim - 1) - nchw_dim
+    return whcn_dim
+
+
 def get_tensor_val_str(tensor_val: FakeTensor) -> str:
     return f"{tensor_val.dtype}: {tensor_val.shape}"
 
@@ -1269,6 +1371,7 @@ def update_program_state_dict(
     updated_tensor: torch.Tensor,
 ) -> None:
     target_name = None
+    kind = None
     # Iterate over all the tensors in the graph signature, and find
     # the one corresponding to the parameter/buffer name
     for input_ in program.graph_signature.input_specs:
@@ -1277,6 +1380,7 @@ def update_program_state_dict(
             and isinstance(input_.arg, TensorArgument)
             and input_.arg.name == buffer_name
         ):
+            kind = input_.kind
             target_name = input_.target
             break
 
@@ -1285,6 +1389,9 @@ def update_program_state_dict(
         target_name is not None
     ), f"could not find {buffer_name} in source program signature"
     assert target_name in program.state_dict, f"could not find {target_name}"
+
+    if kind == InputKind.PARAMETER:
+        updated_tensor = torch.nn.Parameter(updated_tensor, requires_grad=False)
 
     # Finally, overwrite the current tensor with updated tensor
     program.state_dict[target_name] = updated_tensor

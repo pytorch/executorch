@@ -11,6 +11,9 @@ runtime.python_library(
         "rope.py",
         "quantized_linear.py",
         "quantized_convolution.py",
+        "quantized_binary.py",
+        "sdpa.py",
+        "select_as_symint.py",
     ],
     visibility = [
         "//executorch/backends/...",

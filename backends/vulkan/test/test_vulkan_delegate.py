@@ -11,20 +11,14 @@ import unittest
 from typing import Tuple
 
 import executorch.backends.vulkan.test.utils as test_utils
-
 import torch
-
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
-
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
-
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
-
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -36,11 +30,8 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
 )
 from executorch.extension.pytree import tree_flatten
 from torch.export import Dim, export, ExportedProgram
-
 from torchao.quantization.granularity import PerGroup
-
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-
 from torchao.quantization.pt2e.quantizer import Quantizer
 from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 from torchao.utils import unwrap_tensor_subclass
@@ -69,9 +60,6 @@ def lower_module(
     edge_program = to_edge_transform_and_lower(
         program,
         compile_config=edge_compile_config,
-        transform_passes=[
-            I64toI32(edge_compile_config._skip_dim_order),
-        ],
         partitioner=[VulkanPartitioner(compile_options)],
     )
 
@@ -2482,6 +2470,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
+    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence(self):
         """
         Test a sequence of convolution layers quantized with PT2E quantization.
@@ -2572,6 +2561,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
+    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence_all_reduced(self):
         """
         Test a sequence of convolution layers quantized with PT2E quantization.
@@ -2680,14 +2670,17 @@ class TestVulkanBackend(unittest.TestCase):
             def apply_8da4w_quantization(self):
                 """Apply TorchAO 8da4w quantization (int8 dynamic activation + int4 weight)."""
                 from torchao.quantization import (
-                    int8_dynamic_activation_int4_weight,
+                    Int8DynamicActivationIntxWeightConfig,
                     quantize_,
                 )
+                from torchao.quantization.granularity import PerGroup
                 from torchao.utils import unwrap_tensor_subclass
 
                 quantize_(
                     self,
-                    int8_dynamic_activation_int4_weight(group_size=self.group_size),
+                    Int8DynamicActivationIntxWeightConfig(
+                        weight_dtype=torch.int4, granularity=PerGroup(self.group_size)
+                    ),
                 )
                 unwrap_tensor_subclass(self)
                 return self

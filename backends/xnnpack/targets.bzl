@@ -59,6 +59,9 @@ def define_common_targets():
             exported_deps = [
                 "//executorch/runtime/backend:interface" + aten_suffix,
             ],
+            exported_headers = [
+                "runtime/XNNPACKBackend.h",
+            ],
             deps = [
                 third_party_dep("XNNPACK"),
                 "//executorch/backends/xnnpack/serialization:xnnpack_flatbuffer_header",
@@ -70,3 +73,13 @@ def define_common_targets():
             # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
             link_whole = True,
         )
+    
+    runtime.cxx_library(
+        name = "xnnpack_interface",
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_headers = [
+            "runtime/XNNPACKBackend.h",
+        ],
+    )

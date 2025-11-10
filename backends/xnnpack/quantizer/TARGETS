@@ -1,6 +1,6 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-python_library(
+runtime.python_library(
     name = "xnnpack_quantizer",
     srcs = ["xnnpack_quantizer.py"],
     deps = [
@@ -11,7 +11,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "xnnpack_quantizer_utils",
     srcs = ["xnnpack_quantizer_utils.py"],
     deps = [

@@ -86,8 +86,10 @@ TEST_F(FlatTensorSerializeTest, ValidFlatTensorSerialized) {
   const uint64_t segment_offset = 48 + 280 + 8; // 8 is padding.
   EXPECT_EQ(*(uint64_t*)(header_buffer + 24), segment_offset);
 
-  // Segment total size, 8 bytes of data (2 floats), 24 bytes of padding.
-  const uint64_t segment_size = 32;
+  // Segment total size = 20
+  // linear.bias: 4 bytes + 12 bytes of padding.
+  // linear.weight: 4 bytes + 0 padding (last segment).
+  const uint64_t segment_size = 20;
   EXPECT_EQ(*(uint64_t*)(header_buffer + 32), segment_size);
 
   // Check Flatbuffer

@@ -56,8 +56,6 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * output has shape (batches, seq_len, num_q_heads, head_dim)
  */
 
-#extension GL_EXT_debug_printf : enable
-
 void main() {
   const int tile_idx_x = int(gl_GlobalInvocationID.x);
   const int tile_idx_y = int(gl_GlobalInvocationID.y);
@@ -77,6 +75,7 @@ void main() {
   const int Q_H = q_projected_sizes.y;
   // sequence length
   const int S = q_projected_sizes.z;
+  const int S_aligned = align_up_4(S);
 
   // number of K/V heads
   const int KV_H = v_cache_sizes.y;
@@ -115,7 +114,7 @@ void main() {
       s,
       q_h,
       context_texel_len,
-      S,
+      S_aligned,
       Q_H);
 
     load_v_cache_tile_no_checks(
@@ -138,7 +137,7 @@ void main() {
       s,
       q_h,
       context_texel_len,
-      S,
+      S_aligned,
       Q_H);
 
     load_v_cache_tile_with_checks(

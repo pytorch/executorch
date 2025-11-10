@@ -22,7 +22,6 @@ OpType = Union[str, OpOverload, EdgeOpOverload]
 
 class SqueezeUnsqueezeInputs(ExportPass):
     _squeezable_ops: Set[OpType] = {
-        exir_ops.edge.et_vk.linear_weight_int4.default,
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten.gelu.default,
     }
