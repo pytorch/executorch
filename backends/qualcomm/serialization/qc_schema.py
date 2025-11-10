@@ -43,7 +43,6 @@ class QcomChipset(IntEnum):
     SM8450 = 36  # v69
     SM8475 = 42  # v69
     SM8550 = 43  # v73
-    SA8255 = 52  # v73
     SM8650 = 57  # v75
     SM8750 = 69  # v79
     SSG2115P = 46  # v73
@@ -53,6 +52,7 @@ class QcomChipset(IntEnum):
     SXR2330P = 75  # v79
     QCS9100 = 77  # v73
     SAR2230P = 95  # v81
+    SA8255 = 52  # v73
 
 
 @dataclass
