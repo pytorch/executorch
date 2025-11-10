@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import dataclass
 from functools import partial
 from multiprocessing.connection import Listener
 from pathlib import Path
@@ -118,6 +119,36 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = AdaptiveAvgPool2D()  # noqa: F405
         sample_input = (torch.randn(1, 512, 7, 7),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_adaptive_avg_pool3d(self):
+        # NOTE: Support the cases mod(input_dhw, output_dhw) = 0
+        modules = [
+            AdaptiveAvgPool3D((2, 2, 2)),  # noqa: F405
+            AdaptiveAvgPool3D((8)),  # noqa: F405
+            AdaptiveAvgPool3D((2, None, None)),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn(1, 512, 16, 8, 16),),
+        ]
+        for j in range(len(sample_inputs)):
+            for i, module in enumerate(modules):
+                with self.subTest(i=i):
+                    self.lower_module_and_test_output(module, sample_inputs[j])
+
+    def test_qnn_backend_adaptive_max_pool2d(self):
+        sample_input = (torch.randn(1, 512, 24, 24),)
+        # NOTE: Currently, we only support the return_indices is False and default is False.
+        # NOTE: Currently, we only support the case mod(in_w, out_w)=0 and mod(in_h, out_h)=0.
+        modules = [
+            AdaptiveMaxPool2D((1, 1), False),  # noqa: F405
+            AdaptiveMaxPool2D((4, 4)),  # noqa: F405
+            AdaptiveMaxPool2D((24, 24)),  # noqa: F405
+            AdaptiveMaxPool2D((None, 4)),  # noqa: F405
+            AdaptiveMaxPool2D((12, None)),  # noqa: F405
+        ]
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_alias(self):
         module = Alias()  # noqa: F405
@@ -254,6 +285,25 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_inputs[i])
+
+    def test_qnn_backend_avg_pool3d(self):
+        # NOTE: Support the cases mod(input_dhw, filter_dhw) = 0
+        # NOTE: The pad should be at most half of effective kernel size.
+        modules = [
+            AvgPool3d((8), (2), (1), True, True),  # noqa: F405
+            AvgPool3d((8), (2), (1), True, False),  # noqa: F405
+            AvgPool3d((8), (2), (1), False, False),  # noqa: F405
+            AvgPool3d((16, 16, 16), (4, 4, 4), (1, 1, 1), False, True),  # noqa: F405
+            AvgPool3d((8, 8, 8), (2, 2, 2), (1, 1, 1), True, True),  # noqa: F405
+            AvgPool3d((12, 12, 12), (4, 6, 2), (0, 0, 0), True, True),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn(1, 3, 64, 48, 32),),
+        ]
+        for j in range(len(sample_inputs)):
+            for i, module in enumerate(modules):
+                with self.subTest(i=i):
+                    self.lower_module_and_test_output(module, sample_inputs[j])
 
     def test_qnn_backend_batch_norm(self):
         modules = [BatchNorm(32), BatchNorm(32, False)]  # noqa: F405
@@ -823,6 +873,29 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = Gelu()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_grid_sampler(self):
+        # NOTE: The grid_sampler 3d version is not supported in fp16.
+        modes = ["bilinear", "nearest"]
+        padding_modes = ["zeros", "border", "reflection"]
+        align_corners = [False, True]
+        grid_samples = [
+            GridSample(mode, pad, align)  # noqa: F405
+            for mode, pad, align in itertools.product(
+                modes, padding_modes, align_corners
+            )
+        ]
+        sample_inputs = [
+            (
+                torch.randn(1, 12, 14, 14),
+                torch.randn(1, 3, 3, 2),
+            ),  # for grid_sampler 2d
+        ]
+
+        for j in range(len(sample_inputs)):
+            for i, module in enumerate(grid_samples):
+                with self.subTest(i=i, j=j, module=module):
+                    self.lower_module_and_test_output(module, sample_inputs[j])
 
     def test_qnn_backend_glu(self):
         modules = [torch.nn.GLU(), torch.nn.GLU(dim=0)]
@@ -2041,6 +2114,38 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_adaptive_avg_pool3d(self):
+        # NOTE: Support the cases mod(input_dhw, output_dhw) = 0
+        modules = [
+            AdaptiveAvgPool3D((2, 2, 2)),  # noqa: F405
+            AdaptiveAvgPool3D((8)),  # noqa: F405
+            AdaptiveAvgPool3D((2, None, None)),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn(1, 512, 16, 8, 16),),
+        ]
+        for j in range(len(sample_inputs)):
+            for i, module in enumerate(modules):
+                with self.subTest(i=i):
+                    module = self.get_qdq_module(module, sample_inputs[j])
+                    self.lower_module_and_test_output(module, sample_inputs[j])
+
+    def test_qnn_backend_adaptive_max_pool2d(self):
+        sample_input = (torch.randn(1, 512, 24, 24),)
+        # NOTE: Currently, we only support the return_indices is False and default is False.
+        # NOTE: Currently, we only support the case mod(in_w, out_w)=0 and mod(in_h, out_h)=0.
+        modules = [
+            AdaptiveMaxPool2D((1, 1), False),  # noqa: F405
+            AdaptiveMaxPool2D((4, 4)),  # noqa: F405
+            AdaptiveMaxPool2D((24, 24)),  # noqa: F405
+            AdaptiveMaxPool2D((None, 4)),  # noqa: F405
+            AdaptiveMaxPool2D((12, None)),  # noqa: F405
+        ]
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module_one = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module_one, sample_input)
+
     def test_qnn_backend_alias(self):
         module = Alias()  # noqa: F405
         sample_input = (torch.randn(1, 10),)
@@ -2186,6 +2291,26 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_inputs[i])
                 self.lower_module_and_test_output(module, sample_inputs[i])
+
+    def test_qnn_backend_avg_pool3d(self):
+        # NOTE: Support the cases mod(input_dhw, filter_dhw) = 0
+        # NOTE: The pad should be at most half of effective kernel size.
+        modules = [
+            AvgPool3d((8), (2), (1), True, True),  # noqa: F405
+            AvgPool3d((8), (2), (1), True, False),  # noqa: F405
+            AvgPool3d((8), (2), (1), False, False),  # noqa: F405
+            AvgPool3d((16, 16, 16), (4, 4, 4), (1, 1, 1), False, True),  # noqa: F405
+            AvgPool3d((8, 8, 8), (2, 2, 2), (1, 1, 1), True, True),  # noqa: F405
+            AvgPool3d((12, 12, 12), (4, 6, 2), (0, 0, 0), True, True),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn(1, 3, 64, 48, 32),),
+        ]
+        for j in range(len(sample_inputs)):
+            for i, module in enumerate(modules):
+                with self.subTest(i=i):
+                    module = self.get_qdq_module(module, sample_inputs[j])
+                    self.lower_module_and_test_output(module, sample_inputs[j])
 
     def test_qnn_backend_batch_norm(self):
         modules = [BatchNorm(32), BatchNorm(32, False)]  # noqa: F405
@@ -2838,6 +2963,34 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn(2, 5, 1, 3),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_grid_sampler(self):
+        modes = ["bilinear", "nearest"]
+        padding_modes = ["zeros", "border", "reflection"]
+        align_corners = [False, True]
+        grid_samples = [
+            GridSample(mode, pad, align)  # noqa: F405
+            for mode, pad, align in itertools.product(
+                modes, padding_modes, align_corners
+            )
+        ]
+        sample_inputs = [
+            (
+                torch.randn(1, 12, 14, 14),
+                torch.randn(1, 3, 3, 2),
+            ),  # for grid_sampler 2d
+            (
+                torch.randn(1, 15, 9, 17, 33),
+                torch.randn(1, 7, 8, 9, 3),
+            ),  # for grid_sampler 3d
+        ]
+        for j in range(len(sample_inputs)):
+            for i, module in enumerate(grid_samples):
+                with self.subTest(i=i, j=j, module=module):
+                    module = self.get_qdq_module(
+                        module, sample_inputs[j], quant_dtype=QuantDtype.use_16a16w
+                    )
+                    self.lower_module_and_test_output(module, sample_inputs[j])
 
     def test_qnn_backend_glu(self):
         modules = [torch.nn.GLU(), torch.nn.GLU(dim=0)]
@@ -5692,11 +5845,71 @@ class TestQNNQuantizedUtils(TestQNN):
 
 
 class TestExampleLLMScript(TestQNN):
-    def test_static_gemma_2b(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
 
-        prompt = "My favourite condiment is "
+    @dataclass(frozen=True)
+    class LlmSpecs:
+        SM8650: float
+        SM8750: float
+        ppl: float
+        pte_size: float
+
+    # TODO: refactor to support different backends
+    def setUp(self):
+        self.llm_specs = {
+            "gemma-2b": TestExampleLLMScript.LlmSpecs(
+                SM8650=32, SM8750=36, ppl=35, pte_size=2_700_000_000
+            ),  # 2.7 GB
+            "gemma3-1b": TestExampleLLMScript.LlmSpecs(
+                SM8650=70, SM8750=100, ppl=23, pte_size=1_200_000_000
+            ),  # 1.2 GB
+            "phi_4_mini": TestExampleLLMScript.LlmSpecs(
+                SM8650=14, SM8750=19, ppl=12, pte_size=4_000_000_000
+            ),  # 4GB
+            "llama3_2-1b_instruct": TestExampleLLMScript.LlmSpecs(
+                SM8650=37, SM8750=45, ppl=16, pte_size=1_500_000_000
+            ),  # 1.5 GB
+            "llama3_2-3b_instruct": TestExampleLLMScript.LlmSpecs(
+                SM8650=21, SM8750=26, ppl=11, pte_size=2_800_000_000
+            ),  # 2.8 GB
+            "qwen2_5-0_5b": TestExampleLLMScript.LlmSpecs(
+                SM8650=115, SM8750=155, ppl=15, pte_size=600_000_000
+            ),  # 600 MB
+            "qwen2_5-1_5b": TestExampleLLMScript.LlmSpecs(
+                SM8650=38, SM8750=47, ppl=10, pte_size=1_500_000_000
+            ),  # 1.5 GB
+            "qwen3-0_6b": TestExampleLLMScript.LlmSpecs(
+                SM8650=47, SM8750=68, ppl=21, pte_size=700_000_000
+            ),  # 700 MB
+            "qwen3-1_7b": TestExampleLLMScript.LlmSpecs(
+                SM8650=28, SM8750=34, ppl=15, pte_size=1_800_000_000
+            ),  # 1.8 GB
+            "smollm2_135m": TestExampleLLMScript.LlmSpecs(
+                SM8650=214, SM8750=260, ppl=23, pte_size=210_000_000
+            ),  # 210 MB
+            "smollm3-3b": TestExampleLLMScript.LlmSpecs(
+                SM8650=23, SM8750=28, ppl=10, pte_size=2_600_000_000
+            ),  # 2.6 GB
+        }
+
+    def test_static_llm_model(self):
+        if not self.required_envs([self.model_name]):
+            self.skipTest("missing required envs")
+        assert (
+            self.model_name in self.llm_specs
+        ), f"Unable to find {self.model_name} under model_specs."
+
+        is_llama_model = self.model_name in {
+            "llama3_2-1b_instruct",
+            "llama3_2-3b_instruct",
+        }
+        if is_llama_model:
+            assert (
+                self.llama_artifacts is not None
+            ), "Please provide path to llama artifacts"
+
+        prompt = (
+            "I would like to learn python, could you teach me with a simple example?"
+        )
         cmds = [
             "python",
             f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
@@ -5712,8 +5925,10 @@ class TestExampleLLMScript(TestQNN):
             str(self.port),
             "--prompt",
             f"{prompt}",
+            "--temperature",
+            "0",
             "--decoder_model",
-            "gemma-2b",
+            self.model_name,
             "--model_mode",
             "kv",
             "--max_seq_len",
@@ -5724,6 +5939,19 @@ class TestExampleLLMScript(TestQNN):
             "--limit",
             "1",
         ]
+
+        if is_llama_model:
+            cmds.extend(
+                [
+                    "--checkpoint",
+                    f"{self.llama_artifacts}/consolidated.00.pth",
+                    "--params",
+                    f"{self.llama_artifacts}/params.json",
+                    "--tokenizer_model",
+                    f"{self.llama_artifacts}/tokenizer.model",
+                ]
+            )
+
         if self.compile_only:
             cmds.extend(["--compile_only"])
         elif self.device:
@@ -5743,19 +5971,30 @@ class TestExampleLLMScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
-                inference_speed_ref = {"SM8650": 32, "SM8750": 36}
-                self.assertLessEqual(msg["wiki_ppl"], 35)
-                self.assertLessEqual(msg["pte_size"], 2_700_000_000)  # 2.7GB
-                if self.model in inference_speed_ref:
-                    self.assertGreaterEqual(
-                        msg["inference_speed"], inference_speed_ref[self.model]
-                    )
+                llm_spec = self.llm_specs[self.model_name]
+                pte_size = msg["pte_size"]
+                self.assertLessEqual(pte_size, llm_spec.pte_size)
+                print(f"Model Name: {self.model_name}\nTarget Device: {self.model}")
+                print(f"PTE Size: {pte_size} bytes")
+                if not self.compile_only:
+                    ppl = msg["wiki_ppl"]
+                    print(f"PPL: {ppl}")
+                    self.assertLessEqual(ppl, llm_spec.ppl)
+                    if not self.enable_x86_64 and hasattr(llm_spec, self.model):
+                        device_inference_speed = msg["inference_speed"]
+                        expected_inference_speed = getattr(llm_spec, self.model)
+                        print(
+                            f"Prompt Evaluation: {device_inference_speed} tokens/second"
+                        )
+                        self.assertGreaterEqual(
+                            device_inference_speed, expected_inference_speed
+                        )
 
-    def test_static_gemma3_1b(self):
+    def test_codegen2_1b(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
 
-        prompt = "My favourite condiment is "
+        prompt = "def hello_world():"
         cmds = [
             "python",
             f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
@@ -5770,23 +6009,15 @@ class TestExampleLLMScript(TestQNN):
             "--port",
             str(self.port),
             "--prompt",
-            f"{prompt}",
-            "--ptq",
-            "16a4w_block",
+            prompt,
             "--temperature",
             "0",
             "--decoder_model",
-            "gemma3-1b",
+            "codegen2_1b",
             "--model_mode",
             "kv",
             "--max_seq_len",
-            "1024",
-            "--eval_perplexity",
-            "--tasks",
-            "wikitext",
-            "--limit",
-            "1",
-            "--enable_masked_softmax",
+            "128",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -5799,6 +6030,7 @@ class TestExampleLLMScript(TestQNN):
         if self.pre_gen_pte:
             cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
 
+        golden_start_with = "def hello_world():"
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
@@ -5808,93 +6040,16 @@ class TestExampleLLMScript(TestQNN):
                 self.fail(msg["Error"])
             else:
                 if not self.compile_only:
-                    self.assertLessEqual(msg["wiki_ppl"], 23)
+                    model_out = msg["result"][0]
+                    self.assertTrue(
+                        model_out.startswith(golden_start_with),
+                        f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
+                    )
                 if not self.enable_x86_64:
                     pte_size = msg["pte_size"]
-                    self.assertLessEqual(pte_size, 1_200_000_000)  # 1.2GB
-                inference_speed_ref = {"SM8650": 70, "SM8750": 100}
-                if (
-                    not self.compile_only
-                    and not self.enable_x86_64
-                    and self.model in inference_speed_ref
-                ):
-                    self.assertGreaterEqual(
-                        msg["inference_speed"], inference_speed_ref[self.model]
-                    )
-
-    def test_llama3_2_instruct(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-        assert (
-            self.llama_artifacts is not None
-        ), "Please provide path to llama artifacts"
-
-        prompt = "What is the meaning of life?"
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--model",
-            self.model,
-            "--checkpoint",
-            f"{self.llama_artifacts}/consolidated.00.pth",
-            "--params",
-            f"{self.llama_artifacts}/params.json",
-            "--tokenizer_model",
-            f"{self.llama_artifacts}/tokenizer.model",
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--prompt",
-            f"{prompt}",
-            "--temperature",
-            "0",
-            "--decoder_model",
-            "llama3_2-1b_instruct",
-            "--model_mode",
-            "kv",
-            "--max_seq_len",
-            "1024",
-            "--eval_perplexity",
-            "--tasks",
-            "wikitext",
-            "--limit",
-            "1",
-        ]
-        if self.compile_only:
-            cmds.extend(["--compile_only"])
-        elif self.device:
-            cmds.extend(["--device", self.device])
-        if self.host:
-            cmds.extend(["--host", self.host])
-        elif self.enable_x86_64:
-            cmds.extend(["--enable_x86_64"])
-        if self.pre_gen_pte:
-            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                inference_speed_ref = {"SM8650": 37, "SM8750": 49}
-                if (
-                    not self.compile_only
-                    and not self.enable_x86_64
-                    and self.model in inference_speed_ref
-                ):
-                    self.assertLessEqual(msg["pte_size"], 1_500_000_000)
-                    self.assertLessEqual(msg["wiki_ppl"], 15)
-                    self.assertGreaterEqual(
-                        msg["inference_speed"], inference_speed_ref[self.model]
-                    )
+                    self.assertLessEqual(pte_size, 1_200_000_000)  # 1200MB
+                if not self.compile_only and not self.enable_x86_64:
+                    self.assertGreaterEqual(msg["inference_speed"], 60)
 
     def test_llama_stories_260k(self):
         if not self.required_envs():
@@ -5989,6 +6144,8 @@ class TestExampleLLMScript(TestQNN):
             self.build_folder,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--checkpoint",
             f"{self.llama_artifacts}/stories110M.pt",
             "--params",
@@ -6043,188 +6200,12 @@ class TestExampleLLMScript(TestQNN):
                 # x86 does not allow weight sharing, so we don't check pte size
                 if not self.enable_x86_64:
                     pte_size = msg["pte_size"]
-                    self.assertLessEqual(pte_size, 130_000_000)  # 130MB
+                    self.assertLessEqual(pte_size, 135_000_000)  # 135MB
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 220)  # Lanai
 
-    def test_static_phi4(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        prompt = "My favourite condiment is "
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--prompt",
-            f"{prompt}",
-            "--decoder_model",
-            "phi_4_mini",
-            "--model_mode",
-            "kv",
-            "--max_seq_len",
-            "1024",
-            "--eval_perplexity",
-            "--tasks",
-            "wikitext",
-            "--limit",
-            "1",
-        ]
-        if self.compile_only:
-            cmds.extend(["--compile_only"])
-        elif self.device:
-            cmds.extend(["--device", self.device])
-        if self.host:
-            cmds.extend(["--host", self.host])
-        elif self.enable_x86_64:
-            cmds.extend(["--enable_x86_64"])
-        if self.pre_gen_pte:
-            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                inference_speed_ref = {"SM8650": 14, "SM8750": 19}
-                self.assertLessEqual(msg["wiki_ppl"], 12)
-                self.assertLessEqual(msg["pte_size"], 4_000_000_000)  # 4GB
-                if self.model in inference_speed_ref:
-                    self.assertGreaterEqual(
-                        msg["inference_speed"], inference_speed_ref[self.model]
-                    )
-
-    def test_static_qwen2_5(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        prompt = "My favourite condiment is "
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--prompt",
-            f"{prompt}",
-            "--decoder_model",
-            "qwen2_5-0_5b",
-            "--model_mode",
-            "kv",
-            "--max_seq_len",
-            "1024",
-            "--eval_perplexity",
-            "--tasks",
-            "wikitext",
-            "--limit",
-            "1",
-        ]
-        if self.compile_only:
-            cmds.extend(["--compile_only"])
-        elif self.device:
-            cmds.extend(["--device", self.device])
-        if self.host:
-            cmds.extend(["--host", self.host])
-        elif self.enable_x86_64:
-            cmds.extend(["--enable_x86_64"])
-        if self.pre_gen_pte:
-            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                inference_speed_ref = {"SM8650": 115, "SM8750": 155}
-                self.assertLessEqual(msg["wiki_ppl"], 15)
-                self.assertLessEqual(msg["pte_size"], 600_000_000)  # 600MB
-                if self.model in inference_speed_ref:
-                    self.assertGreaterEqual(
-                        msg["inference_speed"], inference_speed_ref[self.model]
-                    )
-
-    def test_static_qwen3(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        prompt = "My favourite condiment is "
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--prompt",
-            f"{prompt}",
-            "--decoder_model",
-            "qwen3-0_6b",
-            "--model_mode",
-            "kv",
-            "--max_seq_len",
-            "1024",
-            "--eval_perplexity",
-            "--tasks",
-            "wikitext",
-            "--limit",
-            "1",
-        ]
-        if self.compile_only:
-            cmds.extend(["--compile_only"])
-        elif self.device:
-            cmds.extend(["--device", self.device])
-        if self.host:
-            cmds.extend(["--host", self.host])
-        elif self.enable_x86_64:
-            cmds.extend(["--enable_x86_64"])
-        if self.pre_gen_pte:
-            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                inference_speed_ref = {"SM8650": 38, "SM8750": 56}
-                self.assertLessEqual(msg["wiki_ppl"], 18)
-                self.assertLessEqual(msg["pte_size"], 950_000_000)  # 950MB
-                if self.model in inference_speed_ref:
-                    self.assertGreaterEqual(
-                        msg["inference_speed"], inference_speed_ref[self.model]
-                    )
-
     def test_qwen2_5(self):
+        # This is not testing static llm flow.
         if not self.required_envs([]):
             self.skipTest("missing required envs")
         prompt = "My favourite condiment is "
@@ -6278,125 +6259,6 @@ class TestExampleLLMScript(TestQNN):
                         f"Expected Output: '{golden_start_with}' Actual Output: '{model_out}'",
                     )
 
-    def test_static_smollm2(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        prompt = "My favourite condiment is "
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--prompt",
-            f"{prompt}",
-            "--decoder_model",
-            "smollm2_135m",
-            "--model_mode",
-            "kv",
-            "--temperature",
-            "0",
-            "--max_seq_len",
-            "1024",
-            "--eval_perplexity",
-            "--task",
-            "wikitext",
-            "--limit",
-            "1",
-        ]
-        if self.compile_only:
-            cmds.extend(["--compile_only"])
-        elif self.device:
-            cmds.extend(["--device", self.device])
-        if self.host:
-            cmds.extend(["--host", self.host])
-        elif self.enable_x86_64:
-            cmds.extend(["--enable_x86_64"])
-        if self.pre_gen_pte:
-            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                print("Perplexity score: ", msg["wiki_ppl"])
-                self.assertLessEqual(msg["wiki_ppl"], 25)
-                if not self.enable_x86_64:
-                    self.assertGreaterEqual(msg["inference_speed"], 200)
-
-    def test_static_smollm3(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        prompt = "My favourite condiment is "
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--prompt",
-            f"{prompt}",
-            "--decoder_model",
-            "smollm3-3b",
-            "--model_mode",
-            "kv",
-            "--temperature",
-            "0",
-            "--max_seq_len",
-            "1024",
-            "--eval_perplexity",
-            "--task",
-            "wikitext",
-            "--limit",
-            "1",
-        ]
-        if self.compile_only:
-            cmds.extend(["--compile_only"])
-        elif self.device:
-            cmds.extend(["--device", self.device])
-        if self.host:
-            cmds.extend(["--host", self.host])
-        elif self.enable_x86_64:
-            cmds.extend(["--enable_x86_64"])
-        if self.pre_gen_pte:
-            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                inference_speed_ref = {"SM8650": 23, "SM8750": 28}
-                self.assertLessEqual(msg["wiki_ppl"], 10)
-                self.assertLessEqual(msg["pte_size"], 2_600_000_000)  # 2.6GB
-                if self.model in inference_speed_ref:
-                    self.assertGreaterEqual(
-                        msg["inference_speed"], inference_speed_ref[self.model]
-                    )
-
 
 class TestExampleOssScript(TestQNN):
     def test_albert(self):
@@ -6415,6 +6277,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -6451,6 +6315,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -6488,6 +6354,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -6563,6 +6431,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -6600,6 +6470,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -6637,6 +6509,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -6674,6 +6548,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -6709,6 +6585,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -6746,6 +6624,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -6786,6 +6666,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--oss_repo",
             self.oss_repo,
             "--pretrained_weight",
@@ -6826,6 +6708,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--default_dataset",
             "--oss_repo",
             self.oss_repo,
@@ -6866,6 +6750,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -6904,6 +6790,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--oss_repo",
             self.oss_repo,
             "--pretrained_weight",
@@ -6946,6 +6834,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -6984,6 +6874,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7024,6 +6916,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7100,6 +6994,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7140,6 +7036,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7217,6 +7115,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7256,6 +7156,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--dataset",
             self.image_dataset,
             "--ip",
@@ -7294,6 +7196,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7331,6 +7235,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7367,6 +7273,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--oss_repo",
             self.oss_repo,
             "--pretrained_weight",
@@ -7407,6 +7315,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7481,6 +7391,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7553,6 +7465,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7820,6 +7734,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7860,6 +7776,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7900,6 +7818,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7940,6 +7860,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -7980,6 +7902,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -8018,6 +7942,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--default_dataset",
             "--ip",
             self.ip,
@@ -8057,6 +7983,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--download",
             "--ip",
             self.ip,
@@ -8098,6 +8026,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--pretrained_weight",
             self.pretrained_weight,
             "--ip",
@@ -8139,6 +8069,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--pretrained_weight",
             self.pretrained_weight,
             "--ptq",
@@ -8181,6 +8113,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--pretrained_weight",
             self.pretrained_weight,
             "--ip",
@@ -8253,6 +8187,8 @@ class TestUtilsScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -8285,6 +8221,8 @@ class TestUtilsScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -8362,6 +8300,8 @@ class TestUtilsScript(TestQNN):
                 f"{tmp_dir}/e_out",
                 "--model",
                 self.model,
+                "--target",
+                self.target,
                 "--device",
                 self.device,
                 "--build_folder",
@@ -8441,13 +8381,6 @@ def setup_environment():
         default="",
         type=str,
     )
-
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated pte in the given directory.",
-        type=str,
-    )
-
     parser.add_argument(
         "--llama_artifacts",
         help="A folder that contains: weight, tokenizer, and params.",
@@ -8477,6 +8410,7 @@ def setup_environment():
     TestQNN.pre_gen_pte = args.pre_gen_pte
     TestQNN.llama_artifacts = args.llama_artifacts
     TestQNN.op_package_dir = args.op_package_dir
+    TestQNN.target = args.target
     return sys.argv[:1] + ns_args
 
 

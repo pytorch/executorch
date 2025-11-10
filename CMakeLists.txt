@@ -591,8 +591,9 @@ endif()
 if(EXECUTORCH_BUILD_CUDA)
   # Build CUDA-specific AOTI functionality
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cuda)
-  # Add aoti_cuda to backends - it already depends on aoti_common
-  list(APPEND _executorch_backends aoti_cuda)
+  # Add aoti_cuda_backend to backends - it transitively includes aoti_cuda_shims
+  # and cuda_platform
+  list(APPEND _executorch_backends aoti_cuda_backend)
 endif()
 
 if(EXECUTORCH_BUILD_METAL)
@@ -924,6 +925,11 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
   list(APPEND _executorch_extensions extension_llm_runner)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/asr/runner)
+  list(APPEND _executorch_extensions extension_asr_runner)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)

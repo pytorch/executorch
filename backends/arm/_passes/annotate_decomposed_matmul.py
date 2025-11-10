@@ -64,6 +64,7 @@ class AnnotateDecomposedMatmulPass(ArmPass):
         )
         matmul_targets = {
             exir_ops.edge.aten.bmm.default,
+            exir_ops.edge.aten.mm.default,
         }
         for partition in matmul_partitions:
             quantized_input = all(

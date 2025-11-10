@@ -493,7 +493,14 @@ class InstallerBuildExt(build_ext):
                     # Run build.sh with SDK path exported
                     env = dict(**os.environ)
                     env["QNN_SDK_ROOT"] = str(sdk_path)
-                    subprocess.check_call([str(build_sh), "--skip_aarch64"], env=env)
+                    subprocess.check_call(
+                        [
+                            str(build_sh),
+                            "--skip_linux_android",
+                            "--skip_linux_embedded",
+                        ],
+                        env=env,
+                    )
 
                     # Copy the main .so into the wheel package
                     so_src = (
@@ -910,6 +917,12 @@ setup(
             dst="executorch/kernels/quantized/",
             is_dynamic_lib=True,
             dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_LLM_AOT"],
+        ),
+        BuiltFile(
+            src_dir="backends/cuda/runtime/",
+            src_name="aoti_cuda_shims.lib",
+            dst="executorch/data/lib/",
+            dependent_cmake_flags=[],
         ),
     ],
 )

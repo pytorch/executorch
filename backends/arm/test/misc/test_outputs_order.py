@@ -3,8 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 #
+import importlib
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
@@ -18,7 +20,8 @@ from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir import to_edge_transform_and_lower
 from torch import nn
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from tosa import TosaGraph
+
+_TOSA_GRAPH: Any = importlib.import_module("tosa.TosaGraph")
 
 
 class Network(nn.Module):
@@ -57,7 +60,7 @@ def _read_tosa_outputs(tosa_path: Path):
     # Find output tensor names in order and return shapes
     buf = tosa_path.read_bytes()
     buf_arr = bytearray(buf)
-    graph = TosaGraph.TosaGraph.GetRootAsTosaGraph(buf_arr, 0)
+    graph = _TOSA_GRAPH.TosaGraph.GetRootAsTosaGraph(buf_arr, 0)
     region = graph.Regions(0)
     block = region.Blocks(0)
     # Build a dict name - tensor‑shape
@@ -76,7 +79,7 @@ def _read_tosa_outputs(tosa_path: Path):
 
 
 @pytest.mark.parametrize("batch_size", [1, 4])
-def test_network_output_order_and_restore(tmp_path, batch_size):
+def test_network_output_order_and_restore(batch_size):
     model = Network(batch_norm=True).eval()
     # Prepare spec
     spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
@@ -94,7 +97,7 @@ def test_network_output_order_and_restore(tmp_path, batch_size):
     model = convert_pt2e(model)
     # Export to aten dialect
     aten_gm = torch.export.export(model, args=(dummy,), strict=True)
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir="") as tmpdir:
         art_dir = Path(tmpdir)
         part = TOSAPartitioner(
             TosaCompileSpec(spec).dump_intermediate_artifacts_to(str(art_dir))

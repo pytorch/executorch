@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -21,6 +22,7 @@ using Tensor = torch::executor::Tensor;
 using ScalarType = executorch::aten::ScalarType;
 using Scalar = torch::executor::Scalar;
 using Error = executorch::runtime::Error;
+using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
 
 // From arm_nn_math_types.h
 #define ARM_NN_Q31_MAX ((int32_t)(0x7FFFFFFFL))
@@ -49,6 +51,12 @@ inline void validate_cmsis_nn_tensor_requirements(
       "Output dtype must be %hhd, got %hhd",
       expected_dtype,
       output.scalar_type());
+  ET_CHECK_MSG(
+      input1.sizes() == input2.sizes(),
+      "Input1 and Input2 must have the same sizes");
+  ET_CHECK_MSG(
+      output.sizes() == input1.sizes(),
+      "Output must have the same sizes as inputs");
 
   // Dim order consistency
   ET_CHECK_MSG(
