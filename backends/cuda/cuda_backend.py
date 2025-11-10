@@ -29,7 +29,6 @@ from torch._inductor.decomposition import conv1d_to_conv2d
 from torch.export.passes import move_to_device_pass
 from torch.nn.attention import SDPBackend
 
-
 cuda_decomposition_table = {
     torch.ops.aten.conv1d.default: conv1d_to_conv2d,
 }
