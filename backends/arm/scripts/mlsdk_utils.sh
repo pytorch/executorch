@@ -205,51 +205,7 @@ function setup_path_emulation_layer() {
     model_emulation_layer_path="$(cd "${mlsdk_manifest_dir}/sw/emulation-layer/" && pwd)"
     prepend_env_in_setup_path LD_LIBRARY_PATH "${model_emulation_layer_path}/deploy/lib"
     prepend_env_in_setup_path DYLD_LIBRARY_PATH "${model_emulation_layer_path}/deploy/lib"
-    prepend_env_in_setup_path VK_LAYER_PATH "${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d"
     prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Tensor_Emulation
     prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Graph_Emulation
-}
-
-function setup_path_emulation_layer_from_pip() {
-    if ! command -v emulation_layer >/dev/null 2>&1; then
-        echo "[mlsdk_utils] 'emulation_layer' command not found; skipping pip emulation layer path setup"
-        return
-    fi
-
-    local output
-    if ! output=$(emulation_layer 2>/dev/null); then
-        echo "[mlsdk_utils] Failed to query emulation_layer environment; skipping"
-        return
-    fi
-
-    local exports
-    exports=$(echo "$output" | grep '^export ' || true)
-
-    local ld_line
-    ld_line=$(echo "$exports" | grep 'LD_LIBRARY_PATH=' || true)
-    if [[ -n "${ld_line}" ]]; then
-        local ld_value=${ld_line#export LD_LIBRARY_PATH=}
-        ld_value=${ld_value%%:\$LD_LIBRARY_PATH*}
-        if [[ -n "${ld_value}" ]]; then
-            prepend_env_in_setup_path LD_LIBRARY_PATH "${ld_value}"
-        fi
-    fi
-
-    local vk_add_line
-    vk_add_line=$(echo "$exports" | grep 'VK_ADD_LAYER_PATH=' || true)
-    if [[ -n "${vk_add_line}" ]]; then
-        local vk_add_value=${vk_add_line#export VK_ADD_LAYER_PATH=}
-        if [[ -n "${vk_add_value}" ]]; then
-            prepend_env_in_setup_path VK_ADD_LAYER_PATH "${vk_add_value}"
-        fi
-    fi
-
-    local vk_instance_line
-    vk_instance_line=$(echo "$exports" | grep 'VK_INSTANCE_LAYERS=' || true)
-    if [[ -n "${vk_instance_line}" ]]; then
-        local vk_instance_value=${vk_instance_line#export VK_INSTANCE_LAYERS=}
-        if [[ -n "${vk_instance_value}" ]]; then
-            prepend_env_in_setup_path VK_INSTANCE_LAYERS "${vk_instance_value}"
-        fi
-    fi
+    prepend_env_in_setup_path VK_LAYER_PATH "${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d"
 }
