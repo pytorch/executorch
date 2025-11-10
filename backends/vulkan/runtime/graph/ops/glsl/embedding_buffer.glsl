@@ -19,7 +19,6 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-#define DEBUG_MODE
 #include "indexing.glslh"
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, "buffer")}
