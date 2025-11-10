@@ -58,7 +58,9 @@ else()
 endif()
 
 # Link against ExecuTorch core libraries
-target_link_libraries(cuda_tensor_maker PUBLIC executorch ${CMAKE_DL_LIBS})
+target_link_libraries(
+  cuda_tensor_maker PRIVATE executorch_core ${CMAKE_DL_LIBS}
+)
 executorch_target_link_options_shared_lib(cuda_tensor_maker)
 
 install(
@@ -67,50 +69,134 @@ install(
   DESTINATION lib
 )
 
-# CUDA-specific AOTI functionality
-set(_aoti_cuda_sources
-    runtime/cuda_backend.cpp
-    runtime/shims/memory.cpp
-    runtime/shims/tensor_attribute.cpp
-    runtime/guard.cpp
-    runtime/shims/cuda_guard.cpp
-    runtime/shims/int4mm.cu
-    runtime/platform/platform.cpp
-)
-add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
+# Platform utilities (load_library, close_library, etc.)
+set(_cuda_platform_sources runtime/platform/platform.cpp)
+add_library(cuda_platform STATIC ${_cuda_platform_sources})
+
 target_include_directories(
-  aoti_cuda
+  cuda_platform
+  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
+         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+)
+
+target_compile_options(
+  cuda_platform
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+)
+
+# Link against ExecuTorch core libraries
+target_link_libraries(cuda_platform PRIVATE executorch_core ${CMAKE_DL_LIBS})
+
+install(
+  TARGETS cuda_platform
+  EXPORT ExecuTorchTargets
+  DESTINATION lib
+)
+
+# CUDA-specific AOTI shim symbols (dynamically linked)
+set(_aoti_cuda_shim_sources
+    runtime/shims/memory.cpp runtime/shims/tensor_attribute.cpp
+    runtime/guard.cpp runtime/shims/cuda_guard.cpp runtime/shims/int4mm.cu
+    ${EXECUTORCH_ROOT}/backends/aoti/common_shims.cpp
+)
+
+add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
+
+# Define export macros for shared library
+if(MSVC)
+  target_compile_definitions(aoti_cuda_shims PRIVATE EXPORT_AOTI_FUNCTIONS)
+
+  # Ensure proper DLL import/export library naming on Windows
+  set_target_properties(
+    aoti_cuda_shims PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF
+  )
+endif()
+
+target_include_directories(
+  aoti_cuda_shims
+  PUBLIC ${CUDAToolkit_INCLUDE_DIRS} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+         $<INSTALL_INTERFACE:include>
+)
+
+target_compile_options(
+  aoti_cuda_shims
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+)
+
+# Ensure symbols are exported properly
+target_link_options(
+  aoti_cuda_shims PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
+)
+
+# Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and
+# platform utilities
+target_link_libraries(
+  aoti_cuda_shims
+  PRIVATE cuda_platform
+  PUBLIC extension_tensor cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
+)
+
+if(NOT MSVC)
+  executorch_target_link_options_shared_lib(aoti_cuda_shims)
+endif()
+
+install(
+  TARGETS aoti_cuda_shims
+  EXPORT ExecuTorchTargets
+  DESTINATION lib
+)
+
+# CUDA backend implementation
+set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp)
+
+# CUDA backend implementation
+add_library(aoti_cuda_backend STATIC ${_aoti_cuda_backend_sources})
+
+target_include_directories(
+  aoti_cuda_backend
   PUBLIC ${CUDAToolkit_INCLUDE_DIRS} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
          $<INSTALL_INTERFACE:include>
 )
 target_compile_options(
-  aoti_cuda PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
-                   $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+  aoti_cuda_backend
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
 )
 # Ensure symbols are exported properly
 target_link_options(
-  aoti_cuda PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
+  aoti_cuda_backend PUBLIC
+  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
 )
 
-# Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and PyTorch
-# CUDA libraries
+# Link against shims library and other dependencies On Windows (MSVC), use
+# PRIVATE linkage for aoti_cuda_shims since the DLL is copied to the executable
+# directory. On other platforms, use PUBLIC so the dependency propagates to
+# consumers.
 target_link_libraries(
-  aoti_cuda PUBLIC aoti_common cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
+  aoti_cuda_backend PUBLIC cuda_platform extension_tensor cuda_tensor_maker
+                           CUDA::cudart ${CMAKE_DL_LIBS}
 )
-# If you need other CUDA libraries, link them similarly:
-# target_link_libraries(aoti_cuda PUBLIC CUDA::cublas CUDA::cufft ...)
-executorch_target_link_options_shared_lib(aoti_cuda)
+
+if(MSVC)
+  target_link_libraries(aoti_cuda_backend PRIVATE aoti_cuda_shims)
+else()
+  target_link_libraries(aoti_cuda_backend PUBLIC aoti_cuda_shims)
+endif()
+
+executorch_target_link_options_shared_lib(aoti_cuda_backend)
+
+install(
+  TARGETS aoti_cuda_backend
+  EXPORT ExecuTorchTargets
+  DESTINATION lib
+)
 
 if(BUILD_TESTING)
   add_executable(multimodal_benchmark tests/multimodal_benchmark.cpp)
   target_link_libraries(
-    multimodal_benchmark PUBLIC aoti_cuda extension_module_static
+    multimodal_benchmark PUBLIC aoti_cuda_backend extension_module_static
                                 extension_flat_tensor portable_ops_lib
   )
 endif()
-
-install(
-  TARGETS aoti_cuda
-  EXPORT ExecuTorchTargets
-  DESTINATION lib
-)

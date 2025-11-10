@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <executorch/backends/aoti/export.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <cstdint>
@@ -24,12 +25,11 @@ extern "C" {
 using AOTITorchError = Error;
 
 // Device type functions for tensor attributes
-AOTITorchError aoti_torch_get_device_type(
-    Tensor* tensor,
-    int32_t* ret_device_type);
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_device_type(Tensor* tensor, int32_t* ret_device_type);
 
 // Device type constants
-int32_t aoti_torch_device_type_cuda();
+AOTI_SHIM_EXPORT int32_t aoti_torch_device_type_cuda();
 
 } // extern "C"
 
