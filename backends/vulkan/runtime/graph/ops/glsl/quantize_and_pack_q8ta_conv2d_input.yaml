@@ -15,6 +15,7 @@ quantize_and_pack_q8ta_conv2d_input:
       combos:
         - parameter_values: [texture3d, texture3d]
         - parameter_values: [buffer, texture3d]
+        - parameter_values: [buffer, buffer]
     DTYPE:
       - VALUE: float
   shader_variants:
