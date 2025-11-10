@@ -18,9 +18,7 @@ set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 
 # Turn on the quantized and LLM kernels unless on windows cuda build which
 # currently doesn't support this due to using msvc.
-if(NOT (EXECUTORCH_BUILD_CUDA AND (CMAKE_SYSTEM_NAME STREQUAL "Windows"
-                                   OR CMAKE_SYSTEM_NAME STREQUAL "WIN32"))
-)
+if(NOT (EXECUTORCH_BUILD_CUDA AND MSVC))
   set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
   set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM ON)
 endif()
