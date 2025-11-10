@@ -144,13 +144,9 @@ def register_ephemeral_op():
 
 @update_features(
     [
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.quantize_per_token.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
     ]
 )
@@ -630,10 +626,11 @@ def register_quantized_binary_op():
 
 @update_features(
     [
-        exir_ops.edge.et_vk.quantize_q8ta_for_conv2d.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     ]
 )
-def register_quantize_for_conv2d_op():
+def register_quantize_op():
     return OpFeatures(
         inputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
@@ -641,16 +638,16 @@ def register_quantize_for_conv2d_op():
         outputs_storage=[
             utils.PACKED_INT8_4W4C_BUFFER,
         ],
-        supports_resize=False,
     )
 
 
 @update_features(
     [
-        exir_ops.edge.et_vk.dequantize_q8to_from_conv2d.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     ]
 )
-def register_dequantize_for_conv2d_op():
+def register_dequantize_op():
     return OpFeatures(
         inputs_storage=[
             utils.PACKED_INT8_4W4C_BUFFER,
@@ -658,7 +655,6 @@ def register_dequantize_for_conv2d_op():
         outputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
         ],
-        supports_resize=False,
     )
 
 
