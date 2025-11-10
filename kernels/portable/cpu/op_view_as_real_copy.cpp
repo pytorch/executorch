@@ -41,6 +41,14 @@ Tensor& view_as_real_copy_out(
 
   // Get the output shape
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      static_cast<size_t>(self.dim()) < kTensorDimensionLimit,
+      InvalidArgument,
+      out,
+      "Output size buffer is too small. Expected at least %zu, got %zu",
+      self.dim() + 1,
+      kTensorDimensionLimit);
   get_view_as_real_copy_out_target_size(self, expected_output_size);
 
   // Resize for dynamic shape
