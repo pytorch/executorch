@@ -19,7 +19,9 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 from huggingface_hub import hf_hub_download
 
-from ng_model_gym.usecases.nss.model.model_blocks import AutoEncoderV1
+from ng_model_gym.usecases.nss.model.model_blocks import (  # type: ignore[import-not-found,import-untyped]
+    AutoEncoderV1,
+)
 
 input_t = Tuple[torch.Tensor]  # Input x
 
