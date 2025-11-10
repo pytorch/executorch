@@ -148,7 +148,9 @@ class AotiBackend(ABC):
         options = cls.get_aoti_compile_options()
 
         # Move the edge_program to the target device
-        device_edge_program = move_to_device_pass(edge_program, device_name)
+        device_edge_program = move_to_device_pass(
+            edge_program, device_name if device_name != "metal" else "mps"
+        )
 
         # Replace view_copy with view
         ReplaceViewCopyWithViewPass()(device_edge_program.graph_module)
