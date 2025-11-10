@@ -58,7 +58,9 @@ else()
 endif()
 
 # Link against ExecuTorch core libraries
-target_link_libraries(cuda_tensor_maker PUBLIC executorch ${CMAKE_DL_LIBS})
+target_link_libraries(
+  cuda_tensor_maker PRIVATE executorch_core ${CMAKE_DL_LIBS}
+)
 executorch_target_link_options_shared_lib(cuda_tensor_maker)
 
 install(
@@ -84,7 +86,7 @@ target_compile_options(
 )
 
 # Link against ExecuTorch core libraries
-target_link_libraries(cuda_platform PUBLIC executorch ${CMAKE_DL_LIBS})
+target_link_libraries(cuda_platform PRIVATE executorch_core ${CMAKE_DL_LIBS})
 
 install(
   TARGETS cuda_platform
