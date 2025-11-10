@@ -8,6 +8,7 @@ import contextlib
 import os
 import typing
 from enum import Enum
+from importlib import resources
 
 from typing import Any, Dict, final, List, Optional, Set
 
@@ -27,6 +28,7 @@ from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch.export.passes import move_to_device_pass
 from torch.nn.attention import SDPBackend
+
 
 cuda_decomposition_table = {
     torch.ops.aten.conv1d.default: conv1d_to_conv2d,
@@ -171,8 +173,11 @@ class CudaBackend(BackendDetails):
                 shim_library_path = spec.value.decode("utf-8")
 
         assert platform == "linux" or platform == "windows"
-        if platform == "windows":
-            assert shim_library_path is not None
+        if platform == "windows" and shim_library_path is None:
+            lib_path = resources.files("executorch").joinpath(
+                "data/bin/aoti_cuda_shims.lib"
+            )
+            shim_library_path = str(lib_path)
         if platform == "linux":
             assert shim_library_path is None
 
