@@ -8,6 +8,7 @@ import contextlib
 import os
 import typing
 from enum import Enum
+from importlib import resources
 
 from typing import Any, Dict, final, List, Optional, Set
 
@@ -116,7 +117,7 @@ class CudaBackend(BackendDetails):
     """
 
     @staticmethod
-    def preprocess(
+    def preprocess(  # noqa: C901
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
@@ -161,6 +162,31 @@ class CudaBackend(BackendDetails):
             # Use TRITON backend for convolution operations tuning only to avoid using operators in libtorch
             "max_autotune_conv_backends": "TRITON",
         }
+
+        platform = "linux"
+        shim_library_path = None
+        for spec in compile_specs:
+            if spec.key == "platform":
+                platform = spec.value.decode("utf-8")
+            if spec.key == "shim_library_path":
+                shim_library_path = spec.value.decode("utf-8")
+
+        assert platform == "linux" or platform == "windows"
+        if platform == "windows" and shim_library_path is None:
+            lib_dir = resources.files("executorch").joinpath("data/lib")
+            shim_library_path = str(lib_dir)
+        if platform == "linux":
+            assert shim_library_path is None
+
+        if platform == "windows":
+            options.update(
+                {
+                    "aot_inductor.cross_target_platform": "windows",
+                    "aot_inductor.aoti_shim_library": "aoti_cuda_shims",
+                    "aot_inductor.aoti_shim_library_path": shim_library_path,
+                    "aot_inductor.precompile_headers": False,
+                }
+            )
 
         with collect_unsupported_fallback_kernels(), torch.nn.attention.sdpa_kernel(
             [
