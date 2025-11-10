@@ -9,8 +9,8 @@ from typing import Any, Dict, final
 
 import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
-from executorch.exir.backend.backend_details import BackendDetails
 from executorch.exir._warnings import experimental
+from executorch.exir.backend.backend_details import BackendDetails
 from torch._inductor.decomposition import conv1d_to_conv2d
 
 
@@ -18,7 +18,7 @@ from torch._inductor.decomposition import conv1d_to_conv2d
 @experimental(
     "This API and all of cuda backend related functionality are experimental."
 )
-class CudaBackend(BackendDetails, AotiBackend):
+class CudaBackend(AotiBackend, BackendDetails):
     """
     CudaBackend is a backend that compiles a model to run on CUDA devices. It uses the AOTInductor compiler to generate
     optimized CUDA kernels for the model's operators with libtorch-free. The compiled model can be executed on CUDA devices

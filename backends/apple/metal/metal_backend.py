@@ -16,7 +16,7 @@ from executorch.exir._warnings import experimental
 @experimental(
     "This API and all of Metal backend related functionality are experimental."
 )
-class MetalBackend(BackendDetails, AotiBackend):
+class MetalBackend(AotiBackend, BackendDetails):
     """
     MetalBackend is a backend that compiles a model to run on Metal/MPS devices. It uses the AOTInductor compiler to generate
     optimized Metal kernels for the model's operators with libtorch-free. The compiled model can be executed on Metal devices
