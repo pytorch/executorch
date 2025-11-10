@@ -55,7 +55,22 @@ Tensor& quantized_mul_out(
   const int32_t zp2 = extractScalarToInt32(input2_zero_point);
   const int32_t out_zp = extractScalarToInt32(output_zero_point);
   const int32_t output_mult = extractScalarToInt32(output_multiplier);
-  const int32_t output_shift_val = extractScalarToInt(output_shift);
+  const int32_t output_shift_val = extractScalarToInt32(output_shift);
+
+  // Note 1: The CMSIS-NN kernel implementation uses offsets which are always
+  // added to the data, whereas zero_points are subtracted when dequantizing
+  // (for the inputs) and added when quantizing (for the  output). Hence the
+  // negative signs required here.
+
+  // Note 2: The following rewrite is used
+  //    yq = y / scale_out + zp_out
+  //    y = x_1*x_2
+  //    x_i = scale_in_i * (xq_i - xq_i),  i = 1, 2
+  //    ==>
+  //    yq = (xq_1 - zp_in1) * (xq_2 - zp_in_2) * effective_scale + zp_out
+  //    where
+  //    effective_scale = (scale_in1 * scale_in2 / scale_out)
+  // Hence no input quantization params required here.
 
   // Call CMSIS-NN elementwise multiply kernel
   arm_cmsis_nn_status status = arm_elementwise_mul_s8(
