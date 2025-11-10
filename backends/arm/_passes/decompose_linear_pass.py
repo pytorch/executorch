@@ -12,6 +12,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
+from executorch.backends.arm._passes.insert_rescales_pass import InsertRescaleInt32Pass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -26,7 +27,7 @@ class DecomposeLinearPass(ArmPass):
         output           = view(conv2d)
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {InsertRescaleInt32Pass}
 
     def call(self, graph_module):
         for node in graph_module.graph.nodes:

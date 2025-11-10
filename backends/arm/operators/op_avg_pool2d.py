@@ -118,11 +118,11 @@ class AvgPool2dVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.FP32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.FP32],
             output.tosa_spec,
         )
 
-        if inputs[0].dtype == ts.DType.INT8:
+        if inputs[0].dtype == ts.DType.INT8 or inputs[0].dtype == ts.DType.INT16:
             accumulator_type = ts.DType.INT32
             input_qargs = get_input_qparams(node)
             input_zp = input_qargs[0].get_zp_per_tensor()

@@ -47,7 +47,7 @@ class EqualVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             inputs,
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.FP32],
             output.tosa_spec,
         )
         validate_valid_dtype(self.target, output, ts.DType.BOOL, output.tosa_spec)
