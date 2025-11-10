@@ -16,8 +16,10 @@ namespace aoti {
 
 namespace internal {
 // Global storage for tensor metadata
-std::unordered_map<Tensor*, std::vector<int64_t>> tensor_to_sizes;
-std::unordered_map<Tensor*, std::vector<int64_t>> tensor_to_strides;
+AOTI_SHIM_EXPORT std::unordered_map<Tensor*, std::vector<int64_t>>
+    tensor_to_sizes;
+AOTI_SHIM_EXPORT std::unordered_map<Tensor*, std::vector<int64_t>>
+    tensor_to_strides;
 } // namespace internal
 
 extern "C" {
@@ -202,6 +204,69 @@ size_t aoti_torch_dtype_element_size(int32_t dtype) {
 void cleanup_tensor_metadata() {
   internal::tensor_to_sizes.clear();
   internal::tensor_to_strides.clear();
+}
+
+AOTI_SHIM_EXPORT void aoti_torch_warn(
+    const char* func,
+    const char* file,
+    uint32_t line,
+    const char* msg) {
+  ET_LOG(Error, "[%s:%u] %s: %s", file, line, func, msg);
+}
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_storage_size(Tensor* tensor, int64_t* ret_size) {
+  (void)tensor;
+  (void)ret_size;
+  throw std::runtime_error("Not implemented");
+  return Error::Internal;
+}
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_clone_preserve_strides(Tensor* self, Tensor** ret_new_tensor) {
+  (void)self;
+  (void)ret_new_tensor;
+  throw std::runtime_error("Not implemented");
+  return Error::Internal;
+}
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_clone(Tensor* self, Tensor** ret_new_tensor) {
+  (void)self;
+  (void)ret_new_tensor;
+  throw std::runtime_error("Not implemented");
+  return Error::Internal;
+}
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_new_tensor_handle(Tensor* orig_handle, Tensor** new_handle) {
+  (void)orig_handle;
+  (void)new_handle;
+  throw std::runtime_error("Not implemented");
+  return Error::Internal;
+}
+
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob(
+    void* data_ptr,
+    int64_t ndim,
+    const int64_t* sizes,
+    const int64_t* strides,
+    int64_t storage_offset,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    Tensor** ret_new_tensor) {
+  (void)data_ptr;
+  (void)ndim;
+  (void)sizes;
+  (void)strides;
+  (void)storage_offset;
+  (void)dtype;
+  (void)device_type;
+  (void)device_index;
+  (void)ret_new_tensor;
+  throw std::runtime_error("Not implemented");
+  return Error::Internal;
 }
 
 } // extern "C"
