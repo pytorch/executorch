@@ -60,7 +60,13 @@ jobs:
         RC=0
         # Run lintrunner on all files. pytorch/pytorch notes that mypy
         # in particular needs this.
-        if ! lintrunner --force-color --all-files --take MYPY --tee-json=lint.json 2> /dev/null; then
+        lintrunner --force-color --all-files --take MYPY --tee-json=lint.json 2> /dev/null || true
+
+        # Check if there are any non-advice or non-FLAKE8-advice issues
+        NON_ADVICE_COUNT=$(jq '[.[] | select(.severity != "advice" and .severity != "disabled")] | length' lint.json || echo 0)
+        FLAKE8_NON_ADVICE_COUNT=$(jq '[.[] | select(.code == "FLAKE8" and .severity != "advice" and .severity != "disabled")] | length' lint.json || echo 0)
+
+        if [ "$NON_ADVICE_COUNT" -gt 0 ] || [ "$FLAKE8_NON_ADVICE_COUNT" -gt 0 ]; then
           echo ""
           echo -e "\e[1m\e[36mYou can reproduce these results locally by using \`lintrunner --take MYPY\`. (If you don't get the same results, run \'lintrunner init\' to update your local linter)\e[0m"
           echo -e "\e[1m\e[36mSee https://github.com/pytorch/pytorch/wiki/lintrunner for setup instructions.\e[0m"
@@ -112,7 +118,13 @@ jobs:
         else
           LINTRUNNER_FILES="${CHANGED_FILES}"
         fi
-        if ! lintrunner --force-color ${LINTRUNNER_FILES} --skip MYPY --tee-json=lint.json 2> /dev/null; then
+        lintrunner --force-color ${LINTRUNNER_FILES} --skip MYPY --tee-json=lint.json 2> /dev/null || true
+
+        # Check if there are any non-advice or non-FLAKE8-advice issues
+        NON_ADVICE_COUNT=$(jq '[.[] | select(.severity != "advice" and .severity != "disabled")] | length' lint.json || echo 0)
+        FLAKE8_NON_ADVICE_COUNT=$(jq '[.[] | select(.code == "FLAKE8" and .severity != "advice" and .severity != "disabled")] | length' lint.json || echo 0)
+
+        if [ "$NON_ADVICE_COUNT" -gt 0 ] || [ "$FLAKE8_NON_ADVICE_COUNT" -gt 0 ]; then
           echo ""
           echo -e "\e[1m\e[36mYou can reproduce these results locally by using \`lintrunner --skip MYPY\`. (If you don't get the same results, run \'lintrunner init\' to update your local linter)\e[0m"
           echo -e "\e[1m\e[36mSee https://github.com/pytorch/pytorch/wiki/lintrunner for setup instructions.\e[0m"
