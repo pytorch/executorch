@@ -9,6 +9,8 @@ from typing import Optional
 import executorch.backends.vulkan.patterns as vk_patterns
 import torch.library
 
+from torch._subclasses.fake_tensor import FakeTensor
+
 namespace = "et_vk"
 lib = torch.library.Library(namespace, "DEF")
 
@@ -614,3 +616,18 @@ lib.define(
 )
 lib.impl(name, add_q8ta_q8ta_q8to_impl, "CompositeExplicitAutograd")
 add_q8ta_q8ta_q8to_op = getattr(getattr(torch.ops, namespace), name)
+
+#############################
+## select_as_symint ##
+#############################
+
+
+def select_as_symint_impl(x: torch.Tensor, dim: int, index: int):
+    assert isinstance(x, FakeTensor)
+    return x.fake_mode.shape_env.create_unbacked_symint()
+
+
+name = "select_as_symint"
+lib.define(f"{name}(Tensor x, int dim, int index) -> SymInt")
+lib.impl(name, select_as_symint_impl, "Meta")
+select_as_symint_op = getattr(getattr(torch.ops, namespace), name)

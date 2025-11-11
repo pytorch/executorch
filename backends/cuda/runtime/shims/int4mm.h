@@ -10,6 +10,7 @@
 
 #include <cuda_runtime.h>
 #include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/aoti/export.h>
 
 namespace executorch::backends::cuda {
 
@@ -69,7 +70,7 @@ extern "C" {
  *     or invalid qGroupSize
  *   - Error::Internal: CUDA kernel launch failure
  */
-AOTITorchError aoti_torch_cuda__weight_int4pack_mm(
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda__weight_int4pack_mm(
     Tensor* self,
     Tensor* mat2,
     int64_t qGroupSize,
