@@ -64,7 +64,7 @@ struct PrepareInputTensorsOptions {
    * all inputs exceeds this, an error is returned. This prevents allocating too
    * much memory if the PTE file is malformed.
    */
-  size_t max_total_allocation_size = 1024 * 1024 * 1024;
+  size_t max_total_allocation_size = 1024 * 1024 * 1024 * 10;
 
   /**
    * The maximum number of inputs to allocate. If the number of inputs exceeds

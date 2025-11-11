@@ -164,6 +164,10 @@ int32_t aoti_torch_layout_strided() {
 }
 
 // Dtype constants - these return the PyTorch dtype codes
+int32_t aoti_torch_dtype_float16() {
+  return 5; // PyTorch's float16 dtype code
+}
+
 int32_t aoti_torch_dtype_float32() {
   return 6; // PyTorch's float32 dtype code
 }

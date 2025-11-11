@@ -61,6 +61,7 @@ enum class SupportedDTypes : int32_t {
   INT16 = 2, // PyTorch's int16 dtype code
   INT32 = 3, // PyTorch's int32 dtype code
   INT64 = 4, // PyTorch's int64 dtype code
+  FLOAT16 = 5, // PyTorch's float16 dtype code
   FLOAT32 = 6, // PyTorch's float32 dtype code
   BOOL = 11, // PyTorch's bool dtype code
   BFLOAT16 = 15, // PyTorch's bfloat16 dtype code
@@ -84,6 +85,7 @@ inline bool is_dtype_supported_in_et_cuda(int32_t dtype) {
     case static_cast<int32_t>(SupportedDTypes::INT16):
     case static_cast<int32_t>(SupportedDTypes::INT32):
     case static_cast<int32_t>(SupportedDTypes::INT64):
+    case static_cast<int32_t>(SupportedDTypes::FLOAT16):
     case static_cast<int32_t>(SupportedDTypes::FLOAT32):
     case static_cast<int32_t>(SupportedDTypes::BOOL):
     case static_cast<int32_t>(SupportedDTypes::BFLOAT16):
@@ -98,12 +100,13 @@ inline AOTITorchError validate_dtype(int32_t dtype) {
   ET_CHECK_OR_RETURN_ERROR(
       is_dtype_supported_in_et_cuda(dtype),
       InvalidArgument,
-      "Unsupported dtype: %d. Supported dtypes: %d (int8), %d (int16), %d (int32), %d (int64), %d (float32), %d (bool), %d (bfloat16)",
+      "Unsupported dtype: %d. Supported dtypes: %d (int8), %d (int16), %d (int32), %d (int64), %d (float16), %d (float32), %d (bool), %d (bfloat16)",
       dtype,
       static_cast<int32_t>(SupportedDTypes::INT8),
       static_cast<int32_t>(SupportedDTypes::INT16),
       static_cast<int32_t>(SupportedDTypes::INT32),
       static_cast<int32_t>(SupportedDTypes::INT64),
+      static_cast<int32_t>(SupportedDTypes::FLOAT16),
       static_cast<int32_t>(SupportedDTypes::FLOAT32),
       static_cast<int32_t>(SupportedDTypes::BOOL),
       static_cast<int32_t>(SupportedDTypes::BFLOAT16));

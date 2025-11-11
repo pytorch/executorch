@@ -162,11 +162,7 @@ class CudaBackend(BackendDetails):
             "max_autotune_conv_backends": "TRITON",
         }
 
-        with collect_unsupported_fallback_kernels(), torch.nn.attention.sdpa_kernel(
-            [
-                SDPBackend.MATH  # pyre-ignore[16]: Module `torch.nn.attention` has no attribute `SDPBackend`.
-            ]
-        ), torch.no_grad():
+        with collect_unsupported_fallback_kernels(), torch.no_grad():
             # torch._logging.set_logs(post_grad_graphs=True)
             # Here we should expect 1 so file and 1 weight blob in the same directory.
             paths = torch._inductor.aot_compile(edge_program_module, tuple(user_input_placeholders), options=options)  # type: ignore[arg-type]
