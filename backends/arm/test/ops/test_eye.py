@@ -95,7 +95,7 @@ def test_eye_u85_INT(test_data: test_data_t):
         input_data(),
         EyeAdd.aten_op,
         use_to_edge_transform_and_lower=True,
-    )
+    ).dump_artifact("to_edge_transform_and_lower")
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 

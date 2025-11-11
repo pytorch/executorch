@@ -68,6 +68,10 @@ test_data_suite = {
         ConstAdd(torch.int64, 2**40),
         (torch.rand(10) - 0.5,),
     ),
+    "int64_in+float_const": (
+        ConstAdd(torch.float32),
+        (torch.randint(0, 10, (10,)),),
+    ),
     "fp32_in+int64_buffer_chain": (
         BufferChainAdd(torch.int64),
         (torch.rand(2, 5, 3) - 0.5,),
@@ -90,7 +94,7 @@ def test_int64_tosa_FP(test_data: Tuple):
         ArmTester(
             model,
             inputs,
-            common.get_tosa_compile_spec("TOSA-1.0+FP"),
+            common.get_tosa_compile_spec("TOSA-1.0+FP", custom_path="tosa/int64"),
         )
         .export()
         .to_edge_transform_and_lower()
