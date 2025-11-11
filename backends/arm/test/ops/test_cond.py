@@ -174,9 +174,7 @@ test_cases: dict[str, Callable[[], tuple[torch.nn.Module, tuple]]] = {
     "case",
     test_cases,
     xfails={
-        "one_arg_two_outputs": "Multiple outputs is not supported.",
         "one_arg_and_scalar_one_output": "Scalars become get_attr nodes that are not supported.",
-        "two_args_two_outputs": "Nodes with multiple outputs are not properly supported.",
         "multiple_one_arg_one_output": "Scalars become get_attr nodes that are not supported.",
     },
 )

@@ -10,6 +10,7 @@ the TOSA serializer types and shapes used during initial compilation.
 
 """
 
+import operator
 from enum import Enum
 from typing import Any, Optional, Sequence
 
@@ -136,7 +137,7 @@ class TosaArg:
         special (list | None): Captured list when the argument is a sequence.
         number (float | int | None): Captured numeric value when given.
         tosa_spec (TosaSpecification): Active specification used for mapping.
-
+        multiple_output_name (list[str]): Output node names when node has multiple outputs; empty otherwise.
     """
 
     def __process_node(self, argument: torch.fx.Node):
@@ -146,7 +147,8 @@ class TosaArg:
             argument (torch.fx.Node): FX node to inspect.
 
         """
-        self.name = argument.name + argument.meta.get(TOSA_TENSOR_NAME_META, "")
+        suffix = argument.meta.get(TOSA_TENSOR_NAME_META, "")
+        self.name = argument.name + suffix
 
         if "val" in argument.meta:
             output_dtype, self.shape, self.dim_order = extract_tensor_meta(
@@ -157,6 +159,16 @@ class TosaArg:
                 output_dtype = special_type.get_tosa_dtype()
 
             self.dtype = output_dtype
+
+        # If all users of the node are getitems, node visitors should connect the output of this node directly to the getitem tensors.
+        # Add a new attribute 'multiple_output_names' instead of making 'name' a list to avoid ambiguity regarding the type of 'name'.
+        # Make name of the output is the first getitem since we in most cases only handle that output.
+        users = list(argument.users)
+        if len(users) > 0 and all(user.target == operator.getitem for user in users):
+            self.multiple_output_names: list = [user.name + suffix for user in users]
+            self.name = self.multiple_output_names[0]
+        else:
+            self.multiple_output_names = []
 
     def __process_list(self, argument):
         """Capture a sequence argument as ``special``.
@@ -244,4 +256,6 @@ class TosaArg:
             attrs.append(f"number={self.number!r}")
         if hasattr(self, "tosa_spec") and self.tosa_spec is not None:
             attrs.append(f"tosa_spec={self.tosa_spec!r}")
+        if hasattr(self, "names"):
+            attrs.append(f"names={self.multiple_output_names!r}")
         return f"{self.__class__.__name__}({', '.join(attrs)})"
