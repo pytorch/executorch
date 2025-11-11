@@ -1106,6 +1106,25 @@ class OpRepSets:
         self.assert_sync_contraints()
         return True
 
+    def try_constrain_with_out_repset(self, repset: TensorRepSet):
+        # Skip for operators that must synchronize the input and output representations
+        # or operators that have more than one output repset
+        if self.sync_primary_io_repr or len(self.outs_repset_list) > 1:
+            return False
+
+        out_current_repset = self.outs_repset_list[0]
+
+        if out_current_repset == repset:
+            return False
+
+        if not out_current_repset.any_in_common(repset):
+            return False
+
+        self.outs_repset_list[0] = out_current_repset.make_intersect(repset)
+
+        self.assert_sync_contraints()
+        return True
+
     def pick_representations(self) -> Tuple[TensorReprList, TensorReprList]:
         """
         For each tensor participating in the op, pick a representation for it among the
