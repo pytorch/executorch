@@ -6,7 +6,6 @@
 
 from typing import Any, List
 
-import executorch.backends.arm.tosa.quant_utils as tqutils  # noqa: F401
 import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
