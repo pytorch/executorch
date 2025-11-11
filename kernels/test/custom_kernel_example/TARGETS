@@ -1,0 +1,8 @@
+load(":targets.bzl", "define_common_targets")
+load(":tests.bzl", "define_common_test_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+define_common_test_targets()

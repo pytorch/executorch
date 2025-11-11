@@ -1,0 +1,36 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "parse_profiler_library",
+    srcs = [
+        "parse_profiler_results.py",
+        "profiler_results_cli.py",
+    ],
+    base_module = "executorch.profiler",
+    visibility = ["@EXECUTORCH_CLIENTS"],
+    external_deps = ["prettytable"],
+)
+
+runtime.python_library(
+    name = "profiler_results_cli_lib",
+    srcs = [
+        "profiler_results_cli.py",
+    ],
+    base_module = "executorch.profiler",
+    deps = [
+        ":parse_profiler_library",
+    ],
+)
+
+runtime.python_binary(
+    name = "profiler_results_cli",
+    main_function = "executorch.profiler.profiler_results_cli.invoke_main",
+    deps = [
+        ":profiler_results_cli_lib",
+    ],
+)

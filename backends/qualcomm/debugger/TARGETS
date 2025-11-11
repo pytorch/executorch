@@ -1,0 +1,12 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+runtime.python_library(
+    name = "utils",
+    srcs = ["utils.py"],
+    deps = [
+        "//caffe2:torch",
+        "fbsource//third-party/pypi/graphviz:graphviz",
+        "//executorch/backends/qualcomm/aot/python:PyQnnManagerAdaptor",
+        "fbsource//third-party/pypi/pandas:pandas",
+    ]
+)

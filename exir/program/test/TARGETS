@@ -1,0 +1,27 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    # @autodeps-skip pybindings don't work well with autodeps
+    name = "test_program",
+    srcs = [
+        "test_fake_program.py",
+        "test_program.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/exir:error",
+        "//executorch/exir:lib",
+        "//executorch/exir:print_program",
+        "//executorch/exir:schema",
+        "//executorch/exir/backend/test:op_partitioner_demo",
+        "//executorch/exir/emit:lib",
+        "//executorch/exir/passes:const_prop_pass",
+        "//executorch/exir/program:lib",
+        "//executorch/exir/tests:lib",
+        "//executorch/exir/tests:models",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+    ],
+)

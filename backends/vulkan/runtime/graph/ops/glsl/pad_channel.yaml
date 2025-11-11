@@ -1,0 +1,12 @@
+pad_channel:
+  parameter_names_with_default_values:
+    NDIM: 3
+    DTYPE: float
+    PACKING: C_packed
+    STORAGE: texture3d
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+  shader_variants:
+    - NAME: pad_channel

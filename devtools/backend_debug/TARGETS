@@ -1,0 +1,23 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "delegation_info",
+    srcs = [
+        "__init__.py",
+        "delegation_info.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "//executorch/exir/backend/...",
+        "//executorch/test/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/pandas:pandas",
+        "//caffe2:torch",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/exir/backend/canonical_partitioners:duplicate_constant_node_pass",
+    ],
+)

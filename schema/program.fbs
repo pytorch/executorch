@@ -1,0 +1,489 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+
+//
+// See README.md before modifying this file.
+//
+
+include "scalar_type.fbs";
+
+namespace executorch_flatbuffer;
+
+// Identifier of a valid executor schema.
+file_identifier "ET12";
+// Extension of written files.
+file_extension "pte";
+
+// Table that contains the metadata about how
+// to unflatten the flattened input/output from compiler
+table ContainerMetadata {
+  encoded_inp_str: string;
+  encoded_out_str: string;
+}
+
+table Null {}
+
+// Contains information relevant to the allocation of non-constant
+// buffer data (e.g. from tensors).
+// This refers to where the buffer needs to be placed in an existing
+// memory and at what offset from its base address.
+table AllocationDetails {
+  memory_id: uint;  // ID of the memory where this data needs to be placed.
+
+  // Offset in bytes relative to the start of the memory area indicated by
+  // memory_id.
+  //
+  // Originally this field was a single 32-bit uint, but we need 64 bits for
+  // larger models. To preserve backwards compatibility, the high bits are
+  // managed in a separate 32-bit field. Users should combine the two fields
+  // to get the full 64-bit offset.
+  memory_offset_low: uint;  // Least significant 32 bits
+  memory_offset_high: uint;  // Most significant 32 bits. Defaults to zero.
+}
+
+// Indicates the types of shape a Tensor may have, from the point
+// of view of their dynamism.
+enum TensorShapeDynamism : byte {
+  // Static shape. Memory is allocated by the compiler.
+  STATIC = 0,
+  // Dynamic shape but with an upper bound.
+  // Memory is allocated by the compiler.
+  DYNAMIC_BOUND = 1,
+  // Dynamic shape without upper bound.
+  // Memory allocation is handled by the runtime.
+  DYNAMIC_UNBOUND = 2,
+}
+
+// Indicates where a tensor is stored.
+enum TensorDataLocation : byte {
+  // Stored in a segment of the PTE file.
+  SEGMENT = 0,
+  // Stored outside of the PTE file.
+  EXTERNAL = 1,
+}
+
+// Table to put additional information about tensors in that is not applicable
+// to the vast majority of tensors in the vast majority of programs.
+table ExtraTensorInfo {
+  // [Optional] Specifies the SubsegmentOffsets in
+  //  program.mutable_data_segments that specifies where the data is located in.
+  //  If not present and the data is located in a segment, then the data is in
+  //  index zero.
+  mutable_data_segments_idx: uint64;
+
+  // [Optional] The unique name of the tensor. e.g. 'mod.linear.weight'
+  fully_qualified_name: string;
+
+  // [Optional] Specifies where the tensor's data is stored.
+  // - SEGMENT (default): Data is stored in a segment.
+  // - EXTERNAL: Data is stored outside of the PTE file. fully_qualified_name
+  //   must be non-empty, and is used as a key to find the tensor's external
+  //   data. Tensor.data_buffer_idx is ignored.
+  location: TensorDataLocation;
+}
+
+table Tensor {
+  scalar_type: ScalarType;
+
+  // Offset in scalar_type elements (e.g., multiples of 4 bytes for an int
+  // scalar type) from the beginning of the tensor buffer to the beginning of
+  // the actual data. Currently, the runtime only supports a value of zero.
+  storage_offset: int;
+
+  sizes: [int];
+
+  // Specifies in what order the dimensions are laid out in memory (from outer
+  // to inner).
+  //
+  // For example, given a rank 3 Tensor of size (3, 5, 2). If we name
+  // dimensions: [row, column, batch], then a dim_order of:
+  // - (2, 0, 1) represents a [batch, row, column] ordering where "column" is
+  //   the innermost dimension, then comes "row", and the outermost dimension is
+  //   "batch".
+  // - (0, 2, 1) represents a [row, batch, column] ordering where "column" is
+  //   the innermost dimension, then comes "batch", and the outermost dimension
+  //   is "row".
+  dim_order: [ubyte];
+
+  // out of scope M1
+  requires_grad: bool;
+
+  // Overall, a Tensor is either constant or mutable. At method load time
+  //  constant tensors receive a dataptr into the serialized program. Mutable
+  //  tensors can either receive a pointer from the heirarchical allocator or a
+  //  nullptr if they will receive a data pointer at execution time (inputs
+  //  and control flow placeholders can be like this). Mutable tensors may or
+  //  may not also have an initial value in the serialized program.
+  //
+  // In summary:
+  //   data_buffer_idx > 0, allocation_info = Null: Tensor is a constant.
+  //   data_buffer_idx = 0, allocation_info = Non Null: Tensor is mutable and
+  //     will receive a dataptr at method load time.
+  //   data_buffer_idx = 0, allocation_info = Null: Tensor is mutable and
+  //     will receive a dataptr at input time or during execution.
+  //   data_buffer_idx > 0, allocation_info = Non Null: Tensor is mutable and
+  //     will receive a dataptr at method load time, and has an initial state.
+  //
+  // Tensor data is stored inline if program.constant_buffer is null. Otherwise
+  //  it is in a segment. If this tensor's allocation_info is null then the
+  //  tensor data location is specified by program.constant_segment. If the
+  //  allocation_info is non_null then the data is somewhere in
+  //  program.mutable_data_segments. If tensor_info is Null, then the data is
+  //  in program.mutable_data_segments[0] otherwise if tensor_info is non-null
+  //  then the mutable_data_segment index is specified by
+  //  tensor_info.mutable_data_segments_index.
+  data_buffer_idx: uint;
+
+  // [Optional] preallocation details for non-constants (null otherwise).
+  allocation_info: AllocationDetails;
+
+  // May not be needed.
+  layout: byte;
+
+  // Determines the type of the tensor's shape, from the point of view of its
+  // dynamic or not behavior, and consequently how the allocation of the
+  // underlying memory is handled, and also how to interpret the sizes and
+  // strides fields.
+  // 1. dynamism == STATIC: sizes field represents the static shape of
+  //    the tensor.
+  // 2. dynamism == DYNAMIC_BOUND: sizes field represents the upper bound shape
+  //    of the tensor. Each dimension of the tensor at runtime should never
+  //    exceed the corresponding dimension of the upper bound shape.
+  //
+  // 3. dynamism == DYNAMIC_UNBOUND: the stored sizes field can be ignored since
+  //    shape is fully dynamic.
+  shape_dynamism: TensorShapeDynamism;
+
+  // [Optional] Additional information about the Tensor that is not applicable
+  // to most tensors.
+  extra_tensor_info: ExtraTensorInfo;
+}
+
+table Int {
+  int_val: long;
+}
+
+table Bool {
+  bool_val: bool;
+}
+
+table Double {
+  double_val: double;
+}
+
+table String {
+  string_val: string;
+}
+
+table IntList {
+  items: [long];
+}
+
+table DoubleList {
+  items: [double];
+}
+
+table BoolList {
+  items: [bool];
+}
+
+// Unlike primitive lists, tensor lists have mutable members and aliasing behavior when
+// elements are added to them. To match this aliasing behavior, the runtime tensor list is
+// serialized by serializing its elements into the ExecutionPlan.values array, and then
+// serializing their corresponding indices into TensorList.items.
+table TensorList {
+  items: [int];  // EValue indices.
+}
+
+// Similar to TensorList except the indices can also point to None.
+table OptionalTensorList {
+  items: [int];
+}
+
+// Supported values in Executorch kernels, Enums are serialized as ints.
+union KernelTypes {
+  Null,
+  Int,
+  Bool,
+  Double,
+  Tensor,
+  String,
+  IntList,
+  DoubleList,
+  BoolList,
+  TensorList,
+  OptionalTensorList,
+}
+
+// Abstraction for program values. A subset of types supported in core pytorch kernels.
+table EValue {
+  val: KernelTypes;
+}
+
+table Operator {
+  // Operator registry and lookup is uniquely identified by its name, and overload name.
+  // TODO(larryliu): is there a more efficient way to represent this
+  name: string;
+  overload: string;
+}
+
+table KernelCall {
+  // Index to the operators table in the program.
+  op_index: int;
+
+  // Indexes to the (values) required by the operation (in and out).
+  args: [int];
+}
+
+table DelegateCall {
+  // Index to the delegates table in the program.
+  delegate_index: int;
+
+  // Indexes to the (values) required by the delegates (in and out).
+  args: [int];
+}
+
+table MoveCall {
+  // Index into the values table of the evalue we are moving from
+  move_from: int;
+
+  // Index into the values table of the evalue we are moving into
+  move_to: int;
+}
+
+table JumpFalseCall {
+  // Index into the values table of boolean that specifies whether or not to jump
+  cond_value_index: int;
+
+  // Value to set the executor program counter if the jump occurs
+  destination_instruction: int;
+}
+
+table FreeCall {
+  // Index into values table of the tensor whose underlying data blob is being freed
+  value_index: int;
+}
+
+union InstructionArguments {
+  KernelCall,
+  DelegateCall,
+  MoveCall,
+  JumpFalseCall,
+  FreeCall,
+}
+
+// Basic unit of execution
+table Instruction {
+  instr_args: InstructionArguments;
+}
+
+table Frame {
+  // For storing the frame to print stacktraces
+  filename: string;  // Name of the file in which the instruction exists
+  lineno: int;       // Line number at which the instruction was called
+  name: string;      // Name of the function the instruction was called from
+  context: string;   // Source code of the instruction
+}
+
+table FrameList {
+  // For storing the frames to print stacktraces
+  items: [Frame];
+}
+
+// Indicates where a piece of data is stored.
+enum DataLocation : byte {
+  // Stored directly in the flatbuffer.
+  INLINE = 0,
+  // Stored in a segment.
+  SEGMENT = 1,
+}
+
+// Indicates where the delegate data is stored
+table BackendDelegateDataReference {
+  // Indicates which list to index into:
+  //     INLINE -> Program.backend_delegate_data
+  //     SEGMENT -> Program.segments
+  location: DataLocation;
+
+  // The index into the list indicated by the location.
+  index: uint;
+}
+
+table CompileSpec {
+  // One compile spec. There are can be multiple specs for one method
+  key: string; // like max_value
+  value: [ubyte]; // like 4, or other types based on needs.
+}
+
+table BackendDelegate {
+  // Used to resolve the delegate backend classes, for example, "TCE0", "TCE1", etc.
+  // This string is also used in to_backend.
+  id: string;
+
+  // A binary blob (from a subgraph) as an output of preprocessing. Will be
+  // provided to the backend code at init time. Can be very large, on the
+  // order of 10-100MB.
+  processed: BackendDelegateDataReference;
+
+  // The compilation spec for the lowered module's forward function
+  // Example: [CompileSpec["max_value", 4]]
+  compile_specs: [CompileSpec];
+}
+
+// A sequence of blocking instructions to be executed in order. The
+// abstraction is not currently leveraged, all current programs are 1 chain.
+// We are leaving chains as part of the program definition for future use cases
+// around graph level async where different threads will be represented as
+// seperate chains.
+table Chain {
+  // Indices of the values that are (non-static) inputs into this Chain.
+  inputs: [int];
+
+  // Indices of the values that are outputs out of this Chain.
+  outputs: [int];
+
+  // List of instructions to be executed in order.
+  instructions: [Instruction];
+
+  // Optional list of frames for each instruction.
+  // The backend config must have 'emit_stacktrace' set to true to emit
+  stacktrace: [FrameList];
+}
+
+table ExecutionPlan {
+
+  // Name of a method on the nn.Module that was traced to create this program.
+  name: string;
+
+  // Type meta data for input/output to the execution plan
+  container_meta_type: ContainerMetadata;
+
+  // A list of all values used in this execution plan.
+  values: [EValue];
+
+  // Indices to the 'Evalues' that are inputs to this execution plan.
+  // This list contains only the non-constant tensors (i.e. not part of
+  // the saved program).
+  inputs: [int];
+
+  // Indices to the 'Evalues' that are outputs of this execution plan.
+  // This signals a lifespan that goes beyond the execution.
+  outputs: [int];
+
+  // List of Chains of kernels.
+  chains: [Chain];
+
+  // Operators used in this execution plan
+  operators: [Operator];
+
+  // A list of delegates and each is a special instance of execution, the same level of chains.
+  delegates: [BackendDelegate];
+
+  // List of buffer sizes for non_constant memory allocations. (Think neural net activations)
+  // A list instead of a single buffer to account for complex memory hierarchies.
+  // TODO(jakeszwe, razy): How to reconcile this with the ability for the hierarchical memory allocator
+  // to be id based instead of index based.
+  // Runtime should use the len(constant_buffer) as the ground truth of the
+  // constants memory buffer size, and ignore non_const_buffer_sizes[0].
+  non_const_buffer_sizes: [int64];
+
+}
+
+// Constant tensor data stored directly in the flatbuffer.
+table Buffer {
+  // During serialization, this alignment may be rewritten to a larger value.
+  // The magic "@executorch-tensor-alignment" comment tells EXIR which lines to
+  // patch.
+  storage: [ubyte] (force_align: 16);  // @executorch-tensor-alignment
+}
+
+// Delegate data stored directly in the flatbuffer. This is a different type
+// than Buffer because tensors and delegates can have different alignment
+// requirements.
+table BackendDelegateInlineData {
+  // During serialization, this alignment may be rewritten to a larger value.
+  // The magic "@executorch-delegate-alignment" comment tells EXIR which lines
+  // to patch.
+  data: [ubyte] (force_align: 16);  // @executorch-delegate-alignment
+}
+
+// Describes a contiguous piece of data that lives outside of the flatbuffer data,
+// typically appended afterwards in the file. The "extended header" in the file,
+// when present, points to the segment base offset.
+table DataSegment {
+  // Segment offsets are relative to the segment base offset provided in
+  // the extended file header. Segments will typically be aligned in a
+  // way to make it possible to use mmap() to load them.
+  offset: uint64;
+
+  // The size in bytes of valid data starting at the offset. The segment
+  // data may be followed by padding before the segment that follows it,
+  // to make it easier to use mmap().
+  size: uint64;
+}
+
+// Describes data offsets into a particular segment
+table SubsegmentOffsets {
+  // Index of the segment in Program.segments
+  segment_index: uint;
+
+  // Each element is an offset in bytes into the data of the segment pointed to
+  // by segment_index. Offsets must be aligned to @executorch-tensor-alignment.
+  offsets: [uint64];
+}
+
+// Attributes a name to data referenced by Program.segments. Used when data is
+// referenced by multiple users, in cases where indices are not guaranteed to
+// be consistent across the users.
+table NamedData {
+  // The unique id of the data blob.
+  key: string;
+
+  // Index of the segment in Program.segments.
+  segment_index: uint32;
+}
+
+table Program {
+  // Schema version.
+  version: uint;
+
+  // List of ExecutionPlans that make up the program. Each ExecutionPlan corresponds with a
+  // different entry point into the model.
+  execution_plan: [ExecutionPlan];
+
+  // Tables of constant data, used for constant Values (e.g.data field of weight tensors).
+  // Each constant is assigned an index into the table which are each individually aligned.
+  // 0 index is reserved to be pointed to by non-constant Tensors.
+  // If this field is non-empty, constant_segment.offsets must be empty.
+  // DEPRECATED: After D61996249 on 2024-09-05, no new PTE files will use this field.
+  constant_buffer: [Buffer];
+
+  // List of delegate data. Pointed to by BackendDelegateDataReference.
+  backend_delegate_data: [BackendDelegateInlineData];
+
+  // List of data segments that follow the Program data in this file, sorted by
+  // offset. Elements in this schema can refer to these segments by index.
+  segments: [DataSegment];
+
+  // Describes the offsets of each constant tensor, relative to the segment
+  // offset. If constant_segment.offsets field is non-empty, constant_buffer
+  // must be empty. constant_segment.offsets[0] is reserved to be pointed to by
+  // non-constant Tensors.
+  constant_segment: SubsegmentOffsets;
+
+  // [Optional] Describes the offsets into various segments for each mutable
+  // tensor. Only mutable tensors with a meaningful initial state are
+  // serialized here (for example weights that will be trained on-device as
+  // opposed to just layer activations). Seperate from the constant_segment to
+  // reduce peak memory usage by letting us read directly from the PTE file
+  // into the mutable tensor, as opposed to loading the .pte data into
+  // constant memory, copying it over, and then being unable to release the
+  // constant segment. No two elements should point to the same segment.
+  mutable_data_segments: [SubsegmentOffsets];
+
+  // [Optional] List of blobs keyed by a unique name. Note that multiple
+  // 'NamedData' entries could point to the same segment index. Stored in
+  // segments attached to the PTE file.
+  named_data: [NamedData];
+}
+
+root_type Program;

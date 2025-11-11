@@ -1,0 +1,5 @@
+cmake=3.31.2
+ninja=1.10.2
+libuv
+llvm-openmp
+pkg-config

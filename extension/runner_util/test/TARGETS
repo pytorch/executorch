@@ -1,0 +1,8 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets(is_fbcode = True)

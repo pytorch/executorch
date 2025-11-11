@@ -1,0 +1,14 @@
+concat_buffer:
+  parameter_names_with_default_values:
+    DTYPE: float
+    NUM_INPUTS: 2
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+  shader_variants:
+    - NAME: concat_1_buffer
+      NUM_INPUTS: 1
+    - NAME: concat_2_buffer
+    - NAME: concat_3_buffer
+      NUM_INPUTS: 3

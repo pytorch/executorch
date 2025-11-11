@@ -1,0 +1,83 @@
+name: Run all unittests
+
+on:
+  workflow_call:
+    inputs:
+      docker-image:
+        required: true
+        type: string
+        description: Name of the docker image to use.
+      build-mode:
+        required: true
+        type: string
+        description: Build mode to use, Debug or Release.
+      build-tool:
+        required: true
+        type: string
+        description: Build tool to use, cmake or buck2.
+      editable:
+        required: false
+        type: string
+        description: Install ExecuTorch in editable mode or not.
+        default: 'false'
+      python-version:
+        required: false
+        type: string
+        default: '3.10'
+
+jobs:
+  linux:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge.memory
+      docker-image: ${{ inputs.docker-image }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+        .ci/scripts/unittest-linux.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
+
+  macos:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        # This is needed to get the prebuilt PyTorch wheel from S3
+        ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
+        .ci/scripts/unittest-macos.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
+
+  windows:
+    if: ${{ inputs.build-tool == 'cmake' }}
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    with:
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        conda init powershell
+
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
+
+          .ci/scripts/setup-windows.ps1 -editable "${{ inputs.editable }}"
+          if (\$LASTEXITCODE -ne 0) {
+              Write-Host "Setup failed. Exit code: \$LASTEXITCODE."
+              exit \$LASTEXITCODE
+          }
+
+          .ci/scripts/unittest-windows.ps1 -buildMode "${{ inputs.build-mode }}"
+          if (\$LASTEXITCODE -ne 0) {
+              Write-Host "Unit tests failed. Exit code: \$LASTEXITCODE."
+              exit \$LASTEXITCODE
+          }
+        }"

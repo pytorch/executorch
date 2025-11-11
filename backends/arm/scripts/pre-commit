@@ -1,0 +1,13 @@
+#!/bin/bash
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Check 1: If commit header contains WIP, everything is ok
+git rev-list --format=%s --max-count=1 HEAD | grep -q WIP && exit 0
+
+# Check 2: lintunner on latest patch.
+lintrunner -a --revision 'HEAD^' --skip MYPY
+commit_files=$(git diff-tree --no-commit-id --name-only --diff-filter=M HEAD -r)
+git add $commit_files || true

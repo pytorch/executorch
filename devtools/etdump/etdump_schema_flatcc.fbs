@@ -1,0 +1,181 @@
+include "scalar_type.fbs";
+
+namespace etdump;
+
+// Identifier of a valid executor schema.
+file_identifier "ED00";
+// Extension of written files.
+file_extension "etdp";
+
+table Null {}
+
+table Tensor {
+  scalar_type:executorch_flatbuffer.ScalarType;
+  sizes:[long];
+  strides:[long];
+  offset:long;
+}
+
+table Int {
+  int_val:long;
+}
+
+table Bool {
+  bool_val:bool;
+}
+
+table Float {
+  float_val:float;
+}
+
+table Double {
+  double_val:double;
+}
+
+table String {
+  string_val:string;
+}
+
+table TensorList {
+  tensors:[Tensor];
+}
+
+enum ValueType : byte { Null, Int, Bool, Float, Double, Tensor, TensorList, String,}
+
+// This table is only necessary because flatbuffer can't support a list of
+// union elements directly, they need to be wrapped in a table.
+table Value {
+    val:ValueType;
+    tensor:Tensor;
+    tensor_list:TensorList;
+    int_value:Int;
+    float_value:Float;
+    double_value:Double;
+    bool_value:Bool;
+    output:Bool;
+}
+
+// This table contains all the details that we store to debug an op executed in the
+// runtime. Each entry here reprsents an op executed in the runtime during inference.
+table DebugEvent {
+  // The chain to which this instruction belongs to. For now it will always be 0,
+  // as chains are not used, but left in place in case they are used in the future.
+  chain_index:ulong;
+
+  // Runtime instruction id to which this event corresponds to.
+  instruction_id:int = -1;
+
+  // List of debug entries corresponding to this debug event. These could be
+  // scalars, tensors etc.
+  // The order of these entries is expected to be the same as the parameters
+  // that are passed into a operator.
+  debug_entry:Value;
+
+  // Integer based delegate debug identifier.
+  delegate_debug_id_int:int = -1;
+
+  // String based delegate debug identifier.
+  delegate_debug_id_str:string;
+
+  // Name assigned to this debug event by the runtime. If it is an operator
+  // call this will just be the name of the operator that was executed.
+  name:string;
+}
+
+// All the details pertaining to an allocation done in the runtime. The main
+// details that we care about currently are the allocator id (which directly maps
+// to the allocators stored in the RunData.allocators vector) and the size of the
+// allocation done from it.
+table AllocationEvent {
+  // Allocator id of the allocator from which this memory was allocated.
+  allocator_id:int;
+
+  // Size of allocation in bytes.
+  allocation_size:ulong;
+}
+
+// This table contains all the details we need to represent a profiling event that
+// has occurred in the runtime. These could be an operator profiling event or something
+// more generic like the total time taken to execute an inference loop.
+table ProfileEvent {
+  // Name assigned to this profiling event by the runtime. If it is an operator
+  // call this will just be the name of the operator that was executed.
+  name:string;
+
+  // The chain to which this instruction belongs to. For now it will always be 0,
+  // as chains are not used, but left in place in case they are used in the future.
+  chain_index:int;
+
+  // Runtime instruction id to which this event corresponds to.
+  instruction_id:int = -1;
+
+  // If this is a delegate event then these will be the corresponding delegate
+  // debug identifiers of the event which occurred in the delegate backend. This
+  // should be the same delegate debug identifier that was generated AOT.
+
+  // Integer based delegate debug identifier.
+  delegate_debug_id_int:int = -1;
+
+  // String based delegate debug identifier.
+  delegate_debug_id_str:string;
+
+  // Delegate debug metadata bytes.
+  delegate_debug_metadata:[ubyte];
+
+  // Time at which this event started. Could be in units of time or CPU cycles.
+  start_time:ulong;
+
+  // Time at which this event ended. Could be in units of time or CPU cycles.
+  end_time:ulong;
+}
+
+// This table contains all the details we need to represent a profiling, allocation, or
+// debug event that has occurred in the runtime. These could be an operator profiling
+// event or something more generic like the total time taken to execute an inference loop.
+// Since we can only keep one vector open at a time when building the flatbuffer, using a
+// generic Event type (as opposed to separate arrays for each type) allows us to add
+// different events as they occur.
+//
+// Exactly one of these fields must be non-null, and the rest must be set to null.
+table Event {
+  profile_event: ProfileEvent;
+
+  allocation_event: AllocationEvent;
+
+  debug_event: DebugEvent;
+}
+
+// Representation of an ExecuTorch memory allocator that is used in the runtime.
+table Allocator {
+  // Name of the allocator.
+  name:string;
+}
+
+// This table contains the total set of debug and profiling data that was
+// collected for a single run. It's not always necessary that the profiling
+// data and debug data map 1:1.
+table RunData {
+  name: string;
+
+  // If bundled input was used to run this model on device then this
+  // entry will contain the index of the bundled input that was used
+  // to run this specific block.
+  bundled_input_index:int = -1;
+
+  // List of allocators on which profiling was enabled in the runtime.
+  allocators:[Allocator];
+
+  events: [Event];
+}
+
+table ETDump {
+  // Schema version.
+  version:uint;
+
+  // This is the base level abstraction. One entry here will correspond
+  // to one run.
+  run_data:[RunData];
+
+}
+
+root_type ETDump;

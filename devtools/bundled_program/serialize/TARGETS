@@ -1,0 +1,37 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+# Use runtime.python_library instead of the one defined in python_library.bzl,
+# so we can have access to EXECUTORCH_CLIENTS list.
+runtime.python_library(
+    name = "lib",
+    srcs = [
+        "__init__.py",
+    ],
+    resources = {
+        "//executorch/devtools/bundled_program/schema:bundled_program_schema.fbs": "bundled_program_schema.fbs",
+        "//executorch/devtools/bundled_program/schema:scalar_type.fbs": "scalar_type.fbs",
+    },
+    # Currently serialization API should only be used in some dedicated targets,
+    # to avoid ODR violation when linking with another Flatbuffers library.
+    # Please ask before changing this.
+    visibility = [
+        "//executorch/bacends/...",
+        "//executorch/backends/xnnpack/test/...",
+        "//executorch/codegen/...",
+        "//executorch/devtools/bundled_program/tests/...",
+        "//executorch/examples/async_exec:emit_program_lib",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings/test:test",
+        "//executorch/extension/pybindings/test:test-library",
+        "//executorch/profiler/...",
+        "//executorch/test/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/setuptools:setuptools",
+        "//executorch/devtools/bundled_program/schema:bundled_program_schema_py",
+        "//executorch/exir/_serialize:lib",
+    ],
+)

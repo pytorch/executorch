@@ -1,0 +1,472 @@
+merge_base_with = "main"
+
+[[linter]]
+code = 'FLAKE8'
+include_patterns = ['**/*.py']
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+    '.github/scripts/**',
+    'exir/serde/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'flake8_linter',
+    '--',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+# Black + usort
+[[linter]]
+code = 'UFMT'
+include_patterns = [
+    '**/*.py',
+    '**/*.pyi',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+    'exir/serde/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'ufmt_linter',
+    '--',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--no-black-binary',
+    '--requirement=requirements-lintrunner.txt',
+]
+is_formatter = true
+
+#CLANGFORMAT
+[[linter]]
+code = 'CLANGFORMAT'
+include_patterns = [
+    '**/*.h',
+    '**/*.cpp',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+    # NB: Objective-C is not supported
+    'examples/apple/**',
+    'examples/demo-apps/react-native/rnllama/ios/**',
+    'extension/apple/**',
+    'extension/llm/apple/**',
+    # File contains @generated
+    'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
+    'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
+    # Want to be able to keep c10 in sync with PyTorch core.
+    'runtime/core/portable_type/c10/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'clangformat_linter',
+    '--binary=clang-format',
+    '--fallback',
+    '--',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+is_formatter = true
+
+[[linter]]
+code = 'CMAKE'
+include_patterns = [
+    "**/*.cmake",
+    "**/*.cmake.in",
+    "**/CMakeLists.txt",
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'cmake_linter',
+    '--config=.cmakelintrc',
+    '--',
+    '@{{PATHSFILE}}',
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
+code = 'CMAKEFORMAT'
+include_patterns = [
+    "**/*.cmake",
+    "**/*.cmake.in",
+    "**/CMakeLists.txt",
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'cmake_format_linter',
+    '--',
+    '@{{PATHSFILE}}',
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
+code = 'ETCAPITAL'
+include_patterns = [
+    '**/*.py',
+    '**/*.pyi',
+    '**/*.h',
+    '**/*.cpp',
+    '**/*.md',
+    '**/*.rst',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    # Exclude "ExecuTorch" pattern within URLs
+    '--pattern= Executorch(?!\\W*(://|\\.[a-z]{2,}))\\W+',
+    '--linter-name=ExecuTorchCapitalization',
+    '--error-name=Incorrect capitalization for ExecuTorch',
+    """--error-description=
+    Please use ExecuTorch with capital T for consistency.
+    https://fburl.com/workplace/nsx6hib2
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = 'NEWLINE'
+include_patterns = ['**']
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+    '**/*.png',
+    '**/*.webp',
+    '**/*.jpeg',
+    '**/*.mp3',
+    '**/*.mp4',
+    '**/*.pte',
+    '**/*.pth',
+    '**/*.bin',
+    '**/*.patch',
+    '**/*.svg',
+    '**/*.bat',
+    '**/*.jpg',
+    '**/*.jar',
+    '**/*.gif',
+    'extension/llm/tokenizers',
+    'extension/llm/tokenizers/**',
+    'examples/cuda',
+    # File contains @generated
+    'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
+    'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'newlines_linter',
+    '--',
+    '@{{PATHSFILE}}',
+]
+is_formatter = true
+
+[[linter]]
+code = 'NOSTDINC'
+include_patterns = [
+    "**/*.c",
+    "**/*.cpp",
+    "**/*.h",
+    "**/*.hpp",
+]
+exclude_patterns = [
+    '**/devtools/**',
+    '**/test/**',
+    '**/testing_util/**',
+    '**/third-party/**',
+    'backends/**',
+    'devtools/**',
+    'examples/**',
+    'extension/**',
+    'kernels/optimized/**',
+    # Justified <functional> include.
+    'kernels/portable/cpu/op_bitwise*.cpp',
+    'kernels/portable/cpu/op_eq.cpp',
+    'kernels/portable/cpu/op_ge.cpp',
+    'kernels/portable/cpu/op_gt.cpp',
+    'kernels/portable/cpu/op_le.cpp',
+    'kernels/portable/cpu/op_lt.cpp',
+    'kernels/portable/cpu/op_ne.cpp',
+    'runtime/kernel/thread_parallel_interface.h',
+    'scripts/**',
+    'third-party/**',
+    'util/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=([^\\S\r\n]*#include\s*<(deque|exception|forward_list|functional|list|map|multimap|multiset|priority_queue|queue|set|stack|string|unordered_map|unordered_multimap|unordered_multiset|unordered_set|vector)>)',
+    '--linter-name=NOSTDINC',
+    '--error-name=Standard C++ container include in core',
+    """--error-description=\
+        Standard library containers should not be included in ExecuTorch core \
+        because they may call malloc, which is not allowed in core. \
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = 'NOTORCHINC'
+include_patterns = [
+    "**/*.c",
+    "**/*.cpp",
+    "**/*.h",
+    "**/*.hpp",
+]
+exclude_patterns = [
+    '**/devtools/**',
+    '**/fb/**',
+    '**/test/**',
+    '**/tests/**',
+    '**/testing_util/**',
+    '**/third-party/**',
+    'backends/**',
+    'codegen/templates/RegisterDispatchKeyCustomOps.cpp',
+    'codegen/templates/RegisterSchema.cpp',
+    'devtools/**',
+    'examples/**',
+    'exir/verification/bindings.cpp',
+    'extension/**',
+    # Uses properly-gated (ET_USE_PYTORCH_HEADERS) ATen include.
+    'kernels/portable/cpu/util/elementwise_util.h',
+    'kernels/portable/cpu/util/math_util.h',
+    'kernels/portable/cpu/util/vectorized_math.h',
+    'kernels/optimized/**',
+    'runtime/core/exec_aten/**',
+    # Want to be able to keep c10 in sync with PyTorch core.
+    'runtime/core/portable_type/c10/**',
+    'runtime/executor/tensor_parser_aten.cpp',
+    'scripts/**',
+    'test/**',
+    'third-party/**',
+    'util/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=#include\s+[<"](aten/|ATen/|torch/)',
+    '--linter-name=NOTORCHINC',
+    '--error-name=ATen or torch include',
+    """--error-description=\
+        PyTorch includes in ExecuTorch core are prohibited to prevent \
+        accidentally breaking core's requirements; please make sure this \
+        header complies (e.g., no streams/malloc/syscalls) and then include \
+        a patch to update this linter.\
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = 'MYPY'
+include_patterns = [
+    # TODO(https://github.com/pytorch/executorch/issues/7441): Gradually start enabling all folders.
+    # 'backends/**/*.py',
+    'backends/arm/**/*.py',
+    'backends/openvino/**/*.py',
+    'build/**/*.py',
+    'codegen/**/*.py',
+    # 'devtools/**/*.py',
+    'devtools/visualization/**/*.py',
+    'docs/**/*.py',
+    # 'examples/**/*.py',
+    'examples/openvino/**/*.py',
+    # 'exir/**/*.py',
+    # 'extension/**/*.py',
+    'kernels/**/*.py',
+    'profiler/**/*.py',
+    'runtime/**/*.py',
+    'scripts/**/*.py',
+    'test/**/*.py',
+    'util/**/*.py',
+    '*.py',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+    'scripts/check_binary_dependencies.py',
+    'profiler/test/test_profiler_e2e.py',
+    'backends/arm/test/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'mypy_linter',
+    '--config=.mypy.ini',
+    '--show-disable',
+    '--',
+    '--explicit-package-bases',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
+code = 'LICENSELINT'
+include_patterns = [
+    '**/*',
+]
+exclude_patterns = [
+    '**/fb/**',
+    '.lintrunner.toml',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=Confidential and proprietary',
+    '--linter-name=LICENSELINT',
+    '--error-name=Wrong license',
+    """--error-description=\
+        Code contributed to ExecuTorch open source repo should have \
+        BSD-license header \
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = "TORCH_AO_IMPORT"
+include_patterns = ["**/*.py"]
+exclude_patterns = [
+    "third-party/**",
+    # TODO: remove exceptions as we migrate
+    # backends
+    "exir/tests/test_memory_planning.py",
+    "exir/backend/test/demos/test_xnnpack_qnnpack.py",
+    "backends/xnnpack/test/test_xnnpack_utils.py",
+]
+
+command = [
+  "python",
+  "-m",
+  "lintrunner_adapters",
+  "run",
+  "grep_linter",
+  "--pattern=\\bfrom torch\\.ao\\.quantization\\.(?:quantizer|observer|quantize_pt2e|pt2e)(?:\\.[A-Za-z0-9_]+)*\\b",
+  "--linter-name=TorchAOImport",
+  "--error-name=Prohibited torch.ao.quantization import",
+  """--error-description=\
+  Imports from torch.ao.quantization are not allowed. \
+  Please import from torchao.quantization.pt2e instead.\n \
+  * torchao.quantization.pt2e (includes all the utils, including observers, fake quants etc.) \n \
+  * torchao.quantization.pt2e.quantizer (quantizer related objects and utils) \n \
+  * torchao.quantization.pt2e.quantize_pt2e (prepare_pt2e, prepare_qat_pt2e, convert_pt2e) \n\n \
+  If you need something from torch.ao.quantization, you can add your file to an exclude_patterns for TORCH_AO_IMPORT in .lintrunner.toml. \
+  """,
+  "--",
+  "@{{PATHSFILE}}",
+]
+
+[[linter]]
+code = 'ETVKNODEBUG'
+include_patterns = [
+    "backends/vulkan/**/*.glsl",
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=((DEBUG_MODE)|(GL_EXT_debug_printf))',
+    '--linter-name=ETVKNODEBUG',
+    '--error-name=Using DEBUG_MODE or GL_EXT_debug_printf in Vulkan shader',
+    """--error-description=\
+        #define DEBUG_MODE or #extension GL_EXT_debug_printf should only be used during development!
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]

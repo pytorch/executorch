@@ -1,0 +1,17 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "operators",
+    srcs = glob(["*.py"]),
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/exir:graph_module",
+        "//executorch/exir/backend:backend_details",
+    ],
+)

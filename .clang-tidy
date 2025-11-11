@@ -1,0 +1,10 @@
+---
+# NOTE there must be no spaces before the '-', so put the comma last.
+InheritParentConfig: true
+Checks: '
+-facebook-hte-BadMemberName,
+-facebook-hte-NullableReturn,
+'
+AnalyzeTemporaryDtors: false
+CheckOptions:
+...

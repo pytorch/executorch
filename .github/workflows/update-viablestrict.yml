@@ -1,0 +1,27 @@
+name: Update viable/strict
+
+on:
+  schedule:
+    - cron: 17,47 * * * *
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  do_update_viablestrict:
+    if: ${{ github.repository_owner == 'pytorch' }}
+    runs-on: ubuntu-22.04
+    environment: ${{ (github.event_name == 'schedule') && 'update-viable-strict' || '' }}
+    steps:
+      - name: Update viable/strict
+        uses: pytorch/test-infra/.github/actions/update-viablestrict@main
+        with:
+          repository: pytorch/executorch
+          stable-branch: viable/strict
+          requires: '[\"pull\", \"lint\", \"trunk\", \"Build documentation\", \"^Apple$\"]'
+          secret-bot-token: ${{ secrets.UPDATEBOT_TOKEN }}
+          clickhouse-url: ${{ secrets.CLICKHOUSE_URL }}
+          clickhouse-username: ${{ secrets.CLICKHOUSE_VIABLESTRICT_USERNAME }}
+          clickhouse-password: ${{ secrets.CLICKHOUSE_VIABLESTRICT_PASSWORD }}

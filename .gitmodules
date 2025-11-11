@@ -1,0 +1,69 @@
+[submodule "backends/arm/third-party/ethos-u-core-driver"]
+	path = backends/arm/third-party/ethos-u-core-driver
+	url = https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-core-driver.git
+[submodule "backends/vulkan/third-party/Vulkan-Headers"]
+	path = backends/vulkan/third-party/Vulkan-Headers
+	url = https://github.com/KhronosGroup/Vulkan-Headers
+[submodule "backends/vulkan/third-party/VulkanMemoryAllocator"]
+	path = backends/vulkan/third-party/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "backends/vulkan/third-party/volk"]
+	path = backends/vulkan/third-party/volk
+	url = https://github.com/zeux/volk
+[submodule "backends/xnnpack/third-party/FP16"]
+	path = backends/xnnpack/third-party/FP16
+	url = https://github.com/Maratyszcza/FP16.git
+[submodule "backends/xnnpack/third-party/FXdiv"]
+	path = backends/xnnpack/third-party/FXdiv
+	url = https://github.com/Maratyszcza/FXdiv.git
+[submodule "backends/xnnpack/third-party/XNNPACK"]
+	path = backends/xnnpack/third-party/XNNPACK
+	url = https://github.com/google/XNNPACK.git
+[submodule "backends/xnnpack/third-party/cpuinfo"]
+	path = backends/xnnpack/third-party/cpuinfo
+	url = https://github.com/pytorch/cpuinfo.git
+[submodule "backends/xnnpack/third-party/pthreadpool"]
+	path = backends/xnnpack/third-party/pthreadpool
+	url = https://github.com/google/pthreadpool.git
+[submodule "extension/llm/tokenizers"]
+	path = extension/llm/tokenizers
+	url = https://github.com/meta-pytorch/tokenizers.git
+[submodule "kernels/optimized/third-party/eigen"]
+	path = kernels/optimized/third-party/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "third-party/flatbuffers"]
+	path = third-party/flatbuffers
+	url = https://github.com/google/flatbuffers.git
+[submodule "third-party/flatcc"]
+	path = third-party/flatcc
+	url = https://github.com/dvidelabs/flatcc.git
+[submodule "third-party/gflags"]
+	path = third-party/gflags
+	url = https://github.com/gflags/gflags.git
+[submodule "third-party/googletest"]
+	path = third-party/googletest
+	url = https://github.com/google/googletest.git
+[submodule "third-party/ios-cmake"]
+	path = third-party/ios-cmake
+	url = https://github.com/leetal/ios-cmake
+[submodule "third-party/prelude"]
+	path = third-party/prelude
+	url = https://github.com/facebook/buck2-prelude.git
+[submodule "third-party/pybind11"]
+	path = third-party/pybind11
+	url = https://github.com/pybind/pybind11.git
+[submodule "third-party/ao"]
+	path = third-party/ao
+	url = https://github.com/pytorch/ao.git
+[submodule "backends/cadence/utils/FACTO"]
+	path = backends/cadence/utils/FACTO
+	url = https://github.com/pytorch-labs/FACTO.git
+[submodule "third-party/pocketfft"]
+	path = third-party/pocketfft
+	url = https://github.com/mreineck/pocketfft
+[submodule "shim"]
+	path = shim
+	url = https://github.com/facebook/buck2-shims-meta
+[submodule "third-party/json"]
+	path = third-party/json
+	url = https://github.com/nlohmann/json.git

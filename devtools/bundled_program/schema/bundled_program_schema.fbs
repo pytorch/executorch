@@ -1,0 +1,97 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+
+//
+// See README.md before modifying this file.
+//
+
+include "scalar_type.fbs";
+
+namespace bundled_program_flatbuffer;
+
+// Identifier of a valid bundled program schema.
+file_identifier "BP08";
+// Extension of written files.
+file_extension "bpte";
+
+// Reason for basic struct: union value type can only be table/struct/string
+table Int {
+  int_val:long;
+}
+
+table Bool {
+  bool_val:bool;
+}
+
+table Double {
+  double_val:double;
+}
+
+// All information we need to bundle for a tensor EValue input.
+table Tensor {
+  // The scalar type of Tensor
+  scalar_type: executorch_flatbuffer.ScalarType;
+  // The target sizes of the tensor.
+  sizes: [int];
+  // The contents of the corresponding input tensor.
+  data: [ubyte] (force_align: 16);
+  dim_order:[ubyte];
+}
+
+union ValueUnion {
+  Tensor,
+  Int,
+  Bool,
+  Double,
+}
+
+// Abstraction for BundledMethodTestCase values
+table Value {
+  val: ValueUnion;
+}
+
+// A single test for a method. The provided inputs should produce the
+// expected outputs.
+table BundledMethodTestCase {
+  // The inputs to provide to the method. The number and types of inputs must
+  // match the schema of the method under test.
+  inputs: [Value];
+
+  // The expected outputs generated while running the model in eager mode using
+  // the inputs provided. Its length should be equal to the length of program
+  // outputs.
+  expected_outputs: [Value];
+}
+
+// Collection of test cases for a program method.
+table BundledMethodTestSuite {
+  // The name of the method to test; e.g., "forward" for the forward() method
+  // of an nn.Module. This name match a method defined by the ExecuTorch
+  // program.
+  method_name: string;
+
+  // Individual test cases for the method.
+  test_cases: [BundledMethodTestCase];
+}
+
+
+// Executorch program bunlded with data for verification.
+table BundledProgram {
+  // Schema version.
+  version:uint;
+
+  // Test sets to run against the program.
+  // Each BundledMethodTestSuite should be used for the method of program sharing same name.
+  method_test_suites: [BundledMethodTestSuite];
+
+  // The binary data of a serialized Executorch program.
+  // The following `force_align` may sliently override any larger force_align
+  // used in the program. Therefore, to keep the data (including constant
+  // tensor, delegate data, etc, see schema.fbs for more info) in the
+  // executorch program keeps the same alignment as original no matter how
+  // the program schema changes, we need to make the force_align here the max
+  // one around all kinds of force_align in the current and future program
+  // schema, so we use the 32 as the force_align here.
+  program: [ubyte] (force_align: 32);
+}
+
+root_type BundledProgram;

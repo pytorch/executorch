@@ -1,0 +1,9 @@
+- namespace: global
+  is_aten: true
+  output_resize: true
+
+- namespace: op_gelu
+  dtype_double: true
+
+- namespace: op_log_softmax
+  dtype_double: true

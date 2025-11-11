@@ -1,0 +1,160 @@
+name: Android Release Artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version name to be uploaded for AAR release
+        required: false
+        type: string
+      upload_to_maven:
+        description: Upload the AAR to maven staging repository
+        required: false
+        type: boolean
+      flavor:
+        type: choice
+        options:
+          - "xnnpack"
+          - "vulkan"
+          - "qnn"
+  schedule:
+    - cron: 0 10 * * *
+
+jobs:
+  check-if-aar-exists:
+    name: check-if-aar-exists
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Check if this RC version is already in S3
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          FLAVOR="${{ inputs.flavor }}"
+          if [ -z "$VERSION" ]; then
+            echo "No version name specified. Will create a snapshot AAR"
+            exit 0
+          fi
+          if curl -I "https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}-${FLAVOR}/executorch.aar" | grep "200 OK"; then
+            echo "AAR already exists at https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}-${FLAVOR}/executorch.aar"
+            echo "Will skip build/upload"
+            exit 1
+          fi
+
+  build-aar:
+    name: build-aar
+    needs: check-if-aar-exists
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    secrets: inherit
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      secrets-env: EXECUTORCH_MAVEN_SIGNING_KEYID EXECUTORCH_MAVEN_SIGNING_PASSWORD EXECUTORCH_MAVEN_CENTRAL_PASSWORD EXECUTORCH_MAVEN_CENTRAL_USERNAME EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
+      submodules: 'recursive'
+      ref: ${{ github.sha }}
+      timeout: 90
+      upload-artifact: android-apps
+      upload-artifact-to-s3: true
+      script: |
+        set -eux
+
+        # Use sccache for NDK compiler as well
+        export CMAKE_CXX_COMPILER_LAUNCHER=sccache
+        export CMAKE_C_COMPILER_LAUNCHER=sccache
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
+        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
+
+        mkdir -p ~/.gradle
+        touch ~/.gradle/gradle.properties
+        echo "signing.keyId=${SECRET_EXECUTORCH_MAVEN_SIGNING_KEYID}" >> ~/.gradle/gradle.properties
+        echo "signing.password=${SECRET_EXECUTORCH_MAVEN_SIGNING_PASSWORD}" >> ~/.gradle/gradle.properties
+        echo "mavenCentralUsername=${SECRET_EXECUTORCH_MAVEN_CENTRAL_USERNAME}" >> ~/.gradle/gradle.properties
+        echo "mavenCentralPassword=${SECRET_EXECUTORCH_MAVEN_CENTRAL_PASSWORD}" >> ~/.gradle/gradle.properties
+        echo "signing.secretKeyRingFile=/tmp/secring.gpg" >> ~/.gradle/gradle.properties
+
+        echo -n "$SECRET_EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS" | base64 -d > /tmp/secring.gpg
+
+        GRADLE_ARGS=""
+
+        # Update the version name in build.gradle in case of maven publish
+        VERSION="${{ inputs.version }}"
+        if [ ! -z "$VERSION" ]; then
+          GRADLE_ARGS+=" -DexecuTorchVersion=${VERSION}"
+        fi
+
+        FLAVOR="${{ inputs.flavor }}"
+        if [ ! -z "$FLAVOR" ]; then
+          GRADLE_ARGS+=" -Dflavor=${FLAVOR}"
+        fi
+
+        if [[ "$FLAVOR" == "vulkan" || -z "$FLAVOR" ]]; then
+          curl -O https://sdk.lunarg.com/sdk/download/1.4.321.1/linux/vulkansdk-linux-x86_64-1.4.321.1.tar.xz
+          tar xf vulkansdk-linux-x86_64-1.4.321.1.tar.xz -C /tmp
+          export PATH="/tmp/1.4.321.1/x86_64/bin:$PATH"
+          export EXECUTORCH_BUILD_VULKAN=ON
+        fi
+
+        if [[ "$FLAVOR" == "qnn" ]]; then
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+          PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+          export EXECUTORCH_BUILD_QNN=ON
+          source backends/qualcomm/scripts/qnn_config.sh
+          export QNN_SDK_ROOT="/tmp/qnn/${QNN_VERSION}"
+          export ANDROID_ABIS=arm64-v8a
+          GRADLE_ARGS+=" -DqnnVersion=2.37.0"
+        fi
+
+        # Build AAR Package
+        mkdir aar-out
+        export BUILD_AAR_DIR=aar-out
+        bash scripts/build_android_library.sh
+        mkdir -p "${ARTIFACTS_DIR_NAME}"
+        cp aar-out/executorch.aar "${ARTIFACTS_DIR_NAME}/executorch.aar"
+
+        shasum -a 256 "${ARTIFACTS_DIR_NAME}/executorch.aar"
+
+        # Publish to maven staging
+        UPLOAD_TO_MAVEN="${{ inputs.upload_to_maven }}"
+        if [[ "$UPLOAD_TO_MAVEN" == "true" ]]; then
+          (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew  ${GRADLE_ARGS} :executorch_android:publishToMavenCentral)
+        fi
+
+  upload-release-aar:
+    name: upload-release-aar
+    needs: build-aar
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          role-to-assume: arn:aws:iam::308535385114:role/gha_executorch_upload-frameworks-android
+          aws-region: us-east-1
+      - name: Upload AAR RC to AWS S3
+        shell: bash
+        run: |
+          wget https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/executorch.aar
+          shasum -a 256 executorch.aar > executorch.aar.sha256sums
+
+          pip install awscli==1.32.18
+          AWS_CMD="aws s3 cp"
+          VERSION="${{ inputs.version }}"
+          FLAVOR="${{ inputs.flavor }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="snapshot-$(date +"%Y%m%d")"
+          fi
+          if [ -z "$FLAVOR" ]; then
+            FLAVOR="xnnpack"
+          fi
+          ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION}-${FLAVOR}/executorch.aar --acl public-read
+          ${AWS_CMD} executorch.aar.sha256sums s3://ossci-android/executorch/release/${VERSION}-${FLAVOR}/executorch.aar.sha256sums --acl public-read

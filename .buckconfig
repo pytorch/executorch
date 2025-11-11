@@ -1,0 +1,45 @@
+[executorch]
+  is_oss = 1
+
+[buildfile]
+  name = TARGETS
+
+[repositories]
+  root = .
+  prelude = third-party/prelude
+  shim = shim
+  shim_et = shim_et
+
+[repository_aliases]
+  bazel_skylib = shim
+  config = prelude
+  ovr_config = prelude
+  toolchains = shim_et
+  fbcode = shim_et
+  fbcode_macros = shim
+  fbsource = shim_et
+  buck = shim
+  gh_facebook_buck2_shims_meta = shim
+
+[cxx]
+  cxxflags = -g -std=c++17
+
+[parser]
+  target_platform_detector_spec = target:root//...->prelude//platforms:default target:shim//...->prelude//platforms:default
+
+# Limit the number of files that the buck daemon needs to monitor. If every
+# submodule is cloned recursively, some system can fail to build with "OS file
+# watch limit reached".
+[project]
+  ignore = \
+      .git, \
+      **/.git, \
+      cmake-out, \
+      pip-out
+
+[buck2]
+restarter=true
+file_watcher=notify
+
+[oss]
+folly_cxx_tests = False
