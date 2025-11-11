@@ -1524,7 +1524,7 @@ void conv2d_q8ta_q8csw_q8to_test(
       utils::kBuffer,
       utils::kPackedInt8_4W4C);
 
-  add_quantize_and_pack_q8ta_conv2d_input_node(
+  add_quantize_and_pack_4w4c_node(
       graph, fp_input, input_scale, input_zp, packed_int8_input);
 
   std::vector<ValueRef> conv2d_args = {
@@ -1546,7 +1546,7 @@ void conv2d_q8ta_q8csw_q8to_test(
 
   conv2d_q8ta_q8csw_q8to(graph, conv2d_args);
 
-  add_unpack_and_dequantize_q8ta_conv2d_output_node(
+  add_unpack_4w4c_and_dequantize_node(
       graph, packed_int8_output, output_scale, output_zp, fp_output);
 }
 

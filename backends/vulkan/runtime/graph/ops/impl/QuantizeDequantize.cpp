@@ -41,7 +41,7 @@ std::tuple<int64_t, int64_t> get_quantized_input_num_blocks(
   return std::make_tuple(num_blocks_M, num_blocks_K);
 }
 
-utils::uvec3 quant_pack_input_global_wg_size(
+utils::uvec3 quantize_and_pack_4h4w_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -57,7 +57,7 @@ utils::uvec3 quant_pack_input_global_wg_size(
       1u};
 }
 
-vkapi::ShaderInfo pick_quantize_and_pack_input_with_sums_shader(
+vkapi::ShaderInfo pick_quantize_and_pack_4h4w_with_group_sums_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
@@ -67,7 +67,7 @@ vkapi::ShaderInfo pick_quantize_and_pack_input_with_sums_shader(
 
   const int64_t group_size_val = graph->extract_scalar<int64_t>(group_size);
 
-  std::string shader_name = "quantize_and_pack_linear_input_with_sums";
+  std::string shader_name = "quantize_and_pack_4h4w_with_group_sums";
   if (group_size_val >= 128) {
     shader_name += "_o2w32";
   } else {
@@ -82,7 +82,7 @@ vkapi::ShaderInfo pick_quantize_and_pack_input_with_sums_shader(
   return VK_KERNEL_FROM_STR(shader_name);
 }
 
-utils::uvec3 pick_quantize_and_pack_input_with_sums_global_wg_size(
+utils::uvec3 pick_quantize_and_pack_4h4w_with_group_sums_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -113,7 +113,7 @@ utils::uvec3 pick_quantize_and_pack_input_with_sums_global_wg_size(
       1u};
 }
 
-utils::uvec3 pick_quantize_and_pack_input_with_sums_local_wg_size(
+utils::uvec3 pick_quantize_and_pack_4h4w_with_group_sums_local_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const utils::uvec3& global_workgroup_size,
@@ -144,7 +144,7 @@ utils::uvec3 pick_quantize_and_pack_input_with_sums_local_wg_size(
 // Dispatch logic (Linear)
 //
 
-void add_quantize_and_pack_linear_input_node(
+void add_quantize_and_pack_4h4w_node(
     ComputeGraph& graph,
     const QuantizationConfig& input_quant_config,
     const ValueRef fp_input,
@@ -164,7 +164,7 @@ void add_quantize_and_pack_linear_input_node(
   float inv_scale = 1.0f / graph.extract_scalar<float>(input_scale_data);
   int32_t zp = graph.extract_scalar<int32_t>(input_zp_data);
 
-  std::string shader_name = "quantize_and_pack_linear_input_per_tensor";
+  std::string shader_name = "quantize_and_pack_4h4w_per_tensor";
   add_storage_type_suffix(shader_name, graph.storage_type_of(packed_int_input));
   add_storage_type_suffix(shader_name, graph.storage_type_of(fp_input));
   add_dtype_suffix(shader_name, graph.dtype_of(fp_input));
@@ -179,7 +179,7 @@ void add_quantize_and_pack_linear_input_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(shader_name),
-      quant_pack_input_global_wg_size,
+      quantize_and_pack_4h4w_global_wg_size,
       default_pick_local_wg_size,
       // Inputs and Outputs
       {{packed_int_input, vkapi::kWrite}, {fp_input, vkapi::kRead}},
@@ -193,7 +193,7 @@ void add_quantize_and_pack_linear_input_node(
       {}));
 }
 
-void add_quantize_and_pack_linear_input_with_sums_node(
+void add_quantize_and_pack_4h4w_with_group_sums_node(
     ComputeGraph& graph,
     const QuantizationConfig& input_quant_config,
     const ValueRef fp_input,
@@ -216,9 +216,9 @@ void add_quantize_and_pack_linear_input_with_sums_node(
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      pick_quantize_and_pack_input_with_sums_shader,
-      pick_quantize_and_pack_input_with_sums_global_wg_size,
-      pick_quantize_and_pack_input_with_sums_local_wg_size,
+      pick_quantize_and_pack_4h4w_with_group_sums_shader,
+      pick_quantize_and_pack_4h4w_with_group_sums_global_wg_size,
+      pick_quantize_and_pack_4h4w_with_group_sums_local_wg_size,
       // Inputs and Outputs
       {{{packed_int_input, int_input_sums}, vkapi::kWrite},
        {{fp_input, packed_input_scales, packed_input_zps}, vkapi::kRead}},
@@ -236,7 +236,7 @@ void add_quantize_and_pack_linear_input_with_sums_node(
 // Dispatch utilities (Conv2d)
 //
 
-utils::uvec3 pick_quantize_and_pack_conv2d_input_global_wg_size(
+utils::uvec3 pick_quantize_and_pack_4w4c_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -253,7 +253,7 @@ utils::uvec3 pick_quantize_and_pack_conv2d_input_global_wg_size(
   return {W4, H, C4};
 }
 
-utils::uvec3 pick_unpack_and_dequantize_conv2d_output_global_wg_size(
+utils::uvec3 pick_unpack_4w4c_and_dequantize_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -274,7 +274,7 @@ utils::uvec3 pick_unpack_and_dequantize_conv2d_output_global_wg_size(
 // Dispatch logic (Conv2d)
 //
 
-void add_quantize_and_pack_q8ta_conv2d_input_node(
+void add_quantize_and_pack_4w4c_node(
     ComputeGraph& graph,
     const ValueRef fp_input,
     const ValueRef input_scale,
@@ -284,7 +284,7 @@ void add_quantize_and_pack_q8ta_conv2d_input_node(
   int32_t zp = graph.extract_scalar<int32_t>(input_zp);
 
   // Get shader for quantized conv2d linear tiled
-  std::string kernel_name = "quantize_and_pack_q8ta_conv2d_input";
+  std::string kernel_name = "quantize_and_pack_4w4c_per_tensor";
   add_storage_type_suffix(
       kernel_name, graph.storage_type_of(packed_int8_input));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(fp_input));
@@ -302,7 +302,7 @@ void add_quantize_and_pack_q8ta_conv2d_input_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_quantize_and_pack_conv2d_input_global_wg_size,
+      pick_quantize_and_pack_4w4c_global_wg_size,
       pick_wc_square_wg_size,
       // Inputs and Outputs
       {{packed_int8_input, vkapi::kWrite}, {fp_input, vkapi::kRead}},
@@ -318,7 +318,7 @@ void add_quantize_and_pack_q8ta_conv2d_input_node(
       nullptr));
 }
 
-void add_unpack_and_dequantize_q8ta_conv2d_output_node(
+void add_unpack_4w4c_and_dequantize_node(
     ComputeGraph& graph,
     const ValueRef packed_int8_output,
     const ValueRef output_scale,
@@ -328,7 +328,7 @@ void add_unpack_and_dequantize_q8ta_conv2d_output_node(
   int32_t zp = graph.extract_scalar<int32_t>(output_zp);
 
   // Get shader for quantized conv2d linear tiled
-  std::string kernel_name = "unpack_and_dequantize_q8ta_conv2d_output";
+  std::string kernel_name = "unpack_4w4c_and_dequantize_per_tensor";
   add_storage_type_suffix(kernel_name, graph.storage_type_of(fp_output));
   add_storage_type_suffix(
       kernel_name, graph.storage_type_of(packed_int8_output));
@@ -346,7 +346,7 @@ void add_unpack_and_dequantize_q8ta_conv2d_output_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_unpack_and_dequantize_conv2d_output_global_wg_size,
+      pick_unpack_4w4c_and_dequantize_global_wg_size,
       default_pick_local_wg_size,
       // Inputs and Outputs
       {{fp_output, vkapi::kWrite}, {packed_int8_output, vkapi::kRead}},
@@ -375,7 +375,7 @@ void quantize_q8ta_for_conv2d(
   const ValueRef zero_point = args.at(idx++);
   const ValueRef packed_int8_input = args.at(idx++);
 
-  add_quantize_and_pack_q8ta_conv2d_input_node(
+  add_quantize_and_pack_4w4c_node(
       graph, fp_input, scale, zero_point, packed_int8_input);
 }
 
@@ -388,7 +388,7 @@ void dequantize_q8to_from_conv2d(
   const ValueRef zero_point = args.at(idx++);
   const ValueRef fp_output = args.at(idx++);
 
-  add_unpack_and_dequantize_q8ta_conv2d_output_node(
+  add_unpack_4w4c_and_dequantize_node(
       graph, packed_int8_output, scale, zero_point, fp_output);
 }
 
@@ -408,10 +408,10 @@ void qdq8ta_conv2d_input(
       utils::kBuffer,
       utils::kPackedInt8_4W4C);
 
-  add_quantize_and_pack_q8ta_conv2d_input_node(
+  add_quantize_and_pack_4w4c_node(
       graph, fp_input, scale, zero_point, packed_int8_input);
 
-  add_unpack_and_dequantize_q8ta_conv2d_output_node(
+  add_unpack_4w4c_and_dequantize_node(
       graph, packed_int8_input, scale, zero_point, fp_output);
 }
 

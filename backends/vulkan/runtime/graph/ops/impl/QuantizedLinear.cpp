@@ -607,7 +607,7 @@ void quantized_linear_impl(
 
   // Non dynamically quantized input case
   if (!input_quant_config.is_dynamic) {
-    add_quantize_and_pack_linear_input_node(
+    add_quantize_and_pack_4h4w_node(
         graph,
         input_quant_config,
         fp_input,
@@ -656,7 +656,7 @@ void quantized_linear_impl(
       utils::kBuffer,
       utils::kWidthPacked);
 
-  add_quantize_and_pack_linear_input_with_sums_node(
+  add_quantize_and_pack_4h4w_with_group_sums_node(
       graph,
       input_quant_config,
       fp_input,

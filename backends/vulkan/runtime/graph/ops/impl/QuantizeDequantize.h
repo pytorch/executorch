@@ -23,7 +23,7 @@ bool is_gemv(ComputeGraph* graph, const ValueRef& fp_input);
 // Quantize, Dequantize for Linear/Matmul
 //
 
-void add_quantize_and_pack_linear_input_node(
+void add_quantize_and_pack_4h4w_node(
     ComputeGraph& graph,
     const QuantizationConfig& input_quant_config,
     const ValueRef fp_input,
@@ -34,7 +34,7 @@ void add_quantize_and_pack_linear_input_node(
     const ValueRef packed_int_input,
     const ValueRef group_size);
 
-void add_quantize_and_pack_linear_input_with_sums_node(
+void add_quantize_and_pack_4h4w_with_group_sums_node(
     ComputeGraph& graph,
     const QuantizationConfig& input_quant_config,
     const ValueRef fp_input,
@@ -48,14 +48,14 @@ void add_quantize_and_pack_linear_input_with_sums_node(
 // Quantize, Dequantize for Convolution
 //
 
-void add_quantize_and_pack_q8ta_conv2d_input_node(
+void add_quantize_and_pack_4w4c_node(
     ComputeGraph& graph,
     const ValueRef fp_input,
     const ValueRef input_scale,
     const ValueRef input_zp,
     const ValueRef packed_int8_input);
 
-void add_unpack_and_dequantize_q8ta_conv2d_output_node(
+void add_unpack_4w4c_and_dequantize_node(
     ComputeGraph& graph,
     const ValueRef packed_int8_output,
     const ValueRef output_scale,

@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-quantize_and_pack_q8ta_conv2d_input:
+quantize_and_pack_4w4c:
   parameter_names_with_default_values:
     DTYPE: float
     OUTPUT_STORAGE: texture3d
@@ -19,4 +19,4 @@ quantize_and_pack_q8ta_conv2d_input:
     DTYPE:
       - VALUE: float
   shader_variants:
-    - NAME: quantize_and_pack_q8ta_conv2d_input
+    - NAME: quantize_and_pack_4w4c_per_tensor
