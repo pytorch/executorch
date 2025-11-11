@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
+# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,8 +13,6 @@ Use these helpers to check and mark annotation state when working with
 """
 
 from typing import cast
-
-from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 
 from torch.fx import Node
 
@@ -67,10 +65,4 @@ def mark_node_as_annotated(node: Node) -> None:
     """
     if Q_ANNOTATION_KEY not in node.meta:
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation()
-    annotation_info = ArmAnnotationInfo(
-        quantized=True,
-    )
     node.meta[Q_ANNOTATION_KEY]._annotated = True
-    meta_custom = node.meta.get("custom", {})
-    meta_custom[ArmAnnotationInfo.CUSTOM_META_KEY] = annotation_info
-    node.meta["custom"] = meta_custom
