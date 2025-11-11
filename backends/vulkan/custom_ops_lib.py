@@ -539,42 +539,6 @@ lib.define(
 lib.impl(name, apply_rotary_emb_impl, "CompositeExplicitAutograd")
 apply_rotary_emb_op = getattr(getattr(torch.ops, namespace), name)
 
-#############################
-## quantize/dequantize ops ##
-#############################
-
-
-def quantize_q8ta_for_conv2d_impl(
-    input: torch.Tensor,
-    scale: float,
-    zero_point: int,
-):
-    return torch.ops.quantized_decomposed.quantize_per_tensor(
-        input, scale, zero_point, -128, 127, torch.int8
-    )
-
-
-name = "quantize_q8ta_for_conv2d"
-lib.define(f"{name}(Tensor input, float scale, int zero_point) -> Tensor")
-lib.impl(name, quantize_q8ta_for_conv2d_impl, "CompositeExplicitAutograd")
-quantize_q8ta_for_conv2d_op = getattr(getattr(torch.ops, namespace), name)
-
-
-def dequantize_q8to_from_conv2d_impl(
-    input: torch.Tensor,
-    scale: float,
-    zero_point: int,
-):
-    return torch.ops.quantized_decomposed.dequantize_per_tensor(
-        input, scale, zero_point, -128, 127, input.dtype
-    )
-
-
-name = "dequantize_q8to_from_conv2d"
-lib.define(f"{name}(Tensor input, float scale, int zero_point) -> Tensor")
-lib.impl(name, dequantize_q8to_from_conv2d_impl, "CompositeExplicitAutograd")
-dequantize_q8to_from_conv2d_op = getattr(getattr(torch.ops, namespace), name)
-
 ########################
 ## add_q8ta_q8ta_q8to ##
 ########################

@@ -366,30 +366,52 @@ void add_unpack_4w4c_and_dequantize_node(
 // Operator Entrypoints
 //
 
-void quantize_q8ta_for_conv2d(
+void quantize_per_tensor_impl(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
-  int32_t idx = 0;
-  const ValueRef fp_input = args.at(idx++);
-  const ValueRef scale = args.at(idx++);
-  const ValueRef zero_point = args.at(idx++);
-  const ValueRef packed_int8_input = args.at(idx++);
+  int32_t arg_idx = 0;
+  const ValueRef fp_input = args[arg_idx++];
+  const ValueRef scale = args[arg_idx++];
+  const ValueRef zero_point = args[arg_idx++];
+  const ValueRef quant_min = args[arg_idx++];
+  (void)quant_min;
+  const ValueRef quant_max = args[arg_idx++];
+  (void)quant_max;
+  const ValueRef dtype = args[arg_idx++];
+  (void)dtype;
+
+  const ValueRef int8_output = args[arg_idx++];
+
+  VK_CHECK_COND(
+      graph.estimate_memory_layout_of(int8_output) == utils::kPackedInt8_4W4C);
 
   add_quantize_and_pack_4w4c_node(
-      graph, fp_input, scale, zero_point, packed_int8_input);
+      graph, fp_input, scale, zero_point, int8_output);
 }
 
-void dequantize_q8to_from_conv2d(
+void dequantize_per_tensor_impl(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
-  int32_t idx = 0;
-  const ValueRef packed_int8_output = args.at(idx++);
-  const ValueRef scale = args.at(idx++);
-  const ValueRef zero_point = args.at(idx++);
-  const ValueRef fp_output = args.at(idx++);
+  int32_t arg_idx = 0;
+  const ValueRef int8_input = args[arg_idx++];
+  const ValueRef scale = args[arg_idx++];
+  const ValueRef zero_point = args[arg_idx++];
+  const ValueRef quant_min = args[arg_idx++];
+  (void)quant_min;
+  const ValueRef quant_max = args[arg_idx++];
+  (void)quant_max;
+  const ValueRef dtype = args[arg_idx++];
+  (void)dtype;
+  const ValueRef output_dtype = args[arg_idx++];
+  (void)output_dtype;
+
+  const ValueRef fp_output = args[arg_idx++];
+
+  VK_CHECK_COND(
+      graph.estimate_memory_layout_of(int8_input) == utils::kPackedInt8_4W4C);
 
   add_unpack_4w4c_and_dequantize_node(
-      graph, packed_int8_output, scale, zero_point, fp_output);
+      graph, int8_input, scale, zero_point, fp_output);
 }
 
 void qdq8ta_conv2d_input(
@@ -416,11 +438,13 @@ void qdq8ta_conv2d_input(
 }
 
 REGISTER_OPERATORS {
+  VK_REGISTER_OP(
+      quantized_decomposed.quantize_per_tensor.default,
+      quantize_per_tensor_impl);
+  VK_REGISTER_OP(
+      quantized_decomposed.dequantize_per_tensor.default,
+      dequantize_per_tensor_impl);
   VK_REGISTER_OP(etvk.qdq8ta_conv2d_input.default, qdq8ta_conv2d_input);
-  VK_REGISTER_OP(
-      et_vk.quantize_q8ta_for_conv2d.default, quantize_q8ta_for_conv2d);
-  VK_REGISTER_OP(
-      et_vk.dequantize_q8to_from_conv2d.default, dequantize_q8to_from_conv2d);
 }
 
 } // namespace vkcompute
