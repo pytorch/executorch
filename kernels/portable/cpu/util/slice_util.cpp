@@ -81,7 +81,7 @@ bool check_slice_scatter_args(
     Tensor output) {
   ET_LOG_AND_RETURN_IF_FALSE(input.dim() > 0);
 
-  // Check dim. The dim planed to be selected on shall exist in input
+  // Check dim. The dim planned to be selected on shall exist in input
   ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, input.dim()));
 
   // Input and output tensors should be the same shape and dtype
@@ -97,7 +97,7 @@ bool check_slice_scatter_args(
   // The size of src tensor should follow these rules:
   // - src.size(i) shall equal to input.size(i) if i != dim,
   // - src.size(dim) shall equal to num_values
-  for (const auto d : c10::irange(input.dim() - 1)) {
+  for (const auto d : c10::irange(input.dim())) {
     if (d != dim) {
       ET_LOG_AND_RETURN_IF_FALSE(
           tensors_have_same_size_at_dims(input, d, src, d));
