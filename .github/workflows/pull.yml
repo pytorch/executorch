@@ -909,8 +909,6 @@ jobs:
 
   test-samsung-models-linux:
     name: test-samsung-models-linux
-    # Skip this job if the pull request is from a fork (secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -937,12 +935,6 @@ jobs:
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
         source .ci/scripts/setup-samsung-linux-deps.sh
 
-        # Test models serially
-        models="mv2 ic3 resnet18 resnet50 mv3 ic4 dl3 edsr vit w2l"
-        for model in $models; do
-          python -m executorch.examples.samsung.aot_compiler --model_name=$model -c E9955
-        done
-
         # Test quant models
         model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
         for m_script in $model_scripts; do
@@ -951,6 +943,8 @@ jobs:
 
         # Test ops
         python -m unittest discover -s backends/samsung/test/ops -p "test_*.py"
+        # Test models
+        python -m unittest discover -s backends/samsung/test/models -p "test_*.py"
 
 
   test-vulkan-models-linux:
