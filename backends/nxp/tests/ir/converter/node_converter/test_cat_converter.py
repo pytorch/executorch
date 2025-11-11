@@ -44,6 +44,18 @@ class CatModule(torch.nn.Module):
         return torch.cat(list(inputs), self.dim)
 
 
+class AddCatModule(torch.nn.Module):
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, *inputs: torch.Tensor):
+        inputs = [input_ + input_ for input_ in inputs]
+
+        return torch.cat(list(inputs), self.dim)
+
+
 class CatConvModule(torch.nn.Module):
 
     def __init__(self, dim: int, channels: int = 4):
@@ -73,7 +85,7 @@ class CatConvModule(torch.nn.Module):
     ],
 )
 def test_cat__same_shapes(dim, num_inputs, rank, mocker):
-    input_shape = tuple([2, 8, 8, 8, 8][-rank:])
+    input_shape = tuple([8, 8, 8, 8][:rank])
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
@@ -134,11 +146,23 @@ def test_cat__channels_first__same_shapes(dim, num_inputs, mocker):
     )
 
 
-@pytest.mark.parametrize("dim", [0, -4])
-@pytest.mark.parametrize("num_inputs", [2])
-def test_cat__unsupported_dim__imxrt700(dim, num_inputs):
-    input_shape = (2, 8, 6, 8)
-
+@pytest.mark.parametrize(
+    "dim, input_shape",
+    [
+        pytest.param(0, (1, 8, 8, 8), id="axis = 0"),
+        pytest.param(0, (8, 8, 8, 8), id="axis = 0, no `1s` in the shape."),
+        pytest.param(-4, (1, 8, 8, 8), id="axis = -4"),
+        pytest.param(1, (1, 1, 8, 8), id="axis = 1"),
+        pytest.param(-3, (1, 1, 8, 8), id="axis = -3"),
+        pytest.param(2, (1, 1, 1, 8), id="axis = 2"),
+        pytest.param(-2, (1, 1, 1, 8), id="axis = -2"),
+    ],
+)
+def test_cat__unsupported__imxrt700(dim, input_shape):
+    """This test is conjoined with the one below (`test_cat__context_dependent__imxrt700`).
+    In this case, the inputs of the `cat` are NOT compute ops, so the `cat` is NOT delegated.
+    """
+    num_inputs = 2
     quantized_program = to_quantized_edge_program(
         CatModule(dim), [input_shape] * num_inputs, target="imxrt700"
     ).exported_program()
@@ -150,6 +174,32 @@ def test_cat__unsupported_dim__imxrt700(dim, num_inputs):
     assert not any(
         "lowered_module" in node.name for node in quantized_program.graph.nodes
     )
+
+
+@pytest.mark.parametrize(
+    "dim, input_shape",
+    [
+        pytest.param(0, (1, 8, 8, 8), id="axis = 0"),
+        pytest.param(0, (8, 8, 8, 8), id="axis = 0, no `1s` in the shape."),
+        pytest.param(-4, (1, 8, 8, 8), id="axis = -4"),
+        pytest.param(1, (1, 1, 8, 8), id="axis = 1"),
+        pytest.param(-3, (1, 1, 8, 8), id="axis = -3"),
+        pytest.param(2, (1, 1, 1, 8), id="axis = 2"),
+        pytest.param(-2, (1, 1, 1, 8), id="axis = -2"),
+    ],
+)
+def test_cat__context_dependent__imxrt700(dim, input_shape):
+    """This test is conjoined with the one above (`test_cat__unsupported__imxrt700`).
+    In this case, the inputs of the `cat` are compute ops, so the `cat` is delegated.
+    """
+    num_inputs = 2
+    ep = to_quantized_edge_program(
+        AddCatModule(dim), [input_shape] * num_inputs, target="imxrt700"
+    ).exported_program()
+
+    # Make sure the `Cat` was delegated.
+    assert not graph_contains_any_of_ops(ep.graph, [exir_ops.edge.aten.cat.default])
+    assert any("lowered_module" in node.name for node in ep.graph.nodes)
 
 
 @pytest.mark.parametrize(

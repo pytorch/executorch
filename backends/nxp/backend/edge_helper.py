@@ -22,14 +22,6 @@ DEQUANTIZE_OPERATORS = [
 ]
 
 
-def _is_dequantize(node_: Node) -> bool:
-    return node_.op == "call_function" and node_.target in DEQUANTIZE_OPERATORS
-
-
-def _is_quantize(node_: Node) -> bool:
-    return node_.op == "call_function" and node_.target in QUANTIZE_OPERATORS
-
-
 def input_tensor(node: Node, input_index: int) -> torch.Tensor:
     if len(node.all_input_nodes) <= input_index:
         raise IndexError
@@ -103,3 +95,33 @@ def try_get_tensor_constant_from_node(
             return None
         attr_itr = getattr(attr_itr, atom)
     return attr_itr
+
+
+def _is_dequantize(node_: Node) -> bool:
+    return node_.op == "call_function" and node_.target in [
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+        torch.ops.quantized_decomposed.dequantize_per_channel.default,
+    ]
+
+
+def _is_quantize(node_: Node) -> bool:
+    return node_.op == "call_function" and node_.target in [
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+        torch.ops.quantized_decomposed.quantize_per_tensor.default,
+        torch.ops.quantized_decomposed.quantize_per_channel.default,
+    ]
+
+
+def previous_non_qdq_node(node: Node, input_index: int = 0) -> Node | None:
+    """Return the first node which is not a `quantize` or `dequantize`, found by traversing the graph backwards
+    starting with the `node.args[input_index]`,
+    """
+    current_node = node.args[input_index]
+    while True:
+        if _is_quantize(current_node) or _is_dequantize(current_node):
+            current_node = current_node.args[0]
+        else:
+            return current_node
