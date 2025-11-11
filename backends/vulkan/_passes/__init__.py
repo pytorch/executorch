@@ -19,7 +19,6 @@ from executorch.backends.vulkan._passes.remove_asserts import (
 from executorch.backends.vulkan._passes.remove_redundant_ops import (
     RemoveRedundantOpsTransform,
 )
-from executorch.backends.vulkan._passes.replace_qdq import ReplaceQDQPass
 from executorch.backends.vulkan._passes.squeeze_unsqueeze_inputs import (
     SqueezeUnsqueezeInputs,
 )
@@ -33,7 +32,6 @@ __all__ = [
     "remove_asserts",
     "RemoveAssertsTransform",
     "RemoveRedundantOpsTransform",
-    "ReplaceQDQPass",
     "SqueezeUnsqueezeInputs",
     "TagMemoryMetaPass",
 ]
