@@ -711,6 +711,7 @@ def register_view_ops():
         exir_ops.edge.aten.unsqueeze_copy.default,
         exir_ops.edge.aten.clone.default,
         exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.gather.default,
     ]
 )
 def register_view_ops_with_buffer_meta():
