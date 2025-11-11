@@ -6,13 +6,12 @@
 
 from typing import Callable, List, Optional
 
-import torch
-
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.operator_configs import (
+    BINARY_OP_PATTERNS,
     INT8_BINARY_OPS_OPERATOR_CONFIG,
     INT8_LINEAR_OPERATOR_CONFIG,
 )
@@ -37,7 +36,7 @@ class CortexMQuantizer(ComposableQuantizer):
         """
         if node is None:
             return False
-        if node.target not in [torch.ops.aten.add.Tensor]:
+        if [node.target] not in BINARY_OP_PATTERNS:
             return False
 
         if len(node.all_input_nodes) == 2:

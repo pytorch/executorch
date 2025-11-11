@@ -5,7 +5,6 @@
 
 
 from executorch.backends.arm._passes import (
-    DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
     ScalarsToAttributePass,
 )
@@ -29,7 +28,6 @@ class CortexMPassManager(XNNPACKPassManager):
         ReplaceQuantNodesPass,
         QuantizedOpFusionPass,
         QuantizedLinearFusionPass,
-        DecorateFp32toInt32CastingPass,
     ]
 
     pass_list_transform_for_annotation: list[ExportPass] = [

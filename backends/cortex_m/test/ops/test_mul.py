@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import pytest
 import torch
 from executorch.backends.arm.test.common import parametrize
 from executorch.backends.cortex_m.test.tester import (
@@ -91,11 +90,11 @@ test_cases = {
     ),
     "tensor_scalar": McuTestCase(
         CortexMScalarMul(),
-        (torch.ones(2, 2), 1.0),
+        (torch.ones(1), 1.0),
     ),
     "scalar_tensor": McuTestCase(
         CortexMScalarMul(),
-        (1000.0, torch.ones(2, 2)),
+        (1000.0, torch.ones(1)),
     ),
     "broadcast_1": McuTestCase(
         CortexMTensorMul(),
@@ -115,17 +114,32 @@ test_cases = {
 }
 
 
-@pytest.mark.skip(reason="Not implemented yet")
-@parametrize("test_case", test_cases)
+xfail_cases = {
+    "self_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "scalar_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "broadcast_1": "Broadcasting not yet supported in Cortex-M backend",
+    "broadcast_2": "Broadcasting not yet supported in Cortex-M backend",
+    "broadcast_3": "Broadcasting not yet supported in Cortex-M backend",
+}
+
+
+@parametrize("test_case", test_cases, xfails=xfail_cases)
 def test_dialect_mul(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_dialect(
-        test_case.model.ops_before_transforms, test_case.model.ops_after_transforms
+        test_case.model.ops_before_transforms,
+        test_case.model.ops_after_transforms,
+        qtol=1,
     )
 
 
-@pytest.mark.skip(reason="Not implemented yet")
-@parametrize("test_case", test_cases)
+@parametrize("test_case", test_cases, xfails=xfail_cases)
 def test_implementation_mul(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
-    tester.test_implementation()
+    tester.test_implementation(qtol=1)

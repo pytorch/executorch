@@ -17,6 +17,7 @@ from torchao.quantization.pt2e.quantizer import OperatorConfig
 # ----------------- OPERATOR PATTERN PRESETS -----------------
 BINARY_OP_PATTERNS = [
     [torch.ops.aten.add.Tensor],
+    [torch.ops.aten.mul.Tensor],
 ]
 
 LINEAR_OP_PATTERNS = [

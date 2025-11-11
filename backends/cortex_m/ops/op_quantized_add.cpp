@@ -78,6 +78,15 @@ Tensor& quantized_add_out(
       output_mult,
       output_shift_val);
 
+  // Note 1: The CMSIS-NN kernel implementation uses offsets which are always
+  // added to the data, whereas zero_points are subtracted when dequantizing
+  // (for the inputs) and added when quantizing (for the  output). Hence the
+  // negative signs required here.
+
+  // Note 2: It is not possible to perform the same rewrite as for mul for
+  // addition. To preserve precision when rescaling the inputs, they are first
+  // upscaled as much as possible, Hence the left_shift parameter required here.
+
   // Call CMSIS-NN kernel with precomputed parameters
   arm_cmsis_nn_status status = arm_elementwise_add_s8(
       input1_int8.const_data_ptr<int8_t>(),

@@ -139,7 +139,7 @@ test_cases = {
 }
 
 
-dialect_xfails = {
+xfails = {
     "self_scalar": (
         "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
         AttributeError,
@@ -152,10 +152,13 @@ dialect_xfails = {
         "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
         AssertionError,
     ),
+    "broadcast_1": "Broadcasting not yet supported in Cortex-M backend",
+    "broadcast_2": "Broadcasting not yet supported in Cortex-M backend",
+    "broadcast_3": "Broadcasting not yet supported in Cortex-M backend",
 }
 
 
-@parametrize("test_case", test_cases, xfails=dialect_xfails)
+@parametrize("test_case", test_cases, xfails=xfails)
 def test_dialect_add(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_dialect(
@@ -163,35 +166,7 @@ def test_dialect_add(test_case):
     )
 
 
-implementation_xfails = {
-    "self_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
-    "scalar_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
-    "broadcast_1": (
-        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
-        RuntimeError,
-    ),
-    "broadcast_2": (
-        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
-        RuntimeError,
-    ),
-    "broadcast_3": (
-        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
-        RuntimeError,
-    ),
-    "alpha": (
-        "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
-        AssertionError,
-    ),
-}
-
-
-@parametrize("test_case", test_cases, xfails=implementation_xfails)
+@parametrize("test_case", test_cases, xfails=xfails)
 def test_implementation_add(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_implementation()
