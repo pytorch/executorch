@@ -153,25 +153,59 @@ inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
  * Helper function to convert a float tensor to bfloat16.
  * Creates a new tensor with bfloat16 dtype and copies/converts the data.
  */
+// Note: implementation moved to templated `convert_to_fp` below. Keep a
+// single implementation (the templated one) to avoid duplicate definitions.
+
+// Note: implementation moved to templated `convert_to_fp` below. Keep a
+// single implementation (the templated one) to avoid duplicate definitions.
+
+/**
+ * Generic helper to convert a float tensor to a target floating-point-like
+ * dtype (e.g., Half, BFloat16). This implements the core conversion loop
+ * and is used by the strongly-typed wrappers below so existing call sites
+ * remain unchanged.
+ */
+template <
+    typename TargetCppType,
+    ::executorch::aten::ScalarType TargetScalarType>
 inline ::executorch::runtime::Result<::executorch::extension::TensorPtr>
-convert_to_bfloat16(const ::executorch::extension::TensorPtr& src_tensor) {
+convert_to_fp(const ::executorch::extension::TensorPtr& src_tensor) {
   ET_CHECK_OR_RETURN_ERROR(
       src_tensor->scalar_type() == ::executorch::aten::ScalarType::Float,
       InvalidArgument,
-      "BFloat16 conversion only supported from Float source data");
+      "Conversion only supported from Float source data");
+
+  static_assert(
+      TargetScalarType == ::executorch::aten::ScalarType::Half ||
+          TargetScalarType == ::executorch::aten::ScalarType::BFloat16,
+      "convert_to_fp only supports Half or BFloat16 target dtypes");
 
   const auto num_elements = static_cast<size_t>(src_tensor->numel());
   const float* float_data = src_tensor->const_data_ptr<float>();
 
-  auto bf16_tensor = ::executorch::extension::empty_like(
-      src_tensor, ::executorch::aten::ScalarType::BFloat16);
-  auto* bf16_data =
-      bf16_tensor->mutable_data_ptr<::executorch::aten::BFloat16>();
+  auto out_tensor =
+      ::executorch::extension::empty_like(src_tensor, TargetScalarType);
+  auto* out_data = out_tensor->mutable_data_ptr<TargetCppType>();
   for (size_t i = 0; i < num_elements; ++i) {
-    bf16_data[i] = ::executorch::aten::BFloat16(float_data[i]);
+    out_data[i] = TargetCppType(float_data[i]);
   }
 
-  return bf16_tensor;
+  return out_tensor;
+}
+
+// Keep the original API names as thin wrappers for backward compatibility.
+inline ::executorch::runtime::Result<::executorch::extension::TensorPtr>
+convert_to_bfloat16(const ::executorch::extension::TensorPtr& src_tensor) {
+  return convert_to_fp<
+      ::executorch::aten::BFloat16,
+      ::executorch::aten::ScalarType::BFloat16>(src_tensor);
+}
+
+inline ::executorch::runtime::Result<::executorch::extension::TensorPtr>
+convert_to_float16(const ::executorch::extension::TensorPtr& src_tensor) {
+  return convert_to_fp<
+      ::executorch::aten::Half,
+      ::executorch::aten::ScalarType::Half>(src_tensor);
 }
 
 } // namespace llm

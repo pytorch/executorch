@@ -16,6 +16,11 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 # Let files say "include <executorch/path/to/header.h>"
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
+# Options
+option(EXECUTORCH_BUILD_CUDA "Build with CUDA support" OFF)
+option(EXECUTORCH_BUILD_METAL "Build with Metal support" OFF)
+option(EXECUTORCH_BUILD_VULKAN "Build with Vulkan support" OFF)
+
 # Need this for gflags for some reason
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
@@ -26,15 +31,12 @@ find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 set(_link_libraries executorch gflags)
 set(_srcs multimodal.cpp)
 
-list(
-  APPEND
-  _link_libraries
-  optimized_native_cpu_ops_lib
-  quantized_ops_lib
-  custom_ops
-  cpublas
-  eigen_blas
-)
+list(APPEND _link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
+
+# Quantized ops and custom llm kernels are not compiled on MSVC
+if(NOT MSVC)
+  list(APPEND _link_libraries quantized_ops_lib custom_ops)
+endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
@@ -76,6 +78,11 @@ endif()
 if(EXECUTORCH_BUILD_METAL)
   list(APPEND _link_libraries metal_backend)
   executorch_target_link_options_shared_lib(metal_backend)
+endif()
+
+if(EXECUTORCH_BUILD_VULKAN)
+  list(APPEND _link_libraries vulkan_backend)
+  executorch_target_link_options_shared_lib(vulkan_backend)
 endif()
 
 # Add tokenizers

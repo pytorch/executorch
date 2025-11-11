@@ -178,12 +178,28 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
 
   // Convert preprocessed_features to expected dtype if needed
   if (preprocessed_features->scalar_type() != expected_dtype) {
-    if (expected_dtype == ::executorch::aten::ScalarType::BFloat16) {
+    ET_LOG(
+        Info,
+        "Encoder input dtype mismatch: got %s, expected %s",
+        ::executorch::runtime::toString(preprocessed_features->scalar_type()),
+        ::executorch::runtime::toString(expected_dtype));
+    if ((expected_dtype != ::executorch::aten::ScalarType::BFloat16 &&
+         expected_dtype != ::executorch::aten::ScalarType::Half)) {
       ET_LOG(
-          Info,
-          "Converting audio features from %s to BFloat16. Before converting, first value = %f",
-          ::executorch::runtime::toString(preprocessed_features->scalar_type()),
-          preprocessed_features->mutable_data_ptr<float>()[0]);
+          Error,
+          "Unsupported expected dtype %s for encoder input",
+          ::executorch::runtime::toString(expected_dtype));
+      return ::executorch::runtime::Error::Internal;
+    }
+
+    ET_LOG(
+        Info,
+        "Converting audio features from %s to %s. Before converting, first value = %f",
+        ::executorch::runtime::toString(preprocessed_features->scalar_type()),
+        ::executorch::runtime::toString(expected_dtype),
+        preprocessed_features->mutable_data_ptr<float>()[0]);
+
+    if (expected_dtype == ::executorch::aten::ScalarType::BFloat16) {
       auto convert_result = ::executorch::extension::llm::convert_to_bfloat16(
           preprocessed_features);
       ET_CHECK_OK_OR_RETURN_ERROR(convert_result.error());
@@ -194,6 +210,17 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
           static_cast<float>(
               preprocessed_features
                   ->mutable_data_ptr<::executorch::aten::BFloat16>()[0]));
+    } else {
+      auto convert_result = ::executorch::extension::llm::convert_to_float16(
+          preprocessed_features);
+      ET_CHECK_OK_OR_RETURN_ERROR(convert_result.error());
+      preprocessed_features = convert_result.get();
+      ET_LOG(
+          Info,
+          "Conversion complete, first value = %f",
+          static_cast<float>(
+              preprocessed_features
+                  ->mutable_data_ptr<::executorch::aten::Half>()[0]));
     }
   }
 
