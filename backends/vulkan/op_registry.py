@@ -636,7 +636,7 @@ def register_quantized_binary_op():
 def register_quantize_for_conv2d_op():
     return OpFeatures(
         inputs_storage=[
-            utils.CHANNELS_PACKED_TEXTURE,
+            utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
         ],
         outputs_storage=[
             utils.PACKED_INT8_4W4C_BUFFER,
@@ -656,7 +656,7 @@ def register_dequantize_for_conv2d_op():
             utils.PACKED_INT8_4W4C_BUFFER,
         ],
         outputs_storage=[
-            utils.CHANNELS_PACKED_TEXTURE,
+            utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
         ],
         supports_resize=False,
     )

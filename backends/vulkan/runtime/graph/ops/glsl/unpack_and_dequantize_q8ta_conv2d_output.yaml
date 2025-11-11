@@ -15,6 +15,7 @@ unpack_and_dequantize_q8ta_conv2d_output:
       combos:
         - parameter_values: [texture3d, texture3d]
         - parameter_values: [texture3d, buffer]
+        - parameter_values: [buffer, buffer]
     DTYPE:
       - VALUE: float
   shader_variants:
