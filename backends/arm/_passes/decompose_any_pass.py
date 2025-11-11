@@ -7,9 +7,7 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.convert_squeezes_to_view import (
-    ConvertSqueezesToViewPass,
-)
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.exir.dialects._ops import (  # type: ignore[import-not-found]
     ops as exir_ops,
 )
@@ -19,27 +17,29 @@ from executorch.exir.pass_base import (  # type: ignore[import-not-found]
 )
 
 
-class ConvertAnyDefaultDimDimsPass(ArmPass):
+class DecomposeAnyPass(ArmPass):
     """
-    Converts any.default, any.dim and any.dims to a sequence of any.dim by unrolling multi-dimensional reduction.
-    Please refer to KeepDimsFalseToSqueezePass for an explanation of this coversion.
+    Converts any.default, any.dim and any.dims to a sequence of any.dim by
+    unrolling multi-dimensional reductions with keepdim=True. If keepdim=False
+    was requested, the final shape adjustment is implemented with a
+    view_copy.default to the reduced shape.
 
     Example 1
     Original:
-        any()  # x.shape: [dim1, dim2, ..., dimn]
+        any.dim()  # x.shape: [dim1, dim2, ..., dimn]
     After pass:
         any.dim(dim1, keepdim = True)
         any.dim(dim2, keepdim = True)
         ...
         any.dim(dimn, keepdim = True)
-        squeeze(dim = [dim1, dim2, ...., dimn])
+        view_copy(shape = squeezed_shape)
 
     Example 2
     Original:
         any.dim(dim1, keepdim = False)
     After pass:
         any.dim(dim1, keepdim = True)
-        squeeze(dim = [dim1])
+        view_copy(shape = squeezed_shape)
 
     Example 3
     Original:
@@ -47,10 +47,10 @@ class ConvertAnyDefaultDimDimsPass(ArmPass):
     After pass:
         any.dim(dim1, keepdim = True)
         any.dim(dim2, keepdim = True)
-        squeeze(dim = [dim1, dim2])
+        view_copy(shape = squeezed_shape)
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {ConvertSqueezesToViewPass}
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False
@@ -67,40 +67,40 @@ class ConvertAnyDefaultDimDimsPass(ArmPass):
             if len(node.args) == 1:
                 # any.default(input)
                 input_node = (node.args)[0]
-                dims = range(len(input_node.meta["val"].shape))
+                dims_to_reduce = range(len(input_node.meta["val"].shape))
                 keepdim = False
             elif len(node.args) == 2:
                 # any.dim/dims(input, dims=dims)
-                input_node, dims = node.args
+                input_node, dims_to_reduce = node.args
                 keepdim = False
             elif len(node.args) == 3:
                 # any.dim/dims(input, dims=dims, keepdim=keepdim)
-                input_node, dims, keepdim = node.args
+                input_node, dims_to_reduce, keepdim = node.args
             else:
                 raise RuntimeError(
                     f"Unexpected arg size {len(node.args)} in {node.name}"
                 )
             try:
-                iter(dims)
+                iter(dims_to_reduce)
             except:
-                dims = [dims]  # type: ignore[assignment]
+                dims_to_reduce = [dims_to_reduce]  # type: ignore[assignment]
             else:
-                dims = list(dims)  # type: ignore[assignment]
+                dims_to_reduce = list(dims_to_reduce)  # type: ignore[assignment]
 
             # Unroll multi-dimensional reduction and keep-dims arg
             with graph_module.graph.inserting_before(node):
-                for dim in dims:
+                for dim in dims_to_reduce:
                     args = (input_node, dim, True)
                     input_node = graph_module.graph.create_node(
                         "call_function", exir_ops.edge.aten.any.dim, args, node.kwargs
                     )
 
                 if not keepdim:
-                    args = (input_node, dims)  # type: ignore[assignment]
+                    output_shape = list(get_first_fake_tensor(node).shape)
                     input_node = graph_module.graph.create_node(
                         "call_function",
-                        exir_ops.edge.aten.squeeze_copy.dims,
-                        args,
+                        exir_ops.edge.aten.view_copy.default,
+                        (input_node, output_shape),
                     )
 
             node.replace_all_uses_with(input_node)

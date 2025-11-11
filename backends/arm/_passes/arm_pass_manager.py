@@ -18,7 +18,6 @@ from executorch.backends.arm._passes import (
     CastToInt32Pass,
     ComputeConstantOpsAOT,
     Conv1dUnsqueezePass,
-    ConvertAnyDefaultDimDimsPass,
     ConvertELUParamsPass,
     ConvertExpandCopyToRepeatPass,
     ConvertFullLikeToFullPass,
@@ -35,6 +34,7 @@ from executorch.backends.arm._passes import (
     DecomposeAdaptiveAvgPool2dPass,
     DecomposeAddmmPass,
     DecomposeAddSubAlphaPass,
+    DecomposeAnyPass,
     DecomposeAsinAndAcosPass,
     DecomposeAsinhPass,
     DecomposeAtanhPass,
@@ -241,7 +241,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxPass())
         self.add_pass(ConvertMinMaxPass())
-        self.add_pass(ConvertAnyDefaultDimDimsPass())
+        self.add_pass(DecomposeAnyPass())
         self.add_pass(DecomposeAdaptiveAvgPool2dPass())
         self.add_pass(DecomposeAvgPool2d())
         self.add_pass(
