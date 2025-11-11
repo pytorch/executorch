@@ -100,8 +100,9 @@ utils::uvec3 quantized_linear_local_wg_size(
   if (use_coop_algorithm) {
     return {1, 1, 64};
   } else {
-    return pick_hw_square_wg_size(
-        graph, shader, global_workgroup_size, args, resize_args);
+    // return pick_hw_square_wg_size(
+    //     graph, shader, global_workgroup_size, args, resize_args);
+    return {8, 8, 1};
   }
 }
 
@@ -595,7 +596,7 @@ DynamicDispatchNode make_linear_qa_qw_node(
   int32_t zp = graph.extract_scalar<int32_t>(input_zp_data);
 
   // Get shader for quantized linear
-  std::string kernel_name = "linear_q8ta_q8csw_tiled";
+  std::string kernel_name = "linear_q8ta_q8csw_tiled_smem";
   add_storage_type_suffix(kernel_name, graph.storage_type_of(output));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(packed_int_input));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(packed_weight));

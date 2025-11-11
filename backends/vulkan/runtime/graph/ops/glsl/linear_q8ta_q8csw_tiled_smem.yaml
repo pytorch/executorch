@@ -1,0 +1,25 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+linear_q8ta_q8csw_tiled_smem:
+  parameter_names_with_default_values:
+    DTYPE: float
+    OUTPUT_STORAGE: texture3d
+    PACKED_INT8_INPUT_STORAGE: buffer
+    WEIGHT_STORAGE: texture2d
+    TILE_M4: 1
+    TILE_N4: 2
+    TILE_K4: 1
+  generate_variant_forall:
+    combination:
+      parameter_names: [OUTPUT_STORAGE, PACKED_INT8_INPUT_STORAGE, WEIGHT_STORAGE]
+      combos:
+        - parameter_values: [texture3d, buffer, texture2d]
+        - parameter_values: [buffer, buffer, texture2d]
+    DTYPE:
+      - VALUE: float
+  shader_variants:
+    - NAME: linear_q8ta_q8csw_tiled_smem
