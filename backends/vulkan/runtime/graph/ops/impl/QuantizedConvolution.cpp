@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedConvolution.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
@@ -273,40 +274,6 @@ std::vector<int64_t> calculate_output_im2col_sizes(
 //
 // Shader dispatch utilities
 //
-
-utils::uvec3 pick_quantize_and_pack_conv2d_input_global_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef fp_input = args.at(1).refs.at(0);
-
-  const uint32_t W = graph->size_at<uint32_t>(-1, fp_input);
-  const uint32_t H = graph->size_at<uint32_t>(-2, fp_input);
-  const uint32_t C = graph->size_at<uint32_t>(-3, fp_input);
-
-  const uint32_t W4 = utils::div_up_4(W);
-  const uint32_t C4 = utils::div_up_4(C);
-
-  return {W4, H, C4};
-}
-
-utils::uvec3 pick_unpack_and_dequantize_conv2d_output_global_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef fp_output = args.at(0).refs.at(0);
-
-  const uint32_t W = graph->size_at<uint32_t>(-1, fp_output);
-  const uint32_t H = graph->size_at<uint32_t>(-2, fp_output);
-  const uint32_t C = graph->size_at<uint32_t>(-3, fp_output);
-
-  const uint32_t W4 = utils::div_up_4(W);
-  const uint32_t C4 = utils::div_up_4(C);
-
-  return {W4, H, C4};
-}
 
 utils::uvec3 im2col_global_wg_size(
     ComputeGraph* graph,
@@ -692,94 +659,6 @@ void add_input_im2col_packed_int8_node(
       im2col_packed_int8_local_wg_size,
       // Inputs and Outputs
       {{input_im2col, vkapi::kWrite}, {input, vkapi::kRead}},
-      // Shader params buffers
-      param_buffers,
-      // Push Constants
-      push_constants,
-      // Specialization Constants
-      {},
-      // Resize args
-      {},
-      // Resizing Logic
-      nullptr));
-}
-
-void add_quantize_and_pack_q8ta_conv2d_input_node(
-    ComputeGraph& graph,
-    const ValueRef fp_input,
-    const ValueRef input_scale,
-    const ValueRef input_zp,
-    const ValueRef packed_int8_input) {
-  float inv_scale = 1.0f / graph.extract_scalar<float>(input_scale);
-  int32_t zp = graph.extract_scalar<int32_t>(input_zp);
-
-  // Get shader for quantized conv2d linear tiled
-  std::string kernel_name = "quantize_and_pack_q8ta_conv2d_input";
-  add_storage_type_suffix(
-      kernel_name, graph.storage_type_of(packed_int8_input));
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(fp_input));
-  add_dtype_suffix(kernel_name, graph.dtype_of(fp_input));
-
-  vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
-
-  vkapi::ParamsBindList param_buffers = {graph.sizes_ubo(fp_input)};
-
-  std::vector<PushConstantDataInfo> push_constants = {
-      PushConstantDataInfo(&inv_scale, sizeof(inv_scale)),
-      PushConstantDataInfo(&zp, sizeof(zp)),
-  };
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      pick_quantize_and_pack_conv2d_input_global_wg_size,
-      pick_wc_square_wg_size,
-      // Inputs and Outputs
-      {{packed_int8_input, vkapi::kWrite}, {fp_input, vkapi::kRead}},
-      // Shader params buffers
-      param_buffers,
-      // Push Constants
-      push_constants,
-      // Specialization Constants
-      {},
-      // Resize args
-      {},
-      // Resizing Logic
-      nullptr));
-}
-
-void add_unpack_and_dequantize_q8ta_conv2d_output_node(
-    ComputeGraph& graph,
-    const ValueRef packed_int8_output,
-    const ValueRef output_scale,
-    const ValueRef output_zp,
-    const ValueRef fp_output) {
-  float scale = graph.extract_scalar<float>(output_scale);
-  int32_t zp = graph.extract_scalar<int32_t>(output_zp);
-
-  // Get shader for quantized conv2d linear tiled
-  std::string kernel_name = "unpack_and_dequantize_q8ta_conv2d_output";
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(fp_output));
-  add_storage_type_suffix(
-      kernel_name, graph.storage_type_of(packed_int8_output));
-  add_dtype_suffix(kernel_name, graph.dtype_of(fp_output));
-
-  vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
-
-  vkapi::ParamsBindList param_buffers = {graph.sizes_ubo(fp_output)};
-
-  std::vector<PushConstantDataInfo> push_constants = {
-      PushConstantDataInfo(&scale, sizeof(scale)),
-      PushConstantDataInfo(&zp, sizeof(zp)),
-  };
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      pick_unpack_and_dequantize_conv2d_output_global_wg_size,
-      default_pick_local_wg_size,
-      // Inputs and Outputs
-      {{fp_output, vkapi::kWrite}, {packed_int8_output, vkapi::kRead}},
       // Shader params buffers
       param_buffers,
       // Push Constants
@@ -1608,59 +1487,6 @@ void conv2d_q8ta_q8csw_q8to(
 }
 
 //
-// Quantize and dequantize operators
-//
-
-void quantize_q8ta_for_conv2d(
-    ComputeGraph& graph,
-    const std::vector<ValueRef>& args) {
-  int32_t idx = 0;
-  const ValueRef fp_input = args.at(idx++);
-  const ValueRef scale = args.at(idx++);
-  const ValueRef zero_point = args.at(idx++);
-  const ValueRef packed_int8_input = args.at(idx++);
-
-  add_quantize_and_pack_q8ta_conv2d_input_node(
-      graph, fp_input, scale, zero_point, packed_int8_input);
-}
-
-void dequantize_q8to_from_conv2d(
-    ComputeGraph& graph,
-    const std::vector<ValueRef>& args) {
-  int32_t idx = 0;
-  const ValueRef packed_int8_output = args.at(idx++);
-  const ValueRef scale = args.at(idx++);
-  const ValueRef zero_point = args.at(idx++);
-  const ValueRef fp_output = args.at(idx++);
-
-  add_unpack_and_dequantize_q8ta_conv2d_output_node(
-      graph, packed_int8_output, scale, zero_point, fp_output);
-}
-
-void qdq8ta_conv2d_input(
-    ComputeGraph& graph,
-    const std::vector<ValueRef>& args) {
-  int32_t idx = 0;
-  const ValueRef fp_input = args.at(idx++);
-  const ValueRef scale = args.at(idx++);
-  const ValueRef zero_point = args.at(idx++);
-  const ValueRef fp_output = args.at(idx++);
-
-  TmpTensor packed_int8_input(
-      &graph,
-      graph.sizes_of(fp_input),
-      vkapi::kInt8x4,
-      utils::kBuffer,
-      utils::kPackedInt8_4W4C);
-
-  add_quantize_and_pack_q8ta_conv2d_input_node(
-      graph, fp_input, scale, zero_point, packed_int8_input);
-
-  add_unpack_and_dequantize_q8ta_conv2d_output_node(
-      graph, packed_int8_input, scale, zero_point, fp_output);
-}
-
-//
 // Test operators
 //
 
@@ -1727,12 +1553,7 @@ void conv2d_q8ta_q8csw_q8to_test(
 REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.conv2d_q8ta_q8csw.default, conv2d_q8ta_q8csw);
   VK_REGISTER_OP(et_vk.conv2d_q8csw.default, conv2d_q8csw);
-  VK_REGISTER_OP(etvk.qdq8ta_conv2d_input.default, qdq8ta_conv2d_input);
   VK_REGISTER_OP(etvk.conv2d_q8ta_q8csw_q8to.test, conv2d_q8ta_q8csw_q8to_test);
-  VK_REGISTER_OP(
-      et_vk.quantize_q8ta_for_conv2d.default, quantize_q8ta_for_conv2d);
-  VK_REGISTER_OP(
-      et_vk.dequantize_q8to_from_conv2d.default, dequantize_q8to_from_conv2d);
   VK_REGISTER_OP(et_vk.conv2d_q8ta_q8csw_q8to.default, conv2d_q8ta_q8csw_q8to);
   VK_REGISTER_OP(
       et_vk.conv2d_q8ta_q8csw_q8to_dw.default, conv2d_q8ta_q8csw_q8to);
