@@ -150,13 +150,39 @@ int64_t adjust_slice_indices(
 }
 
 void compute_slice(
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     int64_t start,
     int64_t length,
     int64_t step,
     Tensor& out) {
+  // No slicing requested.
+  if (length <= 0) {
+    return;
+  }
+
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      dim < in.dim(),
+      InvalidArgument,
+      /* void */,
+      "Requested dim is larger than input tensor dim");
   size_t dim_length = in.size(dim);
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      start >= 0 && length >= 0 && step >= 0,
+      InvalidArgument,
+      /* void */,
+      "Input args should be >= 0.");
+  int64_t requested_slice = start + (length - 1) * step;
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      static_cast<uint64_t>(requested_slice) <
+          static_cast<uint64_t>(dim_length),
+      InvalidArgument,
+      /* void */,
+      "Requested slice is larger than the dim size");
 
   size_t leading_dims = getLeadingDims(in, dim);
   size_t trailing_dims = getTrailingDims(in, dim);
@@ -170,6 +196,12 @@ void compute_slice(
   const char* input_data = in.const_data_ptr<char>();
   char* dest = out.mutable_data_ptr<char>();
 
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      out.nbytes() >= (length * leading_dims * length_per_step),
+      InvalidArgument,
+      /* void */,
+      "out.nbytes() is smaller than the expected slice size.");
   for (const auto i : c10::irange(leading_dims)) {
     const char* src = input_data + (i * dim_length + start) * length_per_step;
     for ([[maybe_unused]] const auto j : c10::irange(length)) {

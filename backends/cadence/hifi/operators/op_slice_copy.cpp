@@ -65,7 +65,7 @@ Tensor& slice_copy_Tensor_out(
       InvalidArgument,
       out);
 
-  compute_slice(in, dim, start, length, step, out);
+  compute_slice(ctx, in, dim, start, length, step, out);
 
   return out;
 }
