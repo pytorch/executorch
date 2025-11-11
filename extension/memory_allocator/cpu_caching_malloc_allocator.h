@@ -41,7 +41,7 @@ template <typename KeyType, typename ValueType>
 using FlatHashMap = std::unordered_map<KeyType, ValueType>;
 #endif
 
-constexpr size_t kDefaultAlignment = 64;
+constexpr size_t kCachingAllocatorDefaultAlignment = 64;
 class CPUCachingAllocator : public executorch::runtime::MemoryAllocator {
   /*
    * What it does:
@@ -73,7 +73,7 @@ class CPUCachingAllocator : public executorch::runtime::MemoryAllocator {
   // Checks the cache to see if allocation of size bytes can be found.
   // If so return cached memory, else
   // allocates memory, records it for caching and returns.
-  void* allocate(size_t size, size_t alignment = kDefaultAlignment) override;
+  void* allocate(size_t size, size_t alignment = kCachingAllocatorDefaultAlignment) override;
   void reset() override;
   ~CPUCachingAllocator();
 };

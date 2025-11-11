@@ -6,7 +6,7 @@ namespace executorch::extension {
 
 namespace {
 size_t get_alignment_adjusted_size(size_t size, size_t alignment) {
-  alignment = std::max(alignment, kDefaultAlignment);
+  alignment = std::max(alignment, kCachingAllocatorDefaultAlignment);
   if (size % alignment != 0) {
     // Adjust size to the next multiple of alignment
     // This is needed for aligned_alloc to work
@@ -66,6 +66,7 @@ void CPUCachingAllocator::free_cached() {
     }
   }
   available_map_.clear();
+  current_size_ = 0;
 }
 
 void CPUCachingAllocator::reset() {
@@ -75,7 +76,6 @@ void CPUCachingAllocator::reset() {
     size_t alloc_size = it.second;
     // Cache the memory
     available_map_[alloc_size].push_back(ptr);
-    current_size_ -= alloc_size;
   }
   allocation_map_.clear();
 }

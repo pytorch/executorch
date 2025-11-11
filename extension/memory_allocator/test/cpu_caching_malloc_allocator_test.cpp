@@ -12,7 +12,7 @@
 using namespace ::testing;
 using executorch::extension::CPUCachingAllocator;
 
-constexpr auto kDefaultAlignment = executorch::extension::kDefaultAlignment;
+constexpr auto kDefaultAlignment = executorch::extension::kCachingAllocatorDefaultAlignment;
 
 class CPUCachingAllocatorTest : public ::testing::Test {
  protected:
@@ -25,7 +25,7 @@ class CPUCachingAllocatorTest : public ::testing::Test {
 
 bool is_aligned(const void* ptr, size_t alignment) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
-  return addr % alignment == 0;
+  return (addr & (alignment - 1)) == 0;
 }
 
 #define EXPECT_ALIGNED(ptr, alignment)        \
@@ -297,5 +297,6 @@ TEST_F(CPUCachingAllocatorTest, ResetMultipleTimes) {
 
     auto p2 = allocator.allocate(512);
     EXPECT_EQ(p, p2);
+    allocator.reset();
   }
 }
