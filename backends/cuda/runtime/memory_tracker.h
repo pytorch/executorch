@@ -33,6 +33,11 @@ class CudaMemoryTracker {
       return;
     }
     available_ = true;
+    // Record the initial free bytes observed at startup. We'll use this as a
+    // baseline so reported "peak usage" reflects additional memory used
+    // since the tracker was created (instead of the absolute device usage,
+    // which may include other processes).
+    initial_free_bytes_ = last_free_bytes_;
     min_free_bytes_ = last_free_bytes_;
     log_state("startup", last_free_bytes_, total_bytes_);
   }
@@ -71,15 +76,22 @@ class CudaMemoryTracker {
     min_free_bytes_ = std::min(min_free_bytes_, free_bytes);
     total_bytes_ = total_bytes;
     last_free_bytes_ = free_bytes;
-    const double peak_mb =
-        static_cast<double>(total_bytes_ - min_free_bytes_) / (1024.0 * 1024.0);
-    const double total_mb =
-        static_cast<double>(total_bytes_) / (1024.0 * 1024.0);
-    ET_LOG(
-        Info,
-        "CUDA memory peak usage: %.2f MB, total: %.2f MB",
-        peak_mb,
-        total_mb);
+    // Compute peak usage relative to the initial free baseline so that
+    // allocations by other processes present at startup are not attributed
+    // to this process. If for some reason initial_free_bytes_ was not set,
+    // fall back to absolute device usage.
+    double peak_mb = 0.0;
+    if (initial_free_bytes_ != std::numeric_limits<size_t>::max()) {
+      size_t used_delta = 0;
+      if (initial_free_bytes_ > min_free_bytes_) {
+        used_delta = initial_free_bytes_ - min_free_bytes_;
+      }
+      peak_mb = static_cast<double>(used_delta) / (1024.0 * 1024.0);
+    } else {
+      peak_mb = static_cast<double>(total_bytes_ - min_free_bytes_) / (1024.0 * 1024.0);
+    }
+    const double total_mb = static_cast<double>(total_bytes_) / (1024.0 * 1024.0);
+    ET_LOG(Info, "CUDA memory peak usage (since startup): %.2f MB, device total: %.2f MB", peak_mb, total_mb);
   }
 
  private:
@@ -131,6 +143,34 @@ class CudaMemoryTracker {
   size_t last_free_bytes_{0};
   size_t total_bytes_{0};
   size_t min_free_bytes_{std::numeric_limits<size_t>::max()};
+  // Baseline free bytes observed at tracker construction. Used to compute
+  // peak usage attributable to this process since the tracker started.
+  size_t initial_free_bytes_{std::numeric_limits<size_t>::max()};
+ public:
+  // Simple accessors to allow other components to read last-sampled values.
+  // These are safe to call after a successful log_sample() invocation.
+  uint64_t last_free_bytes() const { return static_cast<uint64_t>(last_free_bytes_); }
+  uint64_t total_bytes() const { return static_cast<uint64_t>(total_bytes_); }
+  uint64_t min_free_bytes() const { return static_cast<uint64_t>(min_free_bytes_); }
+  uint64_t initial_free_bytes() const { return static_cast<uint64_t>(initial_free_bytes_); }
+  double peak_usage_mb() const {
+    // Prefer peak relative to the initial free baseline; fall back to
+    // absolute device peak if baseline isn't available.
+    if (min_free_bytes_ == std::numeric_limits<size_t>::max()) {
+      return 0.0;
+    }
+    if (initial_free_bytes_ != std::numeric_limits<size_t>::max()) {
+      size_t used_delta = 0;
+      if (initial_free_bytes_ > min_free_bytes_) {
+        used_delta = initial_free_bytes_ - min_free_bytes_;
+      }
+      return static_cast<double>(used_delta) / (1024.0 * 1024.0);
+    }
+    if (total_bytes_ == 0) {
+      return 0.0;
+    }
+    return static_cast<double>(total_bytes_ - min_free_bytes_) / (1024.0 * 1024.0);
+  }
 };
 
 } // namespace executorch::backends::cuda

@@ -25,8 +25,6 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/log.h>
 
-#include <executorch/backends/cuda/runtime/memory_tracker.h>
-
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
@@ -298,9 +296,6 @@ int32_t main(int32_t argc, char** argv) {
   int32_t cpu_threads = FLAGS_cpu_threads;
   bool warmup = FLAGS_warmup;
 
-  // Initialize memory tracker
-  ::executorch::backends::cuda::CudaMemoryTracker mem_tracker;
-
 #if defined(ET_USE_THREADPOOL)
   uint32_t num_performant_cores = cpu_threads == -1
       ? ::executorch::extension::cpuinfo::get_num_performant_cores()
@@ -337,9 +332,6 @@ int32_t main(int32_t argc, char** argv) {
     return 1;
   }
 
-  // Probe CUDA memory after loading model
-  mem_tracker.log_sample("after_load");
-
   // Prepare inputs
   std::vector<MultimodalInput> inputs = {
       make_text_input("<s>[INST][BEGIN_AUDIO]"),
@@ -369,9 +361,6 @@ int32_t main(int32_t argc, char** argv) {
     ET_LOG(Error, "Failed to generate with multimodal runner");
     return 1;
   }
-
-  // Probe CUDA memory after generation
-  mem_tracker.log_sample("after_generate");
 
   printf("\n");
   return 0;
