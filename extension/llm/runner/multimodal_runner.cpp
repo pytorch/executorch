@@ -15,6 +15,10 @@
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/sentencepiece.h>
 
+#ifdef CUDA_AVAILABLE
+#include <executorch/backends/cuda/runtime/memory_tracker.h>
+#endif
+
 namespace executorch::extension::llm {
 
 using ::executorch::extension::Module;
@@ -38,7 +42,16 @@ MultimodalRunner::MultimodalRunner(
       io_manager_(std::move(io_manager)),
       text_token_generator_(std::move(text_token_generator)),
       stats_(std::move(stats)),
-      pos_(0) {}
+      pos_(0) {
+#ifdef CUDA_AVAILABLE
+  cuda_memory_tracker_ =
+      std::make_unique<::executorch::backends::cuda::CudaMemoryTracker>();
+  // Probe immediately after creating the tracker to capture GPU state before
+  // any model loading happens.
+  stats_->gpu_total_bytes = cuda_memory_tracker_->total_bytes();
+  stats_->gpu_free_before_load_bytes = cuda_memory_tracker_->last_free_bytes();
+#endif
+}
 
 bool MultimodalRunner::is_loaded() {
   return multimodal_prefiller_->is_method_loaded() &&
@@ -49,8 +62,18 @@ Error MultimodalRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
+  stats_->model_load_start_ms = time_in_ms();
   ET_CHECK_OK_OR_RETURN_ERROR(multimodal_prefiller_->load());
   ET_CHECK_OK_OR_RETURN_ERROR(text_token_generator_->load());
+  stats_->model_load_end_ms = time_in_ms();
+
+#ifdef CUDA_AVAILABLE
+  cuda_memory_tracker_->log_sample("after_load");
+  stats_->gpu_total_bytes = cuda_memory_tracker_->total_bytes();
+  stats_->gpu_free_after_load_bytes = cuda_memory_tracker_->last_free_bytes();
+  stats_->gpu_peak_usage_mb = cuda_memory_tracker_->peak_usage_mb();
+#endif
+
   return Error::Ok;
 }
 
@@ -86,9 +109,7 @@ Error MultimodalRunner::generate(
   }
 
   if (!is_loaded()) {
-    stats_->model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
-    stats_->model_load_end_ms = time_in_ms();
   }
 
   if (config.warming) {
@@ -192,6 +213,15 @@ Error MultimodalRunner::generate(
   stats_->num_generated_tokens = num_generated_tokens;
   // Finalize stats and call callback
   stats_->inference_end_ms = time_in_ms();
+
+#ifdef CUDA_AVAILABLE
+  cuda_memory_tracker_->log_sample("after_generate");
+  stats_->gpu_free_after_generate_bytes =
+      cuda_memory_tracker_->last_free_bytes();
+  // update peak in case it changed after generation
+  stats_->gpu_peak_usage_mb = cuda_memory_tracker_->peak_usage_mb();
+#endif
+
   if (!config.warming) {
     printf("\n");
   }

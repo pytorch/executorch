@@ -363,7 +363,7 @@ at::Tensor make_index_tensor_2d(std::vector<std::vector<int32_t>> indices) {{
     static_cast<int64_t>(indices[0].size())}};
 
   // Flatten indices as from_blob reads garbage otherwise.
-  std::vector<int64_t> acc;
+  std::vector<int32_t> acc;
   for (auto& vec: indices) {{
     acc.insert(acc.end(), vec.begin(), vec.end());
   }}
@@ -380,7 +380,7 @@ at::Tensor make_index_tensor_3d(std::vector<std::vector<std::vector<int32_t>>> i
     static_cast<int64_t>(indices[0][0].size())}};
 
   // Flatten indices as from_blob reads garbage otherwise.
-  std::vector<int64_t> acc;
+  std::vector<int32_t> acc;
   for (auto& v: indices) {{
     for (auto& vv: v) {{
       acc.insert(acc.end(), vv.begin(), vv.end());
