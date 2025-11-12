@@ -64,6 +64,7 @@ if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit QUIET)
   if(CUDAToolkit_FOUND)
     target_compile_definitions(extension_llm_runner PUBLIC CUDA_AVAILABLE)
+    target_link_libraries(extension_llm_runner PUBLIC CUDA::cudart)
     message(STATUS "CUDAToolkit found; defining CUDA_AVAILABLE")
   else()
     message(
