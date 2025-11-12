@@ -68,6 +68,7 @@ runtime.python_library(
         "vgf/__init__.py",
         "vgf/backend.py",
         "vgf/compile_spec.py",
+        "vgf/model_converter.py",
         "vgf/partitioner.py",
     ],
     deps = [
