@@ -23,7 +23,6 @@ from executorch.backends.cadence.aot.replace_ops import (
     MakeSliceAndCatDimOutermostPass,
     ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
     ReplaceAddMMWithLinearPass,
-    ReplaceAtenApproxGeluWithApproxGeluPass,
     ReplaceAtenConvolutionWithCadenceConvolutionPass,
     ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass,
     ReplaceConstantPadNdWithSlicePass,
@@ -329,7 +328,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(x,),
         )
         p = ReplaceFunctionallyEquivalentOpTargets()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
 
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.relu.default),
@@ -813,7 +814,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder.output([aten_where_self])
         original_gm = builder.get_graph_module()
         p = ReplaceScalarTensorWithFullPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.full.default),
             1,
@@ -837,7 +840,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(0.123,),
         )
         p = ReplaceScalarTensorWithFullPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.full.default),
             1,
@@ -1335,28 +1340,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(
                 graph_after_passes,
                 exir_ops.edge.aten.where.self,
-            ),
-            1,
-        )
-
-    def test_no_replace_aten_gelu_with_approximate_gelu(self) -> None:
-        inputs = torch.randn(2, 1, 64)
-
-        gm = single_op_builder(
-            placeholders=(inputs,),
-            op=exir_ops.edge.aten.gelu.default,
-            args=(inputs,),
-        )
-        gm = ExportPass().call(gm).graph_module
-
-        p = ReplaceAtenApproxGeluWithApproxGeluPass()
-        graph_after_passes = p.call(gm).graph_module
-
-        # Assert that aten.gelu op was not decomposed, since it didn't have an approximate argument
-        self.assertEqual(
-            count_node(
-                graph_after_passes,
-                exir_ops.edge.aten.gelu.default,
             ),
             1,
         )
@@ -2142,7 +2125,9 @@ class TestReplaceLinalgSvdPass(unittest.TestCase):
         )
 
         p = ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
 
         # Assert that the aten linalg_svd op was replaced with cadence linalg_svd op
         self.assertEqual(
