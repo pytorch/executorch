@@ -772,6 +772,14 @@ WIDTH_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_WIDTH_PACKED})
 HEIGHT_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_HEIGHT_PACKED})
 CHANNELS_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_CHANNELS_PACKED})
 
+CHANNELS_PACKED_ANY = TensorRepSet(
+    {VkMemoryLayout.TENSOR_CHANNELS_PACKED}, {VkMemoryLayout.TENSOR_CHANNELS_PACKED}
+)
+
+CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER = TensorRepSet(
+    {VkMemoryLayout.TENSOR_WIDTH_PACKED}, {VkMemoryLayout.TENSOR_CHANNELS_PACKED}
+)
+
 ANY_TEXTURE = TensorRepSet(set(), all_memory_layouts)
 ANY_BUFFER = TensorRepSet(all_memory_layouts, set())
 
@@ -1094,6 +1102,25 @@ class OpRepSets:
             arg_i == self.primary_arg_idx or self.sync_args_repr
         ):
             self.outs_repset_list[0] = arg_current_repset.make_intersect(source_repset)
+
+        self.assert_sync_contraints()
+        return True
+
+    def try_constrain_with_out_repset(self, repset: TensorRepSet):
+        # Skip for operators that must synchronize the input and output representations
+        # or operators that have more than one output repset
+        if self.sync_primary_io_repr or len(self.outs_repset_list) > 1:
+            return False
+
+        out_current_repset = self.outs_repset_list[0]
+
+        if out_current_repset == repset:
+            return False
+
+        if not out_current_repset.any_in_common(repset):
+            return False
+
+        self.outs_repset_list[0] = out_current_repset.make_intersect(repset)
 
         self.assert_sync_contraints()
         return True
