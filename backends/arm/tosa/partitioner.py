@@ -22,7 +22,6 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
-
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
@@ -317,7 +316,7 @@ class TOSAPartitioner(Partitioner):
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
 
-    def ops_to_not_decompose(  # noqa: C901
+    def ops_to_not_decompose(
         self,
         ep: ExportedProgram,
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
@@ -337,24 +336,17 @@ class TOSAPartitioner(Partitioner):
 
         """
         ops_to_not_decompose_if_quant_op = {
-            torch.ops.aten.eye.default,
             torch.ops.aten.hardsigmoid.default,
             torch.ops.aten.hardswish.default,
             torch.ops.aten.linear.default,
-            torch.ops.aten.linspace.default,
         }
         ops_to_not_decompose_if_fp = {
-            torch.ops.aten.eye.default,
-            torch.ops.aten.logit.default,
             torch.ops.aten.linear.default,
-            torch.ops.aten.linspace.default,
         }
         ops_to_not_decompose_always = {
-            torch.ops.aten.logit.default,
-        }
-        ops_to_not_decompose_if_integer = {
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.logit.default,
         }
 
         def filter_fn(node: torch.fx.Node) -> bool:
@@ -408,42 +400,15 @@ class TOSAPartitioner(Partitioner):
                 ):
                     correct_output_quant = True
 
-                if correct_input_quant and correct_output_quant:
-                    return True
+                return correct_input_quant and correct_output_quant
 
-            if node.target in ops_to_not_decompose_if_integer:
-                # We only want to tag nodes as do_not_decompose if we are sure that
-                # we can partition them. We partition them if one or more of the
-                # following is true:
-                # 1. The node outputs an integer type.
-                # 2. All users cast the output to an integer type.
-
-                dtype = get_first_fake_tensor(node).dtype
-                if not dtype.is_floating_point and not dtype.is_complex:
-                    return True
-
-                output_nodes = node.users
-                for user in output_nodes:
-                    if user.target != torch.ops.aten.to.dtype:
-                        return False
-                    else:
-                        cast_dtype = get_first_fake_tensor(user).dtype
-                        if cast_dtype.is_complex or cast_dtype.is_floating_point:
-                            return False
-                return True
-
-            if node.target in ops_to_not_decompose_if_fp:
-                if self.tosa_spec.support_float():
-                    return True
-            if node.target in ops_to_not_decompose_always:
-                return True
-            return False
+            # By default, do not decompose the operator
+            return True
 
         ops_to_not_decompose = list(
             ops_to_not_decompose_always
             | ops_to_not_decompose_if_quant_op
             | ops_to_not_decompose_if_fp
-            | ops_to_not_decompose_if_integer
         )
 
         if not self.tosa_spec.is_U55_subset:

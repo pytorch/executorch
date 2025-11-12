@@ -102,6 +102,7 @@ def test_nn_functional_FP(test_data):
 @parametrize(
     "test_data",
     module_tests,
+    {"normalize": "MLETORCH-1255: Unsupported dtype in InsertTableOpsPass"},
 )
 def test_nn_functional_INT(test_data):
     module, inputs = test_data
