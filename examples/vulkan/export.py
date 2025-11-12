@@ -11,27 +11,26 @@
 import argparse
 import logging
 
-import backends.vulkan.test.utils as test_utils
-
+import executorch.backends.vulkan.test.utils as test_utils
 import torch
 import torchvision
-
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.devtools import BundledProgram
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
+from executorch.examples.models import MODEL_NAME_TO_MODEL
+from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.exir import to_edge_transform_and_lower
 from executorch.extension.export_util.utils import save_pte_program
 from executorch.extension.pytree import tree_flatten
 from torch.export import Dim, export
 
-from ..models import MODEL_NAME_TO_MODEL
-from ..models.model_factory import EagerModelFactory
-
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
+
+import urllib
 
 
 def is_vision_model(model_name):
@@ -70,6 +69,38 @@ def get_vision_model_dynamic_shapes():
     )
 
 
+def get_dog_image_tensor(image_size=224, normalization="imagenet"):
+    url, filename = (
+        "https://github.com/pytorch/hub/raw/master/images/dog.jpg",
+        "dog.jpg",
+    )
+    try:
+        urllib.URLopener().retrieve(url, filename)
+    except:
+        urllib.request.urlretrieve(url, filename)
+
+    from PIL import Image
+    from torchvision import transforms
+
+    input_image = Image.open(filename).convert("RGB")
+
+    transforms_list = [
+        transforms.Resize((image_size, image_size)),
+        transforms.ToTensor(),
+    ]
+    if normalization == "imagenet":
+        transforms_list.append(
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        )
+
+    preprocess = transforms.Compose(transforms_list)
+
+    input_tensor = preprocess(input_image)
+    input_batch = input_tensor.unsqueeze(0)
+    input_batch = (input_batch,)
+    return input_batch
+
+
 def init_model(model_name):
     if model_name == "convnext_small":
         return torchvision.models.convnext_small()
@@ -77,13 +108,29 @@ def init_model(model_name):
         return torchvision.models.densenet161()
     if model_name == "shufflenet_v2_x1_0":
         return torchvision.models.shufflenet_v2_x1_0()
+    if model_name == "YOLO_NAS_S":
+        try:
+            from super_gradients.common.object_names import Models
+            from super_gradients.training import models
+        except ImportError:
+            raise ImportError(
+                "Please install super-gradients to use the YOLO_NAS_S model."
+            )
+
+        return models.get(Models.YOLO_NAS_S, pretrained_weights="coco")
 
     return None
 
 
 def get_sample_inputs(model_name):
+    # Lock the random seed for reproducibility
+    torch.manual_seed(42)
+
     if is_vision_model(model_name):
-        return get_vision_model_sample_input()
+        return (get_vision_model_sample_input(),)
+    if model_name == "YOLO_NAS_S":
+        input_batch = get_dog_image_tensor(640)
+        return input_batch
 
     return None
 
@@ -115,6 +162,24 @@ def main() -> None:
         help="Force fp32 tensors to be converted to fp16 internally. Input/s outputs "
         "will be converted to/from fp32 when entering/exiting the delegate. Default is "
         "False",
+    )
+
+    parser.add_argument(
+        "--small_texture_limits",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="sets the default texture limit to be (2048, 2048, 2048) which is "
+        "compatible with more devices (i.e. desktop/laptop GPUs) compared to the "
+        "default (16384, 16384, 2048) which is more targeted for mobile GPUs. Default "
+        "is False.",
+    )
+
+    parser.add_argument(
+        "--skip_memory_planning",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Skips memory planning pass while lowering, which can be used for "
+        "debugging. Default is False.",
     )
 
     parser.add_argument(
@@ -189,6 +254,10 @@ def main() -> None:
 
     if args.force_fp16:
         compile_options["force_fp16"] = True
+    if args.skip_memory_planning:
+        compile_options["skip_memory_planning"] = True
+    if args.small_texture_limits:
+        compile_options["small_texture_limits"] = True
 
     logging.info(f"Exporting model {args.model_name} with Vulkan delegate")
 
