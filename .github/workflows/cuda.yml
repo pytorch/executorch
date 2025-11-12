@@ -44,7 +44,7 @@ jobs:
 
         # Test ExecuTorch CUDA build - ExecuTorch will automatically detect CUDA version
         # and install the appropriate PyTorch wheel
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_QNN=OFF" source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
+        source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
 
   # This job will fail if any of the CUDA versions fail
   check-all-cuda-builds:
@@ -83,7 +83,7 @@ jobs:
       script: |
         set -eux
 
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_QNN=OFF" PYTHON_EXECUTABLE=python ./install_executorch.sh
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
         PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
 
@@ -132,7 +132,7 @@ jobs:
         set -eux
 
         echo "::group::Setup ExecuTorch"
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_QNN=OFF" ./install_executorch.sh
+        ./install_executorch.sh
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"

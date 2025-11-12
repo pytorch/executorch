@@ -23,6 +23,7 @@ get_filename_component(
   _common_include_directories "${EXECUTORCH_SOURCE_DIR}/.." ABSOLUTE
 )
 
+# We only download QNN SDK when we build pip wheel for ExecuTorch.
 if(EXECUTORCH_BUILD_PYBIND)
   set(_qnn_default_sdk_dir "${CMAKE_CURRENT_BINARY_DIR}/sdk/qnn")
 
