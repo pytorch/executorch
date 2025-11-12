@@ -152,6 +152,7 @@ class CudaBackend(BackendDetails):
             # Separate weight constants from the .so file
             "aot_inductor.package": True,
             "aot_inductor.package_constants_in_so": False,
+            "aot_inductor.freezing": True,
             # Store weight constants on disk in a binary blob
             "aot_inductor.package_constants_on_disk_format": "binary_blob",
             # Enable maximum automatic tuning for optimal performance
@@ -186,6 +187,8 @@ class CudaBackend(BackendDetails):
             raise RuntimeError(
                 f"Could not find required files in compiled paths, got {paths}"
             )
+
+        print("--- Generate .so lives at", so_path)
 
         # pyre-ignorep[6]: Incompatible parameter type
         with open(so_path, "rb") as f:
