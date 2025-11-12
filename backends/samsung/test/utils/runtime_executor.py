@@ -11,6 +11,13 @@ import numpy as np
 import torch
 
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+
 @cache
 def get_runner_path() -> Path:
     git_root = subprocess.check_output(
@@ -41,20 +48,31 @@ class EDBTestManager:
 
         cmds.extend(cmd)
         command = " ".join(cmds)
+
+        logging.info(f"[EDB] Run: {command}")
+
         result = subprocess.run(
             command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
 
+        stdout_msg = result.stdout.decode("utf-8").strip()
+        if stdout_msg:
+            logging.info(f"[EDB] stdout: {stdout_msg}")
+
         if result.returncode != 0:
-            logging.info(result.stdout.decode("utf-8").strip())
-            logging.error(result.stderr.decode("utf-8").strip())
+            stderr_msg = result.stderr.decode("utf-8").strip()
+            if stderr_msg:
+                logging.error(f"[EDB] stderr: {stderr_msg}")
             raise RuntimeError("edb(Exynos device bridge) command execute failed")
+        else:
+            logging.info("[EDB] Command succeeded")
 
     def push(self):
         self._edb(["-E", f"'rm -rf {self.work_directory}'"])
         self._edb(["-E", f"'mkdir -p {self.work_directory}'"])
         self._edb(["-U", self.pte_file, self.work_directory])
         self._edb(["-U", self.runner, self.work_directory])
+        self._edb(["-E", f"'ls {self.work_directory}'"])  # temp
 
         for input_file in self.input_files:
             input_file_path = os.path.join(self.artifacts_dir, input_file)
@@ -108,6 +126,7 @@ class RuntimeExecutor:
             test_manager.push()
             test_manager.execute()
             host_output_save_dir = os.path.join(tmp_dir, "output")
+            os.makedirs(host_output_save_dir, exist_ok=True)
             test_manager.pull(host_output_save_dir)
 
             model_outputs = self._get_model_outputs()

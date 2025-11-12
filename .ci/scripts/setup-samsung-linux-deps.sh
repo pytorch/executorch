@@ -120,7 +120,7 @@ reserve_if_needed() {
 
   echo "[INFO] Current Reserved Count: $found_count"
 
-  local THRESHOLD_SECONDS=1800
+  local THRESHOLD_SECONDS=12600
   local any_below_threshold=0
 
   if (( found_count > 0 )); then
