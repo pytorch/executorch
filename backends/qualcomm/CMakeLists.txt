@@ -64,6 +64,13 @@ if(EXECUTORCH_BUILD_PYBIND)
     )
   endif()
   set(ENV{QNN_SDK_ROOT} ${QNN_SDK_ROOT})
+elseif(NOT DEFINED QNN_SDK_ROOT)
+  message(
+    FATAL_ERROR
+      "Please define QNN_SDK_ROOT, e.g. cmake <..> -DQNN_SDK_ROOT=<...>"
+  )
+elseif(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
+  message(FATAL_ERROR "ios is not supported by Qualcomm AI Engine Direct")
 endif()
 
 message(STATUS "Using qnn sdk root ${QNN_SDK_ROOT}")
