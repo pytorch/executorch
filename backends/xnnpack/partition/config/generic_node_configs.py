@@ -454,6 +454,14 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
+class CloneDimOrderConfig(ToDimOrderCopyConfig):
+    target_name = "_clone_dim_order.default"
+
+    """
+    Similar to ToDimOrderCopyConfig, but with different target name. We shouldn't change dtype anyway.
+    """
+
+
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
 
