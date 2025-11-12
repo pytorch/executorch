@@ -152,7 +152,6 @@ class CudaBackend(BackendDetails):
             # Separate weight constants from the .so file
             "aot_inductor.package": True,
             "aot_inductor.package_constants_in_so": False,
-            "aot_inductor.freezing": True,
             # Store weight constants on disk in a binary blob
             "aot_inductor.package_constants_on_disk_format": "binary_blob",
             # Enable maximum automatic tuning for optimal performance
