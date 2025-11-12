@@ -97,6 +97,7 @@ class SharedSpecPattern(QuantizationPattern):
     quantization parameters (scale and zero-point).
     """
 
+    @abstractmethod
     def partition_types(self) -> list[torch.nn.Module]:
         pass
 
@@ -392,6 +393,11 @@ class Conv1dPattern(ConvPattern):
         return [torch.ops.aten.conv1d.default]
 
 
+class ConvTranspose1dPattern(ConvPattern):
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.conv_transpose1d.default]
+
+
 class Conv2dPattern(ConvPattern):
     def __init__(self, neutron_quantizer):
         self.neutron_quantizer = neutron_quantizer
@@ -454,6 +460,51 @@ class Conv2dPattern(ConvPattern):
             weights=[(conv_node, NodeArgsIdx(1), weight_quantization_spec)],
             biases=bias,
             output=output,
+        )
+
+
+class ConvTranspose2dPattern(QuantizationPattern):
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.conv_transpose2d.input]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors:
+        conv_node = fused_partition[0].nodes[-1]
+
+        bias_quantization_qspec = DerivedQuantizationSpec(
+            derived_from=[
+                (conv_node.args[0], conv_node),
+                (conv_node.args[1], conv_node),
+            ],
+            derive_qparams_fn=get_bias_qparams,
+            dtype=torch.int32,
+            quant_min=-(2**31) + 1,
+            quant_max=2**31 - 1,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=0,
+        )
+
+        weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+        weight_quantization_spec = QuantizationSpec(
+            dtype=torch.int8,
+            observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
+            quant_min=-127,
+            quant_max=127,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=1,
+        )
+
+        # Keep bias empty if not supplied
+        bias = []
+        if len(conv_node.args) > 2 and conv_node.args[2] is not None:
+            bias = [(conv_node, NodeArgsIdx(2), bias_quantization_qspec)]
+
+        return PartitionAnchors(
+            inputs=[(conv_node, NodeArgsIdx(0))],
+            weights=[(conv_node, NodeArgsIdx(1), weight_quantization_spec)],
+            biases=bias,
+            output=[(conv_node,)],
         )
 
 
