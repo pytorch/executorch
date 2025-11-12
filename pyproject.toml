@@ -62,7 +62,7 @@ dependencies=[
   "packaging",
   "pandas>=2.2.2; python_version >= '3.10'",
   "parameterized",
-  "pytest",
+  "pytest<9.0",
   "pytest-xdist",
   "pytest-rerunfailures==15.1",
   "pytest-json-report",
