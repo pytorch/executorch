@@ -22,6 +22,7 @@ Please check `generate_qnn_executorch_compiler_spec()` in
 - Snapdragon 8 Gen 3
 - Snapdragon 8 Elite
 - SA8295
+- SA8255
 - SSG2115P
 - SSG2125P
 - SXR1230P
