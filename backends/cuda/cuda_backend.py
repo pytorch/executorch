@@ -142,7 +142,7 @@ class CudaBackend(BackendDetails):
 
         options: dict[str, typing.Any] = {
             # Frozen weight during inference for better performance and more optimization like kernel fusion
-            "aot_inductor.freezing": True,
+            "freezing": True,
             # Better model precision
             "emulate_precision_casts": True,
             # Embed CUDA kernel binaries directly into the compiled shared object
