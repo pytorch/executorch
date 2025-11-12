@@ -87,3 +87,18 @@ target_include_directories(whisper_runner PUBLIC ${_common_include_directories})
 
 target_link_libraries(whisper_runner PUBLIC ${_link_libraries})
 target_compile_options(whisper_runner PUBLIC ${_common_compile_options})
+
+add_executable(
+  whisper_torch_runner
+  torch_main.cpp
+  torch_whisper_runner.cpp
+  torch_aoti_model.cpp)
+
+target_include_directories(
+  whisper_torch_runner PUBLIC ${_common_include_directories})
+target_link_libraries(whisper_torch_runner PUBLIC ${_link_libraries})
+target_compile_options(
+  whisper_torch_runner PUBLIC ${_common_compile_options})
+if(UNIX AND NOT APPLE)
+  target_link_libraries(whisper_torch_runner PUBLIC dl)
+endif()
