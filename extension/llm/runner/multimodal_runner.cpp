@@ -62,14 +62,16 @@ Error MultimodalRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
+  stats_->model_load_start_ms = time_in_ms();
   ET_CHECK_OK_OR_RETURN_ERROR(multimodal_prefiller_->load());
   ET_CHECK_OK_OR_RETURN_ERROR(text_token_generator_->load());
+  stats_->model_load_end_ms = time_in_ms();
 
 #ifdef CUDA_AVAILABLE
-    cuda_memory_tracker_->log_sample("after_load");
-    stats_->gpu_total_bytes = cuda_memory_tracker_->total_bytes();
-    stats_->gpu_free_after_load_bytes = cuda_memory_tracker_->last_free_bytes();
-    stats_->gpu_peak_usage_mb = cuda_memory_tracker_->peak_usage_mb();
+  cuda_memory_tracker_->log_sample("after_load");
+  stats_->gpu_total_bytes = cuda_memory_tracker_->total_bytes();
+  stats_->gpu_free_after_load_bytes = cuda_memory_tracker_->last_free_bytes();
+  stats_->gpu_peak_usage_mb = cuda_memory_tracker_->peak_usage_mb();
 #endif
 
   return Error::Ok;
@@ -107,9 +109,7 @@ Error MultimodalRunner::generate(
   }
 
   if (!is_loaded()) {
-    stats_->model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
-    stats_->model_load_end_ms = time_in_ms();
   }
 
   if (config.warming) {
@@ -216,7 +216,8 @@ Error MultimodalRunner::generate(
 
 #ifdef CUDA_AVAILABLE
   cuda_memory_tracker_->log_sample("after_generate");
-  stats_->gpu_free_after_generate_bytes = cuda_memory_tracker_->last_free_bytes();
+  stats_->gpu_free_after_generate_bytes =
+      cuda_memory_tracker_->last_free_bytes();
   // update peak in case it changed after generation
   stats_->gpu_peak_usage_mb = cuda_memory_tracker_->peak_usage_mb();
 #endif

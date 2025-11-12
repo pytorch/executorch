@@ -88,10 +88,16 @@ class CudaMemoryTracker {
       }
       peak_mb = static_cast<double>(used_delta) / (1024.0 * 1024.0);
     } else {
-      peak_mb = static_cast<double>(total_bytes_ - min_free_bytes_) / (1024.0 * 1024.0);
+      peak_mb = static_cast<double>(total_bytes_ - min_free_bytes_) /
+          (1024.0 * 1024.0);
     }
-    const double total_mb = static_cast<double>(total_bytes_) / (1024.0 * 1024.0);
-    ET_LOG(Info, "CUDA memory peak usage (since startup): %.2f MB, device total: %.2f MB", peak_mb, total_mb);
+    const double total_mb =
+        static_cast<double>(total_bytes_) / (1024.0 * 1024.0);
+    ET_LOG(
+        Info,
+        "CUDA memory peak usage (since startup): %.2f MB, device total: %.2f MB",
+        peak_mb,
+        total_mb);
   }
 
  private:
@@ -146,13 +152,22 @@ class CudaMemoryTracker {
   // Baseline free bytes observed at tracker construction. Used to compute
   // peak usage attributable to this process since the tracker started.
   size_t initial_free_bytes_{std::numeric_limits<size_t>::max()};
+
  public:
   // Simple accessors to allow other components to read last-sampled values.
   // These are safe to call after a successful log_sample() invocation.
-  uint64_t last_free_bytes() const { return static_cast<uint64_t>(last_free_bytes_); }
-  uint64_t total_bytes() const { return static_cast<uint64_t>(total_bytes_); }
-  uint64_t min_free_bytes() const { return static_cast<uint64_t>(min_free_bytes_); }
-  uint64_t initial_free_bytes() const { return static_cast<uint64_t>(initial_free_bytes_); }
+  uint64_t last_free_bytes() const {
+    return static_cast<uint64_t>(last_free_bytes_);
+  }
+  uint64_t total_bytes() const {
+    return static_cast<uint64_t>(total_bytes_);
+  }
+  uint64_t min_free_bytes() const {
+    return static_cast<uint64_t>(min_free_bytes_);
+  }
+  uint64_t initial_free_bytes() const {
+    return static_cast<uint64_t>(initial_free_bytes_);
+  }
   double peak_usage_mb() const {
     // Prefer peak relative to the initial free baseline; fall back to
     // absolute device peak if baseline isn't available.
@@ -169,7 +184,8 @@ class CudaMemoryTracker {
     if (total_bytes_ == 0) {
       return 0.0;
     }
-    return static_cast<double>(total_bytes_ - min_free_bytes_) / (1024.0 * 1024.0);
+    return static_cast<double>(total_bytes_ - min_free_bytes_) /
+        (1024.0 * 1024.0);
   }
 };
 

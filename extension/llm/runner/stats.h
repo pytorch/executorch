@@ -84,7 +84,7 @@ struct ET_EXPERIMENTAL Stats {
     num_prompt_tokens = 0;
     num_generated_tokens = 0;
     gpu_total_bytes = static_cast<uint64_t>(-1);
-  gpu_free_before_load_bytes = static_cast<uint64_t>(-1);
+    gpu_free_before_load_bytes = static_cast<uint64_t>(-1);
     gpu_free_after_load_bytes = static_cast<uint64_t>(-1);
     gpu_free_after_generate_bytes = static_cast<uint64_t>(-1);
     gpu_peak_usage_mb = -1.0;
@@ -106,7 +106,7 @@ inline std::string stats_to_json_string(const Stats& stats) {
      << "\"prompt_eval_end_ms\":" << stats.prompt_eval_end_ms << ","
      << "\"first_token_ms\":" << stats.first_token_ms << ","
      << "\"aggregate_sampling_time_ms\":" << stats.aggregate_sampling_time_ms
-    << ",";
+     << ",";
   // Only include GPU fields in the JSON if gpu_total_bytes is valid (not
   // equal to sentinel -1)
   if (stats.gpu_total_bytes != static_cast<uint64_t>(-1)) {
