@@ -875,7 +875,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
             PassResult, ReplacePermuteWithTransposePass()(original_gm)
         ).graph_module
         gm = cast(PassResult, ReplaceMMWithAddMMPass()(gm)).graph_module
-        gm = cast(PassResult, ReplaceAddMMWithLinearPass()(gm)).graph_module
+        pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(gm))
+        self.assertTrue(pass_result.modified)
+        gm = pass_result.graph_module
         graph_after_passes = cast(
             PassResult, ReplaceLinearWithFullyConnectedOpPass()(gm)
         ).graph_module
@@ -924,9 +926,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
         gm = cast(
             PassResult, ReplacePermuteWithTransposePass()(original_gm)
         ).graph_module
-        graph_after_passes = cast(
-            PassResult, ReplaceAddMMWithLinearPass()(gm)
-        ).graph_module
+        pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(gm))
+        self.assertTrue(pass_result.modified)
+        graph_after_passes = pass_result.graph_module
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.linear.default),
