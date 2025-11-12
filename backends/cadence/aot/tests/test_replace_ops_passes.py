@@ -989,7 +989,12 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 args=(x,),
             )
         p = ReplaceSqueezeAndUnsqueezeWithViewPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+
+        # Assert: Verify the pass modified the graph
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default),
@@ -1024,7 +1029,12 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(x, dim),
         )
         p = ReplaceSqueezeAndUnsqueezeWithViewPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+
+        # Assert: Verify the pass modified the graph
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default),
