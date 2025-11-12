@@ -276,8 +276,9 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndexMismatchShape) {
   // Try to copy and replace at index 1. This will fail because
   // copy_to.sizes[1:] and to_copy.sizes[:] don't match each other
   // which is a pre-requisite for this operator.
-  ET_EXPECT_DEATH(
-      getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack), "");
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack));
 }
 
 TEST_F(RegisterPrimOpsTest, TestETCopyIndexStaticShape) {
