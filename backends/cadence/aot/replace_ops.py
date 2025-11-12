@@ -69,50 +69,46 @@ def contains_placeholder_or_param(nodes: Iterable[torch.fx.Node]) -> bool:
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceLogicalNotBooleanWhereWithWherePass(ExportPass):
+class ReplaceLogicalNotBooleanWhereWithWherePass(RemoveOrReplacePassInterface):
     """
     A where op with a logical_not and a boolean tensor can be replaced
     by a where op with flipped inputs and the initial boolean tensor.
     """
 
-    def replace_logical_nop_where_with_where(
-        self, graph_module: torch.fx.GraphModule
-    ) -> None:
-        graph = graph_module.graph
-        for node in graph.nodes:
-            # We are only interested in where nodes
-            if node.target != exir_ops.edge.aten.where.self:
-                continue
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.where.self]
 
-            # If the third arg is not a logical_not, bail.
-            if node.args[0].target != exir_ops.edge.aten.logical_not.default:
-                continue
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # If the first arg is not a logical_not, bail.
+        if not isinstance(node.args[0], torch.fx.Node):
+            return False
 
-            # Get the third arg node and its input
-            logical_not_node = node.args[0]
-            logical_not_input_node = logical_not_node.args[0]
+        logical_not_node = cast(torch.fx.Node, node.args[0])
+        if logical_not_node.target != exir_ops.edge.aten.logical_not.default:
+            return False
 
-            # If the logical_not input is not a boolean tensor, bail.
-            if logical_not_input_node.meta["val"].dtype != torch.bool:
-                continue
+        # Get the first arg node and its input
+        if not isinstance(logical_not_node.args[0], torch.fx.Node):
+            return False
 
-            # Replace the where op with another one, flipping the inputs and using the boolean
-            # tensor from logical_not.
-            with graph.inserting_before(node):
-                linear_node = graph.call_function(
-                    exir_ops.edge.aten.where.self,
-                    args=(logical_not_node.args[0], node.args[2], node.args[1]),
-                )
-            # Replace all the uses
-            node.replace_all_uses_with(linear_node)
+        logical_not_input_node = cast(torch.fx.Node, logical_not_node.args[0])
 
-        graph_module.recompile()
-        graph_module.graph.eliminate_dead_code()
+        # If the logical_not input is not a boolean tensor, bail.
+        if logical_not_input_node.meta["val"].dtype != torch.bool:
+            return False
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        self.replace_logical_nop_where_with_where(graph_module)
-        result = super().call(graph_module)
-        return result
+        # Replace the where op with another one, flipping the inputs and using the boolean
+        # tensor from logical_not.
+        with node.graph.inserting_before(node):
+            new_node = node.graph.call_function(
+                exir_ops.edge.aten.where.self,
+                args=(logical_not_input_node, node.args[2], node.args[1]),
+            )
+            new_node.meta = node.meta
+        # Replace all the uses
+        node.replace_all_uses_with(new_node)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
