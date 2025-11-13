@@ -19,7 +19,10 @@ import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.ethosu import EthosUCompileSpec
-from executorch.backends.arm.quantizer import get_symmetric_quantization_config
+from executorch.backends.arm.quantizer import (
+    get_symmetric_a16w8_quantization_config,
+    get_symmetric_quantization_config,
+)
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
@@ -228,6 +231,7 @@ def quantize(
     example_inputs: Tuple[torch.Tensor],
     evaluator_name: str | None,
     evaluator_config: Dict[str, Any] | None,
+    is_int16x8: bool = False,
 ) -> GraphModule:
     """This is the official recommended flow for quantization in pytorch 2.0
     export.
@@ -238,7 +242,18 @@ def quantize(
 
     quantizer = create_quantizer(compile_specs)
 
-    operator_config = get_symmetric_quantization_config()
+    if is_int16x8:
+        if compile_specs.tosa_spec.support_extension("int16"):
+            operator_config = get_symmetric_a16w8_quantization_config(
+                is_per_channel=True
+            )
+        else:
+            raise ValueError(
+                f"Context TOSA spec {compile_specs.tosa_spec} doesn't support int16"
+            )
+    else:
+        operator_config = get_symmetric_quantization_config(is_per_channel=True)
+
     quantizer.set_global(operator_config)
     m = prepare_pt2e(model, quantizer)
 
@@ -356,6 +371,7 @@ TARGETS = [
     "vgf",
     "TOSA-1.0+INT",
     "TOSA-1.0+FP",
+    "TOSA-1.0+INT+int16",
 ]
 
 
@@ -681,20 +697,23 @@ def quantize_model(
     example_inputs: Tuple[torch.Tensor],
     compile_spec,
 ) -> Tuple[GraphModule, ExportedProgram]:
-    model_int8 = quantize(
+
+    is_int16x8 = True if args.target == "TOSA-1.0+INT+int16" else False
+    model_quant = quantize(
         model,
         args.model_name,
         compile_spec,
         example_inputs,
         args.evaluate,
         args.evaluate_config,
+        is_int16x8,
     )
     # Wrap quantized model back into an exported_program
     exported_program = torch.export.export(
-        model_int8, example_inputs, strict=args.strict_export
+        model_quant, example_inputs, strict=args.strict_export
     )
 
-    return model_int8, exported_program
+    return model_quant, exported_program
 
 
 def to_edge_TOSA_delegate(
@@ -715,9 +734,9 @@ def to_edge_TOSA_delegate(
         args.enable_debug_mode,
     )
 
-    model_int8 = None
+    model_quant = None
     if args.quantize:
-        model_int8, exported_program = quantize_model(
+        model_quant, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
         )
 
@@ -731,7 +750,7 @@ def to_edge_TOSA_delegate(
         ),
     )
 
-    return model_int8, edge
+    return model_quant, edge
 
 
 def to_edge_no_delegate(
@@ -740,7 +759,7 @@ def to_edge_no_delegate(
     model: GraphModule,
     example_inputs: Tuple[torch.Tensor],
 ):
-    model_int8 = None
+    model_quant = None
     if args.quantize:
         # As we can target multiple output encodings, one must
         # be specified.
@@ -756,7 +775,7 @@ def to_edge_no_delegate(
         model, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
         )
-        model_int8 = model
+        model_quant = model
 
     edge = to_edge_transform_and_lower(
         exported_program,
@@ -765,7 +784,7 @@ def to_edge_no_delegate(
         ),
     )
 
-    return model_int8, edge
+    return model_quant, edge
 
 
 def transform_for_cortex_m_backend(edge_program_manager, args):
@@ -818,13 +837,13 @@ if __name__ == "__main__":  # noqa: C901
         )
 
     # Quantize if required
-    model_int8 = None
+    model_quant = None
     if args.delegate:
-        model_int8, edge = to_edge_TOSA_delegate(
+        model_quant, edge = to_edge_TOSA_delegate(
             exported_program, args, model, example_inputs
         )
     else:
-        model_int8, edge = to_edge_no_delegate(
+        model_quant, edge = to_edge_no_delegate(
             exported_program, args, model, example_inputs
         )
 
@@ -884,7 +903,7 @@ if __name__ == "__main__":  # noqa: C901
 
     if args.bundleio:
         # Realize the quantization impact on numerics when generating reference output
-        reference_model = original_model if not model_int8 else model_int8
+        reference_model = original_model if not model_quant else model_quant
         save_bpte_program(exec_prog, reference_model, output_file_name)
         print(f"Bundle PTE file saved as {output_file_name}")
     else:
@@ -895,8 +914,9 @@ if __name__ == "__main__":  # noqa: C901
         evaluate_model(
             args.model_name,
             args.intermediates,
+            args.target,
             model_fp32,
-            model_int8,
+            model_quant,
             example_inputs,
             args.evaluate,
             args.evaluate_config,
