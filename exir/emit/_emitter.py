@@ -117,9 +117,9 @@ class _ProgramState:
     cached_spec_hash_values: Dict[str, int] = field(default_factory=dict)
     cached_spec_mutable_hash_values: Dict[str, int] = field(default_factory=dict)
     # The 0 index is reserved to be pointed to by non-constant tensors, so add an empty placeholder.
-    constant_buffer: List[Buffer] = field(default_factory=lambda: [Buffer(storage=b"")])
+    constant_buffer: List[bytes] = field(default_factory=lambda: [b""])
     # The 0 index is reserved to be pointed to by non-constant tensors, so add an empty placeholder.
-    mutable_buffer: List[Buffer] = field(default_factory=lambda: [Buffer(storage=b"")])
+    mutable_buffer: List[bytes] = field(default_factory=lambda: [b""])
     # Delegate data stored directly in the flatbuffer. Pointed to by BackendDelegateDataReference,
     # and should be copied to Program.backend_delegate_data.
     backend_delegate_data: List[BackendDelegateInlineData] = field(default_factory=list)
@@ -398,11 +398,6 @@ class _Emitter(torch.fx.Interpreter):
         """Saves a new constant tensor to the constant buffer and returns the buffer idx"""
 
         self.program_state.allocated_specs.append(spec)
-        # +1 because the first buffer location is reserved.
-
-        # Update buffer_idx to point to the end of the list where we are adding the new buffer.
-        buffer = Buffer(storage=buffer_data)
-
         # Tensor is stored outside of the PTE file.
         if (
             spec.extra_tensor_info is not None
@@ -425,12 +420,12 @@ class _Emitter(torch.fx.Interpreter):
         elif allocation_info:
             buffer_idx = len(self.program_state.mutable_buffer)
             self.program_state.cached_spec_mutable_hash_values[hashed] = buffer_idx
-            self.program_state.mutable_buffer.append(buffer)
+            self.program_state.mutable_buffer.append(buffer_data)
         # Tensor is stored in the PTE file.
         else:
             buffer_idx = len(self.program_state.constant_buffer)
             self.program_state.cached_spec_hash_values[hashed] = buffer_idx
-            self.program_state.constant_buffer.append(buffer)
+            self.program_state.constant_buffer.append(buffer_data)
 
         return buffer_idx
 

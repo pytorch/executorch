@@ -1020,7 +1020,8 @@ class TestEmit(unittest.TestCase):
             "forward_relu": program_relu.exported_program(),
             "forward_sigmoid": program_sigmoid.exported_program(),
         }
-        merged_program = emit_program(exir_input, False).program
+        merged_emitter_output = emit_program(exir_input, False)
+        merged_program = merged_emitter_output.program
         self.assertEqual(len(merged_program.execution_plan), 2)
 
         self.assertEqual(
@@ -1033,18 +1034,18 @@ class TestEmit(unittest.TestCase):
         )
         # reserved spot, weight, bias
         self.assertEqual(
-            len(program_sigmoid._emitter_output.program.constant_buffer),
+            len(program_sigmoid._emitter_output.constant_data),
             3,
         )
         self.assertEqual(
-            len(program_relu._emitter_output.program.constant_buffer),
+            len(program_relu._emitter_output.constant_data),
             3,
         )
         # sum of the entry points minus 1 because we only have one reserved spot still
         self.assertEqual(
-            len(merged_program.constant_buffer),
-            len(program_sigmoid._emitter_output.program.constant_buffer)
-            + len(program_relu._emitter_output.program.constant_buffer)
+            len(merged_emitter_output.constant_data),
+            len(program_sigmoid._emitter_output.constant_data)
+            + len(program_relu._emitter_output.constant_data)
             - 1,
         )
 
@@ -1081,20 +1082,21 @@ class TestEmit(unittest.TestCase):
             "forward_relu": program_relu.exported_program(),
             "forward_sigmoid": program_sigmoid.exported_program(),
         }
-        merged_program = emit_program(exir_input, False).program
+        merged_emitter_output = emit_program(exir_input, False)
+        merged_program = merged_emitter_output.program
         self.assertEqual(len(merged_program.execution_plan), 2)
 
         # reserved spot, weight, bias
         self.assertEqual(
-            len(program_sigmoid._emitter_output.program.constant_buffer),
+            len(program_sigmoid._emitter_output.constant_data),
             3,
         )
         self.assertEqual(
-            len(program_relu._emitter_output.program.constant_buffer),
+            len(program_relu._emitter_output.constant_data),
             3,
         )
         # weights are shared between entry points so the merged one should deduplicate everything
-        self.assertEqual(len(merged_program.constant_buffer), 3)
+        self.assertEqual(len(merged_emitter_output.constant_data), 3)
 
         self._compare_execution_plans(
             merged_program.execution_plan[0],
@@ -1510,12 +1512,13 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(model.W1.untyped_storage().nbytes(), 8)
         self.assertEqual(model.W2.nbytes, 4)
         self.assertEqual(model.W2.untyped_storage().nbytes(), 8)
-        program = to_edge(export(model, (torch.ones(1),), strict=True)).to_executorch()
-
-        program = program._emitter_output.program
+        executorch_program = to_edge(
+            export(model, (torch.ones(1),), strict=True)
+        ).to_executorch()
+        emitter_output = executorch_program._emitter_output
         # each emitted weight is not a view
-        self.assertEqual(len(program.constant_buffer[1].storage), 4)
-        self.assertEqual(len(program.constant_buffer[2].storage), 4)
+        self.assertEqual(len(emitter_output.constant_data[1]), 4)
+        self.assertEqual(len(emitter_output.constant_data[2]), 4)
 
     def test_non_persistent_buffer(self) -> None:
         class NonPersistentBuffer(nn.Module):
@@ -1527,11 +1530,13 @@ class TestEmit(unittest.TestCase):
                 return x + self.buf
 
         model = NonPersistentBuffer()
-        program = to_edge(export(model, (torch.ones(1),), strict=True)).to_executorch()
-        program = program._emitter_output.program
+        executorch_program = to_edge(
+            export(model, (torch.ones(1),), strict=True)
+        ).to_executorch()
+        emitter_output = executorch_program._emitter_output
         # confirm that the buffer was emitted
-        self.assertEqual(len(program.constant_buffer), 2)
-        self.assertEqual(len(program.constant_buffer[1].storage), 8)
+        self.assertEqual(len(emitter_output.constant_data), 2)
+        self.assertEqual(len(emitter_output.constant_data[1]), 8)
 
     def test_emit_lifted_tensor_constant(self) -> None:
         class LiftedTensorConstants(nn.Module):
@@ -1545,15 +1550,15 @@ class TestEmit(unittest.TestCase):
         model = LiftedTensorConstants()
         # Specify that we want to move non-lifted constants to external file
         et_cfg = ExecutorchBackendConfig(external_constants=True)
-        program = to_edge(
+        executorch_program = to_edge(
             export(model, (torch.ones(3, 2),), strict=True)
         ).to_executorch(et_cfg)
-        program = program._emitter_output.program
-        exec_plan = program.execution_plan[0]
+        emitter_output = executorch_program._emitter_output
+        exec_plan = emitter_output.program.execution_plan[0]
         # There should only be 1 input to this model.
         self.assertEqual(len(exec_plan.inputs), 1)
-        self.assertEqual(len(program.constant_buffer), 2)
-        self.assertEqual(len(program.constant_buffer[1].storage), 24)
+        self.assertEqual(len(emitter_output.constant_data), 2)
+        self.assertEqual(len(emitter_output.constant_data[1]), 24)
 
     def test_emit_lifted_constant(self) -> None:
         class LiftedConstants(nn.Module):
@@ -1567,16 +1572,16 @@ class TestEmit(unittest.TestCase):
         model = LiftedConstants()
         # Specify that we want to move non-lifted constants to external file
         et_cfg = ExecutorchBackendConfig(external_constants=True)
-        program = to_edge(
+        executorch_program = to_edge(
             export(model, (torch.ones(3, 2),), strict=True)
         ).to_executorch(et_cfg)
 
-        program = program._emitter_output.program
-        exec_plan = program.execution_plan[0]
+        emitter_output = executorch_program._emitter_output
+        exec_plan = emitter_output.program.execution_plan[0]
         # There should only be 1 input to this model.
         self.assertEqual(len(exec_plan.inputs), 1)
-        self.assertEqual(len(program.constant_buffer), 2)
-        self.assertEqual(len(program.constant_buffer[1].storage), 8)
+        self.assertEqual(len(emitter_output.constant_data), 2)
+        self.assertEqual(len(emitter_output.constant_data[1]), 8)
 
     def test_mutable_buffers(self) -> None:
         def count_copies(gm: torch.fx.GraphModule) -> int:
@@ -1708,8 +1713,8 @@ class TestEmit(unittest.TestCase):
             )
         )
         emitter_output = model._emitter_output
-        # Check that constant_buffer is empty besides the non-constant placeholder 0.
-        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # Check that constant_data is empty.
+        self.assertEqual(len(emitter_output.constant_data), 0)
         # Check that constant weights are in the external constant buffer.
         self.assertEqual(len(emitter_output.external_constant_buffer), 2)
         # Setting external_constants=True, saves all constants to the key
@@ -1741,8 +1746,8 @@ class TestEmit(unittest.TestCase):
             )
         )
         emitter_output = model._emitter_output
-        # constant_buffer is empty besides the non-constant placeholder 0.
-        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # constant_data is empty.
+        self.assertEqual(len(emitter_output.constant_data), 0)
         # only one item in the external constant buffer.
         self.assertEqual(len(emitter_output.external_constant_buffer), 1)
         # Setting external_constants=True, saves all constants to the key
@@ -1780,8 +1785,8 @@ class TestEmit(unittest.TestCase):
             )
         )
         emitter_output = model._emitter_output
-        # constant_buffer is empty besides the non-constant placeholder 0.
-        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # constant_data is empty.
+        self.assertEqual(len(emitter_output.constant_data), 0)
         # Two items in the external constant buffer.
         self.assertEqual(len(emitter_output.external_constant_buffer), 2)
         # Setting external_constants=True, saves all constants to the key
@@ -1939,8 +1944,8 @@ class TestEmit(unittest.TestCase):
         )
 
         emitter_output = ep._emitter_output
-        # Check that constant_buffer is empty besides the non-constant placeholder 0.
-        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # Check that constant_data is empty.
+        self.assertEqual(len(emitter_output.constant_data), 0)
         # Check that constant weights are in the external constant buffer.
         self.assertEqual(len(emitter_output.external_constant_buffer), 2)
         # Setting external_mutable_weights=True, saves all constants with an associated gradient to the key

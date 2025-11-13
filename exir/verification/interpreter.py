@@ -12,10 +12,10 @@ from typing import List, Optional, Union
 # pyre-fixme[21]: Could not find module `executorch.exir.verification.bindings`.
 import executorch.exir.verification.bindings as bindings  # @manual=//executorch/exir/verification:bindings
 import executorch.extension.pytree as ex_pytree
-
 import torch
 
 from executorch import exir
+from executorch.exir._serialize import _PTEFile
 
 from executorch.exir.schema import (
     Bool,
@@ -126,9 +126,10 @@ def make_operators_list(
 
 
 class Interpreter:
-    def __init__(self, program: Program) -> None:
+    def __init__(self, pte_file: _PTEFile) -> None:
         # Currently there is only 1 execution plan in the list -- this assert will help
         # catch any changes in the future
+        program = pte_file.program
         assert len(program.execution_plan) == 1
         self.execution_plan: exir.schema.ExecutionPlan = program.execution_plan[0]
         self.container_metatype: exir.schema.ContainerMetadata = program.execution_plan[
@@ -137,11 +138,15 @@ class Interpreter:
 
         # create buffer in memory and get reference to it
         # pyre-ignore
-        self.data_buffers: List[bindings.DataBuffer] = [
-            # pyre-ignore
-            bindings.DataBuffer(b.storage, len(b.storage))
-            for b in program.constant_buffer
-        ]
+        self.data_buffers: List[bindings.DataBuffer] = (
+            []
+            if pte_file.constant_data is None
+            else [
+                # pyre-ignore
+                bindings.DataBuffer(b, len(b))
+                for b in pte_file.constant_data
+            ]
+        )
 
         # generate the list of values (including tensors) and operators from the execution plan
         self._value_list: List[ValueType] = [

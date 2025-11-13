@@ -70,11 +70,16 @@ class TestBundle(unittest.TestCase):
                     method_test_case.expected_outputs,
                 )
 
+        emitter_output = executorch_program._emitter_output
         self.assertEqual(
             bundled_program.serialize_to_schema().program,
             bytes(
                 _serialize_pte_binary(
-                    pte_file=_PTEFile(program=executorch_program.executorch_program)
+                    pte_file=_PTEFile(
+                        program=executorch_program.executorch_program,
+                        constant_data=emitter_output.constant_data,
+                        mutable_data=emitter_output.mutable_data,
+                    )
                 )
             ),
         )
@@ -116,10 +121,18 @@ class TestBundle(unittest.TestCase):
                         bundled_program_ioset.expected_outputs,
                         method_test_case.expected_outputs,
                     )
-
+            emitter_output = executorch_program._emitter_output
             self.assertEqual(
                 bundled_program.serialize_to_schema().program,
-                executorch_program.buffer,
+                bytes(
+                    _serialize_pte_binary(
+                        pte_file=_PTEFile(
+                            program=executorch_program.executorch_program,
+                            constant_data=emitter_output.constant_data,
+                            mutable_data=emitter_output.mutable_data,
+                        )
+                    )
+                ),
             )
 
     def test_bundled_miss_methods(self) -> None:

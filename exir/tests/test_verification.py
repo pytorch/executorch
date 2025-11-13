@@ -10,9 +10,10 @@ import unittest
 
 import torch
 from executorch.exir import to_edge
+
+from executorch.exir._serialize import _PTEFile
 from executorch.exir.passes.const_prop_pass import ConstPropPass
 from executorch.exir.schema import Tensor, TensorList
-
 from executorch.exir.verification.interpreter import Interpreter
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from torch._export.verifier import SpecViolationError
@@ -34,7 +35,7 @@ class TestVerification(unittest.TestCase):
             return torch.ones(2) + x + torch.ones(2)
 
         # Generate program
-        program = (
+        emitter_output = (
             to_edge(export(WrapperModule(f), (torch.randn(2),), strict=True))
             .transform(
                 [
@@ -42,10 +43,16 @@ class TestVerification(unittest.TestCase):
                 ]
             )
             .to_executorch()
-            ._emitter_output.program
+            ._emitter_output
         )
 
-        test = Interpreter(program)
+        test = Interpreter(
+            _PTEFile(
+                program=emitter_output.program,
+                constant_data=emitter_output.constant_data,
+                mutable_data=emitter_output.mutable_data,
+            )
+        )
         for val_idx in range(len(test.execution_plan.values)):
             val = test.execution_plan.values[val_idx].val
             if not (
@@ -96,7 +103,7 @@ class TestVerification(unittest.TestCase):
         )
 
         # Initialize and test Interpreter -- assert that the operators are same as above
-        test = Interpreter(program)
+        test = Interpreter(_PTEFile(program=program))
         self.assertEqual(
             set(test.get_operators_list()),
             {torch.ops.aten.mul.out, torch.ops.aten.sub.out},
@@ -112,7 +119,7 @@ class TestVerification(unittest.TestCase):
         )
 
         # Initialize and test Interpreter -- assert that the operators are same as above
-        test = Interpreter(program)
+        test = Interpreter(_PTEFile(program=program))
         self.assertEqual(
             set(test.get_operators_list()),
             {
