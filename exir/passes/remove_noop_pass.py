@@ -104,7 +104,10 @@ class RemoveToCopyPass(ExportPass):
             if node.op != "call_function":
                 continue
 
-            if node.target not in (torch.ops.aten._to_copy.default,):
+            if node.target not in (
+                torch.ops.aten._to_copy.default,
+                torch.ops.aten.clone.default,
+            ):
                 continue
 
             orig_tensor = node.args[0].meta["val"]
