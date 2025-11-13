@@ -676,6 +676,8 @@ class CustomBuild(build):
             # like `TorchConfig.cmake` that are provided by pip packages.
             f"-DCMAKE_PREFIX_PATH={cmake_prefix_path}",
             f"-DCMAKE_BUILD_TYPE={cmake_build_type}",
+            # Turn on the wheel building option for downstream CMakeLists.txt.
+            f"-DEXECUTORCH_BUILD_WHEEL_DEV_USE_ONLY=ON",
         ]
 
         # Use ClangCL on Windows.
