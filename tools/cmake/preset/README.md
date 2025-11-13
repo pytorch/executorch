@@ -77,6 +77,12 @@ For example, `llm-release` workflow:
 - Uses `llm-release-install` build preset (builds the `install` target with parallel jobs)
 - Installs artifacts to `cmake-out/` directory
 
+#### Add a new workflow
+To add a new workflow:
+1. Add a configure preset, e.g. `new-workflow`
+2. Add a build preset that depends on (1), e.g. `new-workflow-install`
+3. You should be able to run `cmake --workflow new-workflow-install`
+
 
 ### Including ExecuTorch as Third-party Library
 
