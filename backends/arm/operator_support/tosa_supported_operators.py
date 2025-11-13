@@ -39,8 +39,11 @@ from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists im
     TOSA_PRO_FP_SupportList,
     TOSA_PRO_INT_SupportList,
 )
-from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.arm.tosa.specification import Tosa_1_00
+from executorch.backends.arm.tosa.specification import (
+    Tosa_1_00,
+    TosaSpecification,
+    TosaSpecMapping,
+)
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -116,10 +119,9 @@ class SupportedTOSAOperatorCheck(OperatorSupportBase):
 
 
 # container for all SupportedTosaOperatorCheck classes
-_tosa_spec_support: dict[TosaSpecification, list[Type[SupportedTOSAOperatorCheck]]] = {
-    TosaSpecification.create_from_string("TOSA-1.0+INT"): [],
-    TosaSpecification.create_from_string("TOSA-1.0+FP"): [],
-}
+_tosa_spec_support: TosaSpecMapping[Type[SupportedTOSAOperatorCheck]] = (
+    TosaSpecMapping()
+)
 
 
 def register_tosa_support_check(checker: Type[SupportedTOSAOperatorCheck]):
@@ -134,7 +136,7 @@ def register_tosa_support_check(checker: Type[SupportedTOSAOperatorCheck]):
 
     """
     for tosa_spec in checker.tosa_specs:
-        _tosa_spec_support[tosa_spec].append(checker)
+        _tosa_spec_support.add(tosa_spec, checker)
     return checker
 
 
@@ -150,12 +152,12 @@ def get_registered_tosa_support_checks(
         list[Type[SupportedTOSAOperatorCheck]]: Registered checker classes.
 
     """
-    if tosa_spec not in _tosa_spec_support:
+    checks = _tosa_spec_support.get(tosa_spec)
+    if not checks:
         raise RuntimeError(
-            f"TOSA specification not valid: {tosa_spec} not in {list(_tosa_spec_support.keys())}"
+            f"TOSA specification not valid: {tosa_spec} not in {list(_tosa_spec_support._mapping.keys())}"
         )
-
-    return _tosa_spec_support[tosa_spec]
+    return checks
 
 
 def tosa_support_factory(

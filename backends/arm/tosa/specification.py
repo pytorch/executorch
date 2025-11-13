@@ -12,9 +12,70 @@ manage a lowering-time context for the active specification.
 
 import contextvars
 import re
-from typing import List
+from typing import Dict, Generic, List, Set, TypeVar
 
 from packaging.version import Version
+
+T = TypeVar("T")
+
+
+class TosaSpecMapping(Generic[T]):
+    def __init__(self):
+        self._mapping: Dict[TosaSpecification, List[T]] = {}
+
+    def add(self, spec: "TosaSpecification", value: T) -> None:
+        """
+        Adds a value to the mapping for the given TOSA specification.
+        The specification is normalized to its canonical form, which means that
+        only the version and profiles are considered, without extensions.
+        This allows for grouping of values under the same TOSA specification
+        regardless of the extensions they may have.
+        """
+
+        if spec.is_U55_subset or spec.extensions:
+            raise ValueError(
+                f"TosaSpecMapping does not support extensions, got: {spec}"
+            )
+
+        if isinstance(spec, Tosa_1_00) and len(spec.profiles) > 1:
+            raise ValueError(
+                f"TosaSpecMapping does not support multiple profiles, got: {spec}"
+            )
+
+        norm_spec = spec._canonical_key()
+        if norm_spec not in self._mapping:
+            self._mapping[norm_spec] = []
+        self._mapping[norm_spec].append(value)
+
+    @staticmethod
+    def _get_base_specs(spec: "TosaSpecification") -> List["TosaSpecification"]:
+        # Handles combined TOSA-1.0+FP+INT, etc.
+        if isinstance(spec, Tosa_1_00):
+            profiles: Set[str] = set(spec.profiles)
+            if profiles == {"FP", "INT"}:
+                version = spec.version
+                return [
+                    TosaSpecification.create_from_string(f"TOSA-{version}+FP"),
+                    TosaSpecification.create_from_string(f"TOSA-{version}+INT"),
+                ]
+        return [spec]
+
+    def get(self, spec: "TosaSpecification") -> List[T]:
+        """
+        Returns a list of values associated with the given TOSA specification.
+        The specification is normalized to its canonical form, which means that
+        only the version and profiles are considered, without extensions.
+        """
+
+        base_specs = self._get_base_specs(spec)
+        result: List[T] = []
+        for base in base_specs:
+            norm_base = base._canonical_key()
+            result.extend(self._mapping.get(norm_base, []))
+        if len(result) == 0:
+            raise KeyError(f"No values found for TOSA specification: {spec}")
+
+        return result  # Do not deduplicate with set(), as values may be unhashable
 
 
 class TosaSpecification:
@@ -34,6 +95,7 @@ class TosaSpecification:
 
     version: Version
     is_U55_subset: bool
+    extensions: List[str]
 
     def support_integer(self) -> bool:
         """Return True if integer operations are supported."""
@@ -52,6 +114,7 @@ class TosaSpecification:
 
         """
         self.version = version
+        self.extensions = []
 
         self.is_U55_subset = "u55" in extras
         if self.is_U55_subset:
@@ -88,6 +151,12 @@ class TosaSpecification:
                     raise ValueError(f"Wrong TOSA version: {version} from {repr}")
 
         raise ValueError(f"Failed to parse TOSA specification representation: {repr}")
+
+    def _canonical_key(self) -> "TosaSpecification":
+        """
+        Returns a new TosaSpecification instance with only version and profiles (no extensions).
+        """
+        raise NotImplementedError
 
 
 class Tosa_1_00(TosaSpecification):
@@ -231,6 +300,16 @@ class Tosa_1_00(TosaSpecification):
                 return True
 
         return False
+
+    def _canonical_key(self) -> "Tosa_1_00":
+        """
+        Returns a new Tosa_1_00 instance with only major.minor version and profiles (no extensions).
+        Patch version is set to zero for normalization.
+        """
+        from packaging.version import Version
+
+        norm_version = Version(f"{self.version.major}.{self.version.minor}.0")
+        return Tosa_1_00(norm_version, self.profiles.copy())
 
 
 class TosaLoweringContext:

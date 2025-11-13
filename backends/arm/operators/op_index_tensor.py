@@ -24,7 +24,6 @@ from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.fx import Node
 
 
-@register_node_visitor
 class CommonIndexTensorVisitor(NodeVisitor):
     target = "aten.index.Tensor"
 
