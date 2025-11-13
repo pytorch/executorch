@@ -105,7 +105,7 @@ class TestCompatibility(unittest.TestCase):
         # Generate the .pte file with the wrong version.
         buff = bytes(
             _serialize_pte_binary(
-                program=prog,
+                pte_file=_PTEFile(program=prog),
             )
         )
 
