@@ -12,7 +12,7 @@ from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.decompose_avg_pool2d import DecomposeAvgPool2d
 
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_base import ExportPass, NodeMetadata
 
 edge_ops = (exir_ops.edge.aten._adaptive_avg_pool2d.default,)
 aten_ops = (torch.ops.aten.adaptive_avg_pool2d.default,)
@@ -60,6 +60,11 @@ class DecomposeAdaptiveAvgPool2dPass(ArmPass):
         # Vela currently only allows a stride in the interval of [1,3] for AvgPool2d.
         # To accommodate this, the AvgPool2d op is applied to pooling regions and the results are concatenated.
 
+        # Slices and concats does not require quantization parameters
+        metadata_dict = dict(meta.data)
+        metadata_dict["input_qparams"] = {}
+        metadata_dict["output_qparams"] = {}
+        meta_with_no_qparams = NodeMetadata(metadata_dict)
         res = []
         for out_i in range(output_size_h):
             row = []
@@ -72,11 +77,15 @@ class DecomposeAdaptiveAvgPool2dPass(ArmPass):
 
                 # Slice along H
                 x_h = super().call_operator(
-                    slice_op, (x, 2, start_h, end_h), kwargs, meta, True
+                    slice_op, (x, 2, start_h, end_h), kwargs, meta_with_no_qparams, True
                 )
                 # Slice along W
                 x_hw = super().call_operator(
-                    slice_op, (x_h, 3, start_w, end_w), kwargs, meta, True
+                    slice_op,
+                    (x_h, 3, start_w, end_w),
+                    kwargs,
+                    meta_with_no_qparams,
+                    True,
                 )
 
                 # Apply avg pooling with kernel size equal to the pooling region
@@ -89,9 +98,13 @@ class DecomposeAdaptiveAvgPool2dPass(ArmPass):
                 row.append(pooled)
 
             # Concatenate row results along width (dim=3)
-            row_tensor = super().call_operator(cat_op, (row, 3), kwargs, meta, True)
+            row_tensor = super().call_operator(
+                cat_op, (row, 3), kwargs, meta_with_no_qparams, True
+            )
             res.append(row_tensor)
 
         # Concatenate all rows along height (dim=2)
-        out = super().call_operator(cat_op, (res, 2), kwargs, meta, True)
+        out = super().call_operator(
+            cat_op, (res, 2), kwargs, meta_with_no_qparams, True
+        )
         return out

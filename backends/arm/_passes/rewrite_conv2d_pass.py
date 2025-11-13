@@ -266,6 +266,7 @@ class RewriteConv2dPass(ArmPass):
                     op_target=target_op,
                     args=conv2d_args,
                     from_node=node,
+                    inherit_qparams=True,
                 )
             bias_fake_tensor = get_first_fake_tensor(bias) if bias else None
             tosa_node_fake_tensor = target_op(

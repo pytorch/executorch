@@ -114,6 +114,7 @@ def create_node(
     quantize: bool = False,
     q_params: Optional[tuple] = None,
     from_node: Optional[torch.fx.Node] = None,
+    inherit_qparams: bool = False,
 ):
     """
     Adds a node to 'graph'. graph.inserting_before/after() should be used before the call to decide where to insert the node.
@@ -132,6 +133,14 @@ def create_node(
         keys = from_node.meta.keys()
         for key in keys:
             new_meta[key] = from_node.meta[key]
+        if not inherit_qparams:
+            if "input_qparams" in new_meta:
+                new_meta["input_qparams"] = {}
+            if "output_qparams" in new_meta:
+                new_meta["output_qparams"] = {}
+    elif inherit_qparams:
+        raise ValueError("inherit_qparams is only valid when from_node is given")
+
     old_stack_trace = new_meta.get("stack_trace", "")
     new_meta["stack_trace"] = f"{old_stack_trace}\n{traceback.format_stack()[-2]}"
     node.meta = new_meta
