@@ -16,7 +16,10 @@ import torch
 from executorch.backends.aoti.passes.replace_view_copy_with_view import (
     ReplaceViewCopyWithViewPass,
 )
+from executorch.backends.cuda.passes import FuseInt4WeightOnlyQuantMatmulPass
+from torch.fx.passes.dialect.common.cse_pass import CSEPass
 from executorch.exir._serialize._named_data_store import NamedDataStore
+from executorch.exir.program._program import _update_exported_program_graph_module
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -126,6 +129,26 @@ class CudaBackend(BackendDetails):
 
         # replace slice_copy.Tensor with slice.Tensor, select_copy.int with select.int
         ReplaceViewCopyWithViewPass()(cuda_edge_program.graph_module)
+
+        # Run CSE to merge duplicate preprocessing chains
+        # This enables Int4 fusion to group operations with identical preprocessing
+        # by simply using node.args[0] (immediate input)
+        cse_pass = CSEPass()
+        cse_result = cse_pass(cuda_edge_program.graph_module)
+        if cse_result.modified:
+            cuda_edge_program = _update_exported_program_graph_module(
+                cuda_edge_program, cse_result.graph_module
+            )
+
+        # Fuse INT4 weight-only quantized matmul operations
+        # Reduces kernel launch overhead by fusing Q/K/V and Gate/Up projections
+        # REQUIRES: CSE pass to have run first (to merge preprocessing)
+        fusion_pass = FuseInt4WeightOnlyQuantMatmulPass()
+        fusion_result = fusion_pass(cuda_edge_program.graph_module)
+        if fusion_result.modified:
+            cuda_edge_program = _update_exported_program_graph_module(
+                cuda_edge_program, fusion_result.graph_module
+            )
 
         cuda_edge_program = cuda_edge_program.run_decompositions(
             cuda_decomposition_table
