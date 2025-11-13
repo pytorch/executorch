@@ -1023,7 +1023,8 @@ def inference(
             runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=[], files=[runtime_tokenizer_path])
+        if not args.skip_push:
+            adb.push(inputs=[], files=[runtime_tokenizer_path])
         adb.execute(custom_runner_cmd=runner_cmd)
         adb.pull(output_path=args.artifact, callback=post_process)
 
