@@ -49,12 +49,6 @@ SEGMENT_ALIGNMENT: int = 128
 CONSTANT_TENSOR_ALIGNMENT: int = 16
 
 
-def add_constant_data(program: Program, blobs: Sequence[bytes]) -> None:
-    """Adds the provided constant data blobs to the program."""
-    for blob in blobs:
-        program.constant_buffer.append(Buffer(storage=blob))
-
-
 def add_delegate_data(
     program: Program, plan: ExecutionPlan, blobs: Sequence[bytes]
 ) -> None:
@@ -169,12 +163,14 @@ class TestProgram(unittest.TestCase):
             self.gen_blob_data(constant_tensor_alignment, b"\x30\x33\x03"),
             self.gen_blob_data(constant_tensor_alignment + 1, b"\x40\x44\x04"),
         )
-        add_constant_data(program, blobs)
 
         # Extract blobs into constant segment during serialization.
         pte_data = bytes(
             serialize_pte_binary(
-                PTEFile(program=program),
+                PTEFile(
+                    program=program,
+                    constant_data=blobs,
+                ),
                 segment_alignment=SEGMENT_ALIGNMENT,
                 constant_tensor_alignment=constant_tensor_alignment,
             )
@@ -289,9 +285,7 @@ class TestProgram(unittest.TestCase):
         # during serialization.
         self.assertEqual(deserialized.program.execution_plan, program.execution_plan)
         # Number of constant tensors should be the same.
-        self.assertEqual(
-            len(deserialized.program.constant_buffer), len(program.constant_buffer)
-        )
+        self.assertEqual(len(deserialized.constant_data), len(blobs))
         self.assertEqual(deserialized.mutable_data, None)
         self.assertEqual(deserialized.named_data, None)
 
@@ -647,12 +641,13 @@ class TestProgram(unittest.TestCase):
 
     def test_no_constants(self) -> None:
         program = get_test_program()
-        # Insert placeholder for non-const tensors.
-        add_constant_data(program, [b""])
 
         pte_data = bytes(
             serialize_pte_binary(
-                PTEFile(program=program),
+                PTEFile(
+                    program=program,
+                    constant_data=[b""],  # placeholder for non-const tensors.
+                ),
                 extract_delegate_segments=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
                 constant_tensor_alignment=CONSTANT_TENSOR_ALIGNMENT,
@@ -667,10 +662,9 @@ class TestProgram(unittest.TestCase):
         # Constant buffer should be empty.
         self.assertEqual(len(flatbuffer_program.constant_buffer), 0)
 
-        # Constant segment should contain the placeholder.
+        # Constant segment also empty
         self.assertEqual(flatbuffer_program.constant_segment.segment_index, 0)
-        self.assertEqual(len(flatbuffer_program.constant_segment.offsets), 1)
-        self.assertEqual(flatbuffer_program.constant_segment.offsets[0], 0)
+        self.assertEqual(len(flatbuffer_program.constant_segment.offsets), 0)
 
     def test_unused_inline_delegate_blobs_with_segments(self) -> None:
         # Create a program with some delegate data blobs.
@@ -736,7 +730,6 @@ class TestProgram(unittest.TestCase):
             self.gen_blob_data(SEGMENT_ALIGNMENT // 2, b"\x30\x33\x03"),
             self.gen_blob_data(SEGMENT_ALIGNMENT + 1, b"\x40\x44\x04"),
         )
-        add_constant_data(program, constant_blobs)
         add_delegate_data(program, program.execution_plan[0], delegate_blobs)
 
         # Create named data segment.
@@ -755,7 +748,9 @@ class TestProgram(unittest.TestCase):
         # Extract the blobs into segments during serialization.
         pte_data = bytes(
             serialize_pte_binary(
-                PTEFile(program=program, named_data=named_data),
+                PTEFile(
+                    program=program, constant_data=constant_blobs, named_data=named_data
+                ),
                 extract_delegate_segments=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
                 constant_tensor_alignment=CONSTANT_TENSOR_ALIGNMENT,
@@ -933,9 +928,7 @@ class TestProgram(unittest.TestCase):
         # during serialization.
         self.assertEqual(deserialized.program.execution_plan, program.execution_plan)
         # Number of constant tensors should be the same.
-        self.assertEqual(
-            len(deserialized.program.constant_buffer), len(program.constant_buffer)
-        )
+        self.assertEqual(len(deserialized.constant_data), len(constant_blobs))
         self.assertEqual(deserialized.mutable_data, None)
         self._check_named_data_store_output(deserialized.named_data, named_data)
 

@@ -49,6 +49,7 @@ def serialize_for_executorch(
     pte: Cord = serialize_pte_binary(
         pte_file=PTEFile(
             program=emitter_output.program,
+            constant_data=emitter_output.constant_data,
             mutable_data=emitter_output.mutable_data,
             named_data=pte_named_data,
         ),
