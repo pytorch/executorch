@@ -10,6 +10,7 @@
 
 import argparse
 import logging
+import os
 
 import executorch.backends.vulkan.test.utils as test_utils
 import torch
@@ -224,6 +225,13 @@ def main() -> None:
         help="Execute lower_module_and_test_output to validate the model. Default is False",
     )
 
+    parser.add_argument(
+        "--save_inputs",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Whether to save the inputs to the model. Default is False",
+    )
+
     args = parser.parse_args()
 
     if args.model_name in MODEL_NAME_TO_MODEL:
@@ -299,25 +307,18 @@ def main() -> None:
         atol = 2e-2
         rtol = 1e-1
 
-    # Test the model if --test flag is provided
-    if args.test:
-        test_result = test_utils.run_and_check_output(
-            reference_model=model,
-            executorch_program=exec_prog,
-            sample_inputs=example_inputs,
-            atol=atol,
-            rtol=rtol,
-        )
+    # Save regular program
+    save_pte_program(exec_prog, output_filename, args.output_dir)
+    logging.info(
+        f"Model exported and saved as {output_filename}.pte in {args.output_dir}"
+    )
 
-        if test_result:
-            logging.info(
-                "✓ Model test PASSED - outputs match reference within tolerance"
-            )
-        else:
-            logging.error("✗ Model test FAILED - outputs do not match reference")
-            raise RuntimeError(
-                "Model validation failed: ExecuTorch outputs do not match reference model outputs"
-            )
+    if args.save_inputs:
+        inputs_flattened, _ = tree_flatten(example_inputs)
+        for i, input_tensor in enumerate(inputs_flattened):
+            input_filename = os.path.join(args.output_dir, f"input{i}.bin")
+            input_tensor.numpy().tofile(input_filename)
+            f"Model input saved as {input_filename} in {args.output_dir}"
 
     if args.bundled:
         # Create bundled program
@@ -356,12 +357,26 @@ def main() -> None:
         logging.info(
             f"Bundled program exported and saved as {output_filename}.bpte in {args.output_dir}"
         )
-    else:
-        # Save regular program
-        save_pte_program(exec_prog, output_filename, args.output_dir)
-        logging.info(
-            f"Model exported and saved as {output_filename}.pte in {args.output_dir}"
+
+    # Test the model if --test flag is provided
+    if args.test:
+        test_result = test_utils.run_and_check_output(
+            reference_model=model,
+            executorch_program=exec_prog,
+            sample_inputs=example_inputs,
+            atol=atol,
+            rtol=rtol,
         )
+
+        if test_result:
+            logging.info(
+                "✓ Model test PASSED - outputs match reference within tolerance"
+            )
+        else:
+            logging.error("✗ Model test FAILED - outputs do not match reference")
+            raise RuntimeError(
+                "Model validation failed: ExecuTorch outputs do not match reference model outputs"
+            )
 
 
 if __name__ == "__main__":
