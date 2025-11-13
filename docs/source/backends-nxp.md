@@ -56,21 +56,41 @@ List of Aten operators supported by Neutron quantizer:
 `reshape`, `view`, `softmax.int`, `sigmoid`, `tanh`, `tanh_`
 
 #### Example
+
+To quantize your model, you can either use the PT2E workflow:
 ```python
 import torch
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 # Prepare your model in Aten dialect
 aten_model = get_model_in_aten_dialect()
 # Prepare calibration inputs, each tuple is one example, example tuple has items for each model input
 calibration_inputs: list[tuple[torch.Tensor, ...]] = get_calibration_inputs()
-quantizer = NeutronQuantizer()
+target_spec = NeutronTargetSpec(target="imxrt700", converter_flavor="SDK_25_09")
+quantizer = NeutronQuantizer(neutron_target_spec)
 
 m = prepare_pt2e(aten_model, quantizer)
 for data in calibration_inputs:
     m(*data)
 m = convert_pt2e(m)
+```
+
+Or you can use the predefined function for post training quantization from NXP backend implementation:
+```python
+from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from executorch.backends.nxp.quantizer.utils import post_training_quantize
+
+...
+
+target_spec = NeutronTargetSpec(target="imxrt700", converter_flavor="SDK_25_09")
+quantized_graph_module = post_training_quantize(
+    aten_model,
+    calibration_inputs,
+    NeutronQuantizer(neutron_target_spec=target_spec),
+)
 ```
 
 ## Runtime Integration

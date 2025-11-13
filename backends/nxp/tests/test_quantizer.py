@@ -376,7 +376,7 @@ def test_quantizers_order_invariance():
 )
 def test_quantizer__linear_w_activation(mocker, activation, inplace):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "_quantize_model")
+    quantizer_spy = mocker.spy(executorch_pipeline, "post_training_quantize")
 
     input_shape = (1, 4)
     model = models.LinearActivationModule(
@@ -432,7 +432,7 @@ def test_quantizer__linear_w_activation(mocker, activation, inplace):
 )
 def test_quantizer__addmm_w_activation(mocker, activation, inplace):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "_quantize_model")
+    quantizer_spy = mocker.spy(executorch_pipeline, "post_training_quantize")
 
     input_shape = (1, 4)
     model = models.LinearActivationModule(
@@ -485,7 +485,7 @@ def test_quantizer__addmm_w_activation(mocker, activation, inplace):
 )
 def test_quantizer__mm_w_activation(mocker, activation, inplace):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "_quantize_model")
+    quantizer_spy = mocker.spy(executorch_pipeline, "post_training_quantize")
 
     input_shape = (1, 4)
     model = models.LinearActivationModule(
@@ -538,7 +538,7 @@ def test_quantizer__mm_w_activation(mocker, activation, inplace):
 )
 def test_quantizer__conv_w_activation(mocker, activation, inplace):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "_quantize_model")
+    quantizer_spy = mocker.spy(executorch_pipeline, "post_training_quantize")
 
     input_shape = (1, 4, 8, 8)
     model = models.ConvActivationModule(

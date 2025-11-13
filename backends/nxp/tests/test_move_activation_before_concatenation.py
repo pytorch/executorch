@@ -19,8 +19,8 @@ from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.quantizer.utils import post_training_quantize
 from executorch.backends.nxp.tests.executorch_pipeline import (
-    _quantize_model,
     get_random_calibration_inputs,
     neutron_target_spec,
     to_model_input_spec,
@@ -220,7 +220,8 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
 
         # Apply the optimization.
         NeutronAtenPassManager(
-            neutron_target_spec, [MoveActivationBeforeConcat(neutron_target_spec)]
+            neutron_target_spec,
+            [MoveActivationBeforeConcat(neutron_target_spec)],
         )(exir_program_aten)
 
         nodes = list(exir_program_aten.graph.nodes)
@@ -247,10 +248,10 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         neutron_aten_pass_manager = NeutronAtenPassManager(neutron_target_spec)
         neutron_aten_pass_manager(exir_program_aten)  # All passes by default.
 
-        exir_program_aten_quant = _quantize_model(
+        exir_program_aten_quant = post_training_quantize(
             exir_program_aten,
-            NeutronQuantizer(neutron_target_spec),
             calibration_inputs,
+            NeutronQuantizer(neutron_target_spec),
         )
 
         # Check convolution and activation are in same QDQ cluster.
@@ -327,7 +328,8 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
 
         # Apply the optimization.
         NeutronAtenPassManager(
-            neutron_target_spec, [MoveActivationBeforeConcat(neutron_target_spec)]
+            neutron_target_spec,
+            [MoveActivationBeforeConcat(neutron_target_spec)],
         )(exir_program_aten)
 
         nodes = list(exir_program_aten.graph.nodes)
@@ -354,10 +356,10 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         neutron_aten_pass_manager = NeutronAtenPassManager(neutron_target_spec)
         neutron_aten_pass_manager(exir_program_aten)  # All passes by default.
 
-        exir_program_aten_quant = _quantize_model(
+        exir_program_aten_quant = post_training_quantize(
             exir_program_aten,
-            NeutronQuantizer(neutron_target_spec),
             calibration_inputs,
+            NeutronQuantizer(neutron_target_spec),
         )
 
         # Check linear and activation are in same QDQ cluster.
@@ -434,7 +436,8 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
 
         # Apply the optimization.
         NeutronAtenPassManager(
-            neutron_target_spec, [MoveActivationBeforeConcat(neutron_target_spec)]
+            neutron_target_spec,
+            [MoveActivationBeforeConcat(neutron_target_spec)],
         )(exir_program_aten)
 
         nodes = list(exir_program_aten.graph.nodes)
@@ -461,10 +464,10 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         neutron_aten_pass_manager = NeutronAtenPassManager(neutron_target_spec)
         neutron_aten_pass_manager(exir_program_aten)  # All passes by default.
 
-        exir_program_aten_quant = _quantize_model(
+        exir_program_aten_quant = post_training_quantize(
             exir_program_aten,
-            NeutronQuantizer(neutron_target_spec),
             calibration_inputs,
+            NeutronQuantizer(neutron_target_spec),
         )
 
         # Check addmm and activation are in same QDQ cluster.
@@ -541,7 +544,8 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
 
         # Apply the optimization.
         NeutronAtenPassManager(
-            neutron_target_spec, [MoveActivationBeforeConcat(neutron_target_spec)]
+            neutron_target_spec,
+            [MoveActivationBeforeConcat(neutron_target_spec)],
         )(exir_program_aten)
 
         nodes = list(exir_program_aten.graph.nodes)
@@ -568,10 +572,10 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         neutron_aten_pass_manager = NeutronAtenPassManager(neutron_target_spec)
         neutron_aten_pass_manager(exir_program_aten)  # All passes by default.
 
-        exir_program_aten_quant = _quantize_model(
+        exir_program_aten_quant = post_training_quantize(
             exir_program_aten,
-            NeutronQuantizer(neutron_target_spec),
             calibration_inputs,
+            NeutronQuantizer(neutron_target_spec),
         )
 
         # Check mm and activation are in same QDQ cluster.
@@ -809,7 +813,9 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             call_original=True,
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
-            with kgb.spy_on(_quantize_model, call_original=True) as quantizer_spy:
+            with kgb.spy_on(
+                post_training_quantize, call_original=True
+            ) as quantizer_spy:
                 input_shape = (1, 8, 8, 8)
                 model = ConvActivationConcatModule(
                     activation1, activation2, act1_inplace, act2_inplace, in_channels=8
@@ -832,7 +838,9 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                     -1
                 ].return_value
                 exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
-                exir_program_aten_quant: GraphModule = quantizer_spy.calls[-1].args[0]
+                exir_program_aten_quant: GraphModule = quantizer_spy.calls[
+                    -1
+                ].return_value
 
                 # Check convolution and activation are in same QDQ cluster.
                 nodes = list(exir_program_aten_quant.graph.nodes)
@@ -886,7 +894,9 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             call_original=True,
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
-            with kgb.spy_on(_quantize_model, call_original=True) as quantizer_spy:
+            with kgb.spy_on(
+                post_training_quantize, call_original=True
+            ) as quantizer_spy:
                 input_shape = (1, 8)
                 model = LinearActivationConcatModule(
                     activation1, activation2, act1_inplace, act2_inplace, in_channels=8
@@ -909,7 +919,9 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                     -1
                 ].return_value
                 exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
-                exir_program_aten_quant: GraphModule = quantizer_spy.calls[-1].args[0]
+                exir_program_aten_quant: GraphModule = quantizer_spy.calls[
+                    -1
+                ].return_value
 
                 # Check linear and activation are in same QDQ cluster.
                 nodes = list(exir_program_aten_quant.graph.nodes)
