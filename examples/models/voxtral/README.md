@@ -123,7 +123,7 @@ python -m executorch.extension.audio.mel_spectrogram \
 ### Building for CPU (XNNPack)
 ```
 # Build and install ExecuTorch
-cmake --preset llm -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -DEXECUTORCH_ENABLE_LOGGING=ON && cmake --build cmake-out -j16 --target install --config Release
+cmake --workflow llm-release
 
 # Build and install Voxtral runner
 cmake -DCMAKE_INSTALL_PREFIX=cmake-out -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -Bcmake-out/examples/models/voxtral examples/models/voxtral && cmake --build cmake-out/examples/models/voxtral -j16 --config Release
@@ -135,12 +135,7 @@ cmake -DCMAKE_INSTALL_PREFIX=cmake-out -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Re
 ./install_executorch.sh
 
 # Build the multimodal runner with CUDA
-cmake --preset llm \
-      -DEXECUTORCH_BUILD_CUDA=ON \
-      -DCMAKE_INSTALL_PREFIX=cmake-out \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Bcmake-out -S.
-cmake --build cmake-out -j16 --target install --config Release
+cmake --workflow llm-release-cuda
 
 cmake -DEXECUTORCH_BUILD_CUDA=ON \
       -DCMAKE_BUILD_TYPE=Release \
@@ -155,12 +150,7 @@ cmake --build cmake-out/examples/models/voxtral --target voxtral_runner --config
 CMAKE_ARGS="-DEXECUTORCH_BUILD_METAL=ON" ./install_executorch.sh
 
 # Build the multimodal runner with Metal
-cmake --preset llm \
-      -DEXECUTORCH_BUILD_METAL=ON \
-      -DCMAKE_INSTALL_PREFIX=cmake-out \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Bcmake-out -S.
-cmake --build cmake-out -j16 --target install --config Release
+cmake --workflow llm-release-metal
 
 cmake -DEXECUTORCH_BUILD_METAL=ON \
       -DCMAKE_BUILD_TYPE=Release \
