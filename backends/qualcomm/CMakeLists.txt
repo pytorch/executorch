@@ -24,7 +24,8 @@ get_filename_component(
 )
 
 # We only download QNN SDK when we build pip wheel for ExecuTorch.
-if(EXECUTORCH_BUILD_WHEEL_DEV_USE_ONLY)
+# Please don't change this code unless you know what you are doing.
+if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
   set(_qnn_default_sdk_dir "${CMAKE_CURRENT_BINARY_DIR}/sdk/qnn")
 
   if(EXISTS "${_qnn_default_sdk_dir}" AND EXISTS "${_qnn_default_sdk_dir}/lib")

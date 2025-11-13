@@ -289,7 +289,7 @@ define_overridable_option(
   FALSE
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_WHEEL_DEV_USE_ONLY
+  EXECUTORCH_BUILD_WHEEL_DO_NOT_USE
   "On if in the wheel building process. Should only be used to guard code that is only needed for building the wheel."
   BOOL
   FALSE
