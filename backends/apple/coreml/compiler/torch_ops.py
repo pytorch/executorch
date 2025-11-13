@@ -20,26 +20,12 @@ from coremltools.converters.mil.frontend.torch.ops import (
     NUM_TO_TORCH_DTYPE,
     split,
     to,
-    transpose,
-    unbind,
 )
 from coremltools.converters.mil.frontend.torch.torch_op_registry import (
     register_torch_op,
 )
 from coremltools.converters.mil.mil import types
 from executorch.exir.dim_order_utils import get_memory_format
-
-
-# https://github.com/apple/coremltools/pull/2556
-@register_torch_op(override=False)
-def transpose_copy(context, node):
-    transpose(context, node)
-
-
-# https://github.com/apple/coremltools/pull/2557
-@register_torch_op(override=False)
-def unbind_copy(context, node):
-    unbind(context, node)
 
 
 # https://github.com/apple/coremltools/pull/2563
@@ -117,7 +103,9 @@ def _clone_dim_order(context, node):
 # https://github.com/apple/coremltools/pull/2558
 @register_torch_op(
     torch_alias=["torchao::dequantize_affine", "torchao.dequantize_affine"],
-    override=False,
+    # coremltools did not merge the fix into 9.0 (https://github.com/apple/coremltools/pull/2589),
+    # so we override here
+    override=True,
 )
 def dequantize_affine(context, node):
     inputs = _get_inputs(context, node, expected=[7, 8])
