@@ -291,9 +291,14 @@ class ArmPassManager(PassManager):
             )
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
+        # Preprocessing passes
+
         self.add_pass(
             RemoveGraphAssertsPass()
         )  # ConvertInt64ConstOpsToInt32Pass requires this pass to remove the assertation in Graph
+
+        # Transformation passes (pre scalar -> tensor)
+
         self.add_pass(ConvertInt64ConstOpsToInt32Pass())
         self.add_pass(ConvertInt64OutputOpsToInt32Pass())
         self.add_pass(InsertInt32CastsAfterInt64PlaceholdersPass())
@@ -304,12 +309,18 @@ class ArmPassManager(PassManager):
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSignPass())
         self.add_pass(DecomposeAddmmPass())
-        self.add_pass(ReplaceScalarWithTensorByProfilePass())
         self.add_pass(DecomposeRemainderPass())
         self.add_pass(DecomposeFloorDividePass())
         self.add_pass(DecomposeDivTensorModePass())
-        self.add_pass(DecomposeAddSubAlphaPass())
+
+        # Scalars -> tensors
+
+        self.add_pass(ReplaceScalarWithTensorByProfilePass())
         self.add_pass(ScalarsToAttributePass())
+
+        # Transformation passes (post scalar removal)
+
+        self.add_pass(DecomposeAddSubAlphaPass())
         self.add_pass(DecomposeGroupNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
@@ -323,16 +334,16 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeSiluPass())
         self.add_pass(DecomposeAvgPool2d())
-
         if self.tosa_spec.is_U55_subset:
             # Numerically stable softmax uses amax which is not supported on Ethos-U55
             self.add_pass(DecomposeSoftmaxUnstablePass())
         else:
             self.add_pass(DecomposeSoftmaxPass())
-
         self.add_pass(ConvertMinMaxPass())
-        self.add_pass(ReplaceInfValues())
 
+        # Postprocessing passes
+
+        self.add_pass(ReplaceInfValues())
         if not self.tosa_spec.is_U55_subset:
             # Uses where which is not supported on Ethos-U55
             self.add_pass(DecomposeMaskedFill())
