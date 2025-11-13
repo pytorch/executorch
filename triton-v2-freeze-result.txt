@@ -1,0 +1,184 @@
+Running Whisper benchmark 50 times...
+Command: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+
+
+[Run 1/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 392.64 t/s, Model load: 1070ms, Inference: 326ms, First token: 13ms
+
+[Run 2/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 406.35 t/s, Model load: 1036ms, Inference: 315ms, First token: 14ms
+
+[Run 3/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 391.44 t/s, Model load: 1043ms, Inference: 327ms, First token: 13ms
+
+[Run 4/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 387.88 t/s, Model load: 1027ms, Inference: 330ms, First token: 13ms
+
+[Run 5/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 371.01 t/s, Model load: 1078ms, Inference: 345ms, First token: 14ms
+
+[Run 6/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 386.71 t/s, Model load: 987ms, Inference: 331ms, First token: 13ms
+
+[Run 7/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 389.06 t/s, Model load: 1112ms, Inference: 329ms, First token: 13ms
+
+[Run 8/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 379.82 t/s, Model load: 982ms, Inference: 337ms, First token: 15ms
+
+[Run 9/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 386.71 t/s, Model load: 1040ms, Inference: 331ms, First token: 13ms
+
+[Run 10/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 383.23 t/s, Model load: 1048ms, Inference: 334ms, First token: 13ms
+
+[Run 11/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 380.95 t/s, Model load: 974ms, Inference: 336ms, First token: 13ms
+
+[Run 12/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 375.37 t/s, Model load: 1059ms, Inference: 341ms, First token: 13ms
+
+[Run 13/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 387.88 t/s, Model load: 1010ms, Inference: 330ms, First token: 12ms
+
+[Run 14/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 386.71 t/s, Model load: 1001ms, Inference: 331ms, First token: 13ms
+
+[Run 15/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 379.82 t/s, Model load: 1001ms, Inference: 337ms, First token: 13ms
+
+[Run 16/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 398.75 t/s, Model load: 1093ms, Inference: 321ms, First token: 13ms
+
+[Run 17/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 392.64 t/s, Model load: 966ms, Inference: 326ms, First token: 12ms
+
+[Run 18/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 391.44 t/s, Model load: 1022ms, Inference: 327ms, First token: 13ms
+
+[Run 19/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 383.23 t/s, Model load: 1020ms, Inference: 334ms, First token: 12ms
+
+[Run 20/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 377.58 t/s, Model load: 987ms, Inference: 339ms, First token: 13ms
+
+[Run 21/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 363.64 t/s, Model load: 1115ms, Inference: 352ms, First token: 16ms
+
+[Run 22/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 377.58 t/s, Model load: 1012ms, Inference: 339ms, First token: 13ms
+
+[Run 23/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 369.94 t/s, Model load: 1079ms, Inference: 346ms, First token: 13ms
+
+[Run 24/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 425.25 t/s, Model load: 1067ms, Inference: 301ms, First token: 14ms
+
+[Run 25/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 416.94 t/s, Model load: 1147ms, Inference: 307ms, First token: 14ms
+
+[Run 26/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 406.35 t/s, Model load: 1106ms, Inference: 315ms, First token: 15ms
+
+[Run 27/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 396.28 t/s, Model load: 1048ms, Inference: 323ms, First token: 12ms
+
+[Run 28/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 433.90 t/s, Model load: 1098ms, Inference: 295ms, First token: 14ms
+
+[Run 29/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 287.64 t/s, Model load: 1091ms, Inference: 445ms, First token: 14ms
+
+[Run 30/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 412.90 t/s, Model load: 1074ms, Inference: 310ms, First token: 18ms
+
+[Run 31/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 421.05 t/s, Model load: 1075ms, Inference: 304ms, First token: 21ms
+
+[Run 32/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 412.90 t/s, Model load: 1029ms, Inference: 310ms, First token: 14ms
+
+[Run 33/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 408.95 t/s, Model load: 1177ms, Inference: 313ms, First token: 14ms
+
+[Run 34/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 419.67 t/s, Model load: 1188ms, Inference: 305ms, First token: 15ms
+
+[Run 35/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 390.24 t/s, Model load: 999ms, Inference: 328ms, First token: 13ms
+
+[Run 36/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 378.70 t/s, Model load: 1042ms, Inference: 338ms, First token: 13ms
+
+[Run 37/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 412.90 t/s, Model load: 1074ms, Inference: 310ms, First token: 15ms
+
+[Run 38/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 415.58 t/s, Model load: 1065ms, Inference: 308ms, First token: 18ms
+
+[Run 39/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 421.05 t/s, Model load: 1173ms, Inference: 304ms, First token: 14ms
+
+[Run 40/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 422.44 t/s, Model load: 1034ms, Inference: 303ms, First token: 16ms
+
+[Run 41/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 245.21 t/s, Model load: 1118ms, Inference: 522ms, First token: 15ms
+
+[Run 42/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 380.95 t/s, Model load: 1043ms, Inference: 336ms, First token: 16ms
+
+[Run 43/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 387.88 t/s, Model load: 999ms, Inference: 330ms, First token: 13ms
+
+[Run 44/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 383.23 t/s, Model load: 1262ms, Inference: 334ms, First token: 14ms
+
+[Run 45/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 415.58 t/s, Model load: 1059ms, Inference: 308ms, First token: 14ms
+
+[Run 46/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 421.05 t/s, Model load: 1019ms, Inference: 304ms, First token: 14ms
+
+[Run 47/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 432.43 t/s, Model load: 1015ms, Inference: 296ms, First token: 14ms
+
+[Run 48/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 410.26 t/s, Model load: 1074ms, Inference: 312ms, First token: 15ms
+
+[Run 49/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 411.58 t/s, Model load: 1059ms, Inference: 311ms, First token: 15ms
+
+[Run 50/50] Executing: cmake-out/examples/models/whisper/whisper_runner --model_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/model.pte --data_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/triton-v2-freeze/aoti_cuda_blob.ptd --tokenizer_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed --audio_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/output.wav --processor_path /home/gasoonjia/kernel-gen/whisper-large-v3-turbo/decomposed/whisper_preprocessor.pte --model_name whisper_large_v3 --temperature 0 
+✓ Tokens: 128, Throughput: 416.94 t/s, Model load: 1064ms, Inference: 307ms, First token: 14ms
+
+======================================================================
+BENCHMARK SUMMARY
+======================================================================
+Total runs: 50
+Generated tokens per run: 128
+
+THROUGHPUT (tokens/sec):
+  Min:    245.21 t/s
+  Max:    433.90 t/s
+  Mean:   392.57 t/s
+  Stdev:  31.88 t/s
+
+MODEL LOAD TIME (ms):
+  Min:    966 ms
+  Max:    1262 ms
+  Mean:   1059 ms
+  Stdev:  59 ms
+
+INFERENCE TIME (ms, prompt_eval_end to inference_end):
+  Min:    295 ms
+  Max:    522 ms
+  Mean:   329 ms
+  Stdev:  36 ms
+
+FIRST TOKEN LATENCY (ms):
+  Min:    12 ms
+  Max:    21 ms
+  Mean:   14 ms
+  Stdev:  2 ms
+======================================================================

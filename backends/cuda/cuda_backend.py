@@ -141,9 +141,8 @@ class CudaBackend(BackendDetails):
                 user_input_placeholders.append(node.meta["val"])
 
         options: dict[str, typing.Any] = {
-            # Disable this to support sdpa decomposition
-            # TODO(gasoonjia): remove it after pin bump to latest pytorch
-            "loop_ordering_after_fusion": False,
+            # Frozen weight during inference for better performance and more optimization like kernel fusion
+            "freezing": True,
             # Better model precision
             "emulate_precision_casts": True,
             # Embed CUDA kernel binaries directly into the compiled shared object
@@ -163,7 +162,6 @@ class CudaBackend(BackendDetails):
             "max_autotune_conv_backends": "TRITON",
         }
 
-
         platform = "linux"
         shim_library_path = None
         for spec in compile_specs:
@@ -172,7 +170,7 @@ class CudaBackend(BackendDetails):
             if spec.key == "shim_library_path":
                 shim_library_path = spec.value.decode("utf-8")
 
-        assert platform == "linux" or platform == "windows"
+        assert platform == "linux"
         if platform == "windows" and shim_library_path is None:
             lib_dir = resources.files("executorch").joinpath("data/lib")
             shim_library_path = str(lib_dir)
