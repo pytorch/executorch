@@ -53,7 +53,7 @@ set(EXECUTORCH_FOUND ON)
 include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
 
 set(optional_lib_list
-    aoti_cuda
+    aoti_cuda_backend
     flatccrt
     etdump
     bundled_program

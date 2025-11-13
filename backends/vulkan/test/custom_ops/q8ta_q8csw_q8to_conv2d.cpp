@@ -47,11 +47,15 @@ TestCase create_test_case_from_config(
   std::vector<int64_t> input_size = {
       1, config.channels.in, config.input_size.h, config.input_size.w};
 
+  utils::GPUMemoryLayout io_memory_layout = storage_type == utils::kBuffer
+      ? utils::kWidthPacked
+      : utils::kChannelsPacked;
+
   ValueSpec input_tensor(
       input_size,
       input_dtype,
       storage_type,
-      utils::kChannelsPacked,
+      io_memory_layout,
       DataGenType::RANDOM);
 
   if (debugging()) {
@@ -139,7 +143,7 @@ TestCase create_test_case_from_config(
       {1, config.channels.out, H_out, W_out},
       input_dtype,
       storage_type,
-      utils::kChannelsPacked,
+      io_memory_layout,
       DataGenType::ZEROS);
 
   // Add all specs to test case for q8ta_q8csw_q8to operation
@@ -182,7 +186,8 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
   config.op_name = "conv2d_q8ta_q8csw_q8to";
 
   // Test with both storage types and data types for completeness
-  std::vector<utils::StorageType> storage_types = {utils::kTexture3D};
+  std::vector<utils::StorageType> storage_types = {
+      utils::kTexture3D, utils::kBuffer};
   std::vector<vkapi::ScalarType> float_types = {vkapi::kFloat};
 
   // Generate test cases for each combination
@@ -341,7 +346,8 @@ std::vector<TestCase> generate_quantized_conv2d_test_cases() {
        4}};
 
   // Test with different storage types and data types
-  std::vector<utils::StorageType> storage_types = {utils::kTexture3D};
+  std::vector<utils::StorageType> storage_types = {
+      utils::kTexture3D, utils::kBuffer};
 
   // Generate test cases for each combination
   for (auto& config : configs) {
@@ -621,7 +627,7 @@ int main(int argc, char* argv[]) {
       quantized_conv2d_flop_calculator,
       "QuantizedConv2dQ8ToQ8To",
       0,
-      10,
+      1,
       ref_fn);
 
   return 0;
