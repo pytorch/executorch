@@ -216,7 +216,7 @@ def get_node_arg(args: list | dict, key: int | str | type, default_value=None):
                 f"Out of bounds index {key} for getting value in args (of size {len(args)})"
             )
     elif isinstance(key, str):
-        return args.get(key, default_value)  # type: ignore[union-attr]  # pyre-ignore[16]
+        return args.get(key, default_value)  # type: ignore[union-attr]
     elif isclass(key):
         for arg in args:
             if isinstance(arg, key):

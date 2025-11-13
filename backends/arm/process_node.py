@@ -57,9 +57,7 @@ def process_call_function(
         return
 
     # Visiting each Node
-    # pyre-ignore[16]: Undefined attribute.
     if node.target.__name__ in node_visitors:  # type: ignore[union-attr]
-        # pyre-ignore[16]: Undefined attribute.
         node_visitors[node.target.__name__].define_node(  # type: ignore[union-attr]
             node,
             tosa_graph,

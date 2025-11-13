@@ -238,7 +238,6 @@ class GenericModelEvaluator:
 
         if self.tosa_output_path:
             # We know output_metrics["metrics"] is list since we just defined it, safe to ignore.
-            # pyre-ignore[16]
             output_metrics["metrics"][  # type: ignore[index]
                 "compression_ratio"
             ] = self.get_compression_ratio()
