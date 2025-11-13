@@ -662,10 +662,9 @@ class TestProgram(unittest.TestCase):
         # Constant buffer should be empty.
         self.assertEqual(len(flatbuffer_program.constant_buffer), 0)
 
-        # Constant segment should contain the placeholder.
+        # Constant segment also empty
         self.assertEqual(flatbuffer_program.constant_segment.segment_index, 0)
-        self.assertEqual(len(flatbuffer_program.constant_segment.offsets), 1)
-        self.assertEqual(flatbuffer_program.constant_segment.offsets[0], 0)
+        self.assertEqual(len(flatbuffer_program.constant_segment.offsets), 0)
 
     def test_unused_inline_delegate_blobs_with_segments(self) -> None:
         # Create a program with some delegate data blobs.

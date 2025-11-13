@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
 import torch
@@ -51,16 +51,16 @@ class EmitterOutput:
     instruction_id_to_num_outs_map: Dict[str, Dict[int, int]]
 
     # Constant data stored in the PTE file.
-    constant_data: Optional[List[bytes]]
+    constant_data: List[bytes] = field(default_factory=list)
     # Mutable data stored in the PTE file.
-    mutable_data: Optional[List[bytes]]
+    mutable_data: List[bytes] = field(default_factory=list)
 
     # Constants are optionally stored in external files.
     # Aggregate unique external constants into one buffer.
-    external_constant_buffer: Optional[List[bytes]]
+    external_constant_buffer: Optional[List[bytes]] = None
     # Each constant_tag groups a set of constants together.
     # {constant_tag: {fqn: index into external_constant_buffer}}
-    external_constant_map: Optional[Dict[str, Dict[str, int]]]
+    external_constant_map: Optional[Dict[str, Dict[str, int]]] = None
 
 
 def _remove_non_user_outputs(exported_program: ExportedProgram) -> torch.fx.GraphModule:
@@ -211,13 +211,13 @@ def emit_program(
         ),
         constant_data=(
             program_state.constant_buffer
-            if len(program_state.constant_buffer) > 0  # Keep the placeholder value.
-            else None
+            if len(program_state.constant_buffer) > 1
+            else []
         ),
         mutable_data=(
             program_state.mutable_buffer
             if len(program_state.mutable_buffer) > 1
-            else None
+            else []
         ),
         external_constant_buffer=program_state.external_constant_buffer,
         external_constant_map=program_state.external_constant_map,

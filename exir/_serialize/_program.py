@@ -11,7 +11,7 @@ import json
 import math
 import re
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar, Dict, List, Literal, Optional, Sequence, Tuple
 
 from executorch.exir._serialize._cord import Cord
@@ -55,8 +55,10 @@ class PTEFile:
     """
 
     program: Program
-    constant_data: Optional[List[bytes]] = None
-    mutable_data: Optional[List[bytes]] = None
+    # Placeholder for non-const tensors.
+    constant_data: List[bytes] = field(default_factory=lambda: [b""])
+    # Placeholder for non-const tensors.
+    mutable_data: List[bytes] = field(default_factory=lambda: [b""])
     named_data: Optional[NamedDataStoreOutput] = None
 
 
@@ -458,7 +460,7 @@ def serialize_pte_binary(
     # This may be constant data, delegate data or named data.
     segments: List[AlignedData] = []
 
-    if pte_file.constant_data is not None:
+    if len(pte_file.constant_data) > 1:
         constant_segment_data, constant_segment_offsets = _extract_constant_segment(
             pte_file.constant_data, tensor_alignment=constant_tensor_alignment
         )
@@ -475,7 +477,7 @@ def serialize_pte_binary(
             # Add to the aggregate segments cord.
             segments.append(AlignedData(constant_segment_data))
 
-    if pte_file.mutable_data is not None:
+    if len(pte_file.mutable_data) > 1:
         mutable_segment_data, mutable_segment_offsets = _extract_constant_segment(
             pte_file.mutable_data,
             tensor_alignment=None,  # data is copied at Method load so no need to align.

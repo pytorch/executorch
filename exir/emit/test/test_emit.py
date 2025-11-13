@@ -1713,8 +1713,8 @@ class TestEmit(unittest.TestCase):
             )
         )
         emitter_output = model._emitter_output
-        # Check that constant_buffer is empty besides the non-constant placeholder 0.
-        self.assertEqual(len(emitter_output.constant_data), 1)
+        # Check that constant_data is empty.
+        self.assertEqual(len(emitter_output.constant_data), 0)
         # Check that constant weights are in the external constant buffer.
         self.assertEqual(len(emitter_output.external_constant_buffer), 2)
         # Setting external_constants=True, saves all constants to the key
@@ -1746,8 +1746,8 @@ class TestEmit(unittest.TestCase):
             )
         )
         emitter_output = model._emitter_output
-        # constant_buffer is empty besides the non-constant placeholder 0.
-        self.assertEqual(len(emitter_output.constant_data), 1)
+        # constant_data is empty.
+        self.assertEqual(len(emitter_output.constant_data), 0)
         # only one item in the external constant buffer.
         self.assertEqual(len(emitter_output.external_constant_buffer), 1)
         # Setting external_constants=True, saves all constants to the key
@@ -1785,8 +1785,8 @@ class TestEmit(unittest.TestCase):
             )
         )
         emitter_output = model._emitter_output
-        # constant_buffer is empty besides the non-constant placeholder 0.
-        self.assertEqual(len(emitter_output.constant_data), 1)
+        # constant_data is empty.
+        self.assertEqual(len(emitter_output.constant_data), 0)
         # Two items in the external constant buffer.
         self.assertEqual(len(emitter_output.external_constant_buffer), 2)
         # Setting external_constants=True, saves all constants to the key
@@ -1944,8 +1944,8 @@ class TestEmit(unittest.TestCase):
         )
 
         emitter_output = ep._emitter_output
-        # Check that constant_buffer is empty besides the non-constant placeholder 0.
-        self.assertEqual(len(emitter_output.constant_data), 1)
+        # Check that constant_data is empty.
+        self.assertEqual(len(emitter_output.constant_data), 0)
         # Check that constant weights are in the external constant buffer.
         self.assertEqual(len(emitter_output.external_constant_buffer), 2)
         # Setting external_mutable_weights=True, saves all constants with an associated gradient to the key
