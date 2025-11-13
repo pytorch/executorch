@@ -9,7 +9,9 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
@@ -30,7 +32,7 @@ class ConvertInt64ConstOpsToInt32Pass(ArmPass):
       5. `torch.tensor`
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOT}
+    _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}
 
     torch_ops = [
         torch.ops.aten.full.default,
@@ -47,7 +49,10 @@ class ConvertInt64ConstOpsToInt32Pass(ArmPass):
             if node.op != "call_function":
                 continue
 
-            if node.target not in ComputeConstantOpsAOT.targeted_ops + self.torch_ops:
+            if (
+                node.target
+                not in ComputeConstantOpsAOTPass.targeted_ops + self.torch_ops
+            ):
                 continue
 
             data = node.target(*node.args, **node.kwargs)
