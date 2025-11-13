@@ -21,7 +21,10 @@ from executorch.exir._serialize._flatbuffer import (
     _program_flatbuffer_to_json,
     _program_json_to_flatbuffer,
 )
-from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+from executorch.exir._serialize._named_data_store import (
+    NamedDataStore,
+    NamedDataStoreOutput,
+)
 
 from executorch.exir._serialize.data_serializer import DataEntry
 
@@ -44,6 +47,19 @@ from executorch.exir.tensor import ALIGNMENT
 # regardless of the host system, since all commonly-used modern CPUs are little
 # endian.
 _HEADER_BYTEORDER: Literal["little"] = "little"
+
+
+@dataclass
+class PTEFile:
+    """
+    Wraps together the data required to serialize into a PTE file.
+    """
+
+    program: Program
+    # TODO(lfq): add constant data (currently restored in the program)
+    # TODO(lfq): update this to List[bytes]
+    mutable_data: Optional[List[Buffer]] = None
+    named_data: Optional[NamedDataStoreOutput] = None
 
 
 @dataclass
@@ -575,7 +591,7 @@ def serialize_pte_binary(
     return pte_data
 
 
-def _restore_segments(program: Program, segment_data: bytes) -> Program:
+def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
     """Moves segments from `segment_data` into `program`.
 
     This should recreate the original Program that the segments were extracted
@@ -589,7 +605,7 @@ def _restore_segments(program: Program, segment_data: bytes) -> Program:
             the preceding data has been stripped off so that the first segment
             begins at offset zero.
     Returns:
-        The Program with segments restored.
+        PTEFile, containing the Program with delegate and constant segments restored, mutable data segment, and named data segment.
     """
     # Extract the list of segment data blobs, which parallel program.segments.
     segments: List[bytes] = []
@@ -624,7 +640,7 @@ def _restore_segments(program: Program, segment_data: bytes) -> Program:
 
     # Replace constants from constant_segment into constant_buffer.
     if program.constant_segment and len(program.constant_segment.offsets) > 0:
-        buffers: List[Buffer] = []
+        constant_buffers: List[Buffer] = []
         constant_segment = segments[program.constant_segment.segment_index]
         for i in range(len(program.constant_segment.offsets)):
             start_offset = program.constant_segment.offsets[i]
@@ -635,17 +651,60 @@ def _restore_segments(program: Program, segment_data: bytes) -> Program:
                 if i < len(program.constant_segment.offsets) - 1
                 else len(constant_segment)
             )
-            buffers.append(Buffer(storage=constant_segment[start_offset:end_offset]))
-        program.constant_buffer = buffers
+            constant_buffers.append(
+                Buffer(storage=constant_segment[start_offset:end_offset])
+            )
+        program.constant_buffer = constant_buffers
         program.constant_segment.segment_index = 0
         program.constant_segment.offsets = []
 
-    # Clear out the segments list since the original Program didn't have one.
+    # Extract mutable segments.
+    mutable_data = None
+    if program.mutable_data_segments and len(program.mutable_data_segments.offsets) > 0:
+        mutable_buffers: List[Buffer] = []
+        mutable_segment = segments[program.mutable_segment.segment_index]
+        for i in range(len(program.mutable_segments.offsets)):
+            start_offset = program.mutable_segment.offsets[i]
+            # Note: this is the original end offset plus any padding between
+            # it and the next start offset.
+            end_offset = (
+                program.mutable_segment.offsets[i + 1]
+                if i < len(program.mutable_segment.offsets) - 1
+                else len(mutable_segment)
+            )
+            mutable_buffers.append(
+                Buffer(storage=mutable_segment[start_offset:end_offset])
+            )
+            mutable_data = mutable_buffers
+        program.mutable_segment.segment_index = 0
+        program.mutable_segment.offsets = []
+
+    # Extract named data.
+    named_data = None
+    if program.named_data:
+        named_data_store = NamedDataStore()
+        named_data_buffers: List[bytes] = []
+        pte_data: Dict[str, DataEntry] = {}
+
+        for entry in program.named_data:
+            if entry.segment_index >= len(segments):
+                raise ValueError(
+                    "Named data segment index "
+                    f"{entry.segment_index} >= num segments {len(segments)}"
+                )
+            named_data_store.add_named_data(
+                key=entry.key,
+                data=segments[entry.segment_index],
+                alignment=1,  # Deserialization does not preserve alignment.
+                tensor_layout=None,  # PTE file currently does not serialize this.
+            )
+        named_data = named_data_store.get_named_data_store_output()
+    program.named_data = []
     program.segments = []
-    return program
+    return PTEFile(program=program, mutable_data=mutable_data, named_data=named_data)
 
 
-def deserialize_pte_binary(program_data: bytes) -> Program:
+def deserialize_pte_binary(program_data: bytes) -> PTEFile:
     """Returns a Program deserialized from the given runtime binary data."""
     program_size = len(program_data)
     segment_base_offset = 0
@@ -664,8 +723,8 @@ def deserialize_pte_binary(program_data: bytes) -> Program:
 
     if segment_base_offset != 0:
         # Move segment data back into the Program.
-        program = _restore_segments(
+        return _restore_segments(
             program=program, segment_data=program_data[segment_base_offset:]
         )
 
-    return program
+    return PTEFile(program=program, mutable_data=None, named_data=None)

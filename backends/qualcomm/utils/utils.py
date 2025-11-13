@@ -197,7 +197,7 @@ def dump_context_from_pte(pte_path) -> List[str]:
     with open(pte_path, "rb") as f:
         program_data = f.read()
 
-    program = deserialize_pte_binary(program_data)
+    program = deserialize_pte_binary(program_data).program
 
     ctx_path = os.path.dirname(pte_path)
     dummy_compiler_specs = generate_qnn_executorch_compiler_spec(
