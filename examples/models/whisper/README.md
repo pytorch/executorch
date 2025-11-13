@@ -24,22 +24,17 @@ Currently we have CUDA and Metal build support. CPU is WIP.
 
 For CUDA:
 ```
-BUILD_BACKEND="EXECUTORCH_BUILD_CUDA"
+WORKFLOW="llm-release-cuda"
 ```
 
 For Metal:
 ```
-BUILD_BACKEND="EXECUTORCH_BUILD_METAL"
+WORKFLOW="llm-release-metal"
 ```
 
 ```bash
 # Install ExecuTorch libraries:
-cmake --preset llm \
-      -D${BUILD_BACKEND}=ON \
-      -DCMAKE_INSTALL_PREFIX=cmake-out \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Bcmake-out -S.
-cmake --build cmake-out -j$(nproc) --target install --config Release
+cmake --workflow $WORKFLOW
 
 # Build the runner:
 cmake \
