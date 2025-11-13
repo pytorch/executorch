@@ -33,7 +33,6 @@ from executorch.exir._serialize.padding import aligned_size, pad_to, padding_req
 from executorch.exir.schema import (
     BackendDelegateDataReference,
     BackendDelegateInlineData,
-    Buffer,
     DataLocation,
     DataSegment,
     NamedData,
@@ -56,9 +55,8 @@ class PTEFile:
     """
 
     program: Program
-    # TODO(lfq): add constant data (currently restored in the program)
-    # TODO(lfq): update this to List[bytes]
-    mutable_data: Optional[List[Buffer]] = None
+    constant_data: Optional[List[bytes]] = None
+    mutable_data: Optional[List[bytes]] = None
     named_data: Optional[NamedDataStoreOutput] = None
 
 
@@ -346,14 +344,14 @@ def _extract_delegate_segments(
 
 
 def _extract_constant_segment(
-    constant_buffer: List[Buffer],
+    constant_buffer: List[bytes],
     tensor_alignment: Optional[int] = None,
 ) -> Tuple[Cord, List[int]]:
     """Copies the tensors from the provided list into a Cord and tracks the offsets
         of each tensor.
 
     Args:
-        constant_buffer: list of Buffers from which to extract constants from. Not modified.
+        constant_buffer: list of bytes from which to extract constants from. Not modified.
         tensor_alignment: Alignment in bytes. Each tensor in the cord will be padded to align
             with this value. Defaults to ALIGNMENT.
 
@@ -365,8 +363,8 @@ def _extract_constant_segment(
     current_offset: int = 0
     for i in range(len(constant_buffer)):
         buffer = constant_buffer[i]
-        constant_segment_data.append(buffer.storage)
-        buffer_length = len(buffer.storage)
+        constant_segment_data.append(buffer)
+        buffer_length = len(buffer)
         pad_length = (
             padding_required(buffer_length, tensor_alignment)
             if tensor_alignment is not None
@@ -460,23 +458,22 @@ def serialize_pte_binary(
     # This may be constant data, delegate data or named data.
     segments: List[AlignedData] = []
 
-    constant_segment_data, constant_segment_offsets = _extract_constant_segment(
-        program.constant_buffer, tensor_alignment=constant_tensor_alignment
-    )
-
-    # If there are no constants, len(constant_segment_data) = 0. However, there may
-    # be non-constants, in which case len(constant_segment_offsets) = 1, containing
-    # the placeholder value 0. Ensure the placeholder value is put into
-    # program.constant_segment.offsets.
-    if len(constant_segment_offsets) > 0:
-        # Update program.constant_segment with constant subsegment offset information.
-        program.constant_segment = SubsegmentOffsets(
-            segment_index=len(segments), offsets=constant_segment_offsets
+    if pte_file.constant_data is not None:
+        constant_segment_data, constant_segment_offsets = _extract_constant_segment(
+            pte_file.constant_data, tensor_alignment=constant_tensor_alignment
         )
-        # Clear the constant buffer, as constant data will be stored in segments.
-        program.constant_buffer = []
-        # Add to the aggregate segments cord.
-        segments.append(AlignedData(constant_segment_data))
+
+        # If there are no constants, len(constant_segment_data) = 0. However, there may
+        # be non-constants, in which case len(constant_segment_offsets) = 1, containing
+        # the placeholder value 0. Ensure the placeholder value is put into
+        # program.constant_segment.offsets.
+        if len(constant_segment_offsets) > 0:
+            # Update program.constant_segment with constant subsegment offset information.
+            program.constant_segment = SubsegmentOffsets(
+                segment_index=len(segments), offsets=constant_segment_offsets
+            )
+            # Add to the aggregate segments cord.
+            segments.append(AlignedData(constant_segment_data))
 
     if pte_file.mutable_data is not None:
         mutable_segment_data, mutable_segment_offsets = _extract_constant_segment(
@@ -637,8 +634,9 @@ def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
             )
 
     # Replace constants from constant_segment into constant_buffer.
+    constant_data = None
     if program.constant_segment and len(program.constant_segment.offsets) > 0:
-        constant_buffers: List[Buffer] = []
+        constant_buffers: List[bytes] = []
         constant_segment = segments[program.constant_segment.segment_index]
         for i in range(len(program.constant_segment.offsets)):
             start_offset = program.constant_segment.offsets[i]
@@ -649,17 +647,15 @@ def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
                 if i < len(program.constant_segment.offsets) - 1
                 else len(constant_segment)
             )
-            constant_buffers.append(
-                Buffer(storage=constant_segment[start_offset:end_offset])
-            )
-        program.constant_buffer = constant_buffers
+            constant_buffers.append(constant_segment[start_offset:end_offset])
+        constant_data = constant_buffers
         program.constant_segment.segment_index = 0
         program.constant_segment.offsets = []
 
     # Extract mutable segments.
     mutable_data = None
     if program.mutable_data_segments and len(program.mutable_data_segments.offsets) > 0:
-        mutable_buffers: List[Buffer] = []
+        mutable_buffers: List[bytes] = []
         mutable_segment = segments[program.mutable_segment.segment_index]
         for i in range(len(program.mutable_segments.offsets)):
             start_offset = program.mutable_segment.offsets[i]
@@ -670,9 +666,7 @@ def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
                 if i < len(program.mutable_segment.offsets) - 1
                 else len(mutable_segment)
             )
-            mutable_buffers.append(
-                Buffer(storage=mutable_segment[start_offset:end_offset])
-            )
+            mutable_buffers.append(mutable_segment[start_offset:end_offset])
             mutable_data = mutable_buffers
         program.mutable_segment.segment_index = 0
         program.mutable_segment.offsets = []
@@ -699,7 +693,12 @@ def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
         named_data = named_data_store.get_named_data_store_output()
     program.named_data = []
     program.segments = []
-    return PTEFile(program=program, mutable_data=mutable_data, named_data=named_data)
+    return PTEFile(
+        program=program,
+        constant_data=constant_data,
+        mutable_data=mutable_data,
+        named_data=named_data,
+    )
 
 
 def deserialize_pte_binary(program_data: bytes) -> PTEFile:
