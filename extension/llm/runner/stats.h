@@ -49,6 +49,14 @@ struct ET_EXPERIMENTAL Stats {
   int64_t num_prompt_tokens;
   // Token count from generated (total - prompt)
   int64_t num_generated_tokens;
+  // GPU memory stats (optional; may be zero if not available)
+  // GPU memory stats (optional). Use sentinel UINT64_MAX / -1.0 to indicate
+  // "not available".
+  uint64_t gpu_total_bytes = static_cast<uint64_t>(-1);
+  uint64_t gpu_free_before_load_bytes = static_cast<uint64_t>(-1);
+  uint64_t gpu_free_after_load_bytes = static_cast<uint64_t>(-1);
+  uint64_t gpu_free_after_generate_bytes = static_cast<uint64_t>(-1);
+  double gpu_peak_usage_mb = -1.0;
   inline void on_sampling_begin() {
     aggregate_sampling_timer_start_timestamp = time_in_ms();
   }
@@ -75,6 +83,11 @@ struct ET_EXPERIMENTAL Stats {
     aggregate_sampling_time_ms = 0;
     num_prompt_tokens = 0;
     num_generated_tokens = 0;
+    gpu_total_bytes = static_cast<uint64_t>(-1);
+    gpu_free_before_load_bytes = static_cast<uint64_t>(-1);
+    gpu_free_after_load_bytes = static_cast<uint64_t>(-1);
+    gpu_free_after_generate_bytes = static_cast<uint64_t>(-1);
+    gpu_peak_usage_mb = -1.0;
     aggregate_sampling_timer_start_timestamp = 0;
   }
 
@@ -93,7 +106,29 @@ inline std::string stats_to_json_string(const Stats& stats) {
      << "\"prompt_eval_end_ms\":" << stats.prompt_eval_end_ms << ","
      << "\"first_token_ms\":" << stats.first_token_ms << ","
      << "\"aggregate_sampling_time_ms\":" << stats.aggregate_sampling_time_ms
-     << "," << "\"SCALING_FACTOR_UNITS_PER_SECOND\":"
+     << ",";
+  // Only include GPU fields in the JSON if gpu_total_bytes is valid (not
+  // equal to sentinel -1)
+  if (stats.gpu_total_bytes != static_cast<uint64_t>(-1)) {
+    ss << "\"gpu_total_bytes\":" << stats.gpu_total_bytes;
+    if (stats.gpu_free_before_load_bytes != static_cast<uint64_t>(-1)) {
+      ss << ",\"gpu_free_before_load_bytes\":"
+         << stats.gpu_free_before_load_bytes;
+    }
+    if (stats.gpu_free_after_load_bytes != static_cast<uint64_t>(-1)) {
+      ss << ",\"gpu_free_after_load_bytes\":"
+         << stats.gpu_free_after_load_bytes;
+    }
+    if (stats.gpu_free_after_generate_bytes != static_cast<uint64_t>(-1)) {
+      ss << ",\"gpu_free_after_generate_bytes\":"
+         << stats.gpu_free_after_generate_bytes;
+    }
+    if (stats.gpu_peak_usage_mb >= 0.0) {
+      ss << ",\"gpu_peak_usage_mb\":" << stats.gpu_peak_usage_mb;
+    }
+    ss << ",";
+  }
+  ss << "\"SCALING_FACTOR_UNITS_PER_SECOND\":"
      << stats.SCALING_FACTOR_UNITS_PER_SECOND << "}";
   return ss.str();
 }
@@ -156,6 +191,35 @@ inline void print_report(const Stats& stats) {
       stats.num_prompt_tokens + stats.num_generated_tokens,
       (double)stats.aggregate_sampling_time_ms /
           stats.SCALING_FACTOR_UNITS_PER_SECOND);
+
+  // GPU memory reporting (only meaningful if GPU fields were populated)
+  if (stats.gpu_total_bytes != static_cast<uint64_t>(-1)) {
+    ET_LOG(
+        Info,
+        "\tGPU total memory: %.2f MB",
+        stats.gpu_total_bytes / 1024.0 / 1024.0);
+    if (stats.gpu_free_before_load_bytes != static_cast<uint64_t>(-1)) {
+      ET_LOG(
+          Info,
+          "\tGPU free before load: %.2f MB",
+          stats.gpu_free_before_load_bytes / 1024.0 / 1024.0);
+    }
+    if (stats.gpu_free_after_load_bytes != static_cast<uint64_t>(-1)) {
+      ET_LOG(
+          Info,
+          "\tGPU free after load: %.2f MB",
+          stats.gpu_free_after_load_bytes / 1024.0 / 1024.0);
+    }
+    if (stats.gpu_free_after_generate_bytes != static_cast<uint64_t>(-1)) {
+      ET_LOG(
+          Info,
+          "\tGPU free after generate: %.2f MB",
+          stats.gpu_free_after_generate_bytes / 1024.0 / 1024.0);
+    }
+    if (stats.gpu_peak_usage_mb >= 0.0) {
+      ET_LOG(Info, "\tGPU peak usage: %.2f MB", stats.gpu_peak_usage_mb);
+    }
+  }
 }
 
 } // namespace llm

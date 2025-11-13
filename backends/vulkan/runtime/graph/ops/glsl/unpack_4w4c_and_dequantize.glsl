@@ -30,7 +30,7 @@ layout(std430) buffer;
 
 #include "conv2d_common.glslh"
 
-${layout_declare_tensor(B, "w", "t_fp_output", DTYPE, OUTPUT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "w", "t_fp_output", DTYPE, OUTPUT_STORAGE)}
 ${layout_declare_tensor(B, "r", "t_packed_int8_output", "int", INPUT_STORAGE, is_scalar_array=False)}
 
 ${layout_declare_ubo(B, "ivec4", "output_sizes")}
@@ -84,7 +84,19 @@ void unpack_and_dequantize(
 void store_fp_output_texel(
     const Conv2dTensorIndex tidx,
     const VEC4_T out_texel) {
+#ifdef OUTPUT_BUFFER
+  const int c_idx = mul_4(tidx.data.z);
+  const int c_stride = output_sizes.y * output_sizes.x;
+
+  const int base_buf_i = c_idx * c_stride + tidx.data.y * output_sizes.x + tidx.data.x;
+  const int limit = min(output_sizes.z - c_idx, 4);
+
+  for (int i = 0; i < limit; ++i) {
+    t_fp_output[base_buf_i + i * c_stride] = out_texel[i];
+  }
+#else
   imageStore(t_fp_output, tidx.data, out_texel);
+#endif
 }
 
 void store_fp_tile(
@@ -92,7 +104,9 @@ void store_fp_tile(
     const Conv2dBlockIndex block_idx) {
   Conv2dTensorIndex store_tidx = block_idx_to_tensor_idx(block_idx);
   [[unroll]] for (int w = 0; w < 4; w++) {
-    store_fp_output_texel(store_tidx, block.data[w][0]);
+    if (store_tidx.data.x < output_sizes.x) {
+      store_fp_output_texel(store_tidx, block.data[w][0]);
+    }
     store_tidx.data.x++;
   }
 }
