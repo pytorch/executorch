@@ -71,7 +71,7 @@ This example is verified with SM8550 and SM8450.
 ### Software:
 
  - Follow ExecuTorch recommended Python version.
- - A compiler to compile AOT parts, e.g., the GCC compiler comes with Ubuntu LTS.
+ - A compiler to compile AOT parts, e.g., the GCC compiler comes with Ubuntu LTS. g++ version need to be 13 or higher.
  - [Android NDK](https://developer.android.com/ndk). This example is verified with NDK 26c.
  - (Optional) Target toolchain for linux embedded platform.
  - [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
