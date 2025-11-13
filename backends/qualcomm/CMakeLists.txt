@@ -27,9 +27,7 @@ get_filename_component(
 if(EXECUTORCH_BUILD_PYBIND)
   set(_qnn_default_sdk_dir "${CMAKE_CURRENT_BINARY_DIR}/sdk/qnn")
 
-  if(EXISTS "${_qnn_default_sdk_dir}" AND EXISTS
-                                          "${_qnn_default_sdk_dir}/lib"
-  )
+  if(EXISTS "${_qnn_default_sdk_dir}" AND EXISTS "${_qnn_default_sdk_dir}/lib")
     message(STATUS "Found cached Qualcomm SDK at ${_qnn_default_sdk_dir}")
     set(QNN_SDK_ROOT
         ${_qnn_default_sdk_dir}
@@ -41,16 +39,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       COMMAND
         ${PYTHON_EXECUTABLE}
         ${EXECUTORCH_SOURCE_DIR}/backends/qualcomm/scripts/download_qnn_sdk.py
-        --dst-folder ${_qnn_default_sdk_dir}
-        --print-sdk-path
+        --dst-folder ${_qnn_default_sdk_dir} --print-sdk-path
       WORKING_DIRECTORY ${EXECUTORCH_SOURCE_DIR}
       RESULT_VARIABLE _qnn_sdk_download_result
       OUTPUT_VARIABLE _qnn_sdk_download_output
       ERROR_VARIABLE _qnn_sdk_download_error
       OUTPUT_STRIP_TRAILING_WHITESPACE
     )
-    if(NOT _qnn_sdk_download_result EQUAL 0 OR _qnn_sdk_download_output STREQUAL
-                                              ""
+    if(NOT _qnn_sdk_download_result EQUAL 0 OR _qnn_sdk_download_output
+                                               STREQUAL ""
     )
       message(
         FATAL_ERROR
