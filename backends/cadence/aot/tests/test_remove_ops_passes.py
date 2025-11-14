@@ -196,13 +196,13 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([pad])
         original = builder.get_graph_module()
-        graph_after_passes = cast(
-            PassResult, RemoveZeroSizedConstantPadNd()(original)
-        ).graph_module
+        pass_result = cast(PassResult, RemoveZeroSizedConstantPadNd()(original))
+        graph_after_passes = pass_result.graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.constant_pad_nd.default),
             0,
         )
+        self.assertTrue(pass_result.modified)
 
     def test_remove_expand(self) -> None:
         builder = GraphBuilder()
@@ -228,12 +228,12 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([concat])
         original = builder.get_graph_module()
-        graph_after_passes = cast(
-            PassResult, RemoveZeroSizedCatArgsPass()(original)
-        ).graph_module
+        pass_result = cast(PassResult, RemoveZeroSizedCatArgsPass()(original))
+        graph_after_passes = pass_result.graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.cat.default), 0
         )
+        self.assertTrue(pass_result.modified)
 
     def test_remove_clone(self) -> None:
         builder = GraphBuilder()
@@ -611,7 +611,9 @@ class TestRemoveOpsPasses(unittest.TestCase):
         original = deepcopy(model)
 
         p = RemoveSqueezeViewBeforeElementwiseOps()
-        transformed = cast(PassResult, p(model)).graph_module
+        pass_result = cast(PassResult, p(model))
+        self.assertTrue(pass_result.modified)
+        transformed = pass_result.graph_module
 
         # First view should be eliminated and second view should be trivial.
         views = transformed.graph.find_nodes(
@@ -872,9 +874,9 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([x1_output, y1_output])
         original = builder.get_graph_module()
-        graph_after_passes = cast(
-            PassResult, RemoveBranchedQuantDequant()(original)
-        ).graph_module
+        pass_result = cast(PassResult, RemoveBranchedQuantDequant()(original))
+        self.assertTrue(pass_result.modified)
+        graph_after_passes = pass_result.graph_module
         self.assertEqual(
             count_node(
                 graph_after_passes,
@@ -904,9 +906,9 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([output])
         original = builder.get_graph_module()
-        graph_after_passes = cast(
-            PassResult, RemoveCatFromSliceCopyPass()(original)
-        ).graph_module
+        pass_result = cast(PassResult, RemoveCatFromSliceCopyPass()(original))
+        self.assertTrue(pass_result.modified)
+        graph_after_passes = pass_result.graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.cat.default), 0
         )
@@ -922,9 +924,9 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([output])
         original = builder.get_graph_module()
-        graph_after_passes = cast(
-            PassResult, RemoveCatFromSliceCopyPass()(original)
-        ).graph_module
+        pass_result = cast(PassResult, RemoveCatFromSliceCopyPass()(original))
+        self.assertFalse(pass_result.modified)
+        graph_after_passes = pass_result.graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.cat.default), 1
         )
