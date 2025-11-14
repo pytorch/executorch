@@ -307,6 +307,22 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         </tr>
                                         
                                         <tr id="i20" class="altColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#ones(Array,DType)>ones</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape, <a href=DType.html>DType</a> dtype) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with given data-type and all elements initialized to one.</td>
+                                        </tr>
+                                        
+                                        <tr id="i21" class="rowColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#zeros(Array,DType)>zeros</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape, <a href=DType.html>DType</a> dtype) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with given data-type and all elements initialized to zero.</td>
+                                        </tr>
+                                        
+                                        <tr id="i22" class="altColor">
                                             <td class="colFirst"><code>long</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#numel()>numel</a>() </code>
@@ -314,7 +330,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast">Returns the number of elements in this tensor.</td>
                                         </tr>
                                         
-                                        <tr id="i21" class="rowColor">
+                                        <tr id="i23" class="rowColor">
                                             <td class="colFirst"><code>static long</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#numel(Array)>numel</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
@@ -322,7 +338,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast">Calculates the number of elements in a tensor with the specified shape.</td>
                                         </tr>
                                         
-                                        <tr id="i22" class="altColor">
+                                        <tr id="i24" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#shape()>shape</a>() </code>
@@ -330,7 +346,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast">Returns the shape of this tensor.</td>
                                         </tr>
                                         
-                                        <tr id="i23" class="rowColor">
+                                        <tr id="i25" class="rowColor">
                                             <td class="colFirst"><code>abstract <a href=DType.html>DType</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#dtype()>dtype</a>() </code>
@@ -338,7 +354,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast"></td>
                                         </tr>
                                         
-                                        <tr id="i24" class="altColor">
+                                        <tr id="i26" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsByteArray()>getDataAsByteArray</a>() </code>
@@ -346,7 +362,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast"></td>
                                         </tr>
                                         
-                                        <tr id="i25" class="rowColor">
+                                        <tr id="i27" class="rowColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;short&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsShortArray()>getDataAsShortArray</a>() </code>
@@ -354,7 +370,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast"></td>
                                         </tr>
                                         
-                                        <tr id="i26" class="altColor">
+                                        <tr id="i28" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsUnsignedByteArray()>getDataAsUnsignedByteArray</a>() </code>
@@ -362,7 +378,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast"></td>
                                         </tr>
                                         
-                                        <tr id="i27" class="rowColor">
+                                        <tr id="i29" class="rowColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsIntArray()>getDataAsIntArray</a>() </code>
@@ -370,7 +386,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast"></td>
                                         </tr>
                                         
-                                        <tr id="i28" class="altColor">
+                                        <tr id="i30" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;float&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsFloatArray()>getDataAsFloatArray</a>() </code>
@@ -378,7 +394,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast"></td>
                                         </tr>
                                         
-                                        <tr id="i29" class="rowColor">
+                                        <tr id="i31" class="rowColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsLongArray()>getDataAsLongArray</a>() </code>
@@ -386,7 +402,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast"></td>
                                         </tr>
                                         
-                                        <tr id="i30" class="altColor">
+                                        <tr id="i32" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;double&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsDoubleArray()>getDataAsDoubleArray</a>() </code>
@@ -394,7 +410,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast"></td>
                                         </tr>
                                         
-                                        <tr id="i31" class="rowColor">
+                                        <tr id="i33" class="rowColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#toByteArray()>toByteArray</a>() </code>
@@ -402,7 +418,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast">Serializes a <code>{@code Tensor}</code> into a byte array.</td>
                                         </tr>
                                         
-                                        <tr id="i32" class="altColor">
+                                        <tr id="i34" class="altColor">
                                             <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#fromByteArray(Array)>fromByteArray</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; bytes) </code>
@@ -971,6 +987,62 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             
                                             
                                             <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="ones(Array,DType)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>ones</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#ones(Array,DType)>ones</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape, <a href=DType.html>DType</a> dtype)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with given data-type and all elements initialized to one.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>dtype</code> - Tensor data-type</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="zeros(Array,DType)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>zeros</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#zeros(Array,DType)>zeros</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape, <a href=DType.html>DType</a> dtype)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with given data-type and all elements initialized to zero.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>dtype</code> - Tensor data-type</dd>
                                             
                                             
                                         </dl>
