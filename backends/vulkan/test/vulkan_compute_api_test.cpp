@@ -2315,38 +2315,42 @@ void test_mm(
 
 TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
 #define RUN_TESTS(dtype, storage_type, layout, prepack) \
-  test_mm(/*B = */ 1,                                   \
-          /*M = */ 31,                                  \
-          /*K = */ 127,                                 \
-          /*N = */ 23,                                  \
-          dtype,                                        \
-          storage_type,                                 \
-          layout,                                       \
-          prepack);                                     \
-  test_mm(/*B = */ 5,                                   \
-          /*M = */ 31,                                  \
-          /*K = */ 127,                                 \
-          /*N = */ 23,                                  \
-          dtype,                                        \
-          storage_type,                                 \
-          layout,                                       \
-          prepack);                                     \
-  test_mm(/*B = */ 7,                                   \
-          /*M = */ 13,                                  \
-          /*K = */ 89,                                  \
-          /*N = */ 17,                                  \
-          dtype,                                        \
-          storage_type,                                 \
-          layout,                                       \
-          prepack);                                     \
-  test_mm(/*B = */ 1,                                   \
-          /*M = */ 13,                                  \
-          /*K = */ 89,                                  \
-          /*N = */ 17,                                  \
-          dtype,                                        \
-          storage_type,                                 \
-          layout,                                       \
-          prepack);
+  test_mm(                                              \
+      /*B = */ 1,                                       \
+      /*M = */ 31,                                      \
+      /*K = */ 127,                                     \
+      /*N = */ 23,                                      \
+      dtype,                                            \
+      storage_type,                                     \
+      layout,                                           \
+      prepack);                                         \
+  test_mm(                                              \
+      /*B = */ 5,                                       \
+      /*M = */ 31,                                      \
+      /*K = */ 127,                                     \
+      /*N = */ 23,                                      \
+      dtype,                                            \
+      storage_type,                                     \
+      layout,                                           \
+      prepack);                                         \
+  test_mm(                                              \
+      /*B = */ 7,                                       \
+      /*M = */ 13,                                      \
+      /*K = */ 89,                                      \
+      /*N = */ 17,                                      \
+      dtype,                                            \
+      storage_type,                                     \
+      layout,                                           \
+      prepack);                                         \
+  test_mm(                                              \
+      /*B = */ 1,                                       \
+      /*M = */ 13,                                      \
+      /*K = */ 89,                                      \
+      /*N = */ 17,                                      \
+      dtype,                                            \
+      storage_type,                                     \
+      layout,                                           \
+      prepack);
 
   CALL_TEST_FN_FOR_W_PACKED(RUN_TESTS);
   CALL_TEST_FN_FOR_C_PACKED(RUN_TESTS);
