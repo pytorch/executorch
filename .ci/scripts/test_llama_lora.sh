@@ -12,10 +12,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
     rm -rf cmake-out
-    retry cmake --preset llm \
-        -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE=Release
-    cmake --build cmake-out -j9 --target install --config Release
+    cmake --workflow llm-release
 }
 
 cmake_build_llama_runner() {

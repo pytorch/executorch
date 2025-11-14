@@ -82,12 +82,7 @@ Ensure you have a CUDA-capable GPU and CUDA toolkit installed on your system.
 ./install_executorch.sh
 
 # Build the multimodal runner with CUDA
-cmake --preset llm \
-      -DEXECUTORCH_BUILD_CUDA=ON \
-      -DCMAKE_INSTALL_PREFIX=cmake-out \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Bcmake-out -S.
-cmake --build cmake-out -j$(nproc) --target install --config Release
+cmake --workflow llm-release-cuda
 
 # Build the Gemma3 runner
 cmake -DEXECUTORCH_BUILD_CUDA=ON \

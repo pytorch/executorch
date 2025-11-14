@@ -23,8 +23,16 @@ if hash nproc &> /dev/null; then NPROC=$(nproc); fi
 
 cmake_install_executorch_libraries() {
   rm -rf cmake-out
-  cmake --preset llm -DCMAKE_INSTALL_PREFIX=cmake-out -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
-  cmake --build cmake-out -j16 --target install --config ${BUILD_TYPE}
+
+  # Select workflow preset based on BUILD_TYPE
+  if [[ "${BUILD_TYPE}" == "Debug" ]]; then
+    WORKFLOW_PRESET="llm-debug"
+  else
+    WORKFLOW_PRESET="llm-release"
+  fi
+
+  echo "Using workflow preset: ${WORKFLOW_PRESET}"
+  cmake --workflow --preset ${WORKFLOW_PRESET}
 }
 
 cmake_build_phi_3_mini() {
