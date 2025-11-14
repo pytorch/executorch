@@ -1049,8 +1049,26 @@ document.write(`
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-arm-vgf.html">Arm® VGF Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">Arm Ethos-U Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="backends/arm-ethos-u/arm-ethos-u-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/arm-ethos-u/arm-ethos-u-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/arm-ethos-u/arm-ethos-u-troubleshooting.html">Arm Ethos-U Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="backends/arm-ethos-u/tutorials/arm-ethos-u-tutorials.html">Arm Ethos-U Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="backends/arm-ethos-u/tutorials/ethos-u-getting-started.html">Getting Started Tutorial</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="backends/arm-vgf/arm-vgf-overview.html">Arm VGF Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="backends/arm-vgf/arm-vgf-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/arm-vgf/arm-vgf-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backends/arm-vgf/arm-vgf-troubleshooting.html">Arm VGF Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="backends/arm-vgf/tutorials/arm-vgf-tutorials.html">Arm VGF Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="backends/arm-vgf/tutorials/vgf-getting-started.html">Getting Started Tutorial</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
@@ -1208,15 +1226,15 @@ document.write(`
 <td><p>NPU</p></td>
 <td><p>MediaTek SoCs</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="backends-arm-ethos-u.html"><span class="doc std std-doc">ARM EthosU</span></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html"><span class="std std-doc">Arm Ethos-U</span></a></p></td>
 <td><p>Embedded</p></td>
 <td><p>NPU</p></td>
-<td><p>ARM MCUs</p></td>
+<td><p>Arm MCUs</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="backends-arm-vgf.html"><span class="doc std std-doc">ARM VGF</span></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="backends/arm-vgf/arm-vgf-overview.html"><span class="std std-doc">Arm VGF</span></a></p></td>
 <td><p>Android</p></td>
-<td><p>NPU</p></td>
-<td><p>ARM platforms</p></td>
+<td><p>GPU</p></td>
+<td><p>Arm platforms</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="build-run-openvino.html"><span class="doc std std-doc">OpenVINO</span></a></p></td>
 <td><p>Embedded</p></td>
@@ -1603,7 +1621,7 @@ document.write(`
        "headline": "Backends",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/backends-section.html",
-       "articleBody": "Backends# Backend Overview# ExecuTorch backends provide hardware acceleration for specific hardware targets, enabling models to run efficiently on devices ranging from mobile phones to embedded systems and DSPs. During the export and lowering process, ExecuTorch optimizes your model for the chosen backend, resulting in a .pte file specialized for that hardware. To support multiple platforms (e.g., Core ML on iOS, Arm CPU on Android), you typically generate a dedicated .pte file for each backend. The choice of backend is informed by the hardware your model will run on. Each backend has its own hardware requirements and level of model/operator support. See the documentation for each backend for details. As part of .pte file creation, ExecuTorch identifies model partitions supported by the backend. These are processed ahead of time for efficient execution. Operators not supported by the delegate are executed using the portable CPU fallback (e.g., XNNPACK), allowing for partial acceleration. You can also specify multiple partitioners in order of priority, so unsupported GPU ops can fall back to CPU, for example. Why Backends Matter# Backends are the bridge between your exported model and the hardware it runs on. Choosing the right backend ensures your model takes full advantage of device-specific acceleration, balancing performance, compatibility, and resource usage. Choosing a Backend# Backend Platform(s) Hardware Type Typical Use Case XNNPACK All CPU General-purpose, fallback Core ML iOS, macOS NPU/GPU/CPU Apple devices, high performance Metal Performance Shaders iOS, macOS GPU Apple GPU acceleration Vulkan Android GPU Android GPU acceleration Qualcomm Android NPU Qualcomm SoCs MediaTek Android NPU MediaTek SoCs ARM EthosU Embedded NPU ARM MCUs ARM VGF Android NPU ARM platforms OpenVINO Embedded CPU/GPU/NPU Intel SoCs NXP Embedded NPU NXP SoCs Cadence Embedded DSP DSP-optimized workloads Samsung Exynos Android NPU Samsung SoCs Tip: For best performance, export a .pte file for each backend you plan to support. Best Practices# Test on all target devices: Operator support may vary by backend. Use fallback wisely: If a backend doesn\u2019t support an operator, ExecuTorch will run it on CPU. Consult backend docs: Each backend has unique setup and tuning options.",
+       "articleBody": "Backends# Backend Overview# ExecuTorch backends provide hardware acceleration for specific hardware targets, enabling models to run efficiently on devices ranging from mobile phones to embedded systems and DSPs. During the export and lowering process, ExecuTorch optimizes your model for the chosen backend, resulting in a .pte file specialized for that hardware. To support multiple platforms (e.g., Core ML on iOS, Arm CPU on Android), you typically generate a dedicated .pte file for each backend. The choice of backend is informed by the hardware your model will run on. Each backend has its own hardware requirements and level of model/operator support. See the documentation for each backend for details. As part of .pte file creation, ExecuTorch identifies model partitions supported by the backend. These are processed ahead of time for efficient execution. Operators not supported by the delegate are executed using the portable CPU fallback (e.g., XNNPACK), allowing for partial acceleration. You can also specify multiple partitioners in order of priority, so unsupported GPU ops can fall back to CPU, for example. Why Backends Matter# Backends are the bridge between your exported model and the hardware it runs on. Choosing the right backend ensures your model takes full advantage of device-specific acceleration, balancing performance, compatibility, and resource usage. Choosing a Backend# Backend Platform(s) Hardware Type Typical Use Case XNNPACK All CPU General-purpose, fallback Core ML iOS, macOS NPU/GPU/CPU Apple devices, high performance Metal Performance Shaders iOS, macOS GPU Apple GPU acceleration Vulkan Android GPU Android GPU acceleration Qualcomm Android NPU Qualcomm SoCs MediaTek Android NPU MediaTek SoCs Arm Ethos-U Embedded NPU Arm MCUs Arm VGF Android GPU Arm platforms OpenVINO Embedded CPU/GPU/NPU Intel SoCs NXP Embedded NPU NXP SoCs Cadence Embedded DSP DSP-optimized workloads Samsung Exynos Android NPU Samsung SoCs Tip: For best performance, export a .pte file for each backend you plan to support. Best Practices# Test on all target devices: Operator support may vary by backend. Use fallback wisely: If a backend doesn\u2019t support an operator, ExecuTorch will run it on CPU. Consult backend docs: Each backend has unique setup and tuning options.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",

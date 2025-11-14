@@ -60,7 +60,7 @@
     <link rel="icon" href="_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Arm VGF Backend Tutorial" href="tutorial-arm-vgf.html" />
+    <link rel="next" title="iOS" href="ios-section.html" />
     <link rel="prev" title="Operator Support" href="backends/samsung/samsung-op-support.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -1030,7 +1030,9 @@ document.write(`
 </details></li>
 <li class="toctree-l3"><a class="reference internal" href="android-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="android-mediatek.html">MediaTek Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="android-arm-vgf.html">Arm® VGF Backend</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="android-arm-vgf.html">Arm VGF Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
 <li class="toctree-l3 has-children"><a class="reference internal" href="backends/samsung/samsung-overview.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-partitioner.html">Partitioner API</a></li>
 <li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-quantization.html">Quantization</a></li>
@@ -1039,8 +1041,7 @@ document.write(`
 </details></li>
 </ul>
 </details></li>
-<li class="toctree-l2 current active has-children"><a class="current reference internal" href="#">Examples &amp; Demos</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="tutorial-arm-vgf.html">Arm VGF Backend Tutorial</a></li>
+<li class="toctree-l2 current active has-children"><a class="current reference internal" href="#">Examples &amp; Demos</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
 </ul>
 </details></li>
 </ul>
@@ -1082,11 +1083,9 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="embedded-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="embedded-cadence.html">Cadence Xtensa Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="embedded-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="embedded-nxp.html">NXP eIQ Neutron Backend</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
 <li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pico2_tutorial.html">Pico2: A simple MNIST Tutorial</a></li>
 </ul>
@@ -1208,7 +1207,7 @@ document.write(`
 <ul class="simple">
 <li><p><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/blob/main/llm/android/LlamaDemo/README.md">Working with LLMs - Android Examples</a> - ExecuTorch Llama Android Demo App</p></li>
 <li><p><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Demo Apps</a> -  DeepLab v3 model for image segmentation</p></li>
-<li><p><a class="reference internal" href="tutorial-arm-vgf.html"><span class="doc">Arm VGF Backend Tutorial</span></a> — Export a simple PyTorch model for the ExecuTorch VGF backend</p></li>
+<li><p><span class="xref std std-doc">tutorial-arm-vgf</span> — Export a simple PyTorch model for the ExecuTorch VGF backend</p></li>
 </ul>
 <div class="toctree-wrapper compound">
 </div>
@@ -1266,11 +1265,11 @@ document.write(`
       </div>
     </a>
     <a class="right-next"
-       href="tutorial-arm-vgf.html"
+       href="ios-section.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Arm VGF Backend Tutorial</p>
+        <p class="prev-next-title">iOS</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1305,11 +1304,11 @@ document.write(`
       </div>
     </a>
     <a class="right-next"
-       href="tutorial-arm-vgf.html"
+       href="ios-section.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Arm VGF Backend Tutorial</p>
+        <p class="prev-next-title">iOS</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1545,7 +1544,7 @@ document.write(`
        "headline": "Examples \u0026 Demos",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/android-examples.html",
-       "articleBody": "Examples \u0026 Demos# Working with LLMs - Android Examples - ExecuTorch Llama Android Demo App Demo Apps - DeepLab v3 model for image segmentation Arm VGF Backend Tutorial \u2014 Export a simple PyTorch model for the ExecuTorch VGF backend",
+       "articleBody": "Examples \u0026 Demos# Working with LLMs - Android Examples - ExecuTorch Llama Android Demo App Demo Apps - DeepLab v3 model for image segmentation tutorial-arm-vgf \u2014 Export a simple PyTorch model for the ExecuTorch VGF backend",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",

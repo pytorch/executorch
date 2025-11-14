@@ -1030,7 +1030,9 @@ document.write(`
 </details></li>
 <li class="toctree-l3"><a class="reference internal" href="android-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="android-mediatek.html">MediaTek Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="android-arm-vgf.html">Arm® VGF Backend</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="android-arm-vgf.html">Arm VGF Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
 <li class="toctree-l3 has-children"><a class="reference internal" href="backends/samsung/samsung-overview.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-partitioner.html">Partitioner API</a></li>
 <li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-quantization.html">Quantization</a></li>
@@ -1039,8 +1041,7 @@ document.write(`
 </details></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="android-examples.html">Examples &amp; Demos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="tutorial-arm-vgf.html">Arm VGF Backend Tutorial</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="android-examples.html">Examples &amp; Demos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
 </ul>
 </details></li>
 </ul>
@@ -1082,11 +1083,9 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="embedded-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="embedded-cadence.html">Cadence Xtensa Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="embedded-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="embedded-nxp.html">NXP eIQ Neutron Backend</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
 <li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pico2_tutorial.html">Pico2: A simple MNIST Tutorial</a></li>
 </ul>
@@ -1223,7 +1222,7 @@ document.write(`
 <section id="tutorials">
 <h2>Tutorials<a class="headerlink" href="#tutorials" title="Link to this heading">#</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="tutorial-arm-ethos-u.html"><span class="doc">Arm Ethos-U NPU Backend Tutorial</span></a> — Export a simple PyTorch model for the ExecuTorch Ethos-U backend</p></li>
+<li><p><span class="xref std std-doc">tutorial-arm-ethos-u</span> — Export a simple PyTorch model for the ExecuTorch Ethos-U backend</p></li>
 <li><p><a class="reference internal" href="raspberry_pi_llama_tutorial.html"><span class="doc">ExecuTorch on Raspberry Pi</span></a> — Deploy a LLaMA model on a Raspberry Pi</p></li>
 <li><p><a class="reference internal" href="pico2_tutorial.html"><span class="doc">Pico2: A simple MNIST Tutorial</span></a> — Deploy a demo MNIST model on the Raspberry Pi Pico 2</p></li>
 </ul>
@@ -1578,7 +1577,7 @@ document.write(`
        "headline": "Embedded Systems",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/embedded-section.html",
-       "articleBody": "Embedded Systems# Deploy ExecuTorch on constrained embedded systems and microcontrollers. API Reference \u0026 Development# Start here for C++ development with ExecuTorch runtime APIs and essential tutorials. Runtime API Reference \u2014 Start here: Complete runtime API reference for embedded development Detailed C++ Runtime APIs Tutorial \u2014 Step-by-step C++ API tutorial with practical examples Running an ExecuTorch Model Using the Module Extension in C++ \u2014 Custom module extensions for specialized functionality Managing Tensor Memory in C++ \u2014 Tensor operations and memory management extensions Build \u0026 Integration Guide# Using ExecuTorch with C++ \u2014 Complete setup guide for C++ runtime integration Building from Source \u2014 Building from Source Choose Backend for acceleration# Backends \u2014 Available embedded backends and acceleration options Tutorials# Arm Ethos-U NPU Backend Tutorial \u2014 Export a simple PyTorch model for the ExecuTorch Ethos-U backend ExecuTorch on Raspberry Pi \u2014 Deploy a LLaMA model on a Raspberry Pi Pico2: A simple MNIST Tutorial \u2014 Deploy a demo MNIST model on the Raspberry Pi Pico 2",
+       "articleBody": "Embedded Systems# Deploy ExecuTorch on constrained embedded systems and microcontrollers. API Reference \u0026 Development# Start here for C++ development with ExecuTorch runtime APIs and essential tutorials. Runtime API Reference \u2014 Start here: Complete runtime API reference for embedded development Detailed C++ Runtime APIs Tutorial \u2014 Step-by-step C++ API tutorial with practical examples Running an ExecuTorch Model Using the Module Extension in C++ \u2014 Custom module extensions for specialized functionality Managing Tensor Memory in C++ \u2014 Tensor operations and memory management extensions Build \u0026 Integration Guide# Using ExecuTorch with C++ \u2014 Complete setup guide for C++ runtime integration Building from Source \u2014 Building from Source Choose Backend for acceleration# Backends \u2014 Available embedded backends and acceleration options Tutorials# tutorial-arm-ethos-u \u2014 Export a simple PyTorch model for the ExecuTorch Ethos-U backend ExecuTorch on Raspberry Pi \u2014 Deploy a LLaMA model on a Raspberry Pi Pico2: A simple MNIST Tutorial \u2014 Deploy a demo MNIST model on the Raspberry Pi Pico 2",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",

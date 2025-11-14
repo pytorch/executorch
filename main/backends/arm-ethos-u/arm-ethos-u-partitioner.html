@@ -2,14 +2,14 @@
 <!DOCTYPE html>
 
 
-<html lang="en" data-content_root="./" >
+<html lang="en" data-content_root="../../" >
 
   <head>
   <meta name="robots" content="noindex">
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>Arm VGF Backend Tutorial &#8212; ExecuTorch main documentation</title>
+    <title>Partitioner API &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -19,49 +19,49 @@
   </script>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-<link href="_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-<link href="_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link href="../../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
 
   
-  <link href="_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+  <link href="../../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
 
-    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
-    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=047068a3" />
-    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
-    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
   
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
-<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
-  <script src="_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
 
-    <script src="_static/documentation_options.js?v=a8da1a53"></script>
-    <script src="_static/doctools.js?v=888ff710"></script>
-    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
-    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
-    <script src="_static/copybutton.js?v=f281be69"></script>
-    <script src="_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'tutorial-arm-vgf';</script>
+    <script src="../../_static/documentation_options.js?v=a8da1a53"></script>
+    <script src="../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/arm-ethos-u/arm-ethos-u-partitioner';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/tutorial-arm-vgf.html" />
-    <link rel="icon" href="_static/executorch-chip-logo.svg"/>
-    <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="iOS" href="ios-section.html" />
-    <link rel="prev" title="Examples &amp; Demos" href="android-examples.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/backends/arm-ethos-u/arm-ethos-u-partitioner.html" />
+    <link rel="icon" href="../../_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Quantization" href="arm-ethos-u-quantization.html" />
+    <link rel="prev" title="Arm Ethos-U Backend" href="arm-ethos-u-overview.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -94,13 +94,13 @@
 <!-- Conditional CSS for header and footer height adjustment -->
 
 
-<link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
-<script type="text/javascript" src="_static/js/theme.js"></script>
+<link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="../../_static/js/theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
 <meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
-<link rel="stylesheet" href="_static/webfonts/all.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../../_static/webfonts/all.min.css" crossorigin="anonymous">
 <meta http-equiv="Content-Security-Policy"
   content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
 <meta name="pytorch_project" content="">
@@ -565,7 +565,7 @@
     <div class="search-button__overlay"></div>
     <div class="search-button__search-container">
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -602,7 +602,7 @@
     
   
 
-<a class="navbar-brand logo" href="index.html">
+<a class="navbar-brand logo" href="../../index.html">
   
   
   
@@ -613,8 +613,8 @@
       
     
     
-    <img src="_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch main documentation - Home"/>
-    <script>document.write(`<img src="_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch main documentation - Home"/>`);</script>
+    <img src="../../_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch main documentation - Home"/>
+    <script>document.write(`<img src="../../_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch main documentation - Home"/>`);</script>
   
   
 </a></div>
@@ -654,56 +654,56 @@ document.write(`
   <ul class="bd-navbar-elements navbar-nav">
     
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="intro-section.html">
+  <a class="nav-link nav-internal" href="../../intro-section.html">
     Intro
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="quick-start-section.html">
+  <a class="nav-link nav-internal" href="../../quick-start-section.html">
     Quick Start
   </a>
 </li>
 
 
-<li class="nav-item current active">
-  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../edge-platforms-section.html">
     Edge
   </a>
 </li>
 
 
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="backends-section.html">
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="../../backends-section.html">
     Backends
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+  <a class="nav-link nav-internal" href="../../llm/working-with-llms.html">
     LLMs
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+  <a class="nav-link nav-internal" href="../../advanced-topics-section.html">
     Advanced
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="tools-section.html">
+  <a class="nav-link nav-internal" href="../../tools-section.html">
     Tools
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="api-section.html">
+  <a class="nav-link nav-internal" href="../../api-section.html">
     API
   </a>
 </li>
@@ -715,7 +715,7 @@ document.write(`
                 <ul id="pst-nav-more-links" class="dropdown-menu">
                     
 <li class=" ">
-  <a class="nav-link dropdown-item nav-internal" href="support-section.html">
+  <a class="nav-link dropdown-item nav-internal" href="../../support-section.html">
     Support
   </a>
 </li>
@@ -735,7 +735,7 @@ document.write(`
         <div class="navbar-item">
   
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -853,63 +853,63 @@ document.write(`
   <ul class="bd-navbar-elements navbar-nav">
     
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="intro-section.html">
+  <a class="nav-link nav-internal" href="../../intro-section.html">
     Intro
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="quick-start-section.html">
+  <a class="nav-link nav-internal" href="../../quick-start-section.html">
     Quick Start
   </a>
 </li>
 
 
-<li class="nav-item current active">
-  <a class="nav-link nav-internal" href="edge-platforms-section.html">
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="../../edge-platforms-section.html">
     Edge
   </a>
 </li>
 
 
-<li class="nav-item ">
-  <a class="nav-link nav-internal" href="backends-section.html">
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="../../backends-section.html">
     Backends
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+  <a class="nav-link nav-internal" href="../../llm/working-with-llms.html">
     LLMs
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="advanced-topics-section.html">
+  <a class="nav-link nav-internal" href="../../advanced-topics-section.html">
     Advanced
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="tools-section.html">
+  <a class="nav-link nav-internal" href="../../tools-section.html">
     Tools
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="api-section.html">
+  <a class="nav-link nav-internal" href="../../api-section.html">
     API
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="support-section.html">
+  <a class="nav-link nav-internal" href="../../support-section.html">
     Support
   </a>
 </li>
@@ -927,7 +927,7 @@ document.write(`
           <div class="navbar-item">
   
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -1017,81 +1017,67 @@ document.write(`
 <nav class="bd-docs-nav bd-links"
      aria-label="Section Navigation">
   <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
-  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Edge Platforms</span></p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Backend Overview</span></p>
 <ul class="current nav bd-sidenav">
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="android-section.html">Android</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="android-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3 has-children"><a class="reference internal" href="android-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../xnnpack/xnnpack-overview.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../xnnpack/xnnpack-partitioner.html">Partitioner API</a></li>
+
+<li class="toctree-l2"><a class="reference internal" href="../xnnpack/xnnpack-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../xnnpack/xnnpack-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../xnnpack/xnnpack-arch-internals.html">Architecture and Internals</a></li>
 </ul>
 </details></li>
-<li class="toctree-l3 has-children"><a class="reference internal" href="android-vulkan.html">Vulkan Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../coreml/coreml-overview.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-op-support.html">Op support</a></li>
 </ul>
 </details></li>
-<li class="toctree-l3"><a class="reference internal" href="android-qualcomm.html">Qualcomm AI Engine Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="android-mediatek.html">MediaTek Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="android-arm-vgf.html">Arm® VGF Backend</a></li>
-<li class="toctree-l3 has-children"><a class="reference internal" href="backends/samsung/samsung-overview.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-partitioner.html">Partitioner API</a></li>
-<li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-quantization.html">Quantization</a></li>
-<li class="toctree-l4"><a class="reference internal" href="backends/samsung/samsung-op-support.html">Operator Support</a></li>
-</ul>
-</details></li>
-</ul>
-</details></li>
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="android-examples.html">Examples &amp; Demos</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l3 current active"><a class="current reference internal" href="#">Arm VGF Backend Tutorial</a></li>
-</ul>
-</details></li>
-</ul>
-</details></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="ios-section.html">iOS</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="ios-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3 has-children"><a class="reference internal" href="ios-coreml.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
-</ul>
-</details></li>
-<li class="toctree-l3"><a class="reference internal" href="ios-mps.html">MPS Backend</a></li>
-<li class="toctree-l3 has-children"><a class="reference internal" href="ios-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+<li class="toctree-l1"><a class="reference internal" href="../mps/mps-overview.html">MPS Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../vulkan/vulkan-overview.html">Vulkan Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-op-support.html">Operator Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../vulkan/vulkan-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../vulkan/tutorials/vulkan-tutorials.html">Vulkan Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../vulkan/tutorials/etvk-profiling-tutorial.html">Executing and profiling an ExecuTorch Vulkan model on device</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../vulkan/tutorials/etvk-llama-tutorial.html">Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device</a></li>
 </ul>
 </details></li>
 </ul>
 </details></li>
-<li class="toctree-l2"><a class="reference internal" href="ios-examples.html">Examples &amp; Demos</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="arm-ethos-u-overview.html">Arm Ethos-U Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="arm-ethos-u-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="arm-ethos-u-troubleshooting.html">Arm Ethos-U Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="tutorials/arm-ethos-u-tutorials.html">Arm Ethos-U Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="tutorials/ethos-u-getting-started.html">Getting Started Tutorial</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="desktop-section.html">Desktop &amp; Laptop Platforms</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
-<li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="desktop-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3 has-children"><a class="reference internal" href="desktop-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
 </ul>
 </details></li>
-<li class="toctree-l3"><a class="reference internal" href="desktop-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../arm-vgf/arm-vgf-overview.html">Arm VGF Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../arm-vgf/arm-vgf-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-vgf/arm-vgf-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-vgf/arm-vgf-troubleshooting.html">Arm VGF Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../arm-vgf/tutorials/arm-vgf-tutorials.html">Arm VGF Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../arm-vgf/tutorials/vgf-getting-started.html">Getting Started Tutorial</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="embedded-section.html">Embedded Systems</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
-<li class="toctree-l2"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l2"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
-<li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
-<li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="embedded-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="embedded-cadence.html">Cadence Xtensa Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="embedded-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="embedded-nxp.html">NXP eIQ Neutron Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../build-run-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-nxp.html">NXP eIQ Neutron Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../samsung/samsung-overview.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../samsung/samsung-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../samsung/samsung-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../samsung/samsung-op-support.html">Operator Support</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pico2_tutorial.html">Pico2: A simple MNIST Tutorial</a></li>
-</ul>
-</details></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
 </ul>
 </div>
 </nav></div>
@@ -1121,26 +1107,21 @@ document.write(`
 
 
 
-
-
 <nav aria-label="Breadcrumb" class="d-print-none">
   <ul class="bd-breadcrumbs">
     
     <li class="breadcrumb-item breadcrumb-home">
-      <a href="index.html" class="nav-link" aria-label="Home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
     
-    <li class="breadcrumb-item"><a href="edge-platforms-section.html" class="nav-link">Edge</a></li>
+    <li class="breadcrumb-item"><a href="../../backends-section.html" class="nav-link">Backends</a></li>
     
     
-    <li class="breadcrumb-item"><i class="fa-solid fa-ellipsis"></i></li>
+    <li class="breadcrumb-item"><a href="arm-ethos-u-overview.html" class="nav-link">Arm Ethos-U Backend</a></li>
     
-    
-    <li class="breadcrumb-item"><a href="android-examples.html" class="nav-link">Examples &amp; Demos</a></li>
-    
-    <li class="breadcrumb-item active" aria-current="page">Arm VGF...</li>
+    <li class="breadcrumb-item active" aria-current="page">Partitioner API</li>
   </ul>
 </nav>
 </div>
@@ -1182,26 +1163,20 @@ document.write(`
     <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <link itemprop="item" href="edge-platforms-section.html">
-        <meta itemprop="name" content="Edge">
+        <link itemprop="item" href="../../backends-section.html">
+        <meta itemprop="name" content="Backends">
         <meta itemprop="position" content="1">
       </div>
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <link itemprop="item" href="android-section.html">
-        <meta itemprop="name" content="Android">
+        <link itemprop="item" href="arm-ethos-u-overview.html">
+        <meta itemprop="name" content="Arm Ethos-U Backend">
         <meta itemprop="position" content="2">
       </div>
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <link itemprop="item" href="android-examples.html">
-        <meta itemprop="name" content="Examples &amp; Demos">
+        <meta itemprop="name" content="Partitioner API">
         <meta itemprop="position" content="3">
-      </div>
-      
-      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-        <meta itemprop="name" content="Arm VGF Backend Tutorial">
-        <meta itemprop="position" content="4">
       </div>
     </div>
 
@@ -1214,223 +1189,53 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="arm-vgf-backend-tutorial">
-<h1>Arm VGF Backend Tutorial<a class="headerlink" href="#arm-vgf-backend-tutorial" title="Link to this heading">#</a></h1>
-<!----This will show a grid card on the page----->
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-Tutorials we recommend you complete before this:</div>
+  <section id="partitioner-api">
+<h1>Partitioner API<a class="headerlink" href="#partitioner-api" title="Link to this heading">#</a></h1>
+<p>The <code class="docutils literal notranslate"><span class="pre">EthosUPartitioner</span></code> controls what parts of a model is delegated to the Arm Ethos-U backend. Below is a reference of the various functions the partitioner provides:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">EthosUPartitioner</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">:</span> <span class="n">executorch</span><span class="o">.</span><span class="n">backends</span><span class="o">.</span><span class="n">arm</span><span class="o">.</span><span class="n">ethosu</span><span class="o">.</span><span class="n">compile_spec</span><span class="o">.</span><span class="n">EthosUCompileSpec</span><span class="p">,</span> <span class="n">additional_checks</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">passes</span><span class="o">.</span><span class="n">operator_support</span><span class="o">.</span><span class="n">OperatorSupportBase</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</pre></div>
+</div>
+<p>Partitions subgraphs supported by the Arm Ethos-U backend.</p>
+<p>Args:</p>
 <ul class="simple">
-<li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="std std-doc">Introduction to ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="getting-started.html"><span class="std std-doc">Getting Started</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="using-executorch-building-from-source.html"><span class="std std-doc">Building ExecuTorch with CMake</span></a></p></li>
+<li><p><strong>compile_spec</strong>: List of CompileSpec objects for Ethos-U backend.</p></li>
+<li><p><strong>additional_checks</strong>: Optional sequence of additional operator support checks.</p></li>
 </ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUPartitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ep</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">ExportedProgram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">node</span><span class="o">.</span><span class="n">Node</span><span class="p">],</span> <span class="nb">bool</span><span class="p">]]]:</span>
+</pre></div>
 </div>
-</div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-What you will learn in this tutorial:</div>
-<p class="sd-card-text">In this tutorial you will learn how to export a simple PyTorch model for the ExecuTorch VGF backend.</p>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="admonition warning">
-<p class="admonition-title">Warning</p>
-<p>This delegate is under active development, to get best results please use a recent version.
-The VGF backend support is in early development and you may encounter issues.
-You may encounter some rough edges and features which may be documented or planned but not implemented, please refer to the in-tree documentation for the latest status of features.</p>
-</div>
-<div class="admonition tip">
-<p class="admonition-title">Tip</p>
-<p>If you are already familiar with this delegate, you may want to jump directly to the examples:</p>
+<p>Return operators and a filter that should not be decomposed.</p>
+<p>Provide a base set of ops to preserve as-is and a predicate that keeps
+certain activations whole when surrounded by quantize/dequantize ops in
+a quantized graph. This helps downstream TOSA lowering and delegation.</p>
+<p>Args:</p>
 <ul class="simple">
-<li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/arm">Examples in the ExecuTorch repository</a></p></li>
-<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/aot_arm_compiler.py">A commandline compiler for example models</a></p></li>
+<li><p><strong>ep (ExportedProgram)</strong>: Program used to infer target-specific policy.</p></li>
 </ul>
-</div>
-<p>This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on VGF targets. The tutorial is based on <code class="docutils literal notranslate"><span class="pre">vgf_minimal_example.ipyb</span></code>, provided in Arm®’s example folder.</p>
-<section id="prerequisites">
-<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
-<section id="hardware">
-<h3>Hardware<a class="headerlink" href="#hardware" title="Link to this heading">#</a></h3>
-<p>To successfully complete this tutorial, you will need a Linux machine with aarch64 or x86_64 processor architecture, or a macOS™ machine with Apple® Silicon.</p>
-<p>To enable development without a specific development board, we will be using the <a class="reference external" href="https://github.com/arm/ai-ml-sdk-for-vulkan/">ML SDK for Vulkan®</a> to emulate the program consumer.</p>
-</section>
-<section id="software">
-<h3>Software<a class="headerlink" href="#software" title="Link to this heading">#</a></h3>
-<p>First, you will need to install ExecuTorch. Please follow the recommended tutorials if you haven’t already, to set up a working ExecuTorch development environment. For the VGF backend it’s recommended you <a class="reference external" href="https://docs.pytorch.org/executorch/stable/using-executorch-building-from-source.html">install from source</a>, or from a <a class="reference external" href="https://download.pytorch.org/whl/nightly/executorch/">nightly</a>.</p>
-<p>Additionally, you need to install a number of SDK dependencies for generating VGF files. For glslc, prefer installing it via your package manager. If this is not possible, and for other dependencies, there are scripts to automate installation available in the main <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/arm/">ExecuTorch repository</a>. glscl will then be installed via the Vulkan SDK.</p>
-<p>To install VGF dependencies, run</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./examples/arm/setup.sh<span class="w"> </span>--i-agree-to-the-contained-eula<span class="w"> </span>--disable-ethos-u-deps<span class="w"> </span>--enable-mlsdk-deps
-</pre></div>
-</div>
-<p>This will install:</p>
+<p>Returns:</p>
 <ul class="simple">
-<li><p><a class="reference external" href="https://www.mlplatform.org/tosa/software.html">TOSA Serialization Library</a> for serializing the Exir IR graph into TOSA IR.</p></li>
-<li><p><a class="reference external" href="https://github.com/arm/ai-ml-sdk-model-converter">ML SDK Model Converter</a> for converting TOSA flatbuffers to VGF files.</p></li>
-<li><p><a class="reference external" href="https://www.vulkan.org">Vulkan API (If needed)</a> Should be set up locally for GPU execution support.</p></li>
-<li><p><a class="reference external" href="https://github.com/arm/ai-ml-emulation-layer-for-vulkan">ML Emulation Layer for Vulkan</a> for testing on Vulkan API.</p></li>
+<li><p><strong>Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]</strong>:
+A list of op overloads to keep intact, and an optional filter
+function that returns True when an op should not be decomposed.</p></li>
 </ul>
-</section>
-</section>
-<section id="set-up-the-developer-environment">
-<h2>Set Up the Developer Environment<a class="headerlink" href="#set-up-the-developer-environment" title="Link to this heading">#</a></h2>
-<p>The <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script has generated a <code class="docutils literal notranslate"><span class="pre">setup_path.sh</span></code> script that you need to source whenever you restart your shell. Do this by running</p>
-<p><code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">examples/arm/ethos-u-scratch/setup_path.sh</span></code></p>
-<p>As a simple check that your environment is set up correctly, run</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>which<span class="w"> </span>model-converter
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUPartitioner</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exported_program</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">ExportedProgram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">backend</span><span class="o">.</span><span class="n">partitioner</span><span class="o">.</span><span class="n">PartitionResult</span><span class="p">:</span>
 </pre></div>
 </div>
-<p>Make sure the executable is located where you expect, in the <code class="docutils literal notranslate"><span class="pre">examples/arm</span></code> tree.</p>
-</section>
-<section id="build">
-<h2>Build<a class="headerlink" href="#build" title="Link to this heading">#</a></h2>
-<section id="ahead-of-time-aot-components">
-<h3>Ahead-of-Time (AOT) components<a class="headerlink" href="#ahead-of-time-aot-components" title="Link to this heading">#</a></h3>
-<p>The ExecuTorch Ahead-of-Time (AOT) pipeline takes a PyTorch Model (a <code class="docutils literal notranslate"><span class="pre">torch.nn.Module</span></code>) and produces a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> binary file, which is then typically consumed by the ExecuTorch Runtime. This <a class="reference internal" href="getting-started-architecture.html"><span class="std std-doc">document</span></a> goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.</p>
-<p>The example below shows how to quantize a model consisting of a single addition, and export it it through the AOT flow using the VGF backend. For more details, se <code class="docutils literal notranslate"><span class="pre">examples/arm/vgf_minimal_example.ipynb</span></code>.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">Add</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
-
-<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
-
-<span class="n">model</span> <span class="o">=</span> <span class="n">Add</span><span class="p">()</span>
-<span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-<span class="n">exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_for_training</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
-<span class="n">graph_module</span> <span class="o">=</span> <span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
-
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.vgf</span><span class="w"> </span><span class="kn">import</span> <span class="n">VgfCompileSpec</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">VgfQuantizer</span><span class="p">,</span>
-    <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
-
-<span class="c1"># Create a compilation spec describing the target for configuring the quantizer</span>
-<span class="n">compile_spec</span> <span class="o">=</span> <span class="n">VgfCompileSpec</span><span class="p">(</span><span class="s2">&quot;TOSA-1.0+INT&quot;</span><span class="p">)</span>
-
-<span class="c1"># Create and configure quantizer to use a symmetric quantization config globally on all nodes</span>
-<span class="n">quantizer</span> <span class="o">=</span> <span class="n">VgfQuantizer</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">)</span>
-<span class="n">operator_config</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">(</span><span class="n">is_per_channel</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">operator_config</span><span class="p">)</span>
-
-<span class="c1"># Post training quantization</span>
-<span class="n">quantized_graph_module</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
-<span class="n">quantized_graph_module</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span> <span class="c1"># Calibrate the graph module with the example input</span>
-<span class="n">quantized_graph_module</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">quantized_graph_module</span><span class="p">)</span>
-
-
-<span class="c1"># Create a new exported program using the quantized_graph_module</span>
-<span class="n">quantized_exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">quantized_graph_module</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.vgf</span><span class="w"> </span><span class="kn">import</span> <span class="n">VgfPartitioner</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">EdgeCompileConfig</span><span class="p">,</span>
-    <span class="n">ExecutorchBackendConfig</span><span class="p">,</span>
-    <span class="n">to_edge_transform_and_lower</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.export_util.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">save_pte_program</span>
-
-<span class="c1"># Create partitioner from compile spec</span>
-<span class="n">partitioner</span> <span class="o">=</span> <span class="n">VgfPartitioner</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">)</span>
-
-<span class="c1"># Lower the exported program to the VGF backend</span>
-<span class="n">edge_program_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
-            <span class="n">quantized_exported_program</span><span class="p">,</span>
-            <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">partitioner</span><span class="p">],</span>
-            <span class="n">compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span>
-                <span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-            <span class="p">),</span>
-<span class="p">)</span>
-
-<span class="c1"># Convert edge program to executorch</span>
-<span class="n">executorch_program_manager</span> <span class="o">=</span> <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
-            <span class="n">config</span><span class="o">=</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span><span class="n">extract_delegate_segments</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="p">)</span>
-
-
-<span class="c1"># Save pte file</span>
-<span class="n">cwd_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
-<span class="n">pte_base_name</span> <span class="o">=</span> <span class="s2">&quot;simple_example&quot;</span>
-<span class="n">pte_name</span> <span class="o">=</span> <span class="n">pte_base_name</span> <span class="o">+</span> <span class="s2">&quot;.pte&quot;</span>
-<span class="n">pte_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cwd_dir</span><span class="p">,</span> <span class="n">pte_name</span><span class="p">)</span>
-<span class="n">save_pte_program</span><span class="p">(</span><span class="n">executorch_program_manager</span><span class="p">,</span> <span class="n">pte_name</span><span class="p">)</span>
-<span class="k">assert</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">pte_path</span><span class="p">),</span> <span class="s2">&quot;Build failed; no .pte-file found&quot;</span>
-</pre></div>
-</div>
-<div class="admonition tip">
-<p class="admonition-title">Tip</p>
-<p>For a quick start, you can use the script <code class="docutils literal notranslate"><span class="pre">examples/arm/aot_arm_compiler.py</span></code> to produce the pte.
-To produce a pte file equivalent to the one above, run
-<code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">examples.arm.aot_arm_compiler</span> <span class="pre">--model_name=add</span> <span class="pre">--delegate</span> <span class="pre">--quantize</span> <span class="pre">--output=simple_example.pte</span> <span class="pre">--target=vgf</span></code></p>
-</div>
-</section>
-<section id="runtime">
-<h3>Runtime:<a class="headerlink" href="#runtime" title="Link to this heading">#</a></h3>
-</section>
-</section>
-<section id="build-executor-runtime">
-<h2>Build executor runtime<a class="headerlink" href="#build-executor-runtime" title="Link to this heading">#</a></h2>
-<p>After the AOT compilation flow is done, we can build the executor runner target. For this tutorial, the default runner can be used. Build it with the following configuration:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># In ExecuTorch top-level, with sourced setup_path.sh</span>
-cmake<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_VULKAN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_VGF<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Bcmake-out<span class="w"> </span>.
-
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>--target<span class="w"> </span>executor_runner<span class="sb">`</span>
-</pre></div>
-</div>
-<p>The block diagram below demonstrates, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.</p>
-<p><img alt="" src="_images/arm-delegate-runtime-build.svg" /></p>
-</section>
-<section id="deploying-and-running-on-device">
-<h2>Deploying and running on device<a class="headerlink" href="#deploying-and-running-on-device" title="Link to this heading">#</a></h2>
-<p>Since we are using the Vulkan emulation layer, we can run the executor runner with the VGF delegate on the host machine:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./cmake-out/executor_runner<span class="w"> </span>-model_path<span class="w"> </span>simple_example.pte
-</pre></div>
-</div>
-<p>The example application is by default built with an input of ones, so the expected result of the quantized addition should be close to 2.</p>
-</section>
-<section id="takeaways">
-<h2>Takeaways<a class="headerlink" href="#takeaways" title="Link to this heading">#</a></h2>
-<p>In this tutorial you have learned how to use ExecuTorch to export a PyTorch model to an executable that can run on an embedded target, and then run that executable on simulated hardware.</p>
-</section>
-<section id="faqs">
-<h2>FAQs<a class="headerlink" href="#faqs" title="Link to this heading">#</a></h2>
-<p><em>glslc is not found when configuring the executor runner</em>.</p>
-<p>The Vulkan sdk is likely not in your path, check whether setup_path.sh contains something like
-<code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">PATH=$(pwd)/examples/arm/ethos-u-scratch/vulkan_sdk/1.4.321.1/x86_64/bin:$PATH</span></code>.
-If not, add it and source the file.</p>
-<p>If you encountered any bugs or issues following this tutorial please file a bug/issue here on <a class="reference external" href="https://github.com/pytorch/executorch/issues/new">Github</a>.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Arm</span> <span class="ow">is</span> <span class="n">a</span> <span class="n">registered</span> <span class="n">trademark</span> <span class="n">of</span> <span class="n">Arm</span> <span class="n">Limited</span> <span class="p">(</span><span class="ow">or</span> <span class="n">its</span> <span class="n">subsidiaries</span> <span class="ow">or</span> <span class="n">affiliates</span><span class="p">)</span><span class="o">.</span>
-</pre></div>
-</div>
-</section>
+<p>Partition the program and tag TOSA-compatible subgraphs.</p>
+<p>Run the FX capability-based partitioner to propose subgraphs, then
+refine tags by removing boundary-only quantize/dequantize nodes and by
+rejecting partitions that would lower to no-ops. Emit a detailed report
+of rejected nodes and their reasons.</p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>exported_program (ExportedProgram)</strong>: Program to analyze and
+partition.</p></li>
+</ul>
+<p>Returns:</p>
+<ul class="simple">
+<li><p><strong>PartitionResult</strong>: The input program with nodes tagged for delegation
+and a mapping of partition tags to delegation specs.</p></li>
+</ul>
 </section>
 
 
@@ -1476,20 +1281,20 @@ If not, add it and source the file.</p>
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="android-examples.html"
+       href="arm-ethos-u-overview.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Examples &amp; Demos</p>
+        <p class="prev-next-title">Arm Ethos-U Backend</p>
       </div>
     </a>
     <a class="right-next"
-       href="ios-section.html"
+       href="arm-ethos-u-quantization.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">iOS</p>
+        <p class="prev-next-title">Quantization</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1515,20 +1320,20 @@ If not, add it and source the file.</p>
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="android-examples.html"
+       href="arm-ethos-u-overview.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Examples &amp; Demos</p>
+        <p class="prev-next-title">Arm Ethos-U Backend</p>
       </div>
     </a>
     <a class="right-next"
-       href="ios-section.html"
+       href="arm-ethos-u-quantization.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">iOS</p>
+        <p class="prev-next-title">Quantization</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1543,36 +1348,10 @@ If not, add it and source the file.</p>
 <div class="sidebar-secondary-items sidebar-secondary__inner">
     
        <div class="sidebar-secondary-item">
-<div
-    id="pst-page-navigation-heading-2"
-    class="page-toc tocsection onthispage">
-    <i class="fa-solid fa-list"></i> On this page
-  </div>
-  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
-    <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#hardware">Hardware</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#software">Software</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#set-up-the-developer-environment">Set Up the Developer Environment</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build">Build</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ahead-of-time-aot-components">Ahead-of-Time (AOT) components</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime">Runtime:</a></li>
-</ul>
-</li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build-executor-runtime">Build executor runtime</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#deploying-and-running-on-device">Deploying and running on device</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#takeaways">Takeaways</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#faqs">FAQs</a></li>
-</ul>
-  </nav></div>
-    
-       <div class="sidebar-secondary-item">
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/tutorial-arm-vgf.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/arm-ethos-u/arm-ethos-u-partitioner.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -1586,7 +1365,7 @@ If not, add it and source the file.</p>
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="_sources/tutorial-arm-vgf.md.txt">
+      <a href="../../_sources/backends/arm-ethos-u/arm-ethos-u-partitioner.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -1610,8 +1389,8 @@ If not, add it and source the file.</p>
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script src="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
-<script src="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+  <script src="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
 
   
 
@@ -1739,7 +1518,7 @@ If not, add it and source the file.</p>
 <div class="cookie-banner-wrapper">
   <div class="container">
     <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
-    <img class="close-button" src="_static/img/pytorch-x.svg">
+    <img class="close-button" src="../../_static/img/pytorch-x.svg">
   </div>
 </div>
   
@@ -1786,11 +1565,11 @@ If not, add it and source the file.</p>
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "Arm VGF Backend Tutorial",
-       "headline": "Arm VGF Backend Tutorial",
+       "name": "Partitioner API",
+       "headline": "Partitioner API",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
-       "url": "/tutorial-arm-vgf.html",
-       "articleBody": "Arm VGF Backend Tutorial# Tutorials we recommend you complete before this: Introduction to ExecuTorch Getting Started Building ExecuTorch with CMake What you will learn in this tutorial: In this tutorial you will learn how to export a simple PyTorch model for the ExecuTorch VGF backend. Warning This delegate is under active development, to get best results please use a recent version. The VGF backend support is in early development and you may encounter issues. You may encounter some rough edges and features which may be documented or planned but not implemented, please refer to the in-tree documentation for the latest status of features. Tip If you are already familiar with this delegate, you may want to jump directly to the examples: Examples in the ExecuTorch repository A commandline compiler for example models This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on VGF targets. The tutorial is based on vgf_minimal_example.ipyb, provided in Arm\u00ae\u2019s example folder. Prerequisites# Hardware# To successfully complete this tutorial, you will need a Linux machine with aarch64 or x86_64 processor architecture, or a macOS\u2122 machine with Apple\u00ae Silicon. To enable development without a specific development board, we will be using the ML SDK for Vulkan\u00ae to emulate the program consumer. Software# First, you will need to install ExecuTorch. Please follow the recommended tutorials if you haven\u2019t already, to set up a working ExecuTorch development environment. For the VGF backend it\u2019s recommended you install from source, or from a nightly. Additionally, you need to install a number of SDK dependencies for generating VGF files. For glslc, prefer installing it via your package manager. If this is not possible, and for other dependencies, there are scripts to automate installation available in the main ExecuTorch repository. glscl will then be installed via the Vulkan SDK. To install VGF dependencies, run ./examples/arm/setup.sh --i-agree-to-the-contained-eula --disable-ethos-u-deps --enable-mlsdk-deps This will install: TOSA Serialization Library for serializing the Exir IR graph into TOSA IR. ML SDK Model Converter for converting TOSA flatbuffers to VGF files. Vulkan API (If needed) Should be set up locally for GPU execution support. ML Emulation Layer for Vulkan for testing on Vulkan API. Set Up the Developer Environment# The setup.sh script has generated a setup_path.sh script that you need to source whenever you restart your shell. Do this by running source examples/arm/ethos-u-scratch/setup_path.sh As a simple check that your environment is set up correctly, run which model-converter Make sure the executable is located where you expect, in the examples/arm tree. Build# Ahead-of-Time (AOT) components# The ExecuTorch Ahead-of-Time (AOT) pipeline takes a PyTorch Model (a torch.nn.Module) and produces a .pte binary file, which is then typically consumed by the ExecuTorch Runtime. This document goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime. The example below shows how to quantize a model consisting of a single addition, and export it it through the AOT flow using the VGF backend. For more details, se examples/arm/vgf_minimal_example.ipynb. import torch class Add(torch.nn.Module): def forward(self, x: torch.Tensor, y: torch.Tensor) -\u003e torch.Tensor: return x + y example_inputs = (torch.ones(1,1,1,1),torch.ones(1,1,1,1)) model = Add() model = model.eval() exported_program = torch.export.export_for_training(model, example_inputs) graph_module = exported_program.graph_module from executorch.backends.arm.vgf import VgfCompileSpec from executorch.backends.arm.quantizer import ( VgfQuantizer, get_symmetric_quantization_config, ) from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e # Create a compilation spec describing the target for configuring the quantizer compile_spec = VgfCompileSpec(\"TOSA-1.0+INT\") # Create and configure quantizer to use a symmetric quantization config globally on all nodes quantizer = VgfQuantizer(compile_spec) operator_config = get_symmetric_quantization_config(is_per_channel=False) quantizer.set_global(operator_config) # Post training quantization quantized_graph_module = prepare_pt2e(graph_module, quantizer) quantized_graph_module(*example_inputs) # Calibrate the graph module with the example input quantized_graph_module = convert_pt2e(quantized_graph_module) # Create a new exported program using the quantized_graph_module quantized_exported_program = torch.export.export(quantized_graph_module, example_inputs) import os from executorch.backends.arm.vgf import VgfPartitioner from executorch.exir import ( EdgeCompileConfig, ExecutorchBackendConfig, to_edge_transform_and_lower, ) from executorch.extension.export_util.utils import save_pte_program # Create partitioner from compile spec partitioner = VgfPartitioner(compile_spec) # Lower the exported program to the VGF backend edge_program_manager = to_edge_transform_and_lower( quantized_exported_program, partitioner=[partitioner], compile_config=EdgeCompileConfig( _check_ir_validity=False, ), ) # Convert edge program to executorch executorch_program_manager = edge_program_manager.to_executorch( config=ExecutorchBackendConfig(extract_delegate_segments=False) ) # Save pte file cwd_dir = os.getcwd() pte_base_name = \"simple_example\" pte_name = pte_base_name + \".pte\" pte_path = os.path.join(cwd_dir, pte_name) save_pte_program(executorch_program_manager, pte_name) assert os.path.exists(pte_path), \"Build failed; no .pte-file found\" Tip For a quick start, you can use the script examples/arm/aot_arm_compiler.py to produce the pte. To produce a pte file equivalent to the one above, run python -m examples.arm.aot_arm_compiler --model_name=add --delegate --quantize --output=simple_example.pte --target=vgf Runtime:# Build executor runtime# After the AOT compilation flow is done, we can build the executor runner target. For this tutorial, the default runner can be used. Build it with the following configuration: # In ExecuTorch top-level, with sourced setup_path.sh cmake \\ -DCMAKE_INSTALL_PREFIX=cmake-out \\ -DCMAKE_BUILD_TYPE=Debug \\ -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \\ -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \\ -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \\ -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \\ -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \\ -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \\ -DEXECUTORCH_BUILD_XNNPACK=OFF \\ -DEXECUTORCH_BUILD_VULKAN=ON \\ -DEXECUTORCH_BUILD_VGF=ON \\ -DEXECUTORCH_ENABLE_LOGGING=ON \\ -DPYTHON_EXECUTABLE=python \\ -Bcmake-out . cmake --build cmake-out --target executor_runner` The block diagram below demonstrates, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable. Deploying and running on device# Since we are using the Vulkan emulation layer, we can run the executor runner with the VGF delegate on the host machine: ./cmake-out/executor_runner -model_path simple_example.pte The example application is by default built with an input of ones, so the expected result of the quantized addition should be close to 2. Takeaways# In this tutorial you have learned how to use ExecuTorch to export a PyTorch model to an executable that can run on an embedded target, and then run that executable on simulated hardware. FAQs# glslc is not found when configuring the executor runner. The Vulkan sdk is likely not in your path, check whether setup_path.sh contains something like export PATH=$(pwd)/examples/arm/ethos-u-scratch/vulkan_sdk/1.4.321.1/x86_64/bin:$PATH. If not, add it and source the file. If you encountered any bugs or issues following this tutorial please file a bug/issue here on Github. Arm is a registered trademark of Arm Limited (or its subsidiaries or affiliates).",
+       "url": "/backends/arm-ethos-u/arm-ethos-u-partitioner.html",
+       "articleBody": "Partitioner API# The EthosUPartitioner controls what parts of a model is delegated to the Arm Ethos-U backend. Below is a reference of the various functions the partitioner provides: class EthosUPartitioner(compile_spec: executorch.backends.arm.ethosu.compile_spec.EthosUCompileSpec, additional_checks: Optional[Sequence[torch.fx.passes.operator_support.OperatorSupportBase]] = None) -\u003e None Partitions subgraphs supported by the Arm Ethos-U backend. Args: compile_spec: List of CompileSpec objects for Ethos-U backend. additional_checks: Optional sequence of additional operator support checks. def EthosUPartitioner.ops_to_not_decompose(self, ep: torch.export.exported_program.ExportedProgram) -\u003e Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.node.Node], bool]]]: Return operators and a filter that should not be decomposed. Provide a base set of ops to preserve as-is and a predicate that keeps certain activations whole when surrounded by quantize/dequantize ops in a quantized graph. This helps downstream TOSA lowering and delegation. Args: ep (ExportedProgram): Program used to infer target-specific policy. Returns: Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]: A list of op overloads to keep intact, and an optional filter function that returns True when an op should not be decomposed. def EthosUPartitioner.partition(self, exported_program: torch.export.exported_program.ExportedProgram) -\u003e executorch.exir.backend.partitioner.PartitionResult: Partition the program and tag TOSA-compatible subgraphs. Run the FX capability-based partitioner to propose subgraphs, then refine tags by removing boundary-only quantize/dequantize nodes and by rejecting partitions that would lower to no-ops. Emit a detailed report of rejected nodes and their reasons. Args: exported_program (ExportedProgram): Program to analyze and partition. Returns: PartitionResult: The input program with nodes tagged for delegation and a mapping of partition tags to delegation specs.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
@@ -1799,7 +1578,7 @@ If not, add it and source the file.</p>
        "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/tutorial-arm-vgf.html"
+         "@id": "/backends/arm-ethos-u/arm-ethos-u-partitioner.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"
