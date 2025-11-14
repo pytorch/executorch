@@ -20,32 +20,22 @@ module to generate the spectrogram tensor.
 
 ## Build
 
-Currently we have CUDA and Metal build support. CPU is WIP.
+Currently we have CUDA and Metal build support.
+
+For CPU:
+```
+make whisper-cpu
+```
 
 For CUDA:
 ```
-WORKFLOW="llm-release-cuda"
+make whisper-cuda
 ```
 
 For Metal:
 ```
-WORKFLOW="llm-release-metal"
+make whisper-metal
 ```
-
-```bash
-# Install ExecuTorch libraries:
-cmake --workflow $WORKFLOW
-
-# Build the runner:
-cmake \
-  -B cmake-out/examples/models/whisper \
-  -S examples/models/whisper
-cmake --build cmake-out/examples/models/whisper -j$(nproc)
-```
-
-The first cmake command build produces a static library named `extension_asr_runner`. The second cmake command links it into your
-application together with the standard ExecuTorch runtime libraries and the
-tokenizer target (`tokenizers::tokenizers`).
 
 ## Usage
 

@@ -1,0 +1,109 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "whisper-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/whisper",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "whisper-cpu",
+            "displayName": "Whisper runner (CPU)",
+            "inherits": ["whisper-base"]
+        },
+        {
+            "name": "whisper-cuda",
+            "displayName": "Whisper runner (CUDA)",
+            "inherits": ["whisper-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "whisper-metal",
+            "displayName": "Whisper runner (Metal)",
+            "inherits": ["whisper-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_METAL": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "whisper-cpu",
+            "displayName": "Build Whisper runner (CPU)",
+            "configurePreset": "whisper-cpu",
+            "targets": ["whisper_runner"]
+        },
+        {
+            "name": "whisper-cuda",
+            "displayName": "Build Whisper runner (CUDA)",
+            "configurePreset": "whisper-cuda",
+            "targets": ["whisper_runner"]
+        },
+        {
+            "name": "whisper-metal",
+            "displayName": "Build Whisper runner (Metal)",
+            "configurePreset": "whisper-metal",
+            "targets": ["whisper_runner"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "whisper-cpu",
+            "displayName": "Configure and build Whisper runner (CPU)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "whisper-cpu"
+                },
+                {
+                    "type": "build",
+                    "name": "whisper-cpu"
+                }
+            ]
+        },
+        {
+            "name": "whisper-cuda",
+            "displayName": "Configure and build Whisper runner (CUDA)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "whisper-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "whisper-cuda"
+                }
+            ]
+        },
+        {
+            "name": "whisper-metal",
+            "displayName": "Configure and build Whisper runner (Metal)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "whisper-metal"
+                },
+                {
+                    "type": "build",
+                    "name": "whisper-metal"
+                }
+            ]
+        }
+    ]
+}
