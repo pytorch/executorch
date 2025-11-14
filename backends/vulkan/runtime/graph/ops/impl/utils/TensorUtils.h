@@ -69,7 +69,7 @@ template <
         std::is_integral<T>::value && std::is_signed<T>::value,
         int>::type = 0>
 T nchw_dim_to_whcn_dim(const T& nchw_dim, const int64_t ndim) {
-  return ndim - 1 - nchw_dim;
+  return ndim - 1 - normalize(nchw_dim, ndim);
 }
 
 } // namespace vkcompute
