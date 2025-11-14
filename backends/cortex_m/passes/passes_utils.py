@@ -50,14 +50,32 @@ def requantize_cmsis(
     multiplier: int,
     shift: int,
 ) -> torch.Tensor:
-    """
-    Simulate CMSIS-NN fixed-point requantization:
-    result = round(tensor * multiplier / (2 ^ shift))
-    with double rounding
-    """
-    multiplied = torch.round(tensor.to(torch.int64) * multiplier)
-    shifted = torch.round(multiplied / (2 ** (31 - shift)))
-    return shifted.to(torch.int32)
+    """Simulate CMSIS-NN's arm_nn_requantize helper."""
+
+    tensor_64 = tensor.to(torch.int64)
+    left_shift = max(shift, 0)
+    right_shift = max(-shift, 0)
+
+    # Equivalent to val * (1 << LEFT_SHIFT(shift))
+    value = tensor_64 << left_shift
+
+    # arm_nn_doubling_high_mult_no_sat(value, multiplier)
+    product = value * int(multiplier)
+    product = product + (1 << 30)
+    result = product >> 31
+
+    if right_shift:
+        remainder_mask = (1 << right_shift) - 1
+        remainder = torch.bitwise_and(result, remainder_mask)
+        result = result >> right_shift
+        threshold = remainder_mask >> 1
+        threshold_tensor = torch.full_like(result, threshold, dtype=torch.int64)
+        threshold_tensor = torch.where(
+            result < 0, threshold_tensor + 1, threshold_tensor
+        )
+        result = result + torch.where(remainder > threshold_tensor, 1, 0)
+
+    return result.to(torch.int32)
 
 
 def extract_scalar_value(node_arg) -> float:

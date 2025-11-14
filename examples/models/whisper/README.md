@@ -20,11 +20,25 @@ module to generate the spectrogram tensor.
 
 ## Build
 
-Currently we have CUDA build support only. CPU and Metal backend builds are WIP.
+Currently we have CUDA and Metal build support. CPU is WIP.
+
+For CUDA:
+```
+BUILD_BACKEND="EXECUTORCH_BUILD_CUDA"
+```
+
+For Metal:
+```
+BUILD_BACKEND="EXECUTORCH_BUILD_METAL"
+```
 
 ```bash
 # Install ExecuTorch libraries:
-cmake --preset llm -DEXECUTORCH_BUILD_CUDA=ON -DCMAKE_INSTALL_PREFIX=cmake-out -DCMAKE_BUILD_TYPE=Release . -Bcmake-out
+cmake --preset llm \
+      -D${BUILD_BACKEND}=ON \
+      -DCMAKE_INSTALL_PREFIX=cmake-out \
+      -DCMAKE_BUILD_TYPE=Release \
+      -Bcmake-out -S.
 cmake --build cmake-out -j$(nproc) --target install --config Release
 
 # Build the runner:
@@ -44,6 +58,8 @@ tokenizer target (`tokenizers::tokenizers`).
 
 Use [Optimum-ExecuTorch](https://github.com/huggingface/optimum-executorch) to export a Whisper model from Hugging Face:
 
+#### CUDA backend:
+
 ```bash
 optimum-cli export executorch \
     --model openai/whisper-small \
@@ -58,6 +74,23 @@ This command generates:
 - `model.pte` — Compiled Whisper model
 - `aoti_cuda_blob.ptd` — Weight data file for CUDA backend
 
+#### Metal backend:
+
+```bash
+optimum-cli export executorch \
+    --model openai/whisper-small \
+    --task automatic-speech-recognition \
+    --recipe metal \
+    --dtype bfloat16 \
+    --output_dir ./
+```
+
+This command generates:
+- `model.pte` — Compiled Whisper model
+- `aoti_metal_blob.ptd` — Weight data file for Metal backend
+
+### Preprocessor
+
 Export a preprocessor to convert raw audio to mel-spectrograms:
 
 ```bash
@@ -71,7 +104,7 @@ python -m executorch.extension.audio.mel_spectrogram \
 
 ### Quantization
 
-Export quantized models to reduce size and improve performance:
+Export quantized models to reduce size and improve performance (Not enabled for Metal yet):
 
 ```bash
 # 4-bit tile packed quantization for encoder
@@ -120,6 +153,8 @@ python -c "from datasets import load_dataset; import soundfile as sf; sample = l
 
 After building the runner (see [Build](#build) section), execute it with the exported model and audio:
 
+#### CUDA backend:
+
 ```bash
 # Set library path for CUDA dependencies
 export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
@@ -128,6 +163,19 @@ export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 cmake-out/examples/models/whisper/whisper_runner \
     --model_path model.pte \
     --data_path aoti_cuda_blob.ptd \
+    --tokenizer_path ./ \
+    --audio_path output.wav \
+    --processor_path whisper_preprocessor.pte \
+    --temperature 0
+```
+
+#### Metal backend:
+
+```bash
+# Run the Whisper runner
+cmake-out/examples/models/whisper/whisper_runner \
+    --model_path model.pte \
+    --data_path aoti_metal_blob.ptd \
     --tokenizer_path ./ \
     --audio_path output.wav \
     --processor_path whisper_preprocessor.pte \
