@@ -73,5 +73,6 @@ cmake -S "$COREMLTOOLS_DIR_PATH" -B "$COREMLTOOLS_DIR_PATH/build"
 cmake --build "$COREMLTOOLS_DIR_PATH/build" --parallel --target mlmodel
 
 echo "${green}ExecuTorch: Copying protobuf files."
+rm -rf "$COREML_DIR_PATH/runtime/sdk/format/"
 mkdir -p "$COREML_DIR_PATH/runtime/sdk/format/"
 cp -rf "$PROTOBUF_FILES_DIR_PATH" "$COREML_DIR_PATH/runtime/sdk/format/"
