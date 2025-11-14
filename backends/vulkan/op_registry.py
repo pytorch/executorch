@@ -740,6 +740,7 @@ def register_cat_op():
     [
         exir_ops.edge.aten.select_copy.int,
         exir_ops.edge.aten.slice_copy.Tensor,
+        exir_ops.edge.aten.split_with_sizes_copy.default,
     ]
 )
 def register_transfer_ops():
@@ -782,10 +783,7 @@ def register_ported_op():
 # Ops ported from PyTorch Vulkan backend. These ops are in a separate registry because they support all packed dimensions
 @update_features(
     [
-        # Tensor combination
         exir_ops.edge.aten.repeat.default,
-        exir_ops.edge.aten.split_with_sizes_copy.default,
-        exir_ops.edge.aten.split.Tensor,
     ]
 )
 def register_ported_op_all_packed_dims():

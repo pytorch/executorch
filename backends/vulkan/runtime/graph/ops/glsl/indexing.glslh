@@ -259,17 +259,28 @@ void clamp_tensor_idx(const BufferMetadata meta, inout TensorIndex tidx) {
   tidx.data[1] = min(tidx.data[1], meta.sizes[1] - 1);
 }
 
-// Does not account for axis mapping or batches
+// Does not account for axis mapping
 TensorIndex4D texture_pos_to_tensor4d_idx_simple(
     const TextureMetadata meta, const ivec3 pos) {
   TensorIndex4D tidx;
   tidx.data.xyz = pos;
   tidx.data.w = 0;
   tidx.data[meta.packed_dim] *= 4;
+
+  // Compute batch idx accounting for batch concatenation, assuming channels as
+  // the concatenation dim.
+  if (meta.sizes.w > 1) {
+    int channels = meta.sizes.z;
+    if (meta.packed_dim == 2) {
+      channels = align_up_4(channels);
+    }
+    tidx.data.w = tidx.data.z / channels;
+    tidx.data.z = tidx.data.z % channels;
+  }
   return tidx;
 }
 
-// Does not account for axis mapping or batches
+// Does not account for axis mapping
 ivec3 tensor4d_idx_to_texel_pos_simple(
     const TextureMetadata meta, const TensorIndex4D tidx) {
   ivec3 texel_pos;
@@ -278,10 +289,20 @@ ivec3 tensor4d_idx_to_texel_pos_simple(
 
   texel_pos = tidx.data.xyz;
   texel_pos[meta.packed_dim] = div_4(packed_dim_idx);
+
+  // Account for batch concatenation, assuming channels as the concatenation dim
+  if (meta.sizes.w > 1) {
+    int channels_ntexels = meta.sizes.z;
+    if (meta.packed_dim == 2) {
+      channels_ntexels = div_up_4(channels_ntexels);
+    }
+    texel_pos.z += tidx.data.w * channels_ntexels;
+  }
+
   return texel_pos;
 }
 
-// Does not account for axis mapping or batches
+// Does not account for axis mapping
 TextureElementIndex tensor4d_idx_to_texture_element_idx_simple(
     const TextureMetadata meta, const TensorIndex4D tidx) {
   const int packed_dim_idx = tidx.data[meta.packed_dim];
@@ -289,6 +310,16 @@ TextureElementIndex tensor4d_idx_to_texture_element_idx_simple(
   tex_idx.pos = tidx.data.xyz;
   tex_idx.pos[meta.packed_dim] = div_4(packed_dim_idx);
   tex_idx.comp = mod_4(packed_dim_idx);
+
+  // Account for batch concatenation, assuming channels as the concatenation dim
+  if (meta.sizes.w > 1) {
+    int channels_ntexels = meta.sizes.z;
+    if (meta.packed_dim == 2) {
+      channels_ntexels = div_up_4(channels_ntexels);
+    }
+    tex_idx.pos.z += tidx.data.w * channels_ntexels;
+  }
+
   return tex_idx;
 }
 
@@ -316,12 +347,20 @@ void printTensorIndex(const TensorIndex tidx) {
     );
 }
 
-void printTensorIndex4D(const TensorIndex tidx) {
+void printTensorIndex4D(const TensorIndex4D tidx) {
     debugPrintfEXT(
         "TensorIndex4D: [%u, %u, %u, %u]\\n",
-        tidx.data[0][0], tidx.data[0][1], tidx.data[0][2], tidx.data[0][3]
+        tidx.data[0], tidx.data[1], tidx.data[2], tidx.data[3]
     );
 }
+
+void printTextureElementIndex(const TextureElementIndex tex_idx) {
+    debugPrintfEXT(
+        "TextureElementIndex: pos=[%d %d %d] comp=%d\\n",
+        tex_idx.pos.x, tex_idx.pos.y, tex_idx.pos.z, tex_idx.comp
+    );
+}
+
 
 void printBufferMetadata(const BufferMetadata meta) {
     debugPrintfEXT(
