@@ -494,9 +494,9 @@ class MeanDimLinearModule(torch.nn.Module):
 
 
 class MeanDimConvModule(torch.nn.Module):
-    def __init__(self, dim, keepdim):
+    def __init__(self, dim, keepdim, out_channels=8):
         super().__init__()
-        self.conv = Conv2dModule(stride=1, padding=1)
+        self.conv = Conv2dModule(stride=1, padding=1, out_channels=out_channels)
         self.dim = dim
         self.keepdim = keepdim
 
