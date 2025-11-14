@@ -1,7 +1,96 @@
+# ==============================================================================
+# ExecuTorch Targets Makefile
+# ==============================================================================
+#
+# This Makefile provides convenient targets for building ExecuTorch model runners
+# with different backend configurations (CPU, CUDA, Metal), as well as other
+# binary targets.
+#
+# WHAT THIS BUILDS:
+# -----------------
+# Each target builds:
+# 1. ExecuTorch core libraries with the specified backend (CPU, CUDA, or Metal)
+# 2. The model-specific runner executable in cmake-out/examples/models/<model>/
+#
+# SUPPORTED MODELS:
+# -----------------
+# - voxtral:  Multimodal voice + text model (CPU, CUDA, Metal)
+# - whisper:  Speech recognition model (CPU, CUDA, Metal)
+# - llama:    Text generation model (CPU)
+# - llava:    Vision + language model (CPU)
+# - gemma3:   Text generation model (CPU, CUDA)
+#
+# USAGE:
+# ------
+# make <model>-<backend>    # Build a specific model with a backend
+# make help                  # Show all available targets
+# make clean                 # Remove all build artifacts
+#
+# Examples:
+#   make voxtral-cuda        # Build Voxtral with CUDA backend
+#   make llama-cpu           # Build Llama with CPU backend
+#   make whisper-metal       # Build Whisper with Metal backend (macOS)
+#
+# HOW TO ADD A NEW MODEL:
+# -----------------------
+# To add a new model (e.g., "mymodel"), follow these steps:
+#
+# 1. Create a CMakePresets.json in examples/models/mymodel/:
+#    - Define configurePresets for each backend (base, cpu, cuda, metal)
+#    - Define buildPresets with the target name from CMakeLists.txt
+#    - Define workflowPresets that combine configure + build steps
+#    - See examples/models/voxtral/CMakePresets.json for multi-backend reference
+#    - Or see examples/models/llama/CMakePresets.json for simple single-preset reference
+#
+# 2. Add targets to this Makefile:
+#    a) Add to .PHONY declaration: mymodel-cuda mymodel-cpu mymodel-metal
+#    b) Add help text in the help target
+#    c) Add target implementations following this pattern:
+#
+#       mymodel-cuda:
+#           @echo "==> Building and installing ExecuTorch with CUDA..."
+#           cmake --workflow --preset llm-release-cuda
+#           @echo "==> Building MyModel runner with CUDA..."
+#           cd examples/models/mymodel && cmake --workflow --preset mymodel-cuda
+#           @echo ""
+#           @echo "✓ Build complete!"
+#           @echo "  Binary: cmake-out/examples/models/mymodel/mymodel_runner"
+#
+#       mymodel-cpu:
+#           @echo "==> Building and installing ExecuTorch..."
+#           cmake --workflow --preset llm-release
+#           @echo "==> Building MyModel runner (CPU)..."
+#           cd examples/models/mymodel && cmake --workflow --preset mymodel-cpu
+#           @echo ""
+#           @echo "✓ Build complete!"
+#           @echo "  Binary: cmake-out/examples/models/mymodel/mymodel_runner"
+#
+#       mymodel-metal:
+#           @echo "==> Building and installing ExecuTorch with Metal..."
+#           cmake --workflow --preset llm-release-metal
+#           @echo "==> Building MyModel runner with Metal..."
+#           cd examples/models/mymodel && cmake --workflow --preset mymodel-metal
+#           @echo ""
+#           @echo "✓ Build complete!"
+#           @echo "  Binary: cmake-out/examples/models/mymodel/mymodel_runner"
+#
+# 3. Test your new targets:
+#    make mymodel-cpu     # or mymodel-cuda, mymodel-metal
+#
+# NOTES:
+# ------
+# - CUDA backend is only available on Linux systems
+# - Metal backend is only available on macOS (Darwin) systems
+# - Some models may not support all backends (check model documentation)
+# - Binary outputs are located in cmake-out/examples/models/<model>/
+# - The preset names in CMakePresets.json must match the names used in Makefile
+#
+# ==============================================================================
+
 .PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-cpu whisper-metal llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
 
 help:
-	@echo "Available targets:"
+	@echo "This Makefile adds targets to build runners for various models on various backends. Run using `make <target>`. Available targets:"
 	@echo "  voxtral-cuda   - Build Voxtral runner with CUDA backend"
 	@echo "  voxtral-cpu    - Build Voxtral runner with CPU backend"
 	@echo "  voxtral-metal  - Build Voxtral runner with Metal backend (macOS only)"
