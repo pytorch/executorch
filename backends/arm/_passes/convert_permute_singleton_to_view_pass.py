@@ -6,6 +6,8 @@
 
 from typing import Sequence, Set, Tuple, Type
 
+from executorch.backends.arm._passes.arm_pass import ArmPass
+
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -18,7 +20,7 @@ _PERMUTE_TARGETS: Tuple[OpOverload, ...] = (
 )
 
 
-class ConvertPermuteSingletonToViewPass(ExportPass):
+class ConvertPermuteSingletonToViewPass(ArmPass):
     """Replace permutations that only move singleton axes with a reshape.
 
     Examples:
