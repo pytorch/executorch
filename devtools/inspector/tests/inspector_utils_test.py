@@ -233,20 +233,20 @@ class TestInspectorUtils(unittest.TestCase):
     def test_merge_overlapping_debug_handles_basic(self):
         big_tensor = torch.rand(100, 100)
         intermediate_outputs = {
-            (1, 2, 3): (1, "val1"),
-            (2, 3, 4, 5): (2, "val2"),
-            (6, 7, 8): (3, "val3"),
-            (10, 11): (4, "val4"),
-            (11, 12): (5, big_tensor),
+            (1, 2, 3): (1, "val1", 1),
+            (2, 3, 4, 5): (2, "val2", 1),
+            (6, 7, 8): (3, "val3", 1),
+            (10, 11): (4, "val4", 1),
+            (11, 12): (5, big_tensor, 1),
         }
         # basic merge behavior
         intermediate_outputs = merge_runtime_overlapping_debug_handles(
             intermediate_outputs
         )
         expected_intermediate_outputs = {
-            (1, 2, 3, 4, 5): (2, "val2"),
-            (6, 7, 8): (3, "val3"),
-            (10, 11, 12): (5, big_tensor),
+            (1, 2, 3, 4, 5): (2, "val2", 1),
+            (6, 7, 8): (3, "val3", 1),
+            (10, 11, 12): (5, big_tensor, 1),
         }
         self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
         self.assertIs(expected_intermediate_outputs[(10, 11, 12)][1], big_tensor)
@@ -258,11 +258,11 @@ class TestInspectorUtils(unittest.TestCase):
         tensor4 = torch.randn(6, 7)
         tensor5 = torch.randn(8, 9)
         intermediate_outputs = {
-            (1, 10): (1, tensor1),
-            (2, 5): (2, tensor2),
-            (1, 7, 9): (3, tensor3),
-            (11, 13): (4, tensor4),
-            (11, 15): (5, tensor5),
+            (1, 10): (1, tensor1, 1),
+            (2, 5): (2, tensor2, 1),
+            (1, 7, 9): (3, tensor3, 1),
+            (11, 13): (4, tensor4, 1),
+            (11, 15): (5, tensor5, 1),
         }
         intermediate_outputs = merge_runtime_overlapping_debug_handles(
             intermediate_outputs
@@ -280,22 +280,22 @@ class TestInspectorUtils(unittest.TestCase):
 
     def test_merge_overlapping_debug_handles_edge_cases(self):
         intermediate_outputs = {
-            (9,): (1, "val1"),
+            (9,): (1, "val1", 1),
             (
                 9,
                 9,
                 9,
-            ): (2, "val2"),
+            ): (2, "val2", 1),
             (
                 9,
                 9,
-            ): (3, "val3"),
+            ): (3, "val3", 1),
         }
         intermediate_outputs = merge_runtime_overlapping_debug_handles(
             intermediate_outputs
         )
         expected_intermediate_outputs = {
-            (9,): (3, "val3"),
+            (9,): (3, "val3", 1),
         }
         self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
 
@@ -312,7 +312,7 @@ class TestInspectorUtils(unittest.TestCase):
     def test_map_runtime_aot_intermediate_outputs_single_element_tuple(self):
         # Single element tuple
         aot_intermediate_outputs = {(0,): 100, (1,): 200, (2,): 300}
-        runtime_intermediate_outputs = {(0,): 150, (1,): 250, (2,): 350}
+        runtime_intermediate_outputs = {(0,): (150, 1), (1,): (250, 1), (2,): (350, 1)}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
@@ -326,7 +326,7 @@ class TestInspectorUtils(unittest.TestCase):
     def test_map_runtime_aot_intermediate_outputs_no_overlaps(self):
         # No overlaps between aot and runtime debug_handles
         aot_intermediate_outputs = {(0,): 100, (4,): 300}
-        runtime_intermediate_outputs = {(2, 3): 200, (8, 9): 300}
+        runtime_intermediate_outputs = {(2, 3): (200, 1), (8, 9): (300, 1)}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
@@ -334,19 +334,21 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertEqual(actual, expected)
 
     def test_map_runtime_aot_intermediate_outputs_partial_match(self):
-        # Partial match between aot and runtime debug_handles will return empty
+        # Partial match between aot and runtime debug_handles will return
+        # matching debug handles from runtime
         aot_intermediate_outputs = {(2,): 100, (9,): 300}
-        runtime_intermediate_outputs = {(2, 3): 200, (8, 9): 300}
+        runtime_intermediate_outputs = {(2, 3): (200, 1), (8, 9): (300, 1)}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
-        expected = {}
+        # Since the runtime output debug handle of 9 is there in aot debug handle
+        expected = {((8, 9), 300): ((8, 9), 300)}
         self.assertEqual(actual, expected)
 
     def test_map_runtime_aot_intermediate_outputs_multiple_aot_to_one_runtime(self):
         # Multiple aot debug_handles map to one runtime debug_handle
         aot_intermediate_outputs = {(0,): 100, (1,): 200, (2,): 300, (3,): 400}
-        runtime_intermediate_outputs = {(2, 3, 1): 250, (8, 9): 300}
+        runtime_intermediate_outputs = {(2, 3, 1): (250, 1), (8, 9): (300, 1)}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
@@ -357,35 +359,45 @@ class TestInspectorUtils(unittest.TestCase):
         # Currently, runtime_intermediate_output logs all delegate call arguments
         # Test that the map function correctly extracted out the delegated outputs
         aot_intermediate_outputs = {
-            (1,): torch.tensor([4, 1]),
+            (1,): torch.tensor([1, 2, 3]),
             (2,): torch.tensor([4, 5]),
             (3,): torch.tensor([10, 10, 13]),
             (4,): torch.tensor([10, 11, 12]),
             (5,): torch.tensor([13, 14, 15, 16, 21]),
-            (6,): torch.tensor([13, 14, 15, 16, 17]),
+            (6,): torch.tensor([2]),
         }
         runtime_intermediate_outputs = {
-            (1, 2): [torch.tensor([1, 2, 3]), torch.tensor([4, 5])],
-            (3, 4): [
-                torch.tensor([6, 7, 8, 9]),
-                torch.tensor(1),
-                torch.tensor([10, 11, 12]),
-            ],
-            (5, 6): [
-                torch.tensor([1]),
-                torch.tensor([2]),
-                torch.tensor([13, 14, 15, 16, 17]),
-            ],
+            (1, 2): ([torch.tensor([1, 2, 3]), torch.tensor([4, 5])], 2),
+            (3, 4): (
+                [
+                    torch.tensor([10, 10, 13]),
+                    torch.tensor([10, 11, 12]),
+                ],
+                2,
+            ),
+            (5, 6): (
+                [
+                    torch.tensor([13, 14, 15, 16, 21]),
+                    torch.tensor([2]),
+                ],
+                2,
+            ),
         }
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
         expected = {
+            ((1, 2), torch.tensor([1, 2, 3])): ((1, 2), torch.tensor([1, 2, 3])),
             ((1, 2), torch.tensor([4, 5])): ((1, 2), torch.tensor([4, 5])),
+            ((3, 4), torch.tensor([10, 10, 13])): ((3, 4), torch.tensor([10, 10, 13])),
             ((3, 4), torch.tensor([10, 11, 12])): ((3, 4), torch.tensor([10, 11, 12])),
-            ((5, 6), torch.tensor([13, 14, 15, 16, 17])): (
+            ((5, 6), torch.tensor([13, 14, 15, 16, 21])): (
                 (5, 6),
-                torch.tensor([13, 14, 15, 16, 17]),
+                torch.tensor([13, 14, 15, 16, 21]),
+            ),
+            ((5, 6), torch.tensor([2])): (
+                (5, 6),
+                torch.tensor([2]),
             ),
         }
         self.assertEqual(len(actual), len(expected))
@@ -399,8 +411,10 @@ class TestInspectorUtils(unittest.TestCase):
                 act_runtime_key,
                 act_runtime_value,
             ) in actual.items():
-                if exp_aot_key == act_aot_key and torch.allclose(
-                    exp_aot_value, act_aot_value
+                if (
+                    exp_aot_key == act_aot_key
+                    and exp_aot_value.numel() == act_aot_value.numel()
+                    and torch.allclose(exp_aot_value, act_aot_value)
                 ):
                     found = True
                     self.assertEqual(exp_runtime_key, act_runtime_key)

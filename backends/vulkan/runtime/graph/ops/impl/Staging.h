@@ -95,8 +95,4 @@ ValueRef prepack_int4_linear_weight_transposed_interleaved(
     ComputeGraph& graph,
     const ValueRef qmat2_data);
 
-ValueRef prepack_int4_linear_weight_transposed_block_4x8(
-    ComputeGraph& graph,
-    const ValueRef qmat2_data);
-
 } // namespace vkcompute

@@ -147,12 +147,17 @@ Error share_tensor_data(
       t_dst.nbytes(),
       t_src.nbytes());
 
+  // Either the t_src is empty or contains valid data.
   ET_CHECK_OR_RETURN_ERROR(
-      t_src.mutable_data_ptr() != nullptr,
+      t_src.mutable_data_ptr() != nullptr || t_src.nbytes() == 0,
       InvalidArgument,
       "Source tensor should have data_ptr not being nullptr.");
+
+  // Setting data_ptr to nullptr explicitly when t_src is empty.
+  void* t_src_data_ptr =
+      t_src.numel() == 0 ? nullptr : t_src.mutable_data_ptr();
   // Assign internal data_ptr as the one in forwarded tensor
-  t_dst.unsafeGetTensorImpl()->set_data(t_src.mutable_data_ptr());
+  t_dst.unsafeGetTensorImpl()->set_data(t_src_data_ptr);
 
   return Error::Ok;
 }

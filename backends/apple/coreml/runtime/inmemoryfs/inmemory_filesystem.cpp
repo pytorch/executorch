@@ -7,9 +7,11 @@
 
 #include "inmemory_filesystem.hpp"
 
+#include <algorithm>
 #include <assert.h>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <sstream>
 
 #if __has_include(<filesystem>)

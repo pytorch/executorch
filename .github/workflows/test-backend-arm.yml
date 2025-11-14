@@ -1,0 +1,32 @@
+name: Test ARM Backend
+
+on:
+  schedule:
+    - cron: 0 2 * * *
+  push:
+    branches:
+      - release/*
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+    paths:
+      - .github/workflows/test-backend-arm.yml
+      - .github/workflows/_test_backend.yml
+      - .ci/scripts/test_backend.sh
+      - backends/test/suite/flow.py
+      - backends/test/suite/flows/arm.py
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+jobs:
+  test-arm:
+    uses: ./.github/workflows/_test_backend.yml
+    with:
+      backend: arm
+      flows: '["arm_tosa_fp", "arm_tosa_int", "arm_ethos_u55", "arm_ethos_u85", "arm_vgf_fp", "arm_vgf_int"]'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      run-linux: true

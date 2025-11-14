@@ -4,12 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "ops",
     srcs = [
         "operators.py",

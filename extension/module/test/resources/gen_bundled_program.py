@@ -8,7 +8,7 @@ from executorch.devtools.bundled_program.serialize import (
 )
 
 from executorch.exir import to_edge_transform_and_lower
-from torch.export import export, export_for_training
+from torch.export import export
 
 
 # Step 1: ExecuTorch Program Export
@@ -44,7 +44,7 @@ def main() -> None:
 
     # Export method's FX Graph.
     method_graph = export(
-        export_for_training(model, capture_input).module(),
+        export(model, capture_input).module(),
         capture_input,
     )
 

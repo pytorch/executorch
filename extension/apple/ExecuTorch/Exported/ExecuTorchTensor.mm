@@ -126,12 +126,37 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   return self;
 }
 
-- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor {
+- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
+                         shape:(NSArray<NSNumber *> *)shape
+                dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                       strides:(NSArray<NSNumber *> *)strides {
   ET_CHECK(otherTensor);
   auto tensor = make_tensor_ptr(
-    **reinterpret_cast<TensorPtr *>(otherTensor.nativeInstance)
+    *reinterpret_cast<TensorPtr *>(otherTensor.nativeInstance),
+    utils::toVector<SizesType>(shape),
+    utils::toVector<DimOrderType>(dimensionOrder),
+    utils::toVector<StridesType>(strides)
   );
-  return [self initWithNativeInstance:&tensor];
+  self = [self initWithNativeInstance:&tensor];
+  if (self) {
+    _data = otherTensor->_data;
+  }
+  return self;
+}
+
+- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
+                         shape:(NSArray<NSNumber *> *)shape {
+  return [self initWithTensor:otherTensor
+                        shape:shape
+               dimensionOrder:@[]
+                      strides:@[]];
+}
+
+- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor {
+  return [self initWithTensor:otherTensor
+                        shape:@[]
+               dimensionOrder:@[]
+                      strides:@[]];
 }
 
 - (instancetype)copy {
@@ -141,6 +166,11 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 - (instancetype)copyWithZone:(nullable NSZone *)zone {
   auto tensor = clone_tensor_ptr(_tensor);
   return [[ExecuTorchTensor allocWithZone:zone] initWithNativeInstance:&tensor];
+}
+
+- (instancetype)copyToDataType:(ExecuTorchDataType)dataType {
+  auto tensor = clone_tensor_ptr(_tensor, static_cast<ScalarType>(dataType));
+  return [[ExecuTorchTensor alloc] initWithNativeInstance:&tensor];
 }
 
 - (void *)nativeInstance {
@@ -271,7 +301,7 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
       ET_CHECK_MSG(false, "Unsupported dtype in description");
     }
   } ctx;
-  ET_SWITCH_REALHBBF16_TYPES(
+  ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
     static_cast<ScalarType>(_tensor->scalar_type()),
     ctx,
     "description",

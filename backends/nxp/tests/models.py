@@ -4,9 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from typing import Callable, Collection, Union
 
 import torch
+
+from torch import nn
 
 
 class Conv1dModule(torch.nn.Module):
@@ -53,6 +56,35 @@ class Conv2dModule(torch.nn.Module):
         super().__init__()
 
         self.conv = torch.nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            bias=bias,
+            groups=group,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class Conv3dModule(torch.nn.Module):
+    def __init__(
+        self,
+        bias: bool = True,
+        dilation: Union[int, tuple[int, int]] = 1,
+        in_channels: int = 4,
+        kernel_size: Union[int, tuple[int, int]] = 3,
+        out_channels: int = 8,
+        padding: Union[str, int, Collection[int]] = 0,
+        stride: Union[int, tuple[int, int]] = 2,
+        group: int = 1,
+    ):
+        super().__init__()
+
+        self.conv = torch.nn.Conv3d(
             in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=kernel_size,
@@ -138,6 +170,32 @@ class LinearModule(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
+
+class AddmmModule(torch.nn.Module):
+    def __init__(self, in_channels: int):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.empty(in_channels, in_channels))
+        self.bias = torch.nn.Parameter(torch.empty(in_channels))
+        torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
+        bound = 1 / math.sqrt(fan_in)
+        torch.nn.init.uniform_(self.bias, -bound, bound)
+        self.eval()
+
+    def forward(self, x):
+        return torch.addmm(self.bias, x, self.weight)
+
+
+class MmModule(torch.nn.Module):
+    def __init__(self, in_channels: int):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.empty(in_channels, in_channels))
+        torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        self.eval()
+
+    def forward(self, x):
+        return torch.mm(x, self.weight)
 
 
 class LinearSoftmaxModule(torch.nn.Module):
@@ -395,6 +453,34 @@ class AddTensorOneInputModule(torch.nn.Module):
         return x + x
 
 
+class SubTensorModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return x - y
+
+
+class SubTensorConvModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = Conv2dModule(padding=1, stride=1)
+
+    def forward(self, x, y):
+        x = self.conv(x)
+        return x - y
+
+
+class SubTensorOneInputModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x):
+        return x - x
+
+
 class MeanDimLinearModule(torch.nn.Module):
     def __init__(self, dim, keepdim):
         super().__init__()
@@ -408,12 +494,80 @@ class MeanDimLinearModule(torch.nn.Module):
 
 
 class MeanDimConvModule(torch.nn.Module):
-    def __init__(self, dim, keepdim):
+    def __init__(self, dim, keepdim, out_channels=8):
         super().__init__()
-        self.conv = Conv2dModule(stride=1, padding=1)
+        self.conv = Conv2dModule(stride=1, padding=1, out_channels=out_channels)
         self.dim = dim
         self.keepdim = keepdim
 
     def forward(self, x):
         x = self.conv(x)
         return torch.mean(x, dim=self.dim, keepdim=self.keepdim)
+
+
+def get_activation(activation, inplace):
+    match activation:
+        case "relu":
+            return nn.ReLU(inplace=inplace)
+        case "relu_hardtanh":
+            return nn.Hardtanh(inplace=inplace, min_val=0.0, max_val=float("inf"))
+        case "relu6":
+            return nn.ReLU6(inplace=inplace)
+        case "tanh":
+            if inplace:
+                return torch.tanh
+            else:
+                return torch.tanh_
+        case "sigmoid":
+            return nn.Sigmoid()
+        case _:
+            raise ValueError
+
+
+class LinearActivationModule(torch.nn.Module):
+    def __init__(
+        self, activation: str, inplace: bool, in_channels: int, mode: str = "linear"
+    ):
+        super().__init__()
+        self.mode = mode.lower()
+        assert self.mode in [
+            "linear",
+            "addmm",
+            "mm",
+        ], "Mode must be 'linear', 'addmm', or 'mm'"
+
+        if self.mode == "linear":
+            self.linear = torch.nn.Linear(in_channels, in_channels)
+        else:
+            # Manual weight and bias for addmm/mm
+            self.weight = torch.nn.Parameter(torch.empty(in_channels, in_channels))
+            self.bias = torch.nn.Parameter(torch.empty(in_channels))
+            torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+            fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / math.sqrt(fan_in)
+            torch.nn.init.uniform_(self.bias, -bound, bound)
+
+        self.activation = get_activation(activation, inplace)
+        self.eval()
+
+    def forward(self, x):
+        if self.mode == "linear":
+            x = self.linear(x)
+        if self.mode == "addmm":
+            x = torch.addmm(self.bias, x, self.weight)
+        elif self.mode == "mm":
+            x = torch.mm(x, self.weight)
+        return self.activation(x)
+
+
+class ConvActivationModule(torch.nn.Module):
+    def __init__(self, activation: str, inplace: bool, in_channels: int):
+        super().__init__()
+
+        self.conv = Conv2dModule(in_channels=in_channels)
+        self.activation = get_activation(activation, inplace)
+        self.eval()
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.activation(x)

@@ -66,7 +66,7 @@ TEST_F(MallocMemoryAllocatorTest, SimpleAllocateSucceeds) {
   EXPECT_ALIGNED(p, kDefaultAlignment);
 
   auto p2 = allocator.allocate(16);
-  EXPECT_NE(p, nullptr);
+  EXPECT_NE(p2, nullptr);
   EXPECT_NE(p2, p);
   EXPECT_ALIGNED(p2, kDefaultAlignment);
 
@@ -130,4 +130,16 @@ TEST_F(MallocMemoryAllocatorTest, ResetSucceeds) {
   p = allocator.allocate(16);
   EXPECT_NE(p, nullptr);
   EXPECT_ALIGNED(p, kDefaultAlignment);
+}
+
+TEST_F(MallocMemoryAllocatorTest, OverflowDetectionOnSizePlusAlignment) {
+  MallocMemoryAllocator allocator = MallocMemoryAllocator();
+
+  constexpr size_t kLargeAlignment = kDefaultAlignment * 64;
+  constexpr size_t kSizeThatWouldOverflow = SIZE_MAX - kLargeAlignment + 1;
+
+  auto p = allocator.allocate(kSizeThatWouldOverflow, kLargeAlignment);
+
+  // Should return nullptr due to overflow detection.
+  EXPECT_EQ(p, nullptr);
 }

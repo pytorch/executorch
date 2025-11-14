@@ -133,6 +133,21 @@ class ModuleAddWithAttributes(torch.nn.Module):
         return (torch.ones(2, 2), torch.ones(2, 2))
 
 
+class ModuleLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 3)
+
+    def forward(self, x: torch.Tensor):
+        return self.linear(x)
+
+    def get_methods_to_export(self):
+        return ("forward",)
+
+    def get_inputs(self):
+        return (torch.randn(3),)
+
+
 def create_program(
     eager_module: torch.nn.Module,
     et_config: Optional[ExecutorchBackendConfig] = None,

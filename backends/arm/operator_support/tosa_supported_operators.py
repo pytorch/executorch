@@ -2,31 +2,48 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Provide operator-support checks and registries for TOSA delegation.
 
-# pyre-unsafe
+Define a base check class, a registry/dispatcher, and several generic checks
+used by the TOSA partitioner to decide if FX nodes are eligible for delegation.
+
+"""
+
 
 import itertools
 import operator
 import typing
-from typing import final, Optional, Sequence, Type
+from typing import cast, final, Optional, Sequence, Type
 
 import torch
 import torch.fx as fx
 
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_first_fake_tensor,
+    is_submodule_node,
+)
 from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
-from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
 from executorch.backends.arm.operator_support.ethos_u55_support import (
+    EthosU55CastCheck,
     EthosU55DtypeSupport,
     EthosU55NotSupported,
     EthosU55TransposeCheck,
     EthosU55ViewCheck,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
+    TOSA_PRO_FP_SupportList,
+    TOSA_PRO_INT_SupportList,
+)
+from executorch.backends.arm.tosa.specification import (
+    Tosa_1_00,
+    TosaSpecification,
+    TosaSpecMapping,
+)
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -38,15 +55,31 @@ from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class SupportedTOSAOperatorCheck(OperatorSupportBase):
-    """
-    Supported OP for TOSA lowering
+    """Provide a base operator-support check for TOSA lowering.
+
+    Subclasses should implement :py:meth:`is_node_tosa_supported` and declare
+    the class attributes below to indicate what they support.
+
+    Attributes:
+        targets (list[OpOverload]): Operator overloads supported by this
+            check.
+        tosa_specs (list[TosaSpecification]): TOSA specs where the check is
+            applicable.
+
     """
 
     def __init__(self, tosa_spec: TosaSpecification, reporter: WhyNoPartitionReporter):
+        """Initialize the check with a TOSA spec and reporter.
+
+        Args:
+            tosa_spec (TosaSpecification): Active TOSA specification.
+            reporter (WhyNoPartitionReporter): Reporter for rejection reasons.
+
+        """
         self.tosa_spec = tosa_spec
         self.reporter = reporter
 
-    # Should be populated by subclass implementation
+    # Class attributes populated by subclasses
     tosa_specs: list[TosaSpecification] = []
     targets: list[str] = []
 
@@ -54,6 +87,17 @@ class SupportedTOSAOperatorCheck(OperatorSupportBase):
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
+        """Return True if the node matches targets and subclass-specific checks.
+
+        Args:
+            submodules (typing.Mapping[str, torch.nn.Module]): Exported program
+                modules.
+            node (fx.Node): Node to evaluate.
+
+        Returns:
+            bool: True if both the target and TOSA-specific checks pass.
+
+        """
         if node.target not in self.targets:
             return False
         return self.is_node_tosa_supported(node, self.tosa_spec)
@@ -61,39 +105,59 @@ class SupportedTOSAOperatorCheck(OperatorSupportBase):
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:
-        """
-        Checks if the fx.Node node is lowerable using the TOSA specification defined by tosa_spec.
+        """Check if the node is lowerable under the given TOSA spec.
+
+        Args:
+            node (fx.Node): FX node to check.
+            tosa_spec (TosaSpecification): Active TOSA specification.
+
+        Returns:
+            bool: True if supported; otherwise, False.
+
         """
         raise NotImplementedError("SupportedTOSAOperatorCheck must be extended.")
 
 
 # container for all SupportedTosaOperatorCheck classes
-_tosa_spec_support: dict[TosaSpecification, list[Type[SupportedTOSAOperatorCheck]]] = {
-    TosaSpecification.create_from_string("TOSA-1.0+INT"): [],
-    TosaSpecification.create_from_string("TOSA-1.0+FP"): [],
-}
+_tosa_spec_support: TosaSpecMapping[Type[SupportedTOSAOperatorCheck]] = (
+    TosaSpecMapping()
+)
 
 
 def register_tosa_support_check(checker: Type[SupportedTOSAOperatorCheck]):
-    """
-    Decorator to mark a subclass implmentation of SupportedTosaOperatorCheck
-    to be registered for checking if a torch.fx.Node is lowerable given
-    a TOSA specification.
+    """Register an operator-support checker for one or more TOSA specs.
+
+    Decorate subclasses of :py:class:`SupportedTOSAOperatorCheck` so they are
+    picked up by the factory and partitioner for the specs declared in their
+    ``tosa_specs`` class attribute.
+
+    Args:
+        checker (Type[SupportedTOSAOperatorCheck]): Checker class to register.
+
     """
     for tosa_spec in checker.tosa_specs:
-        _tosa_spec_support[tosa_spec].append(checker)
+        _tosa_spec_support.add(tosa_spec, checker)
     return checker
 
 
 def get_registered_tosa_support_checks(
     tosa_spec: TosaSpecification,
 ) -> list[Type[SupportedTOSAOperatorCheck]]:
-    if tosa_spec not in _tosa_spec_support:
-        raise RuntimeError(
-            f"TOSA specification not valid: {tosa_spec} not in {list(_tosa_spec_support.keys())}"
-        )
+    """Get all registered operator-support checkers for a given spec.
 
-    return _tosa_spec_support[tosa_spec]
+    Args:
+        tosa_spec (TosaSpecification): TOSA spec to query.
+
+    Returns:
+        list[Type[SupportedTOSAOperatorCheck]]: Registered checker classes.
+
+    """
+    checks = _tosa_spec_support.get(tosa_spec)
+    if not checks:
+        raise RuntimeError(
+            f"TOSA specification not valid: {tosa_spec} not in {list(_tosa_spec_support._mapping.keys())}"
+        )
+    return checks
 
 
 def tosa_support_factory(
@@ -102,23 +166,42 @@ def tosa_support_factory(
     reporter: WhyNoPartitionReporter,
     additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
 ) -> OperatorSupportBase:
-    """Generates an OperatorSupport class depending on the given `tosa_spec`.
-    Additional checks can be supplied to avoid partitioning additional nodes.
+    """Create an OperatorSupport composite for a TOSA spec.
+
+    Combine profile-specific positive checks, registered operator checks, and
+    negative checks into a single :py:class:`OperatorSupportBase` chain.
+
+    Args:
+        tosa_spec (TosaSpecification): Active TOSA specification.
+        exported_program (ExportedProgram): Program context for checks.
+        reporter (WhyNoPartitionReporter): Reporter for rejections.
+        additional_checks (Optional[Sequence[OperatorSupportBase]]): Extra
+            negative checks to apply.
+
+    Returns:
+        OperatorSupportBase: Composite checker for the given spec.
+
     """
     # Postive checks: Add nodes to partitioning
     positive_checks: list[OperatorSupportBase] = [
-        BaseTOSASupportList(),
-        *[
-            check(tosa_spec, reporter)
-            for check in get_registered_tosa_support_checks(tosa_spec)
-        ],
+        CondSupported(exported_program, tosa_spec, reporter)
+    ]
+
+    if tosa_spec.support_integer():
+        positive_checks.append(TOSAProINTSupportList())
+    if tosa_spec.support_float():
+        positive_checks.append(TOSAProFPSupportList())
+    # TODO: Refactor to use TOSAProSupportLists + negtive checks
+    positive_checks += [
+        check(tosa_spec, reporter)
+        for check in get_registered_tosa_support_checks(tosa_spec)
     ]
 
     # Negative checks: Remove nodes from partitioning
     negative_checks: list[OperatorSupportBase] = [
         CheckInt64InputsAndOutputs(exported_program, reporter),
         CheckFloat64Inputs(exported_program, reporter),
-        RankCheck(reporter, max_rank=5),
+        RankCheck(reporter, max_rank=MAX_RANK),
         *[
             reporter.wrap_check(check, f"Rejected by {check.__class__.__name__}")
             for check in (additional_checks if additional_checks else [])
@@ -126,13 +209,13 @@ def tosa_support_factory(
     ]
 
     if not tosa_spec.support_float():
-        negative_checks.append(NeedsDecompositionCheck(reporter))
         negative_checks.append(CheckProperQuantization(reporter))
     if tosa_spec.is_U55_subset:
         negative_checks.append(EthosU55NotSupported(reporter))
         negative_checks.append(EthosU55DtypeSupport(reporter))
         negative_checks.append(EthosU55TransposeCheck(reporter))
         negative_checks.append(EthosU55ViewCheck(reporter))
+        negative_checks.append(EthosU55CastCheck(reporter))
 
     return chain(
         reporter.wrap_check(
@@ -143,187 +226,46 @@ def tosa_support_factory(
     )
 
 
-class BaseTOSASupportList(OperatorSupportBase):
+class TOSAProINTSupportList(OperatorSupportBase):
+    """Provide the INT profile support list for TOSA.
+
+    TOSA_PRO_INT_SupportList enumerates ops supported in the INT profile via
+    native TOSA ops, decompositions, pre-compute steps, or TableOps.
+
+    Note:
+        Ops supported via pre-quantization decompositions are not included
+        here.
+
+    """
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        supported = node.op == "call_function" and node.target in [
-            exir_ops.edge.aten.abs.default,
-            exir_ops.edge.aten.add.Tensor,
-            exir_ops.edge.aten.any.default,
-            exir_ops.edge.aten.any.dim,
-            exir_ops.edge.aten.any.dims,
-            exir_ops.edge.aten.logical_and.default,
-            exir_ops.edge.aten.logical_or.default,
-            exir_ops.edge.aten.logical_xor.default,
-            exir_ops.edge.aten.logical_not.default,
-            exir_ops.edge.aten.arange.start_step,
-            exir_ops.edge.aten.bitwise_and.Tensor,
-            exir_ops.edge.aten.bitwise_or.Tensor,
-            exir_ops.edge.aten.bitwise_xor.Tensor,
-            exir_ops.edge.aten.bitwise_and.Scalar,
-            exir_ops.edge.aten.bitwise_or.Scalar,
-            exir_ops.edge.aten.bitwise_xor.Scalar,
-            exir_ops.edge.aten.expand_copy.default,
-            exir_ops.edge.aten.cat.default,
-            exir_ops.edge.aten.ceil.default,
-            exir_ops.edge.aten.clamp.default,
-            exir_ops.edge.aten.cumsum.default,
-            exir_ops.edge.aten.bmm.default,
-            exir_ops.edge.aten.permute_copy.default,
-            exir_ops.edge.aten.hardsigmoid.default,
-            exir_ops.edge.aten.hardtanh.default,
-            exir_ops.edge.aten.hardswish.default,
-            exir_ops.edge.aten.div.Tensor,
-            exir_ops.edge.aten.eq.Tensor,
-            exir_ops.edge.aten.eq.Scalar,
-            exir_ops.edge.aten.erf.default,
-            exir_ops.edge.aten.exp.default,
-            exir_ops.edge.aten.expm1.default,
-            exir_ops.edge.aten.log.default,
-            exir_ops.edge.aten.linear.default,
-            exir_ops.edge.aten.split_with_sizes_copy.default,
-            exir_ops.edge.aten.floor.default,
-            exir_ops.edge.aten.full.default,
-            exir_ops.edge.aten.full_like.default,
-            exir_ops.edge.aten.ge.Tensor,
-            exir_ops.edge.aten.ge.Scalar,
-            exir_ops.edge.aten.gt.Tensor,
-            exir_ops.edge.aten.gt.Scalar,
-            exir_ops.edge.aten.le.Tensor,
-            exir_ops.edge.aten.le.Scalar,
-            exir_ops.edge.aten.lt.Tensor,
-            exir_ops.edge.aten.lt.Scalar,
-            exir_ops.edge.aten.mul.Tensor,
-            exir_ops.edge.aten.ne.Tensor,
-            exir_ops.edge.aten.ne.Scalar,
-            exir_ops.edge.aten.neg.default,
-            exir_ops.edge.aten.add.Scalar,
-            exir_ops.edge.aten.sub.Scalar,
-            exir_ops.edge.aten.mul.Scalar,
-            exir_ops.edge.aten.div.Scalar,
-            exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-            exir_ops.edge.aten.native_layer_norm.default,
-            exir_ops.edge.aten.native_group_norm.default,
-            exir_ops.edge.aten.sigmoid.default,
-            exir_ops.edge.aten.mean.dim,
-            exir_ops.edge.aten.mm.default,
-            exir_ops.edge.aten.minimum.default,
-            exir_ops.edge.aten.maximum.default,
-            exir_ops.edge.aten.repeat.default,
-            exir_ops.edge.aten.reciprocal.default,
-            exir_ops.edge.aten.relu.default,
-            exir_ops.edge.aten.leaky_relu.default,
-            exir_ops.edge.aten.sqrt.default,
-            exir_ops.edge.aten.rsqrt.default,
-            exir_ops.edge.aten.round.default,
-            exir_ops.edge.aten._softmax.default,
-            exir_ops.edge.aten.select_copy.int,
-            exir_ops.edge.aten._log_softmax.default,
-            exir_ops.edge.aten.sub.Tensor,
-            exir_ops.edge.aten.tanh.default,
-            exir_ops.edge.aten.upsample_bilinear2d.vec,
-            exir_ops.edge.aten.upsample_nearest2d.vec,
-            exir_ops.edge.aten.var.correction,
-            exir_ops.edge.aten.var.dim,
-            exir_ops.edge.aten.view_copy.default,
-            exir_ops.edge.aten.clone.default,
-            exir_ops.edge.aten.unsqueeze_copy.default,
-            exir_ops.edge.aten.squeeze_copy.dims,
-            exir_ops.edge.aten.pow.Tensor_Scalar,
-            exir_ops.edge.aten.pow.Tensor_Tensor,
-            exir_ops.edge.aten.where.self,
-            operator.getitem,
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-            exir_ops.edge.aten.constant_pad_nd.default,
-            exir_ops.edge.aten.amax.default,
-            exir_ops.edge.aten.amin.default,
-            exir_ops.edge.aten.eye.default,
-            exir_ops.edge.aten.linspace.default,
-            exir_ops.edge.aten.bitwise_left_shift.Tensor,
-            exir_ops.edge.aten.__lshift__.Scalar,
-            torch.ops.aten.scalar_tensor.default,
-            exir_ops.edge.aten.gelu.default,
-            exir_ops.edge.aten.alias_copy.default,
-            exir_ops.edge.aten.sinh.default,
-            exir_ops.edge.aten.atan.default,
-            exir_ops.edge.aten.acosh.default,
-            exir_ops.edge.aten._adaptive_avg_pool2d.default,
-            exir_ops.edge.aten.sign.default,
-            exir_ops.edge.aten.asin.default,
-            exir_ops.edge.aten.atanh.default,
-            exir_ops.edge.aten.addmm.default,
-            exir_ops.edge.aten.masked_fill.Scalar,
-            exir_ops.edge.aten.asinh.default,
-            exir_ops.edge.aten.cosh.default,
-            exir_ops.edge.aten.glu.default,
-            exir_ops.edge.aten.logit.default,
-            exir_ops.edge.aten.acos.default,
-        ]
-
-        return supported
+        """Return True if the node is in the INT profile support list."""
+        return node.op == "call_function" and node.target in TOSA_PRO_INT_SupportList
 
 
-class NeedsDecompositionCheck(OperatorSupportBase):
+class TOSAProFPSupportList(OperatorSupportBase):
+    """Provide the FP profile support list for TOSA.
+
+    Includes ops supported natively, via decomposition/transformation, and pre-
+    compute.
+
     """
-    Targeted operators need to be decomposed prior to quantization in order to get a pair of q-dq-nodes surrounding
-    the operator, and to get optimal quantization parameters for each operator. This check will reject operators
-    that need to be decomposed.
-    """
-
-    def __init__(self, reporter: WhyNoPartitionReporter):
-        self.reporter = reporter
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-
-        if node.op != "call_function":
-            return True
-
-        needs_decomp_dict = {
-            exir_ops.edge.aten.div.Tensor: None,
-            exir_ops.edge.aten._native_batch_norm_legit_no_training.default: "BatchNorm2D with track_running_stats==True not immediately following a convolution is not supported for quantized TOSA backends.",
-            exir_ops.edge.aten.native_layer_norm.default: None,
-            exir_ops.edge.aten.native_group_norm.default: None,
-            exir_ops.edge.aten._softmax.default: None,
-            exir_ops.edge.aten._log_softmax.default: None,
-            exir_ops.edge.aten.var.correction: None,
-            exir_ops.edge.aten.var.dim: None,
-            exir_ops.edge.aten.add.Scalar: None,
-            exir_ops.edge.aten.sqrt.default: None,
-            exir_ops.edge.aten.sub.Scalar: None,
-            exir_ops.edge.aten.mul.Scalar: None,
-            exir_ops.edge.aten.ne.Tensor: None,
-            exir_ops.edge.aten.ne.Scalar: None,
-            exir_ops.edge.aten.div.Scalar: None,
-            exir_ops.edge.aten.leaky_relu.default: None,
-            exir_ops.edge.aten.round.default: None,
-            exir_ops.edge.aten.addmm.default: None,
-            exir_ops.edge.aten.glu.default: None,
-            exir_ops.edge.aten.logit.default: None,
-        }
-
-        if node.target in needs_decomp_dict:
-            reject_message = needs_decomp_dict[node.target]
-            if reject_message is None:
-                reject_message = "Op needs to be decomposed into other ops before quantization to get quantized properly."
-
-            self.reporter.report_reject(node, reject_message)
-            return False
-        else:
-            return True
+        """Return True if the node is in the FP profile support list."""
+        return node.op == "call_function" and node.target in TOSA_PRO_FP_SupportList
 
 
 class CheckProperQuantization(OperatorSupportBase):
-    """
-    For targeted nodes, check that it has been quantized as expected. In most cases this means that a pair of quantize
-    and dequantize nodes surrounds the node. This is neccessary for table operators and operators that need to rescale
-    activations.
+    """Ensure targeted nodes are properly quantized.
+
+    Verify that a pair of quantize/dequantize nodes surrounds targeted ops so
+    rescaling and table operators behave correctly.
+
     """
 
     targeted_ops = (
@@ -349,17 +291,32 @@ class CheckProperQuantization(OperatorSupportBase):
     )
 
     def __init__(self, reporter: WhyNoPartitionReporter):
+        """Initialize the check with a reporter."""
         self.reporter = reporter
 
     def _is_matmul_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ):
-        """
-        Find the matmul source partition containing this node and check that all its inputs and outputs are quantized.
+        """Check quantization for decomposed matmul partitions.
+
+        Handles an edge case where the quantized pipeline
+        `dq -> torch.matmul/operator.matmul -> q` decomposes into
+        `dq -> expand -> view -> aten.mm -> view -> q`.
+
+        Args:
+            submodules (Mapping[str, torch.nn.Module]): Map of child modules to
+                inspect for matmul partitions.
+            node (fx.Node): Node that should belong to a quantized matmul
+                partition.
+
+        Returns:
+            bool: True if the matched partition uses quantized inputs and
+                outputs.
+
         """
         for graph_module in submodules.values():
             graph_module = typing.cast(fx.GraphModule, graph_module)
-            matmul_partitions = get_source_partitions(
+            matmul_partitions_map = get_source_partitions(
                 graph_module.graph,
                 [
                     torch.matmul,
@@ -368,7 +325,7 @@ class CheckProperQuantization(OperatorSupportBase):
                 None,
             )
             matmul_partitions = list(
-                itertools.chain.from_iterable(matmul_partitions.values())
+                itertools.chain.from_iterable(matmul_partitions_map.values())
             )
             matched_partition = None
             for partition in matmul_partitions:
@@ -404,6 +361,12 @@ class CheckProperQuantization(OperatorSupportBase):
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
+        """Return True if the node passes constant-cast and multi-output checks.
+
+        Ensures decomposition-specific matmul partitions keep quantized inputs
+        and outputs.
+
+        """
         output_quantized = False
         input_quantized = False
         if node.target not in self.targeted_ops:
@@ -455,21 +418,22 @@ class CheckProperQuantization(OperatorSupportBase):
 
 
 class CheckInt64InputsAndOutputs(OperatorSupportBase):
-    """TOSA does not support int64 tensors so in general, ops with int64 inputs or outputs should not be partitioned.
-    There are however some exceptions:
-        - Nodes with int64 output can be partitioned if they are constant, within int32,
-            and all users cast to something else. In this case, the int64 tensor can safely be cast to int32 AOT.
-        - Nodes with int64 output can be partitioned if all users are getitem with non-int64 output.
-            In this case, there are multiple outputs and the int64 ones are not used.
-        - Nodes with int64 inputs can be partitioned if the inputs are constant placeholders, or constant
-            ops fulfilling the criteria above.
-    Note that we don't check placeholders here, they are partitioned based on whether their users are partitioned
-    or not.
+    """Reject general int64 tensors while allowing safe exceptions.
+
+    Exceptions are:
+        - Nodes with contant int64 output within int32 range that are cast away
+          from int64 by all users.
+        - Int64 output where all users are getitem nodes with non-int64 outputs.
+          In this case there are multiple outputs and the int64 output is unused.
+        - Nodes where all inputs are int64 constant placeholders or constant ops
+          that fulfill the above exceptions.
+
     """
 
     def __init__(
         self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
     ):
+        """Initialize the check with program context and reporter."""
         self.input_names = [
             spec.arg.name
             for spec in exported_program.graph_signature.input_specs
@@ -491,7 +455,9 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-
+        """Return True when int64 use is absent or safe per exceptions."""
+        if is_submodule_node(node):
+            return True
         vals = node.meta["val"]
         tensor_list = vals if isinstance(vals, (list, tuple)) else [vals]
 
@@ -531,7 +497,11 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
 
         # Ops with int64 inputs are only partitioned if input nodes are constant and will be partitioned.
         # If it is not partitioned, the partition will get an int64 input and fail.
-        for input_node in node.all_input_nodes:
+        for input_node in (
+            input_node
+            for input_node in node.all_input_nodes
+            if input_node.op != "get_attr"
+        ):
             tensor_in = get_first_fake_tensor(input_node)
             if tensor_in.dtype != torch.int64:
                 continue
@@ -546,9 +516,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
                 if input_node.target in ComputeConstantOpsAOT.targeted_ops:
                     # This is not perfect since the input_node can still be rejected by other checks but
                     # this should cover the majority of cases.
-                    if self.is_node_supported(
-                        None, input_node  # type: ignore[arg-type] #(we don't use 'submodules')
-                    ):
+                    if self.is_node_supported({}, input_node):
                         continue
             self.reporter.report_reject(
                 node, f"Non-constant int64 input {input_node.name}"
@@ -559,18 +527,30 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
 
 
 class CheckFloat64Inputs(OperatorSupportBase):
+    """Reject nodes with float64 inputs.
+
+    Useful as a negative check for specs that do not allow float64.
+
+    """
 
     def __init__(
         self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
     ):
+        """Initialize the check with program context and reporter."""
         self.reporter = reporter
         super().__init__()
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-
-        for input_node in node.all_input_nodes:
+        """Return True if no float64 inputs are present."""
+        if is_submodule_node(node):
+            return True
+        for input_node in (
+            input_node
+            for input_node in node.all_input_nodes
+            if input_node.op != "get_attr"
+        ):
             tensor = get_first_fake_tensor(input_node)
             if tensor.dtype == torch.float64:
                 self.reporter.report_reject(
@@ -582,9 +562,10 @@ class CheckFloat64Inputs(OperatorSupportBase):
 
 
 class RankCheck(OperatorSupportBase):
-    """Makes sure that nodes with input or output tensors with rank > max_rank are not partitioned"""
+    """Reject nodes with rank greater than ``max_rank``."""
 
     def __init__(self, reporter: WhyNoPartitionReporter, max_rank: int):
+        """Initialize the check with a reporter and maximum rank."""
         self.reporter = reporter
         self.max_rank = max_rank
         super().__init__()
@@ -592,7 +573,14 @@ class RankCheck(OperatorSupportBase):
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        input_nodes = node.all_input_nodes
+        """Return True if input/output tensor ranks are within the limit."""
+        if is_submodule_node(node):
+            return True
+        input_nodes = (
+            input_node
+            for input_node in node.all_input_nodes
+            if input_node.op != "get_attr"
+        )
         # check if any input node has an unsupported rank
         for input_node in input_nodes:
             input_node_shape = get_first_fake_tensor(input_node).shape
@@ -627,3 +615,131 @@ class RankCheck(OperatorSupportBase):
                 )
                 return False
         return True
+
+
+class CondSupported(OperatorSupportBase):
+    """Check whether cond operator and submodule args should be partitioned.
+
+    Applies control-flow extension constraints before allowing delegation.
+
+    """
+
+    def __init__(
+        self,
+        exported_program: ExportedProgram,
+        tosa_spec: TosaSpecification,
+        reporter: WhyNoPartitionReporter,
+    ):
+        """Initialize conditional support checks for TOSA delegation.
+
+        Args:
+            exported_program (ExportedProgram): Program containing the cond
+                submodules to inspect.
+            tosa_spec (TosaSpecification): TOSA specification used to validate
+                supported operators.
+            reporter (WhyNoPartitionReporter): Reporter that records rejection
+                reasons for unsupported nodes.
+
+        """
+        self.exported_program = exported_program
+        self.reporter = reporter
+        self.tosa_spec = tosa_spec
+        super().__init__()
+
+    def _fully_partitioned(self, submodule: fx.GraphModule) -> bool:
+        """Check whether all call_function nodes share one delegation tag."""
+        partition_tag = None
+        for submodule_node in submodule.graph.nodes:
+            if submodule_node.op == "call_function":
+                # Input Q ops and output DQ ops will be de-tagged even if the submodule is fully supported.
+                if (
+                    submodule_node.target in Q_OPS
+                    and list(submodule_node.all_input_nodes)[0].op == "placeholder"
+                ):
+                    continue
+                if (
+                    submodule_node.target in DQ_OPS
+                    and list(submodule_node.users)[0].op == "output"
+                ):
+                    continue
+                if "delegation_tag" not in submodule_node.meta:
+                    return False
+                if partition_tag is None:
+                    partition_tag = submodule_node.meta["delegation_tag"]
+                elif submodule_node.meta["delegation_tag"] != partition_tag:
+                    return False
+        return True
+
+    def _cond_submodules_fully_partitioned(self, node: fx.Node) -> bool:
+        """Determine whether cond submodules were fully partitioned.
+
+        Update the "val" meta of the submodules when they are partitioned.
+
+        """
+        cond_submodules = (
+            (
+                self.exported_program.graph_module.get_submodule(
+                    str(cast(torch.fx.Node, submodule_node).target)
+                ),
+                cast(torch.fx.Node, submodule_node),
+            )
+            for submodule_node in node.args[1:3]
+        )
+        for submodule, submodule_node in cond_submodules:
+            submodule = cast(torch.fx.GraphModule, submodule)
+
+            if self._fully_partitioned(submodule):
+                submodule_node.meta["val"] = submodule.graph.output_node().meta["val"]
+            else:
+                return False
+        return True
+
+    def is_node_supported(  # noqa: C901
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        """Check whether a cond node and its submodules are partitionable."""
+        if is_submodule_node(node):
+            if not isinstance(self.tosa_spec, Tosa_1_00):
+                self.reporter.report_reject(
+                    node, "Control flow extension not supported for TOSA version <1.0"
+                )
+                return False
+            if not self.tosa_spec.support_extension("cf"):
+                self.reporter.report_reject(
+                    node,
+                    f"TOSA spec {self.tosa_spec} does not support control flow extension.",
+                )
+                return False
+            for user in node.users:
+                if user.target != torch.ops.higher_order.cond:
+                    self.reporter.report_reject(
+                        node, f"Submodule had unsupported user {user}"
+                    )
+                    return False
+                if not self._cond_submodules_fully_partitioned(user):
+                    self.reporter.report_reject(
+                        node, "One submodule was not fully partitioned"
+                    )
+                    return False
+            return True
+        if node.target == torch.ops.higher_order.cond:
+            if not isinstance(self.tosa_spec, Tosa_1_00):
+                self.reporter.report_reject(
+                    node, "Control flow extension not supported for TOSA version <1.0"
+                )
+                return False
+            if not self.tosa_spec.support_extension("cf"):
+                self.reporter.report_reject(
+                    node,
+                    f"TOSA spec {self.tosa_spec} does not support control flow extension.",
+                )
+                return False
+
+            if not self._cond_submodules_fully_partitioned(node):
+                self.reporter.report_reject(
+                    node, "Submodule was not fully partitioned."
+                )
+                return False
+            return True
+
+        return False

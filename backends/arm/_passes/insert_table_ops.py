@@ -3,12 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from itertools import chain
-from typing import Callable, cast, Dict, Iterator, Set
+from typing import Callable, cast, Dict, Iterator, Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.transforms.utils import create_constant_placeholder
@@ -59,6 +59,7 @@ class TableOps:
     special_table_ops: Set[EdgeOpOverload] = {
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
+        exir_ops.edge.aten.elu.default,
     }
 
     def __init__(self, exported_program: ExportedProgram):
@@ -92,6 +93,11 @@ class TableOps:
                     return lambda x: torch.nn.functional.gelu(
                         x, approximate=approximate
                     ).flatten()
+                case exir_ops.edge.aten.elu.default:
+                    input_alpha = cast(int, node.kwargs["alpha"])
+                    return lambda x: torch.nn.functional.elu(
+                        x, alpha=input_alpha
+                    ).flatten()
                 case _:
                     # Op must be handled if it's inside self.special_ops
                     raise AssertionError("Unhandled table operation")
@@ -103,13 +109,15 @@ class TableOps:
         return chain(TableOps.unary_table_ops, TableOps.special_table_ops)
 
 
-class InsertTableOpsPass(ExportPass):
+class InsertTableOpsPass(ArmPass):
     """
     For ops in self.table_ops they need to be serialized as a TOSA TABLE. This pass replaces these
     edge ops with a tosa._table(input: Tensor, target_str: str) where target_str == str(node.target).
     When lowering the _table node target_str will be used to find the corresponding torch operator
     which will be used to produce the table values in operators/op_table.py.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__()
@@ -277,7 +285,7 @@ class InsertTableOpsPass(ExportPass):
                     rescale_node = create_node(
                         graph=graph_module.graph,
                         op_target=exir_ops.backend.tosa.RESCALE.default,
-                        args=(table_op_node, output_qparams[0].dtype, scale, 0, 0),
+                        args=(table_op_node, output_qparams[0].dtype, [scale], 0, 0),
                     )
                     output_node = rescale_node
 

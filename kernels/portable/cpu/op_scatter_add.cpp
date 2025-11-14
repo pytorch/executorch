@@ -23,7 +23,7 @@ namespace {
 template <typename CTYPE>
 void scatter_add_helper(
     const CTYPE* src_data,
-    const long* index_data,
+    const int64_t* index_data,
     CTYPE* out_data,
     const Tensor& src,
     const Tensor& index,
@@ -81,7 +81,7 @@ Tensor& scatter_add_out(
 
   ET_SWITCH_REALHBBF16_TYPES(self_type, ctx, "scatter_add.out", CTYPE, [&]() {
     const CTYPE* self_data = self.const_data_ptr<CTYPE>();
-    const long* index_data = index.const_data_ptr<long>();
+    const int64_t* index_data = index.const_data_ptr<int64_t>();
     const CTYPE* src_data = src.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 

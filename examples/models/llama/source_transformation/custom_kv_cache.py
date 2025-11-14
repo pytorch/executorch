@@ -269,7 +269,7 @@ def replace_kv_cache_with_quantized_kv_cache(module):
         executorch_package_path = executorch.__path__[-1]
         libs = list(
             glob.glob(
-                f"{executorch_package_path}/**/libquantized_ops_aot_lib.*",
+                f"{executorch_package_path}/**/*quantized_ops_aot_lib.*",
                 recursive=True,
             )
         )

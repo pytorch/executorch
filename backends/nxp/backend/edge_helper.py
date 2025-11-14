@@ -1,11 +1,25 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from torch.fx import Node
+
+from executorch.exir.dialects._ops import ops as exir_ops
+
+from torch.fx import GraphModule, Node
 from torch.nn import Parameter
+
+
+QUANTIZE_OPERATORS = [
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+]
+
+DEQUANTIZE_OPERATORS = [
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+]
 
 
 def input_tensor(node: Node, input_index: int) -> torch.Tensor:
@@ -62,12 +76,52 @@ def node_is_effectively_static_tensor(
     if node_is_static_tensor(node, parameters_mapping):
         return True
 
-    def _is_dequantize(node_: Node) -> bool:
-        return node_.target.__name__ in {
-            "quantized_decomposed.dequantize_per_tensor.default",
-            "quantized_decomposed.dequantize_per_channel.default",
-        }
-
     return _is_dequantize(node) and node_is_static_tensor(
         node.args[0], parameters_mapping
     )
+
+
+def try_get_tensor_constant_from_node(
+    graph_module: GraphModule, node: Node
+) -> Parameter | None:
+    """Get the static data from a given node. If it doesn't have any data, return `None`."""
+    if node is None or node.op != "get_attr":
+        return None
+
+    target_atoms = node.target.split(".")
+    attr_itr = graph_module
+    for atom in target_atoms:
+        if not hasattr(attr_itr, atom):
+            return None
+        attr_itr = getattr(attr_itr, atom)
+    return attr_itr
+
+
+def _is_dequantize(node_: Node) -> bool:
+    return node_.op == "call_function" and node_.target in [
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+        torch.ops.quantized_decomposed.dequantize_per_channel.default,
+    ]
+
+
+def _is_quantize(node_: Node) -> bool:
+    return node_.op == "call_function" and node_.target in [
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+        torch.ops.quantized_decomposed.quantize_per_tensor.default,
+        torch.ops.quantized_decomposed.quantize_per_channel.default,
+    ]
+
+
+def previous_non_qdq_node(node: Node, input_index: int = 0) -> Node | None:
+    """Return the first node which is not a `quantize` or `dequantize`, found by traversing the graph backwards
+    starting with the `node.args[input_index]`,
+    """
+    current_node = node.args[input_index]
+    while True:
+        if _is_quantize(current_node) or _is_dequantize(current_node):
+            current_node = current_node.args[0]
+        else:
+            return current_node

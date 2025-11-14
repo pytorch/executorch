@@ -20,7 +20,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-from torchaudio import models
+from torchaudio import models  # type: ignore[import-untyped]
 
 input_t = Tuple[torch.Tensor]  # Input x
 
@@ -91,7 +91,6 @@ def test_w2l_u55_INT():
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -106,7 +105,6 @@ def test_w2l_u85_INT():
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
     pipeline.run()
 

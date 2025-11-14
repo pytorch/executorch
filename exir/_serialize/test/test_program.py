@@ -16,10 +16,7 @@ import unittest
 from typing import List, Sequence
 
 from executorch.exir._serialize._flatbuffer import _program_flatbuffer_to_json
-from executorch.exir._serialize._named_data_store import (
-    BufferEntry,
-    NamedDataStoreOutput,
-)
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir._serialize._program import (
     _ExtendedHeader,
     _get_extended_header,
@@ -28,6 +25,7 @@ from executorch.exir._serialize._program import (
     deserialize_pte_binary,
     serialize_pte_binary,
 )
+from executorch.exir._serialize.data_serializer import DataEntry
 from executorch.exir._serialize.padding import aligned_size
 
 from executorch.exir.schema import (
@@ -191,6 +189,8 @@ class TestProgram(unittest.TestCase):
         # the end of the file.
         self.assertGreaterEqual(eh.segment_base_offset, eh.program_size)
         self.assertLess(eh.segment_base_offset, len(pte_data))
+        # Segment data_size should be non-zero since there are segments.
+        self.assertGreater(eh.segment_data_size, 0)
 
         # Peek inside the actual flatbuffer data to see the segments.
         program_with_segments = _json_to_program(_program_flatbuffer_to_json(pte_data))
@@ -232,6 +232,8 @@ class TestProgram(unittest.TestCase):
         # Check segment data.
         offsets = subsegment_offsets.offsets
         segment_data: bytes = pte_data[eh.segment_base_offset :]
+        # Check segment data size.
+        self.assertEqual(len(segment_data), eh.segment_data_size)
 
         # tensor[1]: padding.
         self.assertEqual(
@@ -514,6 +516,8 @@ class TestProgram(unittest.TestCase):
         # the end of the file.
         self.assertGreaterEqual(eh.segment_base_offset, eh.program_size)
         self.assertLess(eh.segment_base_offset, len(pte_data))
+        # Segment data size should be non-zero since there are segments.
+        self.assertGreater(eh.segment_data_size, 0)
 
         # Peek inside the actual flatbuffer data to see the segments. Note that
         # this also implicity tests the case where we try parsing the entire
@@ -566,6 +570,8 @@ class TestProgram(unittest.TestCase):
         # Now that we've shown that the base offset is correct, slice off the
         # front so that all segment offsets are relative to zero.
         segment_data: bytes = pte_data[segment_base_offset:]
+        # Check segment data size.
+        self.assertEqual(len(segment_data), eh.segment_data_size)
 
         # End of the first segment. It's much smaller than the alignment,
         # so we know that it's followed by zeros.
@@ -691,14 +697,14 @@ class TestProgram(unittest.TestCase):
 
         # Create named data segment.
         named_data_buffers = [
-            BufferEntry(
-                buffer=self.gen_blob_data(8, b"\x50\x55\x05"), alignment=3
-            ),  # expect lcm(3, 128) = 384
-            BufferEntry(
-                buffer=self.gen_blob_data(16, b"\x60\x66\x06"), alignment=256
-            ),  # expect lcm(256, 128) = 256
+            self.gen_blob_data(8, b"\x50\x55\x05"),
+            self.gen_blob_data(16, b"\x60\x66\x06"),
         ]
-        pte_named_data = {"key0": 0, "key1": 1}
+        buffer_alignment = [3, 256]
+        pte_named_data = {
+            "key0": DataEntry(0, buffer_alignment[0], None),  # expect lcm(3, 128) = 384
+            "key1": DataEntry(1, buffer_alignment[1], None),
+        }  # expect lcm(256, 128) = 256
         named_data = NamedDataStoreOutput(
             buffers=named_data_buffers, pte_data=pte_named_data, external_data={}
         )
@@ -729,6 +735,8 @@ class TestProgram(unittest.TestCase):
         # the end of the file.
         self.assertGreaterEqual(eh.segment_base_offset, eh.program_size)
         self.assertLess(eh.segment_base_offset, len(pte_data))
+        # Segment data size should be non-zero since there are segments.
+        self.assertGreater(eh.segment_data_size, 0)
 
         # Peek inside the actual flatbuffer data to see the segments.
         program_with_segments = _json_to_program(_program_flatbuffer_to_json(pte_data))
@@ -752,16 +760,16 @@ class TestProgram(unittest.TestCase):
         # Named data segments.
         expected_offset = aligned_size(
             (segment_table[2].offset + segment_table[2].size),
-            math.lcm(named_data_buffers[0].alignment, SEGMENT_ALIGNMENT),
+            math.lcm(buffer_alignment[0], SEGMENT_ALIGNMENT),
         )
         self.assertEqual(segment_table[3].offset, expected_offset)
-        self.assertEqual(segment_table[3].size, len(named_data_buffers[0].buffer))
+        self.assertEqual(segment_table[3].size, len(named_data_buffers[0]))
         expected_offset = aligned_size(
             (segment_table[3].offset + segment_table[3].size),
-            math.lcm(named_data_buffers[1].alignment, SEGMENT_ALIGNMENT),
+            math.lcm(buffer_alignment[1], SEGMENT_ALIGNMENT),
         )
         self.assertEqual(segment_table[4].offset, expected_offset)
-        self.assertEqual(segment_table[4].size, len(named_data_buffers[1].buffer))
+        self.assertEqual(segment_table[4].size, len(named_data_buffers[1]))
 
         # Named data.
         self.assertTrue(program_with_segments.named_data is not None)
@@ -811,6 +819,8 @@ class TestProgram(unittest.TestCase):
         # Now that we've shown that the base offset is correct, slice off the
         # front so that all segment offsets are relative to zero.
         segment_data: bytes = pte_data[segment_base_offset:]
+        # Check segment data size.
+        self.assertEqual(len(segment_data), eh.segment_data_size)
 
         # Check segment[0] for constants.
         offsets = subsegment_offsets.offsets
@@ -862,7 +872,7 @@ class TestProgram(unittest.TestCase):
                 segment_table[3].offset : segment_table[3].offset
                 + segment_table[3].size
             ],
-            named_data_buffers[0].buffer,
+            named_data_buffers[0],
         )
 
         self.assertEqual(
@@ -870,7 +880,7 @@ class TestProgram(unittest.TestCase):
                 segment_table[4].offset : segment_table[4].offset
                 + segment_table[4].size
             ],
-            named_data_buffers[1].buffer,
+            named_data_buffers[1],
         )
 
         # Convert back.
@@ -891,17 +901,17 @@ class TestProgram(unittest.TestCase):
 
         # Create named data segments with different alignments.
         buffers = [
-            BufferEntry(
-                buffer=self.gen_blob_data(8, b"\x10\x11\x01"), alignment=8
-            ),  # expect lcm(8, 12) = 24
-            BufferEntry(
-                buffer=self.gen_blob_data(16, b"\x20\x22\x02"), alignment=32
-            ),  # expect lcm(32, 12) = 96
-            BufferEntry(
-                buffer=self.gen_blob_data(24, b"\x30\x33\x03"), alignment=24
-            ),  # expect lcm(24, 12) = 24
+            self.gen_blob_data(8, b"\x10\x11\x01"),
+            self.gen_blob_data(16, b"\x20\x22\x02"),
+            self.gen_blob_data(24, b"\x30\x33\x03"),
         ]
-        pte_named_data = {"key1": 0, "key2": 0, "key3": 1, "key4": 2}
+        buffer_alignment = [8, 16, 24]
+        pte_named_data = {
+            "key1": DataEntry(0, buffer_alignment[0], None),  # expect lcm(8, 12) = 24
+            "key2": DataEntry(0, buffer_alignment[0], None),  # expect lcm(8, 12) = 24
+            "key3": DataEntry(1, buffer_alignment[1], None),  # expect lcm(32, 12) = 96
+            "key4": DataEntry(2, buffer_alignment[2], None),
+        }  # expect lcm(24, 12) = 24
         named_data = NamedDataStoreOutput(
             buffers=buffers, pte_data=pte_named_data, external_data={}
         )
@@ -925,6 +935,8 @@ class TestProgram(unittest.TestCase):
         # the end of the file.
         self.assertGreaterEqual(eh.segment_base_offset, eh.program_size)
         self.assertLess(eh.segment_base_offset, len(pte_data))
+        # Segment data size should be non-zero since there are segments.
+        self.assertGreater(eh.segment_data_size, 0)
 
         # Peek inside the actual flatbuffer data to see the named data segments.
         program_with_segments = _json_to_program(_program_flatbuffer_to_json(pte_data))
@@ -951,33 +963,36 @@ class TestProgram(unittest.TestCase):
                 segment_table[i - 1].offset + segment_table[i - 1].size if i > 0 else 0
             )
             expected_offset = aligned_size(
-                segment_length, math.lcm(SEGMENT_ALIGNMENT, buffers[i].alignment)
+                segment_length, math.lcm(SEGMENT_ALIGNMENT, buffer_alignment[i])
             )
             self.assertEqual(segment_table[i].offset, expected_offset)
-            self.assertEqual(segment_table[i].size, len(buffers[i].buffer))
+            self.assertEqual(segment_table[i].size, len(buffers[i]))
 
         # Check the pte data for buffer values.
         segment_data: bytes = pte_data[eh.segment_base_offset :]
+        # Check segment data size.
+        self.assertEqual(len(segment_data), eh.segment_data_size)
+
         self.assertEqual(
             segment_data[
                 segment_table[0].offset : segment_table[0].offset
                 + segment_table[0].size
             ],
-            buffers[0].buffer,
+            buffers[0],
         )
         self.assertEqual(
             segment_data[
                 segment_table[1].offset : segment_table[1].offset
                 + segment_table[1].size
             ],
-            buffers[1].buffer,
+            buffers[1],
         )
         self.assertEqual(
             segment_data[
                 segment_table[2].offset : segment_table[2].offset
                 + segment_table[2].size
             ],
-            buffers[2].buffer,
+            buffers[2],
         )
 
 
@@ -985,18 +1000,37 @@ class TestProgram(unittest.TestCase):
 # the example data.
 EXAMPLE_PROGRAM_SIZE: int = 0x1122112233443344
 EXAMPLE_SEGMENT_BASE_OFFSET: int = 0x5566556677887788
+EXAMPLE_SEGMENT_DATA_SIZE: int = 0x5544554433223322
 # This data is intentionally fragile. If the header layout or magic changes,
 # this test must change too. The layout of the header is a contract, not an
 # implementation detail.
 EXAMPLE_HEADER_DATA: bytes = (
     # Magic bytes
     b"eh00"
-    # uint32_t header size (little endian)
+    # uint32_t header size (little endian). 0x20 --> 32 bytes.
+    + b"\x20\x00\x00\x00"
+    # uint64_t program size
+    + b"\x44\x33\x44\x33\x22\x11\x22\x11"
+    # uint64_t segment base offset
+    + b"\x88\x77\x88\x77\x66\x55\x66\x55"
+    # uint64_t segment data size
+    + b"\x22\x33\x22\x33\x44\x55\x44\x55"
+    # Padding; provide at least NUM_HEAD_BYTES for the header.
+    + b"\x99" * (_ExtendedHeader.NUM_HEAD_BYTES - 32)
+)
+
+# Minimum fields in an extended header (no segment data size).
+EXAMPLE_HEADER_DATA_MIN: bytes = (
+    # Magic bytes
+    b"eh00"
+    # uint32_t header size (little endian). 0x18 --> 24 bytes.
     + b"\x18\x00\x00\x00"
     # uint64_t program size
     + b"\x44\x33\x44\x33\x22\x11\x22\x11"
     # uint64_t segment base offset
     + b"\x88\x77\x88\x77\x66\x55\x66\x55"
+    # Padding; provide at least NUM_HEAD_BYTES for the header.
+    + b"\x99" * (_ExtendedHeader.NUM_HEAD_BYTES - 24)
 )
 
 
@@ -1005,14 +1039,16 @@ class TestExtendedHeader(unittest.TestCase):
         eh = _ExtendedHeader(
             program_size=EXAMPLE_PROGRAM_SIZE,
             segment_base_offset=EXAMPLE_SEGMENT_BASE_OFFSET,
+            segment_data_size=EXAMPLE_SEGMENT_DATA_SIZE,
         )
         self.assertTrue(eh.is_valid())
-        self.assertEqual(eh.to_bytes(), EXAMPLE_HEADER_DATA)
+        self.assertEqual(eh.to_bytes(), EXAMPLE_HEADER_DATA[0:32])
 
     def test_to_bytes_with_non_defaults(self) -> None:
         eh = _ExtendedHeader(
             program_size=EXAMPLE_PROGRAM_SIZE,
             segment_base_offset=EXAMPLE_SEGMENT_BASE_OFFSET,
+            segment_data_size=EXAMPLE_SEGMENT_DATA_SIZE,
             # Override the default magic and length, to demonstrate that this
             # does not affect the serialized header.
             magic=b"ABCD",
@@ -1023,11 +1059,11 @@ class TestExtendedHeader(unittest.TestCase):
 
         # But still produces a valid output header, since to_bytes() ignores
         # magic and length.
-        self.assertEqual(eh.to_bytes(), EXAMPLE_HEADER_DATA)
+        self.assertEqual(eh.to_bytes(), EXAMPLE_HEADER_DATA[0:32])
 
     def test_from_bytes_valid(self) -> None:
         # Parse the serialized extended header.
-        eh = _ExtendedHeader.from_bytes(EXAMPLE_HEADER_DATA)
+        eh = _ExtendedHeader.from_bytes(EXAMPLE_HEADER_DATA[0:32])
 
         # This is a valid header: good magic and length.
         self.assertTrue(eh.is_valid())
@@ -1036,6 +1072,21 @@ class TestExtendedHeader(unittest.TestCase):
         self.assertEqual(eh.length, _ExtendedHeader.EXPECTED_LENGTH)
         self.assertEqual(eh.program_size, EXAMPLE_PROGRAM_SIZE)
         self.assertEqual(eh.segment_base_offset, EXAMPLE_SEGMENT_BASE_OFFSET)
+        self.assertEqual(eh.segment_data_size, EXAMPLE_SEGMENT_DATA_SIZE)
+
+    def test_from_bytes_minimum(self) -> None:
+        # Parse the serialized extended header.
+        eh = _ExtendedHeader.from_bytes(EXAMPLE_HEADER_DATA_MIN)
+
+        # This is a valid header: good magic and length.
+        self.assertTrue(eh.is_valid())
+
+        self.assertEqual(eh.magic, _ExtendedHeader.EXPECTED_MAGIC)
+        self.assertEqual(eh.length, _ExtendedHeader.MINIMUM_LENGTH)
+        self.assertEqual(eh.program_size, EXAMPLE_PROGRAM_SIZE)
+        self.assertEqual(eh.segment_base_offset, EXAMPLE_SEGMENT_BASE_OFFSET)
+        # Does not contain segment_data_size; should be 0
+        self.assertEqual(eh.segment_data_size, 0)
 
     def test_from_bytes_with_more_data_than_necessary(self) -> None:
         # Pass in more data than necessary to parse the header.
@@ -1049,6 +1100,7 @@ class TestExtendedHeader(unittest.TestCase):
         self.assertEqual(eh.length, _ExtendedHeader.EXPECTED_LENGTH)
         self.assertEqual(eh.program_size, EXAMPLE_PROGRAM_SIZE)
         self.assertEqual(eh.segment_base_offset, EXAMPLE_SEGMENT_BASE_OFFSET)
+        self.assertEqual(eh.segment_data_size, EXAMPLE_SEGMENT_DATA_SIZE)
 
     def test_from_bytes_larger_than_needed_header_size_field(self) -> None:
         # Simulate a backwards-compatibility situation. Parse a header
@@ -1059,11 +1111,13 @@ class TestExtendedHeader(unittest.TestCase):
             # Magic bytes
             b"eh00"
             # uint32_t header size (little endian)
-            + b"\x1c\x00\x00\x00"  # Longer than expected
+            + b"\x21\x00\x00\x00"  # Longer than expected
             # uint64_t program size
             + b"\x44\x33\x44\x33\x22\x11\x22\x11"
             # uint64_t segment base offset
             + b"\x88\x77\x88\x77\x66\x55\x66\x55"
+            # uint64_t segment data size
+            + b"\x22\x33\x22\x33\x44\x55\x44\x55"
             # uint32_t new field (ignored)
             + b"\xff\xee\xff\xee"
         )
@@ -1075,9 +1129,10 @@ class TestExtendedHeader(unittest.TestCase):
         self.assertTrue(eh.is_valid())
 
         self.assertEqual(eh.magic, _ExtendedHeader.EXPECTED_MAGIC)
-        self.assertEqual(eh.length, 28)
+        self.assertEqual(eh.length, 33)
         self.assertEqual(eh.program_size, EXAMPLE_PROGRAM_SIZE)
         self.assertEqual(eh.segment_base_offset, EXAMPLE_SEGMENT_BASE_OFFSET)
+        self.assertEqual(eh.segment_data_size, EXAMPLE_SEGMENT_DATA_SIZE)
 
     def test_from_bytes_not_enough_data_fails(self) -> None:
         # Parsing a truncated prefix should fail.
@@ -1090,11 +1145,13 @@ class TestExtendedHeader(unittest.TestCase):
             # Magic bytes
             b"ABCD"  # Invalid
             # uint32_t header size (little endian)
-            + b"\x18\x00\x00\x00"
+            + b"\x20\x00\x00\x00"
             # uint64_t program size
             + b"\x44\x33\x44\x33\x22\x11\x22\x11"
             # uint64_t segment base offset
             + b"\x88\x77\x88\x77\x66\x55\x66\x55"
+            # uint64_t segment data size
+            + b"\x22\x33\x22\x33\x44\x55\x44\x55"
         )
 
         # Parse the serialized extended header.
@@ -1109,6 +1166,7 @@ class TestExtendedHeader(unittest.TestCase):
         self.assertEqual(eh.length, _ExtendedHeader.EXPECTED_LENGTH)
         self.assertEqual(eh.program_size, EXAMPLE_PROGRAM_SIZE)
         self.assertEqual(eh.segment_base_offset, EXAMPLE_SEGMENT_BASE_OFFSET)
+        self.assertEqual(eh.segment_data_size, EXAMPLE_SEGMENT_DATA_SIZE)
 
     def test_from_bytes_invalid_length(self) -> None:
         # An invalid serialized header
@@ -1121,6 +1179,8 @@ class TestExtendedHeader(unittest.TestCase):
             + b"\x44\x33\x44\x33\x22\x11\x22\x11"
             # uint64_t segment base offset
             + b"\x88\x77\x88\x77\x66\x55\x66\x55"
+            # uint64_t segment data size
+            + b"\x22\x33\x22\x33\x44\x55\x44\x55"
         )
 
         # Parse the serialized extended header.
@@ -1135,3 +1195,5 @@ class TestExtendedHeader(unittest.TestCase):
         self.assertEqual(eh.length, 16)
         self.assertEqual(eh.program_size, EXAMPLE_PROGRAM_SIZE)
         self.assertEqual(eh.segment_base_offset, EXAMPLE_SEGMENT_BASE_OFFSET)
+        # Length cut short; segment_data_size parsed as 0.
+        self.assertEqual(eh.segment_data_size, 0)

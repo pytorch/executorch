@@ -1,0 +1,131 @@
+name: Test Metal Backend
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/*
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: false
+
+jobs:
+  test-metal-builds:
+    name: test-executorch-metal-build
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m2-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Test ExecuTorch Metal build"
+        PYTHON_EXECUTABLE=python CMAKE_ARGS="-DEXECUTORCH_BUILD_METAL=ON" ${CONDA_RUN} --no-capture-output ./install_executorch.sh
+        echo "::endgroup::"
+
+  export-model-metal-artifact:
+    name: export-model-metal-artifact
+      # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "openai"
+            name: "whisper-small"
+          - repo: "openai"
+            name: "whisper-large-v3-turbo"
+        quant:
+          - "non-quantized"
+    with:
+      runner: macos-m2-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      secrets-env: EXECUTORCH_HF_TOKEN
+      upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}
+      script: |
+        set -eux
+
+        echo "::group::Setup Huggingface"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0" accelerate
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        echo "::endgroup::"
+
+        echo "::group::Setup Optimum-ExecuTorch"
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        echo "Using optimum-executorch version: ${OPTIMUM_ET_VERSION}"
+        ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        echo "::endgroup::"
+
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Pip List"
+        ${CONDA_RUN} pip list
+        echo "::endgroup::"
+
+        ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+
+  test-model-metal-e2e:
+    name: test-model-metal-e2e
+    needs: export-model-metal-artifact
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "openai"
+            name: "whisper-small"
+          - repo: "openai"
+            name: "whisper-large-v3-turbo"
+        quant:
+          - "non-quantized"
+    with:
+      runner: macos-m2-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}
+      script: |
+        set -eux
+
+        echo "::group::Print machine info"
+        uname -a
+        if [ $(uname -s) == Darwin ]; then
+          sw_vers
+          # Print RAM in GB
+          RAM_BYTES=$(sysctl -n hw.memsize)
+          RAM_GB=$(echo "scale=2; $RAM_BYTES/1024/1024/1024" | bc)
+          echo "Available RAM (GB): $RAM_GB"
+          sysctl machdep.cpu.brand_string
+          sysctl machdep.cpu.core_count
+          # Print number of GPU cores (Apple Silicon)
+          if command -v system_profiler &> /dev/null; then
+            GPU_CORES=$(system_profiler SPDisplaysDataType | awk '/Total Number of Cores/ {print $5; exit}')
+            if [ -z "$GPU_CORES" ]; then
+              # Fallback: try to parse "Core Count" from Apple GPU section
+              GPU_CORES=$(system_profiler SPDisplaysDataType | awk '/Core Count/ {print $3; exit}')
+            fi
+            echo "GPU Cores: ${GPU_CORES:-Unknown}"
+          else
+            echo "system_profiler not available, cannot determine GPU cores."
+          fi
+        fi
+        echo "::endgroup::"
+
+        ${CONDA_RUN} bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"

@@ -21,6 +21,7 @@ examples
 |   └── mps                           # Contains end-to-end demos of MPS backend
 ├── arm                               # Contains demos of the Arm TOSA and Ethos-U NPU flows
 ├── qualcomm                          # Contains demos of Qualcomm QNN backend
+�├── samsung                          # Contains demos of Samsung Exynos backend
 ├── cadence                           # Contains demos of exporting and running a simple model on Xtensa DSPs
 ├── third-party                       # Third-party libraries required for working on the demos
 └── README.md                         # This file
@@ -33,7 +34,7 @@ A user's journey may commence by exploring the demos located in the [`portable/`
 
 ## Demos Apps
 
-Explore mobile apps with ExecuTorch models integrated and deployable on [Android](demo-apps/android) and [iOS](demo-apps/apple_ios). This provides end-to-end instructions on how to export Llama models, load on device, build the app, and run it on device.
+Explore mobile apps with ExecuTorch models integrated and deployable on [Android](demo-apps/android) and [iOS](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple). This provides end-to-end instructions on how to export Llama models, load on device, build the app, and run it on device.
 
 For specific details related to models and backend, you can explore the various subsections.
 
@@ -68,6 +69,10 @@ The [`arm`](arm) directory contains scripts to help you run a PyTorch model on a
 ### QNN Backend
 
 You will find demos of [ExecuTorch QNN Backend](qualcomm) in the [`qualcomm`](qualcomm) directory.
+
+###  Exynos Backend
+
+You will find demos of [ExecuTorch Exynos Backend](samsung) in the [`samsung`](samsung) directory.
 
 ### Cadence HiFi4 DSP
 

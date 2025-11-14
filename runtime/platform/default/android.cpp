@@ -46,7 +46,6 @@
       __android_log_print(                                          \
           ANDROID_LOG_FATAL,                                        \
           "ExecuTorch",                                             \
-          "%s",                                                     \
           "ExecuTorch PAL must be initialized before call to %s()", \
           ET_FUNCTION);                                             \
     }                                                               \

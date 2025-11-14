@@ -12,6 +12,18 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 
+/*
+For internal builds using buck rules, the target that depends on
+selective prim ops, will manage its own artifacts. It is in the
+artifacts directory where the geneated selected_prim_ops.h resides
+and thus compilation sources must be copied there including
+selective_build_prim_ops.h. Hence it does not have fully qualified
+name unlike the header files above.
+*/
+#ifdef ET_PRIM_OPS_SELECTIVE_BUILD
+#include "selective_build_prim_ops.h"
+#endif
+
 #include <algorithm>
 #include <cmath>
 
@@ -87,6 +99,8 @@ void floor_div_double(double a, double b, EValue& out) {
 }
 
 static Kernel prim_ops[] = {
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_ATEN_SYM_SIZE_INT)
     // aten::sym_size.int(Tensor self, int dim) -> SymInt
     Kernel(
         "aten::sym_size.int",
@@ -108,6 +122,9 @@ static Kernel prim_ops[] = {
           int64_t size = self_tensor.size(dim_val);
           out = EValue(size);
         }),
+#endif
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_ATEN_LOCAL_SCALAR_DENSE)
     // aten::_local_scalar_dense(Tensor self) -> Scalar
     Kernel(
         "aten::_local_scalar_dense",
@@ -124,6 +141,12 @@ static Kernel prim_ops[] = {
           EValue& out = *stack[1];
           executorch::aten::Tensor self_tensor =
               self.to<executorch::aten::Tensor>();
+          ET_KERNEL_CHECK_MSG(
+              context,
+              self_tensor.numel() >= 1,
+              InvalidArgument,
+              /* void */,
+              "Expected tensor with at least 1 element");
           ET_SWITCH_REAL_TYPES_AND(
               Bool,
               self_tensor.scalar_type(),
@@ -134,6 +157,9 @@ static Kernel prim_ops[] = {
                 out = EValue(Scalar(self_tensor.const_data_ptr<CTYPE>()[0]));
               });
         }),
+#endif
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_ATEN_SYM_NUMEL)
     // aten::sym_numel(Tensor self) -> SymInt
     Kernel(
         "aten::sym_numel",
@@ -153,6 +179,9 @@ static Kernel prim_ops[] = {
           int64_t numel = self_tensor.numel();
           out = EValue(numel);
         }),
+#endif
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_SYM_MAX_SCALAR)
     // executorch_prim::sym_max.Scalar(SymInt a, SymInt b) -> SymInt
     Kernel(
         "executorch_prim::sym_max.Scalar",
@@ -182,6 +211,9 @@ static Kernel prim_ops[] = {
                 (size_t)b.tag);
           }
         }),
+#endif
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_SYM_MIN_SCALAR)
     // executorch_prim::sym_min.Scalar(SymInt a, SymInt b) -> SymInt
     Kernel(
         "executorch_prim::sym_min.Scalar",
@@ -210,27 +242,39 @@ static Kernel prim_ops[] = {
                 (size_t)b.tag);
           }
         }),
+#endif
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_ADD_SCALAR)
     // executorch_prim::add.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::add.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
           ALGEBRA_ET_PRIM_OP(+, stack, context);
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_SUB_SCALAR)
     // executorch_prim::sub.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::sub.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
           ALGEBRA_ET_PRIM_OP(-, stack, context);
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_MUL_SCALAR)
     // executorch_prim::mul.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::mul.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
           ALGEBRA_ET_PRIM_OP(*, stack, context);
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_FLOORDIV_SCALAR)
     /**
      * Python's __floordiv__ operator is more complicated than just floor(a /
      * b). It aims to maintain the property: a == (a // b) * b + remainder(a, b)
@@ -280,8 +324,11 @@ static Kernel prim_ops[] = {
                 (size_t)b.tag);
           }
         }),
+#endif
 
-    // executorch_prim::floordiv.Scalar(Scalar, Scalar) -> Scalar
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_TRUEDIV_SCALAR)
+    // executorch_prim::truediv.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::truediv.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
@@ -318,7 +365,10 @@ static Kernel prim_ops[] = {
                 (size_t)b.tag);
           }
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_SYM_FLOAT_SCALAR)
     // executorch_prim::sym_float.Scalar(Scalar) -> Scalar
     Kernel(
         "executorch_prim::sym_float.Scalar",
@@ -346,41 +396,60 @@ static Kernel prim_ops[] = {
                 context, false, InvalidType, /* void */, "%zu", (size_t)a.tag);
           }
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_EQ_SCALAR)
     // executorch_prim::eq.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::eq.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(==, stack, context);
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_GT_SCALAR)
     // executorch_prim::gt.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::gt.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(>, stack, context);
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_LT_SCALAR)
     // executorch_prim::lt.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::lt.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(<, stack, context);
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_GE_SCALAR)
     // executorch_prim::ge.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::ge.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(>=, stack, context);
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_LE_SCALAR)
     // executorch_prim::le.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::le.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(<=, stack, context);
         }),
+#endif
+
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_NEG_SCALAR)
     // executorch_prim::neg.Scalar(Scalar) -> Scalar
     Kernel(
         "executorch_prim::neg.Scalar",
@@ -404,7 +473,10 @@ static Kernel prim_ops[] = {
                 context, false, InvalidType, /* void */, "%zu", (size_t)a.tag);
           }
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_FLOORDIV_INT)
     // executorch_prim::floordiv.int(int, int) -> int
     Kernel(
         "executorch_prim::floordiv.int",
@@ -422,7 +494,10 @@ static Kernel prim_ops[] = {
           EValue& out = *stack[2];
           out = EValue(a.toInt() / b.toInt());
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_MOD_INT)
     // executorch_prim::mod.int(int, int) -> int
     Kernel(
         "executorch_prim::mod.int",
@@ -440,7 +515,10 @@ static Kernel prim_ops[] = {
           EValue& out = *stack[2];
           out = EValue(a.toInt() % b.toInt());
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_MOD_SCALAR)
     // executorch_prim::mod.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::mod.Scalar",
@@ -469,7 +547,10 @@ static Kernel prim_ops[] = {
                 (size_t)b.tag);
           }
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_CEIL_SCALAR)
     // ceil.Scalar(Scalar a) -> Scalar
     Kernel(
         "executorch_prim::ceil.Scalar",
@@ -496,7 +577,10 @@ static Kernel prim_ops[] = {
                 (size_t)a.tag);
           }
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_ROUND_SCALAR)
     // round.Scalar(Scalar a) -> Scalar
     Kernel(
         "executorch_prim::round.Scalar",
@@ -540,7 +624,10 @@ static Kernel prim_ops[] = {
                 (size_t)a.tag);
           }
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_TRUNC_SCALAR)
     // trunc.Scalar(Scalar a) -> Scalar
     Kernel(
         "executorch_prim::trunc.Scalar",
@@ -562,19 +649,27 @@ static Kernel prim_ops[] = {
                 context, false, InvalidType, /* void */, "%zu", (size_t)a.tag);
           }
         }),
+#endif
 
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_ET_COPY_INDEX_TENSOR)
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
     Kernel(
         "executorch_prim::et_copy_index.tensor",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
           et_copy_index(context, stack);
         }),
+#endif
+
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_ET_VIEW_DEFAULT)
     // executorch_prim::et_view.default(Tensor, int[]) -> Tensor
     Kernel(
         "executorch_prim::et_view.default",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
           et_view(context, stack);
         }),
+#endif
 
 };
 

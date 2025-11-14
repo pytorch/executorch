@@ -14,7 +14,7 @@ from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 
 from typing import List, Optional, Tuple
 
-from executorch.backends.cadence.aot.export_example import export_model
+from executorch.backends.cadence.aot.export_example import export_and_run_model
 from torchaudio.prototype.models import ConvEmformer
 
 
@@ -157,4 +157,4 @@ if __name__ == "__main__":
         transcriber_lengths,
     )
 
-    export_model(encoder, example_inputs)
+    export_and_run_model(encoder, example_inputs)

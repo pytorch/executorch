@@ -8,10 +8,12 @@
 
 from typing import Tuple
 
-import pytest
-
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+    TOSAQuantizer,
+)
+from executorch.backends.arm.test import common, conftest
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -20,6 +22,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.xnnpack.test.tester import Quantize
 
 aten_op = "torch.ops.aten.linear.default"
 
@@ -143,7 +147,6 @@ def test_linear_tosa_FP(test_data: torch.Tensor):
     pipeline.run()
 
 
-@pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness.
 @common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
 def test_linear_tosa_INT(test_data: torch.Tensor):
     test_data, out_features, has_bias, per_channel_quantization = test_data()
@@ -177,7 +180,6 @@ def test_linear_u55_INT(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     ).run()
@@ -200,7 +202,6 @@ def test_linear_u85_INT(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     ).run()
@@ -241,5 +242,144 @@ def test_linear_vgf_INT(test_data: torch.Tensor):
         exir_op=[],
         tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+def get_symmetric_a16w8_linear_quantizer(
+    u55_config=False, per_channel_quantization=False
+):
+    tosa_version = conftest.get_option("tosa_version")
+    tosa_profiles = {
+        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
+    }
+
+    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+    quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    quantizer.set_module_type(
+        torch.nn.Linear,
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization
+        ),
+    )
+
+    return Quantize(
+        quantizer,
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization
+        ),
+    )
+
+
+test_data_all_16a8w = test_data_rank1_INT | test_data_rank4_INT
+
+
+@common.parametrize("test_data", test_data_all_16a8w)
+def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
+    """Test linear operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+
+    # Create pipeline with custom 16A8W quantization config
+    pipeline = TosaPipelineINT[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op,
+        exir_op=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        tosa_extensions=["int16"],
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_linear_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    # Run the pipeline
+    pipeline.run()
+
+
+x_fails = {}
+x_skips = {}
+
+for test_name in [
+    "model_linear_rank4_zeros",
+    "model_linear_rank4_negative_ones",
+    "model_linear_rank4_negative_large_rand",
+]:
+    for set_per_chan in ["True", "False"]:
+        key = test_name + ",per_channel_quant={}".format(set_per_chan)
+        reason = (
+            "MLETORCH-1452: AssertionError: Output 0 does not match reference output."
+        )
+        x_fails[key] = reason
+        # TODO: Check why xfail doesn't work for this buck target. In the interim rely on skip
+        x_skips[key] = reason
+
+
+@common.parametrize("test_data", test_data_all_16a8w, xfails=x_fails, skips=x_skips)
+@common.XfailIfNoCorstone300
+def test_linear_16a8w_u55_INT16(test_data: torch.Tensor):
+    """Test linear operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+
+    pipeline = EthosU55PipelineINT[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op,
+        exir_ops=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_linear_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_all_16a8w)
+@common.XfailIfNoCorstone320
+def test_linear_16a8w_u85_INT16(test_data: torch.Tensor):
+    """Test linear operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+
+    pipeline = EthosU85PipelineINT[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op,
+        exir_ops=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_linear_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
     )
     pipeline.run()

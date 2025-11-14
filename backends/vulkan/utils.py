@@ -22,14 +22,16 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from executorch.exir.tensor import TensorSpec
 
-from torch._export.utils import is_buffer, is_param
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 
-from torch._subclasses.fake_tensor import FakeTensor
+from torch._subclasses.fake_tensor import FakeTensor, FakeTensorConverter
 
 from torch.export import ExportedProgram
 
 from torch.export.exported_program import InputKind
 from torch.export.graph_signature import TensorArgument
+
+TorchOpType = Union[EdgeOpOverload, torch._ops.OpOverload, str]
 
 _DQ_OPS = {
     "dequantize_per_tensor.tensor",
@@ -82,11 +84,25 @@ def is_quant_node(node: torch.fx.Node) -> bool:
     return node_name in _Q_OPS
 
 
+def is_choose_qparams_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return "choose_qparams" in node_name
+
+
 def is_dequant_per_channel_node(node: torch.fx.Node) -> bool:
     if node.op != "call_function":
         return False
     node_name = format_target_name(node.target.__name__)  # pyre-ignore
     return node_name == "dequantize_per_channel.default"
+
+
+def is_view_copy_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return "view_copy" in node_name
 
 
 def is_linear_node(node: torch.fx.Node) -> bool:
@@ -112,7 +128,7 @@ def is_param_node(program: ExportedProgram, node: torch.fx.Node) -> bool:
         is_get_attr_node(node)
         or is_param(program, node)
         or is_buffer(program, node)
-        or is_constant(program, node)
+        or is_lifted_tensor_constant(program, node)
     )
 
 
@@ -190,6 +206,8 @@ def is_tensor_arg_node(node: Any) -> bool:
     if isinstance(node, torch.fx.Node):
         return is_tensor_node(node)
     elif isinstance(node, (list, tuple)):
+        if len(node) == 0:
+            return False
         return all(is_tensor_node(n) for n in node)
 
     return False
@@ -241,6 +259,47 @@ def tensor_node_is_bool(node: torch.fx.Node) -> bool:
     return False
 
 
+def ndim_of(node: Any) -> Optional[int]:
+    """
+    Returns the number of dimensions of the tensor produced by the given node
+    """
+    if not is_single_tensor_node(node):
+        return None
+
+    return node.meta["val"].ndim
+
+
+def is_unsqueezed_vector(node: torch.fx.Node) -> bool:
+    """
+    Returns True if the node's tensor has all dimensions equal to 1 except for the last dimension.
+    """
+    if not is_single_tensor_node(node):
+        return False
+
+    tensor = node.meta["val"]
+    assert isinstance(tensor, FakeTensor)
+
+    if len(tensor.shape) < 1:
+        return False
+    # All dims except last are 1, last can be any size
+    return all(dim == 1 for dim in tensor.shape[:-1])
+
+
+def op_contains_bool_tensor(node: torch.fx.Node) -> bool:
+    """
+    Returns true if the operator used to compute the given node contains a bool tensor
+    """
+    if is_tensor_node(node) and tensor_node_is_bool(node):
+        return True
+
+    for arg_node in node.args:
+        # pyre-ignore[6]
+        if is_tensor_node(arg_node) and tensor_node_is_bool(arg_node):
+            return True
+
+    return False
+
+
 def get_primary_arg_idx(self, node: torch.fx.Node) -> Optional[int]:
     primary_arg_idx: Optional[int] = None
     for i, arg_node in enumerate(node.args):
@@ -275,6 +334,57 @@ def node_comes_from_any_nn_module_in_set(
     return False
 
 
+def get_tensor_name(exp_prog: ExportedProgram, node: torch.fx.Node) -> str:
+    if node is None:
+        return ""
+    if is_param(exp_prog, node):
+        return exp_prog.graph_signature.inputs_to_parameters[node.name]
+    elif is_buffer(exp_prog, node):
+        return exp_prog.graph_signature.inputs_to_buffers[node.name]
+    elif is_lifted_tensor_constant(exp_prog, node):
+        return exp_prog.graph_signature.inputs_to_lifted_tensor_constants[node.name]
+    else:
+        assert isinstance(node.target, str)
+        return node.target
+
+    return ""
+
+
+def find_dequant_user(node: torch.fx.Node) -> Optional[torch.fx.Node]:
+    """
+    Search the direct users of the given node and return the first one that is a
+    dequantization op. Returns None if no dequantization op is found.
+    """
+    for user in node.users:
+        if is_dequant_node(user):
+            return user
+    return None
+
+
+def find_quant_user(node: torch.fx.Node) -> Optional[torch.fx.Node]:
+    """
+    Search the direct users of the given node and return the first one that is a
+    quantization op. Returns None if no quantization op is found.
+    """
+    for user in node.users:
+        if is_quant_node(user):
+            return user
+
+    return None
+
+
+def node_has_target(node: Any, target: str):
+    if not hasattr(node, "target"):
+        return False
+
+    if isinstance(node.target, str):
+        return node.target == target
+    elif hasattr(node.target, "name"):
+        return node.target.name() == target
+
+    return False
+
+
 ##
 ## Memory Layout, Storage Type Determination
 ##
@@ -293,6 +403,8 @@ all_memory_layouts: Set[VkMemoryLayout] = {
     VkMemoryLayout.TENSOR_WIDTH_PACKED,
     VkMemoryLayout.TENSOR_HEIGHT_PACKED,
     VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+    VkMemoryLayout.PACKED_INT8_4W4C,
+    VkMemoryLayout.PACKED_INT8_4H4W,
 }
 
 MemoryLayoutSet = Set[VkMemoryLayout]
@@ -345,6 +457,12 @@ def required_image_extents(sizes: torch.Size, layout: VkMemoryLayout) -> ImageEx
         height = (height + 3) // 4
     elif layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED:
         channels = (channels + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_4W4C:
+        width = (width + 3) // 4
+        channels = (channels + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_4H4W:
+        height = (height + 3) // 4
+        width = (width + 3) // 4
     else:
         raise RuntimeError(f"Unsupported memory layout {layout}")
 
@@ -503,6 +621,16 @@ class TensorRepSet:
             self.valid_texture_layouts & other.valid_texture_layouts,
         )
 
+    def make_union(self, other: "TensorRepSet") -> "TensorRepSet":
+        """
+        Merge this TensorRepSet with another TensorRepSet, returning a new TensorRepSet
+        with the union of the two.
+        """
+        return TensorRepSet(
+            self.valid_buffer_layouts | other.valid_buffer_layouts,
+            self.valid_texture_layouts | other.valid_texture_layouts,
+        )
+
     def is_compatible(self, storage: TensorRepr) -> bool:
         """
         Check if this TensorRepr is compatible with the given TensorRepSet.
@@ -628,14 +756,12 @@ def make_filtered_tensor_repset(
     if len(tensor_val.shape) > 4:
         return TensorRepSet(tensor_repset.valid_buffer_layouts, set())
 
-    # Bool tensors are currently not supported
-    if tensor_val.dtype == torch.bool:
-        return NO_STORAGE
-
     return TensorRepSet(tensor_repset.valid_buffer_layouts, valid_texture_layouts)
 
 
 ## Convenience TensorRepSet definitions
+
+PACKED_INT8_4W4C_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W4C}, set())
 
 CONTIGUOUS_ANY = TensorRepSet(
     {VkMemoryLayout.TENSOR_WIDTH_PACKED}, {VkMemoryLayout.TENSOR_WIDTH_PACKED}
@@ -643,7 +769,16 @@ CONTIGUOUS_ANY = TensorRepSet(
 CONTIGUOUS_BUFFER = TensorRepSet({VkMemoryLayout.TENSOR_WIDTH_PACKED}, set())
 
 WIDTH_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_WIDTH_PACKED})
+HEIGHT_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_HEIGHT_PACKED})
 CHANNELS_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_CHANNELS_PACKED})
+
+CHANNELS_PACKED_ANY = TensorRepSet(
+    {VkMemoryLayout.TENSOR_CHANNELS_PACKED}, {VkMemoryLayout.TENSOR_CHANNELS_PACKED}
+)
+
+CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER = TensorRepSet(
+    {VkMemoryLayout.TENSOR_WIDTH_PACKED}, {VkMemoryLayout.TENSOR_CHANNELS_PACKED}
+)
 
 ANY_TEXTURE = TensorRepSet(set(), all_memory_layouts)
 ANY_BUFFER = TensorRepSet(all_memory_layouts, set())
@@ -971,6 +1106,25 @@ class OpRepSets:
         self.assert_sync_contraints()
         return True
 
+    def try_constrain_with_out_repset(self, repset: TensorRepSet):
+        # Skip for operators that must synchronize the input and output representations
+        # or operators that have more than one output repset
+        if self.sync_primary_io_repr or len(self.outs_repset_list) > 1:
+            return False
+
+        out_current_repset = self.outs_repset_list[0]
+
+        if out_current_repset == repset:
+            return False
+
+        if not out_current_repset.any_in_common(repset):
+            return False
+
+        self.outs_repset_list[0] = out_current_repset.make_intersect(repset)
+
+        self.assert_sync_contraints()
+        return True
+
     def pick_representations(self) -> Tuple[TensorReprList, TensorReprList]:
         """
         For each tensor participating in the op, pick a representation for it among the
@@ -1069,8 +1223,128 @@ def get_node_repr(node) -> Union[TensorRepr, TensorReprList]:
 
 
 ##
+## Graph Pattern Matching
+##
+
+
+def maybe_skip_q_dq_arg_chain(
+    arg: torch.fx.node.Argument,
+) -> Tuple[Optional[torch.fx.Node], Optional[torch.fx.Node], Optional[torch.fx.Node]]:
+    """
+    Check if the given node argument is part of a Quantize/Dequantize chain produced by
+    the quant workflow. If so, return the source tensor that is the input to the Q/DQ
+    chain and the quantize/dequantize nodes in the chain. Otherwise, return the argument
+    as is and None, None
+    """
+    if not isinstance(arg, torch.fx.Node):
+        return None, None, None
+
+    # If the arg is a view copy node, check if the original node is a dequant node
+    if is_dequant_node(arg) or (
+        is_view_copy_node(arg) and is_dequant_node(arg.args[0])  # pyre-ignore[6]
+    ):
+        dequant_node = arg
+        if is_view_copy_node(arg):
+            dequant_node = arg.args[0]
+
+        quant_node = dequant_node.args[0]  # pyre-ignore[16]
+        assert isinstance(quant_node, torch.fx.Node)
+        source_arg = quant_node.args[0]
+        assert isinstance(source_arg, torch.fx.Node)
+        assert isinstance(dequant_node, torch.fx.Node)
+        return source_arg, quant_node, dequant_node
+    else:
+        return arg, None, None
+
+
+def trace_args_until_placeholder(
+    node: torch.fx.node.Argument, max_search_depth: int = 4
+) -> Tuple[Optional[torch.fx.Node], List[torch.fx.Node]]:
+    """
+    Trace through node.args[0] of a given initial node until a placeholder node is found
+    then return it and the list of nodes traversed. If no placeholder node is found,
+    returns None and an empty list.
+    """
+    cur_node = node
+    search_depth = 0
+
+    if not isinstance(cur_node, torch.fx.Node):
+        return None, []
+
+    traversed = [cur_node]
+    while cur_node.op != "placeholder" and search_depth < max_search_depth:
+        # Break if cur_node has no args
+        if len(cur_node.args) == 0:
+            break
+
+        cur_node = cur_node.args[0]
+        if not isinstance(cur_node, torch.fx.Node):
+            break
+        traversed.append(cur_node)
+        search_depth += 1
+
+    if not isinstance(cur_node, torch.fx.Node):
+        return None, []
+    if cur_node.op != "placeholder":
+        return None, []
+
+    assert isinstance(cur_node, torch.fx.Node)
+    return cur_node, traversed
+
+
+def is_in_4bit_range(tensor: torch.Tensor) -> bool:
+    """
+    Check if the given tensor is in the range of 4-bit quantization and is of integer type.
+    """
+    if tensor.dtype not in (torch.int8, torch.uint8):
+        return False
+
+    return tensor.min().item() >= -8 and tensor.max().item() <= 7
+
+
+def is_in_8bit_range(tensor: torch.Tensor) -> bool:
+    """
+    Check if the given tensor is in the range of 4-bit quantization and is of integer type.
+    """
+    if tensor.dtype not in (torch.int8, torch.uint8):
+        return False
+
+    return tensor.min().item() >= -128 and tensor.max().item() <= 127
+
+
+##
 ## Misc
 ##
+
+
+def normalize_dims(dims: Union[int, List[int]], ndim: int) -> Union[int, List[int]]:
+    """
+    Normalize dimension indices to be non-negative and within [0, ndim).
+    Accepts a single int or a list of ints.
+    """
+    if isinstance(dims, int):
+        if dims < 0:
+            dims += ndim
+
+        return dims
+
+    normalized = []
+    for d in dims:
+        if d < 0:
+            d += ndim
+        normalized.append(d)
+
+    return normalized
+
+
+def nchw_dim_to_whcn_dim(nchw_dim: int, ndim: int) -> int:
+    # Handle negative indices for nchw_dim
+    if nchw_dim < 0:
+        nchw_dim += ndim
+
+    assert nchw_dim >= 0 and nchw_dim < ndim
+    whcn_dim = (ndim - 1) - nchw_dim
+    return whcn_dim
 
 
 def get_tensor_val_str(tensor_val: FakeTensor) -> str:
@@ -1124,6 +1398,7 @@ def update_program_state_dict(
     updated_tensor: torch.Tensor,
 ) -> None:
     target_name = None
+    kind = None
     # Iterate over all the tensors in the graph signature, and find
     # the one corresponding to the parameter/buffer name
     for input_ in program.graph_signature.input_specs:
@@ -1132,6 +1407,7 @@ def update_program_state_dict(
             and isinstance(input_.arg, TensorArgument)
             and input_.arg.name == buffer_name
         ):
+            kind = input_.kind
             target_name = input_.target
             break
 
@@ -1141,5 +1417,44 @@ def update_program_state_dict(
     ), f"could not find {buffer_name} in source program signature"
     assert target_name in program.state_dict, f"could not find {target_name}"
 
+    if kind == InputKind.PARAMETER:
+        updated_tensor = torch.nn.Parameter(updated_tensor, requires_grad=False)
+
     # Finally, overwrite the current tensor with updated tensor
     program.state_dict[target_name] = updated_tensor
+
+
+def align_width_and_update_state_dict(
+    ep: ExportedProgram,
+    node: torch.fx.Node,
+    cur_tensor: torch.Tensor,
+    align_to: int = 4,
+    force_update: bool = False,
+) -> torch.Tensor:
+    """
+    Align the width of the given tensor to the given alignment value and update the
+    state dict of the program with the aligned tensor.
+    """
+    added_padding = False
+    cur_width = cur_tensor.shape[-1]
+    # Only align the width of the tensor if it is not already aligned
+    if cur_width % align_to != 0:
+        num_padding = align_to - (cur_width % align_to)
+        # Align the width of the tensor to the given alignment value
+        aligned_tensor = torch.nn.functional.pad(
+            cur_tensor, (0, num_padding)
+        ).contiguous()
+        added_padding = True
+    else:
+        aligned_tensor = cur_tensor
+
+    if added_padding or force_update:
+        update_program_state_dict(ep, node.name, aligned_tensor)
+        # FakeTensor needs to match updated tensor
+        cur_fake_tensor = node.meta["val"]
+        node.meta["val"] = FakeTensorConverter().from_real_tensor(
+            cur_fake_tensor.fake_mode,
+            aligned_tensor,
+        )
+
+    return aligned_tensor

@@ -3,19 +3,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Any, List
 
-import executorch.backends.arm.tosa_quant_utils as tqutils  # noqa: F401
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 
-from executorch.backends.arm.tosa_utils import build_reshape_tosa_1_0
+from executorch.backends.arm.tosa.utils import build_reshape_tosa_1_0
 from torch.fx import Node
 
 
@@ -46,9 +45,6 @@ class IndexSelectVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
-        import serializer.tosa_serializer as ts  # type: ignore
-
         if len(inputs) != 3:
             raise ValueError(f"Number of inputs are not 3: {len(inputs)}")
 
@@ -86,11 +82,15 @@ class IndexSelectVisitor(NodeVisitor):
             tosa_graph, indices.name, indices_new_shape, indices_reshaped.name
         )
 
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().GATHER,
+        attr = ts.TosaSerializerAttribute()
+        attr.GatherAttribute()
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.Op.GATHER,
             [weights_reshaped.name, indices_reshaped.name],
             [output_name],
-            None,
+            attr,
         )
 
         if len(weights.shape) == 2:

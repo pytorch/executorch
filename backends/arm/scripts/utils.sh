@@ -4,6 +4,43 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# Important to check for unset variables since this script is always sourced from setup.sh
+set -u
+
+# Check if the script is being sourced
+(return 0 2>/dev/null)
+if [[ $? -ne 0 ]]; then
+    echo "Error: This script must be sourced."
+    exit 1
+fi
+
+# Usage:
+#   log_step <context> <message>
+# eg.
+# log_step "step" "information message"
+# outputs:
+#   [setup/step] information message
+function log_step() {
+    local context="${1:-main}"
+    shift || true
+    local message="$*"
+    printf "[Arm Setup/%s] %s\n" "${context}" "${message}"
+}
+
+function get_parallel_jobs() {
+    if command -v nproc >/dev/null 2>&1; then
+        nproc
+    elif command -v sysctl >/dev/null 2>&1 && sysctl hw.logicalcpu >/dev/null 2>&1; then
+        sysctl -n hw.logicalcpu
+    elif command -v getconf >/dev/null 2>&1; then
+        getconf _NPROCESSORS_ONLN
+    elif [[ -n "${NUMBER_OF_PROCESSORS:-}" ]]; then
+        echo "${NUMBER_OF_PROCESSORS}"
+    else
+        echo 1
+    fi
+}
+
 function verify_md5() {
     # Compare the md5 of a file with a provided expected value.
 
@@ -55,4 +92,54 @@ function patch_repo() {
 
     echo -e "[${FUNCNAME[0]}] Patched ${name} @ $(git describe --all --long 2> /dev/null) in ${repo_dir} dir.\n"
     popd
+}
+
+function check_platform_support() {
+    # No args
+    # Exits with return code 1 if the platform is unsupported
+
+    # Make sure we are on a supported platform
+    if [[ "${ARCH}" != "x86_64" ]] && [[ "${ARCH}" != "aarch64" ]] \
+        && [[ "${ARCH}" != "arm64" ]]; then
+        echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"
+        exit 1
+    fi
+}
+
+function check_os_support() {
+    # No args
+    # Exits with return code 1 if invalid combination of platform and os
+
+    # Check valid combinations of OS and platform
+
+    # Linux on x86_64
+    if [[ "${ARCH}" == "x86_64" ]] && [[ "${OS}" != "Linux" ]]; then
+        echo "Error: Only Linux is supported on x86_64"
+        exit 1
+    fi
+
+    # Linux on arm64/aarch64
+    # Darwin on arm64/aarch64
+    if [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
+        if [[ "${OS}" != "Darwin" ]] && [[ "${OS}" != "Linux" ]]; then
+            echo "Error: Only Linux and Darwin are supported on arm64"
+            exit 1
+        fi
+    fi
+}
+
+function prepend_env_in_setup_path() {
+    echo "export $1=$2:\${$1-}" >> ${setup_path_script}.sh
+    echo "set --path -pgx $1 $2" >> ${setup_path_script}.fish
+}
+
+function append_env_in_setup_path() {
+    echo "export $1=\${$1-}:$2" >> ${setup_path_script}.sh
+    echo "set --path -agx $1 $2" >> ${setup_path_script}.fish
+}
+
+function clear_setup_path() {
+    # Clear setup_path_script
+    echo "" > "${setup_path_script}.sh"
+    echo "" > "${setup_path_script}.fish"
 }

@@ -6,9 +6,9 @@
 from typing import cast, Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
-
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
@@ -47,8 +47,9 @@ class StrideSlice(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-
         dim = cast(int, node.args[1])
+        if QCOM_AXIS_ORDER in node.meta:
+            dim = node.meta[QCOM_AXIS_ORDER].index(dim)
         if dim < 0:
             dim = dim % len(input_tensor.shape)
 
@@ -62,7 +63,6 @@ class StrideSlice(NodeVisitor):
                 end = end % input_tensor.shape[dim]
         else:
             end = input_tensor.shape[dim]
-
         input_tensor_rank = len(input_tensor.shape)
         ranges = []
         for i in range(input_tensor_rank):

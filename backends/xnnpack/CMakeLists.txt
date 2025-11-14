@@ -35,7 +35,10 @@ if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
   add_definitions(-DENABLE_XNNPACK_KLEIDI)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+)
 
 set(_xnnpack_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 # Paths to headers generated from the .fbs files.
@@ -59,10 +62,10 @@ foreach(fbs_file ${_xnnpack_schema__srcs})
   )
 endforeach()
 
-if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
   set(MV_COMMAND
       powershell -Command
-      "Move-Item -Path ${_xnnpack_flatbuffer__outputs} -Destination ${_xnnpack_schema__outputs}"
+      "Move-Item -Path ${_xnnpack_flatbuffer__outputs} -Destination ${_xnnpack_schema__outputs} -Force"
   )
 else()
   set(MV_COMMAND mv ${_xnnpack_flatbuffer__outputs} ${_xnnpack_schema__outputs})

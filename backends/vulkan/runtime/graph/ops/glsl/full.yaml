@@ -14,5 +14,6 @@ full:
     DTYPE:
       - VALUE: half
       - VALUE: float
+      - VALUE: int32
   shader_variants:
     - NAME: full

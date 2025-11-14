@@ -4,6 +4,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+from typing import Callable
 
 import torch
 from executorch.backends.arm.test import common
@@ -66,7 +67,6 @@ def test_adaptive_avg_pool2d_u55_INT(test_data):
         test_data(),
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     ).run()
 
@@ -79,7 +79,6 @@ def test_adaptive_avg_pool2d_u85_INT(test_data):
         test_data(),
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     ).run()
 
@@ -115,7 +114,7 @@ class MeanDim(torch.nn.Module):
     test_data_suite: dict[str, tuple] = {
         "rank_1_keepdim": lambda: (
             torch.rand(7),
-            (0),
+            0,
             True,
         ),
         "rank_2_keepdim": lambda: (
@@ -166,6 +165,11 @@ class MeanDim(torch.nn.Module):
         "rand_0123_keepdim": lambda: (
             torch.rand(1, 5, 7, 3),
             (0, 1, 2, 3),
+            True,
+        ),
+        "rand_none_keepdim": lambda: (
+            torch.rand(1, 5, 7, 3),
+            None,
             True,
         ),
         "rank_1": lambda: (
@@ -280,20 +284,11 @@ def test_mean_dim_tosa_INT(test_data):
         (test_data,),
         [],  # Might be sum, avgpool, or both
         symmetric_io_quantization=True,
-        custom_path="MEANDIM",
     )
     pipeline.run()
 
 
-xfails = {
-    "rank5_01234": "Rank 5 graph input currently not supported in EthosUBackend (passes since CHW are all averaged over so data order does not matter in this case)",
-    "rank5_234": "Rank 5 graph input currently not supported in EthosUBackend (passes since CHW are all averaged over so data order does not matter in this case)",
-    "rank5_12": "Rank 5 graph input currently not supported in EthosUBackend",
-    "rank5_2": "Rank 5 graph input currently not supported in EthosUBackend",
-}
-
-
-@common.parametrize("test_data", MeanDim.test_data_suite, xfails=xfails, strict=False)
+@common.parametrize("test_data", MeanDim.test_data_suite)
 @common.XfailIfNoCorstone300
 def test_mean_dim_u55_INT(test_data):
     test_data, dim, keep_dim = test_data()
@@ -301,7 +296,6 @@ def test_mean_dim_u55_INT(test_data):
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.add_stage_after(
@@ -313,7 +307,7 @@ def test_mean_dim_u55_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", MeanDim.test_data_suite, xfails=xfails, strict=False)
+@common.parametrize("test_data", MeanDim.test_data_suite)
 @common.XfailIfNoCorstone320
 def test_mean_dim_u85_INT(test_data):
     test_data, dim, keep_dim = test_data()
@@ -321,7 +315,6 @@ def test_mean_dim_u85_INT(test_data):
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.run()
@@ -351,5 +344,45 @@ def test_mean_dim_vgf_INT(test_data):
         [],  # Might be sum, avgpool, or both
         symmetric_io_quantization=True,
         tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+mean_input_t = tuple[torch.Tensor, bool]
+
+
+class MeanDefault(torch.nn.Module):
+    def forward(self, tensor: torch.Tensor, keepdim: bool):
+        return tensor.mean()
+
+    test_data_suite: dict[str, Callable[[], mean_input_t]] = {
+        "rank1": lambda: (
+            torch.rand(
+                1,
+            ),
+            False,
+        ),
+        "rank2": lambda: (torch.rand(5, 5), True),
+        "rank4": lambda: (torch.rand(5, 1, 10, 1), False),
+    }
+
+
+@common.parametrize("test_data", MeanDefault.test_data_suite)
+def test_mean_tosa_FP(test_data):
+    pipeline = TosaPipelineFP[mean_input_t](
+        MeanDefault(),
+        test_data(),
+        [],  # Might be sum, avgpool, or both
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDefault.test_data_suite)
+def test_mean_tosa_INT(test_data):
+    pipeline = TosaPipelineINT[mean_input_t](
+        MeanDefault(),
+        test_data(),
+        [],  # Might be sum, avgpool, or both
+        symmetric_io_quantization=True,
     )
     pipeline.run()

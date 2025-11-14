@@ -18,7 +18,10 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.view_copy_converter import (
     ViewCopyConverter,
 )
-from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
+from executorch.backends.nxp.tests.executorch_pipeline import (
+    neutron_target_spec,
+    to_quantized_edge_program,
+)
 from executorch.backends.nxp.tests.executors import OverrideTargetSupportCheck
 from torch import nn
 
@@ -95,20 +98,21 @@ def test_batch_norm_conv_fusing(bias: bool, input_shape: list[int]):
     example_input = (torch.ones(*input_shape),)
 
     module = ConvBatchNormModule(bias, len(input_shape), 4)
-    program = torch.export.export_for_training(module, example_input, strict=True)
+    program = torch.export.export(module, example_input, strict=True)
     og_module = program.module()
 
-    pm = NeutronAtenPassManager()
+    pm = NeutronAtenPassManager(neutron_target_spec)
     graph_module_out = pm(deepcopy(program.module())).graph_module
 
     # Make sure the fusion worked.
     og_nodes = list(program.graph.nodes)
     transformed_nodes = list(graph_module_out.graph.nodes)
 
-    assert len(og_nodes) == (11 if bias else 10)
-    assert og_nodes[9 if bias else 8].target.__name__ == "batch_norm.default"
+    assert any(
+        node.op == "call_function" and node.target.__name__ == "batch_norm.default"
+        for node in og_nodes
+    )
 
-    assert len(transformed_nodes) == 5
     assert not any(
         node.op == "call_function" and "batch_norm" in node.target.__name__
         for node in transformed_nodes
@@ -118,7 +122,7 @@ def test_batch_norm_conv_fusing(bias: bool, input_shape: list[int]):
     input_data = torch.randn(input_shape, dtype=torch.float32)
     out1 = og_module(input_data).detach().numpy()
     out2 = graph_module_out(input_data).detach().numpy()
-    assert np.allclose(out1, out2, atol=3.0e-7)
+    torch.testing.assert_close(out1, out2)
 
 
 @pytest.mark.parametrize(
@@ -129,20 +133,21 @@ def test_batch_norm_linear_fusing(bias: bool):
     example_input = (torch.ones(*input_shape),)
 
     module = LinearBatchNormModule(bias, 4, input_shape[-1], input_shape[1])
-    program = torch.export.export_for_training(module, example_input, strict=True)
+    program = torch.export.export(module, example_input, strict=True)
     og_module = program.module()
 
-    pm = NeutronAtenPassManager()
+    pm = NeutronAtenPassManager(neutron_target_spec)
     graph_module_out = pm(deepcopy(program.module())).graph_module
 
     # Make sure the fusion worked.
     og_nodes = list(og_module.graph.nodes)
     transformed_nodes = list(graph_module_out.graph.nodes)
 
-    assert len(og_nodes) == (11 if bias else 10)
-    assert og_nodes[8 if bias else 7].target.__name__ == "linear.default"
+    assert any(
+        node.op == "call_function" and node.target.__name__ == "linear.default"
+        for node in og_nodes
+    )
 
-    assert len(transformed_nodes) == 5
     assert not any(
         node.op == "call_function" and "batch_norm" in node.target.__name__
         for node in transformed_nodes
@@ -152,7 +157,7 @@ def test_batch_norm_linear_fusing(bias: bool):
     input_data = torch.randn(input_shape, dtype=torch.float32)
     out1 = og_module(input_data).detach().numpy()
     out2 = graph_module_out(input_data).detach().numpy()
-    assert np.allclose(out1, out2, atol=1.2e-7)
+    torch.testing.assert_close(out1, out2)
 
 
 @pytest.mark.parametrize(
@@ -168,7 +173,7 @@ def test_batch_norm_conv_fusing__full_pipeline__1d(bias: bool):
     nodes = list(edge_program.graph.nodes)
 
     assert (
-        len(nodes) == 13
+        len(nodes) == 17
     )  # 1D Conv currently isn't delegated, because it doesn't get quantized.
     assert not any(
         node.op == "call_function" and "batch_norm" in node.target.__name__

@@ -334,11 +334,6 @@ def compile_whisper(args, inputs):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
     tokenizer = AutoTokenizer.from_pretrained("openai/whisper-tiny")
     module = (
         AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-tiny")
@@ -432,6 +427,7 @@ def inference_whisper(args, inputs, target):
             host_id=args.host,
             soc_model=args.model,
             shared_buffer=args.shared_buffer,
+            target=args.target,
             runner="examples/qualcomm/oss_scripts/whisper/qnn_whisper_runner",
         )
         # No pregen inputs, input_list is not required
@@ -475,13 +471,8 @@ if __name__ == "__main__":
         type=int,
     )
 
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated llama in the given directory.",
-        type=str,
-    )
-
     args = parser.parse_args()
+    args.validate(args)
 
     if args.compile_only and args.pre_gen_pte:
         exit("Cannot set both compile_only and pre_gen_pte as true")

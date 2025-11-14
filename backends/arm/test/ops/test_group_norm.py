@@ -102,6 +102,9 @@ def test_native_group_norm_tosa_INT(test_data):
     "test_data",
     test_data_suite,
     xfails={
+        "rand_4_6_8_groups_2_eps_no_affine": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
+        "rand_4_6_groups_1": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
+        "rand_4_6_groups_2": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
         "randn_1_12_8_6_groups_12": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
         "rand_6_8_10_12_groups_1": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
         "rand_6_8_10_12_groups_4_no_affine": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
@@ -115,7 +118,6 @@ def test_native_group_norm_u55_INT(test_data):
         test_data[1],
         test_data[0],
         "torch.ops.aten.sub.Tensor",  # 'sub' op arbitrarily chosen to confirm groupnorm was decomposed
-        run_on_fvp=True,
         atol=0.1,  # TODO: "MLETORCH-925: Fix numerical issue for aten.native_group_norm"
     )
     pipeline.change_args("run_method_and_compare_outputs", atol=1, qtol=1)
@@ -139,7 +141,6 @@ def test_native_group_norm_u85_INT(test_data):
         test_data[1],
         test_data[0],
         "torch.ops.aten.sub.Tensor",  # 'sub' op arbitrarily chosen to confirm groupnorm was decomposed
-        run_on_fvp=True,
         atol=0.1,  # TODO: "MLETORCH-925: Fix numerical issue for aten.native_group_norm"
     )
     pipeline.change_args("run_method_and_compare_outputs", atol=1, qtol=1)

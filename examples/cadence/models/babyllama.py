@@ -12,10 +12,12 @@ from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 
 import torch
 
-from executorch.backends.cadence.aot.export_example import export_model
+from executorch.backends.cadence.aot.export_example import export_and_run_model
 
-from executorch.examples.models.llama.llama_transformer import ModelArgs, Transformer
-
+from executorch.examples.models.llama.llama_transformer import (
+    construct_transformer,
+    ModelArgs,
+)
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -32,10 +34,10 @@ def main() -> None:
     )
     seq = 64
     b = 1
-    model = Transformer(args)
+    model = construct_transformer(args)
     example_inputs = (torch.randint(0, 10, [b, seq], dtype=torch.int64),)
 
-    export_model(model, example_inputs)
+    export_and_run_model(model, example_inputs)
 
 
 if __name__ == "__main__":

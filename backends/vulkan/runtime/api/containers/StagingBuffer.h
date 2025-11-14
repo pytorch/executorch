@@ -48,7 +48,7 @@ class StagingBuffer final {
     context_p_->register_buffer_cleanup(vulkan_buffer_);
   }
 
-  inline vkapi::ScalarType dtype() {
+  inline vkapi::ScalarType dtype() const {
     return dtype_;
   }
 
@@ -81,6 +81,15 @@ class StagingBuffer final {
         VK_WHOLE_SIZE);
   }
 
+  template <typename SRC_T, typename DST_T>
+  void cast_and_copy_from(const SRC_T* src, const size_t numel) {
+    VK_CHECK_COND(numel <= this->numel());
+    DST_T* dst = reinterpret_cast<DST_T*>(data());
+    for (size_t i = 0; i < numel; ++i) {
+      dst[i] = static_cast<DST_T>(src[i]);
+    }
+  }
+
   inline void copy_to(void* dst, const size_t nbytes) {
     VK_CHECK_COND(nbytes <= this->nbytes());
     vmaInvalidateAllocation(
@@ -91,8 +100,31 @@ class StagingBuffer final {
     memcpy(dst, data(), nbytes);
   }
 
+  template <typename SRC_T, typename DST_T>
+  void cast_and_copy_to(DST_T* dst, const size_t numel) {
+    VK_CHECK_COND(numel <= this->numel());
+    const SRC_T* src = reinterpret_cast<const SRC_T*>(data());
+    for (size_t i = 0; i < numel; ++i) {
+      dst[i] = static_cast<DST_T>(src[i]);
+    }
+  }
+
   inline void set_staging_zeros() {
     memset(data(), 0, nbytes());
+  }
+
+  template <typename T>
+  T select_element_at_dim(
+      const std::vector<int64_t>& sizes,
+      const int64_t dim,
+      const int64_t index) {
+    int64_t stride = 1;
+    for (size_t i = dim + 1; i < sizes.size(); ++i) {
+      stride *= sizes[i];
+    }
+    const int64_t offset = index * stride;
+    const T* typed_data = reinterpret_cast<const T*>(data());
+    return typed_data[offset];
   }
 };
 

@@ -13,52 +13,26 @@ from typing import List, Optional, Tuple
 import scipy
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import (
     hf_precompute_freqs_cis,
     precompute_freqs_cis,
 )
-
-
-def apply_rotary_emb_single(
-    x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
-) -> torch.Tensor:
-    # The implementation of RoPE in HuggingFace processes query and key with two half instead of interleaved way.
-    # The main difference is stride in StrideSlice op. For interleaved way, stride is two which is not friendly for HTP backend.
-    # Ref: https://github.com/huggingface/transformers/issues/25199
-    x_r, x_i = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
-    # broadcast for batch_prefill mode input x
-    if x.dim() == 4:
-        freqs_cos = freqs_cos[None, :, None, :]
-        freqs_sin = freqs_sin[None, :, None, :]
-    x_out_r = x_r * freqs_cos - x_i * freqs_sin
-    x_out_i = x_r * freqs_sin + x_i * freqs_cos
-
-    x_out = torch.cat([x_out_r, x_out_i], dim=-1)
-    return x_out
-
-
-def apply_partial_rotary_emb_single(
-    x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
-) -> torch.Tensor:
-
-    if x.dim() == 4:
-        freqs_cos = freqs_cos[None, :, None, :]
-        freqs_sin = freqs_sin[None, :, None, :]
-
-    rotary_dim = freqs_cos.shape[-1] * 2
-
-    x_rot, x_pass = x[..., :rotary_dim], x[..., rotary_dim:]
-    x_r, x_i = x_rot[..., : x_rot.shape[-1] // 2], x_rot[..., x_rot.shape[-1] // 2 :]
-    x_out_r = x_r * freqs_cos - x_i * freqs_sin
-    x_out_i = x_r * freqs_sin + x_i * freqs_cos
-    x_rotated = torch.cat([x_out_r, x_out_i], dim=-1)
-    return torch.cat([x_rotated, x_pass], dim=-1)
+from executorch.examples.qualcomm.oss_scripts.llama.masking_utils import (
+    AttentionMask,
+    CausalAttentionMask,
+    SlidingWindowAttentionMask,
+)
+from executorch.examples.qualcomm.oss_scripts.llama.model import (
+    FeedForward_REGISTRY,
+    NORM_REGISTRY,
+    ROTARY_EMB_REGISTRY,
+)
 
 
 class LlamaAttention(nn.Module):
-    def __init__(self, config: ModelArgs, output_new_cache_only=False):
+    def __init__(self, layer_idx: int, config: ModelArgs, output_new_cache_only=False):
         super().__init__()
         self.config = config
         self.dim = config.dim
@@ -71,6 +45,11 @@ class LlamaAttention(nn.Module):
         self.enable_masked_softmax = getattr(config, "enable_masked_softmax", False)
         self.use_qk_norm = config.use_qk_norm
         self.qk_norm_before_rope = config.qk_norm_before_rope
+        # If None, assume each layer uses rope
+        self.use_rope = (
+            config.no_rope_layer_interval is None
+            or (layer_idx + 1) % config.no_rope_layer_interval
+        )
 
         if self.use_qk_norm:
             q_norm_dim = self.head_dim
@@ -79,9 +58,9 @@ class LlamaAttention(nn.Module):
             self.k_norm_fn = torch.nn.RMSNorm(k_norm_dim, eps=config.norm_eps)
 
         if config.partial_rotary_factor < 1:
-            self.apply_rope_emb = apply_partial_rotary_emb_single
+            self.apply_rope_emb = ROTARY_EMB_REGISTRY["partial"]
         else:
-            self.apply_rope_emb = apply_rotary_emb_single
+            self.apply_rope_emb = ROTARY_EMB_REGISTRY["default"]
 
         self.wq = nn.Linear(
             self.dim,
@@ -218,11 +197,11 @@ class LlamaAttention(nn.Module):
             .reshape(bsz, seq_len, self.head_dim)
             for wv_sha in self.wv_sha
         ]
-
         for i in range(len(q)):
             if self.use_qk_norm and self.qk_norm_before_rope:
                 q[i] = self.q_norm_fn(q[i])
-            q[i] = self.apply_rope_emb(q[i], freqs_cos, freqs_sin)
+            if self.use_rope:
+                q[i] = self.apply_rope_emb(q[i], freqs_cos, freqs_sin)
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 q[i] = self.q_norm_fn(q[i])
             if getattr(self.config, "enable_r3", False):
@@ -231,7 +210,8 @@ class LlamaAttention(nn.Module):
         for i in range(len(k)):
             if self.use_qk_norm and self.qk_norm_before_rope:
                 k[i] = self.k_norm_fn(k[i])
-            k[i] = self.apply_rope_emb(k[i], freqs_cos, freqs_sin)
+            if self.use_rope:
+                k[i] = self.apply_rope_emb(k[i], freqs_cos, freqs_sin)
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 k[i] = self.k_norm_fn(k[i])
             if getattr(self.config, "enable_r3", False):
@@ -297,8 +277,10 @@ class LlamaAttention(nn.Module):
             q = self.q_norm_fn(q)
             k = self.k_norm_fn(k)
 
-        q = self.apply_rope_emb(q, freqs_cos, freqs_sin)
-        k = self.apply_rope_emb(k, freqs_cos, freqs_sin).permute(0, 2, 3, 1)
+        if self.use_rope:
+            q = self.apply_rope_emb(q, freqs_cos, freqs_sin)
+            k = self.apply_rope_emb(k, freqs_cos, freqs_sin)
+        k = k.permute(0, 2, 3, 1)
 
         if self.use_qk_norm and not self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
@@ -358,6 +340,7 @@ class FeedForward(nn.Module):
         self.w1 = nn.Linear(self.dim, self.hidden_dim, bias=False)
         self.w2 = nn.Linear(self.hidden_dim, self.dim, bias=False)
         self.w3 = nn.Linear(self.dim, self.hidden_dim, bias=False)
+        self.act_fn = args.act_fn.get_function()
 
     def prepare_feedfoward_conv(self):
         self.w1_conv = nn.Conv2d(self.dim, self.hidden_dim, 1, bias=False)
@@ -379,26 +362,47 @@ class FeedForward(nn.Module):
         bsz, _, _ = x.size()
         x = torch.reshape(x, (bsz, -1, 1, self.dim))
         x = x.transpose(1, 3)  # Transpose right before and after Conv
-        x = self.w2_conv(F.silu(self.w1_conv(x)) * self.w3_conv(x))
+        x = self.w2_conv(self.act_fn(self.w1_conv(x)) * self.w3_conv(x))
         x = x.transpose(1, 3)
         x = torch.reshape(x, (bsz, -1, self.dim))
         return x
 
     def forward(self, x):
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+        return self.w2(self.act_fn(self.w1(x)) * self.w3(x))
 
 
 class LlamaDecoderLayer(nn.Module):
-    def __init__(self, config: ModelArgs, output_new_cache_only=False):
+    def __init__(self, layer_idx: int, config: ModelArgs, output_new_cache_only=False):
         super().__init__()
         self.dim = config.dim
         self.attention = LlamaAttention(
+            layer_idx=layer_idx,
             config=config,
             output_new_cache_only=output_new_cache_only,
         )
-        self.feed_forward = FeedForward(config)
-        self.attention_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
-        self.ffn_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+
+        self.feed_forward = FeedForward_REGISTRY.get(
+            config.model_architecture, FeedForward
+        )(config)
+        self.attention_norm = NORM_REGISTRY[config.norm_type](
+            config.dim, eps=config.norm_eps
+        )
+        self.ffn_norm = (
+            NORM_REGISTRY[config.norm_type](config.dim, eps=config.norm_eps)
+            if config.use_ffn_norm
+            else None
+        )
+
+        self.post_attention_norm = (
+            torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+            if config.post_attention_norm
+            else None
+        )
+        self.post_ffn_norm = (
+            torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+            if config.post_ffn_norm
+            else None
+        )
 
     def forward(
         self,
@@ -409,16 +413,25 @@ class LlamaDecoderLayer(nn.Module):
         k_caches: List[torch.Tensor],
         v_caches: List[torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+
+        hidden_states = self.attention_norm(x)
         h, k_cache, v_cache = self.attention(
-            hidden_states=self.attention_norm(x),
+            hidden_states=hidden_states,
             freqs_cos=freqs_cos,
             freqs_sin=freqs_sin,
             atten_mask=atten_mask,
             k_caches=k_caches,
             v_caches=v_caches,
         )
+        if self.post_attention_norm:
+            h = self.post_attention_norm(h)
         h = x + h
-        output = h + self.feed_forward(self.ffn_norm(h))
+        hidden_states = hidden_states if self.ffn_norm is None else self.ffn_norm(h)
+        out = self.feed_forward(hidden_states)
+        if self.post_ffn_norm:
+            out = self.post_ffn_norm(out)
+        output = h + out
+
         return output, k_cache, v_cache
 
 
@@ -430,6 +443,7 @@ class LlamaModel(nn.Module):
         output_new_cache_only=True,
         output_cache=True,
         use_i64_token=False,
+        **kwargs,
     ):
         super().__init__()
         self.dim = config.dim
@@ -442,6 +456,7 @@ class LlamaModel(nn.Module):
         self.vocab_size = config.vocab_size
         self.rope_freq_base = config.rope_freq_base
         self.use_kv_cache = config.use_kv_cache
+        self.embedding_scale_factor = config.embedding_scale_factor
         self.ar_len = ar_len
         self.output_new_cache_only = output_new_cache_only
         self.use_i64_token = use_i64_token
@@ -450,12 +465,13 @@ class LlamaModel(nn.Module):
 
         self.layers = nn.ModuleList(
             [
-                LlamaDecoderLayer(config, self.output_new_cache_only)
-                for _ in range(config.n_layers)
+                LlamaDecoderLayer(i, config, self.output_new_cache_only)
+                for i in range(config.n_layers)
             ]
         )
-        self.norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
-        self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
+        self.norm = NORM_REGISTRY[config.norm_type](config.dim, eps=config.norm_eps)
+        self.output = nn.Linear(config.dim, config.vocab_size, bias=config.output_bias)
+
         self.tok_embeddings = nn.Embedding(config.vocab_size, config.dim)
         if config.use_hf_rope:
             freqs_cos, freqs_sin = hf_precompute_freqs_cis(
@@ -500,7 +516,6 @@ class LlamaModel(nn.Module):
         input_pos: Optional[torch.Tensor] = None,
         *args,
     ) -> Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
-
         output_k_cache = []
         output_v_cache = []
         # following tensors should be invariant across batches
@@ -511,7 +526,7 @@ class LlamaModel(nn.Module):
             self.freqs_sin[input_pos][0] if self.use_kv_cache else self.freqs_sin
         )
 
-        hidden_states = self.tok_embeddings(tokens)
+        hidden_states = self.embedding_scale_factor * self.tok_embeddings(tokens)
         for ind, decoder_layer in enumerate(self.layers):
             k_caches = None
             v_caches = None
@@ -543,22 +558,8 @@ class LlamaModel(nn.Module):
         tokens = torch.randint(
             self.vocab_size, (self.max_batch_size, self.ar_len), dtype=dtype
         )
-
-        atten_mask = torch.full((self.ar_len, self.ar_len), torch.tensor(-255.0))
-        mask_cond = torch.arange(atten_mask.size(-1))
-        atten_mask.masked_fill_(
-            mask_cond < (mask_cond + 1).view(atten_mask.size(-1), 1), 0
-        )
-        if self.max_seq_len != self.ar_len:
-            atten_mask = torch.cat(
-                [
-                    torch.ones(self.ar_len, self.max_seq_len - self.ar_len) * -255.0,
-                    atten_mask,
-                ],
-                dim=-1,
-            )
-        atten_mask = atten_mask[None, :, :].expand(
-            self.max_batch_size, self.ar_len, self.max_seq_len
+        atten_mask = AttentionMask(
+            CausalAttentionMask(self.max_batch_size, self.ar_len, self.max_seq_len)
         )
         if use_kv_cache:
             pos_ids = torch.zeros((self.max_batch_size, self.ar_len), dtype=torch.int32)
@@ -612,3 +613,130 @@ class LlamaModel(nn.Module):
             "get_use_kv_cache": self.use_kv_cache,
             "get_kv_io_bit_width": self.kv_io_bit_width,
         }
+
+
+class MultiScopeAwareLlamaModel(LlamaModel):
+    def __init__(
+        self,
+        config: ModelArgs,
+        ar_len=1,
+        output_new_cache_only=True,
+        output_cache=True,
+        use_i64_token=False,
+        **kwargs,
+    ):
+        super().__init__(
+            config=config,
+            ar_len=ar_len,
+            output_new_cache_only=output_new_cache_only,
+            output_cache=output_cache,
+            use_i64_token=use_i64_token,
+        )
+
+        for key in ["layer_types", "sliding_window", "rope_local_base_freq"]:
+            assert key in kwargs, f"Missing required argument: '{key}' in kwargs"
+
+        # Get attention type for each layer
+        self.layer_types = kwargs["layer_types"]
+        # Get sliding window size (used in local/global attention)
+        self.sliding_window = kwargs["sliding_window"]
+        # Get local freq base for sliding attention
+        rope_freq_base = kwargs["rope_local_base_freq"]
+
+        local_freqs_cos, local_freqs_sin = hf_precompute_freqs_cis(
+            config.head_dim,
+            config.max_seq_len,
+            rope_freq_base,
+            config.partial_rotary_factor,
+        )
+        local_freqs_cos = local_freqs_cos[:, : local_freqs_cos.shape[-1] // 2]
+        local_freqs_sin = local_freqs_sin[:, : local_freqs_sin.shape[-1] // 2]
+        self.register_buffer("local_freqs_cos", local_freqs_cos, persistent=False)
+        self.register_buffer("local_freqs_sin", local_freqs_sin, persistent=False)
+
+    def forward(
+        self,
+        tokens: torch.Tensor,
+        atten_mask: torch.Tensor,
+        window_atten_mask: torch.Tensor,
+        input_pos: Optional[torch.Tensor] = None,
+        *args,
+    ) -> Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
+
+        output_k_cache = []
+        output_v_cache = []
+        # following tensors should be invariant across batches
+        freqs_cos = (
+            self.freqs_cos[input_pos][0] if self.use_kv_cache else self.freqs_cos
+        )
+        freqs_sin = (
+            self.freqs_sin[input_pos][0] if self.use_kv_cache else self.freqs_sin
+        )
+        local_freqs_cos = (
+            self.local_freqs_cos[input_pos][0]
+            if self.use_kv_cache
+            else self.local_freqs_cos
+        )
+        local_freqs_sin = (
+            self.local_freqs_sin[input_pos][0]
+            if self.use_kv_cache
+            else self.local_freqs_sin
+        )
+
+        hidden_states = self.embedding_scale_factor * self.tok_embeddings(tokens)
+        for ind, decoder_layer in enumerate(self.layers):
+            k_caches = None
+            v_caches = None
+            if self.use_kv_cache:
+                offset_k = ind * self.n_kv_heads
+                offset_v = self.n_layers * self.n_kv_heads + offset_k
+                k_caches = args[offset_k : offset_k + self.n_kv_heads]
+                v_caches = args[offset_v : offset_v + self.n_kv_heads]
+
+            if self.layer_types[ind] == "sliding_attention":
+                hidden_states, k, v = decoder_layer(
+                    hidden_states,
+                    freqs_cos=local_freqs_cos,
+                    freqs_sin=local_freqs_sin,
+                    atten_mask=window_atten_mask,
+                    k_caches=k_caches,
+                    v_caches=v_caches,
+                )
+            else:
+                hidden_states, k, v = decoder_layer(
+                    hidden_states,
+                    freqs_cos=freqs_cos,
+                    freqs_sin=freqs_sin,
+                    atten_mask=atten_mask,
+                    k_caches=k_caches,
+                    v_caches=v_caches,
+                )
+
+            output_k_cache.extend(k)
+            output_v_cache.extend(v)
+
+        hidden_states = self.norm(hidden_states)
+        logits = self.output(hidden_states)
+        if self.output_cache:
+            return logits, output_k_cache, output_v_cache
+        return logits
+
+    def get_example_inputs(self, use_kv_cache=True):
+        inputs = list(super().get_example_inputs(use_kv_cache=use_kv_cache))
+        causal_mask = CausalAttentionMask(
+            self.max_batch_size, self.ar_len, self.max_seq_len
+        )
+        sliding_window_mask = SlidingWindowAttentionMask(
+            self.max_batch_size,
+            self.ar_len,
+            self.max_seq_len,
+            sliding_window=self.sliding_window,
+        )
+        # Don't reverse the order of attention mask
+        inputs[1] = AttentionMask([causal_mask, sliding_window_mask])
+        return tuple(inputs)
+
+    def get_metadata(self):
+        meta_data = super().get_metadata()
+        meta_data["get_sliding_window"] = self.sliding_window
+        return meta_data

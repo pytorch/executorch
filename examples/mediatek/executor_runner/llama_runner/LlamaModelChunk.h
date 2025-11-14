@@ -37,6 +37,19 @@ using ModelIndexMap = std::unordered_map<size_t, size_t>;
 
 // Llama decoder chunk
 class LlamaModelChunk : public ModelChunk {
+ public:
+  enum class IOKind {
+    Embedding,
+    Mask,
+    SWAMask,
+    RotEmb,
+    KVCache,
+    Logits,
+
+    // Cache Eviction
+    Attention
+  };
+
  private:
   static constexpr size_t kCacheLengthDim = 2;
 
@@ -44,9 +57,11 @@ class LlamaModelChunk : public ModelChunk {
   explicit LlamaModelChunk(
       const ModelPathMap& modelPathMap,
       const LlamaModelOptions& modelOptions,
+      const bool useSharedWeights,
       const size_t initBatchSize,
       const size_t numCache,
       const size_t numRotEmbInputs,
+      const bool enableSWA,
       const RotaryEmbeddingMasterLut* rotEmbMasterLut);
 
   ~LlamaModelChunk();
@@ -97,18 +112,36 @@ class LlamaModelChunk : public ModelChunk {
       const size_t numSeenToken);
 
  private:
+  // IO Setup and Query
+  virtual void defineIOs();
+
+  void defineInput(const IOKind kind, const size_t count = 1);
+  void defineOutput(const IOKind kind, const size_t count = 1);
+
+  bool hasInput(const IOKind kind) const;
+  bool hasOutput(const IOKind kind) const;
+
+  const std::vector<size_t>& getInputIndexes(const IOKind kind) const;
+  const std::vector<size_t>& getOutputIndexes(const IOKind kind) const;
+
+  size_t getInputIndex(const IOKind kind, const size_t pos = 0) const;
+  size_t getOutputIndex(const IOKind kind, const size_t pos = 0) const;
+
+  size_t getNumInputsFor(const IOKind kind) const;
+  size_t getNumOutputsFor(const IOKind kind) const;
+
   void CheckIoCount();
 
-  size_t GetExpectedInputCount() const;
-
-  size_t GetExpectedOutputCount() const;
-
  private:
-  // Input/Output Indexes
-  const size_t kMaskInputIndex;
-  const std::vector<size_t> kRotEmbInputIndexes;
-  const std::vector<size_t> kCacheInputIndexes;
-  const std::vector<size_t> kCacheOutputIndexes;
+  bool AllowModelsCoexist() const override {
+    return kIsSharedWeightsUsed;
+  }
+
+  std::string SelectMethod(
+      const std::vector<std::string>& methodNames) const override;
+
+  // Whether shared weights is used
+  bool kIsSharedWeightsUsed = false;
 
   // Cache
   TensorShape mCacheShape;
@@ -130,9 +163,22 @@ class LlamaModelChunk : public ModelChunk {
 
   // Mask builder
   std::unique_ptr<MaskBuilder> mMaskBuilder;
+  const size_t kWindowSize;
+  const bool enableSWA;
 
   // Keep track of token index. Its value can also be viewed as numSeenToken.
   size_t mCurrentTokenIndex = 0;
+
+ protected:
+  const size_t kRotEmbInputCount;
+  const size_t kCacheCount;
+  const size_t kSWAMaskCount = 0;
+
+  // IO Indexes
+  size_t mExpectedNumInputs = 0;
+  size_t mExpectedNumOutputs = 0;
+  std::unordered_map<IOKind, std::vector<size_t>> mInputIndexes;
+  std::unordered_map<IOKind, std::vector<size_t>> mOutputIndexes;
 };
 
 } // namespace example

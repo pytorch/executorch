@@ -7,11 +7,9 @@
 # pyre-strict
 
 from functools import partial
-
-from typing import Any, Dict, final, List
+from typing import Any, Callable, Dict, final, List
 
 import executorch.backends.vulkan.utils as utils
-
 from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
@@ -19,16 +17,15 @@ from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
     ViewCopyToSqueezeUnsqueezePass,
 )
 from executorch.backends.vulkan._passes import (
+    FoldQDQPass,
     FuseQuantizedOpsTransform,
     insert_prepack_nodes,
-    RemoveLocalScalarDenseOpsTransform,
     RemoveRedundantOpsTransform,
     SqueezeUnsqueezeInputs,
     TagMemoryMetaPass,
 )
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
-
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
@@ -38,7 +35,6 @@ from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
 )
 from executorch.backends.xnnpack._passes import FuseBatchNormPass
-
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
@@ -46,16 +42,12 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
-
 from executorch.exir.memory_planning import greedy, MemoryPlanningAlgorithmSuite
 from executorch.exir.pass_base import ExportPass, PassBase
-
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
-
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-
-from executorch.exir.program._program import _copy_module
-
+from executorch.exir.program._program import _transform
+from torch._export.verifier import Verifier
 from torch.export._remove_auto_functionalized_pass import (
     unsafe_remove_auto_functionalized_pass,
 )
@@ -63,28 +55,34 @@ from torch.export._remove_auto_functionalized_pass import (
 DEFAULT_DEBUG_HANDLE = 65535
 
 
+class _any_op(Verifier):
+    # Set training dialect to skip functional check in base verifier
+    dialect = "TRAINING"
+
+    def allowed_op_types(self):
+        return (Callable,)
+
+
 # pyre-ignore
 def apply_passes(program: ExportedProgram, passes) -> ExportedProgram:
     for p in passes:
-        if issubclass(type(p), ExportPass) or issubclass(type(p), PassBase):
-            new_gm = program.graph_module
-            # This is a workaround to allow the memory planning pass to work without
-            # having to first apply ToOutVarPass(). See the `greedy()` function in
-            # `exir.memory_planning`; if this attribute isn't set, assertions in
-            # `collect_spec_from_nodes()` will fail.
-            if isinstance(p, MemoryPlanningPass):
-                new_gm.encounter_to_out_var_failure = True
+        if isinstance(p, MemoryPlanningPass) and hasattr(p, "run"):
+            p.run(program.graph_module)
 
-            new_gm_res = p(new_gm)
-            assert new_gm_res is not None
-            new_gm = new_gm_res.graph_module
+        elif issubclass(type(p), ExportPass) or issubclass(type(p), PassBase):
+            # Some passes require the ep to be provided. However, since the ep may be
+            # updated with each pass applied, the ep must be set right before calling
+            # the pass. _exported_program is the attribute used by XNNPACK and Vulkan
+            # passes to store the exported program.
+            if hasattr(p, "_exported_program"):
+                p._exported_program = program
 
+            program = _transform(program, p, override_verifiers=[_any_op])
             # See the application of this function in exir/program/_program.py for more
             # details on why this step is necessary.
             if isinstance(p, SpecPropPass):
-                p.update_placeholder_tensor_specs(program, new_gm)
+                p.update_placeholder_tensor_specs(program, program.graph_module)
 
-            _copy_module(program.graph_module, new_gm)
         else:
             program = p(program)
 
@@ -109,6 +107,9 @@ def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
             options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
 
         if spec.key == "downcast_64_bit":
+            options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
+        if spec.key == "force_fp16":
             options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
 
         # Unhandled options are ignored
@@ -144,6 +145,7 @@ class VulkanBackend(BackendDetails):
             "memory_layout_override", VkMemoryLayout.TENSOR_WIDTH_PACKED
         )
         downcast_64_bit = compile_options.get("downcast_64_bit", True)
+        force_fp16 = compile_options.get("force_fp16", False)
 
         program = unsafe_remove_auto_functionalized_pass(program)
 
@@ -153,15 +155,16 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
-                FusePatternsPass(program),
-                RemoveRedundantOpsTransform(),
+                FuseBatchNormPass(program),
+                FusePatternsPass(),
+                FuseClampPass(),
                 AddmmToLinearTransform(),
-                FuseQuantizedOpsTransform(program),
+                RemoveRedundantOpsTransform(),
+                FuseQuantizedOpsTransform(),
+                FoldQDQPass(),
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
-                FuseBatchNormPass(program),
-                FuseClampPass(),
             ],
         )
 
@@ -177,9 +180,6 @@ class VulkanBackend(BackendDetails):
             program,
             [
                 RemoveAssertsTransform(),
-                # Since this pass may replace a scalar argument with a tensor argument,
-                # this pass may result in a non ATen compliant graph structure.
-                RemoveLocalScalarDenseOpsTransform(),
                 insert_prepack_nodes,
             ],
         )
@@ -197,6 +197,7 @@ class VulkanBackend(BackendDetails):
                         texture_limits,
                         default_storage_type=default_storage_type,
                         default_memory_layout=default_memory_layout,
+                        force_fp16=force_fp16,
                     ),
                 ],
             )
@@ -207,6 +208,11 @@ class VulkanBackend(BackendDetails):
         mem_planning_suite = MemoryPlanningAlgorithmSuite(
             algo_list=[greedy_memory_planning]
         )
+        # This is a workaround to allow the memory planning pass to work without having
+        # to first apply ToOutVarPass(). See the `greedy()` function in
+        # `exir.memory_planning`; if this attribute isn't set, assertions in
+        # `collect_spec_from_nodes()` will fail.
+        program.graph_module.encounter_to_out_var_failure = True
         program = apply_passes(
             program,
             [
@@ -219,6 +225,7 @@ class VulkanBackend(BackendDetails):
             program,
             DelegateMappingBuilder(generated_identifiers=True),
             downcast_64_bit=downcast_64_bit,
+            force_fp16=force_fp16,
         )
         vk_graph = graph_builder.build_graph()
 

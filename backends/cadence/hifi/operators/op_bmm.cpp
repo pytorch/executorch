@@ -22,7 +22,6 @@ using torch::executor::check_bmm_args;
 using torch::executor::Error;
 using torch::executor::get_bmm_out_target_size;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -168,4 +167,3 @@ Tensor& bmm_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

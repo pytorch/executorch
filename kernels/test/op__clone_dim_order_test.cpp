@@ -7,9 +7,6 @@
  */
 
 #include <cstdint>
-#include <map>
-#include <typeindex>
-#include <variant>
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator.
 #include <executorch/kernels/test/TestUtil.h>

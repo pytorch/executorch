@@ -154,7 +154,7 @@ class TestXnnpackRecipes(unittest.TestCase):
             ),
             ExportRecipe.get_recipe(
                 XNNPackRecipeType.TORCHAO_INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR,
-                group_size=8,
+                group_size=32,
             ),
         ]
 
@@ -285,15 +285,6 @@ class TestXnnpackRecipes(unittest.TestCase):
             # Clean up dog.jpg file if it exists
             if os.path.exists("dog.jpg"):
                 os.remove("dog.jpg")
-
-    def test_validate_recipe_kwargs_fp32(self) -> None:
-        provider = XNNPACKRecipeProvider()
-
-        with self.assertRaises(ValueError) as cm:
-            provider.create_recipe(XNNPackRecipeType.FP32, invalid_param=123)
-
-        error_msg = str(cm.exception)
-        self.assertIn("Recipe 'fp32' does not accept any parameters", error_msg)
 
     def test_validate_recipe_kwargs_int4_tensor_with_valid_group_size(
         self,

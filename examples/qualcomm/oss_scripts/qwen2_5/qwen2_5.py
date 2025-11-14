@@ -42,12 +42,6 @@ def compile(args):  # noqa: C901
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     manager = get_qnn_llm_edge_manager(
         args.decoder_model, args.max_seq_len, args.enable_spinquant_r3
     )
@@ -162,6 +156,7 @@ def inference(args):
             host_id=args.host,
             soc_model=args.model,
             runner="examples/models/llama/llama_main",
+            target=args.target,
         )
         # No pregen inputs, input_list is not required
         adb.push(inputs=[], input_list="", files=[tokenizer_json_path])
@@ -216,12 +211,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated Qwen in the given directory.",
-        type=str,
-    )
-
-    parser.add_argument(
         "--prompt",
         help="User prompts for Qwen.",
         required=True,
@@ -262,6 +251,7 @@ if __name__ == "__main__":
 
     try:
         args = parser.parse_args()
+        args.validate(args)
         if args.artifact is None:
             args.artifact = args.decoder_model
         main(args)

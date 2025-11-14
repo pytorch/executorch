@@ -3,11 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Any, List
 
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -21,8 +22,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
@@ -42,8 +43,6 @@ class ConstantPadNDVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 3)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
@@ -51,6 +50,7 @@ class ConstantPadNDVisitor(NodeVisitor):
             [inputs[0], output],
             [
                 ts.DType.INT8,
+                ts.DType.INT16,
                 ts.DType.INT32,
                 ts.DType.FP32,
                 ts.DType.BOOL,
@@ -63,6 +63,11 @@ class ConstantPadNDVisitor(NodeVisitor):
             qargs = input_qparams[0]
             pad_const_val = qargs.quantize_value(inputs[2].number).item()
             pad_const_dtype = ts.DType.INT8
+        elif inputs[0].dtype == ts.DType.INT16:
+            input_qparams = get_input_qparams(node)
+            qargs = input_qparams[0]
+            pad_const_val = qargs.quantize_value(inputs[2].number).item()
+            pad_const_dtype = ts.DType.INT16
         else:
             pad_const_val = inputs[2].number
             pad_const_dtype = inputs[0].dtype
@@ -100,8 +105,13 @@ class ConstantPadNDVisitor(NodeVisitor):
             shape=[1], dtype=pad_const_dtype, vals=[pad_const_val]
         )
 
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().PAD,
+        attr = ts.TosaSerializerAttribute()
+        attr.PadAttribute()
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.Op.PAD,
             [inputs[0].name, padding.name, pad_const.name],
             [output.name],
+            attr,
         )

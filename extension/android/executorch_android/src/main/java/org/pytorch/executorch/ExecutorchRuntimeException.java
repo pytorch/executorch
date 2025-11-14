@@ -75,17 +75,50 @@ public class ExecutorchRuntimeException extends RuntimeException {
   }
 
   static class ErrorHelper {
+    private static final boolean ENABLE_READ_LOG_BUFFER_LOGS = true;
+    // Reusable StringBuilder instance
+    private static final StringBuilder sb = new StringBuilder();
+
     static String formatMessage(int errorCode, String details) {
-      String baseMessage = ERROR_CODE_MESSAGES.get(errorCode);
-      if (baseMessage == null) {
-        baseMessage = "Unknown error code 0x" + Integer.toHexString(errorCode);
+      synchronized (sb) {
+        sb.setLength(0); // Clear the StringBuilder before use
+
+        String baseMessage = ERROR_CODE_MESSAGES.get(errorCode);
+        if (baseMessage == null) {
+          baseMessage = "Unknown error code 0x" + Integer.toHexString(errorCode);
+        }
+
+        sb.append("[Executorch Error 0x")
+            .append(Integer.toHexString(errorCode))
+            .append("] ")
+            .append(baseMessage)
+            .append(": ")
+            .append(details);
+        if (ENABLE_READ_LOG_BUFFER_LOGS) {
+          try {
+            String[] logEntries = Module.readLogBufferStatic(); // JNI call
+            if (logEntries != null && logEntries.length > 0) {
+              sb.append("\n Detailed logs:\n");
+            }
+            formatLogEntries(sb, logEntries);
+          } catch (Exception e) {
+            sb.append("Failed to retrieve detailed logs: ").append(e.getMessage());
+          }
+        }
+
+        return sb.toString();
       }
-      return "[Executorch Error 0x"
-          + Integer.toHexString(errorCode)
-          + "] "
-          + baseMessage
-          + ": "
-          + details;
+    }
+
+    // Append log entries to the provided StringBuilder
+    private static void formatLogEntries(StringBuilder sb, String[] logEntries) {
+      if (logEntries == null || logEntries.length == 0) {
+        sb.append("No detailed logs available.");
+        return;
+      }
+      for (String entry : logEntries) {
+        sb.append(entry).append("\n");
+      }
     }
   }
 

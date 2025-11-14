@@ -21,7 +21,6 @@ using torch::executor::Error;
 using torch::executor::get_slice_copy_out_target_size;
 using torch::executor::KernelRuntimeContext;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -65,7 +64,7 @@ Tensor& slice_copy_Tensor_out(
       InvalidArgument,
       out);
 
-  compute_slice(in, dim, start, length, step, out);
+  compute_slice(ctx, in, dim, start, length, step, out);
 
   return out;
 }
@@ -73,4 +72,3 @@ Tensor& slice_copy_Tensor_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

@@ -14,7 +14,7 @@ from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 
 from typing import Tuple
 
-from executorch.backends.cadence.aot.export_example import export_model
+from executorch.backends.cadence.aot.export_example import export_and_run_model
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -66,4 +66,4 @@ if __name__ == "__main__":
         predictor_lengths,
     )
 
-    export_model(model, example_inputs)
+    export_and_run_model(model, example_inputs)

@@ -13,6 +13,9 @@ runtime.python_library(
     visibility = [
         "//executorch/...",
     ],
+    deps = [
+        "//executorch/exir:tensor_layout",
+    ]
 )
 
 runtime.python_library(
@@ -26,6 +29,7 @@ runtime.python_library(
     ],
     visibility = [
         "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         ":schema",

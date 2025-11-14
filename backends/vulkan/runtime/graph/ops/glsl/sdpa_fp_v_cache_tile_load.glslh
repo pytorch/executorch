@@ -1,0 +1,76 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Assume the following variables are defined in the shader layout:
+ * - t_v_cache
+ *
+ * Macro Settings:
+ * - V_CACHE_BUFFER
+ */
+
+#ifndef SDPA_FP_V_CACHE_TILE_LOAD_GLSLH
+#define SDPA_FP_V_CACHE_TILE_LOAD_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_weight_tile.glslh"
+
+VEC4_T load_v_cache_d4(
+    const int d4,
+    const int c,
+    const int kv_h,
+    const int D4,
+    const int C,
+    const int KV_H) {
+#ifdef V_CACHE_BUFFER
+  return VEC4_T(t_v_cache[(c * KV_H * D4) + (kv_h * D4) + d4]);
+#else
+  return VEC4_T(texelFetch(t_v_cache, ivec3(d4, kv_h, c), 0));
+#endif
+}
+
+void load_v_cache_tile_no_checks(
+    out FPWeightTile tile,
+    const int d4_start,
+    const int c_start,
+    const int kv_h,
+    const int D4,
+    const int context_len,
+    const int C,
+    const int KV_H) {
+  [[unroll]] for (int c = 0; c < TILE_N; ++c) {
+    [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
+      tile.data[c][d4] =
+          load_v_cache_d4(d4_start + d4, c_start + c, kv_h, D4, C, KV_H);
+    }
+  }
+}
+
+void load_v_cache_tile_with_checks(
+    out FPWeightTile tile,
+    const int d4_start,
+    const int c_start,
+    const int kv_h,
+    const int D4,
+    const int context_len,
+    const int C,
+    const int KV_H) {
+  [[unroll]] for (int c = 0; c < TILE_N; ++c) {
+    [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
+      if (d4_start + d4 < D4 && c_start + c < context_len) {
+        tile.data[c][d4] =
+            load_v_cache_d4(d4_start + d4, c_start + c, kv_h, D4, C, KV_H);
+      } else {
+        tile.data[c][d4] = VEC4_T(0.0);
+      }
+    }
+  }
+}
+
+#endif // SDPA_FP_V_CACHE_TILE_LOAD_GLSLH

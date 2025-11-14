@@ -82,11 +82,15 @@ class FuseBatchNormPass(XNNPACKPass):
 
     @staticmethod
     def can_fuse(
-        input_node: torch.fx.Node, bn: torch.fx.Node, program: ExportedProgram
+        input_node: torch.fx.Node,
+        bn: torch.fx.Node,
+        program: ExportedProgram,
     ) -> bool:
         """
         Determine whether a BatchNorm node can be fused with the preceding convolution or linear node.
         """
+
+        is_conv = input_node.target == exir_ops.edge.aten.convolution.default
 
         # All users of the batch_norm node must be getitem ops.
         # batch_norm returns a 3-element tuple.
@@ -109,6 +113,16 @@ class FuseBatchNormPass(XNNPACKPass):
             is_param_node(program, node) for node in {input_node_weights, bn_weights}
         ].count(False):
             return False
+
+        # Check the rank of the convolutution input - only Conv1d and 2d are supported.
+        if is_conv:
+            conv_input = input_node.args[0]
+            if (
+                not isinstance(conv_input, torch.fx.Node)
+                or "val" not in conv_input.meta
+                or len(conv_input.meta["val"].shape) not in (3, 4)
+            ):
+                return False
 
         return True
 

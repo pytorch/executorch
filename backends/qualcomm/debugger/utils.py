@@ -183,11 +183,11 @@ class DrawGraph:
                 cleanup=not self.dot_string,
             )
             source_file = os.path.join(temp_directory, f"{self.filename}.svg")
-            destination_file = os.path.join(".", f"{self.filename}.svg")
+            destination_file = os.path.join(self.directory, f"{self.filename}.svg")
             shutil.move(source_file, destination_file)
             if self.dot_string:
                 dot_file = os.path.join(temp_directory, f"{self.filename}")
-                dot_dest_file = os.path.join(".", f"{self.filename}.dot")
+                dot_dest_file = os.path.join(self.directory, f"{self.filename}.dot")
                 shutil.move(dot_file, dot_dest_file)
 
 

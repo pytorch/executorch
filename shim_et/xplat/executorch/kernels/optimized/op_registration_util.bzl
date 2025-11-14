@@ -174,9 +174,10 @@ OPTIMIZED_ATEN_OPS = (
         # is not sufficient to avoid it.
         compiler_flags = [] if runtime.is_oss else select({
             "DEFAULT": [],
-            "ovr_config//toolchain/clang/constraints:19": select({
+            "ovr_config//os:android": select({
                 "DEFAULT": [],
-                "ovr_config//os:android": ["-O3"],
+                "ovr_config//toolchain/clang/constraints:17": ["-O3"],
+                "ovr_config//toolchain/clang/constraints:19": ["-O3"],
             }),
         }),
         deps = [
