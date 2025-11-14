@@ -1690,6 +1690,7 @@ _DEFINE_UNARY_NODE_NO_PARAMS(Log, xnn_unary_log)
 _DEFINE_UNARY_NODE_NO_PARAMS(Negate, xnn_unary_negate)
 _DEFINE_UNARY_NODE_NO_PARAMS(Square, xnn_unary_square)
 _DEFINE_UNARY_NODE_NO_PARAMS(Abs, xnn_unary_abs)
+_DEFINE_UNARY_NODE_NO_PARAMS(Sin, xnn_unary_sine)
 
 // Unary Ops with min/max params
 _DEFINE_UNARY_NODE_WITH_MINMAX(Clamp, xnn_unary_clamp)
@@ -1737,6 +1738,7 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(Floor)
     _DEFINE(PReLU)
     _DEFINE(Sigmoid)
+    _DEFINE(Sin)
 
     // Others
     _DEFINE(FullyConnected)
