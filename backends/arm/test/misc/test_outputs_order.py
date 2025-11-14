@@ -77,6 +77,7 @@ def _read_tosa_outputs(tosa_path: Path):
         shapes.append(tensors[out_name])
     return shapes
 
+
 # TODO: MLETORCH-1266 Investigate output order issue
 @pytest.mark.parametrize("batch_size", [1, 4])
 @pytest.mark.parametrize("output_order_workaround", [True, False])
