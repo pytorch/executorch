@@ -79,7 +79,7 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
 
     quantization_config = get_ptq_per_channel_quant_config()
     for node in gm.graph.nodes:
-        if node.target != torch.ops.my_ops.mul3.default: g
+        if node.target != torch.ops.my_ops.mul3.default:
             continue
 
         # skip annotation if it is already annotated
@@ -257,6 +257,7 @@ def main(args):
             host_id=args.host,
             soc_model=args.model,
             shared_buffer=args.shared_buffer,
+            target=args.target,
         )
         adb.push(inputs=sample_input, files=op_package_paths)
         adb.execute()
