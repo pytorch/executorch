@@ -63,6 +63,7 @@ class BroadcastArgsPass(ArmPass):
                             args=(arg, multiples),
                             kwargs={},
                             from_node=node,
+                            inherit_qparams=False,
                         )
                         node.replace_input_with(arg, repeat)
 

@@ -37,7 +37,7 @@ from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch.fx.node import Node
 
 from torch.overrides import TorchFunctionMode
-from tosa.TosaGraph import TosaGraph  # type: ignore[import-untyped]
+from tosa.TosaGraph import TosaGraph  # type: ignore[import-not-found, import-untyped]
 
 logger = logging.getLogger(__name__)
 
@@ -767,7 +767,7 @@ def run_tosa_graph(
     inputs_np = [torch_tensor_to_numpy(input_tensor) for input_tensor in inputs]
 
     if isinstance(tosa_version, Tosa_1_00):
-        import tosa_reference_model as reference_model  # type: ignore[import-untyped]
+        import tosa_reference_model as reference_model  # type: ignore[import-not-found, import-untyped]
 
         debug_mode = "ALL" if logger.getEffectiveLevel() <= logging.DEBUG else None
         outputs_np, status = reference_model.run(

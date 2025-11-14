@@ -7,7 +7,7 @@
 
 set -x
 
-conda install -c conda-forge "ffmpeg<8" -y
+sudo apt install ffmpeg -y
 pip install torchcodec==0.7.0.dev20251012 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 pip install moshi==0.2.11
 pip install bitsandbytes soundfile einops

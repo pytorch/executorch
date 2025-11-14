@@ -639,6 +639,10 @@ class ComputeGraph final {
 
   bool device_name_contains(const char* substr);
 
+  int64_t max_buffer_numel() {
+    return static_cast<int64_t>(context_->adapter_ptr()->max_buffer_numel());
+  }
+
   //
   // Graph Building
   //

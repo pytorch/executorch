@@ -66,8 +66,9 @@ non_fbcode_target(_kind = fb_android_cxx_library,
         "//xplat/executorch/extension/runner_util:inputs_static",
         "//xplat/executorch/extension/tensor:tensor_static",
         "//xplat/executorch/kernels/quantized:generated_lib_static",
+    ] + ([
         "//xplat/executorch/backends/vulkan:vulkan_backend_lib_static",
-    ],
+    ] if read_config("executorch", "minimal_jni", "false") == "false" else []),
 )
 
 non_fbcode_target(_kind = fb_android_cxx_library,
