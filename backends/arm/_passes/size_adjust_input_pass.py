@@ -207,7 +207,9 @@ class SizeAdjustInputPass(ArmPass):
             with graph_module.graph.inserting_before(node):
                 last_node = cast(torch.fx.Node, parent_node)
                 for args in slice_args:
-                    slice_node = create_node(graph, slice_op, (last_node,) + args)
+                    slice_node = create_node(
+                        graph, slice_op, (last_node,) + args, from_node=node
+                    )
                     last_node = slice_node
                 node.replace_input_with(cast(torch.fx.Node, parent_node), last_node)
                 modified_graph = True
