@@ -1,4 +1,4 @@
-# Arm Ethos-U NPU Backend Tutorial
+# Getting Started Tutorial
 
 <!----This will show a grid card on the page----->
 ::::{grid} 2
@@ -66,7 +66,6 @@ As a simple check that your environment is set up correctly, run `which FVP_Cors
 The ExecuTorch Ahead-of-Time (AOT) pipeline takes a PyTorch Model (a `torch.nn.Module`) and produces a `.pte` binary file, which is then consumed by the ExecuTorch Runtime. This [document](getting-started-architecture.md) goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.
 
 The example below shows how to quantize a model consisting of a single addition, and export it it through the AOT flow using the EthosU backend. For more details, see `examples/arm/ethos_u_minimal_example.ipynb`.
-
 ```python
 import torch
 
@@ -184,7 +183,6 @@ To build a runner equivalent to the one above, run
 The block diagram below shows, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.
 
 ![](arm-delegate-runtime-build.svg)
-
 
 
 ## Running on Corstone FVP Platforms

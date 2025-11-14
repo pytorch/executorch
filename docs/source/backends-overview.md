@@ -26,8 +26,8 @@ Backends are the bridge between your exported model and the hardware it runs on.
 | [Vulkan ](/backends/vulkan/vulkan-overview.md)                  | Android             | GPU           | Android GPU acceleration        |
 | [Qualcomm](backends-qualcomm)                                   | Android             | NPU           | Qualcomm SoCs                   |
 | [MediaTek](backends-mediatek)                                   | Android             | NPU           | MediaTek SoCs                   |
-| [ARM EthosU](backends-arm-ethos-u)                              | Embedded            | NPU           | ARM MCUs                        |
-| [ARM VGF](backends-arm-vgf)                                     | Android             | NPU           | ARM platforms                   |
+| [Arm Ethos-U](/backends/arm-ethos-u/arm-ethos-u-overview.md)    | Embedded            | NPU           | Arm MCUs                        |
+| [Arm VGF](/backends/arm-vgf/arm-vgf-overview.md)                | Android             | GPU           | Arm platforms                   |
 | [OpenVINO](build-run-openvino)                                  | Embedded            | CPU/GPU/NPU   | Intel SoCs                      |
 | [NXP](backends-nxp)                                             | Embedded            | NPU           | NXP SoCs                        |
 | [Cadence](backends-cadence)                                     | Embedded            | DSP           | DSP-optimized workloads         |
@@ -56,8 +56,8 @@ backends/mps/mps-overview
 backends/vulkan/vulkan-overview
 backends-qualcomm
 backends-mediatek
-backends-arm-ethos-u
-backends-arm-vgf
+backends/arm-ethos-u/arm-ethos-u-overview
+backends/arm-vgf/arm-vgf-overview
 build-run-openvino
 backends-nxp
 backends-cadence
