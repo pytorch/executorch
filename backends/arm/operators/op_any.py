@@ -46,7 +46,7 @@ class AnyVisitor(NodeVisitor):
         )  # process the negative index
         keep_dim = cast(bool, inputs[2].number if len(inputs) > 2 else False)
         if not keep_dim:
-            raise ValueError("This case should be handled by ConvertAnyDimDimsPass")
+            raise ValueError("This case should be handled by DecomposeAnyPass")
 
         attr = ts.TosaSerializerAttribute()
         attr.ReduceAnyAttribute(inputs[0].dim_order.index(dim))
