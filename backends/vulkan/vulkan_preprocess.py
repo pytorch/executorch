@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+import copy
 from functools import partial
 from typing import Any, Callable, Dict, final, List
 
@@ -127,15 +128,21 @@ class VulkanBackend(BackendDetails):
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
         compile_options = parse_compile_spec(module_compile_spec)
-        limits_x = compile_options.get(
-            "texture_limits_x", utils.DEFAULT_TEXTURE_LIMITS[0]
-        )
-        limits_y = compile_options.get(
-            "texture_limits_y", utils.DEFAULT_TEXTURE_LIMITS[1]
-        )
-        limits_z = compile_options.get(
-            "texture_limits_z", utils.DEFAULT_TEXTURE_LIMITS[2]
-        )
+
+        default_texture_limits = copy.deepcopy(utils.DEFAULT_TEXTURE_LIMITS)
+        # 2048 is the typical limit value for 3D textures, but mobile GPUs often support
+        # 16384. Since the Vulkan delegate primarily targets mobile GPUs at the moment,
+        # 16394 is the default texture limit used. This option is provided as a
+        # convenient way to switch to using a limit of 2048 for image textures which
+        # will be compatible with most GPUs.
+        if compile_options.get("small_texture_limits", False):
+            default_texture_limits[0] = 2048
+            default_texture_limits[1] = 2048
+            default_texture_limits[2] = 2048
+
+        limits_x = compile_options.get("texture_limits_x", default_texture_limits[0])
+        limits_y = compile_options.get("texture_limits_y", default_texture_limits[1])
+        limits_z = compile_options.get("texture_limits_z", default_texture_limits[2])
         texture_limits = (limits_x, limits_y, limits_z)
 
         default_storage_type = compile_options.get(
@@ -204,22 +211,26 @@ class VulkanBackend(BackendDetails):
 
         # Finally, apply dynamic shape passes and memory planning pass. These passes
         # must be applied only when the graph structure is finalized.
-        greedy_memory_planning = partial(greedy, allow_overlapping_allocations=False)
-        mem_planning_suite = MemoryPlanningAlgorithmSuite(
-            algo_list=[greedy_memory_planning]
-        )
-        # This is a workaround to allow the memory planning pass to work without having
-        # to first apply ToOutVarPass(). See the `greedy()` function in
-        # `exir.memory_planning`; if this attribute isn't set, assertions in
-        # `collect_spec_from_nodes()` will fail.
-        program.graph_module.encounter_to_out_var_failure = True
-        program = apply_passes(
-            program,
-            [
-                ConstraintBasedSymShapeEvalPass(),
-                MemoryPlanningPass(memory_planning_algo=mem_planning_suite),
-            ],
-        )
+        final_passes = [
+            ConstraintBasedSymShapeEvalPass(),
+        ]
+        if not compile_options.get("skip_memory_planning", False):
+            greedy_memory_planning = partial(
+                greedy, allow_overlapping_allocations=False
+            )
+            mem_planning_suite = MemoryPlanningAlgorithmSuite(
+                algo_list=[greedy_memory_planning]
+            )
+            # This is a workaround to allow the memory planning pass to work without having
+            # to first apply ToOutVarPass(). See the `greedy()` function in
+            # `exir.memory_planning`; if this attribute isn't set, assertions in
+            # `collect_spec_from_nodes()` will fail.
+            program.graph_module.encounter_to_out_var_failure = True
+            final_passes.append(
+                MemoryPlanningPass(memory_planning_algo=mem_planning_suite)
+            )
+
+        program = apply_passes(program, final_passes)
 
         graph_builder = VkGraphBuilder(
             program,
