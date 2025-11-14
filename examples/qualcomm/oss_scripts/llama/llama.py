@@ -44,6 +44,10 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.backends.qualcomm.utils.utils import (
     convert_linear_to_conv2d,
+    convert_qlinear_to_tman_linear,
+    convert_qlinear_to_linear,
+    convert_linear_to_qlinear,
+    generate_composite_llama_program,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_sdk_build_id,
@@ -77,6 +81,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
+    LlamaDecoderLayer,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.range_setting_pt2e import (
     compute_scales,
@@ -96,7 +101,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.extension.llm.custom_ops import model_sharding
 from executorch.extension.llm.export.builder import DType
-from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
+from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer, HuggingFaceTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 
 from torchao.prototype.spinquant import apply_spinquant
@@ -123,6 +128,14 @@ def next_power_of_two(n):
     if n == 0:
         return 1
     return 2 ** math.ceil(math.log2(n))
+
+
+def permute(weights: torch.Tensor, n_head: int, n_head_kv: int | None):
+    if n_head_kv is not None and n_head != n_head_kv:
+        n_head = n_head_kv
+    return (weights.reshape(n_head, 2, weights.shape[0] // n_head // 2, *weights.shape[1:])
+            .swapaxes(1, 2)
+            .reshape(weights.shape))
 
 
 class SingleLlama:
@@ -550,6 +563,41 @@ def compile(
     else:
         state_dict = torch.load(
             args.checkpoint, weights_only=True, map_location="cpu", mmap=True
+    if args.gptq_dir:
+        from gptqmodel.quantization.config import QuantizeConfig
+        from gptqmodel.nn_modules.qlinear.torch import TorchQuantLinear
+        qcfg = QuantizeConfig.from_pretrained(args.gptq_dir)
+        if qcfg.desc_act:
+            raise RuntimeError(
+                "desc_act=True is unsupported right now."
+            )
+        qlinear_cls = partial(
+            TorchQuantLinear,
+            bits=qcfg.bits,
+            group_size=qcfg.group_size,
+            desc_act=qcfg.desc_act,
+            sym=qcfg.sym,
+            pack_dtype=qcfg.pack_dtype,
+            device=qcfg.device,
+            adapter=qcfg.adapter,
+        )
+        for llama_instance in llama_instance_list:
+            layer: LlamaDecoderLayer
+            for layer in llama_instance.layers:
+                convert_linear_to_qlinear(layer.attention, qlinear_cls)
+                convert_linear_to_qlinear(layer.feed_forward, qlinear_cls)
+
+    if "model" in state_dict:
+        state_dict = state_dict["model"]
+
+    # Change to HuggingFace weight to improve the performance of RoPE in HTP backend.
+    def permute(w, heads):
+        dim_0 = w.size(0)
+        dim_1 = w.size(1)
+        return (
+            w.view(heads, dim_0 // heads // 2, 2, dim_1)
+            .transpose(1, 2)
+            .reshape(dim_0, dim_1)
         )
 
         if "model" in state_dict:
@@ -586,6 +634,13 @@ def compile(
                 state_dict[f"layers.{layer_i}.attention.wk.weight"],
                 n_kv_heads,
                 partial_rotary_dim,
+    if not args.gptq_dir:
+        for layer_i in range(n_layers):
+            state_dict[f"layers.{layer_i}.attention.wq.weight"] = permute(
+                state_dict[f"layers.{layer_i}.attention.wq.weight"], n_heads
+            )
+            state_dict[f"layers.{layer_i}.attention.wk.weight"] = permute(
+                state_dict[f"layers.{layer_i}.attention.wk.weight"], n_kv_heads
             )
 
     for llama_instance in llama_instance_list:
@@ -687,12 +742,31 @@ def compile(
                 dtype_override.to_torch_dtype()
             )
 
+    for llama_instance in llama_instance_list:
+        for layer in llama_instance.layers:
+            if args.gptq_dir:
+                # TODO: optimize the performance when needed
+                if args.use_tman:
+                    if getattr(layer.attention, "prepare_tman", None):
+                        layer.attention.prepare_tman(do_permute=False, use_sha=False)
+                    convert_qlinear_to_tman_linear(layer.feed_forward)
+                else:
+                    convert_qlinear_to_linear(layer.attention)
+                    if getattr(layer.attention, "prepare_sha", None):
+                        layer.attention.prepare_sha()
+                    convert_qlinear_to_linear(layer.feed_forward)
+                    if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
+                        layer.feed_forward.prepare_feedfoward_conv()
+
+
     for i in range(len(llama_instance_list)):
         if args.embedding_quantize:
             llama_instance_list[i] = get_quant_embedding_transform(
                 embedding_quantize=args.embedding_quantize
             )(llama_instance_list[i])
         llama_instance_list[i] = convert_linear_to_conv2d(llama_instance_list[i])
+        # llama_instance_list[i] = convert_qlinear_to_tman_linear(llama_instance_list[i])
+        print(llama_instance_list[i])
         llama_instance_list[i] = SingleLlama(
             llama_instance_list[i].eval(), decoder_model_config, pte_filename
         )
@@ -1223,6 +1297,16 @@ def _build_parser():
         "--range_setting",
         help="Choose which range setting method for weight quantization (e.g. mse_weight_only or mse_with_act_loss). If not specified, defaults to minmax",
         type=str,
+        "--gptq_dir",
+        default=None,
+        type=str,
+        help="Path to the GPTQ model dir, which should contain config.json or quantize_config.json.",
+    )
+
+    parser.add_argument(
+        "--use_tman",
+        action="store_true",
+        help="Use TMANLinear instead of QNNConv2d.",
     )
 
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -1280,6 +1364,8 @@ def export_llama(args) -> None:
         tokenizer = get_tokenizer(args.tokenizer_model)
         assert isinstance(
             tokenizer, TiktokenTokenizer
+        ) or isinstance(
+            tokenizer, HuggingFaceTokenizer
         ), f"Wrong tokenizer provided for llama3_2."
         runtime_tokenizer_path = args.tokenizer_model
     elif args.decoder_model in SUPPORTED_LLM_MODELS:
@@ -1315,6 +1401,9 @@ def export_llama(args) -> None:
             file.seek(0)
             json.dump(data, file, indent=4)
             file.truncate()
+        # args.prompt = "<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n".format(args.prompt)
+    else:
+        raise RuntimeError(f"Unknown llama_model: {args.llama_model}.")
 
     if args.kv_updater == "smart_mask":
         args.shared_buffer = True

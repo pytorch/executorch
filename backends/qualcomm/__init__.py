@@ -1,5 +1,6 @@
 import os
 
+from .builders.custom_ops import *
 from .scripts.download_qnn_sdk import install_qnn_sdk, is_linux_x86
 
 

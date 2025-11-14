@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import operator
 from enum import Enum, unique
 from typing import Sequence
 
@@ -20,6 +21,7 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     get_qat_per_channel_quant_config,
     QuantizationConfig,
 )
+from executorch.backends.samsung.quantizer.annotator import annotate_conv2d
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
 from torchao.quantization.pt2e import FixedQParamsObserver, MinMaxObserver
@@ -392,11 +394,23 @@ def annotate_kv_8bit(  # noqa: C901
                 # For k, we tag 8a until add or sub op (rotatary embedding).
                 # The arguments of cat op: (the past kv cache, the new kv cache)
                 node = node.args[0][1]
+            elif node.target == torch.ops.aten.conv2d.default:
+                annotate_conv2d(
+                    node, quantization_config=quantization_config_8a4w_per_channel
+                )
+                break
+            elif node.target in [
+                torch.ops.tman.linear.default,
+                torch.ops.tman.bitnet_linear.default,
+                torch.ops.aten.split_with_sizes.default,
+                operator.getitem,
+            ]:
+                # TODO: tman::linear currently does not support 8a
+                break
             elif node.target in [
                 torch.ops.aten.add.Tensor,
                 torch.ops.aten.sub.Tensor,
                 torch.ops.aten.matmul.default,
-                torch.ops.aten.conv2d.default,
             ]:
                 break
             else:

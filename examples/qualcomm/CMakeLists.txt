@@ -64,6 +64,16 @@ set(_common_include_directories
     ${EXECUTORCH_ROOT}/..
     ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include
 )
+# find RE2 for tokenizer
+set(ABSL_ENABLE_INSTALL ON)
+set(ABSL_PROPAGATE_CXX_STD ON)
+set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers
+  ${CMAKE_CURRENT_BINARY_DIR}/tokenizers
+)
+set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
 # build qnn_executor_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/executor_runner)
