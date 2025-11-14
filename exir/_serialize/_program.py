@@ -589,6 +589,31 @@ def serialize_pte_binary(
     return pte_data
 
 
+def _restore_constant_segment(
+    constant_segment: SubsegmentOffsets, segment_data: bytes
+) -> List[Buffer]:
+    """Convert constant and mutable tensors from a single byte-blob into a list of individual tensors.
+
+    Args:
+        constant_segment: SubsegmentOffset with the offsets of each tensor.
+        segment_data: byte data containing the tensors and padding.
+
+    Returns:
+        List[Buffer] containing each tensor in a separate object.
+    """
+    buffers: List[Buffer] = []
+    for i in range(len(constant_segment.offsets)):
+        start_offset = constant_segment.offsets[i]
+        # Note: this is the original end offset plus any padding between it and the next start offset
+        end_offset = (
+            constant_segment.offsets[i + 1]
+            if i < len(constant_segment.offsets) - 1
+            else len(segment_data)
+        )
+        buffers.append(Buffer(storage=segment_data[start_offset:end_offset]))
+    return buffers
+
+
 def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
     """Moves segments from `segment_data` into `program`.
 
@@ -638,52 +663,27 @@ def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
 
     # Replace constants from constant_segment into constant_buffer.
     if program.constant_segment and len(program.constant_segment.offsets) > 0:
-        constant_buffers: List[Buffer] = []
-        constant_segment = segments[program.constant_segment.segment_index]
-        for i in range(len(program.constant_segment.offsets)):
-            start_offset = program.constant_segment.offsets[i]
-            # Note: this is the original end offset plus any padding between
-            # it and the next start offset.
-            end_offset = (
-                program.constant_segment.offsets[i + 1]
-                if i < len(program.constant_segment.offsets) - 1
-                else len(constant_segment)
-            )
-            constant_buffers.append(
-                Buffer(storage=constant_segment[start_offset:end_offset])
-            )
-        program.constant_buffer = constant_buffers
+        program.constant_buffer = _restore_constant_segment(
+            program.constant_segment, segments[program.constant_segment.segment_index]
+        )
         program.constant_segment.segment_index = 0
         program.constant_segment.offsets = []
 
     # Extract mutable segments.
     mutable_data = None
-    if program.mutable_data_segments and len(program.mutable_data_segments.offsets) > 0:
-        mutable_buffers: List[Buffer] = []
-        mutable_segment = segments[program.mutable_segment.segment_index]
-        for i in range(len(program.mutable_segments.offsets)):
-            start_offset = program.mutable_segment.offsets[i]
-            # Note: this is the original end offset plus any padding between
-            # it and the next start offset.
-            end_offset = (
-                program.mutable_segment.offsets[i + 1]
-                if i < len(program.mutable_segment.offsets) - 1
-                else len(mutable_segment)
-            )
-            mutable_buffers.append(
-                Buffer(storage=mutable_segment[start_offset:end_offset])
-            )
-            mutable_data = mutable_buffers
-        program.mutable_segment.segment_index = 0
-        program.mutable_segment.offsets = []
+    if program.mutable_data_segments and len(program.mutable_data_segments) > 0:
+        if len(program.mutable_data_segments) > 1:
+            raise ValueError("Cant't handle more than 1 mutable data segment.")
+        mutable_data = _restore_constant_segment(
+            program.mutable_data_segments[0],
+            segments[program.mutable_data_segments[0].segment_index],
+        )
+        program.mutable_data_segments = None
 
     # Extract named data.
     named_data = None
     if program.named_data:
         named_data_store = NamedDataStore()
-        named_data_buffers: List[bytes] = []
-        pte_data: Dict[str, DataEntry] = {}
-
         for entry in program.named_data:
             if entry.segment_index >= len(segments):
                 raise ValueError(
