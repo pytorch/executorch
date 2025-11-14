@@ -10,6 +10,7 @@
 
 #include <cuda_runtime.h>
 #include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/aoti/export.h>
 #include <cstdint>
 
 namespace executorch::backends::cuda {
@@ -43,7 +44,7 @@ extern "C" {
  * @return AOTITorchError error code (Error::Ok on success, or an error code on
  * failure)
  */
-AOTITorchError aoti_torch_create_tensor_from_blob_v2(
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     void* data,
     int64_t ndim,
     const int64_t* sizes_ptr,
@@ -71,7 +72,7 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
  * @return AOTITorchError error code (Error::Ok on success, or an error code on
  * failure)
  */
-AOTITorchError aoti_torch_empty_strided(
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
     int64_t ndim,
     const int64_t* sizes_ptr,
     const int64_t* strides_ptr,
@@ -87,7 +88,7 @@ AOTITorchError aoti_torch_empty_strided(
  * @return AOTITorchError error code (Error::Ok on success, or an error code on
  * failure)
  */
-AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor);
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor);
 
 /**
  * Creates a tensor view that reinterprets the same underlying memory with
@@ -106,7 +107,7 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor);
  *
  * @return Error::Ok on success, appropriate error code on failure
  */
-AOTITorchError aoti_torch__reinterpret_tensor(
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
     Tensor* self,
     int64_t ndim,
     const int64_t* sizes_ptr,
@@ -136,11 +137,11 @@ AOTITorchError aoti_torch__reinterpret_tensor(
  *         - Error::MemoryAllocationFailed: failed to allocate temporary memory
  *         - Error::Internal: CUDA operation failures
  */
-AOTITorchError
+AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
 
 // Function to clear all tensors from internal storage
-void clear_all_tensors();
+AOTI_SHIM_EXPORT void clear_all_tensors();
 } // extern "C"
 
 } // namespace executorch::backends::cuda

@@ -7,8 +7,12 @@
 from typing import Tuple
 
 import torch
-from diffusers.models.autoencoders import AutoencoderKL
-from diffusers.utils.testing_utils import floats_tensor
+from diffusers.models.autoencoders import (  # type: ignore[import-not-found]
+    AutoencoderKL,
+)
+from diffusers.utils.testing_utils import (  # type: ignore[import-not-found]
+    floats_tensor,
+)
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.stable_diffusion.stable_diffusion_module_test_configs import (
