@@ -37,6 +37,53 @@ $ cmake -DEXECUTORCH_BUILD_MPS=OFF --preset llm
 
 The cmake presets roughly map to the ExecuTorch presets and are explicitly listed in [CMakePresets.json](../../../CMakePresets.json). Note that you are encouraged to rely on presets when build locally and adding build/tests in CI — CI should do what a developer would do and nothing more!
 
+### Using Workflows
+
+CMake workflow presets combine configure, build, and test steps into a single command. This is the recommended way to build ExecuTorch as it automates the entire build process.
+
+#### List available workflows
+
+```bash
+$ cmake --workflow --list-presets
+```
+
+#### Run a complete workflow
+
+```bash
+# Configure, build, and install LLM extension (CPU)
+$ cmake --workflow --preset llm-release
+
+# Configure, build, and install LLM extension with CUDA (Linux only)
+$ cmake --workflow --preset llm-release-cuda
+
+# Configure, build, and install LLM extension with Metal (macOS only)
+$ cmake --workflow --preset llm-release-metal
+
+# Debug builds are also available
+$ cmake --workflow --preset llm-debug
+$ cmake --workflow --preset llm-debug-cuda
+$ cmake --workflow --preset llm-debug-metal
+```
+
+#### Understanding workflow components
+
+A workflow preset typically consists of:
+1. **Configure preset**: Defines CMake cache variables and build settings
+2. **Build preset**: Specifies targets to build and parallel job count
+3. **Workflow preset**: Orchestrates the configure and build steps
+
+For example, `llm-release` workflow:
+- Uses `llm-release` configure preset (sets `CMAKE_BUILD_TYPE=Release`)
+- Uses `llm-release-install` build preset (builds the `install` target with parallel jobs)
+- Installs artifacts to `cmake-out/` directory
+
+#### Add a new workflow
+To add a new workflow:
+1. Add a configure preset, e.g. `new-workflow`
+2. Add a build preset that depends on (1), e.g. `new-workflow-install`
+3. You should be able to run `cmake --workflow new-workflow-install`
+
+
 ### Including ExecuTorch as Third-party Library
 
 #### Choose a built-in preset
