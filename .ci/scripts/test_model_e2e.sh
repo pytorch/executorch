@@ -161,7 +161,7 @@ if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ]; then
   exit 1
 fi
 
-MAKE_TARGET="${RUNNER_PATH}-${$DEVICE}"
+MAKE_TARGET="${RUNNER_PATH}-${DEVICE}"
 make "${MAKE_TARGET}"
 echo "::endgroup::"
 
