@@ -8,8 +8,10 @@ import torch
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.edge_helper import previous_non_qdq_node
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
+    apply_permutation_to,
     create_channels_first_to_channels_last_permutation,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
@@ -23,6 +25,7 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.concate
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from torch.fx import Node
+from torch.fx.passes.infra.partitioner import Partition
 from torch.nn import Parameter
 
 
@@ -85,10 +88,6 @@ class CatConverter(NodeConverter):
 
         dim = CatConverter._get_normalized_dim(node)
 
-        # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1491
-        if dim == 0:
-            return False
-
         # Neutron requires the channels to be a multiple of `num_macs`. The channels could either be the second or the
         #  last dimension, depending on the formats of the node.
         if node.meta[NXP_NODE_FORMAT].is_channels_first():
@@ -148,6 +147,46 @@ class CatConverter(NodeConverter):
             # The IR requires all inputs to have the same quantization parameters as the output.
             # The quantizer should quantize the operator so that this case does not happen.
             return False
+
+        return True
+
+    @classmethod
+    def supports_partitioning_result(
+        cls,
+        node: Node,
+        partition_list: list[Partition],
+        custom_delegation_options: CustomDelegationOptions,
+    ):
+        # There is a bug in the NeutronConverter, where if none of the input dimensions before the one referenced by
+        #  `dim` are `!= 1`, the `Concat` is not delegated.
+        # This only happens when the inputs to the `Concat` are model inputs, and not outputs of other
+        #  operators.
+        cat_partition = [p for p in partition_list if node in p.nodes][0]
+        cat_inputs = map(previous_non_qdq_node, node.args[0])
+
+        if not all(
+            input_.op == "call_function" and input_ in cat_partition.nodes
+            for input_ in cat_inputs
+        ):
+            # Some inputs of the `cat` are NOT in the same partition as `cat`.
+            dim = CatConverter._get_normalized_dim(node)
+            input_shapes = [list(n.meta["val"].shape) for n in node.args[0]]
+            if node.meta[NXP_NODE_FORMAT].is_channels_first():
+                # Transform the shapes to channels last.
+                to_nhwc_perm = create_channels_first_to_channels_last_permutation(
+                    len(node.meta["val"].shape), True
+                )
+                input_shapes = [
+                    apply_permutation_to(shape, to_nhwc_perm) for shape in input_shapes
+                ]
+
+                # Transform the `dim` to refer to a channels last dimension.
+                dim = to_nhwc_perm.index(dim)
+
+            for input_shape in input_shapes:
+                if not any(d != 1 for d in input_shape[:dim]):
+                    # Do not delegate if there are no "non-1" dimensions in the shape before the `dim` dimension.
+                    return False
 
         return True
 
