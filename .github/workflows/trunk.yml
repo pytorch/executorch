@@ -284,6 +284,7 @@ jobs:
         include:
           - test_arm_baremetal: test_pytest_ops_ethosu_fvp
           - test_arm_baremetal: test_pytest_models_ethosu_fvp
+          - test_arm_baremetal: test_pytest_ops_vkml
           - test_arm_baremetal: test_run_ethosu_fvp
           - test_arm_baremetal: test_models_tosa
           - test_arm_baremetal: test_models_ethos-u55
@@ -306,7 +307,7 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
-        .ci/scripts/setup-arm-baremetal-tools.sh
+        .ci/scripts/setup-arm-baremetal-tools.sh --enable-mlsdk-deps --install-mlsdk-deps-with-pip
 
         # Increase number of files user can monitor to bypass buck failures.
         # Hopefully this is high enough for this setup.
