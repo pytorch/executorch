@@ -226,9 +226,10 @@ class TagMemoryMetaPass(ExportPass):
         """
         arg_node = op_node.args[arg_i]
 
-        # For non-tensor arguments, return ANY_STORAGE
+        # For non-tensor arguments, return ALL_STORAGES_REPSET so that the respset does
+        # not appear to be empty.
         if not utils.is_tensor_arg_node(arg_node):
-            return utils.ANY_STORAGE
+            return utils.ALL_STORAGES_REPSET
 
         # Special case for cat - use the first tensor in the list as representative
         if isinstance(arg_node, list):
