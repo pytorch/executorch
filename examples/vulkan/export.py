@@ -128,7 +128,7 @@ def get_sample_inputs(model_name):
     torch.manual_seed(42)
 
     if is_vision_model(model_name):
-        return (get_vision_model_sample_input(),)
+        return get_vision_model_sample_input()
     if model_name == "YOLO_NAS_S":
         input_batch = get_dog_image_tensor(640)
         return input_batch
@@ -143,7 +143,7 @@ def get_dynamic_shapes(model_name):
     return None
 
 
-def main() -> None:
+def main() -> None:  # noqa: C901
     logger = logging.getLogger("")
     logger.setLevel(logging.INFO)
 
