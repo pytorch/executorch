@@ -813,7 +813,7 @@ def op_ablation_test(  # noqa: C901
 
 def make_indent(indent_level):
     indent_str = ""
-    for i in range(indent_level):
+    for _ in range(indent_level):
         indent_str += " "
     return indent_str
 
