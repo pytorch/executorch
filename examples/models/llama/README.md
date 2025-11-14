@@ -242,12 +242,9 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
 
 2. Build llama runner.
 ```
-cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
-	-DCMAKE_BUILD_TYPE=Release \
-	-Bcmake-out/examples/models/llama \
-	examples/models/llama
-
-cmake --build cmake-out/examples/models/llama -j16 --config Release
+pushd examples/models/llama
+cmake --workflow --preset llama-release
+popd
 ```
 
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama/main.cpp#L18-L40).
