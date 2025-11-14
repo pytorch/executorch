@@ -21,7 +21,6 @@ from executorch.backends.vulkan._passes import (
     FuseQuantizedOpsTransform,
     insert_prepack_nodes,
     RemoveRedundantOpsTransform,
-    ReplaceQDQPass,
     SqueezeUnsqueezeInputs,
     TagMemoryMetaPass,
 )
@@ -162,7 +161,6 @@ class VulkanBackend(BackendDetails):
                 AddmmToLinearTransform(),
                 RemoveRedundantOpsTransform(),
                 FuseQuantizedOpsTransform(),
-                ReplaceQDQPass(),
                 FoldQDQPass(),
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
