@@ -56,6 +56,6 @@ class CondVisitor(NodeVisitor):
                 inputs[0].name,
                 *(subgraph_input.name for subgraph_input in inputs[-1].special),
             ],
-            [output.name],
+            output.multiple_output_names,
             attr,
         )

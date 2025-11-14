@@ -24,6 +24,7 @@ def define_common_targets():
         ],
         headers = [
             "common_shims.h",
+            "export.h",
             "utils.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
