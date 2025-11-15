@@ -21,16 +21,19 @@ trap 'rm -rfv ${TMP_DIR}' EXIT
 
 # Setup MacOS dependencies as there is no Docker support on MacOS atm
 # We need the runner to test the built library.
+echo Starting setup
+date
 PYTHON_EXECUTABLE=python \
 CMAKE_ARGS="-DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=ON -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON -DEXECUTORCH_BUILD_TESTS=ON" \
 ${CONDA_RUN} --no-capture-output \
 .ci/scripts/setup-macos.sh "$@"
+echo Starting tests
+date
 
 if [[ "$BUILD_TOOL" == "cmake" ]]; then
     # Install llama3_2_vision dependencies.
     PYTHON_EXECUTABLE=python \
     ${CONDA_RUN} --no-capture-output \
-
     .ci/scripts/unittest-macos-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
     .ci/scripts/unittest-buck2.sh
