@@ -8,26 +8,18 @@ import operator
 from typing import Any, List, Optional, Set, Tuple, Union
 
 import torch
-
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
     VkStorageType,
 )
-
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
-
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
-
 from executorch.exir.tensor import TensorSpec
-
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
-
 from torch._subclasses.fake_tensor import FakeTensor, FakeTensorConverter
-
 from torch.export import ExportedProgram
-
 from torch.export.exported_program import InputKind
 from torch.export.graph_signature import TensorArgument
 
@@ -399,7 +391,20 @@ all_storage_types: Set[VkStorageType] = {
     VkStorageType.TEXTURE_3D,
 }
 
+# Memory layouts available to non-quantized tensors
 all_memory_layouts: Set[VkMemoryLayout] = {
+    VkMemoryLayout.TENSOR_WIDTH_PACKED,
+    VkMemoryLayout.TENSOR_HEIGHT_PACKED,
+    VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+}
+
+# Memory layouts available to quantized tensors
+all_quantized_memory_layouts: Set[VkMemoryLayout] = {
+    VkMemoryLayout.PACKED_INT8_4W4C,
+    VkMemoryLayout.PACKED_INT8_4H4W,
+}
+
+universal_memory_layout_set: Set[VkMemoryLayout] = {
     VkMemoryLayout.TENSOR_WIDTH_PACKED,
     VkMemoryLayout.TENSOR_HEIGHT_PACKED,
     VkMemoryLayout.TENSOR_CHANNELS_PACKED,
@@ -761,7 +766,7 @@ def make_filtered_tensor_repset(
 
 ## Convenience TensorRepSet definitions
 
-PACKED_INT8_4W4C_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W4C}, set())
+# Only includes memory layouts that can be used by non-quantized tensors
 
 CONTIGUOUS_ANY = TensorRepSet(
     {VkMemoryLayout.TENSOR_WIDTH_PACKED}, {VkMemoryLayout.TENSOR_WIDTH_PACKED}
@@ -772,11 +777,28 @@ WIDTH_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_WIDTH_PACKED})
 HEIGHT_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_HEIGHT_PACKED})
 CHANNELS_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_CHANNELS_PACKED})
 
+CHANNELS_PACKED_ANY = TensorRepSet(
+    {VkMemoryLayout.TENSOR_CHANNELS_PACKED}, {VkMemoryLayout.TENSOR_CHANNELS_PACKED}
+)
+
+CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER = TensorRepSet(
+    {VkMemoryLayout.TENSOR_WIDTH_PACKED}, {VkMemoryLayout.TENSOR_CHANNELS_PACKED}
+)
+
 ANY_TEXTURE = TensorRepSet(set(), all_memory_layouts)
 ANY_BUFFER = TensorRepSet(all_memory_layouts, set())
-
 ANY_STORAGE = TensorRepSet(all_memory_layouts, all_memory_layouts)
+
+# Only includes memory layouts that can be used by quantized tensors
+
+PACKED_INT8_4W4C_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W4C}, set())
+
+# Special use RepSets
+
 NO_STORAGE = TensorRepSet(set(), set())
+ALL_STORAGES_REPSET = TensorRepSet(
+    universal_memory_layout_set, universal_memory_layout_set
+)
 
 
 class TensorRepSetList:
@@ -900,19 +922,19 @@ class OpRepSets:
         # Now, go through the arguments of the operator and create a filtered repset
         # for each based on the actual tensor value.
         args_repset_list = TensorRepSetList([])
-        common_arg_repset = ANY_STORAGE
+        common_arg_repset = ALL_STORAGES_REPSET
         for i, arg_node in enumerate(op_node.args):
             arg_repset = inputs_repsets[i]
 
-            # Use ANY_STORAGE for non-tensor nodes so they don't cause the op repsets to
-            # appear empty
+            # Use ALL_STORAGES_REPSET for non-tensor nodes so they don't cause the op
+            # repsets to appear empty
             if not is_tensor_arg_node(arg_node):
-                args_repset_list.append(ANY_STORAGE)
+                args_repset_list.append(ALL_STORAGES_REPSET)
             # NO_STORAGE is used to denote that an input is either a non tensor arg or
             # a weight tensor that is not prepacked. Similar to the above, use
-            # ANY_STORAGE in this case.
+            # ALL_STORAGES_REPSET in this case.
             elif arg_repset.is_empty():
-                args_repset_list.append(ANY_STORAGE)
+                args_repset_list.append(ALL_STORAGES_REPSET)
             else:
                 assert not arg_repset.is_empty()
 
@@ -925,7 +947,7 @@ class OpRepSets:
 
         # Repeat for output tensors.
         outs_repset_list = TensorRepSetList([])
-        common_out_repset = ANY_STORAGE
+        common_out_repset = ALL_STORAGES_REPSET
         if num_tensors_in_node(op_node) == 1:
             common_out_repset = make_filtered_tensor_repset(
                 op_node.meta["val"], outputs_repsets[0], texture_limits
@@ -1094,6 +1116,25 @@ class OpRepSets:
             arg_i == self.primary_arg_idx or self.sync_args_repr
         ):
             self.outs_repset_list[0] = arg_current_repset.make_intersect(source_repset)
+
+        self.assert_sync_contraints()
+        return True
+
+    def try_constrain_with_out_repset(self, repset: TensorRepSet):
+        # Skip for operators that must synchronize the input and output representations
+        # or operators that have more than one output repset
+        if self.sync_primary_io_repr or len(self.outs_repset_list) > 1:
+            return False
+
+        out_current_repset = self.outs_repset_list[0]
+
+        if out_current_repset == repset:
+            return False
+
+        if not out_current_repset.any_in_common(repset):
+            return False
+
+        self.outs_repset_list[0] = out_current_repset.make_intersect(repset)
 
         self.assert_sync_contraints()
         return True

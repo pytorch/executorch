@@ -156,27 +156,13 @@ echo "::endgroup::"
 
 echo "::group::Build $MODEL_NAME Runner"
 
-if [ "$DEVICE" = "cuda" ]; then
-  BUILD_BACKEND="EXECUTORCH_BUILD_CUDA"
-elif [ "$DEVICE" = "metal" ]; then
-  BUILD_BACKEND="EXECUTORCH_BUILD_METAL"
-else
+if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ]; then
   echo "Error: Unsupported device '$DEVICE'. Must be 'cuda' or 'metal'."
   exit 1
 fi
 
-cmake --preset llm \
-      -D${BUILD_BACKEND}=ON \
-      -DCMAKE_INSTALL_PREFIX=cmake-out \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Bcmake-out -S.
-cmake --build cmake-out -j$(nproc) --target install --config Release
-
-cmake -D${BUILD_BACKEND}=ON \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Sexamples/models/$RUNNER_PATH \
-      -Bcmake-out/examples/models/$RUNNER_PATH/
-cmake --build cmake-out/examples/models/$RUNNER_PATH --target $RUNNER_TARGET --config Release
+MAKE_TARGET="${RUNNER_PATH}-${DEVICE}"
+make "${MAKE_TARGET}"
 echo "::endgroup::"
 
 echo "::group::Run $MODEL_NAME Runner"

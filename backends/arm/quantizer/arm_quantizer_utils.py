@@ -72,5 +72,5 @@ def mark_node_as_annotated(node: Node) -> None:
     )
     node.meta[Q_ANNOTATION_KEY]._annotated = True
     meta_custom = node.meta.get("custom", {})
-    meta_custom[ArmAnnotationInfo.CUSTOM_META_KEY] = annotation_info
+    meta_custom[ArmAnnotationInfo.CUSTOM_META_KEY] = dict(annotation_info)
     node.meta["custom"] = meta_custom

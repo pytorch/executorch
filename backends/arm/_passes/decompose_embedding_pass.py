@@ -10,7 +10,9 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
+from executorch.backends.arm._passes.fuse_view_copy_transform_pass import (
+    FuseViewCopyTransformPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -33,7 +35,7 @@ class DecomposeEmbeddingPass(ArmPass):
          i = indices is expected to be int32 before this pass
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {FuseViewCopyTransform}
+    _passes_required_after: Set[Type[ExportPass]] = {FuseViewCopyTransformPass}
 
     aten_ops = (torch.ops.aten.embedding.default,)
     edge_ops = (exir_ops.edge.aten.embedding.default,)
