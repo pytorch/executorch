@@ -53,6 +53,7 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     TanhConfig,
     ToDimOrderCopyConfig,
     UpsampleBilinear2dConfig,
+    ViewCopyConfig,
 )
 from executorch.backends.xnnpack.partition.config.node_configs import (
     BatchNormConfig,
@@ -112,6 +113,7 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     SquareRootConfig,
     SubConfig,
     UpsampleBilinear2dConfig,
+    ViewCopyConfig,
     # Quant/Dequant Op Configs
     QuantizedPerTensorConfig,
     DeQuantizedPerTensorConfig,
