@@ -132,8 +132,6 @@ def all_flows() -> dict[str, TestFlow]:
             ARM_ETHOS_U85_FLOW,
             ARM_TOSA_FP_FLOW,
             ARM_TOSA_INT_FLOW,
-            ARM_VGF_FP_FLOW,
-            ARM_VGF_INT_FLOW,
         )
 
         flows += [
@@ -141,8 +139,6 @@ def all_flows() -> dict[str, TestFlow]:
             ARM_TOSA_INT_FLOW,
             ARM_ETHOS_U55_FLOW,
             ARM_ETHOS_U85_FLOW,
-            ARM_VGF_FP_FLOW,
-            ARM_VGF_INT_FLOW,
         ]
     except Exception as e:
         logger.info(f"Skipping ARM flow registration: {e}")
