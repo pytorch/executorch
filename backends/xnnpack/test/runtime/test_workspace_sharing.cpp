@@ -57,6 +57,7 @@ TEST(WorkspaceSharing, SetInvalidMode) {
 
   // Make sure the option is still set to a valid value.
   BackendOption read_option;
+  ASSERT_GT(sizeof(read_option.key), strlen(workspace_sharing_mode_option_key));
   strcpy(read_option.key, workspace_sharing_mode_option_key);
   read_option.value = -1;
   status = get_option(xnnpack_backend_key, read_option);
@@ -171,6 +172,7 @@ void set_and_check_workspace_sharing_mode(WorkspaceSharingMode mode) {
 
   // Read the option back to sanity check.
   BackendOption read_option;
+  ASSERT_GT(sizeof(read_option.key), strlen(workspace_sharing_mode_option_key));
   strcpy(read_option.key, workspace_sharing_mode_option_key);
   read_option.value = -1;
   status = get_option(xnnpack_backend_key, read_option);
