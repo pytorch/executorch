@@ -33,6 +33,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceFunctionallyEquivalentOpTargets,
     ReplaceIm2RowWithViewPass,
     ReplaceLinearWithFullyConnectedOpPass,
+    ReplaceLogicalNotBooleanWhereWithWherePass,
     ReplaceMatmulWithTransposedMatmulPass,
     ReplaceMMWithAddMMPass,
     ReplaceMulTensorWithMulAndFullOpsPass,
@@ -874,7 +875,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
             PassResult, ReplacePermuteWithTransposePass()(original_gm)
         ).graph_module
         gm = cast(PassResult, ReplaceMMWithAddMMPass()(gm)).graph_module
-        gm = cast(PassResult, ReplaceAddMMWithLinearPass()(gm)).graph_module
+        pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(gm))
+        self.assertTrue(pass_result.modified)
+        gm = pass_result.graph_module
         graph_after_passes = cast(
             PassResult, ReplaceLinearWithFullyConnectedOpPass()(gm)
         ).graph_module
@@ -923,9 +926,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
         gm = cast(
             PassResult, ReplacePermuteWithTransposePass()(original_gm)
         ).graph_module
-        graph_after_passes = cast(
-            PassResult, ReplaceAddMMWithLinearPass()(gm)
-        ).graph_module
+        pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(gm))
+        self.assertTrue(pass_result.modified)
+        graph_after_passes = pass_result.graph_module
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.linear.default),
@@ -988,7 +991,12 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 args=(x,),
             )
         p = ReplaceSqueezeAndUnsqueezeWithViewPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+
+        # Assert: Verify the pass modified the graph
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default),
@@ -1023,7 +1031,12 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(x, dim),
         )
         p = ReplaceSqueezeAndUnsqueezeWithViewPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+
+        # Assert: Verify the pass modified the graph
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default),
@@ -2183,3 +2196,150 @@ class TestReplaceLinalgSvdPass(unittest.TestCase):
             ),
             1,
         )
+
+
+class TestReplaceLogicalNotBooleanWhereWithWherePass(unittest.TestCase):
+    """Tests for the ReplaceLogicalNotBooleanWhereWithWherePass."""
+
+    @torch.no_grad()
+    def test_replace_where_with_logical_not_boolean(self) -> None:
+        """Test that where(logical_not(bool_cond), x, y) is replaced with where(bool_cond, y, x)."""
+        # Setup: Create a graph with where(logical_not(bool_cond), x, y)
+        builder = GraphBuilder()
+        bool_cond = builder.placeholder("bool_cond", torch.randn(4, 8) > 0)
+        x = builder.placeholder("x", torch.randn(4, 8))
+        y = builder.placeholder("y", torch.randn(4, 8))
+
+        # Create logical_not node
+        logical_not = builder.call_operator(
+            op=exir_ops.edge.aten.logical_not.default,
+            args=(bool_cond,),
+        )
+
+        # Create where node using logical_not
+        where_node = builder.call_operator(
+            op=exir_ops.edge.aten.where.self,
+            args=(logical_not, x, y),
+        )
+        builder.output([where_node])
+        original_gm = builder.get_graph_module()
+
+        # Execute: Apply the replacement pass
+        p = ReplaceLogicalNotBooleanWhereWithWherePass()
+        result = cast(PassResult, p(original_gm))
+
+        # Assert: Verify the pass modified the graph
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Assert: Verify logical_not is removed (dead code elimination)
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.logical_not.default),
+            0,
+        )
+
+        # Assert: Verify where node still exists
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.where.self),
+            1,
+        )
+
+        # Assert: Verify the arguments are flipped (condition uses original bool_cond, x and y are swapped)
+        found_node = False
+        for node in graph_after_passes.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.where.self
+        ):
+            found_node = True
+            # First arg should be the original bool_cond (not the logical_not)
+            self.assertEqual(node.args[0].name, "bool_cond")
+            # Second and third args should be swapped (y, x instead of x, y)
+            self.assertEqual(node.args[1].name, "y")
+            self.assertEqual(node.args[2].name, "x")
+        self.assertTrue(found_node)
+
+    @torch.no_grad()
+    def test_no_replacement_when_not_boolean_tensor(self) -> None:
+        """Test that the pass does NOT apply when logical_not input is not a boolean tensor."""
+        # Setup: Create a graph with where(logical_not(float_tensor > 0), x, y)
+        # The logical_not input is not directly a boolean tensor
+        builder = GraphBuilder()
+        float_tensor = builder.placeholder("float_tensor", torch.randn(4, 8))
+        x = builder.placeholder("x", torch.randn(4, 8))
+        y = builder.placeholder("y", torch.randn(4, 8))
+
+        # Create a comparison that produces a boolean
+        gt_node = builder.call_operator(
+            op=exir_ops.edge.aten.gt.Scalar,
+            args=(float_tensor, 0.0),
+        )
+
+        # Create logical_not node using the comparison result
+        logical_not = builder.call_operator(
+            op=exir_ops.edge.aten.logical_not.default,
+            args=(gt_node,),
+        )
+
+        # Create where node
+        where_node = builder.call_operator(
+            op=exir_ops.edge.aten.where.self,
+            args=(logical_not, x, y),
+        )
+        builder.output([where_node])
+        original_gm = builder.get_graph_module()
+
+        # Execute: Apply the replacement pass
+        p = ReplaceLogicalNotBooleanWhereWithWherePass()
+        result = cast(PassResult, p(original_gm))
+
+        # Assert: Verify the pass modified the graph (gt_node is a boolean tensor)
+        # The pass SHOULD apply because gt.Scalar returns a boolean tensor
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Assert: Verify logical_not is removed
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.logical_not.default),
+            0,
+        )
+
+    @torch.no_grad()
+    def test_no_replacement_without_logical_not(self) -> None:
+        """Test that the pass does NOT apply when there's no logical_not."""
+        # Setup: Create a graph with where(bool_cond, x, y) without logical_not
+        builder = GraphBuilder()
+        bool_cond = builder.placeholder("bool_cond", torch.randn(4, 8) > 0)
+        x = builder.placeholder("x", torch.randn(4, 8))
+        y = builder.placeholder("y", torch.randn(4, 8))
+
+        # Create where node directly without logical_not
+        where_node = builder.call_operator(
+            op=exir_ops.edge.aten.where.self,
+            args=(bool_cond, x, y),
+        )
+        builder.output([where_node])
+        original_gm = builder.get_graph_module()
+
+        # Execute: Apply the replacement pass
+        p = ReplaceLogicalNotBooleanWhereWithWherePass()
+        result = cast(PassResult, p(original_gm))
+
+        # Assert: Verify the pass did NOT modify the graph
+        self.assertFalse(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Assert: Verify where node still exists unchanged
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.where.self),
+            1,
+        )
+
+        # Assert: Verify the arguments are unchanged
+        found_node = False
+        for node in graph_after_passes.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.where.self
+        ):
+            found_node = True
+            self.assertEqual(node.args[0].name, "bool_cond")
+            self.assertEqual(node.args[1].name, "x")
+            self.assertEqual(node.args[2].name, "y")
+        self.assertTrue(found_node)
