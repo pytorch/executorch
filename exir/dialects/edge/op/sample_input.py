@@ -364,6 +364,26 @@ SAMPLE_INPUT = {
             Return(ArgType.Tensor, size=[1, 4, 4]),
         ],
     },
+    "convolution_backward.default": {  # (Tensor grad_output, Tensor input, Tensor weight, SymInt[]? bias_sizes, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, bool[3] output_mask) -> (Tensor, Tensor, Tensor)
+        "args": [
+            InArg(ArgType.Tensor, size=[2, 4, 3, 2]),
+            InArg(ArgType.Tensor, size=[2, 6, 7, 5]),
+            InArg(ArgType.Tensor, size=[4, 3, 4, 2]),
+            InArg(ArgType.Param, value=[4]),
+            InArg(ArgType.Param, value=[1, 2]),
+            InArg(ArgType.Param, value=[1, 0]),
+            InArg(ArgType.Param, value=[2, 1]),
+            InArg(ArgType.Param, value=False),
+            InArg(ArgType.Param, value=[0, 0]),
+            InArg(ArgType.Param, value=2),
+            InArg(ArgType.Param, value=[True, True, True]),
+        ],
+        "returns": [
+            Return(ArgType.Tensor, argname="__ret0", size=[2, 6, 7, 5]),
+            Return(ArgType.Tensor, argname="__ret1", size=[4, 3, 4, 2]),
+            Return(ArgType.Tensor, argname="__ret2", size=[4]),
+        ],
+    },
     "copy.default": {  # (Tensor self, Tensor src, bool non_blocking=False) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
