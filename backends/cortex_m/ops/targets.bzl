@@ -25,6 +25,13 @@ def define_operator_target(name: str):
 OPERATORS = [
     "quantize_per_tensor",
     "dequantize_per_tensor",
+    "quantized_add",
+]
+
+# Q/DQ only operators for specialized builds
+Q_DQ_OPERATORS = [
+    "quantize_per_tensor", 
+    "dequantize_per_tensor",
 ]
 
 def define_common_targets():
@@ -74,6 +81,53 @@ def define_common_targets():
         deps = [
             ":ops_lib",
             ":cortex_m_operators",
+        ],
+        functions_yaml_target = ":operators.yaml",
+        platforms = CXX,
+        visibility = ["PUBLIC"],
+        define_static_targets = True,
+        support_exceptions = False,
+    )
+
+    # Q/DQ only targets for specialized builds
+    q_dq_op_targets = [":op_{}".format(op) for op in Q_DQ_OPERATORS]
+
+    runtime.cxx_library(
+        name = "cortex_m_q_dq_operators",
+        srcs = [],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        platforms = CXX,
+        exported_deps = q_dq_op_targets,
+    )
+
+    et_operator_library(
+        name = "q_dq_ops_lib",
+        ops = [
+            "cortex_m::quantize_per_tensor.out",
+            "cortex_m::dequantize_per_tensor.out",
+        ]
+    )
+
+    executorch_generated_lib(
+        name = "cortex_m_q_dq_generated_lib",
+        deps = [
+            ":q_dq_ops_lib",
+            ":cortex_m_q_dq_operators",
+        ],
+        functions_yaml_target = ":operators.yaml",
+        platforms = CXX,
+        visibility = ["PUBLIC"],
+        define_static_targets = True,
+    )
+
+    executorch_generated_lib(
+        name = "cortex_m_q_dq_no_except_generated_lib",
+        deps = [
+            ":q_dq_ops_lib",
+            ":cortex_m_q_dq_operators",
         ],
         functions_yaml_target = ":operators.yaml",
         platforms = CXX,
