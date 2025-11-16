@@ -457,8 +457,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
             0,
         )
+        # This is a 1D convolution (using [stride], [padding], [dilation])
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
+            count_node(graph_after_passes, exir_ops.edge.cadence.conv1d.default),
             1,
         )
         self.assertEqual(
@@ -544,10 +545,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
 
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
-            0,
-        )
-        self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
             0,
         )
         self.assertEqual(
@@ -646,19 +643,17 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
+            count_node(graph_after_passes, exir_ops.edge.cadence.conv1d.default)
+            + count_node(graph_after_passes, exir_ops.edge.cadence.conv2d.default),
             0,
         )
 
     @expand(
         [
-            [(1, 8, 33), 8, 16, 3, 2, 4, 3, False, False, False],
+            [(1, 8, 33), 8, 16, 3, 2, 4, 3, False, False],
             # # depthwise
-            [(1, 8, 33), 8, 16, 3, 1, 0, 1, True, False, False],
-            [(1, 8, 33), 8, 16, 3, 2, 4, 3, True, False, False],
-            # channel last (uses a permute op before calling conv1d)
-            [(1, 33, 8), 8, 16, 3, 1, 0, 1, False, False, True],
-            [(1, 33, 8), 8, 16, 3, 2, 4, 3, True, False, True],
+            [(1, 8, 33), 8, 16, 3, 1, 0, 1, True, False],
+            [(1, 8, 33), 8, 16, 3, 2, 4, 3, True, False],
         ]
     )
     @torch.no_grad()
@@ -673,7 +668,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
         dilation: int = 1,
         depthwise: bool = False,
         bias_enabled: bool = True,
-        channel_last: bool = False,
     ) -> None:
         groups = in_channels if depthwise else 1
         builder = GraphBuilder()
@@ -689,13 +683,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
             if bias_enabled
             else None
         )
-        if channel_last:
-            x = builder.call_operator(
-                op=exir_ops.edge.aten.permute_copy.default,
-                args=(x, [0, 2, 1]),
-            )
         convolution = builder.call_operator(
-            op=exir_ops.edge.cadence.convolution.default,
+            op=exir_ops.edge.cadence.conv1d.default,
             args=(
                 x,
                 weights,
@@ -704,14 +693,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 [padding],
                 [dilation],
                 groups,
-                False,
             ),
         )
-        if channel_last:
-            convolution = builder.call_operator(
-                op=exir_ops.edge.aten.permute_copy.default,
-                args=(convolution, [0, 2, 1]),
-            )
         builder.output([convolution])
         original_gm = builder.get_graph_module()
         p = ReplaceConvolutionOptionalArgsWithConcreteArgsPass()
@@ -721,7 +704,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             1,
         )
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
+            count_node(graph_after_passes, exir_ops.edge.cadence.conv1d.default),
             1,
         )
 
@@ -1041,21 +1024,16 @@ class TestReplaceOpsPasses(unittest.TestCase):
         bias = torch.randn(192)
         original_gm = single_op_builder(
             placeholders=(x, weights, bias),
-            op=exir_ops.edge.cadence.convolution.default,
-            args=(x, weights, bias, [1], [0], [1], 1, False),
+            op=exir_ops.edge.cadence.conv1d.default,
+            args=(x, weights, bias, [1], [0], [1], 1),
         )
-        # First, replace the aten convolution with a cadence.convolution op
-        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
-        temp_graph = cast(PassResult, p1(original_gm)).graph_module
-        # temp_graph = p1(original_gm).graph_module
-        self.assertIsNotNone(temp_graph)
 
         p2 = ReplaceTrivialConvWithLinear()
-        graph_after_passes = cast(PassResult, p2(temp_graph)).graph_module
+        graph_after_passes = cast(PassResult, p2(original_gm)).graph_module
 
         # Assert that conv1d is trivially converted to linear
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default), 0
+            count_node(graph_after_passes, exir_ops.edge.cadence.conv1d.default), 0
         )
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.cadence.im2row.default), 0
@@ -1075,20 +1053,16 @@ class TestReplaceOpsPasses(unittest.TestCase):
         bias = torch.randn(192)
         original_gm = single_op_builder(
             placeholders=(x, weights, bias),
-            op=exir_ops.edge.cadence.convolution.default,
-            args=(x, weights, bias, [1, 1], [0, 0], [1, 1], 1, False),
+            op=exir_ops.edge.cadence.conv2d.default,
+            args=(x, weights, bias, [1, 1], [0, 0], [1, 1], 1),
         )
-        # First, replace the aten convolution with a cadence.convolution op
-        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
-        temp_graph = cast(PassResult, p1(original_gm)).graph_module
-        self.assertIsNotNone(temp_graph)
 
         p2 = ReplaceTrivialConvWithLinear()
-        graph_after_passes = cast(PassResult, p2(temp_graph)).graph_module
+        graph_after_passes = cast(PassResult, p2(original_gm)).graph_module
 
         # Assert that conv2d is trivially converted to linear
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default), 0
+            count_node(graph_after_passes, exir_ops.edge.cadence.conv2d.default), 0
         )
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.cadence.im2row.default), 0
@@ -1108,15 +1082,15 @@ class TestReplaceOpsPasses(unittest.TestCase):
         bias = torch.randn(192)
         original_gm = single_op_builder(
             placeholders=(x, weights, bias),
-            op=exir_ops.edge.cadence.convolution.default,
-            args=(x, weights, bias, [1, 1], [0, 0], [1, 1], 1, False),
+            op=exir_ops.edge.cadence.conv2d.default,
+            args=(x, weights, bias, [1, 1], [0, 0], [1, 1], 1),
         )
         p = ReplaceConvWithIm2RowAndLinear()
         graph_after_passes = cast(PassResult, p(original_gm)).graph_module
 
         # Assert that the convolution is converted to im2row + linear
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default), 0
+            count_node(graph_after_passes, exir_ops.edge.cadence.conv2d.default), 0
         )
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.cadence.im2row.per_tensor), 1
@@ -1530,61 +1504,9 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             args = args + (channels_last,)
         return single_op_builder(
             placeholders=(x, w, b),
-            op=exir_ops.edge.cadence.convolution.default,
+            op=exir_ops.edge.cadence.conv1d.default,
             args=args,
         )
-
-    def test_conv1d_default_channel_last(self) -> None:
-        # Create a graph with a single convolution node.
-        # Check if graph module is valid by running exportpass on it.
-        gm = self.create_conv1d_graphmodule()
-        gm = ExportPass().call(gm).graph_module
-        self.assertEqual(count_node(gm, exir_ops.edge.cadence.convolution.default), 1)
-        self.assertEqual(count_node(gm, exir_ops.edge.aten.transpose_copy.int), 0)
-
-        # Apply replacement pass.
-        p = ReplaceConvWithChannelLastConvPass()
-        gm_after_replacement = p.call(gm).graph_module
-        # Check that no replacement was made.
-        self.assertEqual(
-            count_node(gm_after_replacement, exir_ops.edge.cadence.convolution.default),
-            1,
-        )
-        self.assertEqual(
-            count_node(gm_after_replacement, exir_ops.edge.aten.transpose_copy.int),
-            # Two transposes are added, one for the input and one for the output.
-            3,
-        )
-        for node in gm_after_replacement.graph.nodes:
-            if node.target != exir_ops.edge.cadence.convolution.default:
-                continue
-            # Check that the channel_last argument is set to True.
-            self.assertEqual(len(node.args), 8, f"{node=}")
-            self.assertTrue(node.args[7])
-
-    def test_conv1d_no_transpose_if_already_channel_last(self) -> None:
-        gm = self.create_conv1d_graphmodule(channels_last=True)
-        gm = ExportPass().call(gm).graph_module
-        self.assertEqual(count_node(gm, exir_ops.edge.cadence.convolution.default), 1)
-
-        # Apply replacement pass.
-        p = ReplaceConvWithChannelLastConvPass()
-        gm_after_replacement = p.call(gm).graph_module
-        # Check that no replacement was made.
-        self.assertEqual(
-            count_node(gm_after_replacement, exir_ops.edge.cadence.convolution.default),
-            1,
-        )
-        self.assertEqual(
-            count_node(gm_after_replacement, exir_ops.edge.aten.transpose_copy.int),
-            0,
-        )
-        for node in gm_after_replacement.graph.nodes:
-            if node.target != exir_ops.edge.cadence.convolution.default:
-                continue
-            # Check that the channel_last argument is set to True.
-            self.assertEqual(len(node.args), 8, f"{node=}")
-            self.assertTrue(node.args[7])
 
     def create_convolution_graph_module(
         self, channels_last: Optional[bool] = None
@@ -1607,61 +1529,9 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             args = args + (channels_last,)
         return single_op_builder(
             placeholders=(x, w, b),
-            op=exir_ops.edge.cadence.convolution.default,
+            op=exir_ops.edge.cadence.conv2d.default,
             args=args,
         )
-
-    def test_convolution_default_channel_last(self) -> None:
-        # Create a graph with a single convolution node.
-        # Check if graph module is valid by running exportpass on it.
-        gm = self.create_convolution_graph_module()
-        gm = ExportPass().call(gm).graph_module
-        self.assertEqual(count_node(gm, exir_ops.edge.cadence.convolution.default), 1)
-        self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
-
-        # Apply replacement pass.
-        p = ReplaceConvWithChannelLastConvPass()
-        gm_after_replacement = p.call(gm).graph_module
-        # Check that no replacement was made.
-        self.assertEqual(
-            count_node(gm_after_replacement, exir_ops.edge.cadence.convolution.default),
-            1,
-        )
-        self.assertEqual(
-            count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
-            # Three permutes are added, two for the input/weights and one for the output.
-            3,
-        )
-        for node in gm_after_replacement.graph.nodes:
-            if node.target != exir_ops.edge.cadence.convolution.default:
-                continue
-            # Check that the channel_last argument is set to True.
-            self.assertEqual(len(node.args), 8, f"{node=}")
-            self.assertTrue(node.args[7])
-
-    def test_no_transpose_if_already_channel_last(self) -> None:
-        gm = self.create_convolution_graph_module(channels_last=True)
-        gm = ExportPass().call(gm).graph_module
-        self.assertEqual(count_node(gm, exir_ops.edge.cadence.convolution.default), 1)
-
-        # Apply replacement pass.
-        p = ReplaceConvWithChannelLastConvPass()
-        gm_after_replacement = p.call(gm).graph_module
-        # Check that no replacement was made.
-        self.assertEqual(
-            count_node(gm_after_replacement, exir_ops.edge.cadence.convolution.default),
-            1,
-        )
-        self.assertEqual(
-            count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
-            0,
-        )
-        for node in gm_after_replacement.graph.nodes:
-            if node.target != exir_ops.edge.cadence.convolution.default:
-                continue
-            # Check that the channel_last argument is set to True.
-            self.assertEqual(len(node.args), 8, f"{node=}")
-            self.assertTrue(node.args[7])
 
     def create_quantized_convolution_graph_module(
         self, channels_last: Optional[bool] = None
