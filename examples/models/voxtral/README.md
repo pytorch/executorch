@@ -122,41 +122,20 @@ python -m executorch.extension.audio.mel_spectrogram \
 
 ### Building for CPU (XNNPack)
 ```
-# Build and install ExecuTorch
-cmake --workflow llm-release
-
 # Build and install Voxtral runner
-cmake -DCMAKE_INSTALL_PREFIX=cmake-out -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -Bcmake-out/examples/models/voxtral examples/models/voxtral && cmake --build cmake-out/examples/models/voxtral -j16 --config Release
+make voxtral-cpu
 ```
 
 ### Building for CUDA
 ```
-# Install ExecuTorch with CUDA support
-./install_executorch.sh
-
-# Build the multimodal runner with CUDA
-cmake --workflow llm-release-cuda
-
-cmake -DEXECUTORCH_BUILD_CUDA=ON \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Sexamples/models/voxtral \
-      -Bcmake-out/examples/models/voxtral/
-cmake --build cmake-out/examples/models/voxtral --target voxtral_runner --config Release
+# Build Voxtral runner with CUDA
+make voxtral-cuda
 ```
 
 ### Building for Metal
 ```
-# Install ExecuTorch with Metal support
-CMAKE_ARGS="-DEXECUTORCH_BUILD_METAL=ON" ./install_executorch.sh
-
-# Build the multimodal runner with Metal
-cmake --workflow llm-release-metal
-
-cmake -DEXECUTORCH_BUILD_METAL=ON \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Sexamples/models/voxtral \
-      -Bcmake-out/examples/models/voxtral/
-cmake --build cmake-out/examples/models/voxtral --target voxtral_runner --config Release
+# Build Voxtral runner with Metal
+make voxtral-metal
 ```
 
 ## Running the model

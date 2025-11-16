@@ -78,18 +78,11 @@ Ensure you have a CUDA-capable GPU and CUDA toolkit installed on your system.
 
 ### Building for CUDA
 ```bash
-# Install ExecuTorch.
-./install_executorch.sh
+# Build the Gemma3 runner with CUDA enabled
+make gemma3-cuda
 
-# Build the multimodal runner with CUDA
-cmake --workflow llm-release-cuda
-
-# Build the Gemma3 runner
-cmake -DEXECUTORCH_BUILD_CUDA=ON \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Sexamples/models/gemma3 \
-      -Bcmake-out/examples/models/gemma3/
-cmake --build cmake-out/examples/models/gemma3 --target gemma3_e2e_runner --config Release
+# Build the Gemma3 runner with CPU enabled
+make gemma3-cpu
 ```
 
 ## Running the model

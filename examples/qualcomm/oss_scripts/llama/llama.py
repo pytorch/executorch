@@ -302,8 +302,8 @@ class SingleLlama:
 
         if args.verbose:
             logging.info("Verifying the QDQ model...")
-            # qdq cpu ppl evaluation is time consuming, only enable when eval_perplexity
-            if args.eval_perplexity:
+            # qdq cpu ppl evaluation is time consuming, only enable when run_lm_eval
+            if args.run_lm_eval:
                 # Check qdq cpu results
                 graph_module_inference(
                     use_kv_cache=self.llama_meta["get_use_kv_cache"],
@@ -892,7 +892,7 @@ def inference(
         else f"{args.artifact}/{pte_filename}.pte"
     )
 
-    if args.eval_perplexity:
+    if args.run_lm_eval:
         # Generate the eval wrapper
         eval_wrapper = QnnRunnerEvalWrapper(
             args=args,
@@ -911,21 +911,41 @@ def inference(
             )
 
         if args.ip and args.port != -1:
-            assert (
-                len(args.tasks) == 1 and args.tasks[0] == "wikitext"
-            ), "CI currently supports wikitext only"
-            wiki_ppl = eval_results["results"][args.tasks[0]]["word_perplexity,none"]
-            pte_size = os.path.getsize(pte_path)
-            with Client((args.ip, args.port)) as conn:
-                conn.send(
-                    json.dumps(
-                        {
-                            "wiki_ppl": wiki_ppl,
-                            "pte_size": pte_size,
-                            "inference_speed": eval_wrapper.inference_speed,
-                        }
+            assert len(args.tasks) == 1, "CI currently supports 1 lm_eval task only."
+            match args.tasks[0]:
+                case "wikitext":
+                    wiki_ppl = eval_results["results"][args.tasks[0]][
+                        "word_perplexity,none"
+                    ]
+                    pte_size = os.path.getsize(pte_path)
+                    with Client((args.ip, args.port)) as conn:
+                        conn.send(
+                            json.dumps(
+                                {
+                                    "wiki_ppl": wiki_ppl,
+                                    "pte_size": pte_size,
+                                    "inference_speed": eval_wrapper.inference_speed,
+                                }
+                            )
+                        )
+                case "hellaswag":
+                    acc_norm = eval_results["results"][args.tasks[0]]["acc_norm,none"]
+                    pte_size = os.path.getsize(pte_path)
+                    with Client((args.ip, args.port)) as conn:
+                        conn.send(
+                            json.dumps(
+                                {
+                                    "acc_norm": acc_norm,
+                                    "pte_size": pte_size,
+                                    "inference_speed": eval_wrapper.inference_speed,
+                                }
+                            )
+                        )
+                case _:
+                    raise RuntimeError(
+                        "CI currently supports [wikitext, hellaswag] only."
                     )
-                )
+
         else:
             for task, res in eval_results["results"].items():
                 logging.info(f"{task}: {res}")
@@ -1053,7 +1073,7 @@ def inference(
 
 def _build_tasks_parser(parser):
     parser.add_argument(
-        "--eval_perplexity",
+        "--run_lm_eval",
         help="If enabled, this will use the tasks provided under args.tasks to calibrate the model",
         action="store_true",
         default=False,
@@ -1140,7 +1160,7 @@ def _build_parser():
 
     parser.add_argument(
         "--system_prompt",
-        help="For Llama3. Tells the model what kind of assistant it should be. For example, You are a helpful AI assistant for travel tips and recommendations. Default is None",
+        help="For Llama3/Granite. Tells the model what kind of assistant it should be. For example, You are a helpful AI assistant for travel tips and recommendations. Default is None",
         default="",
         type=str,
     )
@@ -1234,9 +1254,9 @@ def _build_parser():
 def export_llama(args) -> None:
     if args.compile_only and args.pre_gen_pte:
         raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
-    if args.eval_perplexity and args.model_mode != "kv":
+    if args.run_lm_eval and args.model_mode != "kv":
         raise RuntimeError("Eval device perplexity is only supported for KV mode")
-    if args.eval_perplexity and args.tasks is None:
+    if args.run_lm_eval and args.tasks is None:
         raise RuntimeError("Please provide --tasks to eval perplexity")
     assert (
         args.decoder_model in SUPPORTED_LLM_MODELS
