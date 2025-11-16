@@ -29,6 +29,9 @@ from executorch.examples.models.codegen import (
 
 from executorch.examples.models.gemma import convert_weights as convert_gemma_weights
 from executorch.examples.models.gemma3 import convert_weights as convert_gemma3_weights
+from executorch.examples.models.granite import (
+    convert_weights as convert_granite_weights,
+)
 from executorch.examples.models.phi_4_mini import (
     convert_weights as convert_phi_4_mini_weights,
 )
@@ -364,6 +367,35 @@ class Gemma3(LLMModelConfig):
         BASE_DIR, "../../../models/gemma3/config/1b_config.json"
     )
     convert_weights = convert_gemma3_weights
+    transform_weight = False
+    instruct_model = True
+
+    num_sharding = 1
+    # quant config
+    ptq = QuantDtype.use_16a4w_block
+    group_size = 64
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quantization_config_wv_sha_16a8w = get_ptq_per_channel_quant_config(
+        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
+    )
+    custom_annotation = (
+        annotate_kv_8bit,
+        partial(annotate_wv_sha, quantization_config=quantization_config_wv_sha_16a8w),
+    )
+
+
+@register_llm_model("granite_3_3-2b_instruct")
+@dataclass(init=False, frozen=True)
+class Granite_3_3_2b_Instruct(LLMModelConfig):
+    repo_id: str = "ibm-granite/granite-3.3-2b-instruct"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/granite/config/2b_config.json"
+    )
+    convert_weights = convert_granite_weights
     transform_weight = False
     instruct_model = True
 

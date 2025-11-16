@@ -867,7 +867,7 @@ def graph_module_inference(
                 num_fewshot=num_fewshot,
                 limit=tasks_limit,
             )
-        logging.info(f"Perplexity evaluation summary for {event_name}")
+        logging.info(f"Evaluation summary for {event_name}")
         for task, res in eval_results["results"].items():
             logging.info(f"{task}: {res}")
 

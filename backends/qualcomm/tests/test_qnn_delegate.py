@@ -5933,7 +5933,7 @@ class TestExampleLLMScript(TestQNN):
             "kv",
             "--max_seq_len",
             "1024",
-            "--eval_perplexity",
+            "--run_lm_eval",
             "--tasks",
             "wikitext",
             "--limit",
@@ -6050,6 +6050,73 @@ class TestExampleLLMScript(TestQNN):
                     self.assertLessEqual(pte_size, 1_200_000_000)  # 1200MB
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 60)
+
+    def test_granite_3_3_2b_instruct(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "What is the meaning of life?"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--temperature",
+            "0",
+            "--decoder_model",
+            "granite_3_3-2b_instruct",
+            "--model_mode",
+            "kv",
+            "--max_seq_len",
+            "1024",
+            "--run_lm_eval",
+            "--tasks",
+            "hellaswag",
+            "--limit",
+            "10",
+            "--kv_updater",
+            "shift_pointer",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                inference_speed_ref = {"SM8650": 20, "SM8750": 22}
+                if (
+                    not self.compile_only
+                    and not self.enable_x86_64
+                    and self.model in inference_speed_ref
+                ):
+                    self.assertLessEqual(msg["pte_size"], 1_600_000_000)
+                    self.assertGreaterEqual(msg["acc_norm"], 0.2)
+                    self.assertGreaterEqual(
+                        msg["inference_speed"], inference_speed_ref[self.model]
+                    )
 
     def test_llama_stories_260k(self):
         if not self.required_envs():
