@@ -178,7 +178,7 @@ class CudaBackend(BackendDetails):
             if spec.key == "shim_library_path":
                 shim_library_path = spec.value.decode("utf-8")
 
-        assert platform == "linux"
+        assert platform == "linux" or platform == "windows"
         if platform == "windows" and shim_library_path is None:
             lib_dir = resources.files("executorch").joinpath("data/lib")
             shim_library_path = str(lib_dir)
@@ -219,8 +219,6 @@ class CudaBackend(BackendDetails):
             raise RuntimeError(
                 f"Could not find required files in compiled paths, got {paths}"
             )
-
-        print("--- Generate .so lives at", so_path)
 
         # pyre-ignorep[6]: Incompatible parameter type
         with open(so_path, "rb") as f:
