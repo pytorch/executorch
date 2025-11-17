@@ -276,7 +276,7 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
 
         with open(pte_path, "rb") as f:
             program_data = f.read()
-        program = deserialize_pte_binary(program_data)
+        program = deserialize_pte_binary(program_data).program
 
         # Retrieve vocab_size from get_metadata under static_llama that is passed to edge manager
         self.output_vocab_size = None
