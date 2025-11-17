@@ -49,6 +49,9 @@ class ModelArgs:
     model_architecture: str = (
         "LlamaForCausalLM"  # This setting is currently only supported for the QNN backend
     )
+    attention_multiplier: Optional[float] = (
+        None  # Scaling factor 1/sqrt(d_k) in attention formula
+    )
     norm_eps: float = 1e-5
     post_attention_norm: bool = False
     post_ffn_norm: bool = False
@@ -75,6 +78,9 @@ class ModelArgs:
     # at runtime. Enable it only necessary (e.g., use perplexity tools that requires
     # logits for all input tokens.)
     generate_full_logits: bool = False
+    logits_scaling: Optional[float] = (
+        None  # Scaling factor applied to the logits of model, functioning similarly to a temperature parameter.
+    )
     enable_dynamic_shape: bool = False  # export model with dynamic shape support
     # A dictionary mapping from pruned token-id to original token-id
     input_prune_map: Optional[Dict[int, int]] = None
@@ -85,6 +91,9 @@ class ModelArgs:
     apply_output: bool = True  # Use output layer (unembedding) inside the transformer
     use_qk_norm: bool = False  # apply normalization to q and k in the attention
     qk_norm_before_rope: bool = False  # when to apply qk norm
+    residual_multiplier: Optional[float] = (
+        None  # Scaling factor applied to the residual hidden states
+    )
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
     no_rope_layer_interval: Optional[int] = (
         None  # Interval at which to skip RoPE. From Rope to Nope and Back Again: A New Hybrid Attention Strategy (https://huggingface.co/papers/2501.18795).
