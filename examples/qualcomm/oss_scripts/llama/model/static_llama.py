@@ -81,7 +81,11 @@ class LlamaAttention(nn.Module):
 
         self.attn_softmax = torch.nn.Softmax(dim=-1)
 
-        self.scale = float(self.head_dim) ** 0.5
+        self.scale = (
+            float(self.head_dim) ** 0.5
+            if config.attention_multiplier is None
+            else 1.0 / config.attention_multiplier
+        )
 
         if getattr(config, "enable_r3", False):
             self.register_buffer(
@@ -398,6 +402,7 @@ class LlamaDecoderLayer(nn.Module):
             if config.post_attention_norm
             else None
         )
+        self.residual_multiplier = config.residual_multiplier
         self.post_ffn_norm = (
             torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
             if config.post_ffn_norm
@@ -425,12 +430,20 @@ class LlamaDecoderLayer(nn.Module):
         )
         if self.post_attention_norm:
             h = self.post_attention_norm(h)
-        h = x + h
+        h = (
+            x + h * self.residual_multiplier
+            if self.residual_multiplier is not None
+            else x + h
+        )
         hidden_states = hidden_states if self.ffn_norm is None else self.ffn_norm(h)
         out = self.feed_forward(hidden_states)
         if self.post_ffn_norm:
             out = self.post_ffn_norm(out)
-        output = h + out
+        output = (
+            h + out * self.residual_multiplier
+            if self.residual_multiplier is not None
+            else h + out
+        )
 
         return output, k_cache, v_cache
 
@@ -462,6 +475,7 @@ class LlamaModel(nn.Module):
         self.use_i64_token = use_i64_token
         self.output_cache = output_cache
         self.kv_io_bit_width = config.kv_io_bit_width
+        self.logits_scaling = config.logits_scaling
 
         self.layers = nn.ModuleList(
             [
@@ -548,6 +562,9 @@ class LlamaModel(nn.Module):
 
         hidden_states = self.norm(hidden_states)
         logits = self.output(hidden_states)
+
+        if self.logits_scaling:
+            logits = logits / self.logits_scaling
 
         if self.output_cache:
             return logits, output_k_cache, output_v_cache

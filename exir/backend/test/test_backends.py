@@ -12,6 +12,7 @@ import executorch.exir as exir
 import torch
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import LoweredBackendModule, to_backend
+from executorch.exir.backend.backend_details import BackendDetails
 from executorch.exir.backend.canonical_partitioners.all_node_partitioner import (
     AllNodePartitioner,
 )
@@ -1444,3 +1445,19 @@ class TestBackends(unittest.TestCase):
             self.assertTrue(
                 torch.allclose(model_outputs[0], ref_output, atol=1e-03, rtol=1e-03)
             )
+
+    def test_prohibited_nested_backends(self):
+        class MyBackend(BackendDetails):
+            @staticmethod
+            def preprocess(edge_program, compile_specs):
+                return None
+
+        with self.assertRaises(TypeError) as ctx:
+
+            class MyOtherBackend(MyBackend):
+                pass
+
+        self.assertIn(
+            "'MyBackend'  should be a final backend implementation and should not be subclassed (attempted by 'MyOtherBackend')",
+            str(ctx.exception),
+        )

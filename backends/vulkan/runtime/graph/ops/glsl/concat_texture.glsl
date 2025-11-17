@@ -113,8 +113,6 @@ void main() {
 
   VEC4_T out_texel = imageLoad(t_out, out_pos);
 
-  VEC4_T test_texel = VEC4_T(-1.0);
-
   for (int comp = 0; comp < 4; ++comp) {
     ivec4 out_tidx = out_read_start_tidx;
     out_tidx[out_packed_dim] += comp;
@@ -124,7 +122,6 @@ void main() {
     // of the previous input batch; if so, then don't overwrite this texel
     // element
     if (out_tidx[concat_dim] < concat_offset) {
-      test_texel[comp] = -5.0;
       continue;
     }
 
@@ -164,7 +161,6 @@ void main() {
             inp${i}_packed_dim);
 
         out_texel[comp] = texelFetch(t_inp${i}, in_posi.xyz, 0)[in_posi.w];
-        test_texel[comp] = out_texel[comp];
         continue;
       }
       else {
