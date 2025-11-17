@@ -705,6 +705,10 @@ def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
 
     # Replace constants from constant_segment into constant_buffer.
     if program.constant_segment and len(program.constant_segment.offsets) > 0:
+        if program.constant_segment.segment_index >= len(segments):
+            raise ValueError(
+                f"Constant segment index {program.constant_segment.segment_index} >= num segments {len(segments)}"
+            )
         program.constant_buffer = _restore_constant_segment(
             program.constant_segment, segments[program.constant_segment.segment_index]
         )
@@ -715,10 +719,15 @@ def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
     mutable_data = None
     if program.mutable_data_segments and len(program.mutable_data_segments) > 0:
         if len(program.mutable_data_segments) > 1:
-            raise ValueError("Cant't handle more than 1 mutable data segment.")
+            raise ValueError("Can't handle more than 1 mutable data segment.")
+        segment_index = program.mutable_data_segments[0].segment_index
+        if segment_index >= len(segments):
+            raise ValueError(
+                f"Mutable data segment index {segment_index} >= num segments {len(segments)}"
+            )
         mutable_data = _restore_constant_segment(
             program.mutable_data_segments[0],
-            segments[program.mutable_data_segments[0].segment_index],
+            segments[segment_index],
         )
         program.mutable_data_segments = None
 
@@ -735,7 +744,7 @@ def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
 
 
 def deserialize_pte_binary(program_data: bytes) -> PTEFile:
-    """Returns a Program deserialized from the given runtime binary data."""
+    """Returns a PTEFile deserialized from the given runtime binary data."""
     program_size = len(program_data)
     segment_base_offset = 0
 
