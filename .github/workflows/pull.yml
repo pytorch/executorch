@@ -915,8 +915,8 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
 
-  test-samsung-operations-linux:
-    name: test-samsung-operations-linux
+  test-samsung-quantmodels-linux:
+    name: test-samsung-quantmodels-linux
     # Skip this job if the pull request is from a fork (secrets are not available)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -945,8 +945,11 @@ jobs:
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
         source .ci/scripts/setup-samsung-linux-deps.sh
 
-        # Test ops
-        python -m unittest discover -s backends/samsung/test/ops -p "test_*.py"
+        # Test quant models
+        model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
+        for m_script in $model_scripts; do
+          python -m executorch.examples.samsung.scripts.${m_script} -c e9955 -p A8W8
+        done
 
   test-samsung-models-linux:
     name: test-samsung-models-linux
@@ -977,12 +980,6 @@ jobs:
         # Setup Samsung SDK (AI Lite Core) and install enn backend
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
         source .ci/scripts/setup-samsung-linux-deps.sh
-
-        # Test quant models
-        model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
-        for m_script in $model_scripts; do
-          python -m executorch.examples.samsung.scripts.${m_script} -c e9955 -p A8W8
-        done
 
         # Test models
         python -m unittest discover -s backends/samsung/test/models -p "test_*.py"

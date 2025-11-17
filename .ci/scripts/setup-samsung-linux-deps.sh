@@ -86,7 +86,7 @@ download_ai_lite_core() {
 }
 
 install_devicefarm_cli() {
-  local cli_version="${1:-beta-1.0.6}"
+  local cli_version="${1:-beta-1.0.7}"
   local cli_out="/tmp/devicefarm-cli-v${cli_version}.zip"
   local cli_dir="/tmp/devicefarm_cli"
 
@@ -198,7 +198,7 @@ install_enn_backend() {
 }
 
 litecore_ver="1.0"
-devicefarm_ver="beta-1.0.6"
+devicefarm_ver="beta-1.0.7"
 
 download_ai_lite_core ${litecore_ver}
 install_devicefarm_cli "${devicefarm_ver}"
