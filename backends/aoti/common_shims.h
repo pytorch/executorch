@@ -60,17 +60,14 @@ AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim);
 
 // Utility functions for device and layout information
-
 AOTI_SHIM_EXPORT int32_t aoti_torch_device_type_cpu();
 AOTI_SHIM_EXPORT int32_t aoti_torch_layout_strided();
-AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_float16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_float32();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bfloat16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int8();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int32();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int64();
-AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bool();
 
 // Dtype utility function needed by Metal backend
 AOTI_SHIM_EXPORT size_t aoti_torch_dtype_element_size(int32_t dtype);
