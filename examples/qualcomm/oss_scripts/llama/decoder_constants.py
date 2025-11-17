@@ -16,6 +16,7 @@ DECODER_MODEL_VERSION = {
     "stories110m": "llama2",
     "gemma-2b": "gemma",
     "gemma3-1b": "gemma3",
+    "granite_3_3-2b_instruct": "granite",
     "phi_4_mini": "phi_4_mini",
     "llama3_2-1b_instruct": "llama3",
     "llama3_2-3b_instruct": "llama3",
