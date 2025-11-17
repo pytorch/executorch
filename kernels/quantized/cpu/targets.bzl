@@ -52,6 +52,9 @@ _QUANT_OPS = (
     ),
     op_target(
         name = "op_quantize",
+        deps = [
+            "//executorch/extension/threadpool:threadpool",
+        ],
     ),
 )
 

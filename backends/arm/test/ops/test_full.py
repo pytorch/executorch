@@ -117,7 +117,6 @@ def test_full_like_tosa_INT(test_data: Tuple):
         aten_op=[],
         exir_op=exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 

@@ -17,11 +17,7 @@ runtime.python_library(
 )
 runtime.python_library(
     name = "common",
-    srcs = [
-        "common/__init__.py",
-        "common/debug.py",
-        "common/type.py",
-    ],
+    srcs = glob(["common/*.py"]),
     deps = [
         "fbsource//third-party/tosa_tools:serializer",
         "//caffe2:torch",
