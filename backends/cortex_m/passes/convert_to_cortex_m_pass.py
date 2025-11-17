@@ -139,8 +139,11 @@ class ConvertToCortexMPass(XNNPACKPass):
         if not isinstance(weight_scales, list):
             weight_scales = [weight_scales] * weight.data.shape[0]
 
-        output_scale = node.meta["output_qparams"][0].scale
-        output_zero_point = node.meta["output_qparams"][0].zp
+        output_qparams = node.meta["output_qparams"][0]
+        output_scale = output_qparams.scale
+        output_zero_point = output_qparams.zp
+        output_qmin = output_qparams.qmin
+        output_qmax = output_qparams.qmax
 
         quantized_multipliers = []
         quantized_shifts = []
@@ -177,8 +180,8 @@ class ConvertToCortexMPass(XNNPACKPass):
             output_zero_point,
             torch.tensor(quantized_multipliers, dtype=torch.int32),
             torch.tensor(quantized_shifts, dtype=torch.int32),
-            -128,
-            127,
+            output_qmin,
+            output_qmax,
         )
         return exir_ops.edge.cortex_m.quantized_conv2d.default, new_args
 
