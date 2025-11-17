@@ -23,13 +23,31 @@ from executorch.backends.arm.tosa.mapping import map_dtype, TosaArg
 from torch.fx import Node
 
 
-# TOSA uses the RESCALE operation to scale between values with differing precision.
-# The RESCALE operator is defined using an integer multiply, add, and shift.
-# This utility function is for calculating the multiplier and shift given a scale.
-# Ref: https://www.mlplatform.org/tosa/tosa_spec.html#_precision_scaling
 def _compute_multiplier_and_shift(
     scales: list[float], scaleWidth: int = 32
 ) -> Tuple[list[int], list[int]]:
+    """Derive integer multipliers and shifts from floating-point scales.
+
+    TOSA uses the RESCALE operation to scale between values with differing
+    precision. The RESCALE operator is defined using an integer multiply, add,
+    and shift. This utility function is for calculating the multiplier and shift
+    given a scale.
+    Ref: https://www.mlplatform.org/tosa/tosa_spec.html#_precision_scaling
+
+    Args:
+        scales (list[float]): Scale factors to decompose into multiplier and
+            shift pairs.
+        scaleWidth (int): Bit-width of the multiplier representation; expects
+            ``16`` or ``32``.
+
+    Returns:
+        Tuple[list[int], list[int]]: Parallel lists containing the computed
+            multipliers and right shifts.
+
+    Raises:
+        ValueError: If ``scaleWidth`` is not supported.
+
+    """
     if scaleWidth == 16:
         offset = 15
     elif scaleWidth == 32:
@@ -78,8 +96,6 @@ def _compute_multiplier_and_shift(
     return multipliers, shifts
 
 
-# For TOSA spec v1.0 RESCALE operator requires multiplier, shifts, input_zp and output_zp to be
-# const inputs. Create constant operators from the data already initialized.
 def _create_const_ops_for_rescale(
     tosa_fb,
     scale_32,
@@ -92,6 +108,29 @@ def _create_const_ops_for_rescale(
     output_dtype,
     ts,
 ):
+    """Materialize constant operands required by the TOSA RESCALE op.
+
+    For TOSA spec v1.0 RESCALE operator requires multiplier, shifts, input_zp
+    and output_zp to be const inputs. Create constant operators from the data
+    already initialized.
+
+    Args:
+        tosa_fb (Any): Graph builder used to emit TOSA operators and tensors.
+        scale_32 (bool): Flag indicating whether multipliers use 32-bit width.
+        input_dtype (ts.DType): Data type of the input tensor.
+        node_name (str): Base name reused for created constant tensors.
+        multipliers (list[int]): Precomputed multiplier coefficients.
+        shifts (list[int]): Precomputed shift coefficients.
+        input_zp (list[int]): Quantization zero points for the input.
+        output_zp (list[int]): Quantization zero points for the output.
+        output_dtype (ts.DType): Data type of the output tensor.
+        ts (module): Reference to the ``tosa_serializer`` module.
+
+    Returns:
+        list[str]: Names of the constant tensors added to ``tosa_fb`` in the
+            order expected by RESCALE.
+
+    """
 
     multipliers = tosa_fb.addConst(
         (len(multipliers),),
@@ -124,6 +163,22 @@ def _build_rescale(
     per_channel: bool = False,
     is_scale32: bool = True,
 ):
+    """Insert a TOSA RESCALE operator configured for the quantized path.
+
+    Args:
+        tosa_fb (Any): Graph builder receiving the RESCALE operator.
+        scale (list[float]): Scale factors applied during rescaling.
+        input_node (Any): Input tensor node feeding the operator.
+        output_name (str): Name assigned to the RESCALE output tensor.
+        output_type (ts.DType): Data type of the output tensor.
+        input_zp (list[int]): Quantization zero points for the input tensor.
+        output_zp (list[int]): Quantization zero points for the output tensor.
+        rounding_mode (ts.RoundingMode): Rounding policy for the RESCALE op.
+        per_channel (bool): Whether scales are applied per output channel.
+        is_scale32 (bool): Declared scale width; ignored when the input type is
+            ``ts.DType.INT48``.
+
+    """
     scaleWidth = 16 if input_node.dtype == ts.DType.INT48 else 32
     is_scale32 = False if input_node.dtype == ts.DType.INT48 else True
     multipliers, shifts = _compute_multiplier_and_shift(scale, scaleWidth)
