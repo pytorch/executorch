@@ -98,7 +98,6 @@ def test_arange_start_step_tosa_INT(test_data: test_data_t):
         ArangeAdd.aten_op,
         ArangeAdd.exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -111,7 +110,6 @@ def test_arange_start_step_u55_INT(test_data: test_data_t):
         input_data(),
         ArangeAdd.aten_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -124,7 +122,6 @@ def test_arange_start_step_u85_INT(test_data: test_data_t):
         input_data(),
         ArangeAdd.aten_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
