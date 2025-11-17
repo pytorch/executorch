@@ -69,8 +69,8 @@ list(
 # Link CUDA backend
 if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
-  list(APPEND _link_libraries aoti_cuda)
-  executorch_target_link_options_shared_lib(aoti_cuda)
+  list(APPEND _link_libraries aoti_cuda_backend)
+  executorch_target_link_options_shared_lib(aoti_cuda_backend)
 endif()
 
 if(EXECUTORCH_BUILD_METAL)

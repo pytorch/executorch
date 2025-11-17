@@ -66,6 +66,7 @@ from executorch.backends.arm._passes import (
     DecomposeNotEqualPass,
     DecomposeRemainderPass,
     DecomposeRoundPass,
+    DecomposeScaledDotProductAttention,
     DecomposeSelectPass,
     DecomposeSignPass,
     DecomposeSiluPass,
@@ -82,6 +83,7 @@ from executorch.backends.arm._passes import (
     FuseDuplicateUsersPass,
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
+    FuseViewCopyTransformPass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescaleInt32Pass,
     InsertRescalePass,
@@ -89,6 +91,8 @@ from executorch.backends.arm._passes import (
     MatchArgDtypePass,
     MatchArgRanksPass,
     QuantizeOperatorArguments,
+    RemoveGetItemPass,
+    RemoveGraphAssertsPass,
     RemoveNoopPass,
     ReplaceInfValues,
     ReplaceScalarWithTensorByProfilePass,
@@ -107,14 +111,8 @@ from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
-from executorch.backends.transforms.decompose_sdpa import (
-    DecomposeScaledDotProductAttention,
-)
-from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
-from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
-from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.nn.modules import Module
@@ -192,7 +190,6 @@ class ArmPassManager(PassManager):
 
         # Node transformation passes (post q/dq folding)
 
-        self.add_pass(DecomposeExpm1Pass())
         self.add_pass(DecomposeLogitPass())
         self.add_pass(DecomposeMaskedFill())
         self.add_pass(DecomposeRoundPass())
@@ -211,7 +208,6 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSinhPass())
         self.add_pass(DecomposeSignPass())
         self.add_pass(DecomposeFloorDividePass())
-        self.add_pass(DecomposeDivTensorModePass())
         self.add_pass(DecomposeGeluPass())
         self.add_pass(DecomposeAddSubAlphaPass())
         self.add_pass(DecomposeGroupedConv())
@@ -258,7 +254,7 @@ class ArmPassManager(PassManager):
         self.add_pass(CastToInt32Pass())
         self.add_pass(BroadcastArgsPass())
         self.add_pass(ConvertPermuteSingletonToViewPass())
-        self.add_pass(FuseViewCopyTransform())
+        self.add_pass(FuseViewCopyTransformPass())
         self.add_pass(DecomposeConv2dWithInt16ActivationPass())
         self.add_pass(DecomposeSumPass())
         self.add_pass(InsertTableOpsPass(exported_program))
@@ -295,9 +291,14 @@ class ArmPassManager(PassManager):
             )
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
+        # Preprocessing passes
+
         self.add_pass(
             RemoveGraphAssertsPass()
         )  # ConvertInt64ConstOpsToInt32Pass requires this pass to remove the assertation in Graph
+
+        # Transformation passes (pre scalar -> tensor)
+
         self.add_pass(ConvertInt64ConstOpsToInt32Pass())
         self.add_pass(ConvertInt64OutputOpsToInt32Pass())
         self.add_pass(InsertInt32CastsAfterInt64PlaceholdersPass())
@@ -308,12 +309,18 @@ class ArmPassManager(PassManager):
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSignPass())
         self.add_pass(DecomposeAddmmPass())
-        self.add_pass(ReplaceScalarWithTensorByProfilePass())
         self.add_pass(DecomposeRemainderPass())
         self.add_pass(DecomposeFloorDividePass())
         self.add_pass(DecomposeDivTensorModePass())
-        self.add_pass(DecomposeAddSubAlphaPass())
+
+        # Scalars -> tensors
+
+        self.add_pass(ReplaceScalarWithTensorByProfilePass())
         self.add_pass(ScalarsToAttributePass())
+
+        # Transformation passes (post scalar removal)
+
+        self.add_pass(DecomposeAddSubAlphaPass())
         self.add_pass(DecomposeGroupNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
@@ -327,16 +334,16 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeSiluPass())
         self.add_pass(DecomposeAvgPool2d())
-
         if self.tosa_spec.is_U55_subset:
             # Numerically stable softmax uses amax which is not supported on Ethos-U55
             self.add_pass(DecomposeSoftmaxUnstablePass())
         else:
             self.add_pass(DecomposeSoftmaxPass())
-
         self.add_pass(ConvertMinMaxPass())
-        self.add_pass(ReplaceInfValues())
 
+        # Postprocessing passes
+
+        self.add_pass(ReplaceInfValues())
         if not self.tosa_spec.is_U55_subset:
             # Uses where which is not supported on Ethos-U55
             self.add_pass(DecomposeMaskedFill())
