@@ -589,6 +589,38 @@ def serialize_pte_binary(
     return pte_data
 
 
+def _restore_delegates(program: Program, segments: List[bytes]) -> Program:
+    """Find and replace the Program's references to these segments, inlining
+    the data.
+
+    Args:
+        program: The Program holding non-inlined delegates. Modified in-place.
+        segments: List of bytes containing the delegate data. Not modified.
+
+    Returns: The Program with delegates restored.
+    """
+    for plan_index, plan in enumerate(program.execution_plan):
+        for delegate_index, delegate in enumerate(plan.delegates):
+            if delegate.processed.location == DataLocation.INLINE:
+                continue
+            assert delegate.processed.location == DataLocation.SEGMENT
+            index = delegate.processed.index
+            if index >= len(segments):
+                raise ValueError(
+                    f"Plan {plan_index} delegate {delegate_index} "
+                    + f"segment index {index} >= num segments {len(segments)}"
+                )
+
+            data_index: int = len(program.backend_delegate_data)
+            program.backend_delegate_data.append(
+                BackendDelegateInlineData(data=segments[index])
+            )
+            delegate.processed = BackendDelegateDataReference(
+                location=DataLocation.INLINE, index=data_index
+            )
+    return program
+
+
 def _restore_constant_segment(
     constant_segment: SubsegmentOffsets, segment_data: bytes
 ) -> List[Buffer]:
@@ -596,7 +628,7 @@ def _restore_constant_segment(
 
     Args:
         constant_segment: SubsegmentOffset with the offsets of each tensor.
-        segment_data: byte data containing the tensors and padding.
+        segment_data: byte data containing the tensors and padding. Not modified.
 
     Returns:
         List[Buffer] containing each tensor in a separate object.
@@ -612,6 +644,33 @@ def _restore_constant_segment(
         )
         buffers.append(Buffer(storage=segment_data[start_offset:end_offset]))
     return buffers
+
+
+def _restore_named_data(
+    program: Program,
+    segments: List[bytes],
+) -> NamedDataStoreOutput:
+    """Moves named data from `segments` and `program` into the
+    NamedDataStoreOutput class.
+
+    Args:
+        program: The Program holding named data references. Not modified.
+        segments: The data containing the segments. Not modified.
+    """
+    named_data_store = NamedDataStore()
+    for entry in program.named_data:
+        if entry.segment_index >= len(segments):
+            raise ValueError(
+                "Named data segment index "
+                f"{entry.segment_index} >= num segments {len(segments)}"
+            )
+        named_data_store.add_named_data(
+            key=entry.key,
+            data=segments[entry.segment_index],
+            alignment=1,  # Deserialization does not preserve alignment.
+            tensor_layout=None,  # PTE file currently does not serialize this.
+        )
+    return named_data_store.get_named_data_store_output()
 
 
 def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
@@ -639,27 +698,8 @@ def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
             )
         segments.append(segment_data[segment.offset : segment.offset + segment.size])
 
-    # Find and replace the Program's references to these segments, inlining the
-    # data.
-    for plan_index, plan in enumerate(program.execution_plan):
-        for delegate_index, delegate in enumerate(plan.delegates):
-            if delegate.processed.location == DataLocation.INLINE:
-                continue
-            assert delegate.processed.location == DataLocation.SEGMENT
-            index = delegate.processed.index
-            if index >= len(segments):
-                raise ValueError(
-                    f"Plan {plan_index} delegate {delegate_index} "
-                    + f"segment index {index} >= num segments {len(segments)}"
-                )
-
-            data_index: int = len(program.backend_delegate_data)
-            program.backend_delegate_data.append(
-                BackendDelegateInlineData(data=segments[index])
-            )
-            delegate.processed = BackendDelegateDataReference(
-                location=DataLocation.INLINE, index=data_index
-            )
+    # Restore delegate segments that weren't inlined previously.
+    program = _restore_delegates(program, segments)
 
     # Replace constants from constant_segment into constant_buffer.
     if program.constant_segment and len(program.constant_segment.offsets) > 0:
@@ -683,22 +723,12 @@ def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
     # Extract named data.
     named_data = None
     if program.named_data:
-        named_data_store = NamedDataStore()
-        for entry in program.named_data:
-            if entry.segment_index >= len(segments):
-                raise ValueError(
-                    "Named data segment index "
-                    f"{entry.segment_index} >= num segments {len(segments)}"
-                )
-            named_data_store.add_named_data(
-                key=entry.key,
-                data=segments[entry.segment_index],
-                alignment=1,  # Deserialization does not preserve alignment.
-                tensor_layout=None,  # PTE file currently does not serialize this.
-            )
-        named_data = named_data_store.get_named_data_store_output()
+        named_data = _restore_named_data(program, segments)
+
+    # Clear named_data and segments, which are empty pre-serialization.
     program.named_data = []
     program.segments = []
+
     return PTEFile(program=program, mutable_data=mutable_data, named_data=named_data)
 
 

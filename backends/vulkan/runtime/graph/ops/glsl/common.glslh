@@ -86,4 +86,15 @@ int quantize_and_pack(const vec4 vals, const float inv_scale, const int zp) {
   return pack_into_int32(quantized);
 }
 
+#ifdef DEBUG_MODE
+
+#define printf debugPrintfEXT
+
+void printVec4(vec4 texel) {
+  debugPrintfEXT(
+      "texel: %f, %f, %f, %f\\n", texel.x, texel.y, texel.z, texel.w);
+}
+
+#endif // DEBUG_MODE
+
 #endif // COMMON_GLSLH
