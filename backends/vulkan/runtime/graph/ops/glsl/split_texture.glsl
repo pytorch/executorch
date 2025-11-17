@@ -9,7 +9,6 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
-#define UBO_PARAMS ${UBO_PARAMS}
 
 #define VEC4_T ${texel_load_type(DTYPE, "texture3d")}
 #define T ${texel_load_component_type(DTYPE, "texture3d")}
@@ -24,34 +23,17 @@ layout(std430) buffer;
 #include "common.glslh"
 #include "indexing.glslh"
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, "texture3d")}
-${layout_declare_tensor(B, "r", "t_in", DTYPE, "texture3d")}
+${layout_declare_tensor(B, "w", "t_output", DTYPE, "texture3d")}
+${layout_declare_tensor(B, "r", "t_input", DTYPE, "texture3d")}
 
 ${layout_declare_ubo(B, "TextureMetadata", "outp")}
 ${layout_declare_ubo(B, "TextureMetadata", "inp")}
 
-$if UBO_PARAMS:
-  $if OP_NAME == "slice":
-    ${layout_declare_ubo(B, "int", "start")}
-    ${layout_declare_ubo(B, "int", "step")}
-
-  $if OP_NAME == "select":
-    ${layout_declare_ubo(B, "int", "index")}
-
-layout(push_constant) uniform restrict Block {
-  int selected_dim;
-  $if not UBO_PARAMS:
-    $if OP_NAME == "slice":
-      int start;
-      int step;
-
-    $if OP_NAME == "select":
-      int index;
-};
-
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-#include "${OP_NAME}.glslh"
+layout(constant_id = 3) const int split_dim = 0;
+layout(constant_id = 4) const int split_idx = 0;
+layout(constant_id = 5) const int split_offset = 0;
 
 void main() {
   const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
@@ -61,21 +43,24 @@ void main() {
   }
 
   TensorIndex4D out_tidx = texture_pos_to_tensor4d_idx_simple(outp, out_pos);
+
   VEC4_T out_texel = VEC4_T(0);
 
   int limit = min(
       4, outp.sizes[outp.packed_dim] - out_tidx.data[outp.packed_dim]);
+
+  TensorIndex4D input_tidx = out_tidx;
+  input_tidx.data[split_dim] += split_offset;
+
   for (int comp = 0; comp < limit; comp++) {
-    TensorIndex4D in_tidx = out_tidx_to_in_tidx(out_tidx);
+    TextureElementIndex input_elem_pos = tensor4d_idx_to_texture_element_idx_simple(
+        inp, input_tidx);
 
-    TextureElementIndex in_elem_pos = tensor4d_idx_to_texture_element_idx_simple(
-        inp, in_tidx);
+    VEC4_T input_texel = texelFetch(t_input, input_elem_pos.pos, 0);
+    out_texel[comp] = input_texel[input_elem_pos.comp];
 
-    VEC4_T in_texel = texelFetch(t_in, in_elem_pos.pos, 0);
-    out_texel[comp] = in_texel[in_elem_pos.comp];
-
-    out_tidx.data[outp.packed_dim]++;
+    input_tidx.data[outp.packed_dim]++;
   }
 
-  imageStore(t_out, out_pos, out_texel);
+  imageStore(t_output, out_pos, out_texel);
 }

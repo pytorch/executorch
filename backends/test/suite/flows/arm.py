@@ -78,15 +78,3 @@ ARM_ETHOS_U85_FLOW = _create_arm_flow(
     lambda: common.get_u85_compile_spec(),
     quantize=True,
 )
-ARM_VGF_FP_FLOW = _create_arm_flow(
-    "arm_vgf_fp",
-    lambda: common.get_vgf_compile_spec(tosa_spec="TOSA-1.0+FP"),
-    quantize=False,
-    use_portable_ops=False,
-)
-ARM_VGF_INT_FLOW = _create_arm_flow(
-    "arm_vgf_int",
-    lambda: common.get_vgf_compile_spec(tosa_spec="TOSA-1.0+INT"),
-    quantize=True,
-    use_portable_ops=False,
-)
