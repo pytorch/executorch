@@ -58,8 +58,7 @@ void pad1d(
     for (const auto w : c10::irange(out_width)) {
       size_t in_w_idx = padding_ix(w, in_width, pad_left);
       ET_CHECK(in_w_idx < static_cast<size_t>(in_width));
-      out_data[out_i_base + w] =
-          in_data[in_i_base + in_w_idx];
+      out_data[out_i_base + w] = in_data[in_i_base + in_w_idx];
     }
   }
 }
