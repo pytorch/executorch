@@ -323,6 +323,30 @@ Result<int64_t> TokenGenerator<T>::generate(
       break;
     }
   }
+
+  // Check if generation was truncated due to seq_len limit (no EOS token)
+  if (eos_ids_->count(cur_token) == 0 && pos >= seq_len - 1) {
+    printf("\n");
+    ET_LOG(
+        Info,
+        "Warning: Generation stopped at seq_len limit (%d) without reaching EOS token. Response may be incomplete.",
+        seq_len);
+    if (seq_len >= metadata_.context_len) {
+      ET_LOG(
+          Info,
+          "- seq_len (%d) already equals compiled max_seq_len (%d). Consider recompiling with larger --max_seq_len.",
+          seq_len,
+          metadata_.context_len);
+    } else {
+      ET_LOG(
+          Info,
+          "- seq_len (%d) is less than compiled max_seq_len (%d). Consider increasing --seq_len (up to %d).",
+          seq_len,
+          metadata_.context_len,
+          metadata_.context_len);
+    }
+  }
+
   return pos - start_pos;
 }
 // Explicit instantiations
