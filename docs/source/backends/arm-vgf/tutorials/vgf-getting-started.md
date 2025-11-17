@@ -1,4 +1,4 @@
-# Arm VGF Backend Tutorial
+# Getting Started Tutorial
 
 <!----This will show a grid card on the page----->
 ::::{grid} 2
@@ -29,7 +29,7 @@ If you are already familiar with this delegate, you may want to jump directly to
 * [A commandline compiler for example models](https://github.com/pytorch/executorch/blob/main/examples/arm/aot_arm_compiler.py)
 ```
 
-This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on VGF targets. The tutorial is based on `vgf_minimal_example.ipyb`, provided in Arm&reg;'s example folder.
+This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on VGF targets. The tutorial is based on `vgf_minimal_example.ipyb`, provided in Arm's example folder.
 
 ## Prerequisites
 
@@ -43,16 +43,14 @@ To enable development without a specific development board, we will be using the
 
 First, you will need to install ExecuTorch. Please follow the recommended tutorials if you haven't already, to set up a working ExecuTorch development environment. For the VGF backend it's recommended you [install from source](https://docs.pytorch.org/executorch/stable/using-executorch-building-from-source.html), or from a [nightly](https://download.pytorch.org/whl/nightly/executorch/).
 
-Additionally, you need to install a number of SDK dependencies for generating VGF files. For glslc, prefer installing it via your package manager. If this is not possible, and for other dependencies, there are scripts to automate installation available in the main [ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm/). glscl will then be installed via the Vulkan SDK.
-
-To install VGF dependencies, run
+In addition to this, you need to install a number of SDK dependencies for generating VGF files. Scripts to automate this are available in the main [ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm/). To install VGF dependencies, run
 ```bash
 ./examples/arm/setup.sh --i-agree-to-the-contained-eula --disable-ethos-u-deps --enable-mlsdk-deps
 ```
 This will install:
 - [TOSA Serialization Library](https://www.mlplatform.org/tosa/software.html) for serializing the Exir IR graph into TOSA IR.
 - [ML SDK Model Converter](https://github.com/arm/ai-ml-sdk-model-converter) for converting TOSA flatbuffers to VGF files.
-- [Vulkan API (If needed)](https://www.vulkan.org) Should be set up locally for GPU execution support.
+- [Vulkan API](https://www.vulkan.org) should be set up locally for GPU execution support.
 - [ML Emulation Layer for Vulkan](https://github.com/arm/ai-ml-emulation-layer-for-vulkan) for testing on Vulkan API.
 
 
@@ -67,13 +65,13 @@ As a simple check that your environment is set up correctly, run
 ```bash
 which model-converter
 ```
-Make sure the executable is located where you expect, in the `examples/arm` tree.
+Make sure the executable is located where you expect, in the `examples/arm` tree. 
 
 ## Build
 
 ### Ahead-of-Time (AOT) components
 
-The ExecuTorch Ahead-of-Time (AOT) pipeline takes a PyTorch Model (a `torch.nn.Module`) and produces a `.pte` binary file, which is then typically consumed by the ExecuTorch Runtime. This [document](getting-started-architecture.md) goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.
+The ExecuTorch Ahead-of-Time (AOT) pipeline takes a PyTorch Model (a `torch.nn.Module`) and produces a `.pte` binary file, which is then typically consumed by the ExecuTorch Runtime. This [document](https://github.com/pytorch/executorch/blob/main/docs/source/getting-started-architecture.md) goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.
 
 The example below shows how to quantize a model consisting of a single addition, and export it it through the AOT flow using the VGF backend. For more details, se `examples/arm/vgf_minimal_example.ipynb`.
 
@@ -88,15 +86,15 @@ example_inputs = (torch.ones(1,1,1,1),torch.ones(1,1,1,1))
 
 model = Add()
 model = model.eval()
-exported_program = torch.export.export_for_training(model, example_inputs)
+exported_program = torch.export.export(model, example_inputs)
 graph_module = exported_program.graph_module
 
 
-from executorch.backends.arm.vgf import VgfCompileSpec
 from executorch.backends.arm.quantizer import (
     VgfQuantizer,
     get_symmetric_quantization_config,
 )
+from executorch.backends.arm.vgf import VgfCompileSpec
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 # Create a compilation spec describing the target for configuring the quantizer
@@ -155,7 +153,7 @@ assert os.path.exists(pte_path), "Build failed; no .pte-file found"
 ```{tip}
 For a quick start, you can use the script `examples/arm/aot_arm_compiler.py` to produce the pte.
 To produce a pte file equivalent to the one above, run
-`python -m examples.arm.aot_arm_compiler --model_name=add --delegate --quantize --output=simple_example.pte --target=vgf`
+`python -m examples.arm.aot_arm_compiler --model_name=add --delegate --quantize --output=simple_example.pte --target=vgf` 
 ```
 
 ### Runtime:
@@ -171,7 +169,6 @@ cmake \
   -DCMAKE_BUILD_TYPE=Debug \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-  -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
   -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
   -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
   -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
@@ -208,14 +205,9 @@ In this tutorial you have learned how to use ExecuTorch to export a PyTorch mode
 
 ## FAQs
 
-*glslc is not found when configuring the executor runner*.
-
-The Vulkan sdk is likely not in your path, check whether setup_path.sh contains something like
+Issue: glslc is not found when configuring the executor runner.
+Solution: The Vulkan sdk is likely not in your path, check whether setup_path.sh contains something like
 `export PATH=$(pwd)/examples/arm/ethos-u-scratch/vulkan_sdk/1.4.321.1/x86_64/bin:$PATH`.
 If not, add it and source the file.
 
 If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).
-
-```
-Arm is a registered trademark of Arm Limited (or its subsidiaries or affiliates).
-```

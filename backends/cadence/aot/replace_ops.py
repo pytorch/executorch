@@ -452,14 +452,16 @@ class ReplaceConvolutionOptionalArgsWithConcreteArgsPass(ExportPass):
     def call_operator(self, op, args, kwargs, meta):
         op_packet = get_edge_overload_packet(op)
         if op_packet not in {
-            exir_ops.edge.cadence.convolution,
+            exir_ops.edge.cadence.conv1d,
+            exir_ops.edge.cadence.conv2d,
+            exir_ops.edge.cadence.conv3d,
             exir_ops.edge.cadence.transposed_convolution,
         }:
             return super().call_operator(op, args, kwargs, meta)
 
         is_transposed = op_packet == exir_ops.edge.cadence.transposed_convolution
-        expected_args = 9 if is_transposed else 8
-        assert len(args) == expected_args
+        num_expected_args = 9 if is_transposed else 7
+        assert len(args) == num_expected_args
         # Check if the bias is already concrete
         if args[2] is not None:
             return super().call_operator(op, args, kwargs, meta)
@@ -684,20 +686,28 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
             output_padding,
             groups,
         ) = args
-        # Currently we only handle conversion to conv1d and conv2d, therefore
+        # Currently we only handle conversion to conv1d, conv2d, and conv3d, therefore
         # verify that the stride, padding, dilation, and output_padding have
-        # len <=2.
+        # len <=3.
         assert (
-            len(stride) == len(padding) == len(dilation) == len(output_padding) == 1
-        ) or (
-            len(stride) == len(padding) == len(dilation) == len(output_padding) == 2
-        ), "Can only map convolution to conv1d and conv2d at present"
+            (len(stride) == len(padding) == len(dilation) == len(output_padding) == 1)
+            or (
+                len(stride) == len(padding) == len(dilation) == len(output_padding) == 2
+            )
+            or (
+                len(stride) == len(padding) == len(dilation) == len(output_padding) == 3
+            )
+        ), "Can only map convolution to conv1d, conv2d, and conv3d at present"
 
-        target = (
-            exir_ops.edge.cadence.transposed_convolution.default
-            if transposed
-            else exir_ops.edge.cadence.convolution.default
-        )
+        # Determine if this is 1D, 2D, or 3D convolution based on parameter lengths
+        if transposed:
+            target = exir_ops.edge.cadence.transposed_convolution.default
+        elif len(stride) == 1:
+            target = exir_ops.edge.cadence.conv1d.default
+        elif len(stride) == 2:
+            target = exir_ops.edge.cadence.conv2d.default
+        else:  # len(stride) == 3
+            target = exir_ops.edge.cadence.conv3d.default
 
         if transposed:
             # Flip the height and width dimensions of weight, since we apply a
@@ -756,7 +766,6 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
                 padding,
                 dilation,
                 groups,
-                False,
             )
 
         return super().call_operator(target, new_args, kwargs, meta)
@@ -778,7 +787,9 @@ class ReplaceTrivialConvWithLinear(ExportPass):
     """
 
     trivial_conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
-        exir_ops.edge.cadence.convolution.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.conv1d.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.conv2d.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.conv3d.default: exir_ops.edge.aten.linear.default,
         exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
     }
@@ -795,7 +806,7 @@ class ReplaceTrivialConvWithLinear(ExportPass):
             op == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
             or op == exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
         )
-        assert (len(args) == 8 and not quantized_op) or (
+        assert (len(args) == 7 and not quantized_op) or (
             len(args) >= 12 and quantized_op
         ), "Inconsistent args for convolution"
         (in_tensor, weight, bias, stride, padding, dilation, groups) = args[0:7]
@@ -950,7 +961,9 @@ class ReplaceConvWithChannelLastConvPass(ExportPassWithTransposeHelper):
         meta: NodeMetadata,
     ) -> ProxyValue:
         if op not in {
-            exir_ops.edge.cadence.convolution.default,
+            exir_ops.edge.cadence.conv1d.default,
+            exir_ops.edge.cadence.conv2d.default,
+            exir_ops.edge.cadence.conv3d.default,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
         }:
             return super().call_operator(op, args, kwargs, meta)
@@ -961,11 +974,11 @@ class ReplaceConvWithChannelLastConvPass(ExportPassWithTransposeHelper):
             # Already in NHWC layout.
             return super().call_operator(op, args, kwargs, meta)
 
-        new_op = (
-            exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
-            if quantized_op
-            else exir_ops.edge.cadence.convolution.default
-        )
+        if quantized_op:
+            new_op = exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
+        else:
+            # Determine if 1D or 2D convolution based on op
+            new_op = op
 
         input_proxy = cast(ProxyValue, args[0])
         weight_proxy = cast(ProxyValue, args[1])
@@ -1038,7 +1051,9 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
     # A map from the convolution op to the linear op that it should
     # decompose to.
     conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
-        exir_ops.edge.cadence.convolution.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.conv1d.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.conv2d.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.conv3d.default: exir_ops.edge.aten.linear.default,
         exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
     }
@@ -1052,7 +1067,7 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
             op == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
             or op == exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
         )
-        assert (len(args) == 8 and not quantized_op) or (
+        assert (len(args) == 7 and not quantized_op) or (
             len(args) >= 12 and quantized_op
         ), "Inconsistent args for convolution"
         (in_tensor, weight, bias, stride, padding, dilation, groups) = args[0:7]
