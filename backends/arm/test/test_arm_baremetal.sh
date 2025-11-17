@@ -157,7 +157,6 @@ test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using 
 test_pytest_ops_vkml() { # Same as test_pytest but also sometime verify using VKML runtime
     echo "${TEST_SUITE_NAME}: Run pytest operator tests with VKML runtime"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing_vkml.sh
 
     pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ \

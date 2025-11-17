@@ -317,6 +317,40 @@ jobs:
         # Test test_arm_baremetal.sh with test
         backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
 
+  test-arm-backend-vkml:
+    name: test-arm-backend-vkml
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - test_arm_baremetal: test_pytest_ops_vkml
+      fail-fast: false
+    with:
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps --enable-mlsdk-deps --install-mlsdk-deps-with-pip
+
+        # Increase number of files user can monitor to bypass buck failures.
+        # Hopefully this is high enough for this setup.
+        sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
+
+        ARM_TEST=${{ matrix.test_arm_baremetal }}
+
+        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+
   test-arm-cortex-m-size-test:
     name: test-arm-cortex-m-size-test
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
