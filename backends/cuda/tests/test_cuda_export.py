@@ -270,3 +270,46 @@ class TestCudaExport(unittest.TestCase):
         # Test export
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Conv1d operation export failed")
+
+    def test_sdpa_single_kernel(self):
+        """
+        Test CUDA export for model containing single SDPA kernel.
+
+        SDPA: Scaled Dot Product Attention
+        """
+
+        class SDPAModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, query, key, value):
+                out = torch.nn.functional.scaled_dot_product_attention(
+                    query,
+                    key,
+                    value,
+                    attn_mask=None,
+                    dropout_p=0.0,
+                    is_causal=False,
+                )
+                return out
+
+        module = SDPAModule()
+        module.eval()
+
+        # Create input tensors (batch, num_heads, seq_len, head_dim)
+        batch_size = 2
+        num_heads = 8
+        seq_len = 128
+        head_dim = 64
+
+        query = torch.randn(batch_size, num_heads, seq_len, head_dim)
+        key = torch.randn(batch_size, num_heads, seq_len, head_dim)
+        value = torch.randn(batch_size, num_heads, seq_len, head_dim)
+        inputs = (query, key, value)
+
+        # Test export
+        edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
+        self.assertIsNotNone(
+            edge_program_manager,
+            "SDPA single kernel operation export failed",
+        )

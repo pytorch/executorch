@@ -15,6 +15,7 @@ class Model(str, Enum):
     AddMul = "add_mul"
     Softmax = "softmax"
     Conv1d = "conv1d"
+    Sdpa = "sdpa"
     Dl3 = "dl3"
     Edsr = "edsr"
     EmformerTranscribe = "emformer_transcribe"
@@ -62,6 +63,7 @@ MODEL_NAME_TO_MODEL = {
     str(Model.AddMul): ("toy_model", "AddMulModule"),
     str(Model.Softmax): ("toy_model", "SoftmaxModule"),
     str(Model.Conv1d): ("toy_model", "Conv1dModule"),
+    str(Model.Sdpa): ("toy_model", "SdpaModule"),
     str(Model.Dl3): ("deeplab_v3", "DeepLabV3ResNet50Model"),
     str(Model.Edsr): ("edsr", "EdsrModel"),
     str(Model.EmformerTranscribe): ("emformer_rnnt", "EmformerRnntTranscriberModel"),

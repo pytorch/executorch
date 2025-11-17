@@ -16,6 +16,10 @@ import torch
 from executorch.backends.aoti.passes.replace_view_copy_with_view import (
     ReplaceViewCopyWithViewPass,
 )
+
+from executorch.backends.cuda.triton.replacement_pass import (
+    ReplaceEdgeOpWithTritonOpPass,
+)
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import (
@@ -27,7 +31,7 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch.export.passes import move_to_device_pass
-from torch.nn.attention import SDPBackend
+
 
 cuda_decomposition_table = {
     torch.ops.aten.conv1d.default: conv1d_to_conv2d,
@@ -127,6 +131,9 @@ class CudaBackend(BackendDetails):
         # replace slice_copy.Tensor with slice.Tensor, select_copy.int with select.int
         ReplaceViewCopyWithViewPass()(cuda_edge_program.graph_module)
 
+        # Replace aten ops with triton ops
+        ReplaceEdgeOpWithTritonOpPass()(cuda_edge_program.graph_module)
+
         cuda_edge_program = cuda_edge_program.run_decompositions(
             cuda_decomposition_table
         )
@@ -141,8 +148,9 @@ class CudaBackend(BackendDetails):
                 user_input_placeholders.append(node.meta["val"])
 
         options: dict[str, typing.Any] = {
-            # Frozen weight during inference for better performance and more optimization like kernel fusion
-            "freezing": True,
+            # Disable this to support sdpa decomposition
+            # TODO(gasoonjia): remove it after pin bump to latest pytorch
+            "loop_ordering_after_fusion": False,
             # Better model precision
             "emulate_precision_casts": True,
             # Embed CUDA kernel binaries directly into the compiled shared object

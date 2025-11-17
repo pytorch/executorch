@@ -242,7 +242,6 @@ aoti_torch_clone(Tensor* self, Tensor** ret_new_tensor) {
   return Error::Internal;
 }
 
-
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob(
     void* data_ptr,
     int64_t ndim,
