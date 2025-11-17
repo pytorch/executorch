@@ -84,8 +84,8 @@ dedupe_macos_loader_path_rpaths() {
 
 install_domains() {
   echo "Install torchvision and torchaudio"
-  pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
-  pip install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
+  pip install --no-build-isolation --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  pip install --no-build-isolation --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
 }
 
 install_pytorch_and_domains() {
