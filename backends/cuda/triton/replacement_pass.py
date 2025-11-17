@@ -92,8 +92,6 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
         if node.op != "call_function":
             return False
 
-        print("Checking:", node.target)
-
         return node.target in EDGE_TO_TRITON_KERNELS
 
     def _replace_node_with_triton(self, graph_module: GraphModule, node: Node) -> None:
