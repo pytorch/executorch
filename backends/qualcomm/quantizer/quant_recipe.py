@@ -101,7 +101,7 @@ class QuantizationStrategy(ABC):
         op: OpOverload = node.target
 
         if not self._matches(node):
-            return
+            return None
 
         if self.granularity == QuantGranularity.PER_TENSOR:
             return self.quant_config.quant_config
@@ -121,6 +121,11 @@ class QuantizationStrategy(ABC):
             config = self.quant_config.per_block_quant_config_list[ch_axis]
             config.block_size = self.extra_kwargs["block_size"]
             return config
+        else:
+            raise ValueError(
+                f"Unsupported quantization granularity: {self.granularity}. "
+                f"Supported values: {[granularity.name for granularity in QuantGranularity]}"
+            )
 
 
 class ByNodeTarget(QuantizationStrategy):
@@ -364,12 +369,12 @@ class QuantRecipe:
 
     def summary(self, max_rows: int = -1):
         if not self._pending_annotate_nodes:
-            return
+            return None
 
         headers = [
             "module_stack",
             "op_target",
-            "quatize",
+            "quantize",
             "act_observer",
             "granularity",
             "note",

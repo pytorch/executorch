@@ -72,7 +72,7 @@ class LlamaStories260KQuantRecipe(StaticLLMQuantRecipe):
                 granularity=QuantGranularity.PER_CHANNEL,
             )
             .add_regex(
-                {r"output.conv"},
+                {r"output\.conv"},
                 QuantDtype.use_16a8w,
                 False,
                 act_observer=MinMaxObserver,
@@ -120,7 +120,7 @@ class LlamaStories110MQuantRecipe(StaticLLMQuantRecipe):
                 granularity=QuantGranularity.PER_CHANNEL,
             )
             .add_regex(
-                {r"output.conv"},
+                {r"output\.conv"},
                 QuantDtype.use_16a8w,
                 False,
                 act_observer=MinMaxObserver,
@@ -158,8 +158,8 @@ class Llama3_1BQuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"output.conv",
-                    r"layers.[0-3].feed_forward.w2_conv",
+                    r"output\.conv",
+                    r"layers\.[0-3]\.feed_forward\.w2_conv",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -197,8 +197,8 @@ class Llama3_3BQuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"output.conv",
-                    r"layers.2[1-7].feed_forward.w2_conv",
+                    r"output\.conv",
+                    r"layers\.2[1-7]\.feed_forward\.w2_conv",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -259,7 +259,7 @@ class Gemma_2BQuantRecipe(StaticLLMQuantRecipe):
             .add_regex(
                 {
                     r"layers\..*\.attention\.wv.*",
-                    r"output.conv",
+                    r"output\.conv",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -376,7 +376,7 @@ class Phi4MiniQuantRecipe(StaticLLMQuantRecipe):
                 granularity=QuantGranularity.PER_CHANNEL,
             )
             .add_regex(
-                {r"output.conv"},
+                {r"output\.conv"},
                 QuantDtype.use_16a8w,
                 False,
                 act_observer=MinMaxObserver,
@@ -435,7 +435,7 @@ class Qwen2_5_1_5BQuantRecipe(StaticLLMQuantRecipe):
                 extra_kwargs={"block_size": (1, 16, 1, 1)},
             )
             .add_regex(
-                {r"output.conv"},
+                {r"output\.conv"},
                 QuantDtype.use_16a8w,
                 False,
                 act_observer=MinMaxObserver,
@@ -470,7 +470,7 @@ class Qwen3_0_6BQuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers.*.feed_forward.w2_conv",
+                    r"layers\..*\.feed_forward\.w2_conv",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -506,7 +506,7 @@ class Qwen3_1_7BQuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"output.conv",
+                    r"output\.conv",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -578,7 +578,7 @@ class Smollm3QuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"output.conv",
+                    r"output\.conv",
                 },
                 QuantDtype.use_16a8w,
                 False,
