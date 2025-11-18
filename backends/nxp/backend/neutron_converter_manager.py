@@ -2,6 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 import importlib
 import logging
 import multiprocessing
@@ -75,6 +76,7 @@ class NeutronConverterManager:
         cctx = self.neutron_converter.CompilationContext()
         cctx.targetOpts = self.neutron_converter.getNeutronTarget(target)
         cctx.compilationOpts.minNumOpsPerGraph = 1
+        cctx.compilationOpts.excludeGraphPasses = "MergeTranspose"
 
         logger = multiprocessing.log_to_stderr()
         logger.setLevel(logging.WARNING)

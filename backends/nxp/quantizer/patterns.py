@@ -691,6 +691,15 @@ class PermutePattern(SharedSpecPattern):
         return [torch.ops.aten.permute.default]
 
 
+class TransposeIntPattern(SharedSpecPattern):
+    """
+    Quantizer for Transpose Int operator.
+    """
+
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.transpose.int]
+
+
 class ReluPattern(SingleInputBasicPattern):
     """
     Quantizer for Relu operator.
