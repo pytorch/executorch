@@ -1665,9 +1665,10 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(values[5].val, Double(double_val=float("-inf")))
 
         # Confirm that we can also deserialize the model with infinity in it.
-        pte_data = deserialize_pte_binary(model.buffer)
+        deserialize = deserialize_pte_binary(model.buffer)
         self.assertEqual(
-            pte_data.execution_plan, model.executorch_program.execution_plan
+            deserialize.program.execution_plan,
+            model.executorch_program.execution_plan,
         )
 
     def test_mutate_input_tensor(self) -> None:
