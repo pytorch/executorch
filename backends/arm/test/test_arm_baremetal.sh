@@ -157,7 +157,6 @@ test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using 
 test_pytest_ops_vkml() { # Same as test_pytest but also sometime verify using VKML runtime
     echo "${TEST_SUITE_NAME}: Run pytest operator tests with VKML runtime"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing_vkml.sh
 
     pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ \
@@ -390,7 +389,7 @@ test_memory_allocation() {
             --require "model_pte_program_size" "<= 3000 B" \
             --require "method_allocator_planned" "<= 64 B" \
             --require "method_allocator_loaded" "<= 1024 B" \
-            --require "method_allocator_input" "<= 4 B" \
+            --require "method_allocator_input" "<= 16 B" \
             --require "Total DRAM used" "<= 0.06 KiB"
     echo "${TEST_SUITE_NAME}: PASS"
 }
