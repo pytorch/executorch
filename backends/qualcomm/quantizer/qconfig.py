@@ -136,6 +136,61 @@ def get_8a8w_qnn_ptq_config(
     return quantization_config
 
 
+def get_8a4w_qnn_ptq_config(
+    act_symmetric: bool = True, act_observer=MovingAverageMinMaxObserver
+) -> QuantizationConfig:
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
+
+    if act_symmetric:
+        # If zero_point is 128, htp can do optimizations.
+        # If we keep quant_min and quant_max none, observer will default use 128 as zero_point.
+        # If we provide uint8 quant_min/max, it will use 127 as zero_point, which is undesired.
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.uint8,
+            qscheme=torch.per_tensor_symmetric,
+            ch_axis=0,
+            observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+        )
+    else:
+        # PyTorch will remove redundant observers based on attributes such as:
+        # dtype, quant_min, quant_max, ch_axis, etc.
+        # Providing values like quant_min and quant_max can help observers compare
+        # and further reduce the number of observers.
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.uint8,
+            quant_min=torch.iinfo(torch.uint8).min,
+            quant_max=torch.iinfo(torch.uint8).max,
+            qscheme=torch.per_tensor_affine,
+            observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+        )
+
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=-7,
+        quant_max=7,
+        qscheme=torch.per_tensor_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    bias_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    quantization_config = QuantizationConfig(
+        input_activation=act_quantization_spec,
+        output_activation=act_quantization_spec,
+        weight=weight_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+
+    return quantization_config
+
+
 # 4 bits quantization only supports specific ops.
 def get_16a4w_qnn_ptq_config(
     act_observer=MovingAverageMinMaxObserver,
