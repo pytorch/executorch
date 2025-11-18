@@ -378,7 +378,22 @@ Error Runner<T>::generate_from_prompt_or_file(
   stats_.inference_start_ms = time_in_ms();
 
   int32_t seq_len = config.seq_len;
-  seq_len = (seq_len > 0 && seq_len <= context_len_) ? seq_len : context_len_;
+  if (seq_len > context_len_) {
+    ET_LOG(
+        Info,
+        "Warning: Requested seq_len (%d) exceeds compiled max_seq_len (%d). Clamping to %d.",
+        seq_len,
+        context_len_,
+        context_len_);
+    seq_len = context_len_;
+  } else if (seq_len <= 0) {
+    ET_LOG(
+        Info,
+        "Warning: Invalid seq_len (%d). Using compiled max_seq_len (%d).",
+        seq_len,
+        context_len_);
+    seq_len = context_len_;
+  }
   int32_t n_bos = (cur_pos_ == 0) ? 1 : 0;
 
   // encode the (string) prompt into tokens sequence
