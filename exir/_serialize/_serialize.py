@@ -8,10 +8,10 @@
 
 from typing import Dict, Optional, Set, Tuple
 
-from executorch.exir._serialize import _serialize_pte_binary
-
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+
+from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
 from executorch.exir._serialize.data_serializer import (
     DataEntry,
     DataPayload,
@@ -46,14 +46,16 @@ def serialize_for_executorch(
             pte_data=named_data_store.pte_data,
             external_data={},
         )
-    pte: Cord = _serialize_pte_binary(
-        program=emitter_output.program,
-        mutable_data=emitter_output.mutable_data,
+    pte: Cord = serialize_pte_binary(
+        pte_file=PTEFile(
+            program=emitter_output.program,
+            mutable_data=emitter_output.mutable_data,
+            named_data=pte_named_data,
+        ),
         extract_delegate_segments=config.extract_delegate_segments,
         segment_alignment=config.segment_alignment,
         constant_tensor_alignment=config.constant_tensor_alignment,
         delegate_alignment=config.delegate_alignment,
-        named_data=pte_named_data,
     )
 
     # Serialize PTD files.
