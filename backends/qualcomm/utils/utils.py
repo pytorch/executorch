@@ -1089,6 +1089,7 @@ def generate_qnn_executorch_compiler_spec(
 def get_soc_to_arch_map():
     return {
         "SA8295": HtpArch.V68,
+        "SM8350": HtpArch.V68,
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
         "SM8550": HtpArch.V73,
@@ -1108,6 +1109,7 @@ def get_soc_to_arch_map():
 def get_soc_to_chipset_map():
     return {
         "SA8295": QcomChipset.SA8295,
+        "SM8350": QcomChipset.SM8350,
         "SM8450": QcomChipset.SM8450,
         "SM8475": QcomChipset.SM8475,
         "SM8550": QcomChipset.SM8550,
