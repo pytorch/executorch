@@ -44,6 +44,7 @@ class NeutronCompileSpecBuilder:
         self.output_format = None
         self.operators_not_to_delegate: List[str] = []
         self.neutron_converter_flavor = None
+        self.exclude_optim_graph_passes: List[str] = []
 
     def _replace_colons(self, operator: str) -> str:
         """
@@ -57,6 +58,7 @@ class NeutronCompileSpecBuilder:
         neutron_converter_flavor: str,
         extra_flags: Optional[str] = None,
         operators_not_to_delegate: Optional[List[str]] = None,
+        exclude_optim_graph_passes: Optional[List[str]] = None,
     ):
         """
         Generate compile spec for Neutron NPU
@@ -86,6 +88,9 @@ class NeutronCompileSpecBuilder:
                 self._replace_colons(op) for op in operators_not_to_delegate
             ]
 
+        if exclude_optim_graph_passes is not None:
+            self.exclude_optim_graph_passes = exclude_optim_graph_passes
+
         return self
 
     def build(self):
@@ -104,6 +109,10 @@ class NeutronCompileSpecBuilder:
                     "operators_not_to_delegate",
                     ",".join(self.operators_not_to_delegate).encode(),
                 ),
+                CompileSpec(
+                    "exclude_optim_graph_passes",
+                    ",".join(self.exclude_optim_graph_passes).encode(),
+                )
             ]
 
         return self.compile_spec
@@ -115,6 +124,7 @@ def generate_neutron_compile_spec(
     system_config: Optional[str] = None,
     extra_flags: Optional[str] = None,
     operators_not_to_delegate: Optional[List[str]] = None,
+    exclude_optim_graph_passes: Optional[List[str]] = None,
 ) -> List[CompileSpec]:
     return (
         NeutronCompileSpecBuilder()
@@ -123,6 +133,7 @@ def generate_neutron_compile_spec(
             neutron_converter_flavor,
             extra_flags=extra_flags,
             operators_not_to_delegate=operators_not_to_delegate,
+            exclude_optim_graph_passes = exclude_optim_graph_passes,
         )
         .build()
     )
@@ -145,6 +156,7 @@ class NeutronBackend(BackendDetails):
         binary = bytes()
         target = ""
         neutron_converter_flavor = ""
+        exclude_optim_graph_passes = ""
         for spec in compile_spec:
             if spec.key == "output_format":
                 output_format = spec.value.decode()
@@ -154,6 +166,8 @@ class NeutronBackend(BackendDetails):
                 compile_flags.append(spec.value.decode())
             if spec.key == "neutron_converter_flavor":
                 neutron_converter_flavor = spec.value.decode()
+            if spec.key == "exclude_optim_graph_passes":
+                exclude_optim_graph_passes = spec.value.decode()
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -185,7 +199,7 @@ class NeutronBackend(BackendDetails):
                 neutron_target_spec=NeutronTargetSpec(target, neutron_converter_flavor),
             )
 
-            neutron_model = NeutronConverterManager(neutron_converter_flavor).convert(
+            neutron_model = NeutronConverterManager(neutron_converter_flavor, exclude_optim_graph_passes).convert(
                 tflite_model, target
             )
 
