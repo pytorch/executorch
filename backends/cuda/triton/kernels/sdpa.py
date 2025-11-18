@@ -72,6 +72,8 @@ def _validate_qkv_shapes(
         triton.Config({"BLOCK_M": 64, "BLOCK_N": 128}, num_stages=4, num_warps=4),
         triton.Config({"BLOCK_M": 128, "BLOCK_N": 64}, num_stages=3, num_warps=4),
         triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_stages=3, num_warps=4),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}, num_stages=1, num_warps=2),
+        triton.Config({"BLOCK_M": 32, "BLOCK_N": 64}, num_stages=1, num_warps=2),
     ],
     key=["L_Q", "L_KV", "HEAD_DIM"],
 )
@@ -348,8 +350,8 @@ def _sdpa_abstract(
     attn_mask: Optional[torch.Tensor] = None,
     dropout_p: float = 0.0,
     is_causal: bool = False,
-    scale=None,
-    enable_gqa=False,
+    scale: float = 0.0,
+    enable_gq: bool = False,
 ) -> torch.Tensor:
     """
     Abstract/fake implementation for torch.export.

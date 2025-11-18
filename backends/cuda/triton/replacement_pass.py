@@ -31,10 +31,9 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
     """
     Pass to replace ATen operators with Triton kernels.
 
-    This pass scans the graph for ATen operators that have registered Triton
-    replacements and replaces them with the optimized Triton implementations.
-
-    It automatically imports EDGE_TO_TRITON_KERNELS from cuda_backend.py.
+    This pass scans the graph for Edge operators that have registered Triton
+    replacements using EDGE_TO_TRITON_KERNELS and replaces them with the
+    optimized Triton implementations.
     """
 
     def __init__(self):
@@ -73,7 +72,7 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
             # Recompile the graph module after modifications
             graph_module.recompile()
 
-        print(f"Replaced {self._replacement_count} nodes with Triton kernels")
+        logger.info(f"Replaced {self._replacement_count} nodes with Triton kernels")
 
         return PassResult(graph_module, modified)
 
@@ -83,7 +82,6 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
 
         Args:
             node: The node to check
-            EDGE_TO_TRITON_KERNELS: Mapping from edge ops to Triton kernels
 
         Returns:
             True if the node should be replaced
@@ -101,7 +99,6 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
         Args:
             graph_module: The graph module containing the node
             node: The node to replace
-            EDGE_TO_TRITON_KERNELS: Mapping from edge ops to Triton kernels
         """
         # Get the target operator (should be an exir_ops edge dialect op)
         target = node.target
