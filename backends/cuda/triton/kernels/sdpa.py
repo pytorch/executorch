@@ -5,10 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Optimized Triton SDPA Kernel for ExecuTorch CUDA Backend.
+Triton SDPA Kernel for ExecuTorch CUDA Backend.
 
 This module provides a Triton-optimized implementation of scaled dot-product attention
-that can replace the default ATen SDPA operator during graph transformation.
+that can replace the default ATen/Edge SDPA operator during graph transformation to allow
+us export the model without decomposing the SDPA operator under libtorch free environment
+and have better performance.
 """
 
 import math
@@ -221,22 +223,17 @@ def sdpa(
     """
     Triton fused Scaled Dot-Product Attention with support for different sequence lengths.
 
-    Supports different sequence lengths for query and key/value:
-    - Query: [B, H, L_q, D]
-    - Key: [B, H, L_kv, D]
-    - Value: [B, H, L_kv, D]
-    - Output: [B, H, L_q, D] (matches query shape)
     Args:
-        query: Query tensor [B, H, L_q, D]
-        key: Key tensor [B, H, L_kv, D]
-        value: Value tensor [B, H, L_kv, D]
-        attn_mask: Optional attention mask [B, H, L_q, L_kv] or broadcastable shape
-        dropout_p: must be 0.0 (not supported)
+        query: Query tensor with szie [B, H, L_q, D] and dtype torch.bfloat16
+        key: Key tensor [B, H, L_kv, D] and dtype torch.bfloat16
+        value: Value tensor [B, H, L_kv, D] and dtype torch.bfloat16
+        attn_mask: Optional attention mask [B, H, L_q, L_kv] or broadcastable shape (2D: [L_q, L_kv] or 3D: [B, L_q, L_kv])
+        dropout_p: must be 0.0 (others are not supported)
         is_causal: whether to apply causal masking
-        scale: attention scale (default: 1/sqrt(d))
-        enable_gqa: must be False (not supported)
+        scale: attention scale (default: 1/sqrt(D))
+        enable_gqa: must be False (True is not supported)
     Returns:
-        Output tensor [B, H, L_q, D]
+        Output tensor [B, H, L_q, D] with dtype torch.bfloat16
     """
     # Validate inputs
     if not (query.is_cuda and key.is_cuda and value.is_cuda):
