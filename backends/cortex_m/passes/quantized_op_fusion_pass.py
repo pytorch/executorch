@@ -71,7 +71,7 @@ class QuantizedOpFusionPass(ExportPass):
 
         return exir_ops.edge.cortex_m.quantized_add.default, args
 
-    def _get_mul_replacement(self, args, meta) -> int:
+    def _get_mul_replacement(self, args, meta):
         if (
             meta.data.get("input_qparams", {}) == {}
             or meta.data.get("output_qparams", {}) == {}
@@ -101,7 +101,7 @@ class QuantizedOpFusionPass(ExportPass):
 
         return exir_ops.edge.cortex_m.quantized_mul.default, args
 
-    def _get_permute_replacement(self, args, meta) -> int:
+    def _get_permute_replacement(self, args, meta):
         if args[0].data.dtype != torch.int8:
             return exir_ops.edge.aten.permute_copy.default, args
 

@@ -68,7 +68,7 @@ test_cases = {
         (ramp_tensor(10, 100, (2, 3, 4, 2)),),
     ),
     "permute_rank_1": McuTestCase(
-        CortexMPermute((0)),
+        CortexMPermute((0,)),
         (ramp_tensor(10, 100, (3)),),
     ),
     "transpose_1_2": McuTestCase(
