@@ -53,8 +53,9 @@ def test_mean_dim_conv_quant_conversion(mocker, input_shape, dim, keepdim=True):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    ep = to_quantized_edge_program(model, input_shape).exported_program()
-
+    ep = to_quantized_edge_program(
+        model, input_shape, use_neutron_for_format_conversion=False
+    ).exported_program()
     # Make sure the `mean.dim` was delegated.
     assert not graph_contains_any_of_ops(ep.graph, [exir_ops.edge.aten.mean.dim])
     assert any("lowered_module" in n.name for n in ep.graph.nodes)
@@ -143,7 +144,9 @@ def test_mean_dim_conv_unsupported_quant_conversion(mocker, input_shape, dim, ke
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_neutron_for_format_conversion=False
+    ).exported_program()
     nodes = list(edge_program.graph.nodes)
 
     # Last 2 dimensions are not used or keepdim is False, cannot be converted to MeanDim, node is not delegated
