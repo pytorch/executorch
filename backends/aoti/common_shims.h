@@ -94,9 +94,6 @@ aoti_torch_clone_preserve_strides(Tensor* self, Tensor** ret_new_tensor);
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_clone(Tensor* self, Tensor** ret_new_tensor);
 
-AOTI_SHIM_EXPORT AOTITorchError
-aoti_torch_new_tensor_handle(Tensor* orig_handle, Tensor** new_handle);
-
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob(
     void* data_ptr,
     int64_t ndim,
