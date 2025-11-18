@@ -38,6 +38,9 @@ target_compile_options(
   PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
          $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
 )
+target_compile_definitions(
+  aoti_common PRIVATE $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
+)
 # Ensure symbols are exported properly
 if(APPLE)
   target_link_options(aoti_common PUBLIC -Wl,-export_dynamic)

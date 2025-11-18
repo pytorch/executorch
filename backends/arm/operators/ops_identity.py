@@ -41,7 +41,7 @@ def identity_operator_factory(identity_target: str):
             output: TosaArg,
         ) -> None:
             validate_num_inputs(self.target, inputs, 1)
-            validate_same_dtype(self.target, [*inputs, output], ts)
+            validate_same_dtype(self.target, [inputs[0], output], ts)
 
             # Simply add an identityOp
             attr = ts.TosaSerializerAttribute()
@@ -58,5 +58,4 @@ def identity_operator_factory(identity_target: str):
     register_node_visitor(IdentityOperatorVisitor)
 
 
-identity_operator_factory("getitem")
 identity_operator_factory("aten.alias_copy.default")

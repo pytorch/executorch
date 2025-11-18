@@ -4,7 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from executorch.backends.arm._passes import ScalarsToAttributePass
+from executorch.backends.arm._passes import (
+    FoldAndAnnotateQParamsPass,
+    ScalarsToAttributePass,
+)
 from executorch.backends.cortex_m.passes import (
     QuantizedLinearFusionPass,
     QuantizedOpFusionPass,
@@ -20,6 +23,7 @@ from executorch.exir.pass_base import ExportPass
 class CortexMPassManager(XNNPACKPassManager):
 
     pass_list: list[ExportPass] = [
+        FoldAndAnnotateQParamsPass,
         ReplaceScalarWithTensorArgPass,
         ReplaceQuantNodesPass,
         QuantizedOpFusionPass,
