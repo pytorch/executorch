@@ -26,7 +26,7 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.backends.nxp.quantizer.utils import post_training_quantize
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -110,7 +110,7 @@ def to_quantized_edge_program(
 
     exir_program_aten = torch.export.export(model, example_input, strict=True)
 
-    exir_program_aten__module_quant = post_training_quantize(
+    exir_program_aten__module_quant = calibrate_and_quantize(
         exir_program_aten,
         calibration_inputs,
         get_quantizer_fn(),

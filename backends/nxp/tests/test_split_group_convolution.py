@@ -18,7 +18,7 @@ from executorch.backends.nxp.aten_passes.split_group_convolution import (
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.backends.nxp.quantizer.utils import post_training_quantize
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_random_calibration_inputs,
     neutron_target_spec,
@@ -42,7 +42,7 @@ def _quantize_and_lower_module(
 ) -> EdgeProgramManager:
     calibration_inputs = get_random_calibration_inputs(to_model_input_spec(input_shape))
 
-    exir_program_aten__module_quant = post_training_quantize(
+    exir_program_aten__module_quant = calibrate_and_quantize(
         module,
         calibration_inputs,
         NeutronQuantizer(neutron_target_spec),

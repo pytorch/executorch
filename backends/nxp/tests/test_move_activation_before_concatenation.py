@@ -19,7 +19,7 @@ from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.backends.nxp.quantizer.utils import post_training_quantize
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_random_calibration_inputs,
     neutron_target_spec,
@@ -248,7 +248,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         neutron_aten_pass_manager = NeutronAtenPassManager(neutron_target_spec)
         neutron_aten_pass_manager(exir_program_aten)  # All passes by default.
 
-        exir_program_aten_quant = post_training_quantize(
+        exir_program_aten_quant = calibrate_and_quantize(
             exir_program_aten,
             calibration_inputs,
             NeutronQuantizer(neutron_target_spec),
@@ -356,7 +356,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         neutron_aten_pass_manager = NeutronAtenPassManager(neutron_target_spec)
         neutron_aten_pass_manager(exir_program_aten)  # All passes by default.
 
-        exir_program_aten_quant = post_training_quantize(
+        exir_program_aten_quant = calibrate_and_quantize(
             exir_program_aten,
             calibration_inputs,
             NeutronQuantizer(neutron_target_spec),
@@ -464,7 +464,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         neutron_aten_pass_manager = NeutronAtenPassManager(neutron_target_spec)
         neutron_aten_pass_manager(exir_program_aten)  # All passes by default.
 
-        exir_program_aten_quant = post_training_quantize(
+        exir_program_aten_quant = calibrate_and_quantize(
             exir_program_aten,
             calibration_inputs,
             NeutronQuantizer(neutron_target_spec),
@@ -572,7 +572,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         neutron_aten_pass_manager = NeutronAtenPassManager(neutron_target_spec)
         neutron_aten_pass_manager(exir_program_aten)  # All passes by default.
 
-        exir_program_aten_quant = post_training_quantize(
+        exir_program_aten_quant = calibrate_and_quantize(
             exir_program_aten,
             calibration_inputs,
             NeutronQuantizer(neutron_target_spec),
@@ -814,7 +814,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             with kgb.spy_on(
-                post_training_quantize, call_original=True
+                calibrate_and_quantize, call_original=True
             ) as quantizer_spy:
                 input_shape = (1, 8, 8, 8)
                 model = ConvActivationConcatModule(
@@ -895,7 +895,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             with kgb.spy_on(
-                post_training_quantize, call_original=True
+                calibrate_and_quantize, call_original=True
             ) as quantizer_spy:
                 input_shape = (1, 8)
                 model = LinearActivationConcatModule(
