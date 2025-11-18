@@ -112,7 +112,7 @@ class NeutronCompileSpecBuilder:
                 CompileSpec(
                     "exclude_optim_graph_passes",
                     ",".join(self.exclude_optim_graph_passes).encode(),
-                )
+                ),
             ]
 
         return self.compile_spec
@@ -133,7 +133,7 @@ def generate_neutron_compile_spec(
             neutron_converter_flavor,
             extra_flags=extra_flags,
             operators_not_to_delegate=operators_not_to_delegate,
-            exclude_optim_graph_passes = exclude_optim_graph_passes,
+            exclude_optim_graph_passes=exclude_optim_graph_passes,
         )
         .build()
     )
@@ -199,9 +199,9 @@ class NeutronBackend(BackendDetails):
                 neutron_target_spec=NeutronTargetSpec(target, neutron_converter_flavor),
             )
 
-            neutron_model = NeutronConverterManager(neutron_converter_flavor, exclude_optim_graph_passes).convert(
-                tflite_model, target
-            )
+            neutron_model = NeutronConverterManager(
+                neutron_converter_flavor, exclude_optim_graph_passes
+            ).convert(tflite_model, target)
 
             # Dump the tflite file if logging level is enabled
             if logging.root.isEnabledFor(logging.DEBUG):

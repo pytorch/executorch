@@ -25,7 +25,11 @@ class NeutronConverterManager:
     contains NeutronGraph nodes.
     """
 
-    def __init__(self, neutron_converter_flavor: str = "SDK_25_09", exclude_optim_graph_passes: str = ""):
+    def __init__(
+        self,
+        neutron_converter_flavor: str = "SDK_25_09",
+        exclude_optim_graph_passes: str = "",
+    ):
 
         neutron_converter_modules = [
             module.name
@@ -53,7 +57,9 @@ class NeutronConverterManager:
             f"{requested_module_name}.neutron_library_utils"
         )
 
-        self.exclude_optim_graph_passes = "" if exclude_optim_graph_passes is None else exclude_optim_graph_passes
+        self.exclude_optim_graph_passes = (
+            "" if exclude_optim_graph_passes is None else exclude_optim_graph_passes
+        )
 
     def get_converter(self):
         return self.neutron_converter

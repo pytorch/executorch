@@ -673,7 +673,7 @@ class ViewPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.view.default]
-    
+
 
 class SliceTensorPattern(SharedSpecPattern):
     """
@@ -682,7 +682,7 @@ class SliceTensorPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.slice.Tensor]
-    
+
 
 class SliceCopyTensorPattern(SharedSpecPattern):
     """

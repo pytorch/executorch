@@ -170,7 +170,7 @@ class LinearModule(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
-    
+
 
 class SliceTensorModule(torch.nn.Module):
     def __init__(self, dims, starts, ends):
@@ -178,7 +178,7 @@ class SliceTensorModule(torch.nn.Module):
         self.dims = dims
         self.starts = starts
         self.ends = ends
-        
+
     def do_slice(self, x):
         slices = [slice(None)] * x.dim()
         for i, dim in enumerate(self.dims):
@@ -198,7 +198,7 @@ class SliceTensorConvModule(torch.nn.Module):
         self.dims = dims
         self.starts = starts
         self.ends = ends
-        
+
     def do_slice(self, x):
         slices = [slice(None)] * x.dim()
         for i, dim in enumerate(self.dims):
