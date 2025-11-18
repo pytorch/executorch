@@ -58,6 +58,7 @@ from executorch.exir.program._program import (
     EdgeProgramManager,
     to_edge_transform_and_lower,
 )
+from tabulate import tabulate
 from torch._decomp import core_aten_decompositions, remove_decompositions
 from torch.export.exported_program import ExportedProgram
 from torch.fx import passes
@@ -1122,6 +1123,35 @@ def get_soc_to_chipset_map():
         "QCS9100": QcomChipset.QCS9100,
         "SAR2230P": QcomChipset.SAR2230P,
     }
+
+
+def show_nn_module_stack_for_quant_recipe(gm: torch.fx.GraphModule, supported_ops):
+    """
+    Print a quick preview of op targets and module stack.
+
+    Use this to inspect the FX graph and identify module stack, which helps you craft regex or op-target for quantization recipe.
+
+    """
+
+    module_metadata = {}
+    for node in gm.graph.nodes:
+        target = node.target
+        deepest_module = None
+        if node.op == "call_function" and "nn_module_stack" in node.meta:
+            deepest_module = list(node.meta["nn_module_stack"].values())[-1][0]
+        if node.target in supported_ops:
+            module_metadata.setdefault((target, deepest_module), []).append(node)
+
+    table_rows = []
+    for (target, module_stack), nodes in module_metadata.items():
+        node_names = ", ".join([node.name for node in nodes])
+        table_rows.append([str(target), module_stack, node_names])
+
+    print(
+        tabulate(
+            table_rows, headers=["Op Target", "Module Stack", "Nodes"], tablefmt="grid"
+        )
+    )
 
 
 def tag_quant_io(gm: torch.fx.GraphModule, get_quant_io_dtype_fn: Callable):
