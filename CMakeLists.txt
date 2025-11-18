@@ -801,6 +801,9 @@ if(EXECUTORCH_BUILD_PYBIND)
       torch
   )
 
+  # RPATH for _portable_lib.so
+  set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
+
   if(EXECUTORCH_BUILD_EXTENSION_MODULE)
     # Always use static linking for pybindings to avoid runtime symbol
     # resolution issues
@@ -835,6 +838,7 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_QNN)
     list(APPEND _dep_libs qnn_executorch_backend)
+    string(APPEND _portable_lib_rpath ":$ORIGIN/../../backends/qualcomm")
   endif()
 
   if(EXECUTORCH_BUILD_ENN)
@@ -886,10 +890,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
-  # Set RPATH to find PyTorch libraries relative to the installation location
-  # This goes from executorch/extension/pybindings up to site-packages, then to
-  # torch/lib. Don't do this to APPLE, as it will error out on the following
-  # error:
+  # Set RPATH to find PyTorch and backend libraries relative to the installation
+  # location. This goes from executorch/extension/pybindings up to
+  # site-packages, then to torch/lib. If QNN is enabled, also add
+  # backends/qualcomm/. Don't do this to APPLE, as it will error out on the
+  # following error:
   #
   if(APPLE)
     # Skip setting @loader_path for APPLE, since it causes error like ld:
@@ -897,8 +902,8 @@ if(EXECUTORCH_BUILD_PYBIND)
     # libtorch_cpu.dylib'
   else()
     set_target_properties(
-      portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"
-                              INSTALL_RPATH "$ORIGIN/../../../torch/lib"
+      portable_lib PROPERTIES BUILD_RPATH "${_portable_lib_rpath}"
+                              INSTALL_RPATH "${_portable_lib_rpath}"
     )
   endif()
 

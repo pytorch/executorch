@@ -1,4 +1,4 @@
-# Add these imports for additional logging
+import argparse
 import ctypes
 import logging
 import os
@@ -592,3 +592,46 @@ def install_qnn_sdk() -> bool:
 
     # libc++ and QNN SDK setup
     return _ensure_libcxx_stack() and _ensure_qnn_sdk_lib()
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Helper utility for Qualcomm SDK staging."
+    )
+    parser.add_argument(
+        "--dst-folder",
+        type=pathlib.Path,
+        default=SDK_DIR,
+        help="Destination directory for the Qualcomm SDK.",
+    )
+    parser.add_argument(
+        "--print-sdk-path",
+        action="store_true",
+        help="Print the resolved Qualcomm SDK path to stdout.",
+    )
+    parser.add_argument(
+        "--install-sdk",
+        action="store_true",
+        help="Ensure the SDK and runtime libraries are staged and loaded.",
+    )
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(level=logging.INFO)
+
+    sdk_path: Optional[pathlib.Path]
+    if args.install_sdk:
+        if not install_qnn_sdk():
+            return 1
+        sdk_path = pathlib.Path(os.environ.get("QNN_SDK_ROOT", args.dst_folder))
+    else:
+        sdk_path = _download_qnn_sdk(dst_folder=args.dst_folder)
+        if sdk_path is None:
+            return 1
+
+    if args.print_sdk_path and sdk_path is not None:
+        print(sdk_path)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
