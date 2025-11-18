@@ -503,11 +503,12 @@ class TOSAQuantizer(Quantizer):
         is_qat: bool = False,
     ):
         """Quantizes a GraphModule in a way such that conditional submodules are handled properly.
+
         Args:
             model: GraphModule, the model to quantize.
-        calibration_samples: list[tuple], a list of inputs to used to calibrate the model during quantization.
+            calibration_samples: list[tuple], a list of inputs to used to calibrate the model during quantization.
             To properly calibrate a model with submodules, at least one sample per code path is needed.
-        is_qat: bool, whether to do quantization aware training or not.
+            is_qat: bool, whether to do quantization aware training or not.
         """
         prepare_fn = prepare_qat_pt2e if is_qat else prepare_pt2e
 

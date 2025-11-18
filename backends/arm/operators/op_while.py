@@ -60,8 +60,8 @@ class WhileLoopVisitor(NodeVisitor):
 
         if len(input_names) != len(output.multiple_output_names):
             raise ValueError(
-                f"TOSA specifies that the number of inputs,{input_names}, need to be the"
-                "same as the number of outputs, {output.multiple_output_names}."
+                f"TOSA specifies that the number of inputs, {input_names}, need to be the "
+                f"same as the number of outputs, {output.multiple_output_names}."
             )
 
         self._serialize_operator(

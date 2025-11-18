@@ -26,9 +26,7 @@ class WhileTwoInputsTwoOutputs(torch.nn.Module):
     def forward(
         self, lhs: torch.Tensor, rhs: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        def cond_fn(
-            lhs_val: torch.Tensor, rhs_val: torch.Tensor
-        ) -> Tuple[torch.Tensor]:
+        def cond_fn(lhs_val: torch.Tensor, rhs_val: torch.Tensor) -> torch.Tensor:
             total = torch.sum(rhs_val)
             zero = torch.zeros_like(total)
             return torch.gt(total, zero).squeeze()
@@ -46,7 +44,7 @@ class WhileTwoInputsTwoOutputs(torch.nn.Module):
             (lhs, rhs),
             (),
         )
-        return result
+        return result  # type: ignore
 
 
 class WhileOneInputOneBufferTwoOutputs(torch.nn.Module):
@@ -59,7 +57,9 @@ class WhileOneInputOneBufferTwoOutputs(torch.nn.Module):
             total = value.sum()
             return torch.lt(total, limit).squeeze()
 
-        def body_fn(value: torch.Tensor, limit: torch.Tensor) -> Tuple[torch.Tensor]:
+        def body_fn(
+            value: torch.Tensor, limit: torch.Tensor
+        ) -> Tuple[torch.Tensor, torch.Tensor]:
             return (torch.add(value, value), limit.clone())
 
         result = torch.ops.higher_order.while_loop(
@@ -68,7 +68,7 @@ class WhileOneInputOneBufferTwoOutputs(torch.nn.Module):
             (value, self.threshold),
             (),
         )
-        return result
+        return result  # type: ignore
 
 
 class WhileAdditionalArg(torch.nn.Module):
@@ -81,7 +81,7 @@ class WhileAdditionalArg(torch.nn.Module):
             total = value.sum()
             return torch.lt(total, limit).squeeze()
 
-        def body_fn(value: torch.Tensor, limit: torch.Tensor) -> Tuple[torch.Tensor]:
+        def body_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
             return torch.add(value, value)
 
         result = torch.ops.higher_order.while_loop(
@@ -90,7 +90,7 @@ class WhileAdditionalArg(torch.nn.Module):
             (value,),
             (self.threshold,),
         )
-        return result
+        return result  # type: ignore
 
 
 class WhileSingleCapturedOutput(torch.nn.Module):
@@ -103,7 +103,9 @@ class WhileSingleCapturedOutput(torch.nn.Module):
             total = value.sum()
             return torch.lt(total, limit).squeeze()
 
-        def body_fn(value: torch.Tensor, limit: torch.Tensor) -> Tuple[torch.Tensor]:
+        def body_fn(
+            value: torch.Tensor, limit: torch.Tensor
+        ) -> Tuple[torch.Tensor, torch.Tensor]:
             return (torch.add(value, value), limit.clone())
 
         result = torch.ops.higher_order.while_loop(
@@ -112,7 +114,7 @@ class WhileSingleCapturedOutput(torch.nn.Module):
             (value, self.threshold),
             (),
         )
-        return result[0]
+        return result[0]  # type: ignore
 
 
 def _single_input_case(

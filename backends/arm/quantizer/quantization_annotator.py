@@ -724,7 +724,13 @@ def get_quant_properties(  # noqa: C901
                 (cast(list[Node], submodule_args)[0], node)
             )
             quant_properties.quant_inputs = [
-                _QuantProperty(submodule_args_pos, [input_act_qspec, *([shared_qspec] * (len(submodule_args) - 1))])  # type: ignore[arg-type]
+                _QuantProperty(
+                    submodule_args_pos,
+                    [
+                        input_act_qspec,
+                        *([shared_qspec] * (len(submodule_args) - 1)),  # type: ignore[arg-type]
+                    ],
+                )
             ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     else:

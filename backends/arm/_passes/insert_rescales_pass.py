@@ -471,7 +471,7 @@ class InsertControlFlowRescalesPass(ArmPass):
 
         The dq->q qparam pair we want to convert to a rescale is:
         (input qparam of output_node, output qparam of getitem)
-        And the rescale is inserted between op and output. Note that the output qparam of op is qalled input_qargs,
+        And the rescale is inserted between op and output. Note that the output qparam of op is called input_qargs,
         since the it is the input to the dq-q pair.
 
         Args:

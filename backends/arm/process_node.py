@@ -246,7 +246,6 @@ def process_placeholder(
 ):
     """Wrapper for processing and serializing all types of placeholders"""
     if node.name != node.target:
-        pass
         raise ValueError(
             f"Placeholder name '{node.name}' does not match target '{node.target}'"
         )
@@ -272,7 +271,7 @@ def process_placeholder(
     elif containing_graph_module and _submodule_has_user_input(
         containing_graph_module, edge_program
     ):
-        # If we are in a submodule and it has
+        # If we are in a submodule and it has user input, process as regular input.
         process_inputs(node, tosa_graph, tosa_spec)
     else:
         raise RuntimeError(f"Placeholder '{node.name}' is of unknown type.")
