@@ -21,6 +21,7 @@ from executorch.backends.nxp.tests.models import Conv2dModule
 from executorch.exir.dialects._ops import ops as exir_ops
 from parameterized import parameterized
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 class Conv2dTransposeModule(torch.nn.Module):

@@ -21,6 +21,7 @@ from executorch.backends.nxp.tests.executors import (
 )
 from executorch.backends.nxp.tests.models import Conv2dModule, LinearModule, ReLUModule
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 @pytest.fixture(autouse=True)
@@ -62,13 +63,16 @@ def test_relu_conversion():
     convert_run_compare(edge_program, input_data=input_data)
 
 
-def test_relu_with_conv_quant_conversion(mocker):
+def test_relu_with_conv_quant_conversion(mocker, use_qat):
     input_shape = (1, 4, 32, 32)
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
     _ = to_quantized_edge_program(
-        ConvReLUModule(), input_shape, use_neutron_for_format_conversion=False
+        ConvReLUModule(),
+        input_shape,
+        use_qat=use_qat,
+        use_neutron_for_format_conversion=False,
     )
 
     # Capture generated model
@@ -90,12 +94,12 @@ def test_relu_with_conv_quant_conversion(mocker):
     )
 
 
-def test_relu_with_linear_quant_conversion(mocker):
+def test_relu_with_linear_quant_conversion(mocker, use_qat):
     input_shape = (256, 32)
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(LinearReLUModule(), input_shape)
+    _ = to_quantized_edge_program(LinearReLUModule(), input_shape, use_qat=use_qat)
 
     # Capture generated model
     tflite_flatbuffers_model, _ = converter_spy.spy_return
