@@ -65,12 +65,12 @@ LLM_VARIANT_ARCHS = {
 annotate_wqkv_sha = partial(
     annotate_qkv_proj_sha,
     qkv_tags={
-        StaticLLMQuantConfig.wq_sha,
-        StaticLLMQuantConfig.wk_sha,
-        StaticLLMQuantConfig.wv_sha,
+        StaticLLMQuantConfig.wq,
+        StaticLLMQuantConfig.wk,
+        StaticLLMQuantConfig.wv,
     },
 )
-annotate_wv_sha = partial(annotate_qkv_proj_sha, qkv_tags={StaticLLMQuantConfig.wv_sha})
+annotate_wv_sha = partial(annotate_qkv_proj_sha, qkv_tags={StaticLLMQuantConfig.wv})
 
 
 @dataclass(init=False, frozen=True)
@@ -207,16 +207,9 @@ class LlamaStories260K(LLMModelConfig):
     r1 = False
     r2 = False
     r3 = False
-    quantization_config_wv_sha_8a4w = get_ptq_per_channel_quant_config(
-        act_dtype=torch.uint8,
-        weight_dtype=torch.int4,
-        act_observer=MinMaxObserver,
-        act_symmetric=True,
-    )
     custom_annotation = (
         annotate_kv_8bit,
         annotate_output_16a8w,
-        partial(annotate_wv_sha, quantization_config=quantization_config_wv_sha_8a4w),
     )
 
 
@@ -469,7 +462,7 @@ class Qwen2_5_0_5B(LLMModelConfig):
     seq_mse_candidates = 0
     r1 = False
     r2 = False
-    r3 = True
+    r3 = False
     custom_annotation = ()
 
 
@@ -492,7 +485,7 @@ class Qwen2_5_1_5B(LLMModelConfig):
     seq_mse_candidates = 0
     r1 = False
     r2 = False
-    r3 = True
+    r3 = False
     custom_annotation = (annotate_output_16a8w,)
 
 

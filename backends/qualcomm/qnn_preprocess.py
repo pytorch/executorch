@@ -42,9 +42,12 @@ class QnnBackend(BackendDetails):
         edge_program: ExportedProgram,
         enable_tensor_dump: bool,
         op_package_infos: List[QnnExecuTorchOpPackageInfo],
+        use_mha2sha: bool,
     ):
         # QNN Delegate Specific Passes
-        graph_module = QnnPassManager().transform_for_preprocess_pipeline(edge_program)
+        graph_module = QnnPassManager().transform_for_preprocess_pipeline(
+            edge_program, use_mha2sha=use_mha2sha
+        )
         assert graph_module is not None
 
         nodes_to_wrappers = defaultdict(dict)
@@ -106,6 +109,7 @@ class QnnBackend(BackendDetails):
             edge_program,
             qnn_manager.IsTensorDump(),
             obj_options.op_package_options.op_package_infos,
+            obj_options.use_mha2sha,
         )
 
         qnn_context_binary = qnn_manager.Compile(
@@ -165,6 +169,7 @@ class QnnBackend(BackendDetails):
                     programs[i],
                     qnn_manager.IsTensorDump(),
                     option.op_package_options.op_package_infos,
+                    option.use_mha2sha,
                 )
                 if isinstance(py_op_wrappers, bytes):
                     ctx_binary_list.append(py_op_wrappers)

@@ -104,18 +104,6 @@ class BaseAttentionMask(ABC):
         """
         pass
 
-    @abstractmethod
-    def shift_pointer_update(self, pos, n_updates, lade_pos_offset):
-        """
-        Update the attention mask by shift pointer update method after model forward.
-
-        Args:
-            pos (int): Current position in the sequence.
-            n_updates (int): Number of tokens to shift.
-            lade_pos_offset (List[int]): Position offset of lookahead attention mask.
-        """
-        pass
-
 
 class CausalAttentionMask(BaseAttentionMask):
     def __init__(self, max_batch_size: int, ar_len: int, max_seq_len: int):
@@ -159,41 +147,6 @@ class CausalAttentionMask(BaseAttentionMask):
         """
         start_pos = pos
         end_pos = pos + n_updates
-        self.mask[:, :, start_pos:end_pos] = 0
-
-    def shift_pointer_update(self, pos, n_updates, _):
-        """
-        Shift Pointer mechanism for attention mask updating
-
-        Initial mask(5x15) layout (before any updates):
-            Each row represents a query token in the autoregressive context.
-            ● = activate (can attend), ○ = inactivate (masked)
-
-            0 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ○ ○ ○ ○
-            1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ○ ○ ○
-            2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
-            3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ● ○
-            4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ● ●
-
-        After 1st update (e.g., pos=0, n_updates=5):
-            Newly added tokens are unmasked (set to 0).
-
-            0 ○ ○ ○ ○ ○ ● ● ● ● ● ● ○ ○ ○ ○
-            1 ○ ○ ○ ○ ○ ● ● ● ● ● ● ● ○ ○ ○
-            2 ○ ○ ○ ○ ○ ● ● ● ● ● ● ● ● ○ ○
-            3 ○ ○ ○ ○ ○ ● ● ● ● ● ● ● ● ● ○
-            4 ○ ○ ○ ○ ○ ● ● ● ● ● ● ● ● ● ●
-
-        After 2nd update (e.g., pos=5, n_updates=5):
-
-            0 ● ● ● ● ● ● ● ● ● ● ● ○ ○ ○ ○
-            1 ● ● ● ● ● ● ● ● ● ● ● ● ○ ○ ○
-            2 ● ● ● ● ● ● ● ● ● ● ● ● ● ○ ○
-            3 ● ● ● ● ● ● ● ● ● ● ● ● ● ● ○
-            4 ● ● ● ● ● ● ● ● ● ● ● ● ● ● ●
-        """
-        start_pos = -pos - n_updates - self.ar_len
-        end_pos = -pos - self.ar_len
         self.mask[:, :, start_pos:end_pos] = 0
 
 
@@ -266,54 +219,6 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
                 # TODO: [Optional]: it can be optimized by computing the exact start index
                 self.mask[:, i, : end_pos - available_cache_len] = -255.0
 
-    def shift_pointer_update(self, pos, n_updates, lade_pos_offset):
-        """
-        Shift Pointer mechanism for attention mask updating
-
-        Initial mask(5x15) layout (before any updates):
-            Each row represents a query token in the autoregressive context.
-            ● = activate (can attend), ○ = inactivate (masked)
-
-            0 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ○ ○ ○ ○
-            1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ○ ○ ○
-            2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
-            3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○
-            4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ●
-
-        After 1st update (e.g., pos=0, n_updates=5, sliding_window=3):
-
-            0 ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○ ○
-            1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○
-            2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
-            3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○
-            4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ●
-
-        After 2nd update (e.g., pos=5, n_updates=5, sliding_window=3):
-
-            0 ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○ ○
-            1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○
-            2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
-            3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○
-            4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ●
-        """
-
-        start_pos = -pos - n_updates - self.ar_len
-        end_pos = -pos - self.ar_len
-        self.mask[:, :, start_pos:end_pos] = 0
-
-        for i in range(self.ar_len):
-            available_cache_len = self.sliding_window - (
-                (i + 1) if lade_pos_offset is None else (lade_pos_offset[i] + 1)
-            )
-            if abs(start_pos + self.ar_len) > available_cache_len:
-                self.mask[
-                    :,
-                    i,
-                    start_pos : start_pos
-                    + abs(start_pos + self.ar_len)
-                    - available_cache_len,
-                ] = -255.0
-
 
 class AttentionMask:
     def __init__(self, masks: Union[BaseAttentionMask, List[BaseAttentionMask]]):
@@ -322,10 +227,6 @@ class AttentionMask:
     def smart_mask_update(self, pos, n_updates, lade_pos_offset=None):
         for mask in self.masks:
             mask.smart_mask_update(pos, n_updates, lade_pos_offset)
-
-    def shift_pointer_update(self, pos, n_updates, lade_pos_offset=None):
-        for mask in self.masks:
-            mask.shift_pointer_update(pos, n_updates, lade_pos_offset)
 
     def __iter__(self):
         return iter([mask.mask for mask in self.masks])
