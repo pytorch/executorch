@@ -22,6 +22,19 @@ import triton.language as tl
 from torch.library import triton_op, wrap_triton
 
 
+def _next_power_of_2(n: int) -> int:
+    """Round up to the next power of 2."""
+    if n <= 0:
+        return 1
+    if n & (n - 1) == 0:
+        return n
+
+    power = 1
+    while power < n:
+        power <<= 1
+    return power
+
+
 def _validate_qkv_shapes(
     query: torch.Tensor,
     key: torch.Tensor,
@@ -88,7 +101,7 @@ def _sdpa_fwd_kernel(
     H,
     L_Q,  # Query sequence length
     L_KV,  # Key/Value sequence length
-    HEAD_DIM,
+    HEAD_DIM,  # Actual head dimension (may not be power of 2)
     stride_qb,
     stride_qh,
     stride_ql,
@@ -114,7 +127,7 @@ def _sdpa_fwd_kernel(
     HAS_MASK: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
-    HEAD_DIM_CE: tl.constexpr,
+    HEAD_DIM_CE: tl.constexpr,  # Rounded up for tl.arange
 ):
     """
     Fused SDPA kernel that handles different sequence lengths for Q and K/V.
@@ -141,11 +154,13 @@ def _sdpa_fwd_kernel(
     # Mask base pointer (if provided)
     if HAS_MASK:
         mask_base = mask_ptr + off_b * stride_mb + off_h * stride_mh
+    # Mask for actual head dimension (HEAD_DIM may not be power of 2)
+    mask_d = offs_d < HEAD_DIM
     # Make head-dim addresses compiler-friendly
     offs_d_ctg = tl.max_contiguous(tl.multiple_of(offs_d, 16), HEAD_DIM_CE)
     # Load Q tile [BLOCK_M, HEAD_DIM] - coalesced along HEAD_DIM
     q_ptrs = q_base + (offs_m[:, None] * stride_ql + offs_d_ctg[None, :] * stride_qd)
-    q = tl.load(q_ptrs, mask=mask_m[:, None], other=0.0)
+    q = tl.load(q_ptrs, mask=mask_m[:, None] & mask_d[None, :], other=0.0)
     q = q.to(tl.bfloat16)
     # Initialize accumulators and softmax stats
     acc = tl.zeros((BLOCK_M, HEAD_DIM_CE), dtype=tl.float32)
@@ -161,7 +176,7 @@ def _sdpa_fwd_kernel(
         k_ptrs = k_base + (
             offs_n[:, None] * stride_kl + offs_d_ctg[None, :] * stride_kd
         )
-        k = tl.load(k_ptrs, mask=mask_n[:, None], other=0.0)
+        k = tl.load(k_ptrs, mask=mask_n[:, None] & mask_d[None, :], other=0.0)
         k = k.to(tl.bfloat16)
         # Compute attention logits [BLOCK_M, BLOCK_N] = Q[BM,D] @ K[BN,D]^T
         qk = tl.dot(q, tl.trans(k)).to(tl.float32)
@@ -179,7 +194,9 @@ def _sdpa_fwd_kernel(
                 offs_m[:, None] * stride_ml + offs_n[None, :] * stride_mn
             )
             attn_mask = tl.load(
-                mask_ptrs, mask=mask_m[:, None] & mask_n[None, :], other=0.0
+                mask_ptrs,
+                mask=mask_m[:, None] & mask_n[None, :],
+                other=0.0,
             )
             # Convert boolean mask to additive mask (-inf for False, 0 for True)
             qk = tl.where(attn_mask, qk, -float("inf"))
@@ -195,7 +212,7 @@ def _sdpa_fwd_kernel(
         v_ptrs = v_base + (
             offs_n[:, None] * stride_vl + offs_d_ctg[None, :] * stride_vd
         )
-        v = tl.load(v_ptrs, mask=mask_n[:, None], other=0.0)
+        v = tl.load(v_ptrs, mask=mask_n[:, None] & mask_d[None, :], other=0.0)
         v = v.to(tl.bfloat16)
         # Update accumulator
         acc = acc * alpha[:, None]
@@ -208,7 +225,7 @@ def _sdpa_fwd_kernel(
     acc = acc / l_i[:, None]
     # Store output [BLOCK_M, HEAD_DIM] - shape matches query
     o_ptrs = o_base + (offs_m[:, None] * stride_ol + offs_d_ctg[None, :] * stride_od)
-    tl.store(o_ptrs, acc.to(tl.bfloat16), mask=mask_m[:, None])
+    tl.store(o_ptrs, acc.to(tl.bfloat16), mask=mask_m[:, None] & mask_d[None, :])
 
 
 @triton_op("triton::sdpa", mutates_args={})
@@ -229,7 +246,8 @@ def sdpa(
         query: Query tensor with szie [B, H, L_q, D] and dtype torch.bfloat16
         key: Key tensor [B, H, L_kv, D] and dtype torch.bfloat16
         value: Value tensor [B, H, L_kv, D] and dtype torch.bfloat16
-        attn_mask: Optional attention mask [B, H, L_q, L_kv] or broadcastable shape (2D: [L_q, L_kv] or 3D: [B, L_q, L_kv])
+        attn_mask: Optional attention mask [B, H, L_q, L_kv] or
+            broadcastable shape (2D: [L_q, L_kv] or 3D: [B, L_q, L_kv])
         dropout_p: must be 0.0 (others are not supported)
         is_causal: whether to apply causal masking
         scale: attention scale (default: 1/sqrt(D))
@@ -248,7 +266,9 @@ def sdpa(
         raise RuntimeError("Expected bfloat16 inputs")
     if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
         raise RuntimeError(
-            f"Expected 4D tensors shaped [B, H, L, D]; got query.dim()={query.dim()}, key.dim()={key.dim()}, value.dim()={value.dim()}."
+            f"Expected 4D tensors shaped [B, H, L, D]; got "
+            f"query.dim()={query.dim()}, key.dim()={key.dim()}, "
+            f"value.dim()={value.dim()}."
         )
     # Enforce unsupported features
     if dropout_p != 0.0:
@@ -300,6 +320,8 @@ def sdpa(
         # Dummy strides and mask
         smb, smh, sml, smn = 0, 0, 0, 0
         attn_mask = torch.empty(0, dtype=torch.bool, device=query.device)
+    # Round up head dimension to next power of 2 for tile.arange in Triton kernel
+    HEAD_DIM_CE = _next_power_of_2(D)
     # Launch kernel
     wrap_triton(_sdpa_fwd_kernel)[grid](
         query,
@@ -311,7 +333,7 @@ def sdpa(
         H,
         L_q,  # Query sequence length
         L_kv,  # Key/Value sequence length
-        D,
+        D,  # Actual head dimension
         sqb,
         sqh,
         sql,
@@ -335,7 +357,7 @@ def sdpa(
         sm_scale,
         IS_CAUSAL=is_causal,
         HAS_MASK=has_mask,
-        HEAD_DIM_CE=D,
+        HEAD_DIM_CE=HEAD_DIM_CE,  # Rounded to power of 2
     )
     return out
 

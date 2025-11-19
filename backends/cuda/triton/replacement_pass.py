@@ -72,7 +72,8 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
             # Recompile the graph module after modifications
             graph_module.recompile()
 
-        logger.info(f"Replaced {self._replacement_count} nodes with Triton kernels")
+        # logger.info(f"Replaced {self._replacement_count} nodes with Triton kernels")
+        print(f"Replaced {self._replacement_count} nodes with Triton kernels")
 
         return PassResult(graph_module, modified)
 
