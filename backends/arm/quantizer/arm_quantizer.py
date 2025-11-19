@@ -458,6 +458,12 @@ class TOSAQuantizer(Quantizer):
             for node in _for_each_filtered_node(model, mod_type_filter):
                 node.meta[DISALLOW_TFA_META_KEY] = config is None
 
+        # Finally, override using module name config to take precedence over both global and type configs
+        for module_name, config in self.module_name_config.items():
+            mod_name_filter = get_module_name_filter(module_name)
+            for node in _for_each_filtered_node(model, mod_name_filter):
+                node.meta[DISALLOW_TFA_META_KEY] = config is None
+
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         """Transform the graph to prepare it for quantization annotation.
 

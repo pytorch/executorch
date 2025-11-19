@@ -33,6 +33,19 @@ class LinearSoftmaxModel(torch.nn.Module):
         return (torch.randn(1, 10),)
 
 
+class TwoSigmoidsModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.sigmoid0 = torch.nn.Sigmoid()
+        self.sigmoid1 = torch.nn.Sigmoid()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.sigmoid0(x - 1) + self.sigmoid1(x + 1)
+
+    def example_inputs(self) -> tuple[torch.Tensor, ...]:
+        return (torch.randn(2, 3),)
+
+
 def _collect_disallow_flags(graph: torch.fx.Graph) -> dict[str, bool]:
     flags: dict[str, bool] = {}
     for node in graph.nodes:
@@ -47,9 +60,12 @@ def _run_quantization_pipeline(
     module_type_configs: (
         Iterable[tuple[type[torch.nn.Module], QuantizationConfig]] | None
     ) = None,
+    module_name_configs: Iterable[tuple[str, QuantizationConfig]] | None = None,
 ) -> torch.fx.Graph:
     if module_type_configs is None:
         module_type_configs = []
+    if module_name_configs is None:
+        module_name_configs = []
 
     pipeline = TosaPipelineINT[tuple[torch.Tensor]](
         module,
@@ -58,10 +74,12 @@ def _run_quantization_pipeline(
         [],
     )
 
+    # Set configs for the quantizer
     pipeline.quantizer.set_global(global_config)
-
     for mod, config in module_type_configs:
         pipeline.quantizer.set_module_type(mod, config)
+    for name, config in module_name_configs:
+        pipeline.quantizer.set_module_name(name, config)
 
     pipeline.pop_stage("check_count.exir")
     pipeline.pop_stage("run_method_and_compare_outputs")
@@ -157,6 +175,52 @@ def test_disallow_tfa_with_global_none_and_one_quantized_module():
             "softmax": True,
             "add": True,
             "abs_1": True,
+            "output": True,
+        },
+    )
+
+
+def test_disallow_tfa_for_submodule_by_name():
+    """Ensure submodules can be skipped for quantization by name and have their
+    nodes marked as disallowed for TFA.
+    """
+
+    # Quantize the entire model except self.sigmoid0
+    graph_after_quant_stage = _run_quantization_pipeline(
+        TwoSigmoidsModel(),
+        global_config=get_symmetric_quantization_config(),
+        module_name_configs=[("sigmoid0", None)],
+    )
+    _assert_disallow_flags(
+        graph_after_quant_stage,
+        {
+            "x": False,
+            "sigmoid": True,
+            "sigmoid_1": False,
+            "add": False,
+            "output": False,
+        },
+    )
+
+
+def test_disallow_tfa_name_config_contradicts_type_config():
+    """Ensure that module name configs take precedence over module type configs
+    when they contradict each other.
+    """
+
+    graph_after_quant_stage = _run_quantization_pipeline(
+        TwoSigmoidsModel(),
+        global_config=None,
+        module_type_configs=[(torch.nn.Sigmoid, get_symmetric_quantization_config())],
+        module_name_configs=[("sigmoid0", None)],
+    )
+    _assert_disallow_flags(
+        graph_after_quant_stage,
+        {
+            "x": True,
+            "sigmoid": True,
+            "sigmoid_1": False,
+            "add": True,
             "output": True,
         },
     )
