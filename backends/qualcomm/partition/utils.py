@@ -28,7 +28,7 @@ def generate_qnn_executorch_option(
         raise ValueError(
             f"QNN compile spec (key={QCOM_QNN_COMPILE_SPEC}) not found in compiler_specs"
         )
-        
+
     return qnn_compile_spec_buffer
 
 
