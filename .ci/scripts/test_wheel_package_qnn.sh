@@ -139,7 +139,7 @@ run_core_tests () {
   echo "=== [$LABEL] Installing wheel & deps ==="
   "$PIPBIN" install --upgrade pip
   "$PIPBIN" install "$WHEEL_FILE"
-  "$PIPBIN" install torch=="2.9.0"
+  "$PIPBIN" install torch=="2.9.1"
   "$PIPBIN" install --pre torchao --index-url "https://download.pytorch.org/whl/nightly/cpu"
 
   echo "=== [$LABEL] Import smoke tests ==="
