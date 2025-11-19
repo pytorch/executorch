@@ -745,15 +745,6 @@ class SliceTensorPattern(SharedSpecPattern):
         return [torch.ops.aten.slice.Tensor]
 
 
-class SliceCopyTensorPattern(SharedSpecPattern):
-    """
-    Quantizer for Slice operator.
-    """
-
-    def partition_types(self):
-        return [torch.ops.aten.slice_copy.Tensor]
-
-
 class SoftMaxPattern(QuantizationPattern):
     """
     Quantizer for Softmax operator.
