@@ -11,7 +11,7 @@ from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
 from executorch.backends.nxp.tests.executorch_pipeline import (
-    default_neutron_converter_flavor,
+    neutron_converter_flavor,
     to_quantized_edge_program,
 )
 from executorch.backends.nxp.tests.executors import (
@@ -86,7 +86,7 @@ def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends
         ends=ends,
     )
 
-    if default_neutron_converter_flavor != "SDK_25_12":
+    if neutron_converter_flavor != "SDK_25_12":
         pytest.skip("Neutron Software must be version 2.2.1 or higher.")
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
