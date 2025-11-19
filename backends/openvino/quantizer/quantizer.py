@@ -105,10 +105,11 @@ class OpenVINOQuantizer(Quantizer):
         if self.mode not in OpenVINOQuantizer.WEIGHTS_ONLY_COMPRESSION_MODES:
             self._algo = MinMaxQuantization(**kwargs)
         else:
-            weight_compression_configuration = get_weight_compression_configuration(
-                mode.value.replace(
+            mode = mode.value.replace(
                     "wo", ""
-                ),  # Mode value has to match NNCF CompressWeightsMode
+                )  # Mode value has to match NNCF CompressWeightsMode
+            weight_compression_configuration = get_weight_compression_configuration(
+                nncf.CompressWeightsMode(mode),
                 **kwargs,
             )
             subset_size = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
