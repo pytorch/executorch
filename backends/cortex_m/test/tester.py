@@ -8,43 +8,41 @@ from dataclasses import dataclass
 from typing import Any
 
 import torch
-
-from backends.xnnpack.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
 from executorch.backends.arm.test.common import get_u55_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import Serialize
-from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
-    QuantizedOpFusionPass,
-)
+from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 
-from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
-    ReplaceQuantNodesPass,
-)
+from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import (
     Export,
     Quantize,
     RunPasses,
     StageType,
-    ToEdgeTransformAndLower,
+    ToEdge,
     ToExecutorch,
 )
-from executorch.backends.xnnpack._passes import XNNPACKPassManager
+
+from executorch.exir import EdgeCompileConfig
 
 
 class CortexMQuantize(Quantize):
     def __init__(self):
-        quantizer = XNNPACKQuantizer()
-        config = get_symmetric_quantization_config()
-        super().__init__(quantizer, config)
+        quantizer = CortexMQuantizer()
+        super().__init__(quantizer)
+
+
+class CortexMToEdge(ToEdge):
+    def __init__(self):
+        config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.linear.default])
+        super().__init__(config)
 
 
 class CortexMRunPasses(RunPasses):
     def __init__(self):
         super().__init__(
-            XNNPACKPassManager, pass_list=[QuantizedOpFusionPass, ReplaceQuantNodesPass]
+            CortexMPassManager,
+            CortexMPassManager.pass_list,
         )
 
 
@@ -59,7 +57,7 @@ cortex_m_stage_classes = {
     StageType.QUANTIZE: CortexMQuantize,
     StageType.RUN_PASSES: CortexMRunPasses,
     StageType.SERIALIZE: Serialize,
-    StageType.TO_EDGE_TRANSFORM_AND_LOWER: ToEdgeTransformAndLower,
+    StageType.TO_EDGE: CortexMToEdge,
     StageType.TO_EXECUTORCH: ToExecutorch,
     StageType.SERIALIZE: CortexMSerialize,
 }
@@ -75,7 +73,7 @@ class CortexMTester(TesterBase):
         """
         self.quantize()
         self.export()
-        self.to_edge_transform_and_lower()
+        self.to_edge()
         self.check_count(ops_before_transforms)
         self.run_passes()
         self.check_count(ops_after_transforms)
@@ -87,7 +85,7 @@ class CortexMTester(TesterBase):
         """
         self.quantize()
         self.export()
-        self.to_edge_transform_and_lower()
+        self.to_edge()
         self.run_passes()
         self.to_executorch()
         self.serialize()
@@ -98,3 +96,9 @@ class CortexMTester(TesterBase):
 class McuTestCase:
     model: torch.nn.Module
     example_inputs: tuple[Any]
+
+
+def ramp_tensor(start: int, end: int, shape: tuple[int]) -> torch.Tensor:
+    return torch.linspace(start, end, steps=torch.prod(torch.tensor(shape))).reshape(
+        shape
+    )

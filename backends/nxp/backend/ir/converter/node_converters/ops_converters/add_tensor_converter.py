@@ -9,11 +9,11 @@ from executorch.backends.nxp.backend.ir.converter.conversion.common import (
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     add_options,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -22,20 +22,15 @@ class AddTensorConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
         node: Node,
-        target: Target,
+        neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        match target:
-            case Target.RT700:
-                if node_uses_shape_broadcasting(node):
-                    # Shape broadcasting may require the addition of `Transpose` ops during conversion.
-                    return False
+        if node_uses_shape_broadcasting(node):
+            # Shape broadcasting may require the addition of `Transpose` ops during conversion.
+            return False
 
-                return True
-
-            case _:
-                return False
+        return True
 
     @staticmethod
     def _is_supported_in_IR(

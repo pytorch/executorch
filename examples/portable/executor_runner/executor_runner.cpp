@@ -26,6 +26,7 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/executor/method.h>
@@ -40,6 +41,9 @@
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#include <executorch/extension/threadpool/threadpool_guard.h>
+
+#include <optional>
 #endif
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
@@ -50,6 +54,7 @@ DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
+DEFINE_string(data_path, "", "Path to data file.");
 DEFINE_string(inputs, "", "Comma-separated list of input files");
 DEFINE_string(
     output_file,
@@ -72,6 +77,7 @@ DEFINE_int32(
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::extension::FileDataLoader;
+using executorch::extension::FlatTensorDataMap;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::EventTracer;
@@ -160,6 +166,11 @@ int main(int argc, char** argv) {
     ::executorch::extension::threadpool::get_threadpool()
         ->_unsafe_reset_threadpool(num_performant_cores);
   }
+  std::optional<::executorch::extension::threadpool::NoThreadPoolGuard>
+      opt_guard;
+  if (cpu_threads == 1) {
+    opt_guard.emplace();
+  }
 #endif // ET_USE_THREADPOOL
   // Create a loader to get the data of the program file. There are other
   // DataLoaders that use mmap() or point to data that's already in memory, and
@@ -170,6 +181,34 @@ int main(int argc, char** argv) {
       loader.ok(),
       "FileDataLoader::from() failed: 0x%" PRIx32,
       (uint32_t)loader.error());
+
+  // Load .ptd file if provided
+  std::unique_ptr<FileDataLoader> ptd_loader;
+  std::unique_ptr<FlatTensorDataMap> ptd_data_map;
+  if (!FLAGS_data_path.empty()) {
+    const char* data_path = FLAGS_data_path.c_str();
+    Result<FileDataLoader> ptd_loader_result = FileDataLoader::from(data_path);
+    ET_CHECK_MSG(
+        ptd_loader_result.ok(),
+        "FileDataLoader::from() failed for PTD file: 0x%" PRIx32,
+        (uint32_t)ptd_loader_result.error());
+    ptd_loader =
+        std::make_unique<FileDataLoader>(std::move(ptd_loader_result.get()));
+    ET_LOG(Info, "PTD file %s is loaded.", data_path);
+
+    Result<FlatTensorDataMap> ptd_data_map_result =
+        FlatTensorDataMap::load(ptd_loader.get());
+    ET_CHECK_MSG(
+        ptd_data_map_result.ok(),
+        "FlatTensorDataMap::load() failed for PTD file: 0x%" PRIx32,
+        (uint32_t)ptd_data_map_result.error());
+    ptd_data_map = std::make_unique<FlatTensorDataMap>(
+        std::move(ptd_data_map_result.get()));
+    ET_LOG(
+        Info,
+        "PTD data map created with %" PRIu64 " keys.",
+        static_cast<uint64_t>(ptd_data_map->get_num_keys().get()));
+  }
 
   std::vector<std::string> inputs_storage;
   std::vector<std::pair<char*, size_t>> input_buffers;
@@ -294,7 +333,10 @@ int main(int argc, char** argv) {
   //
   EventTraceManager tracer;
   Result<Method> method = program->load_method(
-      method_name, &memory_manager, tracer.get_event_tracer());
+      method_name,
+      &memory_manager,
+      tracer.get_event_tracer(),
+      ptd_data_map.get());
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,

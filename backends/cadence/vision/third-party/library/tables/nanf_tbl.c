@@ -27,9 +27,9 @@
 */
 
 /* Portable data types. */
-#include "dtypes.h"
 /* NaN values for single precision routines. */
 #include "nanf_tbl.h"
+#include "dtypes.h"
 
 const union ufloat32uint32 sNaNf = {0x7f800001}; /* Signalling NaN          */
 const union ufloat32uint32 qNaNf = {0x7fc00000}; /* Quiet NaN               */

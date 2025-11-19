@@ -7,7 +7,7 @@
 # pyre-strict
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import final, List, Optional, Tuple, Union
 
 import torch
 from executorch.backends.cadence.aot.quantizer.patterns import (
@@ -24,6 +24,9 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
+    MixedW8A32ConvPattern,
+    MixedW8A32GruPattern,
+    MixedW8A32LinearPattern,
     QuantizationPattern,
     ReluPattern0,
     ReluPattern1,
@@ -107,6 +110,13 @@ qconfig_A16 = QuantizationConfig(
     act_qspec_asym16s,
     wgt_qspec_asym8s,
     None,
+)
+
+qconfig_A32W8sym = QuantizationConfig(
+    input_activation=None,
+    output_activation=None,
+    weight=wgt_qspec_sym8s,
+    bias=wgt_qspec_sym8s,
 )
 
 
@@ -234,6 +244,23 @@ class CadenceQuantizer(ComposableQuantizer):
     def __init__(self, quantizers: List[Quantizer]) -> None:
         super().__init__(quantizers)
 
+    @final
+    def get_ops_to_preserve_from_decomposition(self) -> List[torch._ops.OpOverload]:
+        """
+        Get complete list of ops to preserve from decomposition.
+
+        Delegates preservation choices to QuantizationPattern by aggregating
+        the pattern's partition_types(), which explicitly declares the root
+        ops that compose the pattern and should be preserved.
+        """
+        ops: set[torch._ops.OpOverload] = set()
+        for q in self.quantizers:
+            if isinstance(q, CadenceAtenQuantizer):
+                ops.update(q.pattern.partition_types())
+            elif isinstance(q, CadenceQuantizer):
+                ops.update(q.get_ops_to_preserve_from_decomposition())
+        return list(ops)
+
 
 class CadenceDefaultQuantizer(CadenceQuantizer):
     """
@@ -302,6 +329,26 @@ class CadenceFusedConvReluQuantizer(CadenceQuantizer):
         super().__init__(quantizers)
 
 
+class CadenceW8A32MixedQuantizer(CadenceQuantizer):
+    """
+    Quantizer for mixed quantization, 8 bit weights and 32 bit activations
+    TODO: Experimental quantizer, not yet well supported in OSS
+    """
+
+    def __init__(self) -> None:
+        quantizers = []
+        quantizers.append(
+            CadenceAtenQuantizer(MixedW8A32LinearPattern(), qconfig_A32W8sym)
+        )
+        quantizers.append(
+            CadenceAtenQuantizer(MixedW8A32ConvPattern(), qconfig_A32W8sym)
+        )
+        quantizers.append(
+            CadenceAtenQuantizer(MixedW8A32GruPattern(), qconfig_A32W8sym)
+        )
+        super().__init__(quantizers)
+
+
 class CadenceWithSoftmaxQuantizer(CadenceQuantizer):
     """
     Quantizer including A16 softmax
@@ -311,4 +358,17 @@ class CadenceWithSoftmaxQuantizer(CadenceQuantizer):
         if quantizers is None:
             quantizers = get_cadence_default_quantizers()
         quantizers.append(CadenceAtenQuantizer(SoftmaxPattern(), qconfig_A16))
+        super().__init__(quantizers)
+
+
+class CadenceWith16BitLinearActivationsQuantizer(CadenceQuantizer):
+    """
+    Quantizer including A16 fully_connected
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = []
+        # Add 16-bit quantizers for LinearPattern
+        quantizers.append(CadenceAtenQuantizer(LinearPattern(), qconfig_A16))
         super().__init__(quantizers)

@@ -6,7 +6,11 @@
 
 import torch
 from executorch.backends.arm.test.common import parametrize
-from executorch.backends.cortex_m.test.tester import CortexMTester, McuTestCase
+from executorch.backends.cortex_m.test.tester import (
+    CortexMTester,
+    McuTestCase,
+    ramp_tensor,
+)
 from executorch.backends.test.suite.operators.test_add import Model, ModelAlpha
 
 
@@ -80,19 +84,19 @@ test_cases = {
     ),
     "self_rank_2_pos": McuTestCase(
         CortexMSelfAdd(),
-        (torch.linspace(0, 1000, 10).reshape((10, 1)),),
+        (ramp_tensor(0, 1000, (10, 1)),),
     ),
     "self_rank_3_neg": McuTestCase(
         CortexMSelfAdd(),
-        (torch.linspace(-100, 0, 8).reshape((2, 2, 2)),),
+        (ramp_tensor(-100, 0, (2, 2, 2)),),
     ),
     "self_rank_4_small": McuTestCase(
         CortexMSelfAdd(),
-        (torch.linspace(-0.1, 0.1, 16).reshape(2, 2, 2, 2),),
+        (ramp_tensor(-0.1, 0.1, (2, 2, 2, 2)),),
     ),
     "self_rank_5": McuTestCase(
         CortexMSelfAdd(),
-        (torch.linspace(-5, 5, 32).reshape(2, 2, 2, 2, 2),),
+        (ramp_tensor(-5, 5, (2, 2, 2, 2, 2)),),
     ),
     "scalar_scalar": McuTestCase(
         CortexMScalarAdd(),
@@ -100,11 +104,15 @@ test_cases = {
     ),
     "tensor_scalar": McuTestCase(
         CortexMScalarAdd(),
-        (torch.ones(2, 2), 1.0),
+        (torch.ones(1), 1.1),
     ),
     "scalar_tensor": McuTestCase(
         CortexMScalarAdd(),
-        (1000.0, torch.ones(2, 2)),
+        (1000.1, torch.ones(1)),
+    ),
+    "tensor_tensor": McuTestCase(
+        CortexMTensorAdd(),
+        (torch.rand(2, 2) * 10, torch.rand(2, 2)),
     ),
     "broadcast_1": McuTestCase(
         CortexMTensorAdd(),
@@ -117,34 +125,40 @@ test_cases = {
     "broadcast_3": McuTestCase(
         CortexMTensorAdd(),
         (
-            torch.linspace(-2, 2, 4).reshape(2, 1, 2, 1),
-            torch.linspace(-5, 5, 4).reshape(1, 2, 1, 2),
+            ramp_tensor(-2, 2, (2, 1, 2, 1)),
+            ramp_tensor(-5, 5, (1, 2, 1, 2)),
         ),
     ),
     "alpha": McuTestCase(
         CortexMAlphaAdd(0.5),
         (
-            torch.linspace(-10, 10, 20).reshape(4, 5),
-            torch.linspace(-20, 20, 20).reshape(4, 5),
+            ramp_tensor(-10, 10, (4, 5)),
+            ramp_tensor(-20, 20, (4, 5)),
         ),
     ),
 }
 
 
-dialect_xfails = {
-    "self_scalar": ("'float' object has no attribute 'fake_mode'", AttributeError),
-    "self_rank_1": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_2_pos": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_3_neg": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_4_small": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_5": ("Output 0 does not match reference output", AssertionError),
-    "scalar_scalar": ("'float' object has no attribute 'fake_mode'", AttributeError),
-    "broadcast_3": ("Output 0 does not match reference output", AssertionError),
-    "alpha": ("Expecting kwargs for aten op IR to be empty", AssertionError),
+xfails = {
+    "self_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "scalar_scalar": (
+        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
+        AttributeError,
+    ),
+    "alpha": (
+        "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
+        AssertionError,
+    ),
+    "broadcast_1": "Broadcasting not yet supported in Cortex-M backend",
+    "broadcast_2": "Broadcasting not yet supported in Cortex-M backend",
+    "broadcast_3": "Broadcasting not yet supported in Cortex-M backend",
 }
 
 
-@parametrize("test_case", test_cases, xfails=dialect_xfails)
+@parametrize("test_case", test_cases, xfails=xfails)
 def test_dialect_add(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_dialect(
@@ -152,24 +166,7 @@ def test_dialect_add(test_case):
     )
 
 
-implementation_xfails = {
-    "self_scalar": ("'float' object has no attribute 'fake_mode'", AttributeError),
-    "self_rank_1": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_2_pos": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_3_neg": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_4_small": ("Output 0 does not match reference output", AssertionError),
-    "self_rank_5": ("Output 0 does not match reference output", AssertionError),
-    "scalar_scalar": ("'float' object has no attribute 'fake_mode'", AttributeError),
-    "tensor_scalar": ("Output 0 does not match reference output", AssertionError),
-    "scalar_tensor": ("Output 0 does not match reference output", AssertionError),
-    "broadcast_1": ("Output 0 does not match reference output", AssertionError),
-    "broadcast_2": ("Output 0 does not match reference output", AssertionError),
-    "broadcast_3": ("Output 0 does not match reference output", AssertionError),
-    "alpha": ("Expecting kwargs for aten op IR to be empty", AssertionError),
-}
-
-
-@parametrize("test_case", test_cases, xfails=implementation_xfails)
+@parametrize("test_case", test_cases, xfails=xfails)
 def test_implementation_add(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_implementation()

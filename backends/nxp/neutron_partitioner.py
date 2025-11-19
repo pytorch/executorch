@@ -8,23 +8,28 @@
 import logging
 import operator
 from dataclasses import dataclass
-from typing import Dict, final, List, Mapping
+from typing import final, Mapping
 
 import torch
 
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.edge_helper import (
+    DEQUANTIZE_OPERATORS,
+    QUANTIZE_OPERATORS,
+)
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converter import Target
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 from torch.nn import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
 from executorch.backends.nxp.nxp_backend import NeutronBackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -64,22 +69,16 @@ class QDQClusterRecognizer:
         """
 
         compute_node: torch.fx.Node
-        ops: List[torch.fx.Node]
-
-    QUANTIZE_OPERATORS = [
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    ]
-
-    DEQUANTIZE_OPERATORS = [
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-    ]
+        ops: list[torch.fx.Node]
 
     AUXILIARY_OPS = [
         operator.getitem,
         exir_ops.edge.aten.view_copy.default,
         exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.hardtanh.default,
+        exir_ops.edge.aten.relu.default,
+        exir_ops.edge.aten.sigmoid.default,
+        exir_ops.edge.aten.tanh.default,
     ]
 
     def __init__(self):
@@ -87,17 +86,17 @@ class QDQClusterRecognizer:
 
     @staticmethod
     def is_quant_node(node: torch.fx.Node) -> bool:
-        return node.target in QDQClusterRecognizer.QUANTIZE_OPERATORS
+        return node.target in QUANTIZE_OPERATORS
 
     @staticmethod
     def is_dequant_node(node: torch.fx.Node) -> bool:
-        return node.target in QDQClusterRecognizer.DEQUANTIZE_OPERATORS
+        return node.target in DEQUANTIZE_OPERATORS
 
     @staticmethod
     def is_auxiliary_node(node: torch.fx.Node) -> bool:
         return node.target in QDQClusterRecognizer.AUXILIARY_OPS
 
-    def get_qdq_cluster_input_part(self, node: torch.fx.Node) -> List[torch.fx.Node]:
+    def get_qdq_cluster_input_part(self, node: torch.fx.Node) -> list[torch.fx.Node]:
         """
         Return the list of nodes representing the input part of the QDQ cluster of the node `node`.
         Those are various dequantization nodes (see DEQUANTIZE_OPERATORS) optionally followed by auxiliary
@@ -125,7 +124,7 @@ class QDQClusterRecognizer:
         logging.debug(f"Dequant Cluster for {node} is: {qdq_cluster}")
         return qdq_cluster
 
-    def get_qdq_cluster_output_part(self, node: torch.fx.Node) -> List[torch.fx.Node]:
+    def get_qdq_cluster_output_part(self, node: torch.fx.Node) -> list[torch.fx.Node]:
         """
         Returns the list of nodes representing the output part of the QDQ cluster of the `node`.
         Those are various quantize nodes (see QUANTIZE_OPERATORS) preceded by auxiliary nodes.
@@ -155,7 +154,7 @@ class QDQClusterRecognizer:
         logging.debug(f"Quant Cluster for {node} is {qdq_cluster}")
         return qdq_cluster
 
-    def get_qdq_cluster(self, node: torch.fx.Node) -> List[torch.fx.Node]:
+    def get_qdq_cluster(self, node: torch.fx.Node) -> list[torch.fx.Node]:
         """
         Returns the QDQ cluster of the operator, if quantized. If operator is not quantized, returns empty list.
         """
@@ -167,7 +166,7 @@ class QDQClusterRecognizer:
         else:
             return []
 
-    def tag_nodes(self, nodes: List[torch.fx.Node], cluster_name: str) -> None:
+    def tag_nodes(self, nodes: list[torch.fx.Node], cluster_name: str) -> None:
         """
         Tags a node and its related dequant and quant nodes with a specified cluster name
         """
@@ -175,7 +174,7 @@ class QDQClusterRecognizer:
             logging.info(f"Tagging node {node} as {cluster_name}")
             node.meta["cluster"] = cluster_name
 
-    def tag_qdq_clusters(self, nodes: List[torch.fx.Node]):
+    def tag_qdq_clusters(self, nodes: list[torch.fx.Node]):
         """
         Identifies QDQ clusters and tag them based on compute operation inside.
         """
@@ -201,6 +200,7 @@ supported_ops = {
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.cat.default: CatConverter,  # noqa F405
     exir_ops.edge.aten.clone.default: CloneConverter,  # noqa F405
+    exir_ops.edge.dim_order_ops._clone_dim_order.default: CloneConverter,  # noqa F405
     exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,  # noqa F405
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
@@ -209,11 +209,13 @@ supported_ops = {
     exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
+    exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
+    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
+    exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
     exir_ops.edge.aten.tanh.default: TanhConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
-    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
 }
 
 
@@ -221,14 +223,14 @@ class NeutronSupportedOperators(OperatorSupportBase):
 
     def __init__(
         self,
-        qdq_clusters: Dict[str, QDQClusterRecognizer.QDQCluster],
-        target: Target,
-        operators_not_to_delegate: List[str],
+        qdq_clusters: dict[str, QDQClusterRecognizer.QDQCluster],
+        neutron_target_spec: NeutronTargetSpec,
+        operators_not_to_delegate: list[str],
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ):
         self.qdq_clusters = qdq_clusters
-        self.target = target
+        self.neutron_target_spec = neutron_target_spec
         self.operators_not_to_delegate = operators_not_to_delegate
         self.parameters_mapping = parameters_mapping
         self.custom_delegation_options = custom_delegation_options
@@ -270,7 +272,7 @@ class NeutronSupportedOperators(OperatorSupportBase):
             # TODO: `view_copy` node should be delegated only if it's not the only operator in the cluster.
             node_converter.is_supported(
                 node,
-                self.target,
+                self.neutron_target_spec,
                 self.parameters_mapping,
                 self.custom_delegation_options,
             )
@@ -306,16 +308,18 @@ class NeutronSupportedOperators(OperatorSupportBase):
 class NeutronPartitioner(Partitioner):
     def __init__(
         self,
-        compile_spec: List[CompileSpec],
+        compile_spec: list[CompileSpec],
+        neutron_target_spec: NeutronTargetSpec,
         custom_delegation_options: CustomDelegationOptions | None = None,
     ) -> None:
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)
         self.custom_delegation_options = (
             custom_delegation_options or CustomDelegationOptions()
         )
+        self.neutron_target_spec = neutron_target_spec
 
+    @staticmethod
     def validate_partitioning_result(
-        self,
         graph: Graph,
         partition_list: list[Partition],
         custom_delegation_options: CustomDelegationOptions,
@@ -344,22 +348,17 @@ class NeutronPartitioner(Partitioner):
         # subgraphs containing the nodes with the tags
         logging.info("NeutronPartitioner::partition")
         partition_tags = {}
+        partition_list = []
 
         graph_module = exported_program.graph_module
         nodes = list(graph_module.graph.nodes)
 
         qdq_cluster_recognizer = QDQClusterRecognizer()
         qdq_cluster_recognizer.tag_qdq_clusters(nodes)
+
         graph_module.recompile()
 
-        target = None
-        operators_not_to_delegate = ""
-        for spec in self.delegation_spec.compile_specs:
-            if spec.key == "target":
-                target = Target(spec.value.decode())
-            if spec.key == "operators_not_to_delegate":
-                operators_not_to_delegate = spec.value.decode().split(",")
-        assert target is not None
+        operators_not_to_delegate = self.delegation_spec[1][4].value.decode().split(",")
         logging.info(f"Operators not to delegate: {operators_not_to_delegate}")
 
         parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(
@@ -369,13 +368,17 @@ class NeutronPartitioner(Partitioner):
             exported_program.graph_module,
             NeutronSupportedOperators(
                 qdq_cluster_recognizer.cluster_map,
-                target,
+                self.neutron_target_spec,
                 operators_not_to_delegate,
                 parameters_mapping,
                 self.custom_delegation_options,
             ),
             allows_single_node_partition=True,
         )
+
+        # Identify the format (NCHW/NHWC/...) for all nodes in the graph, and store it in the `node.meta`.
+        # This format will be used by the `CapabilityBasedPartitioner` to determine which nodes will be delegated.
+        NodeFormatInference(exported_program).identify_node_formats()
 
         iteration_limit = len(exported_program.graph.nodes)
         for _ in range(iteration_limit):

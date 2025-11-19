@@ -4,13 +4,13 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-# pyre-unsafe
+import operator
 from typing import Any, cast, Dict
 
 import numpy as np
-import serializer.tosa_serializer as ts
 import torch
 import torch.fx
+import tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa.mapping import TosaArg, TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import TosaSpecification
@@ -46,14 +46,18 @@ def process_call_function(
             f"Failed processing call_function: {node.name}. "
             "Is the original torch function supported?"
         ) from e
-    tosa_graph.currRegion.currBasicBlock.addTensor(
-        output.name, tosa_shape(output.shape, output.dim_order), output.dtype
-    )
+
+    if not output.multiple_output_names:
+        tosa_graph.currRegion.currBasicBlock.addTensor(
+            output.name, tosa_shape(output.shape, output.dim_order), output.dtype
+        )
+
+    # Get item nodes just add tensors, no node visitor is needed.
+    if node.target == operator.getitem:
+        return
 
     # Visiting each Node
-    # pyre-ignore[16]: Undefined attribute.
     if node.target.__name__ in node_visitors:  # type: ignore[union-attr]
-        # pyre-ignore[16]: Undefined attribute.
         node_visitors[node.target.__name__].define_node(  # type: ignore[union-attr]
             node,
             tosa_graph,
@@ -85,7 +89,6 @@ def process_inputs(
         tosa_shape(input_shape, input_dim_order),
         tosa_arg.dtype,
         data=None,
-        placeholderFilename=tosa_arg.name + ".npy",
     )
     tosa_graph.addInputTensor(tensor)
 
@@ -160,7 +163,7 @@ def process_inputs_to_buffers(
     buffer_values = np.transpose(buffer_values, tosa_arg.dim_order)
 
     tosa_graph.addConst(
-        buffer_values.shape, tosa_arg.dtype, buffer_values, name=node.name
+        buffer_values.shape, tosa_arg.dtype, buffer_values, name=tosa_arg.name
     )
 
 
@@ -217,11 +220,9 @@ def process_placeholder(
         raise RuntimeError(f"Placeholder '{node.name}' is of unknown type.")
 
 
-def process_output(
-    node: torch.fx.Node,
-    tosa_graph: Any,
-):
+def process_output(node: torch.fx.Node, tosa_graph: Any, tosa_spec: TosaSpecification):
     for output in cast(tuple[torch.fx.Node, ...], node.args[0]):
+        output_arg = TosaArg(output, tosa_spec)
         tosa_graph.addOutputTensor(
-            tosa_graph.currRegion.currBasicBlock.tensors[output.name]
+            tosa_graph.currRegion.currBasicBlock.tensors[output_arg.name]
         )

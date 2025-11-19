@@ -69,8 +69,10 @@ class TestCaseShim:
     def __init__(self, test_runner):
         self._test_runner = test_runner
 
-    def _test_op(self, model, args, flow, generate_random_test_inputs=True):
-        self._test_runner.lower_and_run_model(model, args)
+    def _test_op(self, model, args, flow, generate_random_test_inputs=False):
+        self._test_runner.lower_and_run_model(
+            model, args, generate_random_test_inputs=generate_random_test_inputs
+        )
 
 
 def wrap_test(original_func, test_type):

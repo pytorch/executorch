@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -56,8 +57,25 @@ if [[ "$FLOW" == *vulkan* ]]; then
 fi
 
 if [[ "$FLOW" == *arm* ]]; then
+
     # Setup ARM deps.
-    .ci/scripts/setup-arm-baremetal-tools.sh
+    if [[ "$FLOW" == *vgf* ]]; then
+        .ci/scripts/setup-arm-baremetal-tools.sh --enable-mlsdk-deps --install-mlsdk-deps-with-pip
+    else
+        .ci/scripts/setup-arm-baremetal-tools.sh
+    fi
+    source examples/arm/ethos-u-scratch/setup_path.sh
+
+    if [[ "$FLOW" == *ethos_u* ]]; then
+        # Prepare a test runner binary that can run on the Corstone-3x0 FVPs
+        backends/arm/scripts/build_executorch.sh
+        backends/arm/test/setup_testing.sh
+    fi
+
+    if [[ "$FLOW" == *vgf* ]]; then
+        # Prepare a test runner binary for VKML runtime
+        backends/arm/test/setup_testing_vkml.sh
+    fi
 fi
 
 if [[ $IS_MACOS -eq 1 ]]; then

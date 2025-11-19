@@ -57,6 +57,8 @@ set(_cortex_m_kernels__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_dequantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_add.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_mul.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_transpose.cpp
 )
 
 # Generate C++ bindings to register kernels into Executorch
@@ -90,6 +92,7 @@ gen_operators_lib(
 install(
   TARGETS cortex_m_kernels cortex_m_ops_lib cmsis-nn
   EXPORT ExecuTorchTargets
-  DESTINATION lib
-  PUBLIC_HEADER DESTINATION include/executorch/backends/cortex_m/ops/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  PUBLIC_HEADER
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/cortex_m/ops/
 )

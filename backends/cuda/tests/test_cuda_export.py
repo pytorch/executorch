@@ -8,6 +8,7 @@ import unittest
 from typing import Tuple
 
 import torch
+from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from torch.export import export
@@ -30,7 +31,9 @@ class TestCudaExport(unittest.TestCase):
         exported_program = export(module, inputs, strict=True)
 
         # Create partitioner and compile specs
-        partitioner = CudaPartitioner([])
+        partitioner = CudaPartitioner(
+            [CudaBackend.generate_method_name_compile_spec("forward")]
+        )
 
         # Use to_edge_transform_and_lower for complete pipeline
         edge_program_manager = to_edge_transform_and_lower(
@@ -248,3 +251,22 @@ class TestCudaExport(unittest.TestCase):
         self.assertIsNotNone(
             edge_program_manager, "Mathematical operations export failed"
         )
+
+    def test_conv1d(self):
+        """Test CUDA export for 1D convolution."""
+
+        class Conv1dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(3, 16, kernel_size=3, padding=1)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.conv(x)
+
+        module = Conv1dModule()
+        module.eval()
+        inputs = (torch.randn(1, 3, 10),)
+
+        # Test export
+        edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
+        self.assertIsNotNone(edge_program_manager, "Conv1d operation export failed")

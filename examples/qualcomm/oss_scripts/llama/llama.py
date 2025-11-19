@@ -302,8 +302,8 @@ class SingleLlama:
 
         if args.verbose:
             logging.info("Verifying the QDQ model...")
-            # qdq cpu ppl evaluation is time consuming, only enable when eval_perplexity
-            if args.eval_perplexity:
+            # qdq cpu ppl evaluation is time consuming, only enable when run_lm_eval
+            if args.run_lm_eval:
                 # Check qdq cpu results
                 graph_module_inference(
                     use_kv_cache=self.llama_meta["get_use_kv_cache"],
@@ -327,6 +327,13 @@ class SingleLlama:
                     chat_template, args.prompt[0], args.system_prompt
                 )
             )
+
+            # Gemma may produce unexpected output if the prompt contains an extra <bos> token.
+            # This can happen after applying a prompt template, which might inject <bos> unintentionally.
+            # To prevent decoding issues, we explicitly remove <bos> token
+            if chat_template and args.decoder_model in {"gemma-2b", "gemma3-1b"}:
+                prompt = prompt.replace("<bos>", "")
+
             graph_module_inference(
                 use_kv_cache=self.llama_meta["get_use_kv_cache"],
                 get_example_inputs=self.get_example_inputs,
@@ -438,7 +445,6 @@ def compile(
     kv_config.use_kv_cache = True
     kv_config.enable_r3 = decoder_model_config.r3
     kv_config.kv_io_bit_width = decoder_model_config.get_kv_io_bit_width()
-
     if decoder_model_config.masked_softmax:
         if is_qnn_sdk_version_less_than("2.35"):
             logging.warning(
@@ -534,14 +540,13 @@ def compile(
         state_dict = torch.load(
             checkpoint, weights_only=True, map_location="cpu", mmap=True
         )
-        if args.decoder_model == "gemma3-1b":
+        if args.decoder_model in {"gemma-2b", "gemma3-1b"}:
             for k, v in state_dict.items():
                 if "norm" not in k:
                     continue
                 # Llama does x.to(float16) * w whilst Gemma3 is (x * w).to(float16)
                 # See https://github.com/huggingface/transformers/pull/29402
                 state_dict[k] = v.float() + torch.ones(v.shape, dtype=torch.float32)
-
     else:
         state_dict = torch.load(
             args.checkpoint, weights_only=True, map_location="cpu", mmap=True
@@ -555,25 +560,32 @@ def compile(
 
     if decoder_model_config.transform_weight:
         # Change to HuggingFace weight to improve the performance of RoPE in HTP backend.
-        def permute(w, heads):
+        def permute(w, heads, partial_rotary_dim):
             dim_0 = w.size(0)
             dim_1 = w.size(1)
-            return (
-                w.view(heads, dim_0 // heads // 2, 2, dim_1)
-                .transpose(1, 2)
+            transformed_weight = (
+                w.view(heads, -1, dim_0 // heads // 2 // partial_rotary_dim, 2, dim_1)
+                .transpose(2, 3)
                 .reshape(dim_0, dim_1)
             )
+            return transformed_weight
 
         n_heads = llama_instance_list[0].n_heads
         n_kv_heads = llama_instance_list[0].n_kv_heads
         n_layers = llama_instance_list[0].n_layers
-
+        partial_rotary_dim = int(
+            1 // kv_config.partial_rotary_factor
+        )  # TODO Handle cases where input size isn't divisible.
         for layer_i in range(n_layers):
             state_dict[f"layers.{layer_i}.attention.wq.weight"] = permute(
-                state_dict[f"layers.{layer_i}.attention.wq.weight"], n_heads
+                state_dict[f"layers.{layer_i}.attention.wq.weight"],
+                n_heads,
+                partial_rotary_dim,
             )
             state_dict[f"layers.{layer_i}.attention.wk.weight"] = permute(
-                state_dict[f"layers.{layer_i}.attention.wk.weight"], n_kv_heads
+                state_dict[f"layers.{layer_i}.attention.wk.weight"],
+                n_kv_heads,
+                partial_rotary_dim,
             )
 
     for llama_instance in llama_instance_list:
@@ -642,6 +654,7 @@ def compile(
         for layer in llama_instance.layers:
             if getattr(layer.attention, "prepare_sha", None):
                 layer.attention.prepare_sha()
+
             if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
                 layer.feed_forward.prepare_feedfoward_conv()
 
@@ -879,14 +892,13 @@ def inference(
         else f"{args.artifact}/{pte_filename}.pte"
     )
 
-    if args.eval_perplexity:
+    if args.run_lm_eval:
         # Generate the eval wrapper
         eval_wrapper = QnnRunnerEvalWrapper(
             args=args,
             pte_path=pte_path,
             tokenizer=tokenizer,
             runtime_tokenizer_path=runtime_tokenizer_path,
-            max_seq_length=args.max_seq_len,
         )
 
         # Evaluate the model
@@ -899,21 +911,41 @@ def inference(
             )
 
         if args.ip and args.port != -1:
-            assert (
-                len(args.tasks) == 1 and args.tasks[0] == "wikitext"
-            ), "CI currently supports wikitext only"
-            wiki_ppl = eval_results["results"][args.tasks[0]]["word_perplexity,none"]
-            pte_size = os.path.getsize(pte_path)
-            with Client((args.ip, args.port)) as conn:
-                conn.send(
-                    json.dumps(
-                        {
-                            "wiki_ppl": wiki_ppl,
-                            "pte_size": pte_size,
-                            "inference_speed": eval_wrapper.inference_speed,
-                        }
+            assert len(args.tasks) == 1, "CI currently supports 1 lm_eval task only."
+            match args.tasks[0]:
+                case "wikitext":
+                    wiki_ppl = eval_results["results"][args.tasks[0]][
+                        "word_perplexity,none"
+                    ]
+                    pte_size = os.path.getsize(pte_path)
+                    with Client((args.ip, args.port)) as conn:
+                        conn.send(
+                            json.dumps(
+                                {
+                                    "wiki_ppl": wiki_ppl,
+                                    "pte_size": pte_size,
+                                    "inference_speed": eval_wrapper.inference_speed,
+                                }
+                            )
+                        )
+                case "hellaswag":
+                    acc_norm = eval_results["results"][args.tasks[0]]["acc_norm,none"]
+                    pte_size = os.path.getsize(pte_path)
+                    with Client((args.ip, args.port)) as conn:
+                        conn.send(
+                            json.dumps(
+                                {
+                                    "acc_norm": acc_norm,
+                                    "pte_size": pte_size,
+                                    "inference_speed": eval_wrapper.inference_speed,
+                                }
+                            )
+                        )
+                case _:
+                    raise RuntimeError(
+                        "CI currently supports [wikitext, hellaswag] only."
                     )
-                )
+
         else:
             for task, res in eval_results["results"].items():
                 logging.info(f"{task}: {res}")
@@ -1007,10 +1039,12 @@ def inference(
             host_id=args.host,
             soc_model=args.model,
             shared_buffer=args.shared_buffer,
+            target=args.target,
             runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=[], files=[runtime_tokenizer_path])
+        if not args.skip_push:
+            adb.push(inputs=[], files=[runtime_tokenizer_path])
         adb.execute(custom_runner_cmd=runner_cmd)
         adb.pull(output_path=args.artifact, callback=post_process)
 
@@ -1039,7 +1073,7 @@ def inference(
 
 def _build_tasks_parser(parser):
     parser.add_argument(
-        "--eval_perplexity",
+        "--run_lm_eval",
         help="If enabled, this will use the tasks provided under args.tasks to calibrate the model",
         action="store_true",
         default=False,
@@ -1126,7 +1160,7 @@ def _build_parser():
 
     parser.add_argument(
         "--system_prompt",
-        help="For Llama3. Tells the model what kind of assistant it should be. For example, You are a helpful AI assistant for travel tips and recommendations. Default is None",
+        help="For Llama3/Granite. Tells the model what kind of assistant it should be. For example, You are a helpful AI assistant for travel tips and recommendations. Default is None",
         default="",
         type=str,
     )
@@ -1145,12 +1179,6 @@ def _build_parser():
         type=str,
         choices=["fp32", "fp16"],
         help="Override the dtype of the model (default is the checkpoint dtype). Options: fp32",
-    )
-
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated llama in the given directory.",
-        type=str,
     )
 
     parser.add_argument(
@@ -1226,9 +1254,9 @@ def _build_parser():
 def export_llama(args) -> None:
     if args.compile_only and args.pre_gen_pte:
         raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
-    if args.eval_perplexity and args.model_mode != "kv":
+    if args.run_lm_eval and args.model_mode != "kv":
         raise RuntimeError("Eval device perplexity is only supported for KV mode")
-    if args.eval_perplexity and args.tasks is None:
+    if args.run_lm_eval and args.tasks is None:
         raise RuntimeError("Please provide --tasks to eval perplexity")
     assert (
         args.decoder_model in SUPPORTED_LLM_MODELS
@@ -1286,11 +1314,20 @@ def export_llama(args) -> None:
         )
         tokenizer_artifacts = tokenizer.save_pretrained(args.artifact)
         tokenizer_config = tokenizer_artifacts[0]
-        runtime_tokenizer_path = tokenizer_artifacts[-1]
+        if args.decoder_model == "gemma-2b":
+            # For Gemma, use tokenizer.model as it doesn't provide pre_tokenizer in tokenizer.json.
+            runtime_tokenizer_path = tokenizer_artifacts[-3]
+        else:
+            runtime_tokenizer_path = tokenizer_artifacts[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path, tokenizer_config)
 
+    if args.decoder_model == "codegen2_1b":
+        # Override the default BOS and EOS token IDs for codegen2_1b
+        tokenizer.bos_id = 1
+        tokenizer.eos_id = 2
+
     # TODO: Remove this once error is resolved.
-    if args.decoder_model == "phi_4_mini":
+    elif args.decoder_model == "phi_4_mini":
         with open(runtime_tokenizer_path, "r+") as file:
             data = json.load(file)
             # TODO: Encountered the following error during runtime, so switched behavior for now.

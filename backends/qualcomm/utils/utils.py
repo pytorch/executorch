@@ -197,7 +197,7 @@ def dump_context_from_pte(pte_path) -> List[str]:
     with open(pte_path, "rb") as f:
         program_data = f.read()
 
-    program = deserialize_pte_binary(program_data)
+    program = deserialize_pte_binary(program_data).program
 
     ctx_path = os.path.dirname(pte_path)
     dummy_compiler_specs = generate_qnn_executorch_compiler_spec(
@@ -1092,6 +1092,7 @@ def get_soc_to_arch_map():
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
         "SM8550": HtpArch.V73,
+        "SA8255": HtpArch.V73,
         "SM8650": HtpArch.V75,
         "SM8750": HtpArch.V79,
         "SSG2115P": HtpArch.V73,
@@ -1099,6 +1100,8 @@ def get_soc_to_arch_map():
         "SXR1230P": HtpArch.V73,
         "SXR2230P": HtpArch.V69,
         "SXR2330P": HtpArch.V79,
+        "QCS9100": HtpArch.V73,
+        "SAR2230P": HtpArch.V81,
     }
 
 
@@ -1108,6 +1111,7 @@ def get_soc_to_chipset_map():
         "SM8450": QcomChipset.SM8450,
         "SM8475": QcomChipset.SM8475,
         "SM8550": QcomChipset.SM8550,
+        "SA8255": QcomChipset.SA8255,
         "SM8650": QcomChipset.SM8650,
         "SM8750": QcomChipset.SM8750,
         "SSG2115P": QcomChipset.SSG2115P,
@@ -1115,6 +1119,8 @@ def get_soc_to_chipset_map():
         "SXR1230P": QcomChipset.SXR1230P,
         "SXR2230P": QcomChipset.SXR2230P,
         "SXR2330P": QcomChipset.SXR2330P,
+        "QCS9100": QcomChipset.QCS9100,
+        "SAR2230P": QcomChipset.SAR2230P,
     }
 
 

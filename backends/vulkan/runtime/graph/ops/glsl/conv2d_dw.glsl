@@ -54,7 +54,7 @@ void main() {
   // Compute the start and end of the input indices to load. Padding is assumed
   // to be constant 0 padding, so reads from the padding region are skipped.
   const ivec2 start = ipos;
-  const ivec2 end = ipos + overlay_region.xy;
+  const ivec2 end = min(ipos + overlay_region.xy, in_sizes.xy);
 
   VEC4_T sum = texelFetch(t_bias, ivec2(pos.z, 0), 0);
   int kx = 0;

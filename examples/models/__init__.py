@@ -14,6 +14,7 @@ class Model(str, Enum):
     Add = "add"
     AddMul = "add_mul"
     Softmax = "softmax"
+    Conv1d = "conv1d"
     Dl3 = "dl3"
     Edsr = "edsr"
     EmformerTranscribe = "emformer_transcribe"
@@ -38,6 +39,7 @@ class Model(str, Enum):
     Qwen25 = "qwen2_5_1_5b"
     Phi4Mini = "phi_4_mini"
     SmolLM2 = "smollm2"
+    DeiTTiny = "deit_tiny"
 
     def __str__(self) -> str:
         return self.value
@@ -59,6 +61,7 @@ MODEL_NAME_TO_MODEL = {
     str(Model.Add): ("toy_model", "AddModule"),
     str(Model.AddMul): ("toy_model", "AddMulModule"),
     str(Model.Softmax): ("toy_model", "SoftmaxModule"),
+    str(Model.Conv1d): ("toy_model", "Conv1dModule"),
     str(Model.Dl3): ("deeplab_v3", "DeepLabV3ResNet50Model"),
     str(Model.Edsr): ("edsr", "EdsrModel"),
     str(Model.EmformerTranscribe): ("emformer_rnnt", "EmformerRnntTranscriberModel"),
@@ -85,6 +88,7 @@ MODEL_NAME_TO_MODEL = {
     str(Model.Qwen25): ("qwen2_5", "Qwen2_5Model"),
     str(Model.Phi4Mini): ("phi_4_mini", "Phi4MiniModel"),
     str(Model.SmolLM2): ("smollm2", "SmolLM2Model"),
+    str(Model.DeiTTiny): ("deit_tiny", "DeiTTinyModel"),
 }
 
 __all__ = [

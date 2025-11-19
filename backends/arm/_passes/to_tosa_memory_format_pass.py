@@ -3,13 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
 
 import logging
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.annotate_decomposed_matmul import (
     AnnotateDecomposedMatmulPass,
 )
@@ -19,13 +18,15 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     is_param_node,
 )
 from executorch.backends.arm.constants import (
-    HWCM_ORDER,
     NCHW_ORDER,
     NHWC_INVERSE_ORDER,
     NHWC_ORDER,
     NNCHW_ORDER,
     NNHWC_INVERSE_ORDER,
     NNHWC_ORDER,
+    NNNCHW_ORDER,
+    NNNHWC_INVERSE_ORDER,
+    NNNHWC_ORDER,
 )
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -41,7 +42,7 @@ def _is_input(node: torch.fx.Node, exported_program: ExportedProgram) -> bool:
     return node.op == "placeholder" and not is_param_node(exported_program, node)
 
 
-class ToTosaMemoryFormatPass(ExportPass):
+class ToTosaMemoryFormatPass(ArmPass):
     """
     Annotates each node with a tosa_dim_order. tosa_dim_order can be seen as a channels-last dim-order
     that in most cases will be (0, 2, 3, 1) for nodes with 4D-shapes. The pass also inserts backend.tosa.TRANSPOSE
@@ -51,49 +52,18 @@ class ToTosaMemoryFormatPass(ExportPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    NHWC_order = (0, 2, 3, 1)
-    NHWC_inverse_order = (0, 3, 1, 2)
-    HWCM_order = (2, 3, 0, 1)
-    NNHWC_order = (0, 1, 3, 4, 2)
-    NNHWC_inverse_order = (0, 1, 4, 2, 3)
-
     def __init__(self, exported_program: ExportedProgram) -> None:
-        self.exported_program = exported_program
         super().__init__()
-
-    @staticmethod
-    def _is_consumer_node_depthwise_conv2d(node: torch.fx.Node):
-        consumer_node = list(node.users)[0]
-        if consumer_node.target == exir_ops.edge.aten.convolution.default:
-            consumer_node_inputs = consumer_node.all_input_nodes
-            groups = consumer_node.args[-1]
-            in_channels = consumer_node_inputs[0].meta["val"].shape[1]
-            out_channels = consumer_node_inputs[1].meta["val"].shape[0]
-            if (in_channels == groups) and (out_channels % in_channels) == 0:
-                return True
-
-        return False
-
-    def is_weight_node_for_depthwise_conv2d(self, node: torch.fx.Node):
-        """
-        returns True for w in the following sequence;
-        w -> depthwise_conv2d -> ...
-        """
-        if node.op == "placeholder":
-            # node is an input, weight or bias node
-            consumer_node = list(node.users)[0]
-            if self.is_weight_node_for_depthwise_conv2d(consumer_node):
-                return True
-            if self._is_consumer_node_depthwise_conv2d(node):
-                # Check that node is the weight-argument and not input or bias
-                return consumer_node.args[1] == node
-
-        return False
+        self.exported_program = exported_program
 
     @staticmethod
     def memory_format_differs(shape):
         """Returns true if the shape will have a different memory layout in (N)NCHW and (N)NHWC format"""
-        if len(shape) >= 5:
+        if len(shape) >= 6:
+            C = shape[3]
+            H = shape[4]
+            W = shape[5]
+        elif len(shape) == 5:
             C = shape[2]
             H = shape[3]
             W = shape[4]
@@ -112,25 +82,26 @@ class ToTosaMemoryFormatPass(ExportPass):
 
     @staticmethod
     def is_channel_reshape(input_shape, output_shape):
-        """Returns true if the reshape changes the channel dimension"""
-        if not (
-            (len(input_shape) == len(output_shape) and (len(output_shape) in (4, 5)))
-            or (len(input_shape) == 4 and len(output_shape) == 5)
-            or (len(input_shape) == 5 and len(output_shape) == 4)
-        ):
+        """Returns true if reshape changes the channel dimension or batch product dimension(s)"""
+
+        valid_ranks = {4, 5, 6}
+
+        if not (len(input_shape) in valid_ranks and len(output_shape) in valid_ranks):
             return False
 
         C_old = input_shape[-3]
         C_new = output_shape[-3]
 
-        N_new = (
-            output_shape[0]
-            if len(output_shape) == 4
-            else output_shape[0] * output_shape[1]
-        )
-        N_old = (
-            input_shape[0] if len(input_shape) == 4 else input_shape[0] * input_shape[1]
-        )
+        def get_batch_prod_dim(shape):
+            product = 1
+
+            for dim in shape[:-3]:
+                product = product * dim
+
+            return product
+
+        N_old = get_batch_prod_dim(input_shape)
+        N_new = get_batch_prod_dim(output_shape)
 
         return (N_old != N_new) or (C_old != C_new)
 
@@ -141,17 +112,27 @@ class ToTosaMemoryFormatPass(ExportPass):
             node.replace_input_with(input_node, pre_permute_node)
             return
 
+        if len(get_first_fake_tensor(input_node).size()) == 6:
+            mem_format = NNNHWC_INVERSE_ORDER
+        elif len(get_first_fake_tensor(input_node).size()) == 5:
+            mem_format = NNHWC_INVERSE_ORDER
+        else:
+            mem_format = NHWC_INVERSE_ORDER
+        # Guard: mem_format must be a true permutation for the current rank
+        _rank_ = len(
+            get_first_fake_tensor(input_node).size()
+        )  # or (node) in output path
+        assert sorted(mem_format) == list(
+            range(_rank_)
+        ), f"bad perm {mem_format} for rank {_rank_} in insert_input_transpose"
+
         with graph_module.graph.inserting_before(node):
             permute_node = create_node(
                 graph_module.graph,
                 exir_ops.backend.tosa.TRANSPOSE.default,
                 args=(
                     input_node,
-                    list(
-                        NNHWC_INVERSE_ORDER
-                        if len(get_first_fake_tensor(input_node).size()) == 5
-                        else NHWC_INVERSE_ORDER
-                    ),
+                    list(mem_format),
                 ),
                 from_node=node,
             )
@@ -163,26 +144,38 @@ class ToTosaMemoryFormatPass(ExportPass):
 
     @staticmethod
     def insert_output_transpose(node, graph_module):
+
+        if len(get_first_fake_tensor(node).size()) == 6:
+            mem_format = NNNHWC_ORDER
+        elif len(get_first_fake_tensor(node).size()) == 5:
+            mem_format = NNHWC_ORDER
+        else:
+            mem_format = NHWC_ORDER
+        # Guard: mem_format must be a true permutation for the current rank
+        _rank_ = len(get_first_fake_tensor(node).size())  # or (node) in output path
+        assert sorted(mem_format) == list(
+            range(_rank_)
+        ), f"bad perm {mem_format} for rank {_rank_} in insert_input_transpose"
+
         with graph_module.graph.inserting_after(node):
             permute_node = create_node(
                 graph_module.graph,
                 exir_ops.backend.tosa.TRANSPOSE.default,
                 args=(
                     node,
-                    list(
-                        NNHWC_ORDER
-                        if len(get_first_fake_tensor(node).size()) == 5
-                        else NHWC_ORDER
-                    ),
+                    list(mem_format),
                 ),
                 from_node=node,
             )
 
-            permute_node.meta["tosa_dim_order"] = (
-                NNHWC_ORDER
-                if len(get_first_fake_tensor(node).size()) == 5
-                else NHWC_ORDER
-            )
+            rank = len(get_first_fake_tensor(node).size())
+            if rank == 6:
+                permute_node.meta["tosa_dim_order"] = NNNHWC_ORDER
+            elif rank == 5:
+                permute_node.meta["tosa_dim_order"] = NNHWC_ORDER
+            else:
+                permute_node.meta["tosa_dim_order"] = NHWC_ORDER
+
             node.meta["tosa_dim_order"] = tuple(
                 range(len(get_first_fake_tensor(node).size()))
             )
@@ -261,21 +254,28 @@ class ToTosaMemoryFormatPass(ExportPass):
         ]
         for input_node in inputs:
             input_dim_order = get_first_fake_tensor(input_node).dim_order()
-            if input_dim_order in (NCHW_ORDER, NNCHW_ORDER):
+            if input_dim_order in (NCHW_ORDER, NNCHW_ORDER, NNNCHW_ORDER):
                 self.insert_output_transpose(input_node, graph_module)
 
         # Transpose outputs if they are in (N)NCHW format
         outputs = output_node.args[0]
+        if not isinstance(outputs, (list, tuple)):
+            raise TypeError(
+                f"Expected output node args to be a list or tuple, got {type(outputs)}"
+            )
         output_dim_orders = output_node.meta.get("original_dim_orders")
         if output_dim_orders is None:
             raise RuntimeError(
                 f"{AnnotateDecomposedMatmulPass.__name__} is required to run at the beginning of the pass pipeline when using {ToTosaMemoryFormatPass.__name__}."
             )
 
-        for output_node_input, output_dim_order in zip(outputs, output_dim_orders):  # type: ignore[arg-type]
+        for output_node_input, output_dim_order in zip(
+            outputs, output_dim_orders, strict=True
+        ):
             if output_dim_order in (
                 NCHW_ORDER,
                 NNCHW_ORDER,
+                NNNCHW_ORDER,
             ):
                 self.insert_input_transpose(
                     output_node, output_node_input, graph_module
@@ -299,6 +299,8 @@ class ToTosaMemoryFormatPass(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
+            if "val" not in node.meta:
+                continue
             node_data = get_first_fake_tensor(node).data
 
             self.remove_dim_order_kwargs(graph_module, node)
@@ -307,12 +309,10 @@ class ToTosaMemoryFormatPass(ExportPass):
                 dim_order = node_data.dim_order()
             elif node_data.dim() == 4:
                 dim_order = NHWC_ORDER
-                if self.is_weight_node_for_depthwise_conv2d(node):
-                    # The weights of TOSA DEPTHWISE_CONV2D have shape (H, W, C, M) which corresponds to
-                    # dim_order = (2, 3, 0, 1) (https://www.mlplatform.org/tosa/tosa_spec.html#_depthwise_conv2d).
-                    dim_order = HWCM_ORDER
             elif node_data.dim() == 5:
                 dim_order = NNHWC_ORDER
+            elif node_data.dim() == 6:
+                dim_order = NNNHWC_ORDER
             else:
                 dim_order = tuple(range(node_data.dim()))  # type: ignore[assignment]
 

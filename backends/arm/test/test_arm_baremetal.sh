@@ -157,7 +157,6 @@ test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using 
 test_pytest_ops_vkml() { # Same as test_pytest but also sometime verify using VKML runtime
     echo "${TEST_SUITE_NAME}: Run pytest operator tests with VKML runtime"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing_vkml.sh
 
     pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ \
@@ -340,6 +339,19 @@ test_full_vkml() { # All End to End model tests
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_model_smollm2-135M() {
+    echo "${TEST_SUITE_NAME}: Test SmolLM2-135M on Ethos-U85"
+
+    # Build common libs once
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --build_libs
+
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=smollm2 --extra_flags="-DEXECUTORCH_SELECT_OPS_LIST=dim_order_ops::_to_dim_order_copy.out"
+
+    echo "${TEST_SUITE_NAME}: PASS"
+
+
+}
+
 test_smaller_stories_llama() {
     echo "${TEST_SUITE_NAME}: Test smaller_stories_llama"
 
@@ -366,5 +378,20 @@ test_smaller_stories_llama() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_memory_allocation() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation with run.sh"
+
+    mkdir -p arm_test/test_run
+    # Ethos-U85
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py &> arm_test/test_run/full.log
+    python3 backends/arm/test/test_memory_allocator_log.py --log arm_test/test_run/full.log \
+            --require "model_pte_program_size" "<= 3000 B" \
+            --require "method_allocator_planned" "<= 64 B" \
+            --require "method_allocator_loaded" "<= 1024 B" \
+            --require "method_allocator_input" "<= 16 B" \
+            --require "Total DRAM used" "<= 0.06 KiB"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
 
 ${TEST_SUITE}

@@ -649,7 +649,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
-    if (should_propagate_resize) {
+    if (should_propagate_resize || compute_graph->has_data_dependent_shapes()) {
       compute_graph->propagate_resize();
     }
 

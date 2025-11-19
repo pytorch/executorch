@@ -29,14 +29,21 @@ using namespace executorch::runtime;
 }
 
 - (instancetype)initWithModelPath:(NSString*)modelPath
+                    tokenizerPath:(NSString*)tokenizerPath {
+  return [self initWithModelPath:modelPath
+                   tokenizerPath:tokenizerPath
+                   specialTokens:@[]];
+}
+
+- (instancetype)initWithModelPath:(NSString*)modelPath
                     tokenizerPath:(NSString*)tokenizerPath
-                    specialTokens:(NSArray<NSString*>*)tokens {
+                    specialTokens:(NSArray<NSString*>*)specialTokens {
   self = [super init];
   if (self) {
     _modelPath = [modelPath copy];
     _tokenizerPath = [tokenizerPath copy];
     _specialTokens = std::make_unique<std::vector<std::string>>();
-    for (NSString *token in tokens) {
+    for (NSString *token in specialTokens) {
       _specialTokens->emplace_back(token.UTF8String);
     }
   }

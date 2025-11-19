@@ -304,6 +304,24 @@ class OpGather:
     param_axis: str = "axis"
 
 
+class OpGridSample:
+    op_name: str = "GridSample"
+    param_align_corners: str = "align_corners"
+    param_mode: str = "mode"
+    param_padding_mode: str = "padding_mode"
+
+    @unique
+    class Mode(IntEnum):
+        BILINAR = 0
+        NEAREST = 1
+
+    @unique
+    class PaddingMode(IntEnum):
+        ZEROS = 0
+        BORDER = 1
+        REFLECTION = 2
+
+
 @dataclass(init=False, frozen=True)
 class OpGatherElements:
     op_name: str = "GatherElements"
@@ -386,6 +404,21 @@ class OpPad:
 @dataclass(init=False, frozen=True)
 class OpPoolAvg2d:
     op_name: str = "PoolAvg2d"
+    param_filter_size: str = "filter_size"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_count_pad_for_edges: str = "count_pad_for_edges"
+    param_rounding_mode: str = "rounding_mode"
+
+    @unique
+    class RoundingMode(IntEnum):
+        FLOOR = 0
+        CEIL = 1
+
+
+@dataclass(init=False, frozen=True)
+class OpPoolAvg3d:
+    op_name: str = "PoolAvg3d"
     param_filter_size: str = "filter_size"
     param_stride: str = "stride"
     param_pad_amount: str = "pad_amount"

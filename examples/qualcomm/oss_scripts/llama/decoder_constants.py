@@ -14,7 +14,9 @@ EVAL_MODE = {
 DECODER_MODEL_VERSION = {
     "stories260k": "llama2",
     "stories110m": "llama2",
+    "gemma-2b": "gemma",
     "gemma3-1b": "gemma3",
+    "granite_3_3-2b_instruct": "granite",
     "phi_4_mini": "phi_4_mini",
     "llama3_2-1b_instruct": "llama3",
     "llama3_2-3b_instruct": "llama3",
@@ -24,4 +26,5 @@ DECODER_MODEL_VERSION = {
     "qwen3-1_7b": "qwen3",
     "smollm2_135m": "smollm2_135m",
     "smollm3-3b": "smollm3",
+    "codegen2_1b": "codegen",
 }

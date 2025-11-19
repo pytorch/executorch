@@ -32,12 +32,15 @@ namespace example {
 enum DecoderModelVersion {
   kLlama2 = 0,
   kLlama3,
+  kGemma,
   kGemma3,
+  kGranite,
   kPhi4,
   kQwen2_5,
   kQwen3,
   kSmollm2_135m,
-  kSmollm3
+  kSmollm3,
+  kCodegen,
 };
 
 enum KvBitWidth {
