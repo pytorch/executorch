@@ -104,11 +104,11 @@ test_cases = {
     ),
     "tensor_scalar": McuTestCase(
         CortexMScalarAdd(),
-        (torch.ones(2, 2), 1.0),
+        (torch.ones(1), 1.1),
     ),
     "scalar_tensor": McuTestCase(
         CortexMScalarAdd(),
-        (1000.0, torch.ones(2, 2)),
+        (1000.1, torch.ones(1)),
     ),
     "tensor_tensor": McuTestCase(
         CortexMTensorAdd(),
@@ -139,7 +139,7 @@ test_cases = {
 }
 
 
-dialect_xfails = {
+xfails = {
     "self_scalar": (
         "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
         AttributeError,
@@ -148,34 +148,17 @@ dialect_xfails = {
         "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
         AttributeError,
     ),
-    "tensor_scalar": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "scalar_tensor": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_1": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_2": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_3": (
-        "Expected to find 'executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default' but did not find it - broadcasting not supported.",
-        RuntimeError,
-    ),
     "alpha": (
         "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
         AssertionError,
     ),
+    "broadcast_1": "Broadcasting not yet supported in Cortex-M backend",
+    "broadcast_2": "Broadcasting not yet supported in Cortex-M backend",
+    "broadcast_3": "Broadcasting not yet supported in Cortex-M backend",
 }
 
 
-@parametrize("test_case", test_cases, xfails=dialect_xfails)
+@parametrize("test_case", test_cases, xfails=xfails)
 def test_dialect_add(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_dialect(
@@ -183,43 +166,7 @@ def test_dialect_add(test_case):
     )
 
 
-implementation_xfails = {
-    "self_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
-    "scalar_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
-    "tensor_scalar": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "scalar_tensor": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_1": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_2": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "broadcast_3": (
-        "Missing operator: [2] aten::add.out - broadcasting not supported.",
-        RuntimeError,
-    ),
-    "alpha": (
-        "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
-        AssertionError,
-    ),
-}
-
-
-@parametrize("test_case", test_cases, xfails=implementation_xfails)
+@parametrize("test_case", test_cases, xfails=xfails)
 def test_implementation_add(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_implementation()

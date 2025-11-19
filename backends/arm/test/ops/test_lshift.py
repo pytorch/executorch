@@ -91,7 +91,6 @@ def test_bitwise_left_shift_tensor_tosa_INT_scalar(test_data):
         LshiftScalar.torch_op_INT,
         LshiftScalar.exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -104,7 +103,6 @@ def test_bitwise_left_shift_tensor_u55_INT_scalar(test_data):
         LshiftScalar.torch_op_INT,
         LshiftScalar.exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -117,7 +115,6 @@ def test_bitwise_left_shift_tensor_u85_INT_scalar(test_data):
         LshiftScalar.torch_op_INT,
         LshiftScalar.exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -144,7 +141,6 @@ def test_bitwise_left_shift_tensor_vgf_INT_scalar(test_data: scalar_input_t):
         LshiftScalar.exir_op,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -171,7 +167,6 @@ def test_bitwise_left_shift_tensor_tosa_INT(test_data):
         LshiftTensor.torch_op,
         LshiftTensor.exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -184,7 +179,6 @@ def test_bitwise_left_shift_tensor_u55_INT(test_data):
         LshiftTensor.torch_op,
         LshiftTensor.exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -197,7 +191,6 @@ def test_bitwise_left_shift_tensor_u85_INT(test_data):
         LshiftTensor.torch_op,
         LshiftTensor.exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -224,5 +217,4 @@ def test_bitwise_left_shift_tensor_vgf_INT(test_data: tensor_input_t):
         LshiftTensor.exir_op,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

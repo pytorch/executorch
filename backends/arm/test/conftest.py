@@ -29,7 +29,7 @@ def pytest_configure(config):
     if config.option.arm_run_tosa_version:
         pytest._test_options["tosa_version"] = config.option.arm_run_tosa_version
 
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+    logging.basicConfig(stream=sys.stdout)
 
 
 def pytest_collection_modifyitems(config, items):
