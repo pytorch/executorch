@@ -69,6 +69,7 @@ from executorch.backends.arm._passes import (
     DecomposeRoundPass,
     DecomposeScaledDotProductAttentionPass,
     DecomposeSelectPass,
+    DecomposeSelectScatterPass,
     DecomposeSignPass,
     DecomposeSiluPass,
     DecomposeSinhPass,
@@ -322,6 +323,7 @@ class ArmPassManager(PassManager):
         # Transformation passes (pre scalar -> tensor)
         self.add_passes(
             [
+                DecomposeSelectScatterPass(),
                 ConvertInt64ConstOpsToInt32Pass(),
                 ConvertInt64OutputOpsToInt32Pass(),
                 InsertInt32CastsAfterInt64PlaceholdersPass(),
