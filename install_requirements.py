@@ -26,19 +26,6 @@ SUPPORTED_CUDA_VERSIONS = (
     (13, 0),
 )
 
-# Since ExecuTorch often uses main-branch features of pytorch, only the nightly
-# pip versions will have the required features.
-#
-# NOTE: If a newly-fetched version of the executorch repo changes the value of
-# NIGHTLY_VERSION, you should re-run this script to install the necessary
-# package versions.
-#
-# NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
-# by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
-#
-# NOTE: If you're changing, make the corresponding supported CUDA versions in
-# SUPPORTED_CUDA_VERSIONS above if needed.
-
 
 def install_requirements(use_pytorch_nightly):
     # Skip pip install on Intel macOS if using nightly.
