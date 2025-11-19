@@ -239,6 +239,47 @@ def quantized_mul_impl(
 
 
 # ===================================================================
+# MINIMUM/MAXIMUM OPERATION DEFINITIONS
+# ===================================================================
+lib.define("minimum(Tensor self, Tensor other) -> Tensor")
+lib.define("minimum.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)")
+
+
+@register_fake("cortex_m::minimum")
+def minimum_meta(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
+    assert self.dtype == other.dtype, (
+        "Cortex-M minimum: dtype mismatch — "
+        f"got self.dtype={self.dtype}, other.dtype={other.dtype}"
+    )
+    broadcasted_shape = torch.broadcast_shapes(self.shape, other.shape)
+    return torch.empty(broadcasted_shape, dtype=self.dtype, device=self.device)
+
+
+@impl(lib, "minimum", "CompositeExplicitAutograd")
+def minimum_impl(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
+    return torch.minimum(self, other)
+
+
+lib.define("maximum(Tensor self, Tensor other) -> Tensor")
+lib.define("maximum.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)")
+
+
+@register_fake("cortex_m::maximum")
+def maximum_meta(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
+    assert self.dtype == other.dtype, (
+        "Cortex-M maximum: dtype mismatch — "
+        f"got self.dtype={self.dtype}, other.dtype={other.dtype}"
+    )
+    broadcasted_shape = torch.broadcast_shapes(self.shape, other.shape)
+    return torch.empty(broadcasted_shape, dtype=self.dtype, device=self.device)
+
+
+@impl(lib, "maximum", "CompositeExplicitAutograd")
+def maximum_impl(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
+    return torch.maximum(self, other)
+
+
+# ===================================================================
 # QUANTIZED LINEAR OPERATION DEFINITION
 # ===================================================================
 
