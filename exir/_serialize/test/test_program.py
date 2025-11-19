@@ -8,12 +8,13 @@
 # pyre-unsafe
 
 import copy
+import dataclasses
 import difflib
 import json
 import math
 import unittest
 
-from typing import List, Sequence
+from typing import Dict, List, Sequence
 
 from executorch.exir._serialize._flatbuffer import _program_flatbuffer_to_json
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
@@ -23,6 +24,7 @@ from executorch.exir._serialize._program import (
     _json_to_program,
     _program_to_json,
     deserialize_pte_binary,
+    PTEFile,
     serialize_pte_binary,
 )
 from executorch.exir._serialize.data_serializer import DataEntry
@@ -172,7 +174,7 @@ class TestProgram(unittest.TestCase):
         # Extract blobs into constant segment during serialization.
         pte_data = bytes(
             serialize_pte_binary(
-                program,
+                PTEFile(program=program),
                 segment_alignment=SEGMENT_ALIGNMENT,
                 constant_tensor_alignment=constant_tensor_alignment,
             )
@@ -281,13 +283,43 @@ class TestProgram(unittest.TestCase):
         )
 
         # Convert back.
-        program2 = deserialize_pte_binary(pte_data)
+        deserialized = deserialize_pte_binary(pte_data)
         # Programs are the same besides constant_buffer, as deserialization
         # does not preserve constant segment; padding may be added
         # during serialization.
-        self.assertEqual(program2.execution_plan, program.execution_plan)
+        self.assertEqual(deserialized.program.execution_plan, program.execution_plan)
         # Number of constant tensors should be the same.
-        self.assertEqual(len(program2.constant_buffer), len(program.constant_buffer))
+        self.assertEqual(
+            len(deserialized.program.constant_buffer), len(program.constant_buffer)
+        )
+        self.assertEqual(deserialized.mutable_data, None)
+        self.assertEqual(deserialized.named_data, None)
+
+    def _check_named_data_entries(
+        self, reference: Dict[str, DataEntry], actual: Dict[str, DataEntry]
+    ) -> None:
+        self.assertEqual(reference.keys(), actual.keys())
+        SKIP_FIELDS = {"alignment"}  # Fields to ignore in comparison.
+        for key in reference.keys():
+            ref_entry = reference[key]
+            actual_entry = actual[key]
+            for field in dataclasses.fields(ref_entry):
+                if field.name not in SKIP_FIELDS:
+                    self.assertEqual(
+                        getattr(ref_entry, field.name),
+                        getattr(actual_entry, field.name),
+                        f"Named data record {key}.{field.name} does not match.",
+                    )
+
+    def _check_named_data_store_output(
+        self, reference: NamedDataStoreOutput, actual: NamedDataStoreOutput
+    ) -> None:
+        # Check buffers.
+        self.assertEqual(reference.buffers, actual.buffers)
+        # Check pte_data.
+        self._check_named_data_entries(reference.pte_data, actual.pte_data)
+        # Should be empty.
+        self.assertEqual(reference.external_data, actual.external_data)
 
     def test_canonicalize_delegate_indices(self) -> None:
         def make_execution_plan(
@@ -415,7 +447,7 @@ class TestProgram(unittest.TestCase):
         deserializing.
         """
         program = get_test_program()
-        pte_data = bytes(serialize_pte_binary(program))
+        pte_data = bytes(serialize_pte_binary(pte_file=PTEFile(program)))
         self.assertGreater(len(pte_data), 16)
 
         # File magic should be present at the expected offset.
@@ -426,10 +458,12 @@ class TestProgram(unittest.TestCase):
         self.assertIsNone(eh)
 
         # Convert back.
-        program2 = deserialize_pte_binary(pte_data)
+        deserialized = deserialize_pte_binary(pte_data)
 
         # Programs should be the same.
-        self.assert_programs_equal(program, program2)
+        self.assert_programs_equal(program, deserialized.program)
+        self.assertEqual(deserialized.mutable_data, None)
+        self.assertEqual(deserialized.named_data, None)
 
     def test_round_trip_large_buffer_sizes(self) -> None:
         """Tests that when the non_const_buffer_sizes contains integers
@@ -438,8 +472,10 @@ class TestProgram(unittest.TestCase):
         """
         program = get_test_program()
         program.execution_plan[0].non_const_buffer_sizes = [0, 2**48]
-        flatbuffer_from_py = bytes(serialize_pte_binary(program))
-        self.assert_programs_equal(program, deserialize_pte_binary(flatbuffer_from_py))
+        flatbuffer_from_py = bytes(serialize_pte_binary(pte_file=PTEFile(program)))
+        self.assert_programs_equal(
+            program, deserialize_pte_binary(flatbuffer_from_py).program
+        )
 
     def test_round_trip_no_segments_and_no_header(self) -> None:
         """Tests that a Program serialized with extract_delegate_segments=True
@@ -448,7 +484,11 @@ class TestProgram(unittest.TestCase):
         the same after serializing and deserializing.
         """
         program = get_test_program()
-        pte_data = bytes(serialize_pte_binary(program, extract_delegate_segments=True))
+        pte_data = bytes(
+            serialize_pte_binary(
+                pte_file=PTEFile(program), extract_delegate_segments=True
+            )
+        )
         self.assertGreater(len(pte_data), 16)
 
         # File magic should be present at the expected offset.
@@ -463,10 +503,12 @@ class TestProgram(unittest.TestCase):
         self.assertEqual(program_with_segments.segments, [])
 
         # Convert back.
-        program2 = deserialize_pte_binary(pte_data)
+        deserialized = deserialize_pte_binary(pte_data)
 
         # Programs should be the same.
-        self.assert_programs_equal(program, program2)
+        self.assert_programs_equal(program, deserialized.program)
+        self.assertEqual(deserialized.mutable_data, None)
+        self.assertEqual(deserialized.named_data, None)
 
     @staticmethod
     def gen_blob_data(size: int, pattern: bytes) -> bytes:
@@ -496,7 +538,7 @@ class TestProgram(unittest.TestCase):
         # Extract the blobs into segments during serialization.
         pte_data = bytes(
             serialize_pte_binary(
-                program,
+                PTEFile(program=program),
                 extract_delegate_segments=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
             )
@@ -598,8 +640,10 @@ class TestProgram(unittest.TestCase):
         # meaning that the segments were moved back to inline. This also
         # demonstrates that the contents of all segments survived, and weren't
         # truncated or corrupted.
-        program2 = deserialize_pte_binary(pte_data)
-        self.assert_programs_equal(program, program2)
+        deserialized = deserialize_pte_binary(pte_data)
+        self.assert_programs_equal(program, deserialized.program)
+        self.assertEqual(deserialized.mutable_data, None)
+        self.assertEqual(deserialized.named_data, None)
 
     def test_no_constants(self) -> None:
         program = get_test_program()
@@ -608,7 +652,7 @@ class TestProgram(unittest.TestCase):
 
         pte_data = bytes(
             serialize_pte_binary(
-                program,
+                PTEFile(program=program),
                 extract_delegate_segments=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
                 constant_tensor_alignment=CONSTANT_TENSOR_ALIGNMENT,
@@ -640,7 +684,7 @@ class TestProgram(unittest.TestCase):
         # Extract the blobs into segments should succeeed.
         pte_data = bytes(
             serialize_pte_binary(
-                program,
+                PTEFile(program=program),
                 extract_delegate_segments=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
             )
@@ -655,7 +699,7 @@ class TestProgram(unittest.TestCase):
         # Should cause serialization to fail.
         with self.assertRaises(ValueError):
             serialize_pte_binary(
-                program,
+                PTEFile(program=program),
                 extract_delegate_segments=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
             )
@@ -676,7 +720,7 @@ class TestProgram(unittest.TestCase):
         # Expect failure as tensor alignment 14 is not a power of 2.
         with self.assertRaises(ValueError):
             serialize_pte_binary(
-                program,
+                PTEFile(program=program),
                 segment_alignment=SEGMENT_ALIGNMENT,
                 constant_tensor_alignment=constant_tensor_alignment,
             )
@@ -711,11 +755,10 @@ class TestProgram(unittest.TestCase):
         # Extract the blobs into segments during serialization.
         pte_data = bytes(
             serialize_pte_binary(
-                program,
+                PTEFile(program=program, named_data=named_data),
                 extract_delegate_segments=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
                 constant_tensor_alignment=CONSTANT_TENSOR_ALIGNMENT,
-                named_data=named_data,
             )
         )
 
@@ -884,13 +927,17 @@ class TestProgram(unittest.TestCase):
         )
 
         # Convert back.
-        program2 = deserialize_pte_binary(pte_data)
+        deserialized = deserialize_pte_binary(pte_data)
         # Programs are the same besides constant_buffer, as deserialization
         # does not preserve constant segment; padding may be added
         # during serialization.
-        self.assertEqual(program2.execution_plan, program.execution_plan)
+        self.assertEqual(deserialized.program.execution_plan, program.execution_plan)
         # Number of constant tensors should be the same.
-        self.assertEqual(len(program2.constant_buffer), len(program.constant_buffer))
+        self.assertEqual(
+            len(deserialized.program.constant_buffer), len(program.constant_buffer)
+        )
+        self.assertEqual(deserialized.mutable_data, None)
+        self._check_named_data_store_output(deserialized.named_data, named_data)
 
     def test_named_data_segments(self) -> None:
         # Set segment alignment to 12 to test the padding.
@@ -918,11 +965,10 @@ class TestProgram(unittest.TestCase):
         # Serialize the program with named data segments.
         pte_data = bytes(
             serialize_pte_binary(
-                program,
+                PTEFile(program=program, named_data=named_data),
                 extract_delegate_segments=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
                 constant_tensor_alignment=CONSTANT_TENSOR_ALIGNMENT,
-                named_data=named_data,
             )
         )
 
@@ -994,6 +1040,26 @@ class TestProgram(unittest.TestCase):
             ],
             buffers[2],
         )
+
+        # Test roundtrip
+        deserialized = deserialize_pte_binary(pte_data)
+        self.assert_programs_equal(deserialized.program, program)
+        self.assertEqual(deserialized.mutable_data, None)
+        self._check_named_data_store_output(deserialized.named_data, named_data)
+
+        # Test re-serialize
+        pte_data2 = serialize_pte_binary(
+            PTEFile(program=deserialized.program, named_data=deserialized.named_data),
+            extract_delegate_segments=True,
+            segment_alignment=SEGMENT_ALIGNMENT,
+            constant_tensor_alignment=CONSTANT_TENSOR_ALIGNMENT,
+        )
+        # pte_data2 is not going to be the same as pte_data due to alignment;
+        # directly test the deserialized one.
+        deserialized2 = deserialize_pte_binary(bytes(pte_data2))
+        self.assert_programs_equal(deserialized2.program, program)
+        self.assertEqual(deserialized2.mutable_data, None)
+        self._check_named_data_store_output(deserialized2.named_data, named_data)
 
 
 # Common data for extended header tests. The two example values should produce

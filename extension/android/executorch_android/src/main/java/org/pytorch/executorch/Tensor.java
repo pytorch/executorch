@@ -392,6 +392,82 @@ public abstract class Tensor {
     return new Tensor_float64(data, shape);
   }
 
+  /**
+   * Creates a new Tensor instance with given data-type and all elements initialized to one.
+   *
+   * @param shape Tensor shape
+   * @param dtype Tensor data-type
+   */
+  public static Tensor ones(long[] shape, DType dtype) {
+    checkArgument(shape != null, ERROR_MSG_SHAPE_NOT_NULL);
+    checkShape(shape);
+    int numElements = (int) numel(shape);
+    switch (dtype) {
+      case UINT8:
+        byte[] uInt8Data = new byte[numElements];
+        Arrays.fill(uInt8Data, (byte) 1);
+        return Tensor.fromBlobUnsigned(uInt8Data, shape);
+      case INT8:
+        byte[] int8Data = new byte[numElements];
+        Arrays.fill(int8Data, (byte) 1);
+        return Tensor.fromBlob(int8Data, shape);
+      case INT32:
+        int[] int32Data = new int[numElements];
+        Arrays.fill(int32Data, 1);
+        return Tensor.fromBlob(int32Data, shape);
+      case FLOAT:
+        float[] float32Data = new float[numElements];
+        Arrays.fill(float32Data, 1.0f);
+        return Tensor.fromBlob(float32Data, shape);
+      case INT64:
+        long[] int64Data = new long[numElements];
+        Arrays.fill(int64Data, 1L);
+        return Tensor.fromBlob(int64Data, shape);
+      case DOUBLE:
+        double[] float64Data = new double[numElements];
+        Arrays.fill(float64Data, 1.0);
+        return Tensor.fromBlob(float64Data, shape);
+      default:
+        throw new IllegalArgumentException(
+            String.format("Tensor.ones() cannot be used with DType %s", dtype));
+    }
+  }
+
+  /**
+   * Creates a new Tensor instance with given data-type and all elements initialized to zero.
+   *
+   * @param shape Tensor shape
+   * @param dtype Tensor data-type
+   */
+  public static Tensor zeros(long[] shape, DType dtype) {
+    checkArgument(shape != null, ERROR_MSG_SHAPE_NOT_NULL);
+    checkShape(shape);
+    int numElements = (int) numel(shape);
+    switch (dtype) {
+      case UINT8:
+        byte[] uInt8Data = new byte[numElements];
+        return Tensor.fromBlobUnsigned(uInt8Data, shape);
+      case INT8:
+        byte[] int8Data = new byte[numElements];
+        return Tensor.fromBlob(int8Data, shape);
+      case INT32:
+        int[] int32Data = new int[numElements];
+        return Tensor.fromBlob(int32Data, shape);
+      case FLOAT:
+        float[] float32Data = new float[numElements];
+        return Tensor.fromBlob(float32Data, shape);
+      case INT64:
+        long[] int64Data = new long[numElements];
+        return Tensor.fromBlob(int64Data, shape);
+      case DOUBLE:
+        double[] float64Data = new double[numElements];
+        return Tensor.fromBlob(float64Data, shape);
+      default:
+        throw new IllegalArgumentException(
+            String.format("Tensor.zeros() cannot be used with DType %s", dtype));
+    }
+  }
+
   @DoNotStrip private HybridData mHybridData;
 
   private Tensor(long[] shape) {

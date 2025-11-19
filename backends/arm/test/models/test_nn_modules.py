@@ -147,8 +147,10 @@ def test_nn_Modules_INT(test_data):
     )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
-    pipeline.pop_stage("check.quant_nodes")
-    pipeline.pop_stage("check_not.quant_nodes")
+    if pipeline.has_stage("check.quant_nodes"):
+        pipeline.pop_stage("check.quant_nodes")
+    if pipeline.has_stage("check_not.quant_nodes"):
+        pipeline.pop_stage("check_not.quant_nodes")
     try:
         pipeline.run()
     except RuntimeError as e:

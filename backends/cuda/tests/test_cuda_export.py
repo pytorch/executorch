@@ -10,6 +10,7 @@ from typing import Tuple
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from torch.export import export
 
@@ -270,3 +271,20 @@ class TestCudaExport(unittest.TestCase):
         # Test export
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Conv1d operation export failed")
+
+    def test_sdpa_single_kernel(self):
+        """
+        Test CUDA export for model containing single SDPA kernel.
+        SDPA: Scaled Dot Product Attention
+        """
+
+        sdpa = SdpaModule()
+
+        # Test export
+        edge_program_manager = self._export_to_cuda_with_lower(
+            sdpa.get_eager_model(), sdpa.get_example_inputs()
+        )
+        self.assertIsNotNone(
+            edge_program_manager,
+            "SDPA single kernel operation export failed",
+        )
