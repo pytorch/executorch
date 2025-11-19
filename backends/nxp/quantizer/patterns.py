@@ -493,36 +493,15 @@ class MulTensorPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors | None:
         node = fused_partition[0].nodes[-1]
-
-        qspec1 = FixedQParamsQuantizationSpec(
-            dtype=torch.int8,
-            scale=1.0 / 256.0,
-            zero_point=0,
-            quant_min=-128,
-            quant_max=127,
-            qscheme=torch.per_tensor_symmetric,
-        )
-
-        qspec2 = FixedQParamsQuantizationSpec(
-            dtype=torch.int8,
-            scale=1.0 / 256.0,
-            zero_point=0,
-            quant_min=-128,
-            quant_max=127,
-            qscheme=torch.per_tensor_symmetric,
-        )
-
-        inputs = [(node, NodeArgsIdx(0), qspec1)]
+        inputs = [(node, NodeArgsIdx(0))]
         if len(fused_partition[0].input_nodes) == 2:
-            inputs = [(node, NodeArgsIdx(0), qspec1), (node, NodeArgsIdx(1), qspec2)]
+            inputs = [(node, NodeArgsIdx(0)), (node, NodeArgsIdx(1))]
 
         return PartitionAnchors(
-            inputs=[],
+            inputs=[inputs],
             weights=[],
             biases=[],
-            output=[
-                (node,qspec1),
-            ],
+            output=[(node,)],
         )
 
 
