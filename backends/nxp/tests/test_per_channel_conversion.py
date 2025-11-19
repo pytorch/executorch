@@ -126,6 +126,7 @@ class TestPerChannelConversion(unittest.TestCase):
                 get_quantizer_fn=lambda: NeutronAtenQuantizer(
                     Conv2dPatternPerChannel(is_per_channel=True), static_qconfig
                 ),
+                use_neutron_for_format_conversion=False,
             )
 
             tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value

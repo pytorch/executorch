@@ -140,6 +140,31 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
 
+/**
+ * Creates a new tensor handle from an existing one.
+ *
+ * This function creates a new tensor object that shares the same underlying
+ * memory as the original tensor. Similar to PyTorch's Tensor copy constructor,
+ * it creates a new handle/reference to the same data without performing a deep
+ * copy.
+ *
+ * The new tensor will:
+ * - Share the same memory/storage as the original tensor
+ * - Have the same shape, strides, and dtype as the original
+ * - Increment the reference count for the underlying memory (if owned)
+ *
+ * @param orig_handle Original tensor to create a new handle from (must not be
+ * null)
+ * @param new_handle Output pointer to store the new tensor handle (must not be
+ * null)
+ *
+ * @return Error::Ok on success, appropriate error code on failure:
+ *         - Error::InvalidArgument: null pointers or invalid parameters
+ */
+AOTITorchError aoti_torch_new_tensor_handle(
+    Tensor* orig_handle,
+    Tensor** new_handle);
+
 // Function to clear all tensors from internal storage
 AOTI_SHIM_EXPORT void clear_all_tensors();
 } // extern "C"
