@@ -144,7 +144,7 @@ def convert_pt2(
 # It is however useful for unit tests to separate the converted model from the
 # fused model, to be able to get reference numerics.
 # If this does not apply, please use quantize_pt2 instead.
-def fuse_pt2(
+def apply_pre_edge_transform_passes(
     converted_program: ExportedProgram,
     quantizer: CadenceQuantizer,
 ) -> ExportedProgram:
@@ -229,7 +229,7 @@ def quantize_pt2(
 
     # Apply quant fusion to the exported program
     program = torch.export.export(converted_gm, inputs, strict=True)
-    fused_program = fuse_pt2(program, quantizer)
+    fused_program = apply_pre_edge_transform_passes(program, quantizer)
 
     if dump_graphs:
         logging.info("Graph after quantization and fusion:")
