@@ -59,12 +59,6 @@ constexpr bitwise_fn<T> get_bitwise_fn() {
   if (op == "bitwise_xor.Tensor_out" || op == "bitwise_xor.Scalar_out") {
     return bitwise_xor;
   }
-  if (op == "bitwise_left_shift.Tensor_out" || op == "bitwise_left_shift.Scalar_out") {
-    return bitwise_left_shift;
-  }
-  if (op == "bitwise_right_shift.Tensor_out" || op == "bitwise_right_shift.Scalar_out") {
-    return bitwise_right_shift;
-  }
   return nullptr;
 };
 
