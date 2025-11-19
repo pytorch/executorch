@@ -806,7 +806,10 @@ class PassPipeline(TOSAPipelineMaker, Generic[T]):
             self.add_stage(self.tester.check_count, ops_after_pass, suffix="after")
         if ops_not_after_pass:
             self.add_stage(self.tester.check_not, ops_not_after_pass, suffix="after")
-        self.add_stage(self.tester.run_method_and_compare_outputs)
+        self.add_stage(
+            self.tester.run_method_and_compare_outputs,
+            inputs=self.test_data,
+        )
 
     def run(self):
         with TosaLoweringContext(self.tosa_spec):
