@@ -35,4 +35,3 @@ Tensor& bitwise_left_shift_Scalar_out(
 } // namespace native
 } // namespace executor
 } // namespace torch
-
