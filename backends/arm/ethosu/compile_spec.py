@@ -15,16 +15,7 @@ from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import
 
 
 class EthosUCompileSpec(ArmCompileSpec):
-    """
-    Compile spec for Ethos-U NPU.
-
-    Args:
-        target: Ethos-U accelerator configuration, e.g. ethos-u55-128.
-        system_config: System configuration to select from the Vela configuration file.
-        memory_mode: Memory mode to select from the Vela configuration file.
-        extra_flags: Extra flags for the Vela compiler.
-        config_ini: Vela configuration file(s) in Python ConfigParser .ini file format.
-    """
+    """Compile specification for Ethos-U NPU targets."""
 
     _TARGET_KEY = "target"
 
@@ -36,6 +27,21 @@ class EthosUCompileSpec(ArmCompileSpec):
         extra_flags: list[str] | None = None,
         config_ini: str | None = "Arm/vela.ini",
     ):
+        """Normalise Ethos-U compile configuration and compiler flags.
+
+        Args:
+            target (str): Ethos-U accelerator configuration (for example,
+                ``"ethos-u55-128"``).
+            system_config (str | None): System configuration name from the Vela
+                config file. Defaults based on ``target`` when omitted.
+            memory_mode (str | None): Memory mode selection from the Vela config
+                file. Defaults based on ``target`` when omitted.
+            extra_flags (list[str] | None): Additional command-line flags for
+                Vela.
+            config_ini (str | None): Path to a Vela .ini configuration file.
+                Defaults to ``"Arm/vela.ini"``.
+
+        """
         self.target = target
 
         # Set vela compiler flags
@@ -78,16 +84,18 @@ class EthosUCompileSpec(ArmCompileSpec):
         self.validate()
 
     def to_list(self):
+        """Return compile specs including the encoded Ethos-U target."""
         compile_specs = super().to_list()
         compile_specs.append(CompileSpec(self._TARGET_KEY, self.target.encode()))
         return compile_specs
 
     @classmethod
     def from_list_hook(cls, compile_spec, specs: dict[str, str]):
+        """Restore target-specific metadata from serialized compile specs."""
         compile_spec.target = specs.get(cls._TARGET_KEY, None)
 
     def validate(self):
-        """Throws an error if the compile spec is not valid."""
+        """Validate the configuration against supported Ethos-U settings."""
         if len(self.compiler_flags) == 0:
             raise ValueError(
                 "compile_flags are required in the CompileSpec list for EthosUBackend"
@@ -99,4 +107,5 @@ class EthosUCompileSpec(ArmCompileSpec):
 
     @classmethod
     def get_output_format(cls) -> str:
+        """Return the artifact format emitted by this compile spec."""
         return "vela"
