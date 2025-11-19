@@ -972,7 +972,12 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 args=(x,),
             )
         p = ReplaceSqueezeAndUnsqueezeWithViewPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+
+        # Assert: Verify the pass modified the graph
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default),
@@ -1007,7 +1012,12 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(x, dim),
         )
         p = ReplaceSqueezeAndUnsqueezeWithViewPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+
+        # Assert: Verify the pass modified the graph
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default),
@@ -1016,6 +1026,28 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.unsqueeze_copy.default),
             0,
+        )
+
+    @torch.no_grad()
+    def test_replace_squeeze_and_unsqueeze_with_view_no_modification(self) -> None:
+        """Negative test: pass doesn't modify graphs without squeeze/unsqueeze ops."""
+        x = torch.randn(2, 3, 4)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [2, 12]),
+        )
+        p = ReplaceSqueezeAndUnsqueezeWithViewPass()
+        result = cast(PassResult, p(original_gm))
+
+        # Assert: Verify the pass did NOT modify the graph
+        self.assertFalse(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Verify the original view_copy operation is still there
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default),
+            1,
         )
 
     @torch.no_grad()
