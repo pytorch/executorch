@@ -10,7 +10,10 @@ from backends.nxp.tests.models import SliceTensorModule
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
+from executorch.backends.nxp.tests.executorch_pipeline import (
+    default_neutron_converter_flavor,
+    to_quantized_edge_program,
+)
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
     ToChannelFirstPreprocess,
@@ -83,12 +86,13 @@ def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends
         ends=ends,
     )
 
+    if default_neutron_converter_flavor != "SDK_25_12":
+        pytest.skip("Neutron Software must be version 2.2.1 or higher.")
+
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(
-        model, x_input_shape, exclude_optim_graph_passes=["HoistSliceAboveTranspose"]
-    ).exported_program()
+    _ = to_quantized_edge_program(model, x_input_shape).exported_program()
 
     # Capture generated model
     tflite_flatbuffers_model, _ = converter_spy.spy_return
@@ -128,9 +132,7 @@ def test_slice_tensor_w_conv_quant_conversion(
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(
-        model, x_input_shape, exclude_optim_graph_passes=["HoistSliceAboveTranspose"]
-    )
+    _ = to_quantized_edge_program(model, x_input_shape)
 
     # Capture generated model
     tflite_flatbuffers_model, _ = converter_spy.spy_return
@@ -182,9 +184,7 @@ def test_invalid_slice(mocker, x_input_shape, dims, starts, ends):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(
-        model, x_input_shape, exclude_optim_graph_passes=["HoistSliceAboveTranspose"]
-    ).exported_program()
+    _ = to_quantized_edge_program(model, x_input_shape).exported_program()
 
     # Capture generated model, should be None because the model is invalid
     assert converter_spy.spy_return is None
@@ -216,9 +216,7 @@ def test_slice_not_delegated(mocker, x_input_shape, dims, starts, ends):
         ends=ends,
     )
 
-    edge_program = to_quantized_edge_program(
-        model, x_input_shape, exclude_optim_graph_passes=["HoistSliceAboveTranspose"]
-    ).exported_program()
+    edge_program = to_quantized_edge_program(model, x_input_shape).exported_program()
     nodes = list(edge_program.graph.nodes)
 
     num_slice_ops = 0
