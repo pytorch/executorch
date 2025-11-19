@@ -48,32 +48,61 @@ class StrideSlice(NodeVisitor):
             nodes_to_wrappers,
         )
         dim = cast(int, node.args[1])
-        if QCOM_AXIS_ORDER in node.meta:
-            dim = node.meta[QCOM_AXIS_ORDER].index(dim)
         if dim < 0:
             dim = dim % len(input_tensor.shape)
+        if QCOM_AXIS_ORDER in node.meta:
+            dim = node.meta[QCOM_AXIS_ORDER][dim]
 
-        start = 0 if node.args[2] is None else cast(int, node.args[2])
-        if start < 0:
-            start = start % input_tensor.shape[dim]
+        # --- parse & normalize pytorch dim ---
+        pytorch_dim = int(node.args[1])
+        rank = len(input_tensor.shape)
+        if pytorch_dim < 0:
+            pytorch_dim = pytorch_dim % rank
 
+        # --- map pytorch dim -> QNN dim ---
+        qnn_dim = pytorch_dim
+        if QCOM_AXIS_ORDER in node.meta:
+            axis_order = node.meta[QCOM_AXIS_ORDER] 
+            qnn_dim = axis_order.index(pytorch_dim)     
+
+        # --- size on the QNN axis ---
+        size = int(input_tensor.shape[qnn_dim])
+
+        # --- get start/end/step ---
+        start = 0 if len(node.args) <= 2 or node.args[2] is None else int(node.args[2])
+        end   = size
         if len(node.args) > 3 and node.args[3] is not None:
-            end = min(cast(int, node.args[3]), input_tensor.shape[dim])
-            if end < 0:
-                end = end % input_tensor.shape[dim]
-        else:
-            end = input_tensor.shape[dim]
-        input_tensor_rank = len(input_tensor.shape)
+            end = int(node.args[3])
+        step  = 1 if len(node.args) <= 4 or node.args[4] is None else int(node.args[4])
+
+        # --- normalize negatives ---
+        if start < 0: 
+            start = start % size
+        if end < 0: 
+            end = end % size
+
+        # --- clamp into valid range ---
+        start = max(0, min(start, size))
+        end = max(0, min(end,   size))
+
+        # --- canonicalize for positive step ---
+        if step == 0:
+            step = 1
+        if step > 0 and start > end:
+            # empty slice (like Python []): make it start=end
+            start = end
+        elif step < 0:
+            raise NotImplementedError("Negative step not supported in QNN StridedSlice")
+
+        # --- build ranges in QNN axes ---
         ranges = []
-        for i in range(input_tensor_rank):
-            if i == dim:
-                # find step
-                step = node.args[4] if len(node.args) > 4 else 1
+        for q in range(rank):
+            if q == qnn_dim:
                 ranges.extend([start, end, step])
             else:
-                ranges.extend([0, input_tensor.shape[i], 1])
+                ranges.extend([0, int(input_tensor.shape[q]), 1])
 
-        range_shape = [input_tensor_rank, 3]
+        range_shape = [rank, 3]
 
         stride_slice_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
