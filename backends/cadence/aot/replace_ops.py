@@ -193,39 +193,40 @@ class ReplacePT2DequantWithCadenceDequantPass(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceSqueezeAndUnsqueezeWithViewPass(ExportPass):
+class ReplaceSqueezeAndUnsqueezeWithViewPass(RemoveOrReplacePassInterface):
     """
     When the shape is static, replace squeeze_copy and unsqueeze_copy ops with
     view_copy op
     """
 
-    def call_operator(
-        self,
-        op,
-        args: Tuple[Argument, ...],
-        kwargs: Dict[str, Argument],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
-        # Instead of testing EdgeOpOverload, test EdgeOpOverloadPacket,
-        # which allows us to cover all overloads.
-        if get_edge_overload_packet(op) not in {
-            exir_ops.edge.aten.squeeze_copy,
-            exir_ops.edge.aten.unsqueeze_copy,
-        }:
-            return super().call_operator(op, args, kwargs, meta)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
+            exir_ops.edge.aten.squeeze_copy.default,
+            exir_ops.edge.aten.squeeze_copy.dim,
+            exir_ops.edge.aten.squeeze_copy.dims,
+            exir_ops.edge.aten.unsqueeze_copy.default,
+        ]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Get the output tensor shape
-        out_shape = meta["val"].shape
+        out_shape = node.meta["val"].shape
 
         # Bail out if any dim is not an int (dynamic shape)
         for dim in list(out_shape):
             if not isinstance(dim, int):
-                return super().call_operator(op, args, kwargs, meta)
+                return False
 
-        # Return a view op with the new shape
-        view_args = (args[0], list(out_shape))
-        return super().call_operator(
-            exir_ops.edge.aten.view_copy.default, view_args, kwargs, meta
-        )
+        # Replace with view op with the new shape
+        with node.graph.inserting_before(node):
+            new_node = node.graph.call_function(
+                exir_ops.edge.aten.view_copy.default,
+                args=(node.args[0], list(out_shape)),
+            )
+            # Do not remove the metadata copy!
+            new_node.meta = node.meta
+        node.replace_all_uses_with(new_node)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
