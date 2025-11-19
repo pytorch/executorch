@@ -85,6 +85,9 @@ from executorch.examples.qualcomm.oss_scripts.llama.range_setting_pt2e import (
     set_scales,
     WrappedLlamaModel,
 )
+from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
+    StaticLLMQuantRecipe,
+)
 
 from executorch.examples.qualcomm.utils import (
     make_output_dir,
@@ -220,36 +223,20 @@ class SingleLlama:
         quant_dtype,
         args,
         tokenizer,
-        custom_annotations=(),
+        quant_recipe,
         scales_state_dict=None,
         chat_template=None,
         lookahead_config=None,
     ):
         self.quant_dtype = quant_dtype
-        quantizer = make_custom_quantizer(
-            quant_dtype, args.range_setting, custom_annotations
-        )
+        quantizer = make_custom_quantizer(quant_dtype, args.range_setting, ())
         self.has_quant_io = True
         fx_graph_module = None
         with torch.no_grad():
             fx_graph_module = torch.export.export(
                 self.llama_graph_module, self.inputs, strict=True
             ).module()
-
-            if quant_dtype == QuantDtype.use_16a4w_block:
-                if self.decoder_model_config.group_size is None:
-                    raise ValueError(
-                        "Group size is required when use quant_dtype 16a4w_block"
-                    )
-                conv_nodes = [
-                    n for n in fx_graph_module.graph.nodes if "conv" in n.name
-                ]
-                block_size_map = {
-                    n.name: (1, self.decoder_model_config.group_size, 1, 1)
-                    for n in conv_nodes
-                }
-                quantizer.set_block_size_map(block_size_map)
-
+            quantizer.recipe = quant_recipe
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
 
         logging.info("Quantizing the model...")
@@ -439,12 +426,16 @@ def compile(
     with open(params_path) as f:
         kv_config = ModelArgs(**json.load(f))
 
+    # get quant recipe
+    quant_recipe: StaticLLMQuantRecipe = decoder_model_config.quant_recipe(True)
+
     # TODO: support batch inputs if necessary
     kv_config.max_batch_size = 1
     kv_config.max_seq_len = args.max_seq_len
     kv_config.use_kv_cache = True
     kv_config.enable_r3 = decoder_model_config.r3
-    kv_config.kv_io_bit_width = decoder_model_config.get_kv_io_bit_width()
+    kv_config.kv_io_bit_width = quant_recipe.get_kv_io_bit_width()
+
     if decoder_model_config.masked_softmax:
         if is_qnn_sdk_version_less_than("2.35"):
             logging.warning(
@@ -643,7 +634,7 @@ def compile(
                 QuantDtype.use_8a8w: (8, 8),
                 QuantDtype.use_16a4w: (16, 4),
                 QuantDtype.use_16a4w_block: (16, 4),
-            }[decoder_model_config.ptq]
+            }[quant_recipe.default_quant_dtype]
             scales_state_dict = compute_scales(
                 wrapped_model, tokens, weight_bits, act_bits, 1600
             )
@@ -661,24 +652,24 @@ def compile(
     use_fp16 = True
     # "io_type" here refers to logits output and "kv_type" refers to kv_cache input/output.
     fixed_point_type = {"kv_type": torch.float32, "io_type": torch.float32}
-    if decoder_model_config.ptq:
-        if decoder_model_config.get_kv_io_bit_width() == 8:
+    if quant_recipe.default_quant_dtype:
+        if quant_recipe.get_kv_io_bit_width() == 8:
             fixed_point_type["kv_type"] = torch.uint8
-        elif decoder_model_config.get_kv_io_bit_width() == 16:
+        elif quant_recipe.get_kv_io_bit_width() == 16:
             fixed_point_type["kv_type"] = torch.uint16
         else:
             raise RuntimeError(
-                f"Unknown kv io bit width {decoder_model_config.get_kv_io_bit_width()}"
+                f"Unknown kv io bit width {quant_recipe.get_kv_io_bit_width()}"
             )
 
-        if decoder_model_config.get_logits_output_bit_width() == 16:
+        if quant_recipe.get_logits_output_bit_width() == 16:
             fixed_point_type["io_type"] = torch.uint16
         else:
             raise RuntimeError(
-                f"Unknown logits io bit width {decoder_model_config.get_logits_output_bit_width()}"
+                f"Unknown logits io bit width {quant_recipe.get_logits_output_bit_width()}"
             )
 
-    quant_dtype = decoder_model_config.ptq
+    quant_dtype = quant_recipe.default_quant_dtype
 
     if args.dtype_override is not None:
         dtype_override = DType[args.dtype_override]
@@ -701,9 +692,8 @@ def compile(
                 QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY
             ]["skip_node"] = {"tokens"}
 
-    if decoder_model_config.ptq:
+    if quant_recipe.default_quant_dtype:
         start_quantize_ts = time.time()
-        custom_annotations = decoder_model_config.custom_annotation
         kv_quant_attrs = {}
         for i, llama_instance in enumerate(llama_instance_list):
             lookahead_config = (
@@ -711,11 +701,12 @@ def compile(
                 if i == 0 and args.model_mode == "lookahead"
                 else None
             )
+
             llama_instance.quantize(
                 quant_dtype=quant_dtype,
                 args=args,
                 tokenizer=tokenizer,
-                custom_annotations=custom_annotations,
+                quant_recipe=quant_recipe,
                 scales_state_dict=scales_state_dict,
                 chat_template=chat_template,
                 lookahead_config=lookahead_config,
@@ -729,11 +720,11 @@ def compile(
                             kv_quant_attrs[output_indices] = output.args[1:]
                             output_indices += 1
                         break
-                custom_annotations = custom_annotations + (
+                quant_recipe.recipe.custom_quant_annotations.append(
                     partial(
                         annotate_prefill_kv_output,
                         kv_quant_attrs=kv_quant_attrs,
-                    ),
+                    )
                 )  # temporarily remove annotate_prefill_kv_output
             llama_instance.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
             llama_instance.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][

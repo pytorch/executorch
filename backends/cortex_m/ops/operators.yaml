@@ -34,3 +34,9 @@
   kernels:
     - arg_meta: null
       kernel_name: cortex_m::quantized_linear_out
+
+- func: cortex_m::transpose.out(Tensor input, int[] perm, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: cortex_m::transpose_out

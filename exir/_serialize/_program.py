@@ -419,19 +419,17 @@ def _extract_named_data(
 
 
 def serialize_pte_binary(
-    program: Program,
+    pte_file: PTEFile,
     *,
-    mutable_data: Optional[List[Buffer]] = None,
     extract_delegate_segments: bool = False,
     segment_alignment: int = 128,
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
-    named_data: Optional[NamedDataStoreOutput] = None,
 ) -> Cord:
     """Returns the runtime binary representation of the given Program.
 
     Args:
-        program: The Program to serialize.
+        pte_file: PTEFile class containing the program and segments.
         extract_delegate_segments: Whether to move delegate data blobs from the
             Program into separate segments, rather than encoding those blobs
             in the flatbuffer data. When true, will also:
@@ -446,8 +444,6 @@ def serialize_pte_binary(
         delegate_alignment: If provided, the minimum alignment of delegate data
             in the program. Must be a power of 2. If not provided, uses the
             value in the schema file.
-        named_data: If provided, named blobs to be stored in segments
-            after the PTE file.
     Returns:
         The serialized form of the Program, ready for execution by the runtime.
     """
@@ -458,7 +454,7 @@ def serialize_pte_binary(
     # Don't modify the original program.
     # TODO(T144120904): Could avoid yet more huge copies with a more shallow
     # copy, reusing the actual data blobs.
-    program = copy.deepcopy(program)
+    program = copy.deepcopy(pte_file.program)
 
     # Store extracted segment data, with any buffer-specific alignment.
     # This may be constant data, delegate data or named data.
@@ -482,9 +478,9 @@ def serialize_pte_binary(
         # Add to the aggregate segments cord.
         segments.append(AlignedData(constant_segment_data))
 
-    if mutable_data is not None:
+    if pte_file.mutable_data is not None:
         mutable_segment_data, mutable_segment_offsets = _extract_constant_segment(
-            mutable_data,
+            pte_file.mutable_data,
             tensor_alignment=None,  # data is copied at Method load so no need to align.
         )
         if len(mutable_segment_data) > 0:
@@ -499,8 +495,10 @@ def serialize_pte_binary(
 
     if extract_delegate_segments:
         _extract_delegate_segments(program, segments)
-    if named_data is not None:
-        _extract_named_data(program, segments, named_data.buffers, named_data.pte_data)
+    if pte_file.named_data is not None:
+        _extract_named_data(
+            program, segments, pte_file.named_data.buffers, pte_file.named_data.pte_data
+        )
 
     # Append all segments into a single Cord, adding any necessary padding to ensure that
     # each segment begins at the required alignment.

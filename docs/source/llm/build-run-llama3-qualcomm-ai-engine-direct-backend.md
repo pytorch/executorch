@@ -26,7 +26,7 @@ Deploying large language models like Llama 3 on-device presents the following ch
 
 To address these, we apply the following optimizations:
 
-1. Quantization: Use `QuantDtype.use_16a4w_block` for post-training quantization to reduce model size and memory usage.
+1. Quantization: Apply the `quant_recipe` when setting the quantization config to reduce model size and memory usage.
 
 2. Mixed Precision Quantization: compresses KV cache tensors to 8-bit and applies `QuantDtype.use_16a8w` to the LM head.
 
@@ -48,9 +48,6 @@ class Llama3_2_3B_Instruct(LLMModelConfig):
     instruct_model = False
 
     num_sharding = 4
-    # quant config
-    ptq = QuantDtype.use_16a4w_block
-    group_size = 32  # Group size used in block quantization for weight quantization. Will only be used when ptq = 16a4w_block
     masked_softmax = False
   
     # SeqMSE Quantization: optimizes the parameter encodings of each layer of a model individually to minimize the difference between the layer’s original and quantized outputs. (Implementation details: ./backends/qualcomm/_passes/seq_mse.py) In this configuration, we set `seq_mse_candidates` = 0, which means SeqMSE quantization is not applied.
@@ -58,10 +55,8 @@ class Llama3_2_3B_Instruct(LLMModelConfig):
     r1 = False
     r2 = False
     r3 = False
-    custom_annotation = (
-        annotate_kv_8bit,
-        annotate_output_16a8w,
-    )
+    # quant recipe
+    quant_recipe = Llama3_3BQuantRecipe
 ```
 
 

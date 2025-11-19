@@ -41,7 +41,7 @@ toolchains, down to C++17. See [Runtime Overview](runtime-overview.md) for
 portability details.
 
 ## Environment Setup
- Clone the ExecuTorch repository from GitHub and create a conda environment. Venv can be used in place on conda.
+ Clone the ExecuTorch repository from GitHub and create a conda environment. Venv can be used in place of conda.
    ```bash
    git clone -b viable/strict https://github.com/pytorch/executorch.git
    cd executorch
