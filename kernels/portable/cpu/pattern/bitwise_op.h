@@ -26,6 +26,23 @@ namespace internal {
 DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_and, &)
 DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_or, |)
 DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_xor, ^)
+DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_left_shift, <<)
+DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_right_shift, >>)
+
+// Functor wrappers for shift operations (similar to std::bit_and, etc.)
+template <typename T = void>
+struct bit_lshift {
+  constexpr T operator()(const T& lhs, const T& rhs) const {
+    return lhs << rhs;
+  }
+};
+
+template <typename T = void>
+struct bit_rshift {
+  constexpr T operator()(const T& lhs, const T& rhs) const {
+    return lhs >> rhs;
+  }
+};
 
 template <typename T>
 using bitwise_fn = T (*)(const T, const T);
@@ -41,6 +58,12 @@ constexpr bitwise_fn<T> get_bitwise_fn() {
   }
   if (op == "bitwise_xor.Tensor_out" || op == "bitwise_xor.Scalar_out") {
     return bitwise_xor;
+  }
+  if (op == "bitwise_left_shift.Tensor_out" || op == "bitwise_left_shift.Scalar_out") {
+    return bitwise_left_shift;
+  }
+  if (op == "bitwise_right_shift.Tensor_out" || op == "bitwise_right_shift.Scalar_out") {
+    return bitwise_right_shift;
   }
   return nullptr;
 };
