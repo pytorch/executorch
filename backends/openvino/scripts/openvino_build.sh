@@ -54,9 +54,6 @@ main() {
         # Build the package
         ./install_executorch.sh --minimal
 
-        # Install torchao
-        pip install third-party/ao
-
     else
         echo "Error: Argument is not valid: $build_type"
         exit 1  # Exit the script with an error code
