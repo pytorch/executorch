@@ -26,8 +26,6 @@ namespace internal {
 DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_and, &)
 DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_or, |)
 DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_xor, ^)
-DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_left_shift, <<)
-DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_right_shift, >>)
 
 // Functor wrappers for shift operations (similar to std::bit_and, etc.)
 template <typename T = void>
