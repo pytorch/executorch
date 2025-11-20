@@ -68,7 +68,7 @@ class QnnOperatorSupport(OperatorSupportBase):
         self.skip_node_id_set = skip_node_id_set
         self.nodes_to_wrappers = defaultdict(dict)
         self.qnn_manager = get_current_qnn_manager(
-            python_options.backend_options.backend_type
+            python_options.backend_options.backend_type, compiler_specs
         )
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
