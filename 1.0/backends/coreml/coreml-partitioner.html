@@ -42,7 +42,7 @@
 <link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
   <script src="../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
 
-    <script src="../../_static/documentation_options.js?v=a8da1a53"></script>
+    <script src="../../_static/documentation_options.js?v=f2a433a1"></script>
     <script src="../../_static/doctools.js?v=888ff710"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -53,7 +53,7 @@
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = '1.0';
-        DOCUMENTATION_OPTIONS.show_version_warning_banner = false;
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
     <link rel="canonical" href="https://docs.pytorch.org/executorch/backends/coreml/coreml-partitioner.html" />
     <link rel="icon" href="../../_static/executorch-chip-logo.svg"/>
@@ -98,7 +98,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
-<meta property="og:image" content="../../_static/img/pytorch_seo.png" />
+<meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
 <link rel="stylesheet" href="../../_static/webfonts/all.min.css" crossorigin="anonymous">
 <meta http-equiv="Content-Security-Policy"
   content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
@@ -182,12 +182,6 @@
 </script>
 
 <script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
-
-<!--
-   Search engines should not index the main version of documentation.
-   Stable documentation are built without release == 'main'.
-   -->
-
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -284,6 +278,9 @@
                 <a class="nav-dropdown-item" href="https://pytorch.org/projects/host-your-project/">
                   <span class="dropdown-title">Host Your Project</span>
                 </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/ray/">
+                  <span class="dropdown-title">RAY</span>
+                </a>
               </div>
             </div>
           </li>
@@ -353,6 +350,9 @@
                 </a>
                 <a class="nav-dropdown-item" href="https://pytorch.org/contact">
                   <span class="dropdown-title">Contact</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/wp-content/uploads/2025/09/pytorch_brand_guide_091925a.pdf">
+                  <span class="dropdown-title">Brand Guidelines</span>
                 </a>
               </div>
             </div>
@@ -1641,7 +1641,7 @@ They must be provided through a compile spec.</p>
          "name": "PyTorch Contributors",
          "url": "https://pytorch.org"
        },
-       "image": "../../_static/img/pytorch_seo.png",
+       "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
          "@id": "/backends/coreml/coreml-partitioner.html"
