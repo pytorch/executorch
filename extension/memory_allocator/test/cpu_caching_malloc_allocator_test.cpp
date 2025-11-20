@@ -12,7 +12,8 @@
 using namespace ::testing;
 using executorch::extension::CPUCachingAllocator;
 
-constexpr auto kDefaultAlignment = executorch::extension::kCachingAllocatorDefaultAlignment;
+constexpr auto kDefaultAlignment =
+    executorch::extension::kCachingAllocatorDefaultAlignment;
 
 class CPUCachingAllocatorTest : public ::testing::Test {
  protected:
