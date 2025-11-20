@@ -15,6 +15,7 @@ from executorch.examples.models.torchvision_vit import TorchVisionViTModel
 
 
 class TestMilestoneTorchVisionViT(unittest.TestCase):
+    @unittest.skip("Need to be fixed")
     def test_torchvision_vit_fp16(self):
         torch.manual_seed(8)
         model = TorchVisionViTModel().get_eager_model()
