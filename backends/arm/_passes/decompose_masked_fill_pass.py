@@ -34,7 +34,7 @@ def _get_decomposition(op) -> tuple:
     raise RuntimeError(f"Unable to get decomposition for op {op}")
 
 
-class DecomposeMaskedFill(ArmPass):
+class DecomposeMaskedFillPass(ArmPass):
     """
     Masked fill takes in a boolean mask, a tensor and a scalar value.
     Fills the tensor with the scalar value according to the boolean mask.

@@ -4,7 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from typing import List, Optional, Type
+
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 
@@ -42,6 +46,11 @@ from torch._export.pass_base import PassType
 from torch.export import ExportedProgram
 
 
+class XNNPACKRemoveCloneOpsTransform(RemoveCloneOpsTransform):
+    def __init__(self):
+        super().__init__(preserve_input_output_copies=True)
+
+
 class XNNPACKPassManager:
     def __init__(
         self,
@@ -58,6 +67,7 @@ class XNNPACKPassManager:
         if not passes:
             # All the XNNPACK passes
             self.passes = [
+                XNNPACKRemoveCloneOpsTransform,
                 # TODO - remove this pass once we have a better support for dim_order ops lowering
                 DimOrderOpsRevertPass,
                 ConvertToUpsampleBilinear2d,

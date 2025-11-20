@@ -21,7 +21,7 @@ from executorch.exir.schema import (
 
 
 def extract_coreml_models(pte_data: bytes):
-    program = deserialize_pte_binary(pte_data)
+    program = deserialize_pte_binary(pte_data).program
     delegates: List[BackendDelegate] = sum(
         [execution_plan.delegates for execution_plan in program.execution_plan], []
     )

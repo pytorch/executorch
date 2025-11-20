@@ -61,7 +61,7 @@ function help() {
     echo "  --output=<FOLDER>                      Target build output folder Default: ${output_folder}"
     echo "  --bundleio                             Create Bundled pte using Devtools BundelIO with Input/RefOutput included"
     echo "  --etdump                               Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
-    echo "  --build_type=<TYPE>                    Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
+    echo "  --build_type=<TYPE>                    Build with Release, Debug, RelWithDebInfo or UndefinedSanitizer, default is ${build_type}"
     echo "  --extra_build_flags=<FLAGS>            Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
     echo "  --build_only                           Only build, don't run"
     echo "  --toolchain=<TOOLCHAIN>                Ethos-U: Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"

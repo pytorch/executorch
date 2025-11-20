@@ -25,8 +25,9 @@ class RemoveCloneOpsTransform(ExportPass):
         exir_ops.edge.dim_order_ops._clone_dim_order.default,
     }
 
-    def __init__(self) -> None:
+    def __init__(self, preserve_input_output_copies: bool = False) -> None:
         super().__init__()
+        self._preserve_input_output_copies = preserve_input_output_copies
 
     def _remove(self, graph_module: torch.fx.GraphModule) -> None:
         dequant_nodes = []
@@ -36,6 +37,11 @@ class RemoveCloneOpsTransform(ExportPass):
                 continue
 
             if self._is_non_identity_clone(n):
+                continue
+
+            # If preserve_input_output_copies is set, don't remove clones that directly
+            # copy from input to output.
+            if self._is_input_output_copy(n) and self._preserve_input_output_copies:
                 continue
 
             to_be_removed = n
@@ -74,5 +80,18 @@ class RemoveCloneOpsTransform(ExportPass):
                 and "val" in input_meta
                 and node.meta["val"].dim_order() != input_meta["val"].dim_order()
             )
+
+        return False
+
+    def _is_input_output_copy(self, node: torch.fx.Node) -> bool:
+        """Return True if the node input is a graph input and output goes into an output node."""
+
+        input_node = node.args[0]
+        if input_node.op != "placeholder":
+            return False
+
+        for users in node.users:
+            if users.op == "output":
+                return True
 
         return False

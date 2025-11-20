@@ -12,6 +12,8 @@ allowed dtypes, and compute pooling padding adjustments.
 from math import ceil, floor
 from typing import Any, List, Optional
 
+from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
+
 
 def validate_num_inputs(op_name: str, inputs: List[Any], expected: int | List[int]):
     """Validate the number of inputs against expected values.
@@ -148,6 +150,19 @@ def validate_valid_dtype(
                 f"Expected tensor {tensor.name} in {op_name} to have one of the "
                 f"following dtypes: {valid_names}, got: {got_name}"
             )
+
+
+def validate_cf_extension(op_name: str, tosa_spec: TosaSpecification) -> None:
+    """Ensure that the requested control-flow operator is supported by the active TOSA spec."""
+    if not isinstance(tosa_spec, Tosa_1_00):
+        raise ValueError(
+            f"Got TOSA version {tosa_spec.version}, that does not support extensions."
+        )
+    if not tosa_spec.support_extension("cf"):
+        raise ValueError(
+            f"Trying to lower {op_name}, but TOSA specification {tosa_spec} does not "
+            "support the cf extension."
+        )
 
 
 def adjust_pooling_pad_if_needed(

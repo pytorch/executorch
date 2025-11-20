@@ -101,6 +101,18 @@ class QuantizedOpFusionPass(ExportPass):
 
         return exir_ops.edge.cortex_m.quantized_mul.default, args
 
+    def _get_minimum_replacement(self, args, meta):
+        if args[0].data.dtype != torch.int8:
+            return exir_ops.edge.aten.minimum.default, args
+
+        return exir_ops.edge.cortex_m.minimum.default, args
+
+    def _get_maximum_replacement(self, args, meta):
+        if args[0].data.dtype != torch.int8:
+            return exir_ops.edge.aten.maximum.default, args
+
+        return exir_ops.edge.cortex_m.maximum.default, args
+
     def _get_permute_replacement(self, args, meta):
         if args[0].data.dtype != torch.int8:
             return exir_ops.edge.aten.permute_copy.default, args
@@ -123,6 +135,10 @@ class QuantizedOpFusionPass(ExportPass):
                 op, args = self._get_add_replacement(args, meta)
             case exir_ops.edge.aten.mul.Tensor:
                 op, args = self._get_mul_replacement(args, meta)
+            case exir_ops.edge.aten.minimum.default:
+                op, args = self._get_minimum_replacement(args, meta)
+            case exir_ops.edge.aten.maximum.default:
+                op, args = self._get_maximum_replacement(args, meta)
             case exir_ops.edge.aten.permute_copy.default:
                 op, args = self._get_permute_replacement(args, meta)
             case _:

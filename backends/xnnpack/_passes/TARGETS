@@ -8,6 +8,7 @@ runtime.python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/transforms:addmm_mm_to_linear",
+        "//executorch/backends/transforms:remove_clone_ops",
         "//executorch/backends/transforms:lib",
         "//executorch/backends/xnnpack/partition:partitioner_graphs",
         "//executorch/backends/xnnpack/serialization:xnnpack_schema",

@@ -35,8 +35,8 @@ from executorch.backends.arm.util.arm_model_evaluator import (
 from executorch.backends.arm.vgf import VgfCompileSpec
 
 # To use Cortex-M backend
-from executorch.backends.cortex_m.passes.quantized_linear_fusion_pass import (
-    QuantizedLinearFusionPass,
+from executorch.backends.cortex_m.passes.convert_to_cortex_m_pass import (
+    ConvertToCortexMPass,
 )
 
 from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
@@ -795,7 +795,7 @@ def transform_for_cortex_m_backend(edge_program_manager, args):
     # Instantiate the mandatory ReplaceQuantNodesPass
     passes = [ReplaceQuantNodesPass]
     if args.enable_qdq_fusion_pass:
-        passes += [QuantizedLinearFusionPass, QuantizedOpFusionPass]
+        passes += [ConvertToCortexMPass, QuantizedOpFusionPass]
     current_edge = edge_program_manager
     for pass_cls in passes:
         transform_pass = (
