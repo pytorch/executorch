@@ -46,6 +46,7 @@ from torchao.quantization.pt2e.quantize_pt2e import (
 from torchao.quantization.pt2e.quantizer import (
     annotate_input_qspec_map,
     annotate_output_qspec,
+    get_module_name_filter,
     QuantizationSpec,
     Quantizer,
 )
@@ -248,33 +249,6 @@ NodeFilterType = Callable[[Node], bool]
 """
 
 
-def _get_module_name_filter(module_name: str) -> NodeFilterType:
-    """Get the module_name_filter function for a given module name, the filter accepts
-    a node and checks if the node comes from a module that has certain module name
-
-    For example:
-        node: linear_op = call_function[...](...)  # comes from a module with name blocks.sub.linear1
-
-    >> module_name_filter = _get_module_name_filter("blocks.sub")
-    >> print(module_name_filter(node))
-    True  # the node is from "blocks.sub" based on the fully qualified name "blocks.sub.linear1"
-    """
-
-    name_start = len("L['self'].")
-
-    def module_name_filter(n: Node) -> bool:
-        # node_stack example: {
-        #    'L__self___sub': ("L['self'].sub", <class '....Sub'>),
-        #    'L__self___sub_linear': ("L['self'].sub.linear", <class 'torch.nn.modules.linear.Linear'>)
-        # }
-        # get_attr nodes doesn't have nn_module_stack?
-        nn_module_stack = n.meta.get("nn_module_stack", {})
-        names = [name[name_start:] for name, _ in nn_module_stack.values()]
-        return module_name in names
-
-    return module_name_filter
-
-
 def _get_module_type_filter(tp: Callable) -> NodeFilterType:
     """Get the module_type_filter function for a given module type, the filter accepts
     a node and checks if the node comes from a module that has certain module type
@@ -306,7 +280,7 @@ def _get_not_module_type_or_name_filter(
     tp_list: List[Callable], module_name_list: List[str]
 ) -> NodeFilterType:
     module_type_filters = [_get_module_type_filter(tp) for tp in tp_list]
-    module_name_list_filters = [_get_module_name_filter(m) for m in module_name_list]
+    module_name_list_filters = [get_module_name_filter(m) for m in module_name_list]
 
     def not_module_type_or_name_filter(n: Node) -> bool:
         return not any(f(n) for f in module_type_filters + module_name_list_filters)
@@ -455,7 +429,7 @@ class TOSAQuantizer(Quantizer):
         module_name_list = list(self.module_name_config.keys())
         for module_name, config in self.module_name_config.items():
             self._annotate_all_static_patterns(
-                model, config, _get_module_name_filter(module_name)
+                model, config, get_module_name_filter(module_name)
             )
 
         tp_list = list(self.module_type_config.keys())
