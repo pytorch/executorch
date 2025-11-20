@@ -103,7 +103,9 @@ def test_add_tensor_w_conv_quant_conversion(mocker, input_shape):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    _ = to_quantized_edge_program(
+        model, input_shape, use_neutron_for_format_conversion=False
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return

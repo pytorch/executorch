@@ -62,7 +62,7 @@ class TestTanhConverter(unittest.TestCase):
                 )
 
             quantized_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_neutron_for_format_conversion=False
             ).exported_program()
             tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
