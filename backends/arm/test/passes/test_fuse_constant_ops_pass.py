@@ -8,7 +8,7 @@ from typing import cast, ClassVar, Dict, Protocol, Tuple
 
 import torch
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
-    ComputeConstantOpsAOT,
+    ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
 )
 from executorch.backends.arm.test import common
@@ -157,7 +157,10 @@ def test_fuse_const_ops_tosa_FP(module: ModuleWithFuseAttrs) -> None:
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         ops_not_after_pass=module.ops_not_after_pass,
-        passes_with_exported_program=[ComputeConstantOpsAOT, FuseConstantArgsPass],
+        passes_with_exported_program=[
+            ComputeConstantOpsAOTPass,
+            FuseConstantArgsPass,
+        ],
     )
     pipeline.run()
 
@@ -170,7 +173,10 @@ def test_fuse_const_ops_tosa_INT(module: ModuleWithFuseAttrs) -> None:
         quantize=True,
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
-        passes_with_exported_program=[ComputeConstantOpsAOT, FuseConstantArgsPass],
+        passes_with_exported_program=[
+            ComputeConstantOpsAOTPass,
+            FuseConstantArgsPass,
+        ],
     )
     pipeline.run()
 
@@ -183,7 +189,10 @@ def test_fuse_const_ops_tosa_BI_cat(module: ModuleWithFuseAttrs) -> None:
         quantize=True,
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
-        passes_with_exported_program=[ComputeConstantOpsAOT, FuseConstantArgsPass],
+        passes_with_exported_program=[
+            ComputeConstantOpsAOTPass,
+            FuseConstantArgsPass,
+        ],
     )
     pipeline.run()
 

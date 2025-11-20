@@ -96,7 +96,7 @@ class ClampVisitor(NodeVisitor):
         )
 
         node_input_dtype = node.meta["val"].dtype
-        # NOTE: Quantization of the min/max arguments is handled by QuantizeOperatorArguments
+        # NOTE: Quantization of the min/max arguments is handled by QuantizeClampArgumentsPass
         min_val, max_val = self._get_min_max_arguments(node, node_input_dtype)
 
         attr = ts.TosaSerializerAttribute()

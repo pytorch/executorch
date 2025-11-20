@@ -79,7 +79,6 @@ from executorch.exir.verification.verifier import (
     EXIREdgeDialectVerifier,
     get_aten_verifier,
 )
-from executorch.extension.flat_tensor.serialize.serialize import FlatTensorSerializer
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
 from torch._export.verifier import Verifier
 from torch.export import ExportedProgram
@@ -590,6 +589,10 @@ class ExecutorchProgram:
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
+        from executorch.extension.flat_tensor.serialize.serialize import (
+            FlatTensorSerializer,
+        )
+
         self._data_serializer: DataSerializer = FlatTensorSerializer()
 
     def _get_emitter_output(self) -> EmitterOutput:
@@ -1839,6 +1842,10 @@ class ExecutorchProgramManager:
         )
 
         # Serialize emitter output, ready to be written to a file.
+        from executorch.extension.flat_tensor.serialize.serialize import (
+            FlatTensorSerializer,
+        )
+
         self._data_serializer = FlatTensorSerializer()
         self._pte_data, self._tensor_data = serialize_for_executorch(
             self._emitter_output,

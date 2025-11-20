@@ -24,6 +24,7 @@ from executorch.backends.arm.common.arm_compile_spec import (
     ArmCompileSpec,
 )  # isort: skip
 from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.exir.graph_module import get_cond_while_submodules
 
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
@@ -35,6 +36,11 @@ from torchao.quantization.pt2e import (
     ObserverOrFakeQuantizeConstructor,
     PerChannelMinMaxObserver,
     PlaceholderObserver,
+)
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
 )
 
 from torchao.quantization.pt2e.quantizer import (
@@ -481,14 +487,41 @@ class TOSAQuantizer(Quantizer):
                 )
                 mark_node_as_annotated(node)
             if node.op == "output":
-                parent = node.all_input_nodes[0]
-                annotate_input_qspec_map(
-                    node, parent, quantization_config.get_input_act_qspec()
-                )
+                for parent in node.all_input_nodes:
+                    annotate_input_qspec_map(
+                        node, parent, quantization_config.get_input_act_qspec()
+                    )
                 mark_node_as_annotated(node)
 
     def validate(self, model: GraphModule) -> None:
         pass
+
+    def quantize_with_submodules(
+        self,
+        model: GraphModule,
+        calibration_samples: list[tuple],
+        is_qat: bool = False,
+    ):
+        """Quantizes a GraphModule in a way such that conditional submodules are handled properly.
+
+        Args:
+            model: GraphModule, the model to quantize.
+            calibration_samples: list[tuple], a list of inputs to used to calibrate the model during quantization.
+            To properly calibrate a model with submodules, at least one sample per code path is needed.
+            is_qat: bool, whether to do quantization aware training or not.
+        """
+        prepare_fn = prepare_qat_pt2e if is_qat else prepare_pt2e
+
+        prepared = prepare_fn(model, self)
+        for name, submodule, _ in get_cond_while_submodules(prepared):
+            prepared.set_submodule(name, prepare_fn(submodule, self), strict=True)
+        for inp in calibration_samples:
+            prepared(*inp)
+
+        for name, submodule, _ in get_cond_while_submodules(prepared):
+            prepared.set_submodule(name, convert_pt2e(submodule), strict=True)
+        converted = convert_pt2e(prepared)
+        return converted
 
 
 class EthosUQuantizer(TOSAQuantizer):
