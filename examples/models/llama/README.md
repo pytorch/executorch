@@ -235,21 +235,16 @@ If you're interested in deploying on non-CPU backends, [please refer the non-cpu
 ## Step 3: Run on your computer to validate
 
 1. Build executorch with optimized CPU performance as follows. Build options available [here](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt#L59).
-    ```
-    cmake --preset llm -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out
-
-    cmake --build cmake-out -j16 --target install --config Release
-    ```
+```
+cmake --workflow llm-release
+```
 Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the section of Common Issues and Mitigations below for solutions.
 
 2. Build llama runner.
 ```
-cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
-	-DCMAKE_BUILD_TYPE=Release \
-	-Bcmake-out/examples/models/llama \
-	examples/models/llama
-
-cmake --build cmake-out/examples/models/llama -j16 --config Release
+pushd examples/models/llama
+cmake --workflow --preset llama-release
+popd
 ```
 
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama/main.cpp#L18-L40).

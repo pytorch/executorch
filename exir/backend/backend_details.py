@@ -57,6 +57,22 @@ class BackendDetails(ABC):
 
     """
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        # Allow direct subclasses of BackendDetails
+        if cls.__bases__ == (BackendDetails,):
+            return
+
+        # Forbid subclasses whose ANY parent is already a child of BackendDetails
+        for base in cls.__bases__:
+            if issubclass(base, BackendDetails) and base is not BackendDetails:
+                raise TypeError(
+                    f"ExecuTorch delegate doesn't support nested backend, '{base.__name__}' "
+                    " should be a final backend implementation and should not be subclassed "
+                    f"(attempted by '{cls.__name__}')."
+                )
+
     @staticmethod
     # all backends need to implement this method
     @enforcedmethod

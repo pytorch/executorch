@@ -12,6 +12,8 @@ Use this module to construct and serialize TOSA operators from FX nodes.
 """
 
 import json
+
+import logging
 from typing import Any, Dict, List, Optional
 
 import torch
@@ -20,8 +22,13 @@ import tosa_serializer as ts
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.debug.schema import DebugHook
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import (
+    TosaSpecification,
+    TosaSpecMapping,
+)
 from torch.export import ExportedProgram
+
+logger = logging.getLogger(__name__)
 
 
 class NodeVisitor:
@@ -125,23 +132,31 @@ class NodeVisitor:
 
 
 # container for all node visitors
-_node_visitor_dicts: Dict[TosaSpecification, Dict] = {
-    TosaSpecification.create_from_string("TOSA-1.0+INT"): {},
-    TosaSpecification.create_from_string("TOSA-1.0+FP"): {},
-}
+_node_visitor_tuples: TosaSpecMapping[tuple] = TosaSpecMapping()
 
 
 def register_node_visitor(visitor):
     """Register a concrete ``NodeVisitor`` class for its TOSA specs."""
     for tosa_spec in visitor.tosa_specs:
-        _node_visitor_dicts[tosa_spec][visitor.target] = visitor
+        # Try to get the tuple to make sure it doesn't exist
+        visitor_tuple = (visitor.target, visitor)
+        try:
+            tuples = _node_visitor_tuples.get(tosa_spec)
+        except KeyError:
+            tuples = []
+
+        if visitor_tuple in tuples:
+            raise RuntimeError(
+                f"Visitor for target {visitor.target} already registered for TOSA spec {tosa_spec}"
+            )
+        _node_visitor_tuples.add(tosa_spec, visitor_tuple)
     return visitor
 
 
 def get_node_visitors(*args) -> Dict[str, NodeVisitor]:
     """Return a mapping from target names to visitor instances for a spec."""
-    node_visitors = {}
-    tosa_spec = None
+    node_visitors: Dict[str, NodeVisitor] = {}
+    tosa_spec: TosaSpecification | None = None
     for arg in args:
         if isinstance(arg, TosaSpecification):
             tosa_spec = arg
@@ -150,7 +165,13 @@ def get_node_visitors(*args) -> Dict[str, NodeVisitor]:
     if tosa_spec is None:
         raise RuntimeError("No TOSA specification supplied.")
 
-    for target, visitor in _node_visitor_dicts[tosa_spec].items():
+    # Use the mapping to get the dict for this spec (handles combined specs)
+    for node_visitor_tuple in _node_visitor_tuples.get(tosa_spec):
+        target, visitor = node_visitor_tuple
+        if target in node_visitors and node_visitors[target].__class__ != visitor:
+            logger.warning(
+                f"Target {target} already has visitor class {node_visitors[target].__class__.__name__} registered, overwriting with class: {visitor.__name__}"
+            )
         node_visitors[target] = visitor(*args)
 
     return node_visitors

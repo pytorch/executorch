@@ -1,0 +1,109 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "voxtral-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/voxtral",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "voxtral-cpu",
+            "displayName": "Voxtral runner (CPU)",
+            "inherits": ["voxtral-base"]
+        },
+        {
+            "name": "voxtral-cuda",
+            "displayName": "Voxtral runner (CUDA)",
+            "inherits": ["voxtral-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "voxtral-metal",
+            "displayName": "Voxtral runner (Metal)",
+            "inherits": ["voxtral-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_METAL": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "voxtral-cpu",
+            "displayName": "Build Voxtral runner (CPU)",
+            "configurePreset": "voxtral-cpu",
+            "targets": ["voxtral_runner"]
+        },
+        {
+            "name": "voxtral-cuda",
+            "displayName": "Build Voxtral runner (CUDA)",
+            "configurePreset": "voxtral-cuda",
+            "targets": ["voxtral_runner"]
+        },
+        {
+            "name": "voxtral-metal",
+            "displayName": "Build Voxtral runner (Metal)",
+            "configurePreset": "voxtral-metal",
+            "targets": ["voxtral_runner"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "voxtral-cpu",
+            "displayName": "Configure and build Voxtral runner (CPU)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-cpu"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-cpu"
+                }
+            ]
+        },
+        {
+            "name": "voxtral-cuda",
+            "displayName": "Configure and build Voxtral runner (CUDA)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-cuda"
+                }
+            ]
+        },
+        {
+            "name": "voxtral-metal",
+            "displayName": "Configure and build Voxtral runner (Metal)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-metal"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-metal"
+                }
+            ]
+        }
+    ]
+}
