@@ -326,11 +326,28 @@ endif()
 
 # Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
 # bin size as we link in a number of other symbols
-target_link_libraries(arm_executor_runner ${arm_executor_runner_link})
+target_link_libraries(arm_executor_runner PUBLIC ${arm_executor_runner_link})
 
 target_link_options(
   arm_executor_runner PUBLIC LINKER:-Map=arm_executor_runner.map
 )
+
+# Sanitizers
+if(CMAKE_BUILD_TYPE MATCHES "UndefinedSanitizer")
+  set(_et_runner_ubsan_flag -fsanitize=undefined)
+  target_compile_options(arm_executor_runner PRIVATE ${_et_runner_ubsan_flag})
+  target_link_options(arm_executor_runner PRIVATE ${_et_runner_ubsan_flag})
+  if(NOT TARGET executorch_ubsan)
+    add_subdirectory(
+      ${ET_DIR_PATH}/examples/arm/ubsan
+      ${CMAKE_CURRENT_BINARY_DIR}/ubsan_runtime
+    )
+  endif()
+  target_link_directories(
+    arm_executor_runner PRIVATE $<TARGET_FILE_DIR:executorch_ubsan>
+  )
+  target_link_libraries(arm_executor_runner PRIVATE executorch_ubsan)
+endif()
 
 # ET headers and generated headers includes
 target_include_directories(
