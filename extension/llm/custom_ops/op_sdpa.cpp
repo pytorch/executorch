@@ -266,13 +266,14 @@ Tensor& flash_attention_kernel_out(
 
   auto seq_len = query.size(2);
 
+  bool success = false;
   ET_SWITCH_FLOAT_TYPES(
       query.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
         // TODO we need to re-evaluate this for ARM CPUs
         // And there can be many so instead of templatizing
         // we might consider another appraoch
         if (seq_len >= 768) {
-          sdpa::impl::cpu_flash_attention<CTYPE, 256, 512>(
+          success = sdpa::impl::cpu_flash_attention<CTYPE, 256, 512>(
               output,
               query,
               key,
@@ -288,7 +289,7 @@ Tensor& flash_attention_kernel_out(
               nullopt,
               nullopt);
         } else if (seq_len >= 192) {
-          sdpa::impl::cpu_flash_attention<CTYPE, 64, 512>(
+          success = sdpa::impl::cpu_flash_attention<CTYPE, 64, 512>(
               output,
               query,
               key,
@@ -304,7 +305,7 @@ Tensor& flash_attention_kernel_out(
               nullopt,
               nullopt);
         } else {
-          sdpa::impl::cpu_flash_attention<CTYPE, 32, 512>(
+          success = sdpa::impl::cpu_flash_attention<CTYPE, 32, 512>(
               output,
               query,
               key,
@@ -321,6 +322,8 @@ Tensor& flash_attention_kernel_out(
               nullopt);
         }
       });
+  ET_KERNEL_CHECK_MSG(
+      ctx, success, Internal, output, "cpu_flash_attention failed");
   return output;
 }
 
@@ -411,13 +414,14 @@ Tensor& custom_sdpa_out_impl(
 
   // TODO(task): replace the template param selection logic
   // with whatever apprpriately makes more sense for
+  bool success = false;
   ET_SWITCH_FLOAT_TYPES(
       output.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
         // TODO we need to re-evaluate this for ARM CPUs
         // And there can be many so instead of templatizing
         // we might consider another appraoch
         if (seq_len >= 768) {
-          sdpa::impl::cpu_flash_attention<CTYPE, 256, 512>(
+          success = sdpa::impl::cpu_flash_attention<CTYPE, 256, 512>(
               output,
               q,
               k,
@@ -436,7 +440,7 @@ Tensor& custom_sdpa_out_impl(
               start_pos,
               num_keys_for_causal_attention);
         } else if (seq_len >= 192) {
-          sdpa::impl::cpu_flash_attention<CTYPE, 64, 512>(
+          success = sdpa::impl::cpu_flash_attention<CTYPE, 64, 512>(
               output,
               q,
               k,
@@ -455,7 +459,7 @@ Tensor& custom_sdpa_out_impl(
               start_pos,
               num_keys_for_causal_attention);
         } else {
-          sdpa::impl::cpu_flash_attention<CTYPE, 32, 512>(
+          success = sdpa::impl::cpu_flash_attention<CTYPE, 32, 512>(
               output,
               q,
               k,
@@ -475,6 +479,8 @@ Tensor& custom_sdpa_out_impl(
               num_keys_for_causal_attention);
         }
       });
+  ET_KERNEL_CHECK_MSG(
+      ctx, success, Internal, output, "cpu_flash_attention failed");
   return output;
 }
 
