@@ -70,16 +70,19 @@ def QnnManagerContext(compile_specs: Dict[str, List[CompileSpec]]):
 
 
 def get_current_qnn_manager(
-    backend_type: QnnExecuTorchBackendType,
+    backend_type: QnnExecuTorchBackendType, compile_specs: List[CompileSpec]
 ) -> PyQnnManager.QnnManager:
     """
     Retrieves the QnnManager instance active for the current QnnManagerContext invocation.
-    Raises RuntimeError if no QnnManager is active for the given backend_type in the current context.
+    Return a new QnnManger if no QnnManager is active for the given backend_type in the current context.
     """
     active_registry = getattr(_current_qnn_managers, "active_registry", None)
     if active_registry is None or backend_type not in active_registry._registry:
-        raise RuntimeError(
+        logging.warning(
             f"No QnnManager active for backend type {backend_type.name} in the current QnnManagerContext. "
-            "Ensure get_current_qnn_manager is called within an active QnnManagerContext."
+            "It would be better to use to_edge_transform_and_lower_to_qnn to lowering to QNN Backend."
+        )
+        return QnnManagerRegistry().get_or_create_qnn_manager(
+            backend_type, generate_qnn_executorch_option(compile_specs)
         )
     return active_registry._registry[backend_type]
