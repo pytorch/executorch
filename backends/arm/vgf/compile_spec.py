@@ -15,19 +15,23 @@ logger = logging.getLogger(__name__)
 
 
 class VgfCompileSpec(ArmCompileSpec):
-    """
-    Compile spec for VGF compatible targets.
-
-    Args:
-        tosa_spec: TOSA specification that should be targeted.
-        compiler_flags: Extra compiler flags for converter_backend.
-    """
+    """Compile specification for VGF-compatible targets."""
 
     def __init__(
         self,
         tosa_spec: TosaSpecification | str | None = None,
         compiler_flags: list[str] | None = None,
     ):
+        """Normalise inputs and populate the underlying Arm compile spec.
+
+        Args:
+            tosa_spec (TosaSpecification | str | None): TOSA specification to
+                target. Strings are parsed via
+                :meth:`TosaSpecification.create_from_string`. Defaults to
+                ``"TOSA-1.0+FP"``.
+            compiler_flags (list[str] | None): Optional converter-backend flags.
+
+        """
         if tosa_spec is None:
             tosa_spec = "TOSA-1.0+FP"
         if isinstance(tosa_spec, str):
@@ -39,7 +43,7 @@ class VgfCompileSpec(ArmCompileSpec):
         self.validate()
 
     def validate(self):
-        """Throws an error if the compile spec is not valid."""
+        """Validate the configuration against VGF-supported TOSA profiles."""
         tosa_version = self.tosa_spec.version  # type: ignore[attr-defined]
         tosa_profiles = self.tosa_spec.profiles  # type: ignore[attr-defined]
 
@@ -63,4 +67,5 @@ class VgfCompileSpec(ArmCompileSpec):
 
     @classmethod
     def get_output_format(cls) -> str:
+        """Return the artifact format emitted by this compile spec."""
         return "vgf"

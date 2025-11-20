@@ -113,3 +113,14 @@ runtime.python_test(
         "//executorch/examples/xnnpack:models",  # @manual
     ],
 )
+
+runtime.python_test(
+    name = "test_xnnpack_partitioner",
+    srcs = ["test_xnnpack_partitioner.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)

@@ -18,6 +18,7 @@ enum HtpArch: int {
   V73 = 73,
   V75 = 75,
   V79 = 79,
+  V81 = 81,
 }
 
 table HtpInfo {
@@ -33,6 +34,7 @@ table HtpInfo {
 enum QcomChipset: int {
   UNKNOWN_SM = 0,
   SA8295 = 39,
+  SM8350 = 35,
   SM8450 = 36,
   SM8475 = 42,
   SM8550 = 43,
@@ -44,6 +46,8 @@ enum QcomChipset: int {
   SXR2230P = 53,
   SXR2330P = 75,
   QCS9100 = 77,
+  SAR2230P = 95,
+  SA8255 = 52,
 }
 
 /// Indicate the information of the specified SoC.

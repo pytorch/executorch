@@ -643,3 +643,25 @@ class SinConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class CloneDimOrderConfig(GenericNodePartitionerConfig):
+    target_name = "_clone_dim_order.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        # Only partition no-op _clone_dim_order nodes (output dim order = input).
+        # We can relax this in the future.
+        # This is also a conservative check and doesn't consider ambiguity.
+        dim_order = node.kwargs.get("dim_order", None)
+        input_meta = node.args[0].meta["val"]
+        if dim_order is not None and list(input_meta.dim_order()) != dim_order:
+            why(node, reason="Only dim-order preserving clones are supported.")
+            return False
+
+        return True

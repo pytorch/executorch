@@ -65,7 +65,8 @@ class FuseConstantArgsPass(ArmPass):
             if isinstance(arg, torch.fx.Node) and arg in input_nodes:
                 idx = input_nodes.index(arg)
                 t = get_param_tensor(self.exported_program, arg)
-                if qparams:
+                # Check if qparams exist for this arg
+                if qparams and idx in qparams.keys():
                     t = qparams[idx].dequantize_value(t)
                 return t
             if isinstance(arg, tuple):
@@ -163,7 +164,7 @@ class FuseConstantArgsPass(ArmPass):
         return PassResult(graph_module, True)
 
 
-class ComputeConstantOpsAOT(ArmPass):
+class ComputeConstantOpsAOTPass(ArmPass):
     """
     Evaluates call_functions that produce constant tensor outputs and replaces them with placeholders.
 

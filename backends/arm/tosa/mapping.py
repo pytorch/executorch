@@ -2,14 +2,14 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 """Provide PyTorch-to-TOSA mapping helpers.
 
-Use these utilities to translate PyTorch dtypes and FX node metadata into
-the TOSA serializer types and shapes used during initial compilation.
+Use these utilities to translate PyTorch dtypes and FX node metadata into the
+TOSA serializer types and shapes used during initial compilation.
 
 """
 
+import operator
 from enum import Enum
 from typing import Any, Optional, Sequence
 
@@ -33,18 +33,27 @@ UNSUPPORTED_DTYPES = (
 
 
 class TosaSpecialDtype(Enum):
-    """
-    Special TOSA data types that are not natively supported in PyTorch, to be
-    used in specific scenarios as a value in the key from meta_key().
-    """
+    """Special TOSA dtypes not natively expressed in PyTorch."""
 
     INT48 = ts.DType.INT48
 
     def get_tosa_dtype(self) -> ts.DType:
+        """Return the underlying ``ts.DType`` enumerant.
+
+        Returns:
+            ts.DType: Serializer dtype associated with the enum entry.
+
+        """
         return self.value
 
     @staticmethod
     def meta_key() -> str:
+        """Return the FX ``meta`` key that stores special dtypes.
+
+        Returns:
+            str: Metadata key used to encode :class:`TosaSpecialDtype`.
+
+        """
         return "tosa_special_dtype"
 
 
@@ -56,7 +65,7 @@ def map_dtype(data_type: torch.dtype, tosa_spec: TosaSpecification) -> Any:
         tosa_spec (TosaSpecification): Active spec (reserved for future checks).
 
     Returns:
-        Any: Matching ``ts.DType`` enum value.
+        ts.DType: Matching serializer dtype.
 
     Raises:
         ValueError: If the dtype is unsupported or unknown.
@@ -94,8 +103,8 @@ def extract_tensor_meta(meta, tosa_spec: TosaSpecification):
         tosa_spec (TosaSpecification): Active TOSA spec for dtype mapping.
 
     Returns:
-        tuple: ``(dtype, shape, dim_order)`` where ``dtype`` is ``ts.DType``,
-        ``shape`` is ``Tuple[int, ...]``, and ``dim_order`` is ``Tuple[int, ...]``.
+        tuple[ts.DType, tuple[int, ...], tuple[int, ...]]: Tuple containing
+        tensor dtype, shape, and dimension order.
 
     Raises:
         ValueError: If ``meta['val']`` is not a ``FakeTensor``.
@@ -129,14 +138,16 @@ class TosaArg:
     consistent structure suitable for TOSA serialization.
 
     Attributes:
-        name (str): Node name when argument is a ``torch.fx.Node``; empty otherwise.
+        name (str): Node name when argument is a ``torch.fx.Node``; empty
+            otherwise.
         dtype (ts.DType | None): Inferred dtype when available.
         shape (tuple[int, ...] | None): Inferred shape when available.
-        dim_order (tuple[int, ...] | None): Dimension order, defaulting to ``range(len(shape))``.
+        dim_order (tuple[int, ...] | None): Dimension order, defaulting to
+            ``range(len(shape))``.
         special (list | None): Captured list when the argument is a sequence.
-        number (float | int | None): Captured numeric value when given.
+        number (float | int | None): Captured numeric value when provided.
         tosa_spec (TosaSpecification): Active specification used for mapping.
-
+        multiple_output_name (list[str]): Output node names when node has multiple outputs; empty otherwise.
     """
 
     def __process_node(self, argument: torch.fx.Node):
@@ -146,22 +157,34 @@ class TosaArg:
             argument (torch.fx.Node): FX node to inspect.
 
         """
-        self.name = argument.name + argument.meta.get(TOSA_TENSOR_NAME_META, "")
-        output_dtype, self.shape, self.dim_order = extract_tensor_meta(
-            argument.meta, self.tosa_spec
-        )
+        suffix = argument.meta.get(TOSA_TENSOR_NAME_META, "")
+        self.name = argument.name + suffix
 
-        # Handle special case of types not representable in torch (i.e. i48_t)
-        if special_type := argument.meta.get(TosaSpecialDtype.meta_key(), None):
-            output_dtype = special_type.get_tosa_dtype()
+        if "val" in argument.meta:
+            output_dtype, self.shape, self.dim_order = extract_tensor_meta(
+                argument.meta, self.tosa_spec
+            )
+            # Handle special case of types not representable in torch (i.e. i48_t)
+            if special_type := argument.meta.get(TosaSpecialDtype.meta_key(), None):
+                output_dtype = special_type.get_tosa_dtype()
 
-        self.dtype = output_dtype
+            self.dtype = output_dtype
+
+        # If all users of the node are getitems, node visitors should connect the output of this node directly to the getitem tensors.
+        # Add a new attribute 'multiple_output_names' instead of making 'name' a list to avoid ambiguity regarding the type of 'name'.
+        # Make name of the output is the first getitem since we in most cases only handle that output.
+        users = list(argument.users)
+        if len(users) > 0 and all(user.target == operator.getitem for user in users):
+            self.multiple_output_names: list = [user.name + suffix for user in users]
+            self.name = self.multiple_output_names[0]
+        else:
+            self.multiple_output_names = []
 
     def __process_list(self, argument):
         """Capture a sequence argument as ``special``.
 
         Args:
-            argument (Sequence): Sequence to store.
+            argument (Sequence[Any]): Sequence to store.
 
         """
         self.special: list = list(argument)
@@ -181,10 +204,13 @@ class TosaArg:
         """Initialize the argument wrapper and populate fields.
 
         Args:
-            argument (Any): One of ``torch.fx.Node``, ``Sequence``, ``int``, ``float``, ``torch.dtype``, or ``None``.
-            tosa_spec (Optional[TosaSpecification]): Active specification; required.
+            argument (Any): One of ``torch.fx.Node``, ``Sequence``, ``int``,
+                ``float``, ``torch.dtype``, or ``None``.
+            tosa_spec (Optional[TosaSpecification]): Active specification;
+                required for metadata extraction.
 
         Raises:
+            ValueError: If ``tosa_spec`` is missing or has the wrong type.
             RuntimeError: If ``argument`` is of an unsupported type.
 
         """
@@ -243,4 +269,6 @@ class TosaArg:
             attrs.append(f"number={self.number!r}")
         if hasattr(self, "tosa_spec") and self.tosa_spec is not None:
             attrs.append(f"tosa_spec={self.tosa_spec!r}")
+        if hasattr(self, "names"):
+            attrs.append(f"names={self.multiple_output_names!r}")
         return f"{self.__class__.__name__}({', '.join(attrs)})"

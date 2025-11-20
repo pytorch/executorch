@@ -7,6 +7,7 @@ from executorch.exir.dialects.edge.spec.utils import SAMPLE_INPUT
 # Add edge ops which we lower but which are not included in exir/dialects/edge/edge.yaml here.
 CUSTOM_EDGE_OPS = [
     "linspace.default",
+    "cond.default",
     "eye.default",
     "expm1.default",
     "vector_norm.default",
@@ -18,7 +19,9 @@ CUSTOM_EDGE_OPS = [
     "multihead_attention.default",
     "adaptive_avg_pool2d.default",
     "bitwise_right_shift.Tensor",
+    "bitwise_right_shift.Scalar",
     "bitwise_left_shift.Tensor",
+    "bitwise_left_shift.Scalar",
     "native_group_norm.default",
     "silu.default",
     "sdpa.default",
@@ -30,6 +33,7 @@ CUSTOM_EDGE_OPS = [
     "alias_copy.default",
     "pixel_shuffle.default",
     "pixel_unshuffle.default",
+    "while_loop.default",
 ]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 

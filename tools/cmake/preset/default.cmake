@@ -70,6 +70,10 @@ define_overridable_option(
   "Build the optimized ops library for AOT export usage" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER "Build the ASR runner extension" BOOL
+  OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension" BOOL
   ON # Required by executor_runner
 )
@@ -285,6 +289,12 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD
   "Build the executorch_kernels target with only operator implementations for selected data types."
+  BOOL
+  FALSE
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_WHEEL_DO_NOT_USE
+  "On if in the wheel building process. Should only be used to guard code that is only needed for building the wheel."
   BOOL
   FALSE
 )

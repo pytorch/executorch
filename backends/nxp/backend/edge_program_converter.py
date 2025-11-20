@@ -19,10 +19,7 @@ from torch.fx import Node
 from torch.nn.parameter import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from executorch.backends.nxp.backend.node_format_inference import (
-    NodeFormat,
-    NodeFormatInference,
-)
+from executorch.backends.nxp.backend.node_format import NodeFormat, NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
 
 # noinspection PyProtectedMember
@@ -66,7 +63,7 @@ class EdgeProgramToIRConverter:
         conversion_config: ConversionConfig = _default_conversion_config,
         neutron_target_spec: NeutronTargetSpec = _default_target_spec,
         custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
-    ) -> (bytes, dict):
+    ) -> (bytes, dict[str, NodeFormat]):
         """
         Convert ExportedProgram in Edge dialect to IR (TFLite flatbuffers) as bytes.
 
@@ -76,12 +73,10 @@ class EdgeProgramToIRConverter:
         :param custom_delegation_options: Custom user options which affect node delegation.
         :return: TFLite flatbuffers as bytes.
         """
-        node_formats = NodeFormatInference(edge_program).identify_node_formats()
         parameters_mapping = self.map_inputs_to_parameters(edge_program)
 
         cc = self.build_conversion_context(
             parameters_mapping,
-            node_formats,
             neutron_target_spec,
             conversion_config,
             custom_delegation_options,
@@ -92,13 +87,16 @@ class EdgeProgramToIRConverter:
         self._convert_qdq_cluster_q_dq_nodes(edge_program.graph.nodes, cc)
         self._process_nodes(edge_program.graph.nodes, cc)
 
-        # Assign output
-        io_formats = cc.tflite_builder.assign_model_io_to_subgraph_and_get_io_formats(
-            edge_program.graph_signature
-        )
+        # Assign the model its inputs and outputs.
+        cc.tflite_builder.assign_model_io_to_subgraph(edge_program.graph_signature)
+
+        # Apply optimizations and finalize the model.
+        internal_tflite_model = cc.tflite_builder.finish()
+
+        # Extract the formats of the model's inputs and outputs.
+        io_formats = cc.tflite_builder.get_io_formats(edge_program.graph_signature)
 
         # TFLite model generation
-        internal_tflite_model = cc.tflite_builder.finish()
         flatbuffers_builder = flatbuffers.Builder()
         internal_tflite_model.gen_tflite(flatbuffers_builder)
 
@@ -108,7 +106,7 @@ class EdgeProgramToIRConverter:
     def append_placeholders_and_tensors(nodes: list[Node], context: ConversionContext):
         for node in nodes:
             if node.op == "placeholder":
-                node_format = context.node_formats[node]
+                node_format = node.meta[NXP_NODE_FORMAT]
 
                 if node.name in context.parameters_mapping:
                     # Node is placeholder and has data -> append as static tensor with data
@@ -121,7 +119,7 @@ class EdgeProgramToIRConverter:
                     context.tflite_builder.append_as_fake_tensor(node, node_format)
             elif node.op == "call_function":
                 # Node is call function -> append only output as a tensor
-                node_format = context.node_formats[node]
+                node_format = node.meta[NXP_NODE_FORMAT]
                 context.tflite_builder.append_as_fake_tensor(node, node_format)
             elif node.op == "output":
                 # Nothing to do
@@ -179,7 +177,6 @@ class EdgeProgramToIRConverter:
     @staticmethod
     def build_conversion_context(
         parameters_mapping: dict,
-        node_formats: dict[Node, NodeFormat],
         neutron_target_spec: NeutronTargetSpec,
         conversion_config: ConversionConfig = _default_conversion_config,
         custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
@@ -195,7 +192,6 @@ class EdgeProgramToIRConverter:
             tflite_builder,
             conversion_config,
             parameters_mapping,
-            node_formats,
             custom_delegation_options,
         )
 

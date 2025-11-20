@@ -94,11 +94,13 @@ class ReplaceScalarWithTensorByProfilePass(ReplaceScalarWithTensorArgPass, ArmPa
     def call_operator(self, op, args, kwargs, meta):
         tosa_spec = get_context_spec()
 
+        included_ops = {}
         if tosa_spec.support_integer():
-            included_ops = _int_profile_ops
-        elif tosa_spec.support_float():
-            included_ops = _fp_profile_ops
-        else:
+            included_ops |= _int_profile_ops
+        if tosa_spec.support_float():
+            included_ops |= _fp_profile_ops
+
+        if included_ops == {}:
             raise ValueError("Profile must support either INT or FP")
 
         if op in included_ops:

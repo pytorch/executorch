@@ -6,12 +6,11 @@
 
 # pyre-strict
 
+import copy
 from functools import partial
-
 from typing import Any, Callable, Dict, final, List
 
 import executorch.backends.vulkan.utils as utils
-
 from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
@@ -22,15 +21,12 @@ from executorch.backends.vulkan._passes import (
     FoldQDQPass,
     FuseQuantizedOpsTransform,
     insert_prepack_nodes,
-    RemoveLocalScalarDenseOpsTransform,
     RemoveRedundantOpsTransform,
-    ReplaceQDQPass,
     SqueezeUnsqueezeInputs,
     TagMemoryMetaPass,
 )
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
-
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
@@ -40,7 +36,6 @@ from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
 )
 from executorch.backends.xnnpack._passes import FuseBatchNormPass
-
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
@@ -48,18 +43,12 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
-
 from executorch.exir.memory_planning import greedy, MemoryPlanningAlgorithmSuite
 from executorch.exir.pass_base import ExportPass, PassBase
-
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
-
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-
 from executorch.exir.program._program import _transform
-
 from torch._export.verifier import Verifier
-
 from torch.export._remove_auto_functionalized_pass import (
     unsafe_remove_auto_functionalized_pass,
 )
@@ -139,15 +128,21 @@ class VulkanBackend(BackendDetails):
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
         compile_options = parse_compile_spec(module_compile_spec)
-        limits_x = compile_options.get(
-            "texture_limits_x", utils.DEFAULT_TEXTURE_LIMITS[0]
-        )
-        limits_y = compile_options.get(
-            "texture_limits_y", utils.DEFAULT_TEXTURE_LIMITS[1]
-        )
-        limits_z = compile_options.get(
-            "texture_limits_z", utils.DEFAULT_TEXTURE_LIMITS[2]
-        )
+
+        default_texture_limits = copy.deepcopy(utils.DEFAULT_TEXTURE_LIMITS)
+        # 2048 is the typical limit value for 3D textures, but mobile GPUs often support
+        # 16384. Since the Vulkan delegate primarily targets mobile GPUs at the moment,
+        # 16394 is the default texture limit used. This option is provided as a
+        # convenient way to switch to using a limit of 2048 for image textures which
+        # will be compatible with most GPUs.
+        if compile_options.get("small_texture_limits", False):
+            default_texture_limits[0] = 2048
+            default_texture_limits[1] = 2048
+            default_texture_limits[2] = 2048
+
+        limits_x = compile_options.get("texture_limits_x", default_texture_limits[0])
+        limits_y = compile_options.get("texture_limits_y", default_texture_limits[1])
+        limits_z = compile_options.get("texture_limits_z", default_texture_limits[2])
         texture_limits = (limits_x, limits_y, limits_z)
 
         default_storage_type = compile_options.get(
@@ -173,7 +168,6 @@ class VulkanBackend(BackendDetails):
                 AddmmToLinearTransform(),
                 RemoveRedundantOpsTransform(),
                 FuseQuantizedOpsTransform(),
-                ReplaceQDQPass(),
                 FoldQDQPass(),
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
@@ -193,9 +187,6 @@ class VulkanBackend(BackendDetails):
             program,
             [
                 RemoveAssertsTransform(),
-                # Since this pass may replace a scalar argument with a tensor argument,
-                # this pass may result in a non ATen compliant graph structure.
-                RemoveLocalScalarDenseOpsTransform(),
                 insert_prepack_nodes,
             ],
         )
@@ -213,28 +204,33 @@ class VulkanBackend(BackendDetails):
                         texture_limits,
                         default_storage_type=default_storage_type,
                         default_memory_layout=default_memory_layout,
+                        force_fp16=force_fp16,
                     ),
                 ],
             )
 
         # Finally, apply dynamic shape passes and memory planning pass. These passes
         # must be applied only when the graph structure is finalized.
-        greedy_memory_planning = partial(greedy, allow_overlapping_allocations=False)
-        mem_planning_suite = MemoryPlanningAlgorithmSuite(
-            algo_list=[greedy_memory_planning]
-        )
-        # This is a workaround to allow the memory planning pass to work without having
-        # to first apply ToOutVarPass(). See the `greedy()` function in
-        # `exir.memory_planning`; if this attribute isn't set, assertions in
-        # `collect_spec_from_nodes()` will fail.
-        program.graph_module.encounter_to_out_var_failure = True
-        program = apply_passes(
-            program,
-            [
-                ConstraintBasedSymShapeEvalPass(),
-                MemoryPlanningPass(memory_planning_algo=mem_planning_suite),
-            ],
-        )
+        final_passes = [
+            ConstraintBasedSymShapeEvalPass(),
+        ]
+        if not compile_options.get("skip_memory_planning", False):
+            greedy_memory_planning = partial(
+                greedy, allow_overlapping_allocations=False
+            )
+            mem_planning_suite = MemoryPlanningAlgorithmSuite(
+                algo_list=[greedy_memory_planning]
+            )
+            # This is a workaround to allow the memory planning pass to work without having
+            # to first apply ToOutVarPass(). See the `greedy()` function in
+            # `exir.memory_planning`; if this attribute isn't set, assertions in
+            # `collect_spec_from_nodes()` will fail.
+            program.graph_module.encounter_to_out_var_failure = True
+            final_passes.append(
+                MemoryPlanningPass(memory_planning_algo=mem_planning_suite)
+            )
+
+        program = apply_passes(program, final_passes)
 
         graph_builder = VkGraphBuilder(
             program,
