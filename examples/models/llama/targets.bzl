@@ -5,8 +5,8 @@ def define_common_targets():
         if not runtime.is_oss or not aten:
             aten_suffix = "_aten" if aten else ""
 
-            runtime.cxx_binary(
-                name = "main" + aten_suffix,
+            runtime.cxx_library(
+                name = "main" + aten_suffix + "_lib",
                 srcs = [
                     "main.cpp",
                 ],
@@ -24,4 +24,12 @@ def define_common_targets():
                     "gflags",
                 ],
                 **get_oss_build_kwargs()
+            )
+
+            runtime.cxx_binary(
+                name = "main" + aten_suffix,
+                srcs = [],
+                deps = [
+                    ":main" + aten_suffix + "_lib",
+                ],
             )

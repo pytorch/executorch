@@ -64,6 +64,8 @@ DEFINE_int32(
 
 DEFINE_bool(warmup, false, "Whether to run a warmup run.");
 
+std::vector<std::string> parseStringList(const std::string& input);
+
 // Helper function to parse comma-separated string lists
 std::vector<std::string> parseStringList(const std::string& input) {
   std::vector<std::string> result;
