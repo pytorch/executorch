@@ -42,28 +42,36 @@ class AotiBackend(ABC):
     BackendDetails and AotiBackend to get the full functionality.
     """
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def get_device_name() -> str:
+    def get_device_name(cls) -> str:
         """Return the device name for this backend (e.g., 'cuda', 'metal')."""
         pass
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def get_supported_fallback_kernels() -> Dict[str, Any]:
+    def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
         """Return the set of supported fallback kernels for this backend."""
         pass
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def get_decomposition_table() -> Dict[Any, Any]:
+    def get_decomposition_table(cls) -> Dict[Any, Any]:
         """Return the decomposition table for this backend."""
         pass
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def get_aoti_compile_options() -> Dict[str, typing.Any]:
+    def get_aoti_compile_options(
+        cls, compile_specs: List[CompileSpec]
+    ) -> Dict[str, typing.Any]:
         """Return the AOTInductor compilation options for this backend."""
+        pass
+
+    @classmethod
+    @abstractmethod
+    def get_custom_passes(cls) -> List[typing.Any]:
+        """Return the list of custom passes to apply after ReplaceViewCopyWithViewPass and before decomposition."""
         pass
 
     @classmethod
@@ -145,7 +153,7 @@ class AotiBackend(ABC):
         """
         device_name = cls.get_device_name()
         decomposition_table = cls.get_decomposition_table()
-        options = cls.get_aoti_compile_options()
+        options = cls.get_aoti_compile_options(compile_specs)
 
         # Move the edge_program to the target device
         device_edge_program = move_to_device_pass(
@@ -154,6 +162,11 @@ class AotiBackend(ABC):
 
         # Replace view_copy with view
         ReplaceViewCopyWithViewPass()(device_edge_program.graph_module)
+
+        # Apply custom backend-specific passes
+        custom_passes = cls.get_custom_passes()
+        for custom_pass in custom_passes:
+            custom_pass(device_edge_program.graph_module)
 
         # Run decompositions if any
         if decomposition_table:
@@ -236,8 +249,9 @@ class AotiBackend(ABC):
             data_store_output=named_data_store.get_named_data_store_output(),
         )
 
-    @staticmethod
+    @classmethod
     def generate_method_name_compile_spec(
+        cls,
         method_name: str,
     ) -> CompileSpec:
         """
@@ -248,8 +262,9 @@ class AotiBackend(ABC):
             method_name.encode("utf-8"),
         )
 
-    @staticmethod
+    @classmethod
     def method_name_from_compile_specs(
+        cls,
         compile_specs: List[CompileSpec],
     ) -> str:
         """

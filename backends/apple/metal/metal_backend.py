@@ -5,11 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import typing
-from typing import Any, Dict, final
+from typing import Any, Dict, final, List
 
 from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import BackendDetails
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 @final
@@ -23,12 +24,12 @@ class MetalBackend(AotiBackend, BackendDetails):
     using the Executorch runtime.
     """
 
-    @staticmethod
-    def get_device_name() -> str:
+    @classmethod
+    def get_device_name(cls) -> str:
         return "metal"
 
-    @staticmethod
-    def get_supported_fallback_kernels() -> Dict[str, Any]:
+    @classmethod
+    def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
         return {
             "aoti_torch_mps_addmm_out": None,
             "aoti_torch_mps_convolution": None,
@@ -36,12 +37,21 @@ class MetalBackend(AotiBackend, BackendDetails):
             "at::_ops::_scaled_dot_product_attention_math_for_mps::call": None,
         }
 
-    @staticmethod
-    def get_decomposition_table() -> Dict[Any, Any]:
+    @classmethod
+    def get_decomposition_table(cls) -> Dict[Any, Any]:
         return {}
 
-    @staticmethod
-    def get_aoti_compile_options() -> Dict[str, typing.Any]:
+    @classmethod
+    def get_custom_passes(cls) -> List[typing.Any]:
+        """Return Metal-specific passes (currently none)"""
+        return []
+
+    @classmethod
+    def get_aoti_compile_options(
+        cls, compile_specs: List[CompileSpec]
+    ) -> Dict[str, typing.Any]:
+        """Get AOTI compile options for Metal backend."""
+        _ = compile_specs  # Unused, but required by interface
         return {
             # Do not link against the full PyTorch/libtorch library
             "aot_inductor.link_libtorch": False,
