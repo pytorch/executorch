@@ -16,6 +16,10 @@ import torch
 from executorch.backends.aoti.passes.replace_view_copy_with_view import (
     ReplaceViewCopyWithViewPass,
 )
+
+from executorch.backends.cuda.triton.replacement_pass import (
+    ReplaceEdgeOpWithTritonOpPass,
+)
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import (
@@ -27,7 +31,7 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch.export.passes import move_to_device_pass
-from torch.nn.attention import SDPBackend
+
 
 cuda_decomposition_table = {
     torch.ops.aten.conv1d.default: conv1d_to_conv2d,
@@ -127,6 +131,9 @@ class CudaBackend(BackendDetails):
         # replace slice_copy.Tensor with slice.Tensor, select_copy.int with select.int
         ReplaceViewCopyWithViewPass()(cuda_edge_program.graph_module)
 
+        # Replace aten ops with triton ops
+        ReplaceEdgeOpWithTritonOpPass()(cuda_edge_program.graph_module)
+
         cuda_edge_program = cuda_edge_program.run_decompositions(
             cuda_decomposition_table
         )
@@ -188,11 +195,7 @@ class CudaBackend(BackendDetails):
                 }
             )
 
-        with collect_unsupported_fallback_kernels(), torch.nn.attention.sdpa_kernel(
-            [
-                SDPBackend.MATH  # pyre-ignore[16]: Module `torch.nn.attention` has no attribute `SDPBackend`.
-            ]
-        ), torch.no_grad():
+        with collect_unsupported_fallback_kernels(), torch.no_grad():
             # torch._logging.set_logs(post_grad_graphs=True)
             # Here we should expect 1 so file and 1 weight blob in the same directory.
             paths = torch._inductor.aot_compile(edge_program_module, tuple(user_input_placeholders), options=options)  # type: ignore[arg-type]

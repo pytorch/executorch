@@ -58,6 +58,7 @@ from executorch.exir.program._program import (
     EdgeProgramManager,
     to_edge_transform_and_lower,
 )
+from tabulate import tabulate
 from torch._decomp import core_aten_decompositions, remove_decompositions
 from torch.export.exported_program import ExportedProgram
 from torch.fx import passes
@@ -197,7 +198,7 @@ def dump_context_from_pte(pte_path) -> List[str]:
     with open(pte_path, "rb") as f:
         program_data = f.read()
 
-    program = deserialize_pte_binary(program_data)
+    program = deserialize_pte_binary(program_data).program
 
     ctx_path = os.path.dirname(pte_path)
     dummy_compiler_specs = generate_qnn_executorch_compiler_spec(
@@ -1089,9 +1090,11 @@ def generate_qnn_executorch_compiler_spec(
 def get_soc_to_arch_map():
     return {
         "SA8295": HtpArch.V68,
+        "SM8350": HtpArch.V68,
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
         "SM8550": HtpArch.V73,
+        "SA8255": HtpArch.V73,
         "SM8650": HtpArch.V75,
         "SM8750": HtpArch.V79,
         "SSG2115P": HtpArch.V73,
@@ -1107,9 +1110,11 @@ def get_soc_to_arch_map():
 def get_soc_to_chipset_map():
     return {
         "SA8295": QcomChipset.SA8295,
+        "SM8350": QcomChipset.SM8350,
         "SM8450": QcomChipset.SM8450,
         "SM8475": QcomChipset.SM8475,
         "SM8550": QcomChipset.SM8550,
+        "SA8255": QcomChipset.SA8255,
         "SM8650": QcomChipset.SM8650,
         "SM8750": QcomChipset.SM8750,
         "SSG2115P": QcomChipset.SSG2115P,
@@ -1120,6 +1125,35 @@ def get_soc_to_chipset_map():
         "QCS9100": QcomChipset.QCS9100,
         "SAR2230P": QcomChipset.SAR2230P,
     }
+
+
+def show_nn_module_stack_for_quant_recipe(gm: torch.fx.GraphModule, supported_ops):
+    """
+    Print a quick preview of op targets and module stack.
+
+    Use this to inspect the FX graph and identify module stack, which helps you craft regex or op-target for quantization recipe.
+
+    """
+
+    module_metadata = {}
+    for node in gm.graph.nodes:
+        target = node.target
+        deepest_module = None
+        if node.op == "call_function" and "nn_module_stack" in node.meta:
+            deepest_module = list(node.meta["nn_module_stack"].values())[-1][0]
+        if node.target in supported_ops:
+            module_metadata.setdefault((target, deepest_module), []).append(node)
+
+    table_rows = []
+    for (target, module_stack), nodes in module_metadata.items():
+        node_names = ", ".join([node.name for node in nodes])
+        table_rows.append([str(target), module_stack, node_names])
+
+    print(
+        tabulate(
+            table_rows, headers=["Op Target", "Module Stack", "Nodes"], tablefmt="grid"
+        )
+    )
 
 
 def tag_quant_io(gm: torch.fx.GraphModule, get_quant_io_dtype_fn: Callable):
