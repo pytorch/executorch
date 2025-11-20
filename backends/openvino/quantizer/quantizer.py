@@ -379,18 +379,7 @@ class OpenVINOQuantizer(Quantizer):
         """
         ip = qp.insertion_point
         if qp.is_weight_quantization_point():
-            nncf_node = nncf_graph.get_node_by_name(target_node.name)
-            weights_ports_ids = get_weight_tensor_port_ids(nncf_node, nncf_graph)
-            if len(weights_ports_ids) > 1:
-                # TODO(dlyakhov): support quantization for nodes with several weights
-                nncf_logger.warning(
-                    f"Quantization of the weighted node {target_node.name}"
-                    " is not yet supported by the OpenVINOQuantizer."
-                    f" Only the weight on port ID {weights_ports_ids[0]} will be quantized."
-                    f" Quantizable weights are located on ports: {weights_ports_ids}."
-                )
-            weight_node = target_node.all_input_nodes[weights_ports_ids[0]]
-            return (weight_node, target_node)
+            return OpenVINOQuantizer._get_weight_edge(target_node, nncf_graph)
 
         if ip.input_port_id is None:
             return target_node
