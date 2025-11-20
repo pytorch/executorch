@@ -68,6 +68,7 @@ class RewriteMatmulPass(ArmPass):
                     args=(x1, x2),
                     kwargs={},
                     from_node=node,
+                    inherit_qparams=True,
                 )
                 node.replace_all_uses_with(tosa_matmul_node)
                 graph_module.graph.erase_node(node)
