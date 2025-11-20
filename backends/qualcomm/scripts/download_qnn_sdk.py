@@ -13,7 +13,8 @@ import tempfile
 import urllib.request
 import zipfile
 from typing import Dict, List, Optional, Tuple
-
+import requests
+from requests.adapters import HTTPAdapter, Retry
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
