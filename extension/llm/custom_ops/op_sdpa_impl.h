@@ -778,10 +778,10 @@ void cpu_flash_attention(
     buf = buff_res.get();
   }
   void* buf_reduced = nullptr;
-  int64_t size_per_thread_qdq_vec = qSplitSize * kvSplitSize * headSize;
+  int64_t size_per_thread_qdq_vec = kvSplitSize * headSize;
   // Lets align size_per_thread_qdq_vec to 64 bytes, for coalesced cache reads,
   // by padding with right number of per thread elements
-  constexpr int64_t kAlignment = 32;
+  constexpr int64_t kAlignment = 64;
   size_per_thread_qdq_vec =
       (size_per_thread_qdq_vec + kAlignment - 1) & (-(kAlignment - 1));
   int64_t size_per_thread_qdq_bytes =
