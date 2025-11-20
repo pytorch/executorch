@@ -12,7 +12,9 @@ from executorch.backends.arm.quantizer.quantization_config import QuantizationCo
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.operator_configs import (
     BINARY_OP_PATTERNS,
+    CONV_OP_PATTERNS,
     INT8_BINARY_OPS_OPERATOR_CONFIG,
+    INT8_CONV_OPERATOR_CONFIG,
     INT8_LINEAR_OPERATOR_CONFIG,
 )
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
@@ -47,12 +49,30 @@ class CortexMQuantizer(ComposableQuantizer):
 
         return False
 
+    def nchw_filter(self, node: Optional[Node]) -> bool:
+        """
+        Filter function to exclude nodes that use NCHW memory format.
+        """
+        if node is None:
+            return False
+        if [node.target] not in CONV_OP_PATTERNS:
+            return False
+
+        tensor = get_first_fake_tensor(node)
+        if tensor is None:
+            return False
+
+        return not tensor.is_contiguous(memory_format=torch.channels_last)
+
     def __init__(self) -> None:
         quantizers: List[Quantizer] = [
             OperatorConfigQuantizer(
                 INT8_BINARY_OPS_OPERATOR_CONFIG, filter_fn=self.broadcasting_filter
             ),
             OperatorConfigQuantizer(INT8_LINEAR_OPERATOR_CONFIG),
+            OperatorConfigQuantizer(
+                INT8_CONV_OPERATOR_CONFIG, filter_fn=self.nchw_filter
+            ),
             InputQuantizer(INT8_PER_TENSOR_CONFIG),
             OutputQuantizer(INT8_PER_TENSOR_CONFIG),
             SharedQspecQuantizer(),

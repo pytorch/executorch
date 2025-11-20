@@ -5,7 +5,11 @@
 
 
 import torch
-from torchao.quantization.pt2e import HistogramObserver, MinMaxObserver
+from torchao.quantization.pt2e import (
+    HistogramObserver,
+    MinMaxObserver,
+    PerChannelMinMaxObserver,
+)
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     QuantizationConfig,
@@ -21,8 +25,9 @@ INT8_WEIGHT_PER_TENSOR_QSPEC = QuantizationSpec(
 
 INT8_WEIGHT_PER_CHANNEL_QSPEC = QuantizationSpec(
     dtype=torch.int8,
-    observer_or_fake_quant_ctr=MinMaxObserver,
+    observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
     qscheme=torch.per_channel_symmetric,
+    ch_axis=0,
 )
 
 INT8_ACTIVATION_PER_TENSOR_QSPEC = QuantizationSpec(
@@ -33,8 +38,9 @@ INT8_ACTIVATION_PER_TENSOR_QSPEC = QuantizationSpec(
 
 INT8_ACTIVATION_PER_CHANNEL_QSPEC = QuantizationSpec(
     dtype=torch.int8,
-    observer_or_fake_quant_ctr=HistogramObserver,
+    observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
     qscheme=torch.per_channel_affine,
+    ch_axis=0,
 )
 
 
@@ -61,7 +67,18 @@ def _get_int32_bias_qspec(node):
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.int32).min,
         quant_max=torch.iinfo(torch.int32).max - 1,
-        qscheme=torch.per_tensor_symmetric,
+    )
+
+
+def _get_int32_per_channel_bias_qspec(node):
+    return DerivedQuantizationSpec(
+        derived_from=[(node.args[0], node), (node.args[1], node)],  # type: ignore[list-item]
+        derive_qparams_fn=_derive_bias_qparams_fn,
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max - 1,
+        qscheme=torch.per_channel_symmetric,
+        ch_axis=0,
     )
 
 
@@ -75,8 +92,8 @@ INT8_PER_TENSOR_CONFIG = QuantizationConfig(
 
 
 INT8_PER_CHANNEL_CONFIG = QuantizationConfig(
-    INT8_ACTIVATION_PER_CHANNEL_QSPEC,
-    INT8_ACTIVATION_PER_CHANNEL_QSPEC,
+    INT8_ACTIVATION_PER_TENSOR_QSPEC,
+    INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_WEIGHT_PER_CHANNEL_QSPEC,
-    _get_int32_bias_qspec,
+    _get_int32_per_channel_bias_qspec,
 )
