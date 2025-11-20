@@ -104,7 +104,9 @@ class QnnBackend(BackendDetails):
     ) -> PreprocessResult:
         option = generate_qnn_executorch_option(compile_specs)
         obj_options = flatbuffer_to_option(option)
-        qnn_manager = get_current_qnn_manager(obj_options.backend_options.backend_type)
+        qnn_manager = get_current_qnn_manager(
+            obj_options.backend_options.backend_type, compile_specs
+        )
         qnn_manager.InitContext([DEFAULT_GRAPH_NAME])
         py_op_wrapper_list = QnnBackend._build_op_wrappers(
             edge_program,
@@ -151,7 +153,9 @@ class QnnBackend(BackendDetails):
 
         all_processed_results = {key: [] for key in edge_programs.keys()}
         num_sub_graphs = next(iter(num_sub_graphs))
-        qnn_manager = get_current_qnn_manager(option.backend_options.backend_type)
+        qnn_manager = get_current_qnn_manager(
+            option.backend_options.backend_type, compile_spec
+        )
         for i in range(num_sub_graphs):
             # e.g. 2 methods (x, y) with 3 partitions
             #      > context_binary_0: [x.subgraph_0, y.subgraph_0]
