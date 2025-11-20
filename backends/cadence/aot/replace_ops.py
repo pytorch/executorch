@@ -69,50 +69,46 @@ def contains_placeholder_or_param(nodes: Iterable[torch.fx.Node]) -> bool:
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceLogicalNotBooleanWhereWithWherePass(ExportPass):
+class ReplaceLogicalNotBooleanWhereWithWherePass(RemoveOrReplacePassInterface):
     """
     A where op with a logical_not and a boolean tensor can be replaced
     by a where op with flipped inputs and the initial boolean tensor.
     """
 
-    def replace_logical_nop_where_with_where(
-        self, graph_module: torch.fx.GraphModule
-    ) -> None:
-        graph = graph_module.graph
-        for node in graph.nodes:
-            # We are only interested in where nodes
-            if node.target != exir_ops.edge.aten.where.self:
-                continue
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.where.self]
 
-            # If the third arg is not a logical_not, bail.
-            if node.args[0].target != exir_ops.edge.aten.logical_not.default:
-                continue
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # If the first arg is not a logical_not, bail.
+        if not isinstance(node.args[0], torch.fx.Node):
+            return False
 
-            # Get the third arg node and its input
-            logical_not_node = node.args[0]
-            logical_not_input_node = logical_not_node.args[0]
+        logical_not_node = cast(torch.fx.Node, node.args[0])
+        if logical_not_node.target != exir_ops.edge.aten.logical_not.default:
+            return False
 
-            # If the logical_not input is not a boolean tensor, bail.
-            if logical_not_input_node.meta["val"].dtype != torch.bool:
-                continue
+        # Get the first arg node and its input
+        if not isinstance(logical_not_node.args[0], torch.fx.Node):
+            return False
 
-            # Replace the where op with another one, flipping the inputs and using the boolean
-            # tensor from logical_not.
-            with graph.inserting_before(node):
-                linear_node = graph.call_function(
-                    exir_ops.edge.aten.where.self,
-                    args=(logical_not_node.args[0], node.args[2], node.args[1]),
-                )
-            # Replace all the uses
-            node.replace_all_uses_with(linear_node)
+        logical_not_input_node = cast(torch.fx.Node, logical_not_node.args[0])
 
-        graph_module.recompile()
-        graph_module.graph.eliminate_dead_code()
+        # If the logical_not input is not a boolean tensor, bail.
+        if logical_not_input_node.meta["val"].dtype != torch.bool:
+            return False
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        self.replace_logical_nop_where_with_where(graph_module)
-        result = super().call(graph_module)
-        return result
+        # Replace the where op with another one, flipping the inputs and using the boolean
+        # tensor from logical_not.
+        with node.graph.inserting_before(node):
+            new_node = node.graph.call_function(
+                exir_ops.edge.aten.where.self,
+                args=(logical_not_input_node, node.args[2], node.args[1]),
+            )
+            new_node.meta = node.meta
+        # Replace all the uses
+        node.replace_all_uses_with(new_node)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -197,39 +193,40 @@ class ReplacePT2DequantWithCadenceDequantPass(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceSqueezeAndUnsqueezeWithViewPass(ExportPass):
+class ReplaceSqueezeAndUnsqueezeWithViewPass(RemoveOrReplacePassInterface):
     """
     When the shape is static, replace squeeze_copy and unsqueeze_copy ops with
     view_copy op
     """
 
-    def call_operator(
-        self,
-        op,
-        args: Tuple[Argument, ...],
-        kwargs: Dict[str, Argument],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
-        # Instead of testing EdgeOpOverload, test EdgeOpOverloadPacket,
-        # which allows us to cover all overloads.
-        if get_edge_overload_packet(op) not in {
-            exir_ops.edge.aten.squeeze_copy,
-            exir_ops.edge.aten.unsqueeze_copy,
-        }:
-            return super().call_operator(op, args, kwargs, meta)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
+            exir_ops.edge.aten.squeeze_copy.default,
+            exir_ops.edge.aten.squeeze_copy.dim,
+            exir_ops.edge.aten.squeeze_copy.dims,
+            exir_ops.edge.aten.unsqueeze_copy.default,
+        ]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Get the output tensor shape
-        out_shape = meta["val"].shape
+        out_shape = node.meta["val"].shape
 
         # Bail out if any dim is not an int (dynamic shape)
         for dim in list(out_shape):
             if not isinstance(dim, int):
-                return super().call_operator(op, args, kwargs, meta)
+                return False
 
-        # Return a view op with the new shape
-        view_args = (args[0], list(out_shape))
-        return super().call_operator(
-            exir_ops.edge.aten.view_copy.default, view_args, kwargs, meta
-        )
+        # Replace with view op with the new shape
+        with node.graph.inserting_before(node):
+            new_node = node.graph.call_function(
+                exir_ops.edge.aten.view_copy.default,
+                args=(node.args[0], list(out_shape)),
+            )
+            # Do not remove the metadata copy!
+            new_node.meta = node.meta
+        node.replace_all_uses_with(new_node)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -452,14 +449,16 @@ class ReplaceConvolutionOptionalArgsWithConcreteArgsPass(ExportPass):
     def call_operator(self, op, args, kwargs, meta):
         op_packet = get_edge_overload_packet(op)
         if op_packet not in {
-            exir_ops.edge.cadence.convolution,
+            exir_ops.edge.cadence.conv1d,
+            exir_ops.edge.cadence.conv2d,
+            exir_ops.edge.cadence.conv3d,
             exir_ops.edge.cadence.transposed_convolution,
         }:
             return super().call_operator(op, args, kwargs, meta)
 
         is_transposed = op_packet == exir_ops.edge.cadence.transposed_convolution
-        expected_args = 9 if is_transposed else 8
-        assert len(args) == expected_args
+        num_expected_args = 9 if is_transposed else 7
+        assert len(args) == num_expected_args
         # Check if the bias is already concrete
         if args[2] is not None:
             return super().call_operator(op, args, kwargs, meta)
@@ -684,20 +683,28 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
             output_padding,
             groups,
         ) = args
-        # Currently we only handle conversion to conv1d and conv2d, therefore
+        # Currently we only handle conversion to conv1d, conv2d, and conv3d, therefore
         # verify that the stride, padding, dilation, and output_padding have
-        # len <=2.
+        # len <=3.
         assert (
-            len(stride) == len(padding) == len(dilation) == len(output_padding) == 1
-        ) or (
-            len(stride) == len(padding) == len(dilation) == len(output_padding) == 2
-        ), "Can only map convolution to conv1d and conv2d at present"
+            (len(stride) == len(padding) == len(dilation) == len(output_padding) == 1)
+            or (
+                len(stride) == len(padding) == len(dilation) == len(output_padding) == 2
+            )
+            or (
+                len(stride) == len(padding) == len(dilation) == len(output_padding) == 3
+            )
+        ), "Can only map convolution to conv1d, conv2d, and conv3d at present"
 
-        target = (
-            exir_ops.edge.cadence.transposed_convolution.default
-            if transposed
-            else exir_ops.edge.cadence.convolution.default
-        )
+        # Determine if this is 1D, 2D, or 3D convolution based on parameter lengths
+        if transposed:
+            target = exir_ops.edge.cadence.transposed_convolution.default
+        elif len(stride) == 1:
+            target = exir_ops.edge.cadence.conv1d.default
+        elif len(stride) == 2:
+            target = exir_ops.edge.cadence.conv2d.default
+        else:  # len(stride) == 3
+            target = exir_ops.edge.cadence.conv3d.default
 
         if transposed:
             # Flip the height and width dimensions of weight, since we apply a
@@ -756,7 +763,6 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
                 padding,
                 dilation,
                 groups,
-                False,
             )
 
         return super().call_operator(target, new_args, kwargs, meta)
@@ -778,7 +784,9 @@ class ReplaceTrivialConvWithLinear(ExportPass):
     """
 
     trivial_conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
-        exir_ops.edge.cadence.convolution.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.conv1d.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.conv2d.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.conv3d.default: exir_ops.edge.aten.linear.default,
         exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
     }
@@ -795,7 +803,7 @@ class ReplaceTrivialConvWithLinear(ExportPass):
             op == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
             or op == exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
         )
-        assert (len(args) == 8 and not quantized_op) or (
+        assert (len(args) == 7 and not quantized_op) or (
             len(args) >= 12 and quantized_op
         ), "Inconsistent args for convolution"
         (in_tensor, weight, bias, stride, padding, dilation, groups) = args[0:7]
@@ -950,7 +958,9 @@ class ReplaceConvWithChannelLastConvPass(ExportPassWithTransposeHelper):
         meta: NodeMetadata,
     ) -> ProxyValue:
         if op not in {
-            exir_ops.edge.cadence.convolution.default,
+            exir_ops.edge.cadence.conv1d.default,
+            exir_ops.edge.cadence.conv2d.default,
+            exir_ops.edge.cadence.conv3d.default,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
         }:
             return super().call_operator(op, args, kwargs, meta)
@@ -961,11 +971,11 @@ class ReplaceConvWithChannelLastConvPass(ExportPassWithTransposeHelper):
             # Already in NHWC layout.
             return super().call_operator(op, args, kwargs, meta)
 
-        new_op = (
-            exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
-            if quantized_op
-            else exir_ops.edge.cadence.convolution.default
-        )
+        if quantized_op:
+            new_op = exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
+        else:
+            # Determine if 1D or 2D convolution based on op
+            new_op = op
 
         input_proxy = cast(ProxyValue, args[0])
         weight_proxy = cast(ProxyValue, args[1])
@@ -1038,7 +1048,9 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
     # A map from the convolution op to the linear op that it should
     # decompose to.
     conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
-        exir_ops.edge.cadence.convolution.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.conv1d.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.conv2d.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.conv3d.default: exir_ops.edge.aten.linear.default,
         exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
     }
@@ -1052,7 +1064,7 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
             op == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
             or op == exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
         )
-        assert (len(args) == 8 and not quantized_op) or (
+        assert (len(args) == 7 and not quantized_op) or (
             len(args) >= 12 and quantized_op
         ), "Inconsistent args for convolution"
         (in_tensor, weight, bias, stride, padding, dilation, groups) = args[0:7]

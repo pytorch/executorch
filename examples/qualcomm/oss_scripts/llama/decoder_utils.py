@@ -276,7 +276,7 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
 
         with open(pte_path, "rb") as f:
             program_data = f.read()
-        program = deserialize_pte_binary(program_data)
+        program = deserialize_pte_binary(program_data).program
 
         # Retrieve vocab_size from get_metadata under static_llama that is passed to edge manager
         self.output_vocab_size = None
@@ -867,7 +867,7 @@ def graph_module_inference(
                 num_fewshot=num_fewshot,
                 limit=tasks_limit,
             )
-        logging.info(f"Perplexity evaluation summary for {event_name}")
+        logging.info(f"Evaluation summary for {event_name}")
         for task, res in eval_results["results"].items():
             logging.info(f"{task}: {res}")
 

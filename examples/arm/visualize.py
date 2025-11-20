@@ -95,6 +95,11 @@ def transform_events(
 
         qread_offset = 4 * int(event["args"]["qread"])
 
+        while (cmd_index + chain_len <= queue_df_len - 1) and queue_df.iloc[
+            cmd_index + chain_len
+        ]["scheduled_id"] in sub_ops:
+            chain_len += 1
+
         end_idx = cmd_index + chain_len
         if is_end_of_command(qread_offset, end_idx):
             end_ts = int(event["ts"]) - 1
@@ -102,12 +107,8 @@ def transform_events(
                 end_ts - start_ts,
             ]
             start_ts = end_ts
-            cmd_index += chain_len
+            cmd_index = end_idx
             chain_len = 1
-            while (cmd_index + chain_len <= queue_df_len - 1) and queue_df.iloc[
-                cmd_index + chain_len
-            ]["scheduled_id"] in sub_ops:
-                chain_len += 1
 
 
 Agg = Union[str, Callable[[pd.Series], Any]]
