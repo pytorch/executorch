@@ -7,7 +7,7 @@
 from typing import ClassVar, Dict, Tuple
 
 import torch
-from executorch.backends.arm._passes.convert_to_clamp import ConvertToClampPass
+from executorch.backends.arm._passes.convert_to_clamp_pass import ConvertToClampPass
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
