@@ -88,7 +88,11 @@ from .fuse_view_copy_transform_pass import FuseViewCopyTransformPass  # noqa
 from .insert_int32_casts_after_int64_placeholders import (  # noqa
     InsertInt32CastsAfterInt64PlaceholdersPass,
 )
-from .insert_rescales_pass import InsertRescaleInt32Pass, InsertRescalePass  # noqa
+from .insert_rescales_pass import (  # noqa
+    InsertControlFlowRescalesPass,
+    InsertRescaleInt32Pass,
+    InsertRescalePass,
+)
 from .insert_table_ops import InsertTableOpsPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa

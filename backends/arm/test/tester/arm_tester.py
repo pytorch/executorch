@@ -48,7 +48,9 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     dump_error_output,
     print_error_diffs,
 )
+from executorch.backends.arm.test.tester.quantize import ArmQuantize as Quantize
 from executorch.backends.arm.test.tester.serialize import Serialize
+
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta
@@ -313,7 +315,7 @@ class ArmTester(Tester):
         # Same stage type as parent but exposed via module alias
         if quantize_stage is None:
             quantizer = create_quantizer(self.compile_spec)
-            quantize_stage = tester.Quantize(
+            quantize_stage = Quantize(
                 quantizer,
                 get_symmetric_quantization_config(),
             )

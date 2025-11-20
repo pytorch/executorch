@@ -64,6 +64,7 @@ from . import (  # noqa
     op_tosa_transpose,
     op_view,
     op_where,
+    op_while,
     ops_binary,
     ops_identity,
 )
