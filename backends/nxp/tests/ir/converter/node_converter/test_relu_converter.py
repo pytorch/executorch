@@ -67,7 +67,9 @@ def test_relu_with_conv_quant_conversion(mocker):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(ConvReLUModule(), input_shape)
+    _ = to_quantized_edge_program(
+        ConvReLUModule(), input_shape, use_neutron_for_format_conversion=False
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, _ = converter_spy.spy_return

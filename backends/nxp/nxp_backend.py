@@ -14,16 +14,17 @@ from typing import final, List, Optional
 
 import numpy as np
 import torch
-from executorch.backends.nxp._passes.remove_getitem_pass import RemoveGetItemPass
 
+from executorch.backends.nxp._passes.remove_getitem_pass import RemoveGetItemPass
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
+from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.neutron_converter_manager import (
     NeutronConverterManager,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from executorch.backends.nxp.backend.node_format import NodeFormat
 from executorch.backends.nxp.neutron_node_extraction import (
     extract_artifacts_from_neutron_node,
     NeutronNodeArtifacts,
@@ -44,6 +45,7 @@ class NeutronCompileSpecBuilder:
         self.output_format = None
         self.operators_not_to_delegate: List[str] = []
         self.neutron_converter_flavor = None
+        self.use_neutron_for_format_conversion = True
 
     def _replace_colons(self, operator: str) -> str:
         """
@@ -57,6 +59,7 @@ class NeutronCompileSpecBuilder:
         neutron_converter_flavor: str,
         extra_flags: Optional[str] = None,
         operators_not_to_delegate: Optional[List[str]] = None,
+        use_neutron_for_format_conversion: bool = True,
     ):
         """
         Generate compile spec for Neutron NPU
@@ -67,6 +70,9 @@ class NeutronCompileSpecBuilder:
              "'neutron_converter_SDK_25_09' has flavor 'SDK_25_09'.
             extra_flags: Extra flags for the Neutron compiler
             operators_not_to_delegate: List of operators that should not be delegated
+            use_neutron_for_format_conversion: If True, the EdgeProgramToIRConverter will insert `Transpose` ops to
+                                                ensure that the IO matches the executorch partition, which will be
+                                                delegated to Neutron.
         """
 
         self.neutron_converter_flavor = neutron_converter_flavor
@@ -86,6 +92,8 @@ class NeutronCompileSpecBuilder:
                 self._replace_colons(op) for op in operators_not_to_delegate
             ]
 
+        self.use_neutron_for_format_conversion = use_neutron_for_format_conversion
+
         return self
 
     def build(self):
@@ -104,6 +112,10 @@ class NeutronCompileSpecBuilder:
                     "operators_not_to_delegate",
                     ",".join(self.operators_not_to_delegate).encode(),
                 ),
+                CompileSpec(
+                    "use_neutron_for_format_conversion",
+                    f"{self.use_neutron_for_format_conversion}".encode(),
+                ),
             ]
 
         return self.compile_spec
@@ -115,6 +127,7 @@ def generate_neutron_compile_spec(
     system_config: Optional[str] = None,
     extra_flags: Optional[str] = None,
     operators_not_to_delegate: Optional[List[str]] = None,
+    use_neutron_for_format_conversion: bool = True,
 ) -> List[CompileSpec]:
     return (
         NeutronCompileSpecBuilder()
@@ -123,6 +136,7 @@ def generate_neutron_compile_spec(
             neutron_converter_flavor,
             extra_flags=extra_flags,
             operators_not_to_delegate=operators_not_to_delegate,
+            use_neutron_for_format_conversion=use_neutron_for_format_conversion,
         )
         .build()
     )
@@ -145,6 +159,7 @@ class NeutronBackend(BackendDetails):
         binary = bytes()
         target = ""
         neutron_converter_flavor = ""
+        use_neutron_for_format_conversion = None
         for spec in compile_spec:
             if spec.key == "output_format":
                 output_format = spec.value.decode()
@@ -154,6 +169,8 @@ class NeutronBackend(BackendDetails):
                 compile_flags.append(spec.value.decode())
             if spec.key == "neutron_converter_flavor":
                 neutron_converter_flavor = spec.value.decode()
+            if spec.key == "use_neutron_for_format_conversion":
+                use_neutron_for_format_conversion = spec.value.decode() == "True"
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -180,9 +197,15 @@ class NeutronBackend(BackendDetails):
             ).transform()
 
             # Convert the edge program to TFLite.
+            conversion_config = ConversionConfig(
+                {"use_neutron_for_format_conversion": use_neutron_for_format_conversion}
+                if use_neutron_for_format_conversion is not None
+                else {}
+            )
             tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(
                 edge_program,
                 neutron_target_spec=NeutronTargetSpec(target, neutron_converter_flavor),
+                conversion_config=conversion_config,
             )
 
             neutron_model = NeutronConverterManager(neutron_converter_flavor).convert(
@@ -241,7 +264,9 @@ class PayloadComposer:
 
         return f"{array.size}s{self._padding_format_string_for_array(array)}"
 
-    def _create_payload_header(self, io_formats, neutron_artifacts) -> np.ndarray:
+    def _create_payload_header(
+        self, io_formats: dict[str, list[NodeFormat]], neutron_artifacts
+    ) -> np.ndarray:
         """
         Create bytes header for returned payload. It contains information about
         input and output tensor formats. Tensors are ordered based on graph signature
@@ -279,9 +304,7 @@ class PayloadComposer:
         for input_name in neutron_artifacts.input_names:
             try:
                 header_data.append(
-                    1
-                    if inputs[input_name.decode()] == TensorFormat.CHANNELS_LAST
-                    else 0
+                    1 if inputs[input_name.decode()] == NodeFormat.CHANNELS_LAST else 0
                 )
             except KeyError:
                 raise AssertionError(
@@ -292,7 +315,7 @@ class PayloadComposer:
             try:
                 header_data.append(
                     1
-                    if outputs[output_name.decode()] == TensorFormat.CHANNELS_LAST
+                    if outputs[output_name.decode()] == NodeFormat.CHANNELS_LAST
                     else 0
                 )
             except KeyError:
@@ -331,7 +354,9 @@ class PayloadComposer:
             neutron_artifacts.kernels.tobytes(),
         )
 
-    def get_binary_payload(self, io_formats, neutron_model) -> bytes:
+    def get_binary_payload(
+        self, io_formats: dict[str, list[NodeFormat]], neutron_model
+    ) -> bytes:
         """
         Get binary payload for provided input/output tensor formats and neutron_model. Returned data have
         following structure:
@@ -351,7 +376,7 @@ class PayloadComposer:
         Tensor format definition: '0x1' == CHANNELS_LAST, '0x0' == FORMATLESS (no format).
 
         :param io_formats: Dictionary with keys 'inputs' and 'outputs' that contains dictionaries
-            mapping tensor name to TensorFormat.
+            mapping tensor name to NodeFormat.
         :param neutron_model: Neutron model with single NeutronGraph node.
         :return: 16 bytes aligned binary payload.
         """

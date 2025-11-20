@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 import torch.utils._pytree as pytree
-from executorch.exir._serialize import _serialize_pte_binary
+from executorch.exir._serialize import _PTEFile, _serialize_pte_binary
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
@@ -164,12 +164,14 @@ class LoweredBackendModule(torch.nn.Module):
         # TODO(T181463742): avoid calling bytes(..) which incurs large copies.
         out = bytes(
             _serialize_pte_binary(
-                program=self.program(memory_planning=memory_planning),
+                pte_file=_PTEFile(
+                    program=self.program(memory_planning=memory_planning),
+                    named_data=self.named_data_store_output,
+                ),
                 extract_delegate_segments=extract_delegate_segments,
                 segment_alignment=segment_alignment,
                 constant_tensor_alignment=constant_tensor_alignment,
                 delegate_alignment=delegate_alignment,
-                named_data=self.named_data_store_output,
             )
         )
         return out
