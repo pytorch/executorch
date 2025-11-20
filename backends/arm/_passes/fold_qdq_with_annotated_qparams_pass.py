@@ -302,7 +302,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         return PassResult(graph_module, True)
 
 
-class QuantizeOperatorArguments(ArmPass):
+class QuantizeClampArgumentsPass(ArmPass):
     """
     This pass makes sure that the arguments to clamp.default are quantized correctly.
     More specifically, this pass:

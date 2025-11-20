@@ -11,7 +11,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class ConvertIntPowToMuls(ArmPass):
+class DecomposeIntPowPass(ArmPass):
     """
     Replaces pow with integer exponent with a series of multiplications.
     Only handles pow.Tensor_Scalar and not pow.Tensor_Tensor.

@@ -14,7 +14,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeGroupedConv(ArmPass):
+class DecomposeGroupedConvPass(ArmPass):
     """
     Splits a grouped convolution which is not supported by TOSA into multiple
     convolutions using slice->conv->cat.
@@ -81,7 +81,7 @@ class DecomposeGroupedConv(ArmPass):
             new_qparams = meta.data.get("input_qparams").copy()
             # Get quantization params of the weights and slice them.
             qarg = new_qparams[1]
-            new_qparams[1] = DecomposeGroupedConv._split_per_channel_qparams(
+            new_qparams[1] = DecomposeGroupedConvPass._split_per_channel_qparams(
                 qarg, index=i, output_slice_size=output_slice_size
             )
 
@@ -117,7 +117,7 @@ class DecomposeGroupedConv(ArmPass):
         no_q_dq_meta.data = {}
         no_q_dq_meta.data = {}
 
-        slice_op, conv_op, cat_op = DecomposeGroupedConv._get_decomposition(op)
+        slice_op, conv_op, cat_op = DecomposeGroupedConvPass._get_decomposition(op)
 
         input_slices = []
         for i in range(groups):
@@ -163,7 +163,9 @@ class DecomposeGroupedConv(ArmPass):
             zip(input_slices, filter_slices, bias_slices)
         ):
 
-            meta_copy = DecomposeGroupedConv._get_meta_copy(meta, i, output_slice_size)
+            meta_copy = DecomposeGroupedConvPass._get_meta_copy(
+                meta, i, output_slice_size
+            )
 
             if op == exir_ops.edge.aten.convolution.default:
                 conv_args = (input_slice, filter_slice, bias_slice, *args[3:8], 1)

@@ -22,7 +22,9 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     is_submodule_node,
 )
-from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
@@ -297,7 +299,7 @@ class CheckArmQuantized(OperatorSupportBase):
             return True
         if node.target in (
             exir_ops.edge.aten.full_like.default,
-            *ComputeConstantOpsAOT.targeted_ops,
+            *ComputeConstantOpsAOTPass.targeted_ops,
         ):
             # Special cases where nodes have been created in to_edge, e.g.
             # .Scalar operations that have been promoted .Tensor operations
@@ -548,7 +550,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
                 for output_node in node.users
             )
             if (
-                node.target in ComputeConstantOpsAOT.targeted_ops
+                node.target in ComputeConstantOpsAOTPass.targeted_ops
                 and users_output_non_int64
             ):
                 if not self.inside_int32_bounds(node):
@@ -590,7 +592,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
                 continue
             # Constant operator
             if input_node.op == "call_function":
-                if input_node.target in ComputeConstantOpsAOT.targeted_ops:
+                if input_node.target in ComputeConstantOpsAOTPass.targeted_ops:
                     # This is not perfect since the input_node can still be rejected by other checks but
                     # this should cover the majority of cases.
                     if self.is_node_supported({}, input_node):

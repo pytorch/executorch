@@ -26,7 +26,7 @@ from torch.fx import Node
 from torch.nn.utils.fusion import fuse_conv_bn_weights
 
 
-class FuseBatchnorm2DPass(ArmPass):
+class FuseBatchNorm2dPass(ArmPass):
     """Fuses the pattern convolution -> batchnorm by updating
     the weights and bias of the convolution and removing the batchnorm.
     """

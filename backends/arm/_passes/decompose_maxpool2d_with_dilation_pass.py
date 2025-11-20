@@ -19,7 +19,7 @@ EDGE_MAXPOOL2D = (
 )
 
 
-class DecomposeMaxPool2DPass(ArmPass):
+class DecomposeMaxPool2dPass(ArmPass):
     """
     Decompose dilated max_pool2d (EXIR edge ops) into space-to-batch -> maxpool -> batch-to-space.
     """

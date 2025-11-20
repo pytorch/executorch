@@ -8,7 +8,9 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
-from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
 from executorch.backends.arm.operators.operator_validation_utils import (
     adjust_pooling_pad_if_needed,
 )
@@ -37,8 +39,8 @@ def get_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get avg_pool2d decomposition for op {op}")
 
 
-class DecomposeAvgPool2d(ArmPass):
-    _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOT}
+class DecomposeAvgPool2dPass(ArmPass):
+    _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_div_ops + aten_div_ops):
