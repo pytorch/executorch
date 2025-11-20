@@ -64,6 +64,10 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     int64_t storage_offset,
     AOTITensorHandle* ret_new_tensor);
 
+AOTITorchError aoti_torch_new_tensor_handle(
+    Tensor* orig_handle,
+    Tensor** new_handle);
+
 void cleanup_memory();
 
 } // extern "C"

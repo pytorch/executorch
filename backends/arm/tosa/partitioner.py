@@ -2,7 +2,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 """Provide a partitioner for delegating subgraphs to the TOSA backend.
 
 Implement logic to identify and tag regions of an ``ExportedProgram`` that can
@@ -11,6 +10,7 @@ be delegated to the TOSA backend. Use this module to:
 - Partition graphs based on operator support and additional checks.
 - Prune trivial no-op partitions that would lower to empty TOSA graphs.
 - Tag constant data and report reasons for rejected nodes.
+
 """
 
 import logging
@@ -37,7 +37,7 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
@@ -142,6 +142,7 @@ def reject_partition(
         partition (object): Proposed partition object from the
             capability partitioner.
         reporter (WhyNoPartitionReporter): used to report why nodes were rejected.
+
     """
     for node in partition.nodes:
         if "delegation_tag" in node.meta:
@@ -158,6 +159,7 @@ class TOSAPartitioner(Partitioner):
     Construct this partitioner for compile specs targeting TOSA. The partition
     algorithm uses capability checks and optional additional operator-support
     rules to tag nodes with a delegation tag per subgraph.
+
     """
 
     def __init__(
@@ -191,19 +193,21 @@ class TOSAPartitioner(Partitioner):
         reporter: WhyNoPartitionReporter,
         tag_iterator: count | None = None,
     ) -> set[str]:
-        """Tag nodes in a module, possibly a submodule, from the containing program.
+        """Tag nodes in a module or submodule from the containing program.
 
         Args:
             module: A GraphModule from `containing_program` to tag nodes in.
             containing_program: The ExportedProgram that contains the module.
             reporter: A reporter to report why nodes were rejected.
+
         Returns:
             A set of strings with the partition tags.
+
         """
         tags: set[str] = set()
         if tag_iterator is None:
             tag_iterator = count(0)
-        for _, submodule, _ in get_control_flow_submodules(module):
+        for _, submodule, _ in get_cond_while_submodules(module):
             submodule_tags = self._tag_module(
                 submodule, containing_program, reporter, tag_iterator
             )

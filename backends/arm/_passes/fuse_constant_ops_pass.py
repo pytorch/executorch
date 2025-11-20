@@ -164,7 +164,7 @@ class FuseConstantArgsPass(ArmPass):
         return PassResult(graph_module, True)
 
 
-class ComputeConstantOpsAOT(ArmPass):
+class ComputeConstantOpsAOTPass(ArmPass):
     """
     Evaluates call_functions that produce constant tensor outputs and replaces them with placeholders.
 
