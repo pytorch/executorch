@@ -32,12 +32,12 @@ from executorch.backends.arm.quantizer import (
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
+
+from executorch.backends.arm.test.tester.quantize import ArmQuantize as Quantize
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
-
-from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
 
@@ -51,6 +51,13 @@ def _require_tosa_version() -> str:
     if not isinstance(version, str):
         raise TypeError(f"TOSA version option must be a string, got {type(version)}.")
     return version
+
+
+def _has_quantizable_inputs(test_data: T) -> bool:
+    for data in test_data:
+        if isinstance(data, torch.Tensor) and data.is_floating_point():
+            return True
+    return False
 
 
 class PipelineStage:
@@ -391,30 +398,32 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
         )
         self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
-        self.add_stage_after(
-            "quantize",
-            self.tester.check,
-            [
-                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
-                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
-            ],
-            suffix="quant_nodes",
-        )
-
         remove_quant_nodes_stage = (
             "to_edge_transform_and_lower"
             if use_to_edge_transform_and_lower
             else "partition"
         )
-        self.add_stage_after(
-            remove_quant_nodes_stage,
-            self.tester.check_not,
-            [
-                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
-                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
-            ],
-            suffix="quant_nodes",
-        )
+
+        if _has_quantizable_inputs(test_data):
+            # only add stages if we have quantizable input
+            self.add_stage_after(
+                "quantize",
+                self.tester.check,
+                [
+                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                ],
+                suffix="quant_nodes",
+            )
+            self.add_stage_after(
+                remove_quant_nodes_stage,
+                self.tester.check_not,
+                [
+                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                ],
+                suffix="quant_nodes",
+            )
 
         if run_on_tosa_ref_model:
             self.add_stage(
@@ -571,30 +580,32 @@ class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
 
         self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
-        self.add_stage_after(
-            "quantize",
-            self.tester.check,
-            [
-                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
-                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
-            ],
-            suffix="quant_nodes",
-        )
-
         remove_quant_nodes_stage = (
             "to_edge_transform_and_lower"
             if use_to_edge_transform_and_lower
             else "partition"
         )
-        self.add_stage_after(
-            remove_quant_nodes_stage,
-            self.tester.check_not,
-            [
-                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
-                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
-            ],
-            suffix="quant_nodes",
-        )
+
+        if _has_quantizable_inputs(test_data):
+            # only add stages if we have quantizable input
+            self.add_stage_after(
+                "quantize",
+                self.tester.check,
+                [
+                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                ],
+                suffix="quant_nodes",
+            )
+            self.add_stage_after(
+                remove_quant_nodes_stage,
+                self.tester.check_not,
+                [
+                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                ],
+                suffix="quant_nodes",
+            )
 
         if run_on_fvp:
             self.add_stage(self.tester.serialize)
@@ -669,30 +680,32 @@ class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
 
         self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
-        self.add_stage_after(
-            "quantize",
-            self.tester.check,
-            [
-                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
-                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
-            ],
-            suffix="quant_nodes",
-        )
-
         remove_quant_nodes_stage = (
             "to_edge_transform_and_lower"
             if use_to_edge_transform_and_lower
             else "partition"
         )
-        self.add_stage_after(
-            remove_quant_nodes_stage,
-            self.tester.check_not,
-            [
-                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
-                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
-            ],
-            suffix="quant_nodes",
-        )
+
+        if _has_quantizable_inputs(test_data):
+            # only add stages if we have quantizable input
+            self.add_stage_after(
+                "quantize",
+                self.tester.check,
+                [
+                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                ],
+                suffix="quant_nodes",
+            )
+            self.add_stage_after(
+                remove_quant_nodes_stage,
+                self.tester.check_not,
+                [
+                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                ],
+                suffix="quant_nodes",
+            )
 
         if run_on_fvp:
             self.add_stage(self.tester.serialize)
@@ -793,7 +806,10 @@ class PassPipeline(TOSAPipelineMaker, Generic[T]):
             self.add_stage(self.tester.check_count, ops_after_pass, suffix="after")
         if ops_not_after_pass:
             self.add_stage(self.tester.check_not, ops_not_after_pass, suffix="after")
-        self.add_stage(self.tester.run_method_and_compare_outputs)
+        self.add_stage(
+            self.tester.run_method_and_compare_outputs,
+            inputs=self.test_data,
+        )
 
     def run(self):
         with TosaLoweringContext(self.tosa_spec):
@@ -999,30 +1015,32 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
 
             self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
-            self.add_stage_after(
-                "quantize",
-                self.tester.check,
-                [
-                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
-                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
-                ],
-                suffix="quant_nodes",
-            )
-
             remove_quant_nodes_stage = (
                 "to_edge_transform_and_lower"
                 if use_to_edge_transform_and_lower
                 else "partition"
             )
-            self.add_stage_after(
-                remove_quant_nodes_stage,
-                self.tester.check_not,
-                [
-                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
-                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
-                ],
-                suffix="quant_nodes",
-            )
+
+            if _has_quantizable_inputs(test_data):
+                # only add stages if we have quantizable input
+                self.add_stage_after(
+                    "quantize",
+                    self.tester.check,
+                    [
+                        "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                        "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                    ],
+                    suffix="quant_nodes",
+                )
+                self.add_stage_after(
+                    remove_quant_nodes_stage,
+                    self.tester.check_not,
+                    [
+                        "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                        "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                    ],
+                    suffix="quant_nodes",
+                )
         else:
             self.add_stage_after(
                 "export",

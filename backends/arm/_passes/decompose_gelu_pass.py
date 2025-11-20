@@ -8,7 +8,9 @@ from typing import Set, Type
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
-from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
@@ -85,7 +87,7 @@ class DecomposeGeluPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
-        ComputeConstantOpsAOT,
+        ComputeConstantOpsAOTPass,
         InsertTableOpsPass,
         MatchArgDtypePass,
         MatchArgRanksPass,
