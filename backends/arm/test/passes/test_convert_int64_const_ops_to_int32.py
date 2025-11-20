@@ -90,7 +90,6 @@ def test_convert_arange_default_int64_dtype_to_int32_pass_tosa_INT(
         aten_ops_checks,
         exir_ops_checks,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -152,7 +151,6 @@ def test_convert_arange_start_int64_dtype_to_int32_pass_tosa_INT(
         aten_ops_checks,
         exir_ops_checks,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -214,7 +212,6 @@ def test_convert_arange_start_step_int64_dtype_to_int32_pass_tosa_INT(
         aten_ops_checks,
         exir_ops_checks,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -387,7 +384,6 @@ def test_convert_full_int64_dtype_to_int32_pass_tosa_INT(
         aten_ops_checks,
         exir_ops_checks,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 

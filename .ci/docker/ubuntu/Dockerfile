@@ -83,6 +83,9 @@ RUN if [ -n "${ANDROID_NDK_VERSION}" ]; then bash ./install_android.sh; fi
 RUN rm install_android.sh
 
 ARG ARM_SDK
+COPY ./common/install_arm.sh install_arm.sh
+RUN if [ -n "${ARM_SDK}" ]; then bash ./install_arm.sh; fi
+RUN rm install_arm.sh
 
 ARG ZEPHYR_SDK
 COPY ./common/install_zephyr.sh install_zephyr.sh
