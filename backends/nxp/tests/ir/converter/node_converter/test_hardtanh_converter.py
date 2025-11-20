@@ -42,7 +42,9 @@ def test_relu6_quant(mocker, input_shape: tuple[int], inplace: bool):
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
-    quantized_program = to_quantized_edge_program(model, input_shape).exported_program()
+    quantized_program = to_quantized_edge_program(
+        model, input_shape, use_neutron_for_format_conversion=False
+    ).exported_program()
 
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -79,7 +81,9 @@ def test_custom_hardtanh_quant(
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
-    quantized_program = to_quantized_edge_program(model, input_shape).exported_program()
+    quantized_program = to_quantized_edge_program(
+        model, input_shape, use_neutron_for_format_conversion=False
+    ).exported_program()
 
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]

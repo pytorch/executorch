@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any
+from typing import Any, Optional
 
 import torch
 
@@ -24,7 +24,7 @@ class _DepthRecordingPass(ArmPass):
         self.submodule = None
         self.num_submodules_called = 0
 
-    def call_operator(self, op, args, kwargs, meta, updated: bool = False):
+    def call_operator(self, op, args, kwargs, meta, updated: Optional[bool] = False):
         """Should only be called from the top-level graph module."""
         self.depths.append(self.submodule_depth)
         assert self.submodule == self.initial_submodule

@@ -19,7 +19,7 @@ from torch.fx import Node
 from torch.nn.parameter import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
+from executorch.backends.nxp.backend.node_format import NodeFormat, NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
 
 # noinspection PyProtectedMember
@@ -63,7 +63,7 @@ class EdgeProgramToIRConverter:
         conversion_config: ConversionConfig = _default_conversion_config,
         neutron_target_spec: NeutronTargetSpec = _default_target_spec,
         custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
-    ) -> (bytes, dict):
+    ) -> (bytes, dict[str, NodeFormat]):
         """
         Convert ExportedProgram in Edge dialect to IR (TFLite flatbuffers) as bytes.
 
@@ -87,13 +87,16 @@ class EdgeProgramToIRConverter:
         self._convert_qdq_cluster_q_dq_nodes(edge_program.graph.nodes, cc)
         self._process_nodes(edge_program.graph.nodes, cc)
 
-        # Assign output
-        io_formats = cc.tflite_builder.assign_model_io_to_subgraph_and_get_io_formats(
-            edge_program.graph_signature
-        )
+        # Assign the model its inputs and outputs.
+        cc.tflite_builder.assign_model_io_to_subgraph(edge_program.graph_signature)
+
+        # Apply optimizations and finalize the model.
+        internal_tflite_model = cc.tflite_builder.finish()
+
+        # Extract the formats of the model's inputs and outputs.
+        io_formats = cc.tflite_builder.get_io_formats(edge_program.graph_signature)
 
         # TFLite model generation
-        internal_tflite_model = cc.tflite_builder.finish()
         flatbuffers_builder = flatbuffers.Builder()
         internal_tflite_model.gen_tflite(flatbuffers_builder)
 
