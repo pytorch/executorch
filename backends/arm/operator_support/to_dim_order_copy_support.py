@@ -52,7 +52,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
 
     @staticmethod
     def _merge_supported_types(
-        # pyre-ignore[11]
         dtypes1: SupportedTypeDict,
         dtypes2: SupportedTypeDict,
     ) -> SupportedTypeDict:

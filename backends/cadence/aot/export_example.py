@@ -18,8 +18,8 @@ from typing import Any, Optional, Tuple
 
 from executorch.backends.cadence.aot.compiler import (
     _lower_ep_to_cadence_gen_etrecord,
+    apply_pre_edge_transform_passes,
     convert_pt2,
-    fuse_pt2,
     prepare_pt2,
 )
 
@@ -66,7 +66,7 @@ def export_model(
     ep = torch.export.export(converted_model, example_inputs, strict=True)
 
     # Fuse the quantized patterns on the exported program (note: quantizer needs to be the same as the one used in prepare_and_convert_pt2)
-    ep = fuse_pt2(ep, quantizer)
+    ep = apply_pre_edge_transform_passes(ep, quantizer)
 
     # Get edge program after Cadence specific passes
     exec_prog: ExecutorchProgramManager = _lower_ep_to_cadence_gen_etrecord(

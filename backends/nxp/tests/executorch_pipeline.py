@@ -23,6 +23,7 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.quantizer.utils import post_training_quantize
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -32,12 +33,12 @@ from executorch.exir import (
 )
 from torch import nn
 from torch.export import export
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import Quantizer
 
-default_neutron_converter_flavor = "SDK_25_09"
+
+neutron_converter_flavor = "SDK_25_09"
 neutron_target_spec = NeutronTargetSpec(
-    target="imxrt700", neutron_converter_flavor=default_neutron_converter_flavor
+    target="imxrt700", neutron_converter_flavor=neutron_converter_flavor
 )
 
 
@@ -45,17 +46,6 @@ neutron_target_spec = NeutronTargetSpec(
 class ModelInputSpec:
     shape: tuple[int, ...]
     dtype: torch.dtype = torch.float32
-
-
-def _quantize_model(
-    model, quantizer, calibration_inputs: list[tuple[torch.Tensor, ...]]
-):
-    m = prepare_pt2e(model, quantizer)
-    for data in calibration_inputs:
-        m(*data)
-    m = convert_pt2e(m)
-
-    return m
 
 
 def get_random_calibration_inputs(
@@ -101,15 +91,15 @@ def to_quantized_edge_program(
         [tuple[ModelInputSpec, ...]], list[tuple[torch.Tensor, ...]]
     ] = get_random_calibration_inputs,
     target="imxrt700",
-    neutron_converter_flavor=default_neutron_converter_flavor,
+    neutron_converter_flavor=neutron_converter_flavor,
     remove_quant_io_ops=False,
     custom_delegation_options=CustomDelegationOptions(),  # noqa B008
     get_quantizer_fn=None,
+    use_neutron_for_format_conversion=True,
 ) -> EdgeProgramManager:
     _neutron_target_spec = NeutronTargetSpec(target, neutron_converter_flavor)
     if get_quantizer_fn is None:
         get_quantizer_fn = partial(_get_default_quantizer, _neutron_target_spec)
-    quantizer = get_quantizer_fn()
 
     calibration_inputs = get_calibration_inputs_fn(to_model_input_spec(input_spec))
     example_input = calibration_inputs[0]
@@ -119,16 +109,17 @@ def to_quantized_edge_program(
 
     exir_program_aten = torch.export.export(model, example_input, strict=True)
 
-    exir_program_aten__module_quant = _quantize_model(
-        exir_program_aten.module(),
-        quantizer,
+    exir_program_aten__module_quant = post_training_quantize(
+        exir_program_aten,
         calibration_inputs,
+        get_quantizer_fn(),
     )
 
     compile_spec = generate_neutron_compile_spec(
         target,
         operators_not_to_delegate=operators_not_to_delegate,
         neutron_converter_flavor=neutron_converter_flavor,
+        use_neutron_for_format_conversion=use_neutron_for_format_conversion,
     )
     partitioners = [
         NeutronPartitioner(
@@ -154,8 +145,13 @@ def to_quantized_edge_program(
 def to_quantized_executorch_program(
     model: torch.nn.Module,
     input_spec: tuple[ModelInputSpec, ...] | tuple[int, ...] | list[tuple[int, ...]],
+    use_neutron_for_format_conversion: bool = True,
 ) -> ExecutorchProgramManager:
-    edge_program_manager = to_quantized_edge_program(model, input_spec)
+    edge_program_manager = to_quantized_edge_program(
+        model,
+        input_spec,
+        use_neutron_for_format_conversion=use_neutron_for_format_conversion,
+    )
 
     return edge_program_manager.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=False)

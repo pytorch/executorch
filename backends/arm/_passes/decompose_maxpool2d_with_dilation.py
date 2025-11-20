@@ -70,6 +70,12 @@ class DecomposeMaxPool2DPass(ArmPass):
         ph2 += extra_h * d_h
         pw2 += extra_w * d_w
 
+        meta_with_no_qparams = meta.copy()
+        meta_with_no_qparams.data["output_qparams"] = {}
+        meta_with_no_qparams.data["input_qparams"] = {}
+        meta_with_no_output_qparams = meta.copy()
+        meta_with_no_output_qparams.data["output_qparams"] = {}
+
         # 1) Pad via EXIR edge pad (preserves dtype)
         pad_edge = exir_ops.edge.aten.constant_pad_nd.default
         pads = [pw, pw2, ph, ph2, 0, 0, 0, 0]
@@ -77,7 +83,7 @@ class DecomposeMaxPool2DPass(ArmPass):
             pad_edge,
             (x, pads, 0),
             {},
-            meta,
+            meta_with_no_output_qparams,
         )
 
         # 2) Space-to-batch: reshape and permute
@@ -85,19 +91,19 @@ class DecomposeMaxPool2DPass(ArmPass):
             exir_ops.edge.aten.view_copy.default,
             (x_pad, [N, C, H_pack, d_h, W_pack, d_w]),
             {},
-            meta,
+            meta_with_no_qparams,
         )
         x2 = super().call_operator(
             exir_ops.edge.aten.permute_copy.default,
             (x2, [3, 5, 0, 1, 2, 4]),
             {},
-            meta,
+            meta_with_no_qparams,
         )
         x2 = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (x2, [N * d_h * d_w, C, H_pack, W_pack]),
             {},
-            meta,
+            meta_with_no_qparams,
         )
 
         # 3) Core pooling on packed tensor
@@ -120,13 +126,13 @@ class DecomposeMaxPool2DPass(ArmPass):
                 operator.getitem,
                 (pool_out, 0),
                 {},
-                meta,
+                meta_with_no_qparams,
             )
             indices_proxy = super().call_operator(
                 operator.getitem,
                 (pool_out, 1),
                 {},
-                meta,
+                meta_with_no_qparams,
             )
             pooled_fake, _ = pool_out.data
         else:
@@ -141,20 +147,20 @@ class DecomposeMaxPool2DPass(ArmPass):
             exir_ops.edge.aten.view_copy.default,
             (pooled_proxy, [d_h, d_w, N, C_out, H_out, W_out]),
             {},
-            meta,
+            meta_with_no_qparams,
         )
         out = super().call_operator(
             exir_ops.edge.aten.permute_copy.default,
             (out, [2, 3, 4, 0, 5, 1]),
             {},
-            meta,
+            meta_with_no_qparams,
         )
         # now flatten back into (N, C, H_out*d_h, W_out*d_w)
         out = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (out, [N, C_out, H_out * d_h, W_out * d_w]),
             {},
-            meta,
+            meta_with_no_qparams,
         )
 
         # 5) Final crop
@@ -166,13 +172,13 @@ class DecomposeMaxPool2DPass(ArmPass):
             exir_ops.edge.aten.slice_copy.Tensor,
             (out, 2, S_top, S_top + H),
             {},
-            meta,
+            meta_with_no_qparams,
         )
         out = super().call_operator(
             exir_ops.edge.aten.slice_copy.Tensor,
             (out, 3, S_left, S_left + W),
             {},
-            meta,
+            meta_with_no_qparams,
         )
 
         if is_with_indices:
@@ -181,7 +187,7 @@ class DecomposeMaxPool2DPass(ArmPass):
                 exir_ops.edge.aten.view_copy.default,
                 (indices_proxy, [d_h, d_w, N, C_out, H_out, W_out]),
                 {},
-                meta,
+                meta_with_no_qparams,
             )
             idx = super().call_operator(
                 exir_ops.edge.aten.permute_copy.default,
@@ -193,19 +199,19 @@ class DecomposeMaxPool2DPass(ArmPass):
                 exir_ops.edge.aten.view_copy.default,
                 (idx, [N, C_out, H_out * d_h, W_out * d_w]),
                 {},
-                meta,
+                meta_with_no_qparams,
             )
             idx = super().call_operator(
                 exir_ops.edge.aten.slice_copy.Tensor,
                 (idx, 2, S_top, S_top + H),
                 {},
-                meta,
+                meta_with_no_qparams,
             )
             idx = super().call_operator(
                 exir_ops.edge.aten.slice_copy.Tensor,
                 (idx, 3, S_left, S_left + W),
                 {},
-                meta,
+                meta_with_no_qparams,
             )
             return out, idx
 
