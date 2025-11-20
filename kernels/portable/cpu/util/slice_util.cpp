@@ -217,7 +217,6 @@ void compute_slice(
   if (use_multithreading) {
     // Use parallel_for to distribute work across leading dimensions
     // Calculate grain size based on number of elements per leading dimension
-    const int64_t elements_per_leading_dim = length * trailing_dims;
     const int64_t grain_size = MIN_LEADING_DIMS_FOR_MT;
 
     executorch::extension::parallel_for(

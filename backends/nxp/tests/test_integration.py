@@ -39,7 +39,9 @@ def test_conv_fc_softmax__to_executorch_program():
 def test_cifarnet():
     model = CifarNet().get_eager_model().eval()
     input_shape = (1, 3, 32, 32)
-    exec_prog = to_quantized_executorch_program(model, input_shape)
+    exec_prog = to_quantized_executorch_program(
+        model, input_shape, use_neutron_for_format_conversion=False
+    )
 
     delegation_info = get_delegation_info(exec_prog.exported_program().graph_module)
     assert delegation_info.num_delegated_subgraphs == 1

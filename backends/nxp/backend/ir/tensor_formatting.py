@@ -38,8 +38,10 @@ class TensorFormat(Enum):
 
     @staticmethod
     def from_node_format(node_format: NodeFormat):
-        if node_format.is_channels_first():
-            return TensorFormat.CHANNELS_LAST
+        if node_format == NodeFormat.CHANNELS_FIRST:
+            return TensorFormat.CHANNELS_LAST  # Format is swapped.
+        elif node_format == NodeFormat.CHANNELS_LAST:
+            return TensorFormat.CHANNELS_FIRST  # Format is swapped.
         elif node_format == NodeFormat.FORMATLESS:
             return TensorFormat.FORMATLESS
         else:
@@ -47,8 +49,21 @@ class TensorFormat(Enum):
 
     def to_node_format(self):
         if self == TensorFormat.CHANNELS_LAST:
-            return NodeFormat.CHANNELS_FIRST
+            return NodeFormat.CHANNELS_FIRST  # Format is swapped.
         elif self == TensorFormat.FORMATLESS:
             return NodeFormat.FORMATLESS
+        elif self == TensorFormat.CHANNELS_FIRST:
+            return NodeFormat.CHANNELS_LAST  # Format is swapped.
         else:
             return NodeFormat.NONE
+
+    def to_equal_node_format(self):
+        match self:
+            case TensorFormat.CHANNELS_FIRST:
+                return NodeFormat.CHANNELS_FIRST
+            case TensorFormat.CHANNELS_LAST:
+                return NodeFormat.CHANNELS_LAST
+            case TensorFormat.FORMATLESS:
+                return NodeFormat.FORMATLESS
+            case _:
+                return NodeFormat.NONE
