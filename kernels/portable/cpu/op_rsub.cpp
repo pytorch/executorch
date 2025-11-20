@@ -56,7 +56,7 @@ Tensor& rsub_scalar_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-        [val_b, val_alpha](const auto val_a) {
+        [val_b, val_alpha](const auto& val_a) {
           return val_b - val_alpha * val_a;
         },
         ctx,

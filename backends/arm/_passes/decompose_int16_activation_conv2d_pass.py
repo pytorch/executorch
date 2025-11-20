@@ -4,23 +4,26 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import cast
+from typing import cast, Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.quant_args import QuantArgs
 
-from executorch.backends.arm.tosa.specification import get_context_spec, Tosa_1_00
+from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeConv2dWithInt16ActivationPass(ExportPass):
+class DecomposeConv2dWithInt16ActivationPass(ArmPass):
     """
     This pass decomposes a convolution with input dtype int16 and bias
     into a convolution without bias followed by an addition of the bias
     since the TOSA op requires the bias to be int48 which is hard to represent
     in torch. Instead rescale the int48 output to int16 and add the bias in int16.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta):
         if op != exir_ops.edge.aten.convolution.default:
@@ -37,24 +40,16 @@ class DecomposeConv2dWithInt16ActivationPass(ExportPass):
         if args[0].data.dtype == torch.int8:
             return super().call_operator(op, args, kwargs, meta)
         elif args[0].data.dtype == torch.int16:
-            if isinstance(tosa_spec, Tosa_1_00) and not tosa_spec.support_extension(
-                "int16"
-            ):
+            if not tosa_spec.support_extension("int16"):
                 raise ValueError(
                     "int16 activation for convolution requires TOSA int16 extension"
                 )
         else:
-            raise NotImplementedError(
-                "Decomposition to conv+add only implemented for activation of int16 type"
-            )
+            return super().call_operator(op, args, kwargs, meta)
 
         # convolution with bias and activation is int16
-        # The bias is assumed to be quantized with the same quantization parameters as
-        # as the output of the convolution
         bias = args[2]
-        assert (
-            meta.data["output_qparams"][0].dtype == bias.data.dtype
-        ), "Bias needs to have same type as quantized output type"
+
         no_bias_args = list(args)
         no_bias_args[2] = None
         # split up to convolution + bias
@@ -79,46 +74,30 @@ class DecomposeConv2dWithInt16ActivationPass(ExportPass):
             # The conv will get the output int48 scaled to int32 in serialization step.
             # To be able to add the bias we need to first scale (cast?) the output to int32.
             # The resulting i32 sum will then need to be scaled back to the output dtype.
-
-            # calculate common rescale factor from convolution output and bias quantization
             output_qparams = cast(QuantArgs, meta.data["output_qparams"][0])
             conv_output_scale = output_qparams.scale
+
             bias_qparams = cast(QuantArgs, meta.data["input_qparams"][2])
-            bias_scale = bias_qparams.scale
+            per_channel_quant = bias_qparams.per_channel
 
-            common_scale = max(bias_scale, conv_output_scale)
+            if per_channel_quant:
+                bias_scale = bias_qparams.get_scale_per_channel()
+            else:
+                bias_scale = [bias_qparams.get_scale_per_tensor()]
 
-            # calculate how we can rescale bias and conv to a common scale and maximize the output range
-            bias_rescale_factor = bias_scale / common_scale
-            conv_rescale_factor = conv_output_scale / common_scale
-
-            # Either of conv output or bias now covers the full int16 range and the other one a smaller range.
-            # Since we are upscaling to int32 we have 16 additional bits to work with to maximize the output range.
-            # Worst case here is that both bias and conv output covers the full int16 range so we leave one bit
-            # and then one for the sign bit.
-            bits_left_to_shift = 14
-
-            # update rescale factors
-            bias_rescale_factor *= 1 << bits_left_to_shift
-            conv_rescale_factor *= 1 << bits_left_to_shift
+            conv_rescale_factors = [1.0] * len(bias_scale)
+            final_output_scale = [b / conv_output_scale for b in bias_scale]
 
             conv_output = super().call_operator(
                 exir_ops.backend.tosa.RESCALE.default,
-                (convolution, torch.int32, [conv_rescale_factor], 0, 0),
-                {},
-                new_meta,
-            )
-
-            bias_rescaled = super().call_operator(
-                exir_ops.backend.tosa.RESCALE.default,
-                (channel_bias, torch.int32, [bias_rescale_factor], 0, 0),
+                (convolution, torch.int32, conv_rescale_factors, 0, 0),
                 {},
                 new_meta,
             )
 
             add = super().call_operator(
                 exir_ops.edge.aten.add.Tensor,
-                (conv_output, bias_rescaled),
+                (conv_output, channel_bias),
                 {},
                 new_meta,
             )
@@ -128,7 +107,7 @@ class DecomposeConv2dWithInt16ActivationPass(ExportPass):
                 (
                     add,
                     output_dtype,
-                    [(common_scale / (conv_output_scale * (1 << bits_left_to_shift)))],
+                    final_output_scale,
                     0,
                     0,
                 ),

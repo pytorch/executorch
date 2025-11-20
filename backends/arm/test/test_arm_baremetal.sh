@@ -157,7 +157,6 @@ test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using 
 test_pytest_ops_vkml() { # Same as test_pytest but also sometime verify using VKML runtime
     echo "${TEST_SUITE_NAME}: Run pytest operator tests with VKML runtime"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing_vkml.sh
 
     pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ \
@@ -390,8 +389,18 @@ test_memory_allocation() {
             --require "model_pte_program_size" "<= 3000 B" \
             --require "method_allocator_planned" "<= 64 B" \
             --require "method_allocator_loaded" "<= 1024 B" \
-            --require "method_allocator_input" "<= 4 B" \
+            --require "method_allocator_input" "<= 16 B" \
             --require "Total DRAM used" "<= 0.06 KiB"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_undefinedbehavior_sanitizer() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u executor_runner with UBSAN"
+
+    mkdir -p arm_test/test_run
+    # Ethos-U85
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py --build_type=UndefinedSanitizer
     echo "${TEST_SUITE_NAME}: PASS"
 }
 

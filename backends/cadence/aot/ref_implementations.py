@@ -1334,8 +1334,25 @@ def quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl_tracked(m, "convolution")
-def convolution(
+@impl_tracked(m, "conv1d")
+def conv1d(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int],
+    padding: tuple[int],
+    dilation: tuple[int],
+    groups: int,
+) -> torch.Tensor:
+    conv_out = torch.nn.functional.conv1d(
+        input_tensor, weight, bias, stride[0], padding[0], dilation[0], groups
+    )
+
+    return conv_out
+
+
+@impl_tracked(m, "conv2d")
+def conv2d(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -1343,39 +1360,27 @@ def convolution(
     padding: tuple[int, int],
     dilation: tuple[int, int],
     groups: int,
-    channel_last: bool = False,
 ) -> torch.Tensor:
-    conv_is_1d = len(input_tensor.shape) == 3
-    if channel_last:
-        if conv_is_1d:
-            input_tensor = input_tensor.movedim(-1, 1).contiguous()
-            if len(weight.shape) != 3:
-                raise ValueError("Weight tensor must be 3D if input is 3D")
-            weight = weight.movedim(-1, 1).contiguous()
-        else:
-            input_tensor = input_tensor.movedim(-1, -3)
-            if len(weight.shape) != 4:
-                raise ValueError("Weight tensor must be 4D if input is nd > 3")
-            weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+    conv_out = torch.nn.functional.conv2d(
+        input_tensor, weight, bias, stride, padding, dilation, groups
+    )
 
-    _stride: tuple[int, int] | int = stride
-    _padding: tuple[int, int] | int = padding
-    _dilation: tuple[int, int] | int = dilation
+    return conv_out
 
-    if conv_is_1d:
-        conv = torch.nn.functional.conv1d
-        _stride = stride[0]
-        _padding = padding[0]
-        _dilation = dilation[0]
-    else:
-        conv = torch.nn.functional.conv2d
 
-    conv_out = conv(input_tensor, weight, bias, _stride, _padding, _dilation, groups)
-    if channel_last:
-        if conv_is_1d:
-            conv_out = conv_out.movedim(1, -1).contiguous()
-        else:
-            conv_out = conv_out.movedim(-3, -1).contiguous()
+@impl_tracked(m, "conv3d")
+def conv3d(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int, int],
+    padding: tuple[int, int, int],
+    dilation: tuple[int, int, int],
+    groups: int,
+) -> torch.Tensor:
+    conv_out = torch.nn.functional.conv3d(
+        input_tensor, weight, bias, stride, padding, dilation, groups
+    )
 
     return conv_out
 
@@ -2054,3 +2059,95 @@ def softmax_f32_f32(
     assert input_tensor.dtype == torch.float32, "input_tensor must be float32"
     assert not half_to_float, "half_to_float is not supported"
     return torch.nn.functional.softmax(input_tensor, dim=dim, dtype=torch.float32)
+
+
+def quantized_softmax_per_tensor_common(
+    input_tensor: torch.Tensor,
+    mask: torch.Tensor | None,
+    dim: int,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    """
+    Quantized softmax operation.
+
+    Args:
+        - input_tensor (Tensor): The quantized input tensor
+        - mask (Tensor): Mask tensor
+        - dim (int): The dimension along which softmax is computed
+        - in_scale (float): The scale of the input quantization
+        - in_zero_point (int): The zero point of the input quantization
+        - out_scale (float): The scale of the output quantization
+        - out_zero_point (int): The zero point of the output quantization
+    """
+    # TODO: T228751479 - Add support for mask parameter in softmax
+    assert mask is None
+    supported_dtypes = [torch.int8, torch.uint8, torch.int16]
+    if input_tensor.dtype not in supported_dtypes:
+        raise ValueError(
+            f"Input dtype must be one of {supported_dtypes}. Got {input_tensor.dtype}"
+        )
+
+    float_input_tensor = dequantize_per_tensor(
+        input_tensor,
+        in_scale,
+        in_zero_point,
+        torch.iinfo(input_tensor.dtype).min,
+        torch.iinfo(input_tensor.dtype).max,
+        input_tensor.dtype,
+    )
+
+    softmax_output = torch.nn.functional.softmax(float_input_tensor, dim=dim)
+
+    return quantize_per_tensor(
+        softmax_output,
+        out_scale,
+        out_zero_point,
+        torch.iinfo(input_tensor.dtype).min,
+        torch.iinfo(input_tensor.dtype).max,
+        input_tensor.dtype,
+    )
+
+
+@impl_tracked(m, "quantized_softmax.per_tensor")
+def quantized_softmax_per_tensor(
+    input_tensor: torch.Tensor,
+    mask: torch.Tensor | None,
+    dim: int,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    return quantized_softmax_per_tensor_common(
+        input_tensor,
+        mask,
+        dim,
+        in_scale,
+        in_zero_point,
+        out_scale,
+        out_zero_point,
+    )
+
+
+@impl_tracked(m, "quantized_softmax")
+def quantized_softmax(
+    input_tensor: torch.Tensor,
+    mask: torch.Tensor | None,
+    dim: int,
+    in_scale: torch.Tensor,
+    in_zero_point: torch.Tensor,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    return quantized_softmax_per_tensor_common(
+        input_tensor,
+        mask,
+        dim,
+        float(in_scale.item()),
+        int(in_zero_point.item()),
+        out_scale,
+        out_zero_point,
+    )

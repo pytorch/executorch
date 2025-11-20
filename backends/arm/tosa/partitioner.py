@@ -2,7 +2,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 """Provide a partitioner for delegating subgraphs to the TOSA backend.
 
 Implement logic to identify and tag regions of an ``ExportedProgram`` that can
@@ -11,6 +10,7 @@ be delegated to the TOSA backend. Use this module to:
 - Partition graphs based on operator support and additional checks.
 - Prune trivial no-op partitions that would lower to empty TOSA graphs.
 - Tag constant data and report reasons for rejected nodes.
+
 """
 
 import logging
@@ -22,6 +22,7 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
+
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
@@ -36,7 +37,7 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
@@ -110,8 +111,8 @@ def is_noop_expand(node: torch.fx.node.Node) -> bool:
     if node.target != exir_ops.edge.aten.expand_copy.default:
         return False
     else:
-        multiples = calculate_multiples(node.args)
-    return all(m == 1 for m in multiples)
+        multiples, changes_rank = calculate_multiples(node.args)
+    return all(m == 1 for m in multiples) and not changes_rank
 
 
 def is_partitioned(
@@ -141,6 +142,7 @@ def reject_partition(
         partition (object): Proposed partition object from the
             capability partitioner.
         reporter (WhyNoPartitionReporter): used to report why nodes were rejected.
+
     """
     for node in partition.nodes:
         if "delegation_tag" in node.meta:
@@ -157,6 +159,7 @@ class TOSAPartitioner(Partitioner):
     Construct this partitioner for compile specs targeting TOSA. The partition
     algorithm uses capability checks and optional additional operator-support
     rules to tag nodes with a delegation tag per subgraph.
+
     """
 
     def __init__(
@@ -190,19 +193,21 @@ class TOSAPartitioner(Partitioner):
         reporter: WhyNoPartitionReporter,
         tag_iterator: count | None = None,
     ) -> set[str]:
-        """Tag nodes in a module, possibly a submodule, from the containing program.
+        """Tag nodes in a module or submodule from the containing program.
 
         Args:
-            module: a GraphModule from `containing_program` to tag nodes in.
+            module: A GraphModule from `containing_program` to tag nodes in.
             containing_program: The ExportedProgram that contains the module.
             reporter: A reporter to report why nodes were rejected.
+
         Returns:
             A set of strings with the partition tags.
+
         """
         tags: set[str] = set()
         if tag_iterator is None:
             tag_iterator = count(0)
-        for _, submodule, _ in get_control_flow_submodules(module):
+        for _, submodule, _ in get_cond_while_submodules(module):
             submodule_tags = self._tag_module(
                 submodule, containing_program, reporter, tag_iterator
             )
@@ -316,7 +321,7 @@ class TOSAPartitioner(Partitioner):
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
 
-    def ops_to_not_decompose(
+    def ops_to_not_decompose(  # noqa: C901
         self,
         ep: ExportedProgram,
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
@@ -335,18 +340,31 @@ class TOSAPartitioner(Partitioner):
                 function that returns True when an op should not be decomposed.
 
         """
-        ops_to_not_decompose_if_quant_op = [
+        ops_to_not_decompose_if_quant_op = {
+            torch.ops.aten.eye.default,
             torch.ops.aten.hardsigmoid.default,
             torch.ops.aten.hardswish.default,
-        ]
+            torch.ops.aten.linear.default,
+            torch.ops.aten.linspace.default,
+        }
+        ops_to_not_decompose_if_fp = {
+            torch.ops.aten.eye.default,
+            torch.ops.aten.logit.default,
+            torch.ops.aten.linear.default,
+            torch.ops.aten.linspace.default,
+        }
+        ops_to_not_decompose_always = {
+            torch.ops.aten.logit.default,
+        }
+        ops_to_not_decompose_if_integer = {
+            torch.ops.aten.eye.default,
+            torch.ops.aten.linspace.default,
+        }
 
         def filter_fn(node: torch.fx.Node) -> bool:
-            """Return True to keep selected ops intact inside quantized regions.
-
-            The predicate holds when the target is in
-            ``ops_to_not_decompose_if_quant_op`` and all inputs/outputs are
-            quantize/dequantize ops, indicating a quantized activation that
-            should not be decomposed.
+            """Filter function applied to ops in 'ops_to_not_decompose'.
+            Returns True if the op should not be decomposed.
+            If this function returns True, the partitioner *must* accept the node, or the lowering fails.
 
             Args:
                 node (torch.fx.Node): FX node to evaluate.
@@ -355,35 +373,82 @@ class TOSAPartitioner(Partitioner):
                 bool: True to keep the op intact; otherwise, False.
 
             """
-            dq = torch.ops.quantized_decomposed.dequantize_per_tensor.default
-            q = torch.ops.quantized_decomposed.quantize_per_tensor.default
+            if (
+                self.tosa_spec.support_float()
+                and node.target in ops_to_not_decompose_if_fp
+            ):
+                return True
+
+            dq = (
+                torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+                torch.ops.quantized_decomposed.dequantize_per_channel.default,
+            )
+            q = (
+                torch.ops.quantized_decomposed.quantize_per_tensor.default,
+                torch.ops.quantized_decomposed.quantize_per_channel.default,
+            )
 
             if node.target in ops_to_not_decompose_if_quant_op:
                 # Assume we should not decompose the operator (it is quantized)
-                should_not_decompose = True
+                correct_output_quant = True
+                correct_input_quant = True
 
                 input_nodes = node.all_input_nodes
-                ouput_nodes = node.users
+                output_nodes = node.users
 
                 for inp in input_nodes:
-                    if inp.target != dq:
-                        should_not_decompose = False
+                    if inp.target not in dq:
+                        correct_input_quant = False
 
-                for out in ouput_nodes:
-                    if out.target != q:
-                        should_not_decompose = False
+                for out in output_nodes:
+                    if out.target not in q:
+                        correct_output_quant = False
+                # In some cases, a linear is quantized together with its activation.
+                if (
+                    node.target == torch.ops.aten.linear.default
+                    and len(output_nodes) == 1
+                    and list(output_nodes)[0].target
+                    in (torch.ops.aten.relu.default, torch.ops.aten.hardtanh.default)
+                ):
+                    correct_output_quant = True
 
-                return should_not_decompose
+                if correct_input_quant and correct_output_quant:
+                    return True
 
-            # By default, do not decompose the operator
-            return True
+            if node.target in ops_to_not_decompose_if_integer:
+                # We only want to tag nodes as do_not_decompose if we are sure that
+                # we can partition them. We partition them if one or more of the
+                # following is true:
+                # 1. The node outputs an integer type.
+                # 2. All users cast the output to an integer type.
 
-        ops_to_not_decompose = [
-            torch.ops.aten.linear.default,
-            torch.ops.aten.eye.default,
-            torch.ops.aten.linspace.default,
-            torch.ops.aten.logit.default,
-        ] + ops_to_not_decompose_if_quant_op
+                dtype = get_first_fake_tensor(node).dtype
+                if not dtype.is_floating_point and not dtype.is_complex:
+                    return True
+
+                output_nodes = node.users
+                for user in output_nodes:
+                    if user.target != torch.ops.aten.to.dtype:
+                        return False
+                    else:
+                        cast_dtype = get_first_fake_tensor(user).dtype
+                        if cast_dtype.is_complex or cast_dtype.is_floating_point:
+                            return False
+                return True
+
+            if node.target in ops_to_not_decompose_if_fp:
+                if self.tosa_spec.support_float():
+                    return True
+            if node.target in ops_to_not_decompose_always:
+                return True
+            return False
+
+        ops_to_not_decompose = list(
+            ops_to_not_decompose_always
+            | ops_to_not_decompose_if_quant_op
+            | ops_to_not_decompose_if_fp
+            | ops_to_not_decompose_if_integer
+        )
 
         if not self.tosa_spec.is_U55_subset:
             # Tosa operator "RESIZE" is not supported on U55. Since upsample_bilinear2d

@@ -68,8 +68,8 @@ class DecomposeSumPass(ArmPass):
             case _:
                 raise ValueError(f"Invalid number of arguments ({len(args)}) provided.")
 
-        # If dims is None, sum over all dimensions
-        if dims is None:
+        # If dims evaluates to False (None or []), sum over all dimensions
+        if not dims:
             shape = input_node.data.size()
             dims = list(range(len(shape)))
 
@@ -77,7 +77,11 @@ class DecomposeSumPass(ArmPass):
 
         for dim in dims:
             input_node = super().call_operator(
-                sum_op, (input_node, dim, True), kwargs, meta, updated=True
+                sum_op,
+                (input_node, dim, True),
+                kwargs,
+                meta,
+                updated=True,
             )
 
         if not keepdims:

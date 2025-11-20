@@ -1572,25 +1572,6 @@ class TestRefImplementations(unittest.TestCase):
                     [[[[5.0]]]], dtype=torch.float32
                 ),  # expected: 1*1 + 4*1 = 5
             ),
-            # Test case 2: Basic 2D convolution (NHWC format)
-            (
-                "basic_2d_nhwc",
-                torch.tensor(
-                    [[[[1.0], [2.0]], [[3.0], [4.0]]]], dtype=torch.float32
-                ),  # input: 1x2x2x1 (NHWC)
-                torch.tensor(
-                    [[[[1.0], [0.0]], [[0.0], [1.0]]]], dtype=torch.float32
-                ),  # weight: 1x2x2x1 (NHWC format)
-                torch.tensor([0.0], dtype=torch.float32),  # bias
-                (1, 1),  # stride
-                (0, 0),  # padding
-                (1, 1),  # dilation
-                1,  # groups
-                True,  # channel_last
-                torch.tensor(
-                    [[[[5.0]]]], dtype=torch.float32
-                ),  # expected: 1*1 + 4*1 = 5
-            ),
             # Test case 3: 2D convolution with stride=2
             (
                 "conv2d_stride2",
@@ -1709,23 +1690,6 @@ class TestRefImplementations(unittest.TestCase):
                     [[[3.0, 5.0, 7.0]]], dtype=torch.float32
                 ),  # expected: [1+2, 2+3, 3+4]
             ),
-            # Test case 8: 1D convolution (NLC format)
-            (
-                "conv1d_nlc",
-                torch.tensor(
-                    [[[1.0], [2.0], [3.0], [4.0]]], dtype=torch.float32
-                ),  # input: 1x4x1 (NLC)
-                torch.tensor(
-                    [[[1.0], [1.0]]], dtype=torch.float32
-                ),  # weight: 1x2x1 (NLC)
-                torch.tensor([0.0], dtype=torch.float32),  # bias
-                (1, 1),  # stride
-                (0, 0),  # padding
-                (1, 1),  # dilation
-                1,  # groups
-                True,  # channel_last
-                torch.tensor([[[3.0], [5.0], [7.0]]], dtype=torch.float32),
-            ),
             # Test case 9: Multi-channel input and output
             (
                 "multi_channel",
@@ -1796,19 +1760,31 @@ class TestRefImplementations(unittest.TestCase):
         padding: tuple[int, int],
         dilation: tuple[int, int],
         groups: int,
-        channel_last: bool,
+        channel_last: bool,  # Keep for backward compatibility with test data, but won't use
         expected_output: torch.Tensor,
     ) -> None:
-        output = torch.ops.cadence.convolution(
-            input_tensor,
-            weight,
-            bias,
-            stride,
-            padding,
-            dilation,
-            groups,
-            channel_last,
-        )
+        # Determine if 1D or 2D based on input shape
+        is_conv1d = len(input_tensor.shape) == 3
+        if is_conv1d:
+            output = torch.ops.cadence.conv1d(
+                input_tensor,
+                weight,
+                bias,
+                (stride[0],),
+                (padding[0],),
+                (dilation[0],),
+                groups,
+            )
+        else:
+            output = torch.ops.cadence.conv2d(
+                input_tensor,
+                weight,
+                bias,
+                stride,
+                padding,
+                dilation,
+                groups,
+            )
 
         # Verify output properties
         self.assertEqual(
@@ -1830,7 +1806,6 @@ class TestRefImplementations(unittest.TestCase):
 
     @expand(
         [
-            # Basic 2D transposed convolution with stride=1 (current test case - corrected name)
             (
                 "basic_2d_stride1",
                 torch.tensor(
@@ -1848,33 +1823,6 @@ class TestRefImplementations(unittest.TestCase):
                 False,  # channel_last
                 torch.tensor(
                     [[[[1.0, 3.0, 2.0], [4.0, 10.0, 6.0], [3.0, 7.0, 4.0]]]],
-                    dtype=torch.float32,
-                ),
-            ),
-            # 2D transposed convolution with channel_last=True (NHWC format)
-            (
-                "channel_last_nhwc",
-                torch.tensor(
-                    [[[[1.0], [2.0]], [[3.0], [4.0]]]], dtype=torch.float32
-                ),  # input: 1x2x2x1 (NHWC)
-                torch.tensor(
-                    [[[[1.0], [1.0]], [[1.0], [1.0]]]], dtype=torch.float32
-                ),  # weight: 1x2x2x1 (NHWC)
-                torch.tensor([0.0], dtype=torch.float32),  # bias
-                (1, 1),  # stride
-                (0, 0),  # padding
-                (1, 1),  # dilation
-                1,  # groups
-                (0, 0),  # output_padding
-                True,  # channel_last=True
-                torch.tensor(
-                    [
-                        [
-                            [[1.0], [3.0], [2.0]],
-                            [[4.0], [10.0], [6.0]],
-                            [[3.0], [7.0], [4.0]],
-                        ]
-                    ],
                     dtype=torch.float32,
                 ),
             ),
@@ -1897,26 +1845,6 @@ class TestRefImplementations(unittest.TestCase):
                 torch.tensor(
                     [[[[6.0, 7.0, 5.0], [8.0, 10.0, 7.0], [5.0, 8.0, 9.0]]]],
                     dtype=torch.float32,
-                ),
-            ),
-            # 1D transposed convolution (3D tensor, NLC format)
-            (
-                "conv1d_nlc",
-                torch.tensor(
-                    [[[1.0], [2.0], [3.0]]], dtype=torch.float32
-                ),  # input: 1x3x1 (NLC)
-                torch.tensor(
-                    [[[1.0], [0.5]]], dtype=torch.float32
-                ),  # weight: 1x2x1 (NLC)
-                torch.tensor([0.0], dtype=torch.float32),  # bias
-                (2, 0),  # stride
-                (0, 0),  # padding
-                (1, 1),  # dilation
-                1,  # groups
-                (0, 0),  # output_padding
-                True,  # channel_last=True
-                torch.tensor(
-                    [[[1.0], [0.5], [2.0], [1.0], [3.0], [1.5]]], dtype=torch.float32
                 ),
             ),
         ]
@@ -3078,4 +3006,136 @@ class TestRefImplementations(unittest.TestCase):
 
         self.assertIn(
             "Hidden dimension must be a multiple of 4", str(context.exception)
+        )
+
+    @expand(
+        [
+            (
+                "basic_int8_dim_1",
+                torch.tensor([[10, 20, 30]], dtype=torch.int8),
+                None,
+                1,
+                0.1,
+                0,
+                0.004,
+                0,
+                torch.int8,
+                torch.tensor([[23, 61, 127]], dtype=torch.int8),
+            ),
+            (
+                "uint8_with_zero_points",
+                torch.tensor([[128, 130, 132]], dtype=torch.uint8),
+                None,
+                1,
+                0.1,
+                128,
+                0.004,
+                128,
+                torch.uint8,
+                torch.tensor([[195, 210, 228]], dtype=torch.uint8),
+            ),
+            (
+                "basic_int16",
+                torch.tensor([[100, 200, 300]], dtype=torch.int16),
+                None,
+                1,
+                0.01,
+                0,
+                0.004,
+                0,
+                torch.int16,
+                torch.tensor([[23, 61, 166]], dtype=torch.int16),
+            ),
+            (
+                "multi_row_int8",
+                torch.tensor([[10, 20, 30], [5, 10, 15]], dtype=torch.int8),
+                None,
+                1,
+                0.1,
+                0,
+                0.004,
+                0,
+                torch.int8,
+                torch.tensor([[23, 61, 127], [47, 77, 127]], dtype=torch.int8),
+            ),
+            (
+                "softmax_dim_0",
+                torch.tensor([[10, 20], [30, 40]], dtype=torch.int8),
+                None,
+                0,
+                0.1,
+                0,
+                0.004,
+                0,
+                torch.int8,
+                torch.tensor([[30, 30], [127, 127]], dtype=torch.int8),
+            ),
+        ]
+    )
+    def test_quantized_softmax_per_tensor(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        mask: torch.Tensor | None,
+        dim: int,
+        in_scale: float,
+        in_zero_point: int,
+        out_scale: float,
+        out_zero_point: int,
+        dtype: torch.dtype,
+        expected_output: torch.Tensor,
+    ) -> None:
+        output = torch.ops.cadence.quantized_softmax.per_tensor(
+            input_tensor,
+            mask,
+            dim,
+            in_scale,
+            in_zero_point,
+            out_scale,
+            out_zero_point,
+        )
+
+        # Verify output properties
+        self.assertEqual(
+            output.dtype, dtype, f"Output dtype should be {dtype} in {name}"
+        )
+        self.assertEqual(
+            output.shape,
+            input_tensor.shape,
+            f"Output shape should match input shape in {name}",
+        )
+
+        # Verify output matches expected values (allowing for small quantization errors)
+        # For softmax, we expect outputs to be in [0, 1] range when dequantized
+        self.assertTrue(
+            torch.allclose(
+                output.to(torch.float32),
+                expected_output.to(torch.float32),
+                rtol=0.05,
+                atol=5.0,
+            ),
+            f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+        )
+
+    def test_quantized_softmax(self) -> None:
+        # Test quantized_softmax (default variant with tensor scale/zero_point)
+        input_tensor = torch.tensor([[10, 20, 30]], dtype=torch.int8)
+        in_scale = torch.tensor([0.1])
+        in_zero_point = torch.tensor([0])
+        output = torch.ops.cadence.quantized_softmax(
+            input_tensor,
+            None,  # mask
+            1,  # dim
+            in_scale,
+            in_zero_point,
+            0.004,  # out_scale
+            0,  # out_zero_point
+        )
+
+        # Verify output properties
+        self.assertEqual(output.dtype, torch.int8, "Output dtype should be int8")
+        self.assertEqual(
+            output.shape,
+            input_tensor.shape,
+            "Output shape should match input shape",
         )

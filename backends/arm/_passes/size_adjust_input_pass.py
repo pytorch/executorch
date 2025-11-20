@@ -113,17 +113,17 @@ def is_valid_operator(node: torch.fx.Node) -> bool:
         dilation = node.args[4] if len(node.args) >= 5 else 1
         ceil_mode = node.args[5] if len(node.args) >= 6 else False
 
-        # Dilation should be handled first by DecomposeMaxPool2DPass
+        # Dilation should be handled first by DecomposeMaxPool2dPass
         if isinstance(dilation, int):
             if dilation > 1:
                 raise ValueError(
-                    "Expected max_pool2d with dilation = 1, has DecomposeMaxPool2DPass been run?"
+                    "Expected max_pool2d with dilation = 1, has DecomposeMaxPool2dPass been run?"
                 )
         else:
             dilation = cast(list, dilation)
             if dilation[0] > 1 or dilation[1] > 1:
                 raise ValueError(
-                    "Expected max_pool2d with dilation = [1, 1], has DecomposeMaxPool2DPass been run?"
+                    "Expected max_pool2d with dilation = [1, 1], has DecomposeMaxPool2dPass been run?"
                 )
 
         # If using ceil mode for rounding, the input does not need adjusting
@@ -207,7 +207,9 @@ class SizeAdjustInputPass(ArmPass):
             with graph_module.graph.inserting_before(node):
                 last_node = cast(torch.fx.Node, parent_node)
                 for args in slice_args:
-                    slice_node = create_node(graph, slice_op, (last_node,) + args)
+                    slice_node = create_node(
+                        graph, slice_op, (last_node,) + args, from_node=node
+                    )
                     last_node = slice_node
                 node.replace_input_with(cast(torch.fx.Node, parent_node), last_node)
                 modified_graph = True

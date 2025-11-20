@@ -6,8 +6,8 @@
 from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.convert_int_pow_to_mul import ConvertIntPowToMuls
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
+from executorch.backends.arm._passes.decompose_int_pow_pass import DecomposeIntPowPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
@@ -80,7 +80,7 @@ class DecomposeExpm1Pass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
-        ConvertIntPowToMuls,
+        DecomposeIntPowPass,
         InsertTableOpsPass,
         DecomposeDivPass,
         ReplaceScalarWithTensorByProfilePass,
@@ -91,6 +91,14 @@ class DecomposeExpm1Pass(ArmPass):
     def call_operator(self, op, args, kwargs, meta):
         if op not in edge_expm1_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
+
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
+            return super().call_operator(op, args, kwargs, meta)
 
         (
             op_pow,

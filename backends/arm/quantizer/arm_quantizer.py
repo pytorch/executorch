@@ -24,6 +24,7 @@ from executorch.backends.arm.common.arm_compile_spec import (
     ArmCompileSpec,
 )  # isort: skip
 from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.exir.graph_module import get_cond_while_submodules
 
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
@@ -36,10 +37,16 @@ from torchao.quantization.pt2e import (
     PerChannelMinMaxObserver,
     PlaceholderObserver,
 )
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 
 from torchao.quantization.pt2e.quantizer import (
     annotate_input_qspec_map,
     annotate_output_qspec,
+    get_module_name_filter,
     QuantizationSpec,
     Quantizer,
 )
@@ -51,6 +58,7 @@ __all__ = [
     "TOSAQuantizer",
     "EthosUQuantizer",
     "VgfQuantizer",
+    "get_symmetric_a16w8_quantization_config",
     "get_symmetric_quantization_config",
 ]
 
@@ -241,33 +249,6 @@ NodeFilterType = Callable[[Node], bool]
 """
 
 
-def _get_module_name_filter(module_name: str) -> NodeFilterType:
-    """Get the module_name_filter function for a given module name, the filter accepts
-    a node and checks if the node comes from a module that has certain module name
-
-    For example:
-        node: linear_op = call_function[...](...)  # comes from a module with name blocks.sub.linear1
-
-    >> module_name_filter = _get_module_name_filter("blocks.sub")
-    >> print(module_name_filter(node))
-    True  # the node is from "blocks.sub" based on the fully qualified name "blocks.sub.linear1"
-    """
-
-    name_start = len("L['self'].")
-
-    def module_name_filter(n: Node) -> bool:
-        # node_stack example: {
-        #    'L__self___sub': ("L['self'].sub", <class '....Sub'>),
-        #    'L__self___sub_linear': ("L['self'].sub.linear", <class 'torch.nn.modules.linear.Linear'>)
-        # }
-        # get_attr nodes doesn't have nn_module_stack?
-        nn_module_stack = n.meta.get("nn_module_stack", {})
-        names = [name[name_start:] for name, _ in nn_module_stack.values()]
-        return module_name in names
-
-    return module_name_filter
-
-
 def _get_module_type_filter(tp: Callable) -> NodeFilterType:
     """Get the module_type_filter function for a given module type, the filter accepts
     a node and checks if the node comes from a module that has certain module type
@@ -299,7 +280,7 @@ def _get_not_module_type_or_name_filter(
     tp_list: List[Callable], module_name_list: List[str]
 ) -> NodeFilterType:
     module_type_filters = [_get_module_type_filter(tp) for tp in tp_list]
-    module_name_list_filters = [_get_module_name_filter(m) for m in module_name_list]
+    module_name_list_filters = [get_module_name_filter(m) for m in module_name_list]
 
     def not_module_type_or_name_filter(n: Node) -> bool:
         return not any(f(n) for f in module_type_filters + module_name_list_filters)
@@ -333,16 +314,26 @@ class TOSAQuantizer(Quantizer):
         self.module_name_config: Dict[str, Optional[QuantizationConfig]] = {}
 
     def set_global(self, quantization_config: QuantizationConfig) -> TOSAQuantizer:
-        """Set quantization_config for submodules that are not already annotated by name or type filters."""
+        """
+        Set quantization_config for submodules that are not already annotated by name or type filters.
+
+        Args:
+            quantization_config: The QuantizationConfig to set as global configuration.
+        """
         self.global_config = quantization_config
         return self
 
     def set_module_type(
         self, module_type: Callable, quantization_config: QuantizationConfig
     ) -> TOSAQuantizer:
-        """Set quantization_config for a submodule with type: `module_type`, for example:
+        """
+        Set quantization_config for a submodule with type: `module_type`, for example:
         quantizer.set_module_name(Sub) or quantizer.set_module_name(nn.Linear), it will quantize all supported operator/operator
-        patterns in the submodule with this module type with the given `quantization_config`
+        patterns in the submodule with this module type with the given `quantization_config`.
+
+        Args:
+            module_type: The type of the submodule to set the quantization config for.
+            quantization_config: The QuantizationConfig to set for the submodule.
         """
         self.module_type_config[module_type] = quantization_config
         return self
@@ -350,9 +341,14 @@ class TOSAQuantizer(Quantizer):
     def set_module_name(
         self, module_name: str, quantization_config: Optional[QuantizationConfig]
     ) -> TOSAQuantizer:
-        """Set quantization_config for a submodule with name: `module_name`, for example:
+        """
+        Set quantization_config for a submodule with name: `module_name`, for example:
         quantizer.set_module_name("blocks.sub"), it will quantize all supported operator/operator
         patterns in the submodule with this module name with the given `quantization_config`
+
+        Args:
+            module_name: The name of the submodule to set the quantization config for.
+            quantization_config: The QuantizationConfig to set for the submodule.
         """
         # Validate that quantization_config is provided
         if quantization_config is None:
@@ -360,14 +356,25 @@ class TOSAQuantizer(Quantizer):
         self.module_name_config[module_name] = quantization_config
         return self
 
-    def set_io(self, quantization_config):
-        """Set quantization_config for input and output nodes."""
+    def set_io(self, quantization_config: QuantizationConfig) -> TOSAQuantizer:
+        """
+        Set quantization_config for input and output nodes.
+
+        Args:
+            quantization_config: The QuantizationConfig to set for input and output nodes.
+        """
         self.io_config = quantization_config
         return self
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
-        """An initial pass for transforming the graph to prepare it for annotation.
+        """
+        An initial pass for transforming the graph to prepare it for annotation.
         Currently transforms scalar values to tensor attributes.
+
+        Args:
+            model: The model to transform.
+        Returns:
+            The transformed model.
         """
 
         # TODO: Fix the need to lazily import this.
@@ -422,7 +429,7 @@ class TOSAQuantizer(Quantizer):
         module_name_list = list(self.module_name_config.keys())
         for module_name, config in self.module_name_config.items():
             self._annotate_all_static_patterns(
-                model, config, _get_module_name_filter(module_name)
+                model, config, get_module_name_filter(module_name)
             )
 
         tp_list = list(self.module_type_config.keys())
@@ -454,21 +461,62 @@ class TOSAQuantizer(Quantizer):
                 )
                 mark_node_as_annotated(node)
             if node.op == "output":
-                parent = node.all_input_nodes[0]
-                annotate_input_qspec_map(
-                    node, parent, quantization_config.get_input_act_qspec()
-                )
+                for parent in node.all_input_nodes:
+                    annotate_input_qspec_map(
+                        node, parent, quantization_config.get_input_act_qspec()
+                    )
                 mark_node_as_annotated(node)
 
     def validate(self, model: GraphModule) -> None:
         pass
 
+    def quantize_with_submodules(
+        self,
+        model: GraphModule,
+        calibration_samples: list[tuple],
+        is_qat: bool = False,
+    ):
+        """Quantizes a GraphModule in a way such that conditional submodules are handled properly.
+
+        Args:
+            model: GraphModule, the model to quantize.
+            calibration_samples: list[tuple], a list of inputs to used to calibrate the model during quantization.
+            To properly calibrate a model with submodules, at least one sample per code path is needed.
+            is_qat: bool, whether to do quantization aware training or not.
+        """
+        prepare_fn = prepare_qat_pt2e if is_qat else prepare_pt2e
+
+        prepared = prepare_fn(model, self)
+        for name, submodule, _ in get_cond_while_submodules(prepared):
+            prepared.set_submodule(name, prepare_fn(submodule, self), strict=True)
+        for inp in calibration_samples:
+            prepared(*inp)
+
+        for name, submodule, _ in get_cond_while_submodules(prepared):
+            prepared.set_submodule(name, convert_pt2e(submodule), strict=True)
+        converted = convert_pt2e(prepared)
+        return converted
+
 
 class EthosUQuantizer(TOSAQuantizer):
+    """
+    Quantizer supported by the Arm Ethos-U backend.
+
+    Args:
+        compile_spec: A EthosUCompileSpec instance.
+    """
+
     def __init__(self, compile_spec: EthosUCompileSpec) -> None:
         super().__init__(compile_spec)
 
 
 class VgfQuantizer(TOSAQuantizer):
+    """
+    Quantizer supported by the Arm Vgf backend.
+
+    Args:
+        compile_spec: A VgfCompileSpec instance.
+    """
+
     def __init__(self, compile_spec: VgfCompileSpec) -> None:
         super().__init__(compile_spec)

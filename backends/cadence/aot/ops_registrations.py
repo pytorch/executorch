@@ -6,7 +6,6 @@
 
 # pyre-strict
 
-import logging
 from math import prod
 from typing import Callable, Optional, Tuple
 
@@ -49,35 +48,15 @@ def _validate_ref_impl_exists() -> None:
         "cadence::roi_align_box_processor",
     }
 
-    # All of these should either
-    # 1. be removed
-    # 2. have a reference implementation added to ref_implementations.py
-    _WARN_ONLY = {
-        "cadence::quantized_softmax.per_tensor",
-        "cadence::quantized_softmax",
-    }
-
     ref_impls = get_registered_ref_implementations()
-    warn_impls = []
     error_impls = []
     for op_name in _REGISTERED_META_KERNELS:
         # Strip the namespace prefix if present (e.g., "cadence::" -> "")
         op_name_clean = op_name.split("::")[-1] if "::" in op_name else op_name
 
         if op_name_clean not in ref_impls:
-            if op_name in _WARN_ONLY:
-                warn_impls.append(op_name)
-            elif op_name not in _SKIP_OPS:
+            if op_name not in _SKIP_OPS:
                 error_impls.append(op_name)
-
-    if warn_impls:
-        warn_msg = (
-            f"The following {len(warn_impls)} meta kernel registrations are missing reference implementations:\n"
-            + "\n".join(f"  - {op}" for op in warn_impls)
-            + "\n\nPlease add reference implementations in ref_implementations.py using "
-            + "@impl_tracked(m, '<op_name>')."
-        )
-        logging.warning(warn_msg)
 
     if error_impls:
         error_msg = (
@@ -373,10 +352,6 @@ lib.define(
 )
 
 lib.define(
-    "convolution(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
-    "int[] dilation, int groups, bool channel_last=False) -> (Tensor Y)"
-)
-lib.define(
     "transposed_convolution(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
     "int[] dilation, SymInt[] output_padding, int groups, bool channel_last=False) -> (Tensor Y)"
 )
@@ -510,8 +485,28 @@ lib.define("idma_wait.out(Tensor src, int task_num=0, *, Tensor(a!) out) -> Tens
 # ------------------------------------ #
 # Migrated from the custom_ops.yaml files containing different operator variants (e.g., .out, .tensor_out)
 lib.define(
-    "convolution.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, "
-    "int groups, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "conv1d(Tensor input, Tensor weight, Tensor bias, int[1] stride, SymInt[1] padding, int[1] dilation, "
+    "int groups) -> Tensor"
+)
+lib.define(
+    "conv1d.out(Tensor input, Tensor weight, Tensor bias, int[1] stride, SymInt[1] padding, int[1] dilation, "
+    "int groups, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "conv2d(Tensor input, Tensor weight, Tensor bias, int[2] stride, SymInt[2] padding, int[2] dilation, "
+    "int groups) -> Tensor"
+)
+lib.define(
+    "conv2d.out(Tensor input, Tensor weight, Tensor bias, int[2] stride, SymInt[2] padding, int[2] dilation, "
+    "int groups, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "conv3d(Tensor input, Tensor weight, Tensor bias, int[3] stride, SymInt[3] padding, int[3] dilation, "
+    "int groups) -> Tensor"
+)
+lib.define(
+    "conv3d.out(Tensor input, Tensor weight, Tensor bias, int[3] stride, SymInt[3] padding, int[3] dilation, "
+    "int groups, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "transposed_convolution.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
@@ -2173,8 +2168,8 @@ def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
-@register_fake("cadence::convolution")
-def convolution_meta(
+@register_fake("cadence::conv1d")
+def conv1d_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -2182,32 +2177,93 @@ def convolution_meta(
     padding: Tuple[int],
     dilation: Tuple[int],
     groups: int,
-    channel_last: bool = False,
 ) -> torch.Tensor:
-    if channel_last:
-        out_channels, *kernel_size, _ = weight.shape
-    else:
-        out_channels, _, *kernel_size = weight.shape
+    assert (
+        len(weight.shape) == 3
+    ), f"Conv1d expects a 3D weight, got {len(weight.shape)}D"
+    out_channels, _, kernel_size = weight.shape
     in_size = input.shape
-    # Assert that the input tensor has at least 3 dimensions, and at most 6
-    assert len(in_size) > 2
-    assert len(in_size) < 6
+    assert len(in_size) == 3, f"conv1d expects 3D input, got {len(in_size)}D"
 
-    # Compute the output tensor size
-    output_size = (
-        get_conv1d_output_size(
-            in_size,
-            out_channels,
-            stride[0],
-            padding[0],
-            dilation[0],
-            kernel_size[0],
-            channel_last,
-        )
-        if len(in_size) == 3
-        else get_conv2d_output_size(
-            in_size, out_channels, stride, padding, dilation, kernel_size, channel_last
-        )
+    output_size = get_conv1d_output_size(
+        in_size,
+        out_channels,
+        stride[0],
+        padding[0],
+        dilation[0],
+        kernel_size,
+        False,
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::conv2d")
+def conv2d_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+) -> torch.Tensor:
+    assert (
+        len(weight.shape) == 4
+    ), f"Conv2d expects a 4D weight, got {len(weight.shape)}D"
+    out_channels, _, *kernel_size = weight.shape
+    in_size = input.shape
+    assert len(in_size) == 4, f"conv2d expects 4D input, got {len(in_size)}D"
+
+    output_size = get_conv2d_output_size(
+        in_size, out_channels, stride, padding, dilation, kernel_size, False
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::conv3d")
+def conv3d_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int, int, int],
+    padding: Tuple[int, int, int],
+    dilation: Tuple[int, int, int],
+    groups: int,
+) -> torch.Tensor:
+    assert (
+        len(weight.shape) == 5
+    ), f"Conv3d expects a 5D weight, got {len(weight.shape)}D"
+    out_channels, _, *kernel_size = weight.shape
+    in_size = input.shape
+    assert len(in_size) == 5, f"conv3d expects 5D input, got {len(in_size)}D"
+
+    # Helper to compute 3D convolution output size
+    def get_conv3d_output_size(
+        in_size: torch.Size,
+        out_channels: int,
+        stride: Tuple[int, int, int],
+        padding: Tuple[int, int, int],
+        dilation: Tuple[int, int, int],
+        kernel_size: list[int],
+    ) -> torch.Size:
+        N, C, D, H, W = in_size
+
+        dout = (D + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) // stride[
+            0
+        ] + 1
+        hout = (H + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) // stride[
+            1
+        ] + 1
+        wout = (W + 2 * padding[2] - dilation[2] * (kernel_size[2] - 1) - 1) // stride[
+            2
+        ] + 1
+
+        return torch.Size((N, out_channels, dout, hout, wout))
+
+    output_size = get_conv3d_output_size(
+        in_size, out_channels, stride, padding, dilation, kernel_size
     )
 
     return input.new_empty(output_size, dtype=input.dtype)

@@ -7,7 +7,9 @@
 from typing import Tuple
 
 import torch
-from diffusers.models.transformers import SD3Transformer2DModel
+from diffusers.models.transformers import (  # type: ignore[import-not-found]
+    SD3Transformer2DModel,
+)
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.stable_diffusion.stable_diffusion_module_test_configs import (
@@ -37,7 +39,8 @@ class TestSD3Transformer2DModel:
 
     ops_after_partitioner_INT = {
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
-        "torch.ops.higher_order.executorch_call_delegate": 2,
+        "torch.ops.higher_order.executorch_call_delegate": 3,
+        "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
     }
 
     def _prepare_inputs(

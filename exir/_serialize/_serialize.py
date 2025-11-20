@@ -8,10 +8,10 @@
 
 from typing import Dict, Optional, Set, Tuple
 
-from executorch.exir._serialize import _serialize_pte_binary
-
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+
+from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
 from executorch.exir._serialize.data_serializer import (
     DataEntry,
     DataPayload,
@@ -46,14 +46,16 @@ def serialize_for_executorch(
             pte_data=named_data_store.pte_data,
             external_data={},
         )
-    pte: Cord = _serialize_pte_binary(
-        program=emitter_output.program,
-        mutable_data=emitter_output.mutable_data,
+    pte: Cord = serialize_pte_binary(
+        pte_file=PTEFile(
+            program=emitter_output.program,
+            mutable_data=emitter_output.mutable_data,
+            named_data=pte_named_data,
+        ),
         extract_delegate_segments=config.extract_delegate_segments,
         segment_alignment=config.segment_alignment,
         constant_tensor_alignment=config.constant_tensor_alignment,
         delegate_alignment=config.delegate_alignment,
-        named_data=pte_named_data,
     )
 
     # Serialize PTD files.
@@ -117,18 +119,18 @@ def serialize_for_executorch(
             )
             buffers.append(emitter_output.external_constant_buffer[index])
 
-        # Extract external data.
+        # Extract external data from named_data_store.
         # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `get`.
-        key_to_buffer_index = named_data_store.external_data.get(tag, {})
-        for key, index in key_to_buffer_index.items():
+        blob_to_data_entry = named_data_store.external_data.get(tag, {})
+        for key, data_entry in blob_to_data_entry.items():
             assert key not in key_to_data_entry  # key must be unique
             key_to_data_entry[key] = DataEntry(
                 buffer_index=len(buffers),
-                # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `buffers`.
-                alignment=named_data_store.buffers[index].alignment,
-                tensor_layout=None,
+                alignment=data_entry.alignment,
+                tensor_layout=data_entry.tensor_layout,
             )
-            buffers.append(named_data_store.buffers[index].buffer)
+            # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `buffers`.
+            buffers.append(named_data_store.buffers[data_entry.buffer_index])
 
         # Serialize into PTD file.
         ptd_files[tag] = data_serializer.serialize(
