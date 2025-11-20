@@ -13,7 +13,7 @@ used by the TOSA partitioner to decide if FX nodes are eligible for delegation.
 import itertools
 import operator
 import typing
-from typing import cast, final, Optional, Sequence, Type
+from typing import final, Optional, Sequence, Type
 
 import torch
 import torch.fx as fx
@@ -29,6 +29,10 @@ from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
 from executorch.backends.arm._passes.insert_table_ops import TableOps
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
+from executorch.backends.arm.operator_support.control_flow_support import (
+    ControlFlowOpSupported,
+    ControlFlowSubmoduleSupported,
+)
 from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55CastCheck,
     EthosU55DtypeSupport,
@@ -41,7 +45,6 @@ from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists im
     TOSA_PRO_INT_SupportList,
 )
 from executorch.backends.arm.tosa.specification import (
-    Tosa_1_00,
     TosaSpecification,
     TosaSpecMapping,
 )
@@ -185,7 +188,8 @@ def tosa_support_factory(
     """
     # Postive checks: Add nodes to partitioning
     positive_checks: list[OperatorSupportBase] = [
-        CondSupported(exported_program, tosa_spec, reporter)
+        ControlFlowSubmoduleSupported(exported_program, tosa_spec, reporter),
+        ControlFlowOpSupported(exported_program, tosa_spec, reporter),
     ]
 
     if tosa_spec.support_integer():
@@ -321,8 +325,6 @@ class CheckArmQuantized(OperatorSupportBase):
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        if node.op != "call_function":
-            return False
 
         if node.target in (*DQ_OPS, *Q_OPS):
             return True
@@ -690,131 +692,3 @@ class RankCheck(OperatorSupportBase):
                 )
                 return False
         return True
-
-
-class CondSupported(OperatorSupportBase):
-    """Check whether cond operator and submodule args should be partitioned.
-
-    Applies control-flow extension constraints before allowing delegation.
-
-    """
-
-    def __init__(
-        self,
-        exported_program: ExportedProgram,
-        tosa_spec: TosaSpecification,
-        reporter: WhyNoPartitionReporter,
-    ):
-        """Initialize conditional support checks for TOSA delegation.
-
-        Args:
-            exported_program (ExportedProgram): Program containing the cond
-                submodules to inspect.
-            tosa_spec (TosaSpecification): TOSA specification used to validate
-                supported operators.
-            reporter (WhyNoPartitionReporter): Reporter that records rejection
-                reasons for unsupported nodes.
-
-        """
-        self.exported_program = exported_program
-        self.reporter = reporter
-        self.tosa_spec = tosa_spec
-        super().__init__()
-
-    def _fully_partitioned(self, submodule: fx.GraphModule) -> bool:
-        """Check whether all call_function nodes share one delegation tag."""
-        partition_tag = None
-        for submodule_node in submodule.graph.nodes:
-            if submodule_node.op == "call_function":
-                # Input Q ops and output DQ ops will be de-tagged even if the submodule is fully supported.
-                if (
-                    submodule_node.target in Q_OPS
-                    and list(submodule_node.all_input_nodes)[0].op == "placeholder"
-                ):
-                    continue
-                if (
-                    submodule_node.target in DQ_OPS
-                    and list(submodule_node.users)[0].op == "output"
-                ):
-                    continue
-                if "delegation_tag" not in submodule_node.meta:
-                    return False
-                if partition_tag is None:
-                    partition_tag = submodule_node.meta["delegation_tag"]
-                elif submodule_node.meta["delegation_tag"] != partition_tag:
-                    return False
-        return True
-
-    def _cond_submodules_fully_partitioned(self, node: fx.Node) -> bool:
-        """Determine whether cond submodules were fully partitioned.
-
-        Update the "val" meta of the submodules when they are partitioned.
-
-        """
-        cond_submodules = (
-            (
-                self.exported_program.graph_module.get_submodule(
-                    str(cast(torch.fx.Node, submodule_node).target)
-                ),
-                cast(torch.fx.Node, submodule_node),
-            )
-            for submodule_node in node.args[1:3]
-        )
-        for submodule, submodule_node in cond_submodules:
-            submodule = cast(torch.fx.GraphModule, submodule)
-
-            if self._fully_partitioned(submodule):
-                submodule_node.meta["val"] = submodule.graph.output_node().meta["val"]
-            else:
-                return False
-        return True
-
-    def is_node_supported(  # noqa: C901
-        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
-    ) -> bool:
-        """Check whether a cond node and its submodules are partitionable."""
-        if is_submodule_node(node):
-            if not isinstance(self.tosa_spec, Tosa_1_00):
-                self.reporter.report_reject(
-                    node, "Control flow extension not supported for TOSA version <1.0"
-                )
-                return False
-            if not self.tosa_spec.support_extension("cf"):
-                self.reporter.report_reject(
-                    node,
-                    f"TOSA spec {self.tosa_spec} does not support control flow extension.",
-                )
-                return False
-            for user in node.users:
-                if user.target != torch.ops.higher_order.cond:
-                    self.reporter.report_reject(
-                        node, f"Submodule had unsupported user {user}"
-                    )
-                    return False
-                if not self._cond_submodules_fully_partitioned(user):
-                    self.reporter.report_reject(
-                        node, "One submodule was not fully partitioned"
-                    )
-                    return False
-            return True
-        if node.target == torch.ops.higher_order.cond:
-            if not isinstance(self.tosa_spec, Tosa_1_00):
-                self.reporter.report_reject(
-                    node, "Control flow extension not supported for TOSA version <1.0"
-                )
-                return False
-            if not self.tosa_spec.support_extension("cf"):
-                self.reporter.report_reject(
-                    node,
-                    f"TOSA spec {self.tosa_spec} does not support control flow extension.",
-                )
-                return False
-
-            if not self._cond_submodules_fully_partitioned(node):
-                self.reporter.report_reject(
-                    node, "Submodule was not fully partitioned."
-                )
-                return False
-            return True
-
-        return False
