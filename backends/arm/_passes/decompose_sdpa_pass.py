@@ -10,7 +10,7 @@ from executorch.backends.transforms import decompose_sdpa
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeScaledDotProductAttention(
+class DecomposeScaledDotProductAttentionPass(
     ArmPass, decompose_sdpa.DecomposeScaledDotProductAttention
 ):
     _passes_required_after: Set[Type[ExportPass]] = set()

@@ -18,14 +18,13 @@ from .convert_expand_copy_to_repeat import ConvertExpandCopyToRepeatPass  # noqa
 from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
 from .convert_int64_const_ops_to_int32 import ConvertInt64ConstOpsToInt32Pass  # noqa
 from .convert_int64_output_ops_to_int32 import ConvertInt64OutputOpsToInt32Pass  # noqa
-from .convert_int_pow_to_mul import ConvertIntPowToMuls  # noqa
 from .convert_minmax_pass import ConvertMinMaxPass  # noqa
 from .convert_permute_singleton_to_view_pass import (  # noqa
     ConvertPermuteSingletonToViewPass,
 )
 from .convert_split_to_slice import ConvertSplitToSlicePass  # noqa
 from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
-from .convert_to_clamp import ConvertToClampPass  # noqa
+from .convert_to_clamp_pass import ConvertToClampPass  # noqa
 from .decompose_acosh_pass import DecomposeAcoshPass  # noqa
 from .decompose_adaptive_avg_pool2d_pass import DecomposeAdaptiveAvgPool2dPass  # noqa
 from .decompose_add_sub_alpha_pass import DecomposeAddSubAlphaPass  # noqa
@@ -35,7 +34,7 @@ from .decompose_asin_and_acos_pass import DecomposeAsinAndAcosPass  # noqa
 from .decompose_asinh_pass import DecomposeAsinhPass  # noqa
 from .decompose_atan_pass import DecomposeAtanPass  # noqa
 from .decompose_atanh_pass import DecomposeAtanhPass  # noqa
-from .decompose_avg_pool2d import DecomposeAvgPool2d  # noqa
+from .decompose_avg_pool2d_pass import DecomposeAvgPool2dPass  # noqa
 from .decompose_batch_norm_no_stats import DecomposeBatchNormNoStatsPass  # noqa
 from .decompose_cosh_pass import DecomposeCoshPass  # noqa
 from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
@@ -48,23 +47,24 @@ from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
 from .decompose_floor_divide_pass import DecomposeFloorDividePass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
-from .decompose_grouped_conv import DecomposeGroupedConv  # noqa
+from .decompose_grouped_conv_pass import DecomposeGroupedConvPass  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
 from .decompose_int16_activation_conv2d_pass import (  # noqa
     DecomposeConv2dWithInt16ActivationPass,
 )
+from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
-from .decompose_linalg_vector_norm_pass import DecomposeLinearVectorNormPass  # noqa
+from .decompose_linalg_vector_norm_pass import DecomposeLinalgVectorNormPass  # noqa
 from .decompose_linear_pass import DecomposeLinearPass  # noqa
 from .decompose_logit_pass import DecomposeLogitPass  # noqa
-from .decompose_masked_fill import DecomposeMaskedFill  # noqa
-from .decompose_maxpool2d_with_dilation import DecomposeMaxPool2DPass  # noqa
+from .decompose_masked_fill_pass import DecomposeMaskedFillPass  # noqa
+from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
-from .decompose_sdpa_pass import DecomposeScaledDotProductAttention  # noqa
+from .decompose_sdpa_pass import DecomposeScaledDotProductAttentionPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_sign_pass import DecomposeSignPass  # noqa
 from .decompose_silu_pass import DecomposeSiluPass  # noqa
@@ -77,10 +77,13 @@ from .decompose_var_pass import DecomposeVarPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
-    QuantizeOperatorArguments,
+    QuantizeClampArgumentsPass,
 )
-from .fuse_batchnorm2d_pass import FuseBatchnorm2DPass  # noqa
-from .fuse_constant_ops_pass import ComputeConstantOpsAOT, FuseConstantArgsPass  # noqa
+from .fuse_batch_norm2d_pass import FuseBatchNorm2dPass  # noqa
+from .fuse_constant_ops_pass import (  # noqa
+    ComputeConstantOpsAOTPass,
+    FuseConstantArgsPass,
+)
 from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
@@ -111,5 +114,5 @@ from .size_adjust_input_pass import SizeAdjustInputPass  # noqa
 from .to_tosa_memory_format_pass import ToTosaMemoryFormatPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa
 from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass  # noqa
-from .replace_inf_values_pass import ReplaceInfValues  # noqa  # usort: skip
+from .replace_inf_values_pass import ReplaceInfValuesPass  # noqa  # usort: skip
 from .arm_pass_manager import ArmPassManager  # noqa  # usort: skip
