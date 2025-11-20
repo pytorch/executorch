@@ -10,6 +10,7 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
     ModelBuilder,
 )
@@ -404,7 +405,9 @@ def test_conv2d_quant_conversion(mocker, model: torch.nn.Module, input_shape):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    _ = to_quantized_edge_program(
+        model, input_shape, use_neutron_for_format_conversion=False
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -446,6 +449,7 @@ def test_conv2d_conversion__depthwise__quantized(
             kernel_size=kernel_shape,
         ),
         tuple(input_shape),
+        use_neutron_for_format_conversion=False,
     ).exported_program()
 
     ops = spy.spy_return.sub_graphs[0].operators.vector
@@ -480,6 +484,9 @@ def test_conv2d_conversion__depthwise__padded(padding, mocker):
         tflite_input_preprocess=ToChannelLastPreprocess(),
         tflite_output_preprocess=ToChannelFirstPreprocess(),
         atol=4e-7,
+        conversion_config=ConversionConfig(
+            {"use_neutron_for_format_conversion": False}
+        ),
     )
     conversion_result = spy.spy_return
     ops = conversion_result.sub_graphs[0].operators.vector
@@ -500,6 +507,7 @@ def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker):
             group=group, in_channels=group, out_channels=group, padding=padding
         ),
         tuple(input_shape),
+        use_neutron_for_format_conversion=False,
     ).exported_program()
 
     ops = spy.spy_return.sub_graphs[0].operators.vector
@@ -576,7 +584,9 @@ def test_conv_transpose2d_conversion__quantized(
 ):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
-    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_neutron_for_format_conversion=False
+    ).exported_program()
 
     # Make sure the `TransposeConv` was delegated.
     assert not graph_contains_any_of_ops(

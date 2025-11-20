@@ -71,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: [linear, add, add_mul, resnet18, conv1d]
+        model: [linear, add, add_mul, resnet18, conv1d, sdpa]
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
