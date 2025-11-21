@@ -61,7 +61,7 @@ class RemoveMixedTypeOperators(ExportPass):
             elif isinstance(arg, torch.Tensor):
                 arg_tensor.append(arg)
             else:
-                arg_tensor.append(arg.data)
+                arg_tensor.append(torch.tensor(arg))
         arg_tensor = tuple(arg_tensor)
 
         # Computes type for computation
