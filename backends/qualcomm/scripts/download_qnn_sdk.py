@@ -146,12 +146,16 @@ def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
         logger.info("Download completed!")
 
     except Exception as e:
-        logger.error("Error during download: %s", e)
+        logger.exception("Error during download: %s", e)
         return False
 
     if archive_path.exists() and archive_path.stat().st_size == 0:
         logger.warning("Downloaded file is empty!")
         return False
+    elif not archive_path.exists():
+        logger.error("File was not downloaded!")
+        return False
+        
     return True
 
 
