@@ -148,9 +148,8 @@ class CudaBackend(BackendDetails):
                 user_input_placeholders.append(node.meta["val"])
 
         options: dict[str, typing.Any] = {
-            # Disable this to support sdpa decomposition
-            # TODO(gasoonjia): remove it after pin bump to latest pytorch
-            "loop_ordering_after_fusion": False,
+            # Frozen weight during inference for better performance and more optimization like kernel fusion
+            "freezing": True,
             # Better model precision
             "emulate_precision_casts": True,
             # Embed CUDA kernel binaries directly into the compiled shared object
