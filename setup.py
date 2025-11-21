@@ -52,7 +52,6 @@ import contextlib
 # imports.
 import logging
 import os
-import platform
 import re
 import shutil
 import site
@@ -89,23 +88,6 @@ def _is_macos() -> bool:
 
 def _is_windows() -> bool:
     return sys.platform == "win32"
-
-
-# Duplicate of the one in backends.qualcomm.scripts.download_qnn_sdk to avoid
-# import errors.
-def is_linux_x86() -> bool:
-    """
-    Check if the current platform is Linux x86_64.
-
-    Returns:
-        bool: True if the system is Linux x86_64, False otherwise.
-    """
-    return platform.system().lower() == "linux" and platform.machine().lower() in (
-        "x86_64",
-        "amd64",
-        "i386",
-        "i686",
-    )
 
 
 class Version:
