@@ -190,8 +190,7 @@ convert_to_float16(const ::executorch::extension::TensorPtr& src_tensor) {
 
   auto f16_tensor = ::executorch::extension::empty_like(
       src_tensor, ::executorch::aten::ScalarType::Half);
-  auto* f16_data =
-      f16_tensor->mutable_data_ptr<::executorch::aten::Half>();
+  auto* f16_data = f16_tensor->mutable_data_ptr<::executorch::aten::Half>();
   for (size_t i = 0; i < num_elements; ++i) {
     f16_data[i] = ::executorch::aten::Half(float_data[i]);
   }

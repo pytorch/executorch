@@ -192,7 +192,8 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
           Info,
           "Conversion complete, first value = %f",
           static_cast<float>(
-              preprocessed_features->mutable_data_ptr<::executorch::aten::BFloat16>()[0]));
+              preprocessed_features
+                  ->mutable_data_ptr<::executorch::aten::BFloat16>()[0]));
     } else if (expected_dtype == ::executorch::aten::ScalarType::Half) {
       ET_LOG(
           Info,
@@ -207,7 +208,8 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
           Info,
           "Conversion complete, first value = %f",
           static_cast<float>(
-              preprocessed_features->mutable_data_ptr<::executorch::aten::Half>()[0]));
+              preprocessed_features
+                  ->mutable_data_ptr<::executorch::aten::Half>()[0]));
     }
   }
 
