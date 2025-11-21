@@ -32,12 +32,12 @@ from executorch.backends.arm.quantizer import (
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
+
+from executorch.backends.arm.test.tester.quantize import ArmQuantize as Quantize
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
-
-from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
 
