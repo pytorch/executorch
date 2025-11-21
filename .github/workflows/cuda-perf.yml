@@ -179,6 +179,7 @@ jobs:
     needs:
       - set-parameters
       - export-models
+    if: always()
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
