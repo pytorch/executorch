@@ -259,8 +259,8 @@ jobs:
         CUDA_DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
         echo "CUDA Driver Version: $CUDA_DRIVER_VERSION"
 
-        # Create results directory
-        RESULTS_DIR="${RUNNER_ARTIFACT_DIR}"
+        # Create results directory (separate from model artifacts)
+        RESULTS_DIR="benchmark_results"
         mkdir -p "$RESULTS_DIR"
 
         # Determine model name and runner command based on model
@@ -320,6 +320,15 @@ jobs:
           "workflow_run_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
         }
         EOF
+
+        # Only copy benchmark results to RUNNER_ARTIFACT_DIR for upload (not the entire model)
+        # First, clean up the downloaded model artifacts from RUNNER_ARTIFACT_DIR
+        rm -rf "${RUNNER_ARTIFACT_DIR}"/*
+
+        # Then copy only the benchmark result JSON files
+        cp "$RESULTS_DIR"/*.json "${RUNNER_ARTIFACT_DIR}/"
+        echo "Benchmark results prepared for upload:"
+        ls -lah "${RUNNER_ARTIFACT_DIR}"
         echo "::endgroup::"
 
   upload-benchmark-results:
