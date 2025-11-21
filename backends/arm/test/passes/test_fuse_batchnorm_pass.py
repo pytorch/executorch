@@ -6,7 +6,7 @@
 from typing import cast, ClassVar, Dict, Protocol, Tuple
 
 import torch
-from executorch.backends.arm._passes.fuse_batchnorm2d_pass import FuseBatchnorm2DPass
+from executorch.backends.arm._passes.fuse_batch_norm2d_pass import FuseBatchNorm2dPass
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
@@ -159,6 +159,6 @@ def test_fuse_batchnorm_tosa_FP(module: ModuleWithBatchNormAttrs) -> None:
         quantize=False,
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
-        passes_with_exported_program=[FuseBatchnorm2DPass],
+        passes_with_exported_program=[FuseBatchNorm2dPass],
     )
     pipeline.run()
