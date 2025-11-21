@@ -394,4 +394,14 @@ test_memory_allocation() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_undefinedbehavior_sanitizer() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u executor_runner with UBSAN"
+
+    mkdir -p arm_test/test_run
+    # Ethos-U85
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py --build_type=UndefinedSanitizer
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 ${TEST_SUITE}
