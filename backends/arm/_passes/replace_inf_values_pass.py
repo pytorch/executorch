@@ -14,7 +14,7 @@ from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class ReplaceInfValues(ArmPass):
+class ReplaceInfValuesPass(ArmPass):
     """
     Due to limitation in Quantizer, we need to change inf/-inf to more quantizable values.
     """
