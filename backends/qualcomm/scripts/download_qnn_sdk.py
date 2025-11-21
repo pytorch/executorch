@@ -509,7 +509,7 @@ def _ensure_qnn_sdk_lib() -> bool:
     logger.info("[QNN] Loading %s", qnn_lib)
     lib_loaded = False
     try:
-        ctypes.CDLL(str(qnn_lib), mode=ctypes.RTLD_GLOBAL)
+        ctypes.CDLL(str(qnn_lib), mode=ctypes.RTLD_LOCAL)
         logger.info("[QNN] Loaded libQnnHtp.so from packaged SDK.")
         lib_loaded = True
     except OSError as e:
@@ -528,7 +528,7 @@ def _load_libcxx_libs(lib_path):
     logger.debug("sorted_candidates: %s", sorted_candidates)
     for sofile in sorted_candidates:
         try:
-            ctypes.CDLL(str(sofile), mode=ctypes.RTLD_GLOBAL)
+            ctypes.CDLL(str(sofile), mode=ctypes.RTLD_LOCAL)
             logger.info("Loaded %s", sofile.name)
         except OSError as e:
             logger.warning("[WARN] Failed to load %s: %s", sofile.name, e)

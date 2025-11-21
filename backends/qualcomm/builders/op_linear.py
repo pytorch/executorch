@@ -56,12 +56,12 @@ class LinearVisitor(NodeVisitor):
                 [-1, 1]
             )
 
-        weight_tensor = get_parameter(weight_node, self.edge_program)
+        weight_tensor = self.get_tensor(weight_node, node)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
             node,
             weight_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         linear_input_tensors.append(weight_tensor_wrapper)
