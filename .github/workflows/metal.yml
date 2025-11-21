@@ -44,6 +44,9 @@ jobs:
             name: "whisper-small"
           - repo: "openai"
             name: "whisper-large-v3-turbo"
+        dtype:
+          - "float16"
+          - "bfloat16"
         quant:
           - "non-quantized"
     with:
@@ -53,7 +56,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}
+      upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.dtype }}-${{ matrix.quant }}
       script: |
         set -eux
 
@@ -76,7 +79,7 @@ jobs:
         ${CONDA_RUN} pip list
         echo "::endgroup::"
 
-        ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+        ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.dtype }}" "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
   test-model-metal-e2e:
     name: test-model-metal-e2e
@@ -92,6 +95,9 @@ jobs:
             name: "whisper-small"
           - repo: "openai"
             name: "whisper-large-v3-turbo"
+        dtype:
+          - "float16"
+          - "bfloat16"
         quant:
           - "non-quantized"
     with:
@@ -100,7 +106,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
-      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}
+      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.dtype }}-${{ matrix.quant }}
       script: |
         set -eux
 
@@ -128,4 +134,4 @@ jobs:
         fi
         echo "::endgroup::"
 
-        ${CONDA_RUN} bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+        ${CONDA_RUN} bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.dtype }}" "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"

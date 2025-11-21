@@ -224,12 +224,15 @@ AOTITorchError aoti_torch_mps_mm_out(
       MPSDataType mps_dtype;
       size_t element_size;
 
-      ET_LOG(Debug, "aoti_torch_mps_mm_out: self_tensor scalar_type=%d, SupportedDTypes::FLOAT32=%d, SupportedDTypes::BFLOAT16=%d",
-             dtype, static_cast<int32_t>(SupportedDTypes::FLOAT32), static_cast<int32_t>(SupportedDTypes::BFLOAT16));
+      ET_LOG(Debug, "aoti_torch_mps_mm_out: self_tensor scalar_type=%d, SupportedDTypes::FLOAT32=%d, SupportedDTypes::FLOAT16=%d, SupportedDTypes::BFLOAT16=%d",
+             dtype, static_cast<int32_t>(SupportedDTypes::FLOAT32), static_cast<int32_t>(SupportedDTypes::FLOAT16), static_cast<int32_t>(SupportedDTypes::BFLOAT16));
 
       if (dtype == static_cast<int32_t>(SupportedDTypes::FLOAT32)) {
         mps_dtype = MPSDataTypeFloat32;
         element_size = sizeof(float);
+      } else if (dtype == static_cast<int32_t>(SupportedDTypes::FLOAT16)) {
+        mps_dtype = MPSDataTypeFloat16;
+        element_size = sizeof(uint16_t);  // half is 16 bits
       } else if (dtype == static_cast<int32_t>(SupportedDTypes::BFLOAT16)) {
         mps_dtype = MPSDataTypeBFloat16;
         element_size = sizeof(uint16_t);  // bfloat16 is 16 bits
@@ -592,6 +595,9 @@ AOTITorchError aoti_torch_mps_convolution(
       if (dtype == static_cast<int32_t>(SupportedDTypes::FLOAT32)) {
         mps_dtype = MPSDataTypeFloat32;
         element_size = sizeof(float);
+      } else if (dtype == static_cast<int32_t>(SupportedDTypes::FLOAT16)) {
+        mps_dtype = MPSDataTypeFloat16;
+        element_size = sizeof(uint16_t);  // half is 16 bits
       } else if (dtype == static_cast<int32_t>(SupportedDTypes::BFLOAT16)) {
         mps_dtype = MPSDataTypeBFloat16;
         element_size = sizeof(uint16_t);  // bfloat16 is 16 bits
@@ -1084,6 +1090,9 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
         if (dtype == static_cast<int32_t>(SupportedDTypes::FLOAT32)) {
           mps_dtype = MPSDataTypeFloat32;
           element_size = sizeof(float);
+        } else if (dtype == static_cast<int32_t>(SupportedDTypes::FLOAT16)) {
+          mps_dtype = MPSDataTypeFloat16;
+          element_size = sizeof(uint16_t);  // half is 16 bits
         } else if (dtype == static_cast<int32_t>(SupportedDTypes::BFLOAT16)) {
           mps_dtype = MPSDataTypeBFloat16;
           element_size = sizeof(uint16_t);  // bfloat16 is 16 bits

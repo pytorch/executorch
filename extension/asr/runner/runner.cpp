@@ -192,7 +192,22 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
           Info,
           "Conversion complete, first value = %f",
           static_cast<float>(
-              preprocessed_features->mutable_data_ptr<float>()[0]));
+              preprocessed_features->mutable_data_ptr<::executorch::aten::BFloat16>()[0]));
+    } else if (expected_dtype == ::executorch::aten::ScalarType::Half) {
+      ET_LOG(
+          Info,
+          "Converting audio features from %s to Float16 (Half). Before converting, first value = %f",
+          ::executorch::runtime::toString(preprocessed_features->scalar_type()),
+          preprocessed_features->mutable_data_ptr<float>()[0]);
+      auto convert_result = ::executorch::extension::llm::convert_to_float16(
+          preprocessed_features);
+      ET_CHECK_OK_OR_RETURN_ERROR(convert_result.error());
+      preprocessed_features = convert_result.get();
+      ET_LOG(
+          Info,
+          "Conversion complete, first value = %f",
+          static_cast<float>(
+              preprocessed_features->mutable_data_ptr<::executorch::aten::Half>()[0]));
     }
   }
 
