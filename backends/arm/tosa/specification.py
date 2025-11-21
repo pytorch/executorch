@@ -105,6 +105,18 @@ class TosaSpecification:
         """Return True if floating-point operations are supported."""
         raise NotImplementedError
 
+    def support_extension(self, extension: str) -> bool:
+        """Return True if an extension is supported and enabled.
+
+        Args:
+            extension (str): Extension name (for example ``int4``, ``bf16``).
+
+        Returns:
+            bool: True if the extension is valid for the active profiles and selected.
+
+        """
+        raise NotImplementedError
+
     def __init__(self, version: Version, extras: List[str]):
         """Initialize the base specification.
 
