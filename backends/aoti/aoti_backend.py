@@ -37,7 +37,7 @@ class AotiBackend(ABC):
     This class provides common functionality for compiling models using AOTInductor
     with different device targets (CUDA, Metal, etc.).
 
-    This is a mixin class, not an actual backend object, for aoti-driven backens.
+    This is a mixin class, not an actual backend object, for aoti-driven backends.
     Concrete backends (e.g., CudaBackend, MetalBackend) should inherit from both
     BackendDetails and AotiBackend to get the full functionality.
     """
