@@ -6,7 +6,7 @@
 from typing import cast, Dict, Protocol, Tuple
 
 import torch
-from executorch.backends.arm._passes import ConvertIntPowToMuls
+from executorch.backends.arm._passes import DecomposeIntPowPass
 
 from executorch.backends.arm.test import common
 
@@ -60,7 +60,7 @@ test_data: Dict[str, TestParam] = {
 
 
 @common.parametrize("data", test_data)
-def test_convert_pow_to_muls(data: TestParam) -> None:
+def test_decompose_int_pow(data: TestParam) -> None:
     module_with_inputs, nbr_muls = data
     module = cast(torch.nn.Module, module_with_inputs)
     pipeline = PassPipeline[input_t](
@@ -75,6 +75,6 @@ def test_convert_pow_to_muls(data: TestParam) -> None:
             "executorch_exir_dialects_edge__ops_aten_mul_Tensor": nbr_muls,
         },
         ops_not_after_pass=["executorch_exir_dialects_edge__ops_pow_Tensor_Scalar"],
-        pass_list=[ConvertIntPowToMuls],
+        pass_list=[DecomposeIntPowPass],
     )
     pipeline.run()
