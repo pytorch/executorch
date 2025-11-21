@@ -155,7 +155,7 @@ def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
     elif not archive_path.exists():
         logger.error("File was not downloaded!")
         return False
-        
+
     return True
 
 
