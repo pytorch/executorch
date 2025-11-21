@@ -15,6 +15,7 @@
 #include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/platform/log.h>
 #include <cstdint>
+#include <cstdlib> // for aligned_alloc
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -24,6 +25,7 @@ namespace executorch::backends::cuda {
 
 using executorch::aten::SizesType;
 using executorch::aten::StridesType;
+using executorch::backends::aoti::aoti_torch_dtype_bool;
 using executorch::backends::aoti::aoti_torch_get_device_index;
 using executorch::backends::aoti::aoti_torch_get_dtype;
 using executorch::backends::aoti::aoti_torch_get_sizes;
@@ -119,8 +121,6 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     int32_t layout,
     const uint8_t* opaque_metadata,
     int64_t opaque_metadata_size) {
-  // TODO(gasoonjia): verify given data is on the target device
-  (void)device_type;
   (void)opaque_metadata;
   (void)layout;
   (void)opaque_metadata_size;
@@ -154,6 +154,84 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   // Storage offset must be 0 since from_blob cannot handle different offsets
   ET_CHECK_OK_OR_RETURN_ERROR(validate_storage_offset(storage_offset));
 
+  // Verify that data pointer location matches the requested device_type
+  cudaPointerAttributes data_attributes{};
+  ET_CUDA_CHECK_OR_RETURN_ERROR(
+      cudaPointerGetAttributes(&data_attributes, data));
+
+  bool data_is_on_device = data_attributes.type == cudaMemoryTypeDevice;
+  bool data_is_on_host = data_attributes.type == cudaMemoryTypeHost ||
+      data_attributes.type == cudaMemoryTypeUnregistered;
+  bool requested_device =
+      device_type == static_cast<int32_t>(SupportedDevices::CUDA);
+  bool requested_cpu =
+      device_type == static_cast<int32_t>(SupportedDevices::CPU);
+
+  // Case 1: Data is on GPU but CPU device was requested
+  // This is the bug we're fixing - allocate CPU memory and copy
+  void* actual_data = data;
+  bool need_cleanup = false;
+
+  if (data_is_on_device && requested_cpu) {
+    ET_LOG(
+        Error,
+        "aoti_torch_create_tensor_from_blob_v2: data pointer %p is on CUDA but device_type is CPU. "
+        "Allocating CPU memory and copying data.",
+        data);
+
+    // Calculate total size needed
+    size_t element_size = dtype_to_element_size(dtype);
+    ET_CHECK_OR_RETURN_ERROR(
+        element_size != 0,
+        InvalidArgument,
+        "Invalid element size for dtype: %d",
+        dtype);
+
+    // Calculate storage size based on strides
+    int64_t storage_size = 1;
+    for (int64_t i = 0; i < ndim; i++) {
+      if (sizes_ptr[i] == 0) {
+        storage_size = 0;
+        break;
+      }
+      int64_t stride_i = (strides_ptr != nullptr) ? strides_ptr[i] : 1;
+      if (strides_ptr == nullptr) {
+        for (int64_t j = i + 1; j < ndim; j++) {
+          stride_i *= sizes_ptr[j];
+        }
+      }
+      storage_size += stride_i * (sizes_ptr[i] - 1);
+    }
+    int64_t nbytes = storage_size * element_size;
+
+    // Allocate CPU memory with proper alignment
+    actual_data = aligned_alloc(16, nbytes);
+    ET_CHECK_OR_RETURN_ERROR(
+        actual_data != nullptr,
+        MemoryAllocationFailed,
+        "Failed to allocate aligned CPU memory for device-to-host copy");
+
+    // Copy data from GPU to CPU
+    ET_CUDA_CHECK_OR_RETURN_ERROR(
+        cudaMemcpy(actual_data, data, nbytes, cudaMemcpyDeviceToHost));
+
+    need_cleanup = true;
+    ET_LOG(
+        Info,
+        "Successfully copied %ld bytes from GPU to CPU memory at %p",
+        nbytes,
+        actual_data);
+  }
+  // Case 2: Data is on CPU but GPU device was requested - ERROR
+  else if (data_is_on_host && requested_device) {
+    ET_CHECK_OR_RETURN_ERROR(
+        false,
+        InvalidArgument,
+        "aoti_torch_create_tensor_from_blob_v2 failed: data pointer %p is on CPU "
+        "but device_type is CUDA. This is not supported. Data must be on GPU for CUDA tensors.",
+        data);
+  }
+
   // Convert sizes to the format expected by ExecutorTorch using SizesType
   std::vector<executorch::aten::SizesType> sizes =
       convert_sizes_to_vector(ndim, sizes_ptr);
@@ -163,11 +241,10 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
       convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
 
   // Create ExecutorTorch tensor that wraps the existing memory
-  // Note: We're NOT copying the data, just wrapping it
   // Using CUDA-specific tensor maker that supports incontiguous tensors
   auto tensor = make_tensor(
       sizes, // tensor dimensions
-      data, // existing memory (don't copy!)
+      actual_data, // Use actual_data (either original or copied to CPU)
       {}, // dim_order (empty, will be auto-generated)
       strides, // tensor strides (allows different strides)
       dtype_to_scalar_type(dtype) // map int32_t dtype to ScalarType
@@ -182,16 +259,22 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   *ret_new_tensor = tensor.get();
 
   // Check if this memory address is already being tracked
-  auto memory_it = memory_to_n_tensor.find(data);
+  auto memory_it = memory_to_n_tensor.find(actual_data);
   ET_CHECK_OR_RETURN_ERROR(
       memory_it == memory_to_n_tensor.end(),
       InvalidArgument,
       "Memory address %p is already being tracked by another tensor",
-      data);
+      actual_data);
 
-  // Mark this memory as NOT_OWN since tensor created from blob never owns
-  // memory
-  memory_to_n_tensor[data] = NOT_OWN;
+  // Mark memory ownership appropriately
+  if (need_cleanup) {
+    // We own this memory (we allocated it), set reference count to 1
+    memory_to_n_tensor[actual_data] = 1;
+  } else {
+    // Mark this memory as NOT_OWN since tensor created from blob never owns
+    // the original memory
+    memory_to_n_tensor[actual_data] = NOT_OWN;
+  }
 
   return Error::Ok;
 }
@@ -359,7 +442,7 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
                 Internal,
                 "Expected host memory but got managed!")
             // This is CPU memory - free immediately
-            aligned_free(data_ptr);
+            free(data_ptr);
             data_ptr = nullptr;
           }
 
@@ -370,10 +453,7 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
           memory_to_n_tensor[data_ptr] = ref_count - 1;
         }
       } else {
-        ET_CHECK_OR_RETURN_ERROR(
-            false,
-            Internal,
-            "Internal error: memory not found during deletion");
+        ET_LOG(Error, "Internal error: memory not found during deletion");
       }
 
       // Remove tensor from set (this will call the destructor if it's the last
@@ -682,6 +762,44 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   return Error::Ok;
 }
 
+// item implementation for scalar tensors
+AOTITorchError aoti_torch_item_bool(Tensor* tensor, bool* ret_value) {
+  // Validate that tensor dtype is bool
+  int32_t dtype;
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_dtype(tensor, &dtype));
+
+  ET_CHECK_OR_RETURN_ERROR(
+      dtype == aoti_torch_dtype_bool(), // PyTorch dtype code for bool
+      InvalidArgument,
+      "aoti_torch_item_bool failed: tensor dtype is not bool");
+
+  // Get the data pointer
+  const void* data_ptr = tensor->const_data_ptr();
+  ET_CHECK_OR_RETURN_ERROR(
+      data_ptr != nullptr,
+      InvalidArgument,
+      "aoti_torch_item_bool failed: tensor data pointer is null");
+
+  // Check if tensor is on CUDA or CPU
+  cudaPointerAttributes attributes{};
+  ET_CUDA_CHECK_OR_RETURN_ERROR(
+      cudaPointerGetAttributes(&attributes, data_ptr));
+
+  if (attributes.type == cudaMemoryTypeDevice) {
+    // CUDA memory case: copy from device to host
+    bool device_value;
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
+        &device_value, data_ptr, sizeof(bool), cudaMemcpyDeviceToHost));
+    *ret_value = device_value;
+  } else {
+    // CPU memory case: direct access
+    const bool* bool_ptr = static_cast<const bool*>(data_ptr);
+    *ret_value = *bool_ptr;
+  }
+
+  return Error::Ok;
+}
+
 AOTITorchError aoti_torch_new_tensor_handle(
     Tensor* orig_handle,
     Tensor** new_handle) {
@@ -762,6 +880,75 @@ AOTITorchError aoti_torch_new_tensor_handle(
   tensors.insert(tensor);
 
   *new_handle = tensor.get();
+
+  // Increment the reference count for this memory address only if it is owned
+  // by tensor
+  memory_to_n_tensor[data_ptr] = memory_to_n_tensor[data_ptr] == NOT_OWN
+      ? NOT_OWN
+      : memory_to_n_tensor[data_ptr] + 1;
+
+  return Error::Ok;
+}
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst) {
+  if (src == nullptr || ret_dst == nullptr) {
+    return Error::InvalidArgument;
+  }
+
+  // Get the original data pointer from the source tensor
+  void* data_ptr = src->mutable_data_ptr();
+  ET_CHECK_OR_RETURN_ERROR(
+      data_ptr != nullptr,
+      InvalidArgument,
+      "Source tensor has null data pointer");
+
+  // Check if the given memory is in the map, if not return error
+  auto memory_it = memory_to_n_tensor.find(data_ptr);
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it != memory_to_n_tensor.end(),
+      InvalidArgument,
+      "Memory address %p is not being tracked by reference counting system",
+      data_ptr);
+
+  int32_t dtype = 0;
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_dtype(src, &dtype));
+
+  std::vector<SizesType> sizes;
+  std::vector<StridesType> strides;
+
+  int64_t* view_sizes_ptr;
+  if (aoti_torch_get_sizes(src, &view_sizes_ptr) != Error::Ok) {
+    return Error::Internal;
+  }
+  int64_t* view_strides_ptr;
+  if (aoti_torch_get_strides(src, &view_strides_ptr) != Error::Ok) {
+    return Error::Internal;
+  }
+  sizes = convert_sizes_to_vector(src->dim(), view_sizes_ptr);
+  strides =
+      convert_strides_to_vector(src->dim(), view_sizes_ptr, view_strides_ptr);
+
+  // Create new tensor view that reinterprets the same memory with different
+  // shape/strides This creates a view, not a copy - the data pointer is shared
+  // Using CUDA-specific tensor maker that supports incontiguous tensors
+  std::shared_ptr<Tensor> tensor = make_tensor(
+      sizes, // New sizes with explicit SizesType
+      data_ptr, // Reuse the same memory from source tensor
+      {}, // dim_order (empty, will be auto-generated)
+      strides, // New strides with explicit StridesType
+      dtype_to_scalar_type(dtype) // Convert dtype with explicit type casting
+  );
+
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr,
+      InvalidArgument,
+      "Failed to create reinterpreted tensor view");
+
+  // Store the tensor so it doesn't get destroyed
+  tensors.insert(tensor);
+
+  *ret_dst = tensor.get();
 
   // Increment the reference count for this memory address only if it is owned
   // by tensor
