@@ -2,7 +2,7 @@ name: cuda-perf
 
 on:
   schedule:
-    - cron: 0 8 * * *  # 1am PST (8am UTC)
+    - cron: 0 8 * * *  # 12am / 1am PST (8am UTC)
   pull_request:
     paths:
       - .github/workflows/cuda-perf.yml
@@ -34,8 +34,8 @@ on:
         required: false
         type: string
         default: "50"
-      random_model:
-        description: Run a random model instead of all models
+      run_all_models:
+        description: Run all available models (overrides models input)
         required: false
         type: boolean
         default: false
@@ -64,15 +64,20 @@ jobs:
           ALL_MODELS: 'mistralai/Voxtral-Mini-3B-2507,openai/whisper-small,openai/whisper-medium,openai/whisper-large-v3-turbo,google/gemma-3-4b-it'
           ALL_QUANTIZATIONS: 'non-quantized,quantized-int4-tile-packed,quantized-int4-weight-only'
           NUM_RUNS: ${{ inputs.num_runs || '50' }}
-          RANDOM_MODEL: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'true' || inputs.random_model || 'false' }}
+          RUN_ALL_MODELS: ${{ inputs.run_all_models || 'false' }}
+          RANDOM_MODEL: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'true' || 'false' }}
         run: |
           set -eux
 
           MODELS="${{ inputs.models }}"
           QUANTIZATIONS="${{ inputs.quantizations }}"
 
+          # If run_all_models is true, use all models
+          if [ "$RUN_ALL_MODELS" = "true" ]; then
+            MODELS="$ALL_MODELS"
+            echo "Running all available models: $MODELS"
           # For non-schedule events (PR, manual trigger without inputs), randomly select one model and one quantization
-          if [ -z "$MODELS" ] && [ "${{ github.event_name }}" != "schedule" ]; then
+          elif [ -z "$MODELS" ] && [ "${{ github.event_name }}" != "schedule" ]; then
             # Split all models into array
             IFS=',' read -ra ALL_MODEL_ARRAY <<< "$ALL_MODELS"
             # Randomly select one model
@@ -84,7 +89,11 @@ jobs:
             MODELS="$ALL_MODELS"
           fi
 
-          if [ -z "$QUANTIZATIONS" ] && [ "${{ github.event_name }}" != "schedule" ]; then
+          # If run_all_models is true, use all quantizations
+          if [ "$RUN_ALL_MODELS" = "true" ]; then
+            QUANTIZATIONS="$ALL_QUANTIZATIONS"
+            echo "Running all available quantizations: $QUANTIZATIONS"
+          elif [ -z "$QUANTIZATIONS" ] && [ "${{ github.event_name }}" != "schedule" ]; then
             # Split all quantizations into array
             IFS=',' read -ra ALL_QUANT_ARRAY <<< "$ALL_QUANTIZATIONS"
             # Randomly select one quantization
