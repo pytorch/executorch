@@ -134,7 +134,6 @@ def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
         with session.get(url, stream=True) as r:
             r.raise_for_status()
 
-            total = int(r.headers.get("content-length", 0))
             downloaded = 0
             chunk_size = 1024 * 1024  # 1MB
 
