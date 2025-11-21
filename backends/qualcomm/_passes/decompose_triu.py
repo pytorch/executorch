@@ -5,10 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 from typing import Dict
+
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.fx.experimental.proxy_tensor import make_fx
 from torch._decomp import get_decompositions
+from torch.fx.experimental.proxy_tensor import make_fx
 
 from .utils import merge_decomposed_graph
 
@@ -20,18 +21,20 @@ class DecomposeTriu(ExportPass):
 
     def __init__(self) -> None:
         super().__init__()
-    def _replace_output(self, node: torch.fx.Node, output_node: torch.fx.Node, remap: Dict):
+
+    def _replace_output(
+        self, node: torch.fx.Node, output_node: torch.fx.Node, remap: Dict
+    ):
         for user in node.users.copy():
             # remap
             user.replace_input_with(
                 node,
                 remap[output_node.args[0]],
             )
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
-        decom_mappings = get_decompositions(
-                [torch.ops.aten.triu.default]
-            )
+        decom_mappings = get_decompositions([torch.ops.aten.triu.default])
 
         for node in graph.nodes:
             if node.target == torch.ops.aten.triu.default:
