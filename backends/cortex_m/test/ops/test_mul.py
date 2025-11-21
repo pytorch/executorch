@@ -111,6 +111,14 @@ test_cases = {
             ramp_tensor(-5, 5, (1, 2, 1, 2)),
         ),
     ),
+    "boundary_extreme_positive": McuTestCase(
+        CortexMTensorMul(),
+        (ramp_tensor(127, 127, (2, 2)), ramp_tensor(1, 1, (2, 2))),
+    ),
+    "boundary_extreme_negative": McuTestCase(
+        CortexMTensorMul(),
+        (ramp_tensor(-128, -128, (2, 2)), ramp_tensor(1, 1, (2, 2))),
+    ),
 }
 
 
