@@ -119,6 +119,10 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
 
+if(EXECUTORCH_ENABLE_BUNDLE_IO)
+  add_definitions(-DET_BUNDLE_IO_ENABLED)
+endif()
+
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol.
 if(WIN32)
@@ -1081,6 +1085,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
     list(APPEND _executor_runner_libs etdump flatccrt)
+  endif()
+
+  if(EXECUTORCH_ENABLE_BUNDLE_IO)
+    list(APPEND _executor_runner_libs bundled_program)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})

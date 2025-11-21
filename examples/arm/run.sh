@@ -321,7 +321,8 @@ for i in "${!test_model[@]}"; do
         set -x
         backends/arm/scripts/build_executor_runner_vkml.sh --build_type=${build_type} \
                                                            --extra_build_flags="${extra_build_flags}" \
-                                                           --output="${output_folder}"
+                                                           --output="${output_folder}" \
+                                                           ${bundleio_flag}
         if [ "$build_only" = false ] ; then
             backends/arm/scripts/run_vkml.sh --model=${pte_file} --build_path=${output_folder}
         fi
