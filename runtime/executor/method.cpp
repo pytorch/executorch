@@ -293,6 +293,9 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
 
 } // namespace
 
+// Initialize static method ID counter.
+size_t Method::next_id_ = 0;
+
 Result<size_t> Method::get_num_external_constants() {
   auto flatbuffer_values = serialization_plan_->values();
   size_t n_value = flatbuffer_values->size();
@@ -904,6 +907,7 @@ Error Method::init(
       const auto& delegate = *delegates->Get(i);
       BackendInitContext backend_init_context(
           method_allocator,
+          /*method_id=*/id(),
           /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str(),
           /*named_data_map=*/named_data_map);
