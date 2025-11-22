@@ -69,7 +69,7 @@ The next sections describe how to add a yaml entry.
 
 #### YAML Schema
 
-This YAML file schema is a DSL to decribe the operators and the kernels that implement them. This YAML file is a contract between AOT model export and runtime execution, that if followed correctly, can make sure ExecuTorch runtime be able to link the C++ implementation of an operator to the exported model artifact. Here are some rules of writing up your own YAML files.
+This YAML file schema is a DSL to describe the operators and the kernels that implement them. This YAML file is a contract between AOT model export and runtime execution, that if followed correctly, can make sure ExecuTorch runtime be able to link the C++ implementation of an operator to the exported model artifact. Here are some rules of writing up your own YAML files.
 
 **Out variants only**
 
@@ -100,7 +100,7 @@ ExecuTorch does not support all of the argument types that core PyTorch
 supports. See [this
 spreadsheet](https://docs.google.com/spreadsheets/d/1uArc0r1Yq1QSeyRJZKzZ8Wkz0eS9TsM39ghmMAZCXDA/edit#gid=0)
 for the list of supported and unsupported types.
-<!-- TODO(dbort): Once that list stablizes, move to a table in this file
+<!-- TODO(dbort): Once that list stabilizes, move to a table in this file
 so that external users can see it. -->
 
 **Functions only, no methods**
@@ -406,7 +406,7 @@ Note that not all of these apply to *every* ExecuTorch-compatible operator
 implementation, only those included in this portable library.
 
 For example, a target-specfic custom operator that initiates a DMA copy would be
-stateful, and would probaby modify global memory, but it would need to use
+stateful, and would probably modify global memory, but it would need to use
 target-specific APIs to do so. But, since this library is only for portable
 operator implementations, the operators it contains can't depend on
 target-specific APIs like that.
@@ -422,7 +422,7 @@ includes the corresponding Functions.h file for the specified kernel:
 about which kernel we are testing and which Functions.h we should use.
 
 With *_common_op_test* we use a single test source file (op_<op>_test.cpp) at this directory.
-We automatically find the corresponding registered dispatch function through Funcitons.h, so
+We automatically find the corresponding registered dispatch function through Functions.h, so
 it can be used to test multiple kernels.
 
 In <kernel>/test/ we can put kernel-specific test cases.
