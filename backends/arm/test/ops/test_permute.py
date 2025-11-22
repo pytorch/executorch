@@ -33,6 +33,7 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_permute_default"
 test_data_suite = {
     # (test_name,test_data,dims)
     "rank_2": lambda: (torch.rand(10, 10), [1, 0]),
+    "rank2_bool": lambda: (torch.randint(0, 2, (5, 5), dtype=torch.bool), [1, 0]),
     "rank_3": lambda: (torch.rand(10, 10, 10), [2, 0, 1]),
     "rank_3_2": lambda: (torch.rand(10, 10, 10), [1, 2, 0]),
     "rank_4": lambda: (torch.rand(1, 5, 1, 10), [0, 2, 3, 1]),
@@ -80,7 +81,9 @@ def test_permute_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data", test_data_suite, xfails={"rank2_bool": "Bool not supported on U55"}
+)
 @common.XfailIfNoCorstone300
 def test_permute_u55_INT(test_data):
     test_data, dims = test_data()
@@ -156,7 +159,7 @@ def get_symmetric_a16w8_permute_quantizer(
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_permute_int16_tosa_INT(test_data: torch.Tensor):
+def test_permute_16a8w_tosa_INT(test_data: torch.Tensor):
     """Test permute operation with int16 quantization"""
     test_data, dims = test_data()
     pipeline = TosaPipelineINT[input_t1](
@@ -182,9 +185,13 @@ test_data_suite_exact = {
 }
 
 
-@common.parametrize("test_data", test_data_suite_exact)
+@common.parametrize(
+    "test_data",
+    test_data_suite_exact,
+    xfails={"rank2_bool": "Bool not supported on U55"},
+)
 @common.XfailIfNoCorstone300
-def test_permute_int16_u55_INT16(test_data: torch.Tensor):
+def test_permute_16a8w_u55_INT16(test_data: torch.Tensor):
     """Test permute operation with int16 quantization on U55"""
     test_data, dims = test_data()
     pipeline = EthosU55PipelineINT[input_t1](
@@ -208,7 +215,7 @@ def test_permute_int16_u55_INT16(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_permute_int16_u85_INT16(test_data: torch.Tensor):
+def test_permute_16a8w_u85_INT16(test_data: torch.Tensor):
     """Test permute operation with int16 quantization on U85"""
     test_data, dims = test_data()
     pipeline = EthosU85PipelineINT[input_t1](

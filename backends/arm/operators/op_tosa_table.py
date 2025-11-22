@@ -20,6 +20,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
 
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.specification import Tosa_1_00
 
 
 @register_node_visitor
@@ -36,13 +37,20 @@ class TableVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 2)
+        supported_input_dtypes = [ts.DType.INT8]
+        supported_output_dtypes = [ts.DType.INT8]
+        if isinstance(self.tosa_spec, Tosa_1_00) and self.tosa_spec.support_extension(
+            "int16"
+        ):
+            supported_input_dtypes.append(ts.DType.INT16)
+            supported_output_dtypes.append(ts.DType.INT32)
+
         validate_valid_dtype(
-            self.target, inputs, [ts.DType.INT8, ts.DType.INT16], output.tosa_spec
+            self.target, inputs, supported_input_dtypes, output.tosa_spec
         )
-        if inputs[0].dtype == ts.DType.INT8:
-            validate_valid_dtype(self.target, output, ts.DType.INT8, output.tosa_spec)
-        if inputs[0].dtype == ts.DType.INT16:
-            validate_valid_dtype(self.target, output, ts.DType.INT32, output.tosa_spec)
+        validate_valid_dtype(
+            self.target, output, supported_output_dtypes, output.tosa_spec
+        )
 
         # The name of the table constant is a bit complex.
         # The name of the pytorch buffer will be the target of last node argument.

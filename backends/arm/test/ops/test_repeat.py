@@ -52,6 +52,10 @@ class RepeatInterleaveInt(torch.nn.Module):
 
 test_data_suite = {
     # test_name : lambda: (module, test_data)
+    "1_x_1_bool": lambda: (
+        Repeat((2,)),
+        (torch.randint(0, 2, (3,), dtype=torch.bool),),
+    ),
     "1_x_1": lambda: (Repeat((2,)), (torch.randn(3),)),
     "2_x_2": lambda: (Repeat((2, 1)), (torch.randn(3, 4),)),
     "4_x_4": lambda: (Repeat((1, 2, 3, 4)), (torch.randn(1, 1, 2, 2),)),
@@ -87,7 +91,9 @@ def test_repeat_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data", test_data_suite, xfails={"1_x_1_bool": "Bool not supported on U55"}
+)
 @common.XfailIfNoCorstone300
 def test_repeat_u55_INT(test_data: Tuple):
     module, test_data = test_data()

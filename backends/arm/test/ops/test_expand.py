@@ -31,6 +31,7 @@ input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x, Input y
 class Expand(torch.nn.Module):
     # (input tensor, multiples)
     test_parameters = {
+        "randbool_1d": lambda: (torch.randint(0, 1, (1,), dtype=torch.bool), (5,)),
         "rand_1d_both": lambda: (torch.rand(1), (2,)),
         "rand_1d": lambda: (torch.randn(1), (2, 2, 4)),
         "rand_4d": lambda: (torch.randn(1, 1, 1, 5), (1, 4, -1, -1)),
@@ -71,7 +72,11 @@ def test_expand_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Expand.test_parameters)
+@common.parametrize(
+    "test_data",
+    Expand.test_parameters,
+    xfails={"randbool_1d": "Bool not supported on U55"},
+)
 @common.XfailIfNoCorstone300
 def test_expand_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](

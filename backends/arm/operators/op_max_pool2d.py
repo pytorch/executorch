@@ -21,6 +21,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
 )
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.specification import Tosa_1_00
 
 
 @register_node_visitor
@@ -44,10 +45,15 @@ class MaxPool2dVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, [3, 4, 5, 6])
         validate_same_dtype(self.target, [inputs[0], output], ts)
+        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
+        if isinstance(
+            output.tosa_spec, Tosa_1_00
+        ) and output.tosa_spec.support_extension("int16"):
+            supported_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT16, ts.DType.FP32],
+            supported_dtypes,
             output.tosa_spec,
         )
 
