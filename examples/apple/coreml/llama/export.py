@@ -28,6 +28,7 @@ from executorch.extension.export_util.utils import save_pte_program
 
 from torchao.quantization.granularity import PerAxis, PerGroup
 from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+from torchao.prototype.quantization.codebook_coreml import CodebookWeightOnlyConfig
 from torchao.utils import unwrap_tensor_subclass
 
 
@@ -77,7 +78,7 @@ def main() -> None:
     parser.add_argument(
         "--coreml-quantize",
         default=None,
-        choices=["b4w", "c4w"],
+        choices=["b4w", "c4w", "custom",],
         help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight), c4w (for channelwise 4 bit weight)",
     )
     parser.add_argument(
@@ -117,6 +118,8 @@ def main() -> None:
 
     model.eval()
     model.to(float_dtype)
+
+    print("MODEL", model)
 
     if export_args.target_split_size is not None:
         replace_linear_with_split_linear(
@@ -163,6 +166,34 @@ def main() -> None:
                 granularity=PerAxis(0),
             ),
         )
+    elif export_args.coreml_quantize == "custom":
+        replace_linear_with_split_linear(
+            model,
+            out_target_split_size=2048,
+            out_max_splits=4,
+            in_target_split_size=1,
+            in_max_splits=1,
+            fqn_filer=lambda fqn: any(fqn.endswith(suffix) for suffix in ["w1", "w3"])
+        )
+        replace_linear_with_split_linear(
+            model,
+            out_target_split_size=2048,
+            out_max_splits=1,
+            in_target_split_size=2048,
+            in_max_splits=4,
+            fqn_filer=lambda fqn: any(fqn.endswith(suffix) for suffix in ["w2"])
+        )
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=torch.int4,
+                granularity=PerAxis(0),
+            ),
+            lambda m, fqn: (
+                isinstance(m, torch.nn.Linear) 
+                and any(fqn.endswith(suffix) for suffix in ["wq", "wk", "wv", "wo", "output", "w1", "w3", "w2"])
+            ),
+        )
 
     compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
         minimum_deployment_target=ct.target.iOS18,
@@ -198,6 +229,10 @@ def main() -> None:
     ep = torch.export.export(model, example_inputs, strict=True)
     print("Exported program")
     print(ep)
+
+    # ep = ep.run_decompositions({})
+    # mlprogram = ct.convert(ep, minimum_deployment_target=ct.target.iOS18)
+    # mlprogram.save("model.mlpackage")
 
     edge_manager = to_edge_transform_and_lower(
         ep,
