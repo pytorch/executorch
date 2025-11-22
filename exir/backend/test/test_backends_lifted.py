@@ -25,6 +25,7 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from executorch.exir.backend.test.demo_backend import DemoBackend
 from executorch.exir.backend.test.hta_partitioner_demo import (
     HTAPartitionerMultiplePatternsDemo,
     HTAPartitionerOnePatternDemo,
@@ -33,7 +34,6 @@ from executorch.exir.backend.test.op_partitioner_demo import (
     AddAttributePartitionerDemo,
     AddMulPartitionerDemo,
 )
-from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
 
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -664,7 +664,7 @@ class TestBackends(unittest.TestCase):
             delegate=program_with_delegates._emitter_output.program.execution_plan[
                 0
             ].delegates[0],
-            expected_id=QnnBackend.__name__,
+            expected_id=DemoBackend.__name__,
             expected_processed=b"imqnncompiled",
         )
 
@@ -803,7 +803,7 @@ class TestBackends(unittest.TestCase):
             delegate=program_with_delegates._emitter_output.program.execution_plan[
                 0
             ].delegates[0],
-            expected_id=QnnBackend.__name__,
+            expected_id=DemoBackend.__name__,
             expected_processed=b"imqnncompiled",
         )
 
