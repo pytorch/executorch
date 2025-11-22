@@ -19,7 +19,7 @@ namespace {
 #if defined(ETHOSU55) || defined(ETHOSU65)
 const uint32_t ethosu_pmuCountersUsed = 4;
 #elif defined(ETHOSU85)
-const uint32_t ethosu_pmuCountersUsed = 5;
+const uint32_t ethosu_pmuCountersUsed = 7;
 #else
 #error No NPU target defined
 #endif
@@ -65,11 +65,14 @@ void ethosu_inference_begin(struct ethosu_driver* drv, void*) {
   ETHOSU_PMU_Set_EVTYPER(drv, 2, ETHOSU_PMU_EXT_RD_DATA_BEAT_RECEIVED);
   ETHOSU_PMU_Set_EVTYPER(drv, 3, ETHOSU_PMU_EXT_WR_DATA_BEAT_WRITTEN);
   ETHOSU_PMU_Set_EVTYPER(drv, 4, ETHOSU_PMU_NPU_IDLE);
-  // Enable the 5 counters
+  ETHOSU_PMU_Set_EVTYPER(drv, 5, ETHOSU_PMU_MAC_ACTIVE);
+  ETHOSU_PMU_Set_EVTYPER(drv, 6, ETHOSU_PMU_WD_ACTIVE);
+  // Enable the 7 counters
   ETHOSU_PMU_CNTR_Enable(
       drv,
       ETHOSU_PMU_CNT1_Msk | ETHOSU_PMU_CNT2_Msk | ETHOSU_PMU_CNT3_Msk |
-          ETHOSU_PMU_CNT4_Msk | ETHOSU_PMU_CNT5_Msk);
+          ETHOSU_PMU_CNT4_Msk | ETHOSU_PMU_CNT5_Msk | ETHOSU_PMU_CNT6_Msk |
+          ETHOSU_PMU_CNT7_Msk);
 #else
 #error No NPU target defined
 #endif
@@ -214,7 +217,7 @@ void StopMeasurements(int num_inferences) {
 #elif defined(ETHOSU85)
   ET_LOG(
       Info,
-      "Ethos-U PMU Events:[ETHOSU_PMU_SRAM_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_SRAM_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_EXT_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE]");
+      "Ethos-U PMU Events:[ETHOSU_PMU_SRAM_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_SRAM_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_EXT_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE, ETHOSU_PMU_MAC_ACTIVE, ETHOSU_PMU_WD_ACTIVE]");
 #else
 #error No NPU target defined
 #endif
