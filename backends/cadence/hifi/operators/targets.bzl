@@ -90,7 +90,6 @@ OPERATORS = [
     "quantized_linear_out",
     "quantized_linear_asym8sxasym8s_asym8s_per_tensor_out",
     "quantized_linear_asym8uxasym8u_asym8u_per_tensor_out",
-    "quantized_matmul_out",
     "quantized_matmul_asym8sxasym8s_asym8s_out",
     "quantized_matmul_asym8uxasym8u_asym8u_out",
     "quantized_relu_out",
@@ -122,3 +121,6 @@ def define_common_targets():
     # Define build targets for all operators registered in the tables above.
     for op in OPERATORS:
         define_operator(op)
+
+    # quantized_matmul_out needs additional dependency for int16 support
+    define_operator("quantized_matmul_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators:quantize_matmul_out", "fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators:headers",])
