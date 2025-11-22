@@ -1717,8 +1717,37 @@ class TestEmit(unittest.TestCase):
         external_map = emitter_output.external_constant_map[
             "_default_external_constant"
         ]
+        self.assertEqual(len(external_map), 2)
         self.assertEqual(external_map["linear.weight"], 0)
         self.assertEqual(external_map["linear.bias"], 1)
+
+    def test_constant_tagged_tensors_custom(self) -> None:
+        class LinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(5, 5)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        model = to_edge(
+            export(LinearModule(), (torch.ones(5, 5),), strict=True)
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                external_constants=lambda x: (
+                    "linear_weight" if "weight" in x.name else None
+                ),
+            )
+        )
+        emitter_output = model._emitter_output
+        # constant_buffer contains placeholder and linear bias.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 2)
+        # external constant buffer contains linear weight.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 1)
+        # The lambda saves all constants to the key 'linear_weight'.
+        external_map = emitter_output.external_constant_map["linear_weight"]
+        self.assertEqual(len(external_map), 1)
+        self.assertEqual(external_map["linear.weight"], 0)
 
     def test_constant_tagged_tensor_dedup(self) -> None:
         class ConstantModule(nn.Module):
