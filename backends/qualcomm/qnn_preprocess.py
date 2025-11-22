@@ -22,6 +22,7 @@ from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
     option_to_flatbuffer,
 )
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
@@ -43,6 +44,10 @@ class QnnBackend(BackendDetails):
         enable_tensor_dump: bool,
         op_package_infos: List[QnnExecuTorchOpPackageInfo],
     ):
+        for node in edge_program.graph_module.graph.nodes:
+            if hasattr(node, "meta"):
+                # pop certain keys in meta for not affecting the passes in compilation
+                node.meta.pop(QCOM_AXIS_ORDER, "")
         # QNN Delegate Specific Passes
         graph_module = QnnPassManager().transform_for_preprocess_pipeline(edge_program)
         assert graph_module is not None
