@@ -49,7 +49,8 @@ class CudaBackend(AotiBackend, BackendDetails):
     @classmethod
     def get_custom_passes(cls) -> List[typing.Any]:
         """Return CUDA-specific passes: ReplaceEdgeOpWithTritonOpPass"""
-        return [ReplaceEdgeOpWithTritonOpPass()]
+        # return [ReplaceEdgeOpWithTritonOpPass()]
+        return []
 
     @classmethod
     def get_aoti_compile_options(
