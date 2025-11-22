@@ -839,13 +839,11 @@ def edge_to_executorch_passes(
     Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.
     """
     passes: List[PassType] = [
-        SpecPropPass(),
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
         # there exists an unbacked symint operation.
         *config.passes,
-        # config.passes may contain external_constants_pass. This pass has to
-        # run after SpecPropPass, which populates tensor names.
+        SpecPropPass(),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)
