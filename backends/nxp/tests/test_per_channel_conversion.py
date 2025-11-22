@@ -31,11 +31,18 @@ from executorch.backends.nxp.tests.executors import (
 )
 from executorch.backends.nxp.tests.models import Conv2dModule
 from executorch.exir.dialects._ops import ops as exir_ops
+from parameterized import parameterized
 
 from torch import fx
 from torch._ops import OpOverload
 from torch.export import ExportedProgram
-from torchao.quantization.pt2e import MinMaxObserver, PerChannelMinMaxObserver
+from torchao.quantization.pt2e import (
+    FusedMovingAvgObsFakeQuantize,
+    MinMaxObserver,
+    MovingAverageMinMaxObserver,
+    MovingAveragePerChannelMinMaxObserver,
+    PerChannelMinMaxObserver,
+)
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     QuantizationConfig,
@@ -45,8 +52,8 @@ from torchao.quantization.pt2e.quantizer import (
 
 class Conv2dPatternPerChannel(QuantizationPattern):
 
-    def __init__(self, is_per_channel: bool):
-        super().__init__()
+    def __init__(self, is_per_channel: bool, is_qat: bool):
+        super().__init__(is_qat=is_qat)
         self.is_per_channel = is_per_channel
 
     def partition_types(self) -> list[OpOverload]:
@@ -80,9 +87,20 @@ class Conv2dPatternPerChannel(QuantizationPattern):
             if self.is_per_channel
             else torch.per_tensor_symmetric
         )
-        weight_observer_or_fake_quant_ctr = (
-            PerChannelMinMaxObserver if self.is_per_channel else MinMaxObserver
-        )
+        if self.is_qat:
+            observer = (
+                MovingAveragePerChannelMinMaxObserver
+                if self.is_per_channel
+                else MovingAverageMinMaxObserver
+            )
+            weight_observer_or_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
+                observer=observer
+            )
+        else:
+            weight_observer_or_fake_quant_ctr = (
+                PerChannelMinMaxObserver if self.is_per_channel else MinMaxObserver
+            )
+
         weight_quantization_spec = QuantizationSpec(
             dtype=torch.int8,
             observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
@@ -108,7 +126,8 @@ class TestPerChannelConversion(unittest.TestCase):
         torch.manual_seed(25)
         np.random.seed(25)
 
-    def test_per_channel_convolution(self):
+    @parameterized.expand([("QAT", True), ("PTQ", False)])
+    def test_per_channel_convolution(self, _, use_qat: bool):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program,
             call_original=True,
@@ -119,13 +138,18 @@ class TestPerChannelConversion(unittest.TestCase):
             )
             input_shape = (1, 8, 32, 32)
 
-            static_qconfig = QuantizationConfig(act_qspec, act_qspec, wgt_qspec, None)
+            activation_qspec = act_qspec(is_qat=use_qat)
+            static_qconfig = QuantizationConfig(
+                activation_qspec, activation_qspec, wgt_qspec, None
+            )
             _ = to_quantized_edge_program(
                 model,
                 input_shape,
                 get_quantizer_fn=lambda: NeutronAtenQuantizer(
-                    Conv2dPatternPerChannel(is_per_channel=True), static_qconfig
+                    Conv2dPatternPerChannel(is_per_channel=True, is_qat=use_qat),
+                    static_qconfig,
                 ),
+                use_qat=use_qat,
                 use_neutron_for_format_conversion=False,
             )
 
