@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from .activation_fusion_pass import ActivationFusionPass  # noqa
 from .convert_to_cortex_m_pass import ConvertToCortexMPass  # noqa
 from .quantized_op_fusion_pass import QuantizedOpFusionPass  # noqa
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass  # noqa
