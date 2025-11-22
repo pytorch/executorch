@@ -20,11 +20,18 @@ from executorch.backends.openvino.quantizer.observers import (
     INT8WeightObserver,
 )
 from nncf.common.graph.graph import NNCFGraph  # type: ignore[import-untyped]
+from nncf.common.logging import nncf_logger  # type: ignore[import-untyped]
+from nncf.quantization.algorithms.min_max.algorithm import (  # type: ignore[import-untyped]
+    MinMaxQuantization,
+)
 from nncf.quantization.algorithms.weight_compression.config import (  # type: ignore[import-untyped]
     WeightCompressionParameters,
 )
 from nncf.quantization.quantize_model import (  # type: ignore[import-untyped]
     get_weight_compression_configuration,
+)
+from nncf.torch.model_graph_manager import (  # type: ignore[import-untyped]
+    get_weight_tensor_port_ids,
 )
 from torchao.quantization.pt2e import (
     HistogramObserver,
@@ -96,25 +103,13 @@ class OpenVINOQuantizer(Quantizer):
         """
         self.mode = mode
         if self.mode not in OpenVINOQuantizer.WEIGHTS_ONLY_COMPRESSION_MODES:
-            if mode == QuantizationMode.INT8_SYM:
-                preset = quantization.structs.QuantizationPreset.PERFORMANCE
-                model_type = None
-            elif mode == QuantizationMode.INT8_MIXED:
-                preset = quantization.structs.QuantizationPreset.MIXED
-                model_type = None
-            else:
-                preset = None
-                model_type = nncf.parameters.ModelType.TRANSFORMER
-            self._algo = (
-                nncf.quantization.algorithms.min_max.algorithm.MinMaxQuantization(
-                    preset=preset, model_type=model_type, **kwargs
-                )
-            )
+            self._algo = MinMaxQuantization(**kwargs)
         else:
-            weight_compression_configuration = get_weight_compression_configuration(
-                mode.value.replace(
+            mode = mode.value.replace(
                     "wo", ""
-                ),  # Mode value has to match NNCF CompressWeightsMode
+                )  # Mode value has to match NNCF CompressWeightsMode
+            weight_compression_configuration = get_weight_compression_configuration(
+                nncf.CompressWeightsMode(mode),
                 **kwargs,
             )
             subset_size = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
@@ -384,7 +379,7 @@ class OpenVINOQuantizer(Quantizer):
         """
         ip = qp.insertion_point
         if qp.is_weight_quantization_point():
-            OpenVINOQuantizer._get_weight_edge(target_node, nncf_graph)
+            return OpenVINOQuantizer._get_weight_edge(target_node, nncf_graph)
 
         if ip.input_port_id is None:
             return target_node
