@@ -51,9 +51,10 @@ fi
 set -eux
 
 DEVICE="$1"
-HF_MODEL="$2"
-QUANT_NAME="${3:-non-quantized}"
-OUTPUT_DIR="${4:-.}"
+DTYPE="$2"
+HF_MODEL="$3"
+QUANT_NAME="${4:-non-quantized}"
+OUTPUT_DIR="${5:-.}"
 
 case "$DEVICE" in
   cuda)
@@ -63,6 +64,18 @@ case "$DEVICE" in
   *)
     echo "Error: Unsupported device '$DEVICE'"
     echo "Supported devices: cuda, metal"
+    exit 1
+    ;;
+esac
+
+case "$DTYPE" in
+  float16)
+    ;;
+  bfloat16)
+    ;;
+  *)
+    echo "Error: Unsupported dtype '$DTYPE'"
+    echo "Supported dtypes: float16, bfloat16"
     exit 1
     ;;
 esac
@@ -155,7 +168,7 @@ optimum-cli export executorch \
     --model "$HF_MODEL" \
     --task "$TASK" \
     --recipe "$DEVICE" \
-    --dtype bfloat16 \
+    --dtype "$DTYPE" \
     ${DEVICE_ARG} \
     ${MAX_SEQ_LEN_ARG} \
     ${EXTRA_ARGS} \
