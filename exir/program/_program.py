@@ -1703,6 +1703,7 @@ class EdgeProgramManager:
             after it has been transformed to the ExecuTorch backend.
         """
         config = config if config else ExecutorchBackendConfig()
+
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
             if config.do_quant_fusion_and_const_prop:
