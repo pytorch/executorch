@@ -13,12 +13,12 @@ namespace backends {
 namespace qnn {
 
 QnnProfile::QnnProfile(
-    const QnnImplementation& implementation,
+    QnnImplementation* implementation,
     QnnBackend* backend,
     const QnnExecuTorchProfileLevel& profile_level)
     : handle_(nullptr), implementation_(implementation), backend_(backend) {
   if (profile_level != QnnExecuTorchProfileLevel::kProfileOff) {
-    const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+    const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
 
     QnnProfile_Level_t qnnProfileLevel = 0;
     if (profile_level == QnnExecuTorchProfileLevel::kProfileBasic) {
@@ -72,7 +72,7 @@ QnnProfile::QnnProfile(
 
 Qnn_ErrorHandle_t QnnProfile::ProfileData(
     executorch::runtime::EventTracer* event_tracer) {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   const QnnProfile_EventId_t* events_ptr = nullptr;
   const QnnProfile_EventId_t* sub_events_ptr = nullptr;
   std::uint32_t num_events = 0;
@@ -167,7 +167,7 @@ Qnn_ErrorHandle_t QnnProfile::ProfileData(
 }
 
 QnnProfile::~QnnProfile() {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   if (handle_ != nullptr) {
     Qnn_ErrorHandle_t error = qnn_interface.qnn_profile_free(handle_);
     if (error != QNN_SUCCESS) {
