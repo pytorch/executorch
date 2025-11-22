@@ -125,3 +125,21 @@ def previous_non_qdq_node(node: Node, input_index: int = 0) -> Node | None:
             current_node = current_node.args[0]
         else:
             return current_node
+
+
+def get_non_qdq_users(node: Node) -> list[Node]:
+    users = list(node.users)
+    if len(users) != 1 or users[0].target not in [
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    ]:
+        return []
+
+    q_users = list(users[0].users)
+    if len(q_users) != 1 or q_users[0].target not in [
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    ]:
+        return []
+
+    return list(q_users[0].users)
