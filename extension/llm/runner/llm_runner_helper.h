@@ -123,7 +123,8 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     const std::string& model_path,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::vector<std::string> data_files = {},
-    float temperature = -1.0f);
+    float temperature = -1.0f,
+    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer = nullptr);
 
 /**
  * @brief Creates a MultimodalRunner instance with dependency injection
