@@ -466,6 +466,7 @@ class NodeVisitor:
             tensor_source_node, target_build_node
         )
         dtype = self.get_data_type(tensor, quant_configs)
+        print(f"tensor_name: {tensor_name}, tensor_type: {tensor_type}, dtype: {dtype}")
         if isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
                 tensor_name,
