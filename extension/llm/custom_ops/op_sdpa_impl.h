@@ -213,13 +213,13 @@ void dequant_and_gemm(
     const int64_t v_stride_n,
     float* o_data,
     const int64_t o_stride_m,
-    const float beta) {
-  std::vector<float> dequantized_v_data(v_data.m * v_data.n);
+    const float beta,
+    float* buf_qdq_ptr) {
   dequantize_per_channel_optimized(
       static_cast<const int8_t*>(v_data.data),
       static_cast<const float*>(v_data.scales),
       static_cast<const int8_t*>(v_data.zero_points),
-      dequantized_v_data.data(),
+      buf_qdq_ptr,
       -128,
       127,
       1,
@@ -237,7 +237,7 @@ void dequant_and_gemm(
       m,
       k,
       static_cast<float>(1),
-      dequantized_v_data.data(),
+      buf_qdq_ptr,
       v_data.n,
       qk_data,
       qk_stride_m,
@@ -257,7 +257,8 @@ void _qk_at_v_gemm(
     const int64_t v_stride_n,
     accum_t* o_data,
     const int64_t o_stride_m,
-    const accum_t beta) {
+    const accum_t beta,
+    accum_t* buf_qdq_ptr) {
   if (v_data.dtype == ScalarType::Char) {
     if constexpr (std::is_same<accum_t, float>::value) {
       if (m > 4) {
@@ -273,7 +274,8 @@ void _qk_at_v_gemm(
             v_stride_n,
             o_data,
             o_stride_m,
-            beta);
+            beta,
+            buf_qdq_ptr);
       } else {
         // For smaller batch sizes, use quantized gemm
         int a_stride_m_tmp, b_stride_n_tmp;
@@ -773,6 +775,17 @@ void cpu_flash_attention(
   // at::Tensor buf_reduced = at::empty(
   //    {num_thread, qSplitSize, is_reduced_type ? kvSplitSize : 0},
   //    query.options());
+  int64_t size_per_thread_qdq_vec = kvSplitSize * headSize;
+  // Lets align size_per_thread_qdq_vec to 64 bytes, for coalesced cache reads,
+  // by padding with right number of per thread elements
+  constexpr int64_t kAlignment = 64;
+  size_per_thread_qdq_vec =
+      (size_per_thread_qdq_vec + kAlignment - 1) & (-(kAlignment - 1));
+  int64_t size_per_thread_qdq_bytes = size_per_thread_qdq_vec * sizeof(accum_t);
+  int64_t size_qdq_bytes = size_per_thread_qdq_bytes * num_thread;
+  std::vector<char> scratch_for_quant_dequant_vec(size_qdq_bytes);
+  accum_t* scratch_for_quant_dequant =
+      reinterpret_cast<accum_t*>(scratch_for_quant_dequant_vec.data());
 
   // Data ptrs
   const scalar_t* q_data = query.const_data_ptr<scalar_t>();
@@ -797,6 +810,8 @@ void cpu_flash_attention(
     scalar_t* qk_reduced_data = is_reduced_type
         ? buf_reduced_data + ompIdx * qSplitSize * kvSplitSize
         : nullptr;
+    accum_t* buf_qdq_ptr =
+        scratch_for_quant_dequant + ompIdx * size_per_thread_qdq_vec;
 
     for (int64_t z = begin; z < end; z++) {
       int64_t m = k * qSplitSize;
@@ -1053,7 +1068,8 @@ void cpu_flash_attention(
             vStrideN,
             dst_data,
             headSize,
-            n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1));
+            n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1),
+            buf_qdq_ptr);
       }
       // dst <- dst / sum[row]
       // reorder MHA output with strides
