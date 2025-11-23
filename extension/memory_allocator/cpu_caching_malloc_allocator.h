@@ -59,8 +59,9 @@ class CPUCachingAllocator : public executorch::runtime::MemoryAllocator {
   // New invariants must be written.
   FlatHashMap<size_t, SmallVector<void*, 16>> available_map_;
   FlatHashMap<void*, size_t> allocation_map_;
-  // Since allocation_map, which is a global instance, is mutated/read via
-  // all public APIs we need a global mutex.
+  // Since allocation_map_ and other member variables are mutated/read via
+  // all public APIs, we need a mutex to protect concurrent access to these
+  // instance members.
   std::mutex mutex_;
   size_t max_size_;
   size_t current_size_;
