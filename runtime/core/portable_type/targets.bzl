@@ -14,7 +14,6 @@ def define_common_targets():
         srcs = ["tensor_impl.cpp"],
         exported_headers = [
             "tensor_options.h",
-            "optional.h",
             "scalar.h",
             "tensor.h",
             "tensor_impl.h",
