@@ -216,7 +216,8 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
         model_path,
         data_files,
         Module::LoadMode::File,
-        nullptr,
+        nullptr, // event tracer
+        nullptr, // memory allocator
         std::make_unique<
             executorch::extension::CPUCachingAllocator>( // temp memory
                                                          // allocator
@@ -225,7 +226,8 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     module = std::make_unique<Module>(
         model_path,
         Module::LoadMode::File,
-        nullptr,
+        nullptr, // event tracer
+        nullptr, // memory allocator
         std::make_unique<
             executorch::extension::CPUCachingAllocator>( // temp memory
                                                          // allocator
