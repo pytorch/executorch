@@ -932,7 +932,9 @@ if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/memory_allocator/runner)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/extension/memory_allocator/runner
+  )
   list(APPEND _executorch_extensions extension_memory_allocator)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
   list(APPEND _executorch_extensions extension_llm_runner)
