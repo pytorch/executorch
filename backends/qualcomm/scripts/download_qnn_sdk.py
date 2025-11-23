@@ -134,7 +134,18 @@ def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
     # 1. Detect total file size (HEAD is broken on Qualcomm)
     # ------------------------------------------------------------
     try:
-        # Qualcomm HEAD often lies → fallback to GET
+        # NOTE:
+        # Qualcomm's download endpoint does not return accurate metadata on HEAD requests.
+        # Many Qualcomm URLs first redirect to an HTML "wrapper" page (typically ~134 bytes),
+        # and the HEAD request reflects *that wrapper* rather than the actual ZIP archive.
+        #
+        # Example:
+        #   HEAD -> Content-Length: 134, Content-Type: text/html
+        #   GET  -> Content-Length: 1354151797, Content-Type: application/zip
+        #
+        # Because Content-Length from HEAD is frequently incorrect, we fall back to issuing
+        # a GET request with stream=True to obtain the real Content-Length without downloading
+        # the full file. This ensures correct resume logic and size validation.
         r_head = session.get(url, stream=True)
         r_head.raise_for_status()
 
