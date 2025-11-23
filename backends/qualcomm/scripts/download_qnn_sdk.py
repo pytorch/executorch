@@ -134,7 +134,6 @@ def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
         with session.get(url, stream=True) as r:
             r.raise_for_status()
 
-            total = int(r.headers.get("content-length", 0))
             downloaded = 0
             chunk_size = 1024 * 1024  # 1MB
 
@@ -143,7 +142,6 @@ def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
-                        _make_report_progress()(downloaded, downloaded, total)
 
         logger.info("Download completed!")
 
@@ -159,26 +157,6 @@ def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
         return False
 
     return True
-
-
-def _make_report_progress():
-    """Return a callback to report download progress."""
-    last_reported = 0
-
-    def report_progress(block_num, block_size, total_size):
-        nonlocal last_reported
-        try:
-            downloaded = block_num * block_size
-            percent = downloaded / total_size * 100 if total_size else 100.0
-        except Exception:
-            percent, downloaded, total_size = 0.0, block_num * block_size, 0
-        if percent - last_reported >= 20 or percent >= 100:
-            logger.info(
-                "Downloaded: %d/%d bytes (%.2f%%)", downloaded, total_size, percent
-            )
-            last_reported = percent
-
-    return report_progress
 
 
 def _extract_archive(
