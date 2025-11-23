@@ -78,9 +78,9 @@ runtime::Result<std::unique_ptr<runtime::DataLoader>> make_data_loader(
 Module::Module(
     const std::string& file_path,
     const LoadMode load_mode,
+    std::unique_ptr<runtime::EventTracer> event_tracer,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
-    std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
-    std::unique_ptr<runtime::EventTracer> event_tracer)
+    std::unique_ptr<runtime::MemoryAllocator> temp_allocator)
     : file_path_(file_path),
       load_mode_(load_mode),
       memory_allocator_(
@@ -97,9 +97,9 @@ Module::Module(
     const std::string& file_path,
     const std::string& data_map_path,
     const LoadMode load_mode,
+    std::unique_ptr<runtime::EventTracer> event_tracer,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
-    std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
-    std::unique_ptr<runtime::EventTracer> event_tracer)
+    std::unique_ptr<runtime::MemoryAllocator> temp_allocator)
     : file_path_(file_path),
       load_mode_(load_mode),
       memory_allocator_(
@@ -119,9 +119,9 @@ Module::Module(
     const std::string& file_path,
     std::vector<std::string> data_files,
     const LoadMode load_mode,
+    std::unique_ptr<runtime::EventTracer> event_tracer,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
-    std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
-    std::unique_ptr<runtime::EventTracer> event_tracer)
+    std::unique_ptr<runtime::MemoryAllocator> temp_allocator)
     : file_path_(file_path),
       data_files_(std::move(data_files)),
       load_mode_(load_mode),
