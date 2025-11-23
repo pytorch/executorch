@@ -52,7 +52,7 @@ class CPUCachingAllocator : public executorch::runtime::MemoryAllocator {
    * No speculative allocation for any future allocations.
    */
  private:
-  void free_cached();
+  void free_everything();
 
  protected:
   // Invariants.
