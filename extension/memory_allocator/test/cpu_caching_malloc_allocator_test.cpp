@@ -133,7 +133,7 @@ TEST_F(CPUCachingAllocatorTest, InvalidAlignmentFails) {
   }
 }
 
-TEST_F(CPUCachingAllocatorTest, MaxSizeRespected) {
+TEST_F(CPUCachingAllocatorTest, MaxSizeCanBeExceeded) {
   constexpr size_t kMaxSize = 1024; // 1KB max
   CPUCachingAllocator allocator(kMaxSize);
 
@@ -144,9 +144,15 @@ TEST_F(CPUCachingAllocatorTest, MaxSizeRespected) {
   auto p2 = allocator.allocate(512);
   EXPECT_NE(p2, nullptr);
 
-  // This should trigger cache freeing since we would exceed max_size
+  // This should succeed even though we exceed max_size
+  // The new behavior allows current_size to exceed max_size
   auto p3 = allocator.allocate(512);
   EXPECT_NE(p3, nullptr);
+
+  // All pointers should be different
+  EXPECT_NE(p1, p2);
+  EXPECT_NE(p2, p3);
+  EXPECT_NE(p1, p3);
 }
 
 TEST_F(CPUCachingAllocatorTest, MultipleAllocationsAndResets) {
@@ -300,4 +306,59 @@ TEST_F(CPUCachingAllocatorTest, ResetMultipleTimes) {
     EXPECT_EQ(p, p2);
     allocator.reset();
   }
+}
+
+TEST_F(CPUCachingAllocatorTest, ResetFreesEverythingWhenOverMaxSize) {
+  constexpr size_t kMaxSize = 1024; // 1KB max
+  CPUCachingAllocator allocator(kMaxSize);
+
+  // Allocate more than max_size
+  auto p1 = allocator.allocate(512);
+  auto p2 = allocator.allocate(512);
+  auto p3 = allocator.allocate(512);
+  EXPECT_NE(p1, nullptr);
+  EXPECT_NE(p2, nullptr);
+  EXPECT_NE(p3, nullptr);
+
+  // Reset should free everything since current_size (1536) > max_size (1024)
+  allocator.reset();
+
+  // Subsequent allocations should not reuse any of the old pointers
+  auto p4 = allocator.allocate(512);
+  auto p5 = allocator.allocate(512);
+  EXPECT_NE(p4, nullptr);
+  EXPECT_NE(p5, nullptr);
+
+  // These should be new allocations, not cached ones
+  EXPECT_NE(p4, p1);
+  EXPECT_NE(p4, p2);
+  EXPECT_NE(p4, p3);
+  EXPECT_NE(p5, p1);
+  EXPECT_NE(p5, p2);
+  EXPECT_NE(p5, p3);
+}
+
+TEST_F(CPUCachingAllocatorTest, ResetCachesWhenUnderMaxSize) {
+  constexpr size_t kMaxSize = 2048; // 2KB max
+  CPUCachingAllocator allocator(kMaxSize);
+
+  // Allocate less than max_size
+  auto p1 = allocator.allocate(512);
+  auto p2 = allocator.allocate(512);
+  EXPECT_NE(p1, nullptr);
+  EXPECT_NE(p2, nullptr);
+
+  // Reset should cache the allocations since current_size (1024) <= max_size (2048)
+  allocator.reset();
+
+  // Subsequent allocations should reuse the cached pointers
+  auto p3 = allocator.allocate(512);
+  auto p4 = allocator.allocate(512);
+  EXPECT_NE(p3, nullptr);
+  EXPECT_NE(p4, nullptr);
+
+  // Should reuse cached pointers
+  EXPECT_TRUE((p3 == p1) || (p3 == p2));
+  EXPECT_TRUE((p4 == p1) || (p4 == p2));
+  EXPECT_NE(p3, p4);
 }
