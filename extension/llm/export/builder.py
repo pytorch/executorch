@@ -473,7 +473,11 @@ class LLMEdgeManager:
         return self
 
     def to_executorch(
-        self, passes: Optional[List[ExportPass]] = None
+        self,
+        passes: Optional[List[ExportPass]] = None,
+        external_constants_tag: Optional[
+            Callable[[torch.fx.Node], Optional[str]]
+        ] = None,
     ) -> "LLMEdgeManager":
         """
         Lower the model to executorch and get an ExecutorchProgram.
@@ -506,6 +510,7 @@ class LLMEdgeManager:
                 do_quant_fusion_and_const_prop=True,
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+                external_constants=external_constants_tag,
             )
         )
         logging.info(
