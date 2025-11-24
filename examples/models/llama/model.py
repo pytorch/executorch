@@ -71,38 +71,7 @@ class Llama2Model(EagerModelBase):
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model.
         device = "cpu"
-        # flake8: noqa: TOR102
-        cps = []
-        # Load sharded checkpoint.
-        checkpoint = {}
-        if checkpoint_dir is not None:
-            # Load multiple checkpoint; ignore the single path.
-            checkpoint_path = None
-            for i in range(4):
-                cp_name = f"consolidated.{i}.pth"
-                print(f"Loading {cp_name}")
-                cps.append(
-                    torch.load(
-                        os.path.join(checkpoint_dir, cp_name),
-                        map_location=device,
-                        mmap=True,
-                    )
-                )
-            checkpoint = {}
-            for key in cps[0].keys():
-                if not torch.allclose(cps[0][key], cps[1][key]):
-                    values = (cps[0][key], cps[1][key], cps[2][key], cps[3][key])
-                    if "wo" in key or "w2" in key:
-                        # Concat on dim=1 for "wo" and "w2".
-                        checkpoint[key] = torch.cat(values, dim=1)
-                    else:
-                        # Concat on dim=0 for everything else.
-                        checkpoint[key] = torch.cat(values, dim=0)
-                else:
-                    # Do not duplicate layers shared between each checkpoint.
-                    checkpoint[key] = cps[0][key]
-        # Load single checkpoint.
-        elif checkpoint_path:
+        if checkpoint_path:
             checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
 
         # If given checkpoint is fairseq, convert to llama checkpoint.
