@@ -180,7 +180,7 @@ def export_csv(
         node_info_list.append(node_info)
 
     # Writing to a CSV file
-    with open(f"{path}/{title}.csv", mode="w", newline="") as file:
+    with open(f"{path}/{title}.csv", mode="w", newline="") as csv_file:
         fieldnames = [
             "name",
             "op_code",
@@ -193,7 +193,7 @@ def export_csv(
             f"{evaluator.metric_name()}",
             "is_valid_score",
         ]
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
 
         writer.writeheader()
         writer.writerows(node_info_list)

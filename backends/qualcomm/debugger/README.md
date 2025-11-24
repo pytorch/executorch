@@ -146,7 +146,7 @@ qnn_intermediate_debugger = QNNIntermediateDebugger()
 build_executorch_binary(
     model=MyModel(),
     inputs=(torch.randn(200, 768),),
-    soc_model="SM8650"
+    soc_model="SM8650",
     file_name="my_model",
     dataset=my_dataset,
     dump_intermediate_outputs=args.dump_intermediate_outputs, # Add this flag
@@ -185,7 +185,7 @@ def validate_intermediate_tensor():
         etdump_path=f"{args.artifact}/etdump.etdp",
         debug_buffer_path=f"{args.artifact}/debug_output.bin",
     )
-    qnn_intermediate_debugger.intermediate_output_ep(*(inputs[0]))
+    qnn_intermediate_debugger.intermediate_output_module(*(inputs[0]))
     qnn_intermediate_debugger.generate_results(
         title="debug_graph",
         path=".",
