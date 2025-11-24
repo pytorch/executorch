@@ -142,14 +142,14 @@ class RuntimeExecutor:
                 else:
                     break
 
-            num_of_output_files = len(os.listdir(host_output_save_dir))
+            target_output_save_dir = os.path.join(host_output_save_dir, "output")
+            num_of_output_files = len(os.listdir(target_output_save_dir))
             assert num_of_output_files == len(
                 model_outputs
             ), f"Number of outputs is invalid, expect {len(model_outputs)} while got {num_of_output_files}"
 
             result = []
             for idx in range(num_of_output_files):
-                target_output_save_dir = os.path.join(host_output_save_dir, "output")
                 output_array = np.fromfile(
                     os.path.join(target_output_save_dir, f"output_{idx}.bin"),
                     dtype=np.uint8,

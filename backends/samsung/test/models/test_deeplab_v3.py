@@ -14,7 +14,6 @@ from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet50Model
 
 
 class TestMilestoneDeepLabV3(unittest.TestCase):
-    @unittest.skip("Need to be fixed issue")
     def test_dl3_fp16(self):
         model = DeepLabV3ResNet50Model().get_eager_model()
         example_input = DeepLabV3ResNet50Model().get_example_inputs()
