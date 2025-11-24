@@ -226,6 +226,11 @@ class CoreMLPartitioner(Partitioner):
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
         logger.info("CoreMLPartitioner::partition")
+                logger.warning("Using the old `to_edge()` flow with CoreML may result in performance regression. "
+            "The recommended flow is to use `to_edge_transform_and_lower()` with the CoreML partitioner. "
+            "See the documentation for more details: "
+            "https://github.com/pytorch/executorch/blob/main/docs/source/backends/coreml/coreml-overview.md#using-the-core-ml-backend"
+        )
         partition_tags = {}
 
         capability_partitioner = CapabilityBasedPartitioner(
