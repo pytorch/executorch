@@ -28,6 +28,9 @@ def define_common_targets():
             exported_headers = [
                 "runner.h",
             ],
+            deps = [
+                "//executorch/devtools/etdump:etdump_flatcc",
+            ],
             preprocessor_flags = [
                 "-DUSE_ATEN_LIB",
             ] if aten else [],
