@@ -895,7 +895,6 @@ def _to_edge_and_lower_llama_xnnpack(
     if gen_tag_fn is not None:
         from executorch.exir.passes.external_constants_pass import (
             delegate_external_constants_pass_unlifted,
-            external_constants_pass,
         )
 
         assert (
@@ -906,18 +905,14 @@ def _to_edge_and_lower_llama_xnnpack(
             gen_tag_fn=gen_tag_fn,
         )
 
-        # Also add a pass for 'to_executorch' to tag weights that aren't delegated.
-        additional_passes.append(
-            partial(external_constants_pass, gen_tag_fn=gen_tag_fn)
-        )
-
     builder = builder.to_edge_transform_and_lower(partitioners)
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
 
-    # we need builder.export_program
-
-    return builder.to_executorch(passes=additional_passes)
+    # Add gen_tag_fn to tag non-delegated weights as well.
+    return builder.to_executorch(
+        passes=additional_passes, external_constants_tag=gen_tag_fn
+    )
 
 
 def _to_edge_and_lower_llama_openvino(

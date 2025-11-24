@@ -839,13 +839,11 @@ def edge_to_executorch_passes(
     Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.
     """
     passes: List[PassType] = [
-        SpecPropPass(),
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
         # there exists an unbacked symint operation.
         *config.passes,
-        # config.passes may contain external_constants_pass. This pass has to
-        # run after SpecPropPass, which populates tensor names.
+        SpecPropPass(),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)
@@ -1737,11 +1735,19 @@ class EdgeProgramManager:
                     # TODO(who?)
                     p.update_placeholder_tensor_specs(program, new_gm)
 
-            # Extract constants if the config says too.
-            if config.external_constants:
+            # Tag constant weights.
+            if (
+                isinstance(config.external_constants, bool)
+                and config.external_constants
+            ):
                 new_gm_res = external_constants_pass(new_gm)
                 new_gm = new_gm_res.graph_module
-            elif config.external_mutable_weights:
+            elif callable(config.external_constants):
+                new_gm_res = external_constants_pass(new_gm, config.external_constants)
+                new_gm = new_gm_res.graph_module
+
+            # Tag mutable weights.
+            if config.external_mutable_weights:
                 new_gm_res = external_mutable_weights_pass(new_gm, program)
                 new_gm = new_gm_res.graph_module
 
