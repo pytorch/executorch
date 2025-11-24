@@ -33,6 +33,32 @@ We offer the following modes to execute the model:
 
 - Lookahead Mode: Lookahead Mode introduces [lookahead decoding](https://arxiv.org/abs/2402.02057) and uses AR-N model to process prompt to enhance token generation speed. While decoding multiple tokens in a single step is infeasible, an LLM can generate multiple guess tokens in parallel. These guess tokens may fit into future parts of the generated sequence. The lookahead decoder generates and verifies these guess tokens, integrating them into the sequence if suitable. In some cases, it can obtain more than one token in a single step. Result is lossless.
 
+## Hardware Support
+
+We’ve validated this flow on the **Samsung Galaxy S23**, **Samsung Galaxy S24**, and **OnePlus 12**.  
+Support on other hardware depends on the **HTP architecture (HtpArch)**.  
+The **16a4w_block** format and **weight sharing between prefill and decode** are supported on **V73 and newer**.
+
+For older devices, you may need to **retune the quantization recipe**. A good starting point is:
+
+- Use **16a4w**
+- Optionally apply **SpinQuant** for better stability and accuracy
+
+### Memory Limit Errors (4 GB HTP Limit)
+
+If you encounter errors like the following, it typically means the model’s requested memory exceeds the **4 GB per-context limit** on HTP.  
+To resolve this, try **increasing the sharding number** (`num_sharding`) to reduce per-shard memory usage:
+
+```
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> Failed to find available PD for contextId 1 on deviceId 0 coreId 0 with context size estimate 4025634048
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> context create from binary failed on contextId 1
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> Fail to create context from binary with err 1002
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> Size Calculation encounter error! Doing Hard reset of reserved mem to 0.
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> Failed to create context from binary with err 0x3ea
+[ERROR] [Qnn ExecuTorch]: Can't create context from binary
+```
+
+
 ## Instructions
 ### Note
 1. For hybrid mode, the export time will be longer and can take up to 1-4 hours to complete, depending on the specific model users are exporting.
