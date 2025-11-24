@@ -179,6 +179,12 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
         config.expect_dynamic_shapes = true;
       }
     }
+    if (strcmp(spec.key, "warmup_execute_after_compile") == 0) {
+      ET_CHECK_MSG(value_size == sizeof(uint8_t), "Unexpected value size!");
+      bool value = getBool(value_data);
+
+      config.warmup_execute_after_compile = value;
+    }
   }
 #ifdef ET_EVENT_TRACER_ENABLED
   config.enable_querypool = true;
@@ -578,6 +584,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     compute_graph->prepare_pipelines();
 
     compute_graph->prepack();
+
+    compute_graph->optional_warmup_execute();
 
     return Error::Ok;
   }
