@@ -209,7 +209,7 @@ def get_symmetric_a16w8_quantization_config(
     # 16-bit activation quantization spec
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int16,
-        quant_min=torch.iinfo(torch.int16).min,  # -32768
+        quant_min=torch.iinfo(torch.int16).min + 1,  # -32767
         quant_max=torch.iinfo(torch.int16).max,  # 32767
         qscheme=torch.per_tensor_symmetric,
         is_dynamic=is_dynamic,
