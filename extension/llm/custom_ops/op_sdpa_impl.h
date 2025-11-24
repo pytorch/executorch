@@ -765,9 +765,7 @@ void cpu_flash_attention(
 
   // Since all intermediate compute is accum_t, we need to
   // allocate a buffer accordingly.
-  int64_t size_of_intermediate_precision = sizeof(accum_t);
-  int64_t size_bytes = size_per_thread * num_thread * query.element_size() *
-      size_of_intermediate_precision;
+  int64_t size_bytes = size_per_thread * num_thread * query.element_size();
   Result<void*> buff_res = ctx.allocate_temp(size_bytes);
   std::unique_ptr<char[]> allocated_buf;
   void* buf;
@@ -784,8 +782,7 @@ void cpu_flash_attention(
   constexpr int64_t kAlignment = 64;
   size_per_thread_qdq_vec =
       (size_per_thread_qdq_vec + kAlignment - 1) & (-(kAlignment - 1));
-  int64_t size_per_thread_qdq_bytes =
-      size_per_thread_qdq_vec * size_of_intermediate_precision;
+  int64_t size_per_thread_qdq_bytes = size_per_thread_qdq_vec * sizeof(accum_t);
   int64_t size_qdq_bytes = size_per_thread_qdq_bytes * num_thread;
   std::unique_ptr<char[]> allocated_buf_for_qdq;
   Result<void*> scratch_for_quant_dequant_res =
