@@ -32,12 +32,12 @@ from executorch.backends.arm.quantizer import (
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
+
+from executorch.backends.arm.test.tester.quantize import ArmQuantize as Quantize
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
-
-from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
 
@@ -806,7 +806,10 @@ class PassPipeline(TOSAPipelineMaker, Generic[T]):
             self.add_stage(self.tester.check_count, ops_after_pass, suffix="after")
         if ops_not_after_pass:
             self.add_stage(self.tester.check_not, ops_not_after_pass, suffix="after")
-        self.add_stage(self.tester.run_method_and_compare_outputs)
+        self.add_stage(
+            self.tester.run_method_and_compare_outputs,
+            inputs=self.test_data,
+        )
 
     def run(self):
         with TosaLoweringContext(self.tosa_spec):

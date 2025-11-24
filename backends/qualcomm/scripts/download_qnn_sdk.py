@@ -14,6 +14,8 @@ import urllib.request
 import zipfile
 from typing import Dict, List, Optional, Tuple
 
+import requests
+from requests.adapters import HTTPAdapter, Retry
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -115,12 +117,36 @@ def _atomic_download(url: str, dest: pathlib.Path):
 
 
 def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
-    """Download archive from URL with progress reporting."""
+    """Robust streaming download with retries."""
+
     logger.debug("Archive will be saved to: %s", archive_path)
 
+    session = requests.Session()
+    retries = Retry(
+        total=5,
+        backoff_factor=1.0,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+    )
+    session.mount("https://", HTTPAdapter(max_retries=retries))
+
     try:
-        urllib.request.urlretrieve(url, archive_path, _make_report_progress())
+        with session.get(url, stream=True) as r:
+            r.raise_for_status()
+
+            total = int(r.headers.get("content-length", 0))
+            downloaded = 0
+            chunk_size = 1024 * 1024  # 1MB
+
+            with open(archive_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        _make_report_progress()(downloaded, downloaded, total)
+
         logger.info("Download completed!")
+
     except Exception as e:
         logger.exception("Error during download: %s", e)
         return False
@@ -131,6 +157,7 @@ def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
     elif not archive_path.exists():
         logger.error("File was not downloaded!")
         return False
+
     return True
 
 
