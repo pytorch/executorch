@@ -313,8 +313,9 @@ class TestQNN(unittest.TestCase):
                 node_tensor_map = qnn_intermediate_debugger._match_tensors(
                     inspector=inspector, keep_qnn_layout=False
                 )
-                self.assertTrue(
-                    len(node_tensor_map) == expected_compared_events,
+                self.assertEqual(
+                    len(node_tensor_map),
+                    expected_compared_events,
                     msg=f"Unexpected number of compared events, expecting {expected_compared_events}, but has {len(node_tensor_map)} events.",
                 )
                 # Compare accuracy for each layer
@@ -324,8 +325,9 @@ class TestQNN(unittest.TestCase):
                     )
                 for event_block in inspector.event_blocks:
                     if event_block.name == "Execute":
-                        self.assertTrue(
-                            len(event_block.events) == expected_intermediate_events,
+                        self.assertEqual(
+                            len(event_block.events),
+                            expected_intermediate_events,
                             msg=f"Unexpected number of intermediate events, expecting {expected_intermediate_events}, but has {len(event_block.events)} events.",
                         )
 

@@ -19,7 +19,7 @@ class MetricEvaluatorBase(ABC):
         Returns:
             str: name of the metric evaluation
         """
-        pass
+        ...
 
     @abstractmethod
     def evaluate(
@@ -38,11 +38,10 @@ class MetricEvaluatorBase(ABC):
                 1) Score or anything that you would like to be printed under metrics category for svg graph or csv file.
                 2) A boolean that indicates whether the evaluation result is acceptable or not.
         """
+        ...
 
 
 class AtolEvaluator(MetricEvaluatorBase):
-    import torch.nn.functional as F
-
     def __init__(self, threshold=1e-1):
         self.threshold = threshold
 
@@ -59,8 +58,6 @@ class AtolEvaluator(MetricEvaluatorBase):
 
 
 class CosineSimilarityEvaluator(MetricEvaluatorBase):
-    import torch.nn.functional as F
-
     def __init__(self, threshold=0.9):
         self.threshold = threshold
 

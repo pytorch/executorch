@@ -488,7 +488,9 @@ def build_executorch_binary(
 
     if qnn_intermediate_debugger:
         lowered_module_nodes = get_delegates(edge_prog_mgr.exported_program().graph)
-        assert len(lowered_module_nodes) == 1, "Length not correct"
+        assert (
+            len(lowered_module_nodes) == 1
+        ), "Graph with partitions are currently unsupported."
 
         lowered_module_node = lowered_module_nodes[0]
         lower_module = getattr(
