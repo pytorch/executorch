@@ -8455,8 +8455,8 @@ class TestExampleUtilsScript(TestQNN):
                 assert os.path.exists(csv_path), f"Unable to find CSV file: {csv_path}"
 
                 csv_valid_count = 0
-                with open(csv_path, mode="r", newline="") as file:
-                    reader = csv.reader(file)
+                with open(csv_path, mode="r", newline="") as csv_file:
+                    reader = csv.reader(csv_file)
                     header = next(reader)
                     index = header.index("is_valid_score")
                     for row in reader:
@@ -8468,8 +8468,8 @@ class TestExampleUtilsScript(TestQNN):
                 ), f"Expected CSV events with valid score is outside of expected range, number of valid score events found: {csv_valid_count}"
 
                 svg_valid_count = 0
-                with open(svg_path, "r", encoding="utf-8") as file:
-                    for line in file:
+                with open(svg_path, "r", encoding="utf-8") as svg_file:
+                    for line in svg_file:
                         svg_valid_count += line.count("is_valid_score=True")
                 # We assume svg_valid_count == compared_events, since all compared events meet metric's threshold
                 assert (

@@ -283,8 +283,8 @@ class QNNIntermediateDebugger:
             Meta_info is the info stored during forward hook_fn.
         """
 
-        # map {key: tuple(qnn_output, cpu_output, meta_info)}
-        map = {}
+        # node_tensor_map {key: tuple(qnn_output, cpu_output, meta_info)}
+        node_tensor_map = {}
         # OPs that only exists in QNN but not CPU Golden
         unmatched_qnn_tensors = []
         # E.g.: DELEGATE_CALL (This is the model input data), 'Method::execute'
@@ -305,7 +305,7 @@ class QNNIntermediateDebugger:
                             if keep_qnn_layout
                             else self._process_qnn_output(event.debug_data[0], meta)
                         )
-                        map[node_name] = (
+                        node_tensor_map[node_name] = (
                             qnn_output,
                             cpu_output,
                             meta,
@@ -325,4 +325,4 @@ class QNNIntermediateDebugger:
             f"The following QNN OPs are missing CPU reference. OPs added during qnn_preprocess will not have CPU reference. Please ensure the operations below are created during qnn_preprocess. {unmatched_qnn_tensors}",
             stacklevel=1,
         )
-        return map
+        return node_tensor_map
