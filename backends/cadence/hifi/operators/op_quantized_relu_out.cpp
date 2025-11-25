@@ -9,13 +9,13 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
-using torch::executor::KernelRuntimeContext;
-
 namespace impl {
 namespace HiFi {
 namespace native {
+
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::KernelRuntimeContext;
 
 void quantized_relu_per_tensor_out(
     KernelRuntimeContext& ctx,
