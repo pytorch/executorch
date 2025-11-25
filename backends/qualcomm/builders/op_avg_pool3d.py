@@ -6,7 +6,7 @@
 import warnings
 from typing import cast, Dict, List
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import numpy as np
 
 import torch
@@ -27,8 +27,8 @@ class AvgPool3d(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
 
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
@@ -36,7 +36,7 @@ class AvgPool3d(NodeVisitor):
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -88,11 +88,11 @@ class AvgPool3d(NodeVisitor):
             node,
             node,
             out_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
-        avg_pool3d_op = PyQnnWrapper.PyQnnOpWrapper(
+        avg_pool3d_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpPoolAvg3d.op_name,
@@ -103,7 +103,7 @@ class AvgPool3d(NodeVisitor):
 
         avg_pool3d_op.AddTensorParam(
             OpPoolAvg3d.param_filter_size,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(filter_size_shape),
             filter_size_shape,
             np.array(
@@ -115,7 +115,7 @@ class AvgPool3d(NodeVisitor):
 
         avg_pool3d_op.AddTensorParam(
             OpPoolAvg3d.param_stride,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(stride_shape),
             stride_shape,
             np.array(
@@ -127,7 +127,7 @@ class AvgPool3d(NodeVisitor):
 
         avg_pool3d_op.AddTensorParam(
             OpPoolAvg3d.param_pad_amount,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(padding_shape),
             padding_shape,
             np.array(
@@ -139,13 +139,13 @@ class AvgPool3d(NodeVisitor):
 
         avg_pool3d_op.AddScalarParam(
             OpPoolAvg3d.param_count_pad_for_edges,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {QCOM_DATA: count_pad_for_edges},
         )
 
         avg_pool3d_op.AddScalarParam(
             OpPoolAvg3d.param_rounding_mode,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(mode)},
         )
 
@@ -162,15 +162,15 @@ class AdaptiveAvgPool3d(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         # NOTE: This operator is layout sensitive, so the input tensor shape is always N,D,H,W,C.
@@ -235,11 +235,11 @@ class AdaptiveAvgPool3d(NodeVisitor):
             node,
             node,
             out_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
-        adaptive_avg_pool3d_op = PyQnnWrapper.PyQnnOpWrapper(
+        adaptive_avg_pool3d_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpPoolAvg3d.op_name,
@@ -250,7 +250,7 @@ class AdaptiveAvgPool3d(NodeVisitor):
 
         adaptive_avg_pool3d_op.AddTensorParam(
             OpPoolAvg3d.param_filter_size,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(filter_shape),
             filter_shape,
             np.array(
@@ -262,7 +262,7 @@ class AdaptiveAvgPool3d(NodeVisitor):
 
         adaptive_avg_pool3d_op.AddTensorParam(
             OpPoolAvg3d.param_stride,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(stride_shape),
             stride_shape,
             np.array(
@@ -274,7 +274,7 @@ class AdaptiveAvgPool3d(NodeVisitor):
 
         adaptive_avg_pool3d_op.AddTensorParam(
             OpPoolAvg3d.param_pad_amount,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(padding_shape),
             padding_shape,
             np.array(
@@ -286,13 +286,13 @@ class AdaptiveAvgPool3d(NodeVisitor):
 
         adaptive_avg_pool3d_op.AddScalarParam(
             OpPoolAvg3d.param_count_pad_for_edges,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {QCOM_DATA: count_pad_for_edges},
         )
 
         adaptive_avg_pool3d_op.AddScalarParam(
             OpPoolAvg3d.param_rounding_mode,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(mode)},
         )
 

@@ -6,7 +6,7 @@
 import warnings
 from typing import cast, Dict, List
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
@@ -27,8 +27,8 @@ class Cat(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_nodes = cast(List[torch.fx.Node], node.args[0])
         input_tensor_wrappers = []
 
@@ -40,7 +40,7 @@ class Cat(NodeVisitor):
                     source_input_node,
                     node,
                     input_tensor,
-                    PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                    PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                     nodes_to_wrappers,
                 )
             )
@@ -57,7 +57,7 @@ class Cat(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -72,7 +72,7 @@ class Cat(NodeVisitor):
         if QCOM_AXIS_ORDER in node.meta:
             axis = node.meta[QCOM_AXIS_ORDER].index(axis)
 
-        concat_op = PyQnnWrapper.PyQnnOpWrapper(
+        concat_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpConcat.op_name,
@@ -82,7 +82,7 @@ class Cat(NodeVisitor):
 
         concat_op.AddScalarParam(
             OpConcat.param_axis,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(axis)},
         )
 
