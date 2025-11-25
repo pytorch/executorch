@@ -162,7 +162,7 @@ Tensor& add_out(
     float alpha_val;
     torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
 
-    if ((a.numel() == 1) && (alpha_val == 1.0)) {
+    if ((a.numel() == 1) && (alpha_val == 1.0f)) {
       XT_KERNEL_CHECK(
           ctx,
           out,
