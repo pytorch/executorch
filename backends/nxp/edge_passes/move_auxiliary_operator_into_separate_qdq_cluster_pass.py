@@ -20,6 +20,8 @@ HardTanh = exir_ops.edge.aten.hardtanh.default
 Relu = exir_ops.edge.aten.relu.default
 Sigmoid = exir_ops.edge.aten.sigmoid.default
 Tanh = exir_ops.edge.aten.tanh.default
+Clone = exir_ops.edge.aten.clone.default
+CloneDimOrder = exir_ops.edge.dim_order_ops._clone_dim_order.default
 
 
 def insert_qdq_pair_after_node(
@@ -69,29 +71,29 @@ def _is_quantize(node_: Node) -> bool:
 
 class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
     """
-                                                           │
-                                                     ┌─────▼──────┐
-                │                                    │ dequantize │
-          ┌─────▼──────┐                             └─────┬──────┘
-          │ dequantize │                             ┌─────▼──────┐
-          └─────┬──────┘                             │ <aux_node> │
-          ┌─────▼──────┐                             └─────┬──────┘
-          │ <aux_node> │                              ┌────▼─────┐            ┐
-          └─────┬──────┘                              │ quantize │            │
-     ┌──────────▼──────────┐       replaced with      └────┬─────┘            │
-    ⋯┤ <main_cluster_node> ├⋯     ──────────────►          │                  │ newly added nodes
-     └──────────┬──────────┘                         ┌─────▼──────┐           │
-                ▼                                    │ dequantize │           │
-                ⋮                                    └─────┬──────┘           ┘
-           ┌────▼─────┐                         ┌──────────▼──────────┐
-           │ quantize │                        ⋯┤ <main_cluster_node> ├⋯
-           └────┬─────┘                         └──────────┬──────────┘
-                ▼                                          ▼
-                                                           ⋮
-                                                      ┌────▼─────┐
-                                                      │ quantize │
-                                                      └────┬─────┘
-                                                           ▼
+                                                             │
+                                                       ┌─────▼──────┐
+                  │                                    │ dequantize │
+            ┌─────▼──────┐                             └─────┬──────┘
+            │ dequantize │                             ┌─────▼──────┐
+            └─────┬──────┘                             │ <aux_node> │
+            ┌─────▼──────┐                             └─────┬──────┘
+            │ <aux_node> │                              ┌────▼─────┐            ┐
+            └─────┬──────┘                              │ quantize │            │
+       ┌──────────▼──────────┐       replaced with      └────┬─────┘            │
+    ...┤ <main_cluster_node> ├...   ──────────────►          │                  │ newly added nodes
+       └──────────┬──────────┘                         ┌─────▼──────┐           │
+                  ▼                                    │ dequantize │           │
+                  .                                    └─────┬──────┘           ┘
+             ┌────▼─────┐                         ┌──────────▼──────────┐
+             │ quantize │                      ...┤ <main_cluster_node> ├...
+             └────┬─────┘                         └──────────┬──────────┘
+                  ▼                                          ▼
+                                                             .
+                                                        ┌────▼─────┐
+                                                        │ quantize │
+                                                        └────┬─────┘
+                                                             ▼
     """
 
     # Dictionary mapping main cluster nodes to auxiliary nodes, for which this optimization will be applied.
@@ -102,6 +104,7 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
         MM: [
             ViewCopy,
         ],
+        ViewCopy: [Clone, CloneDimOrder],
     }
 
     def run(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -152,28 +155,28 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
 
 class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
     """
-                                                            │
-                                                      ┌─────▼──────┐
-                │                                     │ dequantize │
-          ┌─────▼──────┐                              └─────┬──────┘
-          │ dequantize │                                    ⋮
-          └─────┬──────┘                         ┌──────────▼──────────┐
-                ▼                               ⋯┤ <main_cluster_node> ├⋯
-                ⋮                                └──────────┬──────────┘
-     ┌──────────▼──────────┐       replaced with       ┌────▼─────┐            ┐
-    ⋯┤ <main_cluster_node> ├⋯     ──────────────►      │ quantize │            │
-     └──────────┬──────────┘                           └────┬─────┘            │
-          ┌─────▼──────┐                                    │                  │ newly added nodes
-          │ <aux_node> │                              ┌─────▼──────┐           │
-          └─────┬──────┘                              │ dequantize │           │
-           ┌────▼─────┐                               └─────┬──────┘           ┘
-           │ quantize │                               ┌─────▼──────┐
-           └────┬─────┘                               │ <aux_node> │
-                ▼                                     └─────┬──────┘
-                                                       ┌────▼─────┐
-                                                       │ quantize │
-                                                       └────┬─────┘
-                                                            ▼
+                                                              │
+                                                        ┌─────▼──────┐
+                  │                                     │ dequantize │
+            ┌─────▼──────┐                              └─────┬──────┘
+            │ dequantize │                                    .
+            └─────┬──────┘                         ┌──────────▼──────────┐
+                  ▼                             ...┤ <main_cluster_node> ├...
+                  .                                └──────────┬──────────┘
+       ┌──────────▼──────────┐       replaced with       ┌────▼─────┐            ┐
+    ...┤ <main_cluster_node> ├...   ──────────────►      │ quantize │            │
+       └──────────┬──────────┘                           └────┬─────┘            │
+            ┌─────▼──────┐                                    │                  │ newly added nodes
+            │ <aux_node> │                              ┌─────▼──────┐           │
+            └─────┬──────┘                              │ dequantize │           │
+             ┌────▼─────┐                               └─────┬──────┘           ┘
+             │ quantize │                               ┌─────▼──────┐
+             └────┬─────┘                               │ <aux_node> │
+                  ▼                                     └─────┬──────┘
+                                                         ┌────▼─────┐
+                                                         │ quantize │
+                                                         └────┬─────┘
+                                                              ▼
     """
 
     # Dictionary mapping main cluster nodes to auxiliary nodes, for which this optimization will be applied.
@@ -198,6 +201,7 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             Sigmoid,
             Tanh,
         ],
+        ViewCopy: [Clone, CloneDimOrder],
     }
 
     def run(self, graph_module: torch.fx.GraphModule) -> PassResult:
