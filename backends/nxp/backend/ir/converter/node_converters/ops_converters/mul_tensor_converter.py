@@ -32,6 +32,7 @@ class MulTensorConverter(NodeConverter):
             return False
 
         node_shape = node.meta["val"].shape
+        
         # Check that at least one dimension is divisible by number of MACS
         # or all dimensions are equal to one
         # Otherwise Neutron cannot convert it

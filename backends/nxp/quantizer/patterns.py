@@ -698,8 +698,9 @@ class MulTensorPattern(QuantizationPattern):
             qscheme=torch.per_tensor_affine,
         )
 
-        # appending custom qspec before the "Mul" operator caused to have two unnecessary dequantize-quantize sequences,
-        # which prevented from partitioner functioning properly
+        # appending custom qspec before the "Mul" operator caused two unnecessary dequantize-quantize sequences,
+        # which prevented from partitioner functioning properly. This way I set only one dequantize-quantize sequence 
+        # with correct quantization params
         for input_node in input_nodes:
             input_node.meta["quantization_annotation"].output_qspec = qspec
 

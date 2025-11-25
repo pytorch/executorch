@@ -52,7 +52,7 @@ def test_mul_tensor_quant_conversion(mocker, x_input_shape):
     ).exported_program()
     edge_nodes = list(edge_program.graph.nodes)
 
-    # Check mul was delegated
+    # Check "Mul" was delegated
     mul_delegated = edge_nodes[5]
     assert (
         mul_delegated.op == "call_function"
@@ -121,7 +121,7 @@ def test_mul_tensor_one_input_quant_conversion(mocker, input_shape):
     edge_program = to_quantized_edge_program(model, input_shape).exported_program()
     edge_nodes = list(edge_program.graph.nodes)
 
-    # Check mul was delegated
+    # Check "Mul" was delegated
     mul_delegated = edge_nodes[3]
     assert (
         mul_delegated.op == "call_function"
@@ -164,7 +164,7 @@ def test_mul_tensor_w_conv_quant_conversion(mocker, x_input_shape):
     ).exported_program()
     edge_nodes = list(edge_program.graph.nodes)
 
-    # Check mul was delegated
+    # Check "Mul" was delegated
     mul_delegated = edge_nodes[5]
     assert (
         mul_delegated.op == "call_function"
@@ -205,12 +205,12 @@ def test_mul_tensor_w_conv_quant_conversion(mocker, x_input_shape):
     "x_input_shape, y_input_shape",
     [
         pytest.param((1, 4, 7), (4, 7), id="3D -> 2D."),
-        pytest.param((1, 4, 8), (1, 4, 4, 8), id="3D -> 4D."),
+        pytest.param((4, 4, 8), (1, 4, 4, 8), id="3D -> 4D."),
         pytest.param((1, 1, 4, 4, 8), (1, 4, 4, 8), id="5D -> 4D."),
-        pytest.param((4,), (4, 4), id="1D -> 2D."),
-        pytest.param((4,), (4, 4, 4), id="1D -> 3D."),
-        pytest.param((6, 6), (1, 8, 6, 6), id="2D -> 4D."),
-        pytest.param((6, 6), (6,), id="2D -> 1D."),
+        pytest.param((4,), (1, 4), id="1D -> 2D."),
+        pytest.param((4,), (1, 1, 4), id="1D -> 3D."),
+        pytest.param((6, 6), (1, 1, 6, 6), id="2D -> 4D."),
+        pytest.param((1, 6), (6,), id="2D -> 1D."),
     ],
 )
 def test_mul_tensor_broadcasting_unsupported_quant_conversion(
