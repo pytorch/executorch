@@ -8,7 +8,7 @@ from typing import cast, Dict, Protocol, Tuple
 import torch
 
 from executorch.backends.arm._passes.decompose_linalg_vector_norm_pass import (
-    DecomposeLinearVectorNormPass,
+    DecomposeLinalgVectorNormPass,
 )
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
@@ -65,7 +65,7 @@ modules = {
 @common.parametrize("module", modules)
 def test_decompose_vector_norm_tosa_INT(module: ModuleWithInputs) -> None:
     """
-    This test creates a PassPipeline that applies the DecomposeLinearVectorNormPass.
+    This test creates a PassPipeline that applies the DecomposeLinalgVectorNormPass.
     The expected primitive ops vary depending on the norm order:
       - p == 1: should decompose to ABS and SUM.
       - p == 2 (default): should decompose to MUL, SUM, and SQRT.
@@ -102,6 +102,6 @@ def test_decompose_vector_norm_tosa_INT(module: ModuleWithInputs) -> None:
         ops_not_after_pass=[
             "executorch_exir_dialects_edge__ops_aten_linarg_vector_norm_default",
         ],
-        pass_list=[DecomposeLinearVectorNormPass],
+        pass_list=[DecomposeLinalgVectorNormPass],
     )
     pipeline.run()
