@@ -63,6 +63,7 @@ aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim);
 AOTI_SHIM_EXPORT int32_t aoti_torch_device_type_cpu();
 AOTI_SHIM_EXPORT int32_t aoti_torch_layout_strided();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_float32();
+AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_float16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bfloat16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int8();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int16();
