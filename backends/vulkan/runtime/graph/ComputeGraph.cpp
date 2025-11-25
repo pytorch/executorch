@@ -1107,6 +1107,12 @@ void ComputeGraph::prepack() {
   }
 }
 
+void ComputeGraph::optional_warmup_execute() {
+  if (config_.warmup_execute_after_compile) {
+    execute();
+  }
+}
+
 void ComputeGraph::execute() {
   if (deferred_cmd_list_.empty()) {
     context_->flush();
