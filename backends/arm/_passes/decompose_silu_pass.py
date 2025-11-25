@@ -28,7 +28,7 @@ class DecomposeSiluPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (aten_silu_ops):
+        if op not in (aten_silu_ops) or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
         sigmoid_op = torch.ops.aten.sigmoid.default
         mul_op = torch.ops.aten.mul.Tensor

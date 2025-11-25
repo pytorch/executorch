@@ -49,7 +49,7 @@ class DecomposeAddmmPass(ArmPass):
     }
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in [edge_addmm, aten_addmm]:
+        if op not in [edge_addmm, aten_addmm] or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         input, mat1, mat2 = args

@@ -43,7 +43,9 @@ class DecomposeDivPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_div_ops + aten_div_ops):
+        if op not in (edge_div_ops + aten_div_ops) or not self.allowed_to_transform(
+            meta
+        ):
             return super().call_operator(op, args, kwargs, meta)
 
         reciprocal_op, mul_op = get_div_decomposition(op)
