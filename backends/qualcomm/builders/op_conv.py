@@ -6,7 +6,7 @@
 
 from typing import cast, Dict, List
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA, QCOM_QUANT_ATTRS
@@ -47,7 +47,7 @@ class Conv2d(NodeVisitor):
         output_padding_shape=None,
         transpose_conv=False,
         groups=None,
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+    ) -> PyQnnManager.PyQnnOpWrapper:
         """
         This function is shared among Conv1D, Conv2D, and DepthWise Conv2D as most of the required parameters overlaps.
         """
@@ -55,7 +55,7 @@ class Conv2d(NodeVisitor):
         conv_op.AddOutputTensors(conv_output_tensors)
         conv_op.AddTensorParam(
             OP.param_stride,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(stride_shape),
             stride_shape,
             np.array(stride, dtype=np.uint32),
@@ -63,7 +63,7 @@ class Conv2d(NodeVisitor):
         )
         conv_op.AddTensorParam(
             OP.param_pad_amount,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(padding_shape),
             padding_shape,
             np.array(
@@ -76,7 +76,7 @@ class Conv2d(NodeVisitor):
         if transpose_conv:
             conv_op.AddTensorParam(
                 OP.param_output_padding,
-                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+                PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 len(output_padding_shape),
                 output_padding_shape,
                 np.array(output_padding, dtype=np.uint32),
@@ -85,7 +85,7 @@ class Conv2d(NodeVisitor):
         else:
             conv_op.AddTensorParam(
                 OP.param_dilation,
-                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+                PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 len(dilation_shape),
                 dilation_shape,
                 np.array(dilation, dtype=np.uint32),
@@ -95,7 +95,7 @@ class Conv2d(NodeVisitor):
         if groups is not None:
             conv_op.AddScalarParam(
                 OP.param_group,
-                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+                PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 {QCOM_DATA: np.uint32(groups)},
             )
 
@@ -127,8 +127,8 @@ class Conv2d(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[str, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         assert (
@@ -144,7 +144,7 @@ class Conv2d(NodeVisitor):
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -171,7 +171,7 @@ class Conv2d(NodeVisitor):
             filter_node,
             node,
             filter_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
         )
         conv_input_tensors = [input_tensor_wrapper, filter_tensor_wrapper]
@@ -192,7 +192,7 @@ class Conv2d(NodeVisitor):
                 bias_node,
                 node,
                 bias_tensor,
-                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
                 nodes_to_wrappers,
             )
             conv_input_tensors.append(bias_tensor_wrapper)
@@ -201,7 +201,7 @@ class Conv2d(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         conv_output_tensors = [output_tensor_wrapper]
@@ -238,7 +238,7 @@ class Conv2d(NodeVisitor):
         else:
             op_class = OpConv2d if is_conv2d else OpConv3d
 
-        conv_op = PyQnnWrapper.PyQnnOpWrapper(
+        conv_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             op_class.op_name,

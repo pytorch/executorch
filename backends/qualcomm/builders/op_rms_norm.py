@@ -7,7 +7,7 @@
 import warnings
 from typing import Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import numpy as np
 
 import torch
@@ -34,8 +34,8 @@ class RmsNormVisitor(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         # args of node : ['input', 'normalized_shape', 'weight', 'eps']
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
@@ -43,7 +43,7 @@ class RmsNormVisitor(NodeVisitor):
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -67,7 +67,7 @@ class RmsNormVisitor(NodeVisitor):
             weight_node,
             node,
             weight_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
         )
 
@@ -89,7 +89,7 @@ class RmsNormVisitor(NodeVisitor):
             bias_node,
             node,
             bias_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
         )
 
@@ -101,11 +101,11 @@ class RmsNormVisitor(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
-        rms_nrom_op = PyQnnWrapper.PyQnnOpWrapper(
+        rms_nrom_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpRmsNorm.op_name,
@@ -117,12 +117,12 @@ class RmsNormVisitor(NodeVisitor):
         rms_nrom_op.AddOutputTensors([output_tensor_wrapper])
         rms_nrom_op.AddScalarParam(
             OpRmsNorm.param_epsilon,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
             {QCOM_DATA: np.float32(epsilon)},
         )
         rms_nrom_op.AddTensorParam(
             OpRmsNorm.param_axes,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(axes_shape),
             axes_shape,
             np.array(axes, dtype=np.uint32),

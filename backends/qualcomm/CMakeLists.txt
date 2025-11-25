@@ -267,14 +267,10 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     ${CMAKE_CURRENT_BINARY_DIR}/pybind11
   )
   add_library(PyQnnManagerAdaptor MODULE)
-  add_library(PyQnnWrapperAdaptor MODULE)
   # PyQnnManager containing a pybind type triggers the warning because pybind11
   # code internally forces hidden visibility.
   set_target_properties(
     PyQnnManagerAdaptor PROPERTIES CXX_VISIBILITY_PRESET hidden
-  )
-  set_target_properties(
-    PyQnnWrapperAdaptor PROPERTIES CXX_VISIBILITY_PRESET hidden
   )
 
   target_link_libraries(
@@ -287,18 +283,14 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
             executorch
             extension_tensor
             qnn_backend_options
-  )
-  target_link_libraries(
-    PyQnnWrapperAdaptor PRIVATE pybind11::module pybind11::lto wrappers
-                                qnn_executorch_logging qnn_executorch_header
+            wrappers
+            qnn_executorch_logging
   )
 
   pybind11_extension(PyQnnManagerAdaptor)
-  pybind11_extension(PyQnnWrapperAdaptor)
   if(NOT MSVC AND NOT ${CMAKE_BUILD_TYPE} MATCHES RelWithDebInfo)
     # Strip unnecessary sections of the binary
     pybind11_strip(PyQnnManagerAdaptor)
-    pybind11_strip(PyQnnWrapperAdaptor)
   endif()
 
   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -309,9 +301,6 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     target_compile_options(
       PyQnnManagerAdaptor PUBLIC ${_pybind_compile_options}
     )
-    target_compile_options(
-      PyQnnWrapperAdaptor PUBLIC ${_pybind_compile_options}
-    )
   endif()
 
   add_subdirectory(
@@ -320,7 +309,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   )
 
   install(
-    TARGETS PyQnnManagerAdaptor PyQnnWrapperAdaptor
+    TARGETS PyQnnManagerAdaptor
     LIBRARY
       DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm/python
     RUNTIME

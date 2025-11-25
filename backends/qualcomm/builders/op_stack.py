@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import cast, Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
@@ -26,8 +26,8 @@ class Stack(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node_list = node.args[0]
         stack_input_tensors = []
         for input_node in input_node_list:
@@ -36,7 +36,7 @@ class Stack(NodeVisitor):
                 input_node,
                 node,
                 input_tensor,
-                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 nodes_to_wrappers,
             )
             stack_input_tensors.append(stack_inp_tensor_wrapper)
@@ -45,7 +45,7 @@ class Stack(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         stack_output_tensors = [output_tensor_wrapper]
@@ -55,7 +55,7 @@ class Stack(NodeVisitor):
             dim = dim % len(output_tensor.shape)
         if QCOM_AXIS_ORDER in node.meta:
             dim = node.meta[QCOM_AXIS_ORDER].index(dim)
-        stack_op = PyQnnWrapper.PyQnnOpWrapper(
+        stack_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpPack.op_name,
@@ -65,7 +65,7 @@ class Stack(NodeVisitor):
 
         stack_op.AddScalarParam(
             OpPack.param_axis,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(dim)},
         )
 
