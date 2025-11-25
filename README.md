@@ -73,6 +73,18 @@ import torch
 from executorch.exir import to_edge_transform_and_lower
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 
+# 0、enable log for partition debug
+import logging
+logger = logging.getLogger("executorch.backends.xnnpack.partition")
+logger.setLevel(logging.DEBUG)
+
+if not logger.handlers:
+  ch = logging.StreamHandler()
+  ch.setLevel(logging.DEBUG)
+  formatter = logging.Formatter("[%(levelname)s] %(name)s: %(message)s")
+  ch.setFormatter(formatter)
+  logger.addHandler(ch)
+
 # 1. Export your PyTorch model
 model = MyModel().eval()
 example_inputs = (torch.randn(1, 3, 224, 224),)
