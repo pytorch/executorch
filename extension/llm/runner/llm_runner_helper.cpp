@@ -201,7 +201,8 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     const std::string& model_path,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::vector<std::string> data_files,
-    float temperature) {
+    float temperature,
+    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer) {
   // Sanity check tokenizer
   if (!tokenizer || !tokenizer->is_loaded()) {
     ET_LOG(Error, "Tokenizer is null or not loaded");
@@ -216,7 +217,7 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
         model_path,
         data_files,
         Module::LoadMode::File,
-        nullptr, // event tracer
+        std::move(event_tracer),
         nullptr, // memory allocator
         std::make_unique<
             executorch::extension::CPUCachingAllocator>( // temp memory
@@ -225,8 +226,9 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   } else {
     module = std::make_unique<Module>(
         model_path,
+        model_path,
         Module::LoadMode::File,
-        nullptr, // event tracer
+        std::move(event_tracer), // event tracer
         nullptr, // memory allocator
         std::make_unique<
             executorch::extension::CPUCachingAllocator>( // temp memory
