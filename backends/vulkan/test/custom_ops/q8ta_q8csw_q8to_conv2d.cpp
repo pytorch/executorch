@@ -456,8 +456,9 @@ void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   if (N > kRefDimSizeLimit || C_in > kRefDimSizeLimit ||
       H_in > kRefDimSizeLimit || W_in > kRefDimSizeLimit ||
       C_out > kRefDimSizeLimit) {
-    throw std::invalid_argument(
+      throw std::invalid_argument(
         "One or more dimensions exceed the allowed limit for reference implementation.");
+      std::cout << "Reference implementation: computation may take some time for large tensors..." << std::endl;
   }
 
   if (input_spec.dtype != vkapi::kFloat) {

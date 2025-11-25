@@ -1321,7 +1321,7 @@ TestResult execute_test_cases(
           print_valuespec_data(output_spec, "vulkan output");
           print_valuespec_data(output_spec, "ref output", true);
 
-          throw std::runtime_error("Correctness validation failed");
+            throw std::runtime_error("Correctness validation failed");
         }
       }
 
