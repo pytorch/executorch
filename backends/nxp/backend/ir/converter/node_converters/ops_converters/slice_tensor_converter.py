@@ -4,12 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
-from backends.nxp.backend.edge_helper import input_tensor
-from backends.nxp.backend.ir.converter.conversion.common import OpsList
+from executorch.backends.nxp.backend.edge_helper import input_tensor
+from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
-from executorch.backends.nxp.backend.ir.converter.conversion.common import (
-    node_uses_shape_broadcasting,
-)
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
@@ -30,10 +27,6 @@ class SliceTensorConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if node_uses_shape_broadcasting(node):
-            # Shape broadcasting may require the addition of `Transpose` ops during conversion.
-            return False
-
         # Provisional solution - slice conversion works for neutron software 2.2.1+
         neutron_flavor = neutron_target_spec.neutron_target.__module__.split(".")[0]
         if neutron_flavor != "neutron_converter_SDK_25_12":
@@ -42,7 +35,7 @@ class SliceTensorConverter(NodeConverter):
         input_shape = input_tensor(node, 0).shape
         dim = node.args[1]
 
-        # The rank of the dimension that we want to slice must be divisible by num_macs
+        # The shape of dimension that we want to slice must be divisible by num_macs
         num_macs = neutron_target_spec.get_num_macs()
         return input_shape[dim] % num_macs == 0
 
@@ -77,9 +70,6 @@ class SliceTensorConverter(NodeConverter):
         begin[-1], begin[dim] = begin[dim], begin[-1]
         size[-1], size[dim] = size[dim], size[-1]
 
-        # Create permutation for swapping
-        perm = list(range(0, input_rank))
-        perm[dim], perm[-1] = perm[-1], perm[dim]
 
         begin_tensor = self.builder.create_tensor_for_data(
             np.asarray(begin, np.int32), "begin"
@@ -90,18 +80,25 @@ class SliceTensorConverter(NodeConverter):
 
         t_op.tmp_inputs = [main_input, begin_tensor, size_tensor]
         t_op.builtin_options = slice_options.Slice()
-
         ops = OpsList(middle_op=t_op)
-        # Insert forward and backward transpose
-        ops.add_pre(self.builder.create_transpose_operator_before(t_op, 0, perm))
-        ops.add_post(self.builder.create_transpose_operator_after(t_op, 0, perm))
+
+        # If slicing along non-channels dimension, we need to swap it with channels dimension.
+        # Otherwise Neutron will not convert it.
+        if dim != -1:
+            # Create permutation for swapping
+            perm = list(range(0, input_rank))
+            perm[dim], perm[-1] = perm[-1], perm[dim]
+
+            # Insert forward and backward transpose
+            ops.add_pre(self.builder.create_transpose_operator_before(t_op, 0, perm))
+            ops.add_post(self.builder.create_transpose_operator_after(t_op, 0, perm))
 
         self.builder.append_operators(ops.flatten())
 
     Dim = Start = End = int
 
     @staticmethod
-    def _get_clipped_slice_args(node: Node) -> (Dim, Start, End):
+    def _get_clipped_slice_args(node: Node) -> tuple[Dim, Start, End]:
         input_shape = input_tensor(node, 0).shape
         _, dim, start, end = node.args
         sliced_tensor_rank = input_shape[dim]

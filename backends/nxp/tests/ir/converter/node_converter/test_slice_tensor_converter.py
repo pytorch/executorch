@@ -6,10 +6,11 @@ import numpy as np
 import pytest
 import torch
 
-from backends.nxp.tests.models import SliceTensorModule
+from executorch.backends.nxp.tests.models import SliceTensorModule
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.tests.executorch_pipeline import (
     neutron_converter_flavor,
     to_quantized_edge_program,
@@ -86,13 +87,18 @@ def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends
         ends=ends,
     )
 
-    if neutron_converter_flavor != "SDK_25_12":
+    if neutron_converter_flavor == "SDK_25_09":
         pytest.skip("Neutron Software must be version 2.2.1 or higher.")
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, x_input_shape).exported_program()
+    edge_program = to_quantized_edge_program(model, x_input_shape).exported_program()
+    edge_nodes = list(edge_program.graph.nodes)
+
+    # Check if slices and potential transposes were delegated
+    node_delegated = edge_nodes[3]
+    assert node_delegated.op == "call_function" and node_delegated.target.__name__ == "executorch_call_delegate"
 
     # Capture generated model
     tflite_flatbuffers_model, _ = converter_spy.spy_return
@@ -116,10 +122,10 @@ def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends
     "x_input_shape, dims, starts, ends",
     [
         pytest.param(
-            (1, 4, 32, 48),
+            (1, 4, 34, 50),
             (0, 1, 2, 3),
             (0, 0, 8, 0),
-            (1, 8, 32, 48),
+            (1, 8, 32, 32),
             id="4D, handle channel order swap",
         )
     ],
@@ -132,7 +138,12 @@ def test_slice_tensor_w_conv_quant_conversion(
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, x_input_shape)
+    edge_program = to_quantized_edge_program(model, x_input_shape, use_neutron_for_format_conversion=False).exported_program()
+    edge_nodes = list(edge_program.graph.nodes)
+
+    # Check if slices and transposes were delegated
+    node_delegated = edge_nodes[3]
+    assert node_delegated.op == "call_function" and node_delegated.target.__name__ == "executorch_call_delegate"
 
     # Capture generated model
     tflite_flatbuffers_model, _ = converter_spy.spy_return
@@ -145,12 +156,15 @@ def test_slice_tensor_w_conv_quant_conversion(
     )
     input_data = {0: input_data}
 
+    conversion_config = ConversionConfig()
+    conversion_config.use_neutron_for_format_conversion = False
     convert_run_compare(
         exported_program,
         input_data=input_data,
         tflite_input_preprocess=ToChannelLastPreprocess(),
         tfl_model=tflite_flatbuffers_model,
         tflite_output_preprocess=ToChannelFirstPreprocess(),
+        conversion_config=conversion_config
     )
 
 
