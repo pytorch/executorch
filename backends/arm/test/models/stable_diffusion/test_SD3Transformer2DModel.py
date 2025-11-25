@@ -24,16 +24,12 @@ class TestSD3Transformer2DModel(unittest.TestCase):
 
     # Adjust nbr below as we increase op support.
     ops_after_partitioner_FP = {
-        "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
         "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_view_copy_default": 2,
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
         "torch.ops.higher_order.executorch_call_delegate": 1,
     }
 
     ops_after_partitioner_INT = {
-        "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_view_copy_default": 2,
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
         "torch.ops.higher_order.executorch_call_delegate": 2,
     }
