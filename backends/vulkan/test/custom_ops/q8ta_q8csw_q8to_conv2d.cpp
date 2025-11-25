@@ -171,6 +171,7 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
 
   // Single simple configuration for debugging
   Conv2dConfig config = {
+#if 0
       OutInChannels(16, 8), // channels (out, in)
       InputSize2D(21, 17), // input_size (h, w)
       KernelSize(3, 3), // kernel
@@ -178,6 +179,15 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
       Padding(1, 1), // padding
       Dilation(1, 1), // dilation
       2, // groups
+#else
+      OutInChannels(128, 128),
+      InputSize2D(128, 128),
+      KernelSize(5, 5),
+      Stride(2, 2),
+      Padding(2, 2),
+      Dilation(1, 1),
+      1,
+#endif
   };
   config.op_name = "conv2d_q8ta_q8csw_q8to";
 
@@ -435,8 +445,9 @@ void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   if (N > kRefDimSizeLimit || C_in > kRefDimSizeLimit ||
       H_in > kRefDimSizeLimit || W_in > kRefDimSizeLimit ||
       C_out > kRefDimSizeLimit) {
-    throw std::invalid_argument(
-        "One or more dimensions exceed the allowed limit for reference implementation.");
+//    throw std::invalid_argument(
+//        "One or more dimensions exceed the allowed limit for reference implementation.");
+      std::cout << "Reference implementation: computation may take some time for large tensors..." << std::endl;
   }
 
   if (input_spec.dtype != vkapi::kFloat) {
@@ -617,7 +628,11 @@ int main(int argc, char* argv[]) {
 
   // Execute test cases using the new framework with custom FLOP calculator
   auto results = execute_test_cases(
+#if 1
       generate_quantized_conv2d_test_cases,
+#else
+      generate_quantized_conv2d_easy_cases,
+#endif
       quantized_conv2d_flop_calculator,
       "QuantizedConv2dQ8ToQ8To",
       0,

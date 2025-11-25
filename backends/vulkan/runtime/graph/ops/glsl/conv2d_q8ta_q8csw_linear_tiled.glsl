@@ -42,9 +42,9 @@ ${layout_declare_tensor(B, "r", "t_weight_sums", "int", "buffer", is_scalar_arra
 ${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False)}
 
-${layout_declare_ubo(B, "ivec4", "output_sizes")}
-${layout_declare_ubo(B, "ivec4", "input_sizes")}
-${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
+//${layout_declare_ubo(B, "ivec4", "output_sizes")}
+//${layout_declare_ubo(B, "ivec4", "input_sizes")}
+//${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
 
 layout(push_constant) uniform restrict Block {
   float input_scale;
@@ -54,6 +54,33 @@ layout(push_constant) uniform restrict Block {
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_in_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_out_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_groups", "1")}
+
+${layout_declare_spec_const(C, "int", "output_x", "1")}
+${layout_declare_spec_const(C, "int", "output_y", "1")}
+${layout_declare_spec_const(C, "int", "output_z", "1")}
+${layout_declare_spec_const(C, "int", "output_w", "1")}
+${layout_declare_spec_const(C, "int", "input_x", "1")}
+${layout_declare_spec_const(C, "int", "input_y", "1")}
+${layout_declare_spec_const(C, "int", "input_z", "1")}
+${layout_declare_spec_const(C, "int", "input_w", "1")}
+
+
 
 #include "linear_int8_input_tile_load.glslh"
 #include "linear_int8_weight_tile_load.glslh"
@@ -67,6 +94,9 @@ void main() {
   // Each thread writes out a 4 wide x 4 high tile of output values
   const int out_tile_x = int(gl_GlobalInvocationID.x);
   const int out_tile_y = int(gl_GlobalInvocationID.y);
+
+  const ivec4 output_sizes = ivec4(int(output_x), int(output_y), int(output_z), int(output_w));
+  const ivec4 input_sizes = ivec4(int(input_x), int(input_y), int(input_z), int(input_w));
 
   const int n = int(out_tile_x * TILE_N);
   const int m = int(out_tile_y * TILE_M);
@@ -83,10 +113,10 @@ void main() {
     return;
   }
 
-  const int group_idx = n / conv2d_params.out_channels_per_group;
-  const int input_k4_offset = conv2d_params.K4_per_group * group_idx;
+  const int group_idx = n / conv2d_params_out_channels_per_group;
+  const int input_k4_offset = conv2d_params_K4_per_group * group_idx;
 
-  const int K4 = conv2d_params.K4;
+  const int K4 = conv2d_params_K4;
   const int N4 = div_up_4(N);
 
   Int32Accum out_accum;
@@ -95,7 +125,7 @@ void main() {
   Int8InputTile int8_in_tile;
   Int8WeightTile int8_weight_tile;
 
-  for (int k4 = 0; k4 < conv2d_params.K4_per_group; k4++) {
+  for (int k4 = 0; k4 < conv2d_params_K4_per_group; k4++) {
     load_int8_input_tile(int8_in_tile, k4 + input_k4_offset, m4, K4);
     load_int8_weight_tile(int8_weight_tile, n4, k4, N4);
 

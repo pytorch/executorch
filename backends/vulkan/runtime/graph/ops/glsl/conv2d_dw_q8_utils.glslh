@@ -143,7 +143,7 @@ void perform_conv1d(
     const WeightRow weight_row) {
   for (int out_w = 0; out_w < 4; ++out_w) {
     [[unroll]] for (int kx = 0; kx < weight_row.len; ++kx) {
-      const int in_w = out_w * conv2d_params.stride.x;
+      const int in_w = out_w * conv2d_params_stride_x;
       out_block.data[out_w] = fma(
           input_window.data[in_w + kx],
           weight_row.data[kx],

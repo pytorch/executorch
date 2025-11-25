@@ -42,9 +42,9 @@ ${layout_declare_tensor(B, "r", "t_weight_sums", "int", "buffer", is_scalar_arra
 ${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False)}
 
-${layout_declare_ubo(B, "ivec4", "output_sizes")}
+//${layout_declare_ubo(B, "ivec4", "output_sizes")}
 ${layout_declare_ubo(B, "ivec4", "im2col_sizes")}
-${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
+//${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
 
 layout(push_constant) uniform restrict Block {
   float input_scale;
@@ -56,6 +56,33 @@ layout(push_constant) uniform restrict Block {
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_in_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_out_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_groups", "1")}
+
+${layout_declare_spec_const(C, "int", "output_x", "1")}
+${layout_declare_spec_const(C, "int", "output_y", "1")}
+${layout_declare_spec_const(C, "int", "output_z", "1")}
+${layout_declare_spec_const(C, "int", "output_w", "1")}
+${layout_declare_spec_const(C, "int", "input_x", "1")}
+${layout_declare_spec_const(C, "int", "input_y", "1")}
+${layout_declare_spec_const(C, "int", "input_z", "1")}
+${layout_declare_spec_const(C, "int", "input_w", "1")}
+
+
 
 #include "conv2d_int8_input_tile_load.glslh"
 #include "linear_int8_weight_tile_load.glslh"
@@ -72,6 +99,9 @@ void main() {
   output_block_idx.data.x = int(gl_GlobalInvocationID.y) * TILE_M4;
   output_block_idx.data.y = int(gl_GlobalInvocationID.z);
 
+  const ivec4 output_sizes = ivec4(int(output_x), int(output_y), int(output_z), int(output_w));
+//  const ivec4 input_sizes = ivec4(int(input_x), int(input_y), int(input_z), int(input_w));
+
   Conv2dBlockExtents output_block_extents = make_block_extents(output_sizes);
   if (block_idx_out_of_bounds(output_block_idx, output_block_extents)) {
     return;
@@ -79,8 +109,8 @@ void main() {
 
   const int n = mul_4(output_block_idx.data.z);
 
-  const int group_idx = n / conv2d_params.out_channels_per_group;
-  const int group_k4_offset = group_idx * conv2d_params.K4_per_group;
+  const int group_idx = n / conv2d_params_out_channels_per_group;
+  const int group_k4_offset = group_idx * conv2d_params_K4_per_group;
 
   Conv2dBlockExtents input_block_extents = make_block_extents(im2col_sizes);
 
@@ -93,7 +123,7 @@ void main() {
   Int8InputTileIndex input_idx = make_initial_int8_input_tile_index(
       output_block_idx, input_block_extents, group_k4_offset);
 
-  for (int k4 = 0; k4 < conv2d_params.K4_per_group; k4++) {
+  for (int k4 = 0; k4 < conv2d_params_K4_per_group; k4++) {
     load_packed_int8_input_tile(int8_input_tile, input_idx);
 
     load_int8_weight_tile(
