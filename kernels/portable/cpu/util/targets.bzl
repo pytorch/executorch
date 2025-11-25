@@ -292,6 +292,7 @@ def define_common_targets():
         exported_headers = ["slice_util.h"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/extension/threadpool:threadpool",
         ],
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
