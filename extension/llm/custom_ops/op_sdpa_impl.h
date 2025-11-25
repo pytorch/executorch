@@ -35,7 +35,6 @@ enum class SeqDim { ONE = 1, TWO };
 
 namespace sdpa::impl {
 
-static std::vector<char> scratch_for_quant_dequant_vec;
 struct MaybeQuantizedMatrixData {
   const void* data{nullptr};
   const int8_t* zero_points{nullptr};
@@ -765,32 +764,26 @@ void cpu_flash_attention(
 
   // Since all intermediate compute is accum_t, we need to
   // allocate a buffer accordingly.
-  int64_t size_of_intermediate_precision = sizeof(accum_t);
-  int64_t size_bytes = size_per_thread * num_thread * query.element_size() *
-      size_of_intermediate_precision;
-  Result<void*> buff_res = ctx.allocate_temp(size_bytes);
+  int64_t size_bytes = size_per_thread * num_thread * sizeof(accum_t);
   std::unique_ptr<char[]> allocated_buf;
   void* buf;
-  if (!buff_res.ok()) {
+  Result<void*> scratch = ctx.allocate_temp(size_bytes, 64);
+  if (!scratch.ok()) {
     allocated_buf = std::make_unique<char[]>(size_bytes);
-    buf = reinterpret_cast<void*>(allocated_buf.get());
+    buf = allocated_buf.get();
   } else {
-    buf = buff_res.get();
+    buf = scratch.get();
   }
   void* buf_reduced = nullptr;
-  int64_t size_per_thread_qdq_vec = kvSplitSize * headSize;
+  int64_t size_per_thread_qdq_vec = qSplitSize * kvSplitSize * headSize;
   // Lets align size_per_thread_qdq_vec to 64 bytes, for coalesced cache reads,
   // by padding with right number of per thread elements
-  constexpr int64_t kAlignment = 64;
-  size_per_thread_qdq_vec =
-      (size_per_thread_qdq_vec + kAlignment - 1) & (-(kAlignment - 1));
-  int64_t size_per_thread_qdq_bytes =
-      size_per_thread_qdq_vec * size_of_intermediate_precision;
+  int64_t size_per_thread_qdq_bytes = size_per_thread_qdq_vec * sizeof(accum_t);
   int64_t size_qdq_bytes = size_per_thread_qdq_bytes * num_thread;
   std::unique_ptr<char[]> allocated_buf_for_qdq;
-  Result<void*> scratch_for_quant_dequant_res =
-      ctx.allocate_temp(size_qdq_bytes);
   accum_t* scratch_for_quant_dequant;
+  Result<void*> scratch_for_quant_dequant_res =
+      ctx.allocate_temp(size_qdq_bytes, 64);
   if (!scratch_for_quant_dequant_res.ok()) {
     allocated_buf_for_qdq = std::make_unique<char[]>(size_qdq_bytes);
     scratch_for_quant_dequant =
