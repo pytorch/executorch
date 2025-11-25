@@ -141,6 +141,8 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kSmollm3;
   } else if (decoder_model_version == "codegen") {
     decoder_model_version_ = DecoderModelVersion::kCodegen;
+  } else if (decoder_model_version == "glm") {
+    decoder_model_version_ = DecoderModelVersion::kGlm;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
@@ -211,6 +213,8 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kCodegen) {
     eos_ids->insert(tokenizer_->encode("<|endoftext|>", 0, 0).get()[0]);
+  } else if (decoder_model_version_ == DecoderModelVersion::kGlm) {
+    eos_ids->insert(tokenizer_->encode("<|user|>", 0, 0).get()[0]);
   }
 
   // Try avoid getMetadataHelper as it is time consuming.
