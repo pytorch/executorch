@@ -24,6 +24,7 @@ namespace executorch::backends::cuda {
 
 using executorch::aten::SizesType;
 using executorch::aten::StridesType;
+using executorch::backends::aoti::aoti_torch_dtype_bool;
 using executorch::backends::aoti::aoti_torch_get_device_index;
 using executorch::backends::aoti::aoti_torch_get_dtype;
 using executorch::backends::aoti::aoti_torch_get_sizes;
@@ -682,6 +683,50 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   return Error::Ok;
 }
 
+// item implementation for scalar tensors
+AOTITorchError aoti_torch_item_bool(Tensor* tensor, bool* ret_value) {
+  // Validate that tensor is 0D
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor->dim() == 0,
+      InvalidArgument,
+      "aoti_torch_item_bool failed: tensor is not 0D");
+
+  // Validate that tensor dtype is bool
+  int32_t dtype;
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_dtype(tensor, &dtype));
+
+  ET_CHECK_OR_RETURN_ERROR(
+      dtype == aoti_torch_dtype_bool(), // PyTorch dtype code for bool
+      InvalidArgument,
+      "aoti_torch_item_bool failed: tensor dtype is not bool");
+
+  // Get the data pointer
+  const void* data_ptr = tensor->const_data_ptr();
+  ET_CHECK_OR_RETURN_ERROR(
+      data_ptr != nullptr,
+      InvalidArgument,
+      "aoti_torch_item_bool failed: tensor data pointer is null");
+
+  // Check if tensor is on CUDA or CPU
+  cudaPointerAttributes attributes{};
+  ET_CUDA_CHECK_OR_RETURN_ERROR(
+      cudaPointerGetAttributes(&attributes, data_ptr));
+
+  if (attributes.type == cudaMemoryTypeDevice) {
+    // CUDA memory case: copy from device to host
+    bool device_value;
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
+        &device_value, data_ptr, sizeof(bool), cudaMemcpyDeviceToHost));
+    *ret_value = device_value;
+  } else {
+    // CPU memory case: direct access
+    const bool* bool_ptr = static_cast<const bool*>(data_ptr);
+    *ret_value = *bool_ptr;
+  }
+
+  return Error::Ok;
+}
+
 AOTITorchError aoti_torch_new_tensor_handle(
     Tensor* orig_handle,
     Tensor** new_handle) {
@@ -762,6 +807,75 @@ AOTITorchError aoti_torch_new_tensor_handle(
   tensors.insert(tensor);
 
   *new_handle = tensor.get();
+
+  // Increment the reference count for this memory address only if it is owned
+  // by tensor
+  memory_to_n_tensor[data_ptr] = memory_to_n_tensor[data_ptr] == NOT_OWN
+      ? NOT_OWN
+      : memory_to_n_tensor[data_ptr] + 1;
+
+  return Error::Ok;
+}
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst) {
+  if (src == nullptr || ret_dst == nullptr) {
+    return Error::InvalidArgument;
+  }
+
+  // Get the original data pointer from the source tensor
+  void* data_ptr = src->mutable_data_ptr();
+  ET_CHECK_OR_RETURN_ERROR(
+      data_ptr != nullptr,
+      InvalidArgument,
+      "Source tensor has null data pointer");
+
+  // Check if the given memory is in the map, if not return error
+  auto memory_it = memory_to_n_tensor.find(data_ptr);
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it != memory_to_n_tensor.end(),
+      InvalidArgument,
+      "Memory address %p is not being tracked by reference counting system",
+      data_ptr);
+
+  int32_t dtype = 0;
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_dtype(src, &dtype));
+
+  std::vector<SizesType> sizes;
+  std::vector<StridesType> strides;
+
+  int64_t* view_sizes_ptr;
+  if (aoti_torch_get_sizes(src, &view_sizes_ptr) != Error::Ok) {
+    return Error::Internal;
+  }
+  int64_t* view_strides_ptr;
+  if (aoti_torch_get_strides(src, &view_strides_ptr) != Error::Ok) {
+    return Error::Internal;
+  }
+  sizes = convert_sizes_to_vector(src->dim(), view_sizes_ptr);
+  strides =
+      convert_strides_to_vector(src->dim(), view_sizes_ptr, view_strides_ptr);
+
+  // Create new tensor view that reinterprets the same memory with different
+  // shape/strides This creates a view, not a copy - the data pointer is shared
+  // Using CUDA-specific tensor maker that supports incontiguous tensors
+  std::shared_ptr<Tensor> tensor = make_tensor(
+      sizes, // New sizes with explicit SizesType
+      data_ptr, // Reuse the same memory from source tensor
+      {}, // dim_order (empty, will be auto-generated)
+      strides, // New strides with explicit StridesType
+      dtype_to_scalar_type(dtype) // Convert dtype with explicit type casting
+  );
+
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr,
+      InvalidArgument,
+      "Failed to create reinterpreted tensor view");
+
+  // Store the tensor so it doesn't get destroyed
+  tensors.insert(tensor);
+
+  *ret_dst = tensor.get();
 
   // Increment the reference count for this memory address only if it is owned
   // by tensor
