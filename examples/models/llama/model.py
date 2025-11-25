@@ -7,8 +7,7 @@
 # pyre-unsafe
 
 import json
-import os
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import torch
 from executorch.examples.models.checkpoint import (
@@ -18,7 +17,6 @@ from executorch.examples.models.checkpoint import (
 
 from executorch.examples.models.llama.llama_transformer import construct_transformer
 from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.rope import Rope
 
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 from torchao.utils import TorchAOBaseTensor
@@ -39,12 +37,9 @@ from ..model_base import EagerModelBase
 
 class Llama2Model(EagerModelBase):
     def __init__(self, llm_config: Optional[LlmConfig] = None):
-        resource_dir = get_default_model_resource_dir(__file__)
-
         self.llm_config = llm_config if llm_config else LlmConfig()
 
         checkpoint_path = self.llm_config.base.checkpoint
-        checkpoint_dir = self.llm_config.base.checkpoint_dir
         params_path = self.llm_config.base.params
 
         # Adapter checkpoint and config.
@@ -71,6 +66,7 @@ class Llama2Model(EagerModelBase):
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model.
         device = "cpu"
+        # flake8: noqa: TOR102
         if checkpoint_path:
             checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
 
