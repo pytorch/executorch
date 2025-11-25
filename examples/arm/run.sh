@@ -43,6 +43,7 @@ select_ops_list="aten::_softmax.out"
 qdq_fusion_op=false
 model_explorer=false
 perf_overlay=false
+model_converter=false
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -126,18 +127,7 @@ fi
 # Default Ethos-u tool folder override with --scratch-dir=<FOLDER>
 ethos_u_scratch_dir=$(realpath ${ethos_u_scratch_dir})
 setup_path_script=${ethos_u_scratch_dir}/setup_path.sh
-if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
-    toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
-elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
-    toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
-else
-    echo "Error: Invalid toolchain selection, provided: ${toolchain}"
-    echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
-    exit 1;
-fi
-toolchain_cmake=$(realpath ${toolchain_cmake})
 _setup_msg="please refer to ${script_dir}/setup.sh to properly install necessary tools."
-
 
 # Set target based variables
 if [[ ${system_config} == "" ]]
@@ -163,48 +153,6 @@ then
     config="Arm/vela.ini"
 fi
 
-function check_setup () {
-    # basic checks that setup.sh did everything needed before we get started
-
-    # check if setup_path_script was created, if so source it
-    if [[ -f ${setup_path_script} ]]; then
-        source $setup_path_script
-    else
-        echo "Could not find ${setup_path_script} file, ${_setup_msg}"
-        return 1
-    fi
-
-    # If setup_path_script was correct all these checks should now pass
-    hash ${toolchain} \
-        || { echo "Could not find ${toolchain} toolchain on PATH, ${_setup_msg}"; return 1; }
-
-    [[ -f ${toolchain_cmake} ]] \
-        || { echo "Could not find ${toolchain_cmake} file, ${_setup_msg}"; return 1; }
-
-    [[ -f ${et_root_dir}/CMakeLists.txt ]] \
-        || { echo "Executorch repo doesn't contain CMakeLists.txt file at root level"; return 1; }
-
-    return 0
-}
-
-#######
-### Main
-#######
-if ! check_setup; then
-    if [ "$scratch_dir_set" = false ] ; then
-	# check setup failed, no scratchdir given as parameter. trying to run setup.sh
-	if ${script_dir}/setup.sh; then
-	    # and recheck setup. If this fails exit.
-	    if ! check_setup; then
-		exit 1
-	    fi
-	else
-	    # setup.sh failed, it should print why
-	    exit 1
-	fi
-    fi
-fi
-
 # Build executorch libraries
 cd $et_root_dir
 devtools_flag=""
@@ -227,7 +175,67 @@ if [ "$qdq_fusion_op" = true ] ; then
     qdq_fusion_op_flag="--enable_qdq_fusion_pass"
 fi
 
-backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag $et_dump_flag --toolchain="${toolchain}"
+function check_setup () {
+    # basic checks that setup.sh did everything needed before we get started
+
+    # check if setup_path_script was created, if so source it
+    if [[ -f ${setup_path_script} ]]; then
+        source $setup_path_script
+        echo $setup_path_script
+    else
+        echo "Could not find ${setup_path_script} file, ${_setup_msg}"
+        return 1
+    fi
+    # If setup_path_script was correct all these checks should now pass
+    if [[ ${target} =~ "ethos-u" ]]; then
+        if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
+            toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+        elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
+            toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
+        else
+            echo "Error: Invalid toolchain selection, provided: ${toolchain}"
+            echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
+            exit 1;
+        fi
+        toolchain_cmake=$(realpath ${toolchain_cmake})
+        hash ${toolchain} \
+            || { echo "Could not find ${toolchain} toolchain on PATH, ${_setup_msg}"; return 1; }
+
+        [[ -f ${toolchain_cmake} ]] \
+            || { echo "Could not find ${toolchain_cmake} file, ${_setup_msg}"; return 1; }
+
+        [[ -f ${et_root_dir}/CMakeLists.txt ]] \
+            || { echo "Executorch repo doesn't contain CMakeLists.txt file at root level"; return 1; }
+        
+
+    backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag $et_dump_flag --toolchain="${toolchain}"
+    elif [[ ${target} =~ "vgf" ]]; then
+        model_converter=$(which model-converter)
+        echo "${model_converter}"
+        [[ "${model_converter}" == "model-converter not found" ]] \
+            && { echo "Could not find model-converter, ${_setup_msg}"; return 1; }
+    fi
+
+    return 0
+}
+
+#######
+### Main
+#######
+if ! check_setup; then
+    if [ "$scratch_dir_set" = false ] ; then
+	# check setup failed, no scratchdir given as parameter. trying to run setup.sh
+	if ${script_dir}/setup.sh; then
+	    # and recheck setup. If this fails exit.
+	    if ! check_setup; then
+		exit 1
+	    fi
+	else
+	    # setup.sh failed, it should print why
+	    exit 1
+	fi
+    fi
+fi
 
 if [[ -z "$model_name" ]]; then
     # the test models run, and whether to delegate
