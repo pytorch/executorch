@@ -672,18 +672,12 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
         if llm_config.base.checkpoint
         else None
     )
-    checkpoint_dir = (
-        canonical_path(llm_config.base.checkpoint_dir)
-        if llm_config.base.checkpoint_dir
-        else None
-    )
     params_path = (
         canonical_path(llm_config.base.params) if llm_config.base.params else None
     )
     output_dir_path = canonical_path(llm_config.export.output_dir, dir=True)
 
     llm_config.base.checkpoint = checkpoint_path
-    llm_config.base.checkpoint_dir = checkpoint_dir
     llm_config.base.params = params_path
     llm_config.export.output_dir = output_dir_path
 
