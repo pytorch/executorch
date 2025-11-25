@@ -112,33 +112,6 @@ class CortexMConv2Dx3(torch.nn.Module):
         return x
 
 
-class CortexMConv2DReLU(torch.nn.Module):
-    ops_before_transforms = {
-        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
-        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3,
-        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3,
-        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 1,
-    }
-
-    ops_after_transforms = {
-        "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 1,
-        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
-        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
-    }
-
-    def __init__(self):
-        super().__init__()
-        self.conv = torch.nn.Conv2d(4, 8, 3, padding=1, bias=True)
-        self.relu = torch.nn.ReLU()
-
-    def forward(self, x):
-        x = self.conv(x)
-        x = self.relu(x)
-        return x
-
-
 # in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias, padding_mode
 test_cases = {
     "conv2d": McuTestCase(
@@ -205,12 +178,6 @@ test_cases = {
             ramp_tensor(0, 10, (1, 3, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
-    "conv2d_relu": McuTestCase(
-        model=CortexMConv2DReLU(),
-        example_inputs=(
-            ramp_tensor(-5, 5, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
-        ),
-    ),
 }
 
 
@@ -219,7 +186,6 @@ xfails_dialect = {
     "conv1d": "Currently not supported.",
     "conv2d_nchw": "Currently not supported.",
     "conv3d": "Currently not supported.",
-    "conv2d_relu": "Currently not supported.",
 }
 
 
@@ -237,7 +203,6 @@ xfails_implementation = {
     "conv1d": "Currently not supported.",
     "conv2d_nchw": "Currently not supported.",
     "conv3d": "Currently not supported.",
-    "conv2d_relu": "Currently not supported.",
 }
 
 
