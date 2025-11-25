@@ -5,8 +5,6 @@
 import numpy as np
 import pytest
 import torch
-
-from executorch.backends.nxp.tests.models import SliceTensorModule
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
@@ -20,7 +18,11 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
-from executorch.backends.nxp.tests.models import SliceTensorConvModule
+
+from executorch.backends.nxp.tests.models import (
+    SliceTensorConvModule,
+    SliceTensorModule,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 
@@ -98,7 +100,10 @@ def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends
 
     # Check if slices and potential transposes were delegated
     node_delegated = edge_nodes[3]
-    assert node_delegated.op == "call_function" and node_delegated.target.__name__ == "executorch_call_delegate"
+    assert (
+        node_delegated.op == "call_function"
+        and node_delegated.target.__name__ == "executorch_call_delegate"
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, _ = converter_spy.spy_return
@@ -138,12 +143,17 @@ def test_slice_tensor_w_conv_quant_conversion(
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    edge_program = to_quantized_edge_program(model, x_input_shape, use_neutron_for_format_conversion=False).exported_program()
+    edge_program = to_quantized_edge_program(
+        model, x_input_shape, use_neutron_for_format_conversion=False
+    ).exported_program()
     edge_nodes = list(edge_program.graph.nodes)
 
     # Check if slices and transposes were delegated
     node_delegated = edge_nodes[3]
-    assert node_delegated.op == "call_function" and node_delegated.target.__name__ == "executorch_call_delegate"
+    assert (
+        node_delegated.op == "call_function"
+        and node_delegated.target.__name__ == "executorch_call_delegate"
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, _ = converter_spy.spy_return
@@ -164,7 +174,7 @@ def test_slice_tensor_w_conv_quant_conversion(
         tflite_input_preprocess=ToChannelLastPreprocess(),
         tfl_model=tflite_flatbuffers_model,
         tflite_output_preprocess=ToChannelFirstPreprocess(),
-        conversion_config=conversion_config
+        conversion_config=conversion_config,
     )
 
 

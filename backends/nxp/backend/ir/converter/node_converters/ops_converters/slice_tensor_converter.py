@@ -5,8 +5,8 @@
 
 import numpy as np
 from executorch.backends.nxp.backend.edge_helper import input_tensor
-from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
+from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
@@ -69,7 +69,6 @@ class SliceTensorConverter(NodeConverter):
         # So we swap the sliced dimension with the channels dimension
         begin[-1], begin[dim] = begin[dim], begin[-1]
         size[-1], size[dim] = size[dim], size[-1]
-
 
         begin_tensor = self.builder.create_tensor_for_data(
             np.asarray(begin, np.int32), "begin"
