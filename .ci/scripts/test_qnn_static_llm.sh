@@ -34,6 +34,7 @@ fi
 which "${PYTHON_EXECUTABLE}"
 
 # Although static llama CI does not require graphviz, it is required by test_qnn_delegate.py
+pip install pydot
 pip install graphviz
 
 set +e
