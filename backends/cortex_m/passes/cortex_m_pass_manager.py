@@ -11,6 +11,7 @@ from executorch.backends.arm._passes import (
     ScalarsToAttributePass,
 )
 from executorch.backends.cortex_m.passes import (
+    ActivationFusionPass,
     ConvertToCortexMPass,
     QuantizedOpFusionPass,
     ReplaceQuantNodesPass,
@@ -31,6 +32,7 @@ class CortexMPassManager(PassManager):
         ReplaceScalarWithTensorArgPass,
         ReplaceQuantNodesPass,
         QuantizedOpFusionPass,
+        ActivationFusionPass,
         ConvertToCortexMPass,
     ]
 
