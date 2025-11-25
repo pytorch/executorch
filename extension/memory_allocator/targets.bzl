@@ -20,3 +20,20 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
     )
+
+    runtime.cxx_library(
+        name = "cpu_caching_allocator",
+        srcs = [
+            "cpu_caching_malloc_allocator.cpp",
+        ],
+        exported_headers = [
+            "cpu_caching_malloc_allocator.h",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core:memory_allocator",
+        ],
+        visibility = [
+            "//executorch/extension/memory_allocator/test/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )

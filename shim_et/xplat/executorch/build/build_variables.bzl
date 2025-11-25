@@ -337,6 +337,10 @@ EXTENSION_FLAT_TENSOR_SRCS = [
     "extension/flat_tensor/serialize/flat_tensor_header.cpp",
 ]
 
+EXTENSION_MEMORY_ALLOCATOR_SRCS = [
+    "extension/memory_allocator/cpu_caching_malloc_allocator.cpp",
+]
+
 EXTENSION_MODULE_SRCS = [
     "extension/module/module.cpp",
 ]
