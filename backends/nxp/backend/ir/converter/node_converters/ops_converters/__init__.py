@@ -93,5 +93,5 @@ __all__ = [
     "HardTanhConverter",
     "SigmoidConverter",
     "TanhConverter",
-    "MulTensorConverter"
+    "MulTensorConverter",
 ]

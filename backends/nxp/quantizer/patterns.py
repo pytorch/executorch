@@ -14,7 +14,7 @@ from executorch.backends.nxp.quantizer.utils import get_bias_qparams
 from torch import fx
 from torch._ops import OpOverload
 from torch.fx import Node
-from torchao.quantization.pt2e import PerChannelMinMaxObserver, HistogramObserver
+from torchao.quantization.pt2e import PerChannelMinMaxObserver
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
@@ -687,15 +687,29 @@ class MulTensorPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors | None:
         node = fused_partition[0].nodes[-1]
-        inputs = [(node, NodeArgsIdx(0))]
-        if len(fused_partition[0].input_nodes) == 2:
-            inputs = [(node, NodeArgsIdx(0)), (node, NodeArgsIdx(1))]
+        input_nodes = node.all_input_nodes
+
+        qspec = FixedQParamsQuantizationSpec(
+            dtype=torch.int8,
+            scale=1.0 / 256.0,
+            zero_point=0,
+            quant_min=-128,
+            quant_max=127,
+            qscheme=torch.per_tensor_affine,
+        )
+
+        # appending custom qspec before the "Mul" operator caused to have two unnecessary dequantize-quantize sequences,
+        # which prevented from partitioner functioning properly
+        for input_node in input_nodes:
+            input_node.meta["quantization_annotation"].output_qspec = qspec
 
         return PartitionAnchors(
-            inputs=[inputs],
+            inputs=[(node, NodeArgsIdx(0), qspec), (node, NodeArgsIdx(1), qspec)],
             weights=[],
             biases=[],
-            output=[(node,)],
+            output=[
+                (node,),
+            ],
         )
 
 

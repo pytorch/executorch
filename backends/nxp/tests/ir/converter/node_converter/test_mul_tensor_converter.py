@@ -10,6 +10,7 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
@@ -20,7 +21,6 @@ from executorch.backends.nxp.tests.models import (
     MulTensorConvModule,
     MulTensorModule,
     MulTensorOneInputModule,
-    AddTensorModule
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
@@ -35,7 +35,7 @@ def reseed_model_per_test_run():
 @pytest.mark.parametrize(
     "x_input_shape",
     [
-        pytest.param((16,), id="1D."),
+        pytest.param((1,), id="1D."),
         pytest.param((6, 8), id="2D."),
         pytest.param((1, 4, 8), id="3D."),
         pytest.param((1, 4, 8, 8), id="4D."),
@@ -47,7 +47,17 @@ def test_mul_tensor_quant_conversion(mocker, x_input_shape):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, [x_input_shape, x_input_shape])
+    edge_program = to_quantized_edge_program(
+        model, [x_input_shape, x_input_shape]
+    ).exported_program()
+    edge_nodes = list(edge_program.graph.nodes)
+
+    # Check mul was delegated
+    mul_delegated = edge_nodes[5]
+    assert (
+        mul_delegated.op == "call_function"
+        and mul_delegated.target.__name__ == "executorch_call_delegate"
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -63,8 +73,8 @@ def test_mul_tensor_quant_conversion(mocker, x_input_shape):
     )
     input_data = {0: input_data_1, 1: input_data_2}
 
-    nodes = list(exported_program.graph.nodes)
-    assert nodes[4].target == exir_ops.edge.aten.mul.Tensor
+    exported_nodes = list(exported_program.graph.nodes)
+    assert exported_nodes[4].target == exir_ops.edge.aten.mul.Tensor
 
     convert_run_compare(
         exported_program, tfl_model=tflite_flatbuffers_model, input_data=input_data
@@ -84,14 +94,12 @@ def test_mul_tensor_shape_unsupported_quant_conversion(x_input_shape):
     model = MulTensorOneInputModule()
 
     # Run conversion
-    edge_program = to_quantized_edge_program(
-        model, x_input_shape
-    ).exported_program()
+    edge_program = to_quantized_edge_program(model, x_input_shape).exported_program()
     nodes = list(edge_program.graph.nodes)
 
     # Input tensor shape is not supported, node is not converted
     assert (
-        nodes[5].target == exir_ops.edge.aten.mul.Tensor
+        nodes[3].target == exir_ops.edge.aten.mul.Tensor
     )  # Mul Tensor is not delegated.
 
 
@@ -110,7 +118,15 @@ def test_mul_tensor_one_input_quant_conversion(mocker, input_shape):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+    edge_nodes = list(edge_program.graph.nodes)
+
+    # Check mul was delegated
+    mul_delegated = edge_nodes[3]
+    assert (
+        mul_delegated.op == "call_function"
+        and mul_delegated.target.__name__ == "executorch_call_delegate"
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -120,8 +136,8 @@ def test_mul_tensor_one_input_quant_conversion(mocker, input_shape):
 
     input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
 
-    nodes = list(exported_program.graph.nodes)
-    assert nodes[2].target == exir_ops.edge.aten.mul.Tensor
+    exported_nodes = list(exported_program.graph.nodes)
+    assert exported_nodes[2].target == exir_ops.edge.aten.mul.Tensor
 
     convert_run_compare(
         exported_program, tfl_model=tflite_flatbuffers_model, input_data=input_data
@@ -131,20 +147,29 @@ def test_mul_tensor_one_input_quant_conversion(mocker, input_shape):
 @pytest.mark.parametrize(
     "x_input_shape",
     [
-        pytest.param((1, 4, 8, 8), id="4D."),
-        pytest.param((1, 4, 16, 16), id="4D, product of dims is not a multiple of 8."),
+        pytest.param((1, 4, 16, 16), id="4D."),
+        pytest.param((1, 4, 5, 5), id="4D, product of dims is not a multiple of 8."),
     ],
 )
 def test_mul_tensor_w_conv_quant_conversion(mocker, x_input_shape):
     model = MulTensorConvModule()
-
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
-    n, c, h, w = x_input_shape
-    y_input_shape = (n, 8, h, w)
+    c, _, w, h = x_input_shape
+    y_input_shape = (c, 8, w, h)
 
     # Run conversion
-    _ = to_quantized_edge_program(model, [x_input_shape, y_input_shape])
+    edge_program = to_quantized_edge_program(
+        model, [x_input_shape, y_input_shape], use_neutron_for_format_conversion=False
+    ).exported_program()
+    edge_nodes = list(edge_program.graph.nodes)
+
+    # Check mul was delegated
+    mul_delegated = edge_nodes[5]
+    assert (
+        mul_delegated.op == "call_function"
+        and mul_delegated.target.__name__ == "executorch_call_delegate"
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -160,14 +185,18 @@ def test_mul_tensor_w_conv_quant_conversion(mocker, x_input_shape):
     )
     input_data = {0: input_data_1, 1: input_data_2}
 
-    nodes = list(exported_program.graph.nodes)
-    assert nodes[4].target == exir_ops.edge.aten.mul.Tensor
+    exported_nodes = list(exported_program.graph.nodes)
+    assert exported_nodes[12].target == exir_ops.edge.aten.convolution.default
+    assert exported_nodes[15].target == exir_ops.edge.aten.mul.Tensor
 
+    conversion_config = ConversionConfig()
+    conversion_config.use_neutron_for_format_conversion = False
     convert_run_compare(
         exported_program,
         input_data=input_data,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
         tfl_model=tflite_flatbuffers_model,
+        conversion_config=conversion_config,
+        tflite_input_preprocess=ToChannelLastPreprocess(),
         tflite_output_preprocess=ToChannelFirstPreprocess(),
     )
 
@@ -197,6 +226,5 @@ def test_mul_tensor_broadcasting_unsupported_quant_conversion(
 
     # Broadcast is not supported, node is not converted
     assert (
-        nodes[10].target == exir_ops.edge.aten.mul.Tensor
+        nodes[6].target == exir_ops.edge.aten.mul.Tensor
     )  # Mul Tensor is not delegated.
-
