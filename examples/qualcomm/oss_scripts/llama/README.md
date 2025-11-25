@@ -40,7 +40,7 @@ Support on other hardware depends on the **HTP architecture (HtpArch)** and the 
 
 ### HTP Minimum Version Requirements
 
-- **LPBQ (block-wise quantization)** requires **V69 or newer**
+- **LPBQ (16a4w block-wise quantization)** requires **V69 or newer**
 - **Weight sharing between prefill and decode** requires **V73 or newer**
 - **16-bit activations + 16-bit weights for matmul** (e.g., **16-bit KV cache**) requires **V73 or newer**
 
