@@ -316,7 +316,9 @@ def eval_llm(args):
     if args.ptq is not None:
         quant_dtype = getattr(QuantDtype, f"use_{args.ptq}")
         decoder_model_config = SUPPORTED_LLM_MODELS[args.decoder_model]
-        custom_annotations = decoder_model_config.custom_annotation
+        custom_annotations = (
+            decoder_model_config.quant_recipe().recipe.custom_quant_annotations
+        )
 
         quantizer = make_custom_quantizer(
             quant_dtype, args.range_setting, custom_annotations, args.quant_linear_only
