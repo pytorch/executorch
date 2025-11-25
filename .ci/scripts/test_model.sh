@@ -176,6 +176,8 @@ test_model_with_qnn() {
   export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/
   export PYTHONPATH=$EXECUTORCH_ROOT/..
 
+  pip install pydot
+
   EXTRA_FLAGS=""
   # Ordered by the folder name, then alphabetically by the model name
   # Following models are inside examples/qualcomm/scripts folder
