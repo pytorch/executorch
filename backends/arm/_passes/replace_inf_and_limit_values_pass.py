@@ -14,9 +14,11 @@ from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class ReplaceInfValuesPass(ArmPass):
+class ReplaceInfAndLimitValuesPass(ArmPass):
     """
-    Due to limitation in Quantizer, we need to change inf/-inf to more quantizable values.
+    Rewrites +inf/-inf and floating-point limit values (e.g., torch.finfo(...).min/max)
+    to quantization-friendly values (±255 by default), improving quantizer stability
+    (notably for attention mask paths).
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -34,12 +36,12 @@ class ReplaceInfValuesPass(ArmPass):
         for node in graph_module.graph.nodes:
             arg_list = list(node.args)
             for index, arg in enumerate(arg_list):
-                if arg == float("-inf"):
+                if arg == float("-inf") or arg == torch.finfo(torch.float32).min:
                     modified = True
-                    arg_list[index] = -255
-                elif arg == float("inf"):
+                    arg_list[index] = -255.0
+                elif arg == float("inf") or arg == torch.finfo(torch.float32).max:
                     modified = True
-                    arg_list[index] = +255
+                    arg_list[index] = +255.0
             node.args = tuple(arg_list)
 
         if modified:
