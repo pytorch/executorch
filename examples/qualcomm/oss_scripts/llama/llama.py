@@ -425,6 +425,9 @@ def compile(
         params_path = decoder_model_config.params_path
     with open(params_path) as f:
         kv_config = ModelArgs(**json.load(f))
+    if args.decoder_model in {"gemma-2b", "gemma3-1b"}:
+        # For gemma, we have preprocessed the weight of rmsnorm
+        kv_config.norm_type = "rmsnorm"
 
     # get quant recipe
     quant_recipe: StaticLLMQuantRecipe = decoder_model_config.quant_recipe(True)
@@ -808,10 +811,8 @@ def compile(
                 soc_model=get_soc_to_chipset_map()[args.model],
                 backend_options=backend_options,
                 shared_buffer=args.shared_buffer,
-                graph_name=graph_name,
             )
-            for graph_name in graph_names
-        ]
+        ] * len(graph_names)
 
         llama_instance_list[1].save_logits_quant_attrs()
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(

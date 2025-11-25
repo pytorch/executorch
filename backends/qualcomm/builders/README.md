@@ -18,8 +18,8 @@ Thank you for contributing to Qualcomm AI Engine Direct delegate for ExecuTorch.
 
 ## References
 ### Qualcomm AI Engine Direct
-- [Operator Definitions](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/MasterOpDef.html)
-- [Supported Operators in Backends](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/operations.html#backend-supplements)
+- [Operator Definitions](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/MasterOpDef.html)
+- [Supported Operators in Backends](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/operations.html#backend-supplements)
 
 ### PyTorch
 - [torch.nn Operator Definitions](https://pytorch.org/docs/stable/nn.html)
@@ -124,9 +124,9 @@ It will provide more hint to the source PyTorch layer where the missing operator
         };
     } Qnn_Param_t;
     ```
-    The name value equals to the parameter name described in [Operator Definitions](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/MasterOpDef.html), there are `epsilon`, `axes` for `LayerNorm` case.<br/>
+    The name value equals to the parameter name described in [Operator Definitions](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/MasterOpDef.html), there are `epsilon`, `axes` for `LayerNorm` case.<br/>
 
-    If you find it hard to correlate missing operator with documentation, this [table](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/SupportedOps.html) might be helpful for searching. In some cases, an exact match may not exist. Consider seeking for a math equivalent approach or notify maintainer for further analysis.
+    If you find it hard to correlate missing operator with documentation, this [table](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/SupportedOps.html) might be helpful for searching. In some cases, an exact match may not exist. Consider seeking for a math equivalent approach or notify maintainer for further analysis.
 
 - **PyTorch**:<br/>
     We could also read the IO spec from [function declaration](https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/layer_norm.cpp) mentioned in [PyTorch Documentation](#pytorch):
