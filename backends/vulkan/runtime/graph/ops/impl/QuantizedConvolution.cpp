@@ -569,6 +569,41 @@ ValueRef prepack_quantized_conv2d_dw_weight(
 //
 // Dispatch nodes
 //
+vkapi::SpecVarList GenerateSpecConstants(
+  ComputeGraph& graph,
+  Conv2DParams& conv_params,
+  const ValueRef& groups,
+  uint32_t apply_bias = 1)
+{
+  uint32_t conv2d_params_stride_x = conv_params.stride[0];
+  uint32_t conv2d_params_stride_y = conv_params.stride[1];
+  uint32_t conv2d_params_padding_x = conv_params.padding[0];
+  uint32_t conv2d_params_padding_y = conv_params.padding[1];
+  uint32_t conv2d_params_dilation_x = conv_params.dilation[0];
+  uint32_t conv2d_params_dilation_y = conv_params.dilation[1];
+  uint32_t conv2d_params_kernel_size_x = conv_params.kernel_size[0];
+  uint32_t conv2d_params_kernel_size_y = conv_params.kernel_size[1];
+  uint32_t in_channels_per_group = conv_params.in_channels_per_group;
+  uint32_t out_channels_per_group = conv_params.out_channels_per_group;
+  uint32_t K4_per_group = conv_params.K4_per_group;
+  uint32_t K4 = conv_params.K4;
+  uint32_t K_per_group = conv_params.K_per_group;
+  uint32_t logical_K_per_group = conv_params.logical_K_per_group;
+  uint32_t logical_K = conv_params.logical_K;
+  uint32_t groups_val = graph.get_int(groups);
+
+  vkapi::SpecVarList spec_constants = {
+      apply_bias,
+      conv2d_params_stride_x, conv2d_params_stride_y,
+      conv2d_params_padding_x, conv2d_params_padding_y,
+      conv2d_params_dilation_x, conv2d_params_dilation_y,
+      conv2d_params_kernel_size_x, conv2d_params_kernel_size_y,
+      in_channels_per_group, out_channels_per_group,
+      K4_per_group, K4, K_per_group, logical_K, logical_K_per_group, groups_val
+  };
+
+  return spec_constants;
+}
 
 void add_input_im2col_node(
     ComputeGraph& graph,
@@ -598,8 +633,9 @@ void add_input_im2col_node(
   vkapi::ParamsBindList param_buffers = {
       graph.sizes_ubo(input_im2col),
       graph.sizes_ubo(input_image),
-      graph.sizes_ubo(output_image),
-      graph.create_params_buffer(conv_params)};
+      graph.sizes_ubo(output_image)};
+
+  vkapi::SpecVarList spec_constants = GenerateSpecConstants(graph, conv_params, groups);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -613,7 +649,7 @@ void add_input_im2col_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      spec_constants,
       // Resize args
       {output_image, kernel_size, groups},
       // Resizing Logic
@@ -644,13 +680,14 @@ void add_input_im2col_packed_int8_node(
   vkapi::ParamsBindList param_buffers = {
       graph.sizes_ubo(input_im2col),
       graph.sizes_ubo(output),
-      graph.sizes_ubo(input),
-      graph.create_params_buffer(conv_params)};
+      graph.sizes_ubo(input)};
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&inv_scale, sizeof(inv_scale)),
       PushConstantDataInfo(&zp, sizeof(zp)),
   };
+
+  vkapi::SpecVarList spec_constants = GenerateSpecConstants(graph, conv_params, groups);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -664,7 +701,7 @@ void add_input_im2col_packed_int8_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {},
+      spec_constants,
       // Resize args
       {},
       // Resizing Logic
@@ -707,13 +744,14 @@ void add_quantize_and_pack_im2col_node(
   vkapi::ParamsBindList param_buffers = {
       graph.sizes_ubo(input_int_im2col),
       graph.sizes_ubo(input_image),
-      graph.sizes_ubo(output_image),
-      graph.create_params_buffer(conv_params)};
+      graph.sizes_ubo(output_image)};
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&inv_scale, sizeof(inv_scale)),
       PushConstantDataInfo(&zp, sizeof(zp)),
   };
+
+  vkapi::SpecVarList spec_constants = GenerateSpecConstants(graph, conv_params, groups);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -727,7 +765,7 @@ void add_quantize_and_pack_im2col_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {},
+      spec_constants,
       // Resize args
       {output_image, kernel_size, groups},
       // Resizing Logic
@@ -774,13 +812,14 @@ void add_conv2d_q8csw_linear_node(
 
   vkapi::ParamsBindList param_buffers = {
       graph.sizes_ubo(output_image),
-      graph.sizes_ubo(input_image),
-      graph.create_params_buffer(conv_params)};
+      graph.sizes_ubo(input_image)};
 
   uint32_t apply_bias = 1;
   if (graph.val_is_none(bias_data)) {
     apply_bias = 0;
   }
+
+  vkapi::SpecVarList spec_constants = GenerateSpecConstants(graph, conv_params, groups, apply_bias);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -796,7 +835,7 @@ void add_conv2d_q8csw_linear_node(
       // Push Constants
       {},
       // Specialization Constants
-      {apply_bias},
+      spec_constants,
       // Resize args
       {},
       // Resizing Logic
@@ -850,8 +889,7 @@ void add_conv2d_q8ta_q8csw_linear_node(
 
   vkapi::ParamsBindList param_buffers = {
       graph.sizes_ubo(output_image),
-      graph.sizes_ubo(input_image),
-      graph.create_params_buffer(conv_params)};
+      graph.sizes_ubo(input_image)};
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&scale, sizeof(scale)),
@@ -862,6 +900,8 @@ void add_conv2d_q8ta_q8csw_linear_node(
   if (graph.val_is_none(bias_data)) {
     apply_bias = 0;
   }
+
+  vkapi::SpecVarList spec_constants = GenerateSpecConstants(graph, conv_params, groups, apply_bias);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -881,7 +921,7 @@ void add_conv2d_q8ta_q8csw_linear_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {apply_bias},
+      spec_constants,
       // Resize args
       {weight_data},
       // Resizing Logic
@@ -935,8 +975,7 @@ void add_conv2d_q8ta_q8csw_q8to_node(
 
   vkapi::ParamsBindList param_buffers = {
       graph.sizes_ubo(packed_int8_output),
-      graph.sizes_ubo(packed_int8_input_im2col),
-      graph.create_params_buffer(conv_params)};
+      graph.sizes_ubo(packed_int8_input_im2col)};
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&input_scale_val, sizeof(input_scale_val)),
@@ -949,6 +988,8 @@ void add_conv2d_q8ta_q8csw_q8to_node(
   if (graph.val_is_none(bias_data)) {
     apply_bias = 0;
   }
+
+  vkapi::SpecVarList spec_constants = GenerateSpecConstants(graph, conv_params, groups, apply_bias);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -968,7 +1009,7 @@ void add_conv2d_q8ta_q8csw_q8to_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {apply_bias},
+      spec_constants,
       // Resize args
       {},
       // Resizing Logic
@@ -1023,8 +1064,7 @@ void add_conv2d_dw_q8ta_q8csw_q8to_node(
 
   vkapi::ParamsBindList param_buffers = {
       graph.sizes_ubo(packed_int8_output),
-      graph.sizes_ubo(packed_int8_input),
-      graph.create_params_buffer(conv_params)};
+      graph.sizes_ubo(packed_int8_input)};
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&input_scale_val, sizeof(input_scale_val)),
@@ -1037,6 +1077,8 @@ void add_conv2d_dw_q8ta_q8csw_q8to_node(
   if (graph.val_is_none(bias_data)) {
     apply_bias = 0;
   }
+
+  vkapi::SpecVarList spec_constants = GenerateSpecConstants(graph, conv_params, groups, apply_bias);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -1056,7 +1098,7 @@ void add_conv2d_dw_q8ta_q8csw_q8to_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {apply_bias},
+      spec_constants,
       // Resize args
       {},
       // Resizing Logic

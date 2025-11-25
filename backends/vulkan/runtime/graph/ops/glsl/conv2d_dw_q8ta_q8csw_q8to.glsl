@@ -36,7 +36,6 @@ ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False
 
 ${layout_declare_ubo(B, "ivec4", "output_sizes")}
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}
-${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
 
 layout(push_constant) uniform restrict Block {
   float input_scale;
@@ -48,6 +47,24 @@ layout(push_constant) uniform restrict Block {
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_in_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_out_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_groups", "1")}
+
+
 
 #include "conv2d_dw_q8_utils.glslh"
 
@@ -67,7 +84,7 @@ void main() {
 
   Conv2dBlockExtents in_block_extents = make_block_extents(input_sizes);
 
-  const int Kw4 = div_up_4(conv2d_params.kernel_size.x);
+  const int Kw4 = div_up_4(conv2d_params_kernel_size_x);
 
   // Compute 4 channels for 4 output elements.
   ivec4 acc[4];
@@ -75,13 +92,13 @@ void main() {
     acc[i] = ivec4(0);
   }
 
-  for (int ky = 0; ky < conv2d_params.kernel_size.y; ky++) {
-    const int h = out_h * conv2d_params.stride.y - conv2d_params.padding.y +
-        ky * conv2d_params.dilation.y;
+  for (int ky = 0; ky < conv2d_params_kernel_size_y; ky++) {
+    const int h = out_h * conv2d_params_stride_y - conv2d_params_padding_y +
+        ky * conv2d_params_dilation_y;
 
-    for (int kx = 0; kx < conv2d_params.kernel_size.x; kx++) {
-      const int w = out_w * conv2d_params.stride.x - conv2d_params.padding.x +
-          kx * conv2d_params.dilation.x;
+    for (int kx = 0; kx < conv2d_params_kernel_size_x; kx++) {
+      const int w = out_w * conv2d_params_stride_x - conv2d_params_padding_x +
+          kx * conv2d_params_dilation_x;
 
       // Load and unpack weights.
       const int packed_weight_4c = load_weight_1w4c(
@@ -96,7 +113,7 @@ void main() {
 
       [[unroll]] for (int subtile_w = 0; subtile_w < 4; ++subtile_w) {
           ivec4 input_texel = unpack_int8x4(load_input_1w4c(
-              w + conv2d_params.stride.x * subtile_w,
+              w + conv2d_params_stride_x * subtile_w,
               h,
               out_block_idx.data.z,
               out_block_extents.data.z,
