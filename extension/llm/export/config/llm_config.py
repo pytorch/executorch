@@ -76,7 +76,6 @@ class BaseConfig:
             If left empty, the model will either be initialized with random weights
             if it is a Llama model or the weights will be downloaded from HuggingFace
             if it is a non-Llama model.
-        checkpoint_dir: Path to directory containing sharded checkpoint files.
         adapter_checkpoint: Path to the adapter.pt file from torchtune. Used if
             the model has trained LoRA adapters. Must provide
             adapter_config.json.
@@ -99,7 +98,6 @@ class BaseConfig:
     model_class: ModelType = ModelType.llama3
     params: Optional[str] = None
     checkpoint: Optional[str] = None
-    checkpoint_dir: Optional[str] = None
     adapter_checkpoint: Optional[str] = None
     adapter_config: Optional[str] = None
     tokenizer_path: Optional[str] = None
@@ -527,8 +525,6 @@ class LlmConfig:
             llm_config.base.params = args.params
         if hasattr(args, "checkpoint"):
             llm_config.base.checkpoint = args.checkpoint
-        if hasattr(args, "checkpoint_dir"):
-            llm_config.base.checkpoint_dir = args.checkpoint_dir
         if hasattr(args, "adapter_checkpoint"):
             llm_config.base.adapter_checkpoint = args.adapter_checkpoint
         if hasattr(args, "adapter_config"):
