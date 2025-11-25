@@ -307,6 +307,41 @@ class Gemma3QuantRecipe(StaticLLMQuantRecipe):
         self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
 
 
+class GLM_1_5B_InstructQuantRecipe(StaticLLMQuantRecipe):
+    default_quant_dtype = QuantDtype.use_16a4w
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = (
+            QuantRecipe(
+                self.default_quant_dtype,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_TENSOR,
+                verbose=verbose,
+            )
+            .add_node_target(
+                {
+                    torch.ops.aten.conv2d.default,
+                },
+                QuantDtype.use_16a4w_block,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_BLOCK,
+                extra_kwargs={"block_size": (1, 32, 1, 1)},
+            )
+            .add_regex(
+                {r"output\.conv"},
+                QuantDtype.use_16a8w,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_CHANNEL,
+            )
+        )
+        self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
+
+
 class Granite_3_3_2B_InstructQuantRecipe(StaticLLMQuantRecipe):
     default_quant_dtype = QuantDtype.use_16a4w
 

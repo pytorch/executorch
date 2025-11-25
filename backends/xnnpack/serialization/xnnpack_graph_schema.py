@@ -353,6 +353,11 @@ class XNNSin(XNNNode1x1):
 
 
 @dataclass
+class XNNCopy(XNNNode1x1):
+    pass
+
+
+@dataclass
 class XNNScaledDotProductAttention:
     query_id: int
     key_id: int
@@ -409,6 +414,7 @@ XNodeUnion = Union[
     XNNTanh,
     XNNExp,
     XNNSin,
+    XNNCopy,
 ]
 
 

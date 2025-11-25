@@ -6,7 +6,7 @@ def define_common_targets():
             aten_suffix = "_aten" if aten else ""
 
             runtime.cxx_library(
-                name = "main" + aten_suffix + "_lib",
+                name = "main_lib" + aten_suffix,
                 srcs = [
                     "main.cpp",
                 ],
@@ -19,6 +19,7 @@ def define_common_targets():
                     "//executorch/extension/evalue_util:print_evalue",
                     "//executorch/extension/threadpool:threadpool",
                     "//executorch/extension/threadpool:cpuinfo_utils",
+                    "//executorch/devtools/etdump:etdump_flatcc" + aten_suffix,
                 ],
                 external_deps = [
                     "gflags",
@@ -30,6 +31,6 @@ def define_common_targets():
                 name = "main" + aten_suffix,
                 srcs = [],
                 deps = [
-                    ":main" + aten_suffix + "_lib",
+                    ":main_lib" + aten_suffix,
                 ],
             )
