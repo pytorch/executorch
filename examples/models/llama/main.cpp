@@ -72,6 +72,8 @@ DEFINE_string(
     "etdump.in",
     "If an etdump path is provided, generate an ETDump file at the specified path for profiling purposes.");
 
+std::vector<std::string> parseStringList(const std::string& input);
+
 // Helper function to parse comma-separated string lists
 std::vector<std::string> parseStringList(const std::string& input) {
   std::vector<std::string> result;
