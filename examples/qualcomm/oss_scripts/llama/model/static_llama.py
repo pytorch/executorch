@@ -353,7 +353,6 @@ class FeedForward(nn.Module):
 
         self.forward_no_conv = self.forward
         self.forward = self.forward_feedfoward_conv
-
         self.w1_conv.weight.data.copy_(self.w1.weight[:, :, None, None])
         self.w2_conv.weight.data.copy_(self.w2.weight[:, :, None, None])
         self.w3_conv.weight.data.copy_(self.w3.weight[:, :, None, None])

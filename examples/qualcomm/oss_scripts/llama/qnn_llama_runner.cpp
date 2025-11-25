@@ -183,6 +183,15 @@ std::string get_formatted_prompt(
       formatted_prompt.append("<|im_end|>\n");
       formatted_prompt.append("<|im_start|>assistant\n");
       break;
+    case example::DecoderModelVersion::kGlm:
+      formatted_prompt.append("<|user|>\n");
+      formatted_prompt.append(prompt);
+      if (!system_prompt.empty()) {
+        formatted_prompt.append("<|system|>\n");
+        formatted_prompt.append(system_prompt);
+      }
+      formatted_prompt.append("<|assistant|>\n");
+      break;
     default:
       ET_CHECK_MSG(false, "unsupported llama version");
       break;
