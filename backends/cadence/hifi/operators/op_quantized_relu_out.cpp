@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/common/xt_macros.h>
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -34,7 +35,10 @@ void quantized_relu_per_tensor_out(
     const uint8_t* p_in = input.const_data_ptr<uint8_t>();
     uint8_t* p_out = output.mutable_data_ptr<uint8_t>();
 
-    WORD32 ret_val = xa_nn_vec_relu_asym8u_asym8u(
+    XT_KERNEL_CHECK(
+        ctx,
+        ,
+        xa_nn_vec_relu_asym8u_asym8u,
         p_out,
         p_in,
         _in_zero_point,
@@ -45,15 +49,16 @@ void quantized_relu_per_tensor_out(
         255,
         input.numel());
 
-    ET_CHECK_MSG(ret_val == 0, "An internal error occured");
-
   } else if (input.scalar_type() == executorch::aten::ScalarType::Char) {
-    const int8_t _in_zero_point = static_cast<int8_t>(in_zero_point);
-    const int8_t _out_zero_point = static_cast<int8_t>(out_zero_point);
+    const int _in_zero_point = static_cast<int>(in_zero_point);
+    const int _out_zero_point = static_cast<int>(out_zero_point);
     const int8_t* p_in = input.const_data_ptr<int8_t>();
     int8_t* p_out = output.mutable_data_ptr<int8_t>();
 
-    WORD32 ret_val = xa_nn_vec_relu_asym8s_asym8s(
+    XT_KERNEL_CHECK(
+        ctx,
+        ,
+        xa_nn_vec_relu_asym8s_asym8s,
         p_out,
         p_in,
         _in_zero_point,
@@ -63,8 +68,6 @@ void quantized_relu_per_tensor_out(
         -128,
         127,
         input.numel());
-
-    ET_CHECK_MSG(ret_val == 0, "An internal error occured");
 
   } else {
     ET_CHECK_MSG(
