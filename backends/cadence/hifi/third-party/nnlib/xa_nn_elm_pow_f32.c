@@ -20,7 +20,7 @@
 
 ******************************************************************************/
 
-#include "../include/NatureDSP_Signal_math.h"
+#include "NatureDSP_Signal_math.h"
 #include "NatureDSP_types.h"
 #include "xa_nn_common.h"
 
