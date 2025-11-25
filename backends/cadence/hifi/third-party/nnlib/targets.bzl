@@ -13,6 +13,10 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         compatible_with = ["ovr_config//cpu:xtensa"],
+        compiler_flags = [
+            "-Wno-pointer-sign",
+            "-Wno-incompatible-pointer-types-discards-qualifiers",
+        ],
         deps = [
             "fbsource//third-party/nnlib-hifi4/xa_nnlib:libxa_nnlib",
         ],
