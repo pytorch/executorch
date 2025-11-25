@@ -35,14 +35,14 @@ We offer the following modes to execute the model:
 
 ## Hardware Support
 
-We’ve validated this flow on the **Samsung Galaxy S23**, **Samsung Galaxy S24**, and **OnePlus 12**.  
+We’ve validated this flow on the **Samsung Galaxy S23**, **Samsung Galaxy S24**, **Samsung Galaxy S25**, and **OnePlus 12**.  
 Support on other hardware depends on the **HTP architecture (HtpArch)** and the feature set available on that version.
 
 ### HTP Minimum Version Requirements
 
 - **LPBQ (16a4w block-wise quantization)** requires **V69 or newer**
-- **Weight sharing between prefill and decode** requires **V73 or newer**
-- **16-bit activations + 16-bit weights for matmul** (e.g., **16-bit KV cache**) requires **V73 or newer**
+- **Weight sharing** between prefill and decode requires **V73 or newer**
+- **16-bit activations + 16-bit weights for matmul** (e.g., 16-bit KV cache) requires **V73 or newer**
 
 ### Quantization Guidance for Older Devices
 
