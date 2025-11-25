@@ -36,13 +36,21 @@ We offer the following modes to execute the model:
 ## Hardware Support
 
 We’ve validated this flow on the **Samsung Galaxy S23**, **Samsung Galaxy S24**, and **OnePlus 12**.  
-Support on other hardware depends on the **HTP architecture (HtpArch)**.  
-The **16a4w_block** format and **weight sharing between prefill and decode** are supported on **V73 and newer**.
+Support on other hardware depends on the **HTP architecture (HtpArch)** and the feature set available on that version.
 
-For older devices, you may need to **retune the quantization recipe**. A good starting point is:
+### HTP Minimum Version Requirements
 
-- Use **16a4w**
-- Optionally apply **SpinQuant** for better stability and accuracy
+- **LPBQ (block-wise quantization)** requires **V69 or newer**
+- **Weight sharing between prefill and decode** requires **V73 or newer**
+- **16-bit activations + 16-bit weights for matmul** (e.g., **16-bit KV cache**) requires **V73 or newer**
+
+### Quantization Guidance for Older Devices
+
+For older HTP versions, you may need to adjust the quantization strategy. Recommended starting points:
+
+- Use **16a4w** as the baseline
+- Optionally apply **SpinQuant**
+- Use **16a8w selectively on some layers** to further improve accuracy (mixed-precision quantization)
 
 ### Memory Limit Errors (4 GB HTP Limit)
 
