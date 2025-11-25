@@ -42,10 +42,10 @@ get_create_store_statement(std::string_view store_name, StorageType key_storage_
     ss << "CREATE TABLE IF NOT EXISTS ";
     ss << store_name << " ";
     ss << "(";
-    ss << "ENTRY_KEY " << to_string(key_storage_type) << "PRIMARY KEY UNIQUE, ";
+    ss << "ENTRY_KEY " << to_string(key_storage_type) << " PRIMARY KEY UNIQUE, ";
     ss << "ENTRY_VALUE " << to_string(value_storage_type) << ", ";
-    ss << "ENTRY_ACCESS_COUNT " << to_string(StorageType::Integer) << ", ";
-    ss << "ENTRY_ACCESS_TIME " << to_string(StorageType::Integer);
+    ss << "ENTRY_ACCESS_COUNT INTEGER NOT NULL DEFAULT 0, ";
+    ss << "ENTRY_ACCESS_TIME  INTEGER NOT NULL DEFAULT 0";
     ss << ")";
 
     return ss.str();
@@ -53,7 +53,8 @@ get_create_store_statement(std::string_view store_name, StorageType key_storage_
 
 std::string get_create_index_statement(std::string_view store_name, std::string_view column_name) {
     std::stringstream ss;
-    ss << "CREATE INDEX IF NOT EXISTS " << column_name << "_INDEX" << " ON " << store_name << "(" << column_name << ")";
+    ss << "CREATE INDEX IF NOT EXISTS " << store_name << "_" << column_name << "_INDEX" << " ON " << store_name << "("
+       << column_name << ")";
 
     return ss.str();
 }
@@ -89,8 +90,14 @@ std::string get_key_count_statement(std::string_view store_name) {
 
 std::string get_update_entry_access_statement(std::string_view store_name) {
     std::stringstream ss;
-    ss << "UPDATE " << store_name << " SET ENTRY_ACCESS_COUNT = ?, ENTRY_ACCESS_TIME = ? WHERE ENTRY_KEY = ?";
+    ss << "UPDATE " << store_name
+       << " SET ENTRY_ACCESS_COUNT = ENTRY_ACCESS_COUNT + 1, ENTRY_ACCESS_TIME = ? WHERE ENTRY_KEY = ?";
+    return ss.str();
+}
 
+static std::string get_exists_statement(std::string_view store) {
+    std::stringstream ss;
+    ss << "SELECT 1 FROM " << store << " WHERE ENTRY_KEY = ? LIMIT 1";
     return ss.str();
 }
 
@@ -159,12 +166,18 @@ bool execute(Database* database,
 int64_t get_last_access_time(Database* database, std::string_view storeName, std::error_code& error) {
     int64_t latestAccessTime = 0;
     auto statement = get_keys_sorted_by_column_statement(storeName, kAccessTimeColumnName, SortOrder::Descending);
-    std::function<bool(const UnOwnedValue&)> fn = [&latestAccessTime](const UnOwnedValue& value) {
-        latestAccessTime = std::get<int64_t>(value);
-        return false;
-    };
 
-    return execute(database, statement, 1, fn, error);
+    bool ok = execute(
+        database,
+        statement,
+        /*columnIndex=*/2,
+        [&](const UnOwnedValue& v) {
+            latestAccessTime = std::get<int64_t>(v);
+            return false; // stop after first row
+        },
+        error);
+
+    return (ok && !error) ? latestAccessTime : 0;
 }
 
 } // namespace
@@ -172,80 +185,32 @@ int64_t get_last_access_time(Database* database, std::string_view storeName, std
 namespace executorchcoreml {
 namespace sqlite {
 
-bool KeyValueStoreImpl::init(std::error_code& error) noexcept {
-    if (!database_->execute(get_create_store_statement(name_, get_key_storage_type_, get_value_storage_type_), error)) {
-        return false;
-    }
-
-    if (!database_->execute(get_create_index_statement(name_, kAccessCountColumnName), error)) {
-        return false;
-    }
-
-    if (!database_->execute(get_create_index_statement(name_, kAccessTimeColumnName), error)) {
-        return false;
-    }
-
-    int64_t lastAccessTime = get_last_access_time(database_.get(), name_, error);
-    if (error) {
-        return false;
-    }
-
-    lastAccessTime_.store(lastAccessTime, std::memory_order_seq_cst);
-    return true;
-}
+bool KeyValueStoreImpl::init(std::error_code& error) noexcept { return ensure_schema_exists(error); }
 
 bool KeyValueStoreImpl::exists(const Value& key, std::error_code& error) noexcept {
-    if (error) {
+    error = {}; // ensure "miss" can be distinguished from "error"
+    if (!ensure_schema_exists(error))
         return false;
-    }
-
-    auto query = database_->prepare_statement(get_key_count_statement(name_), error);
-    if (!query) {
+    auto q = database_->prepare_statement(get_exists_statement(name_), error);
+    if (!q)
         return false;
-    }
-
-    if (!bind_value(query.get(), get_key_storage_type(), key, 1, error)) {
+    if (!bind_value(q.get(), get_key_storage_type(), key, 1, error))
         return false;
-    }
-
-    if (!query->step(error)) {
+    bool has_row = q->step(error);
+    if (error)
         return false;
-    }
-
-    return std::get<int64_t>(query->get_column_value(0, error)) > 0;
-}
-
-bool KeyValueStoreImpl::updateValueAccessCountAndTime(const Value& key,
-                                                      int64_t accessCount,
-                                                      std::error_code& error) noexcept {
-    auto update = database_->prepare_statement(get_update_entry_access_statement(name_), error);
-    if (!update) {
-        return false;
-    }
-
-    if (!bind_value(update.get(), StorageType::Integer, accessCount + 1, 1, error)) {
-        return false;
-    }
-
-    if (!bind_value(update.get(), StorageType::Integer, lastAccessTime_, 2, error)) {
-        return false;
-    }
-
-    if (!bind_value(update.get(), get_key_storage_type(), key, 3, error)) {
-        return false;
-    }
-
-    bool result = update->execute(error);
-    if (result) {
-        lastAccessTime_ += 1;
-    }
-    return result;
+    return has_row;
 }
 
 bool KeyValueStoreImpl::get(const Value& key,
                             const std::function<void(const UnOwnedValue&)>& fn,
                             std::error_code& error,
                             bool updateAccessStatistics) noexcept {
+    error = {}; // ensure "miss" can be distinguished from "error"
+
+    if (!ensure_schema_exists(error))
+        return false;
+
     auto query = database_->prepare_statement(getQueryStatement(name_), error);
     if (!query) {
         return false;
@@ -255,22 +220,47 @@ bool KeyValueStoreImpl::get(const Value& key,
         return false;
     }
 
-    if (!query->step(error)) {
+    bool has_row = query->step(error);
+    if (error)
+        return false;
+    if (!has_row) {
+        error = {};
         return false;
     }
 
     auto value = query->get_column_value_no_copy(0, error);
+
+    if (error)
+        return false;
+
     fn(value);
 
     if (updateAccessStatistics) {
-        int64_t accessCount = std::get<int64_t>(query->get_column_value(1, error));
-        return updateValueAccessCountAndTime(key, accessCount, error);
+        auto update = database_->prepare_statement(get_update_entry_access_statement(name_), error);
+        if (!update)
+            return false;
+
+        auto next = lastAccessTime_.load(std::memory_order_acquire) + 1;
+        if (!bind_value(update.get(), StorageType::Integer, next, 1, error))
+            return false;
+        if (!bind_value(update.get(), get_key_storage_type(), key, 2, error))
+            return false;
+        bool ok = update->execute(error);
+        if (ok && !error) {
+            lastAccessTime_.store(next, std::memory_order_release);
+        }
+        return ok && !error;
     }
 
     return true;
 }
 
 bool KeyValueStoreImpl::put(const Value& key, const Value& value, std::error_code& error) noexcept {
+    error = {}; // clear error
+
+    if (!ensure_schema_exists(error))
+        return false;
+
     auto statement = database_->prepare_statement(get_insert_or_replace_statement(name_), error);
     if (!statement) {
         return false;
@@ -288,16 +278,41 @@ bool KeyValueStoreImpl::put(const Value& key, const Value& value, std::error_cod
         return false;
     }
 
-    if (!bind_value(statement.get(), StorageType::Integer, lastAccessTime_.load(std::memory_order_acquire), 4, error)) {
+    auto next = lastAccessTime_.load(std::memory_order_acquire) + 1;
+    if (!bind_value(statement.get(), StorageType::Integer, next, 4, error)) {
         return false;
     }
+    bool ok = statement->execute(error);
+    if (ok && !error) {
+        lastAccessTime_.store(next, std::memory_order_release);
+    }
+    return ok && !error;
+}
 
-    lastAccessTime_ += 1;
-    return statement->execute(error);
+bool KeyValueStoreImpl::ensure_schema_exists(std::error_code& error) noexcept {
+    error = {};
+    if (!database_->execute(get_create_store_statement(name_, get_key_storage_type(), get_value_storage_type()), error))
+        return false;
+    if (!database_->execute(get_create_index_statement(name_, kAccessCountColumnName), error))
+        return false;
+    if (!database_->execute(get_create_index_statement(name_, kAccessTimeColumnName), error))
+        return false;
+
+    // Always recompute (cheap with the index).
+    auto t = get_last_access_time(database_.get(), name_, error);
+    if (error)
+        return false;
+    lastAccessTime_.store(t, std::memory_order_seq_cst);
+    return true;
 }
 
 bool KeyValueStoreImpl::remove(const Value& key, std::error_code& error) noexcept {
+    error = {}; // clear error
+    if (!ensure_schema_exists(error))
+        return false;
     auto statement = database_->prepare_statement(get_remove_statement(name_), error);
+    if (!statement)
+        return false;
     if (!bind_value(statement.get(), get_key_storage_type(), key, 1, error)) {
         return false;
     }
@@ -308,6 +323,9 @@ bool KeyValueStoreImpl::remove(const Value& key, std::error_code& error) noexcep
 bool KeyValueStoreImpl::get_keys_sorted_by_access_count(const std::function<bool(const UnOwnedValue&)>& fn,
                                                         SortOrder order,
                                                         std::error_code& error) noexcept {
+    error = {}; // clear error
+    if (!ensure_schema_exists(error))
+        return false;
     auto statement = get_keys_sorted_by_column_statement(name(), kAccessCountColumnName, order);
     return execute(database_.get(), statement, 0, fn, error);
 }
@@ -315,21 +333,27 @@ bool KeyValueStoreImpl::get_keys_sorted_by_access_count(const std::function<bool
 bool KeyValueStoreImpl::get_keys_sorted_by_access_time(const std::function<bool(const UnOwnedValue&)>& fn,
                                                        SortOrder order,
                                                        std::error_code& error) noexcept {
+    error = {}; // clear error
+    if (!ensure_schema_exists(error))
+        return false;
     auto statement = get_keys_sorted_by_column_statement(name(), kAccessTimeColumnName, order);
     return execute(database_.get(), statement, 0, fn, error);
 }
 
 std::optional<size_t> KeyValueStoreImpl::size(std::error_code& error) noexcept {
+    error = {}; // clear error
+    if (!ensure_schema_exists(error))
+        return std::nullopt;
     int64_t count = database_->get_row_count(name_, error);
     return count < 0 ? std::nullopt : std::optional<size_t>(count);
 }
 
 bool KeyValueStoreImpl::purge(std::error_code& error) noexcept {
+    error = {}; // clear error
     if (!database_->drop_table(name_, error)) {
         return false;
     }
-
-    return init(error);
+    return ensure_schema_exists(error);
 }
 
 } // namespace sqlite
