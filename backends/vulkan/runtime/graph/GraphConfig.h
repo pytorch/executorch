@@ -71,6 +71,10 @@ struct GraphConfig final {
   // many command buffers.
   size_t execute_max_cmds = 0;
 
+  // If true, then the graph will be executed once immediately after it is
+  // compiled.
+  bool warmup_execute_after_compile = false;
+
   vkapi::Adapter* external_adapter;
 
   // Generate a default graph config with pre-configured settings
