@@ -37,11 +37,39 @@ ${layout_declare_tensor(B, "r", "t_input", DTYPE, INPUT_STORAGE, is_scalar_array
 // Sizes of the im2col matrix of the convolution input
 ${layout_declare_ubo(B, "ivec4", "matrix_sizes")}
 // Sizes of the input image
-${layout_declare_ubo(B, "ivec4", "input_sizes")}
+//${layout_declare_ubo(B, "ivec4", "input_sizes")}
 // Sizes of the output image
-${layout_declare_ubo(B, "ivec4", "output_sizes")}
+//${layout_declare_ubo(B, "ivec4", "output_sizes")}
 
-${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
+//${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
+
+${layout_declare_spec_const(C, "int", "apply_bias", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_in_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_out_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_groups", "1")}
+
+${layout_declare_spec_const(C, "int", "output_x", "1")}
+${layout_declare_spec_const(C, "int", "output_y", "1")}
+${layout_declare_spec_const(C, "int", "output_z", "1")}
+${layout_declare_spec_const(C, "int", "output_w", "1")}
+${layout_declare_spec_const(C, "int", "input_x", "1")}
+${layout_declare_spec_const(C, "int", "input_y", "1")}
+${layout_declare_spec_const(C, "int", "input_z", "1")}
+${layout_declare_spec_const(C, "int", "input_w", "1")}
+
 
 layout(push_constant) uniform restrict Block {
   float inv_scale;
@@ -64,11 +92,14 @@ void main() {
   const int k4 = int(gl_GlobalInvocationID.x);
   const int m4 = int(gl_GlobalInvocationID.y);
 
+  const ivec4 output_sizes = ivec4(int(output_x), int(output_y), int(output_z), int(output_w));
+  const ivec4 input_sizes = ivec4(int(input_x), int(input_y), int(input_z), int(input_w));
+
   // Convert block idx to tensor idx
   const int k = mul_4(k4);
   const int m = mul_4(m4);
 
-  const int logical_K = conv2d_params.logical_K;
+  const int logical_K = conv2d_params_logical_K;
   // Similarly, compute the logical size of the M dim.
   const int logical_M = output_sizes.x * output_sizes.y * output_sizes.w;
 
