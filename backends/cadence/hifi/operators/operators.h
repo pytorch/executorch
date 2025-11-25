@@ -83,6 +83,19 @@ void quantized_linear_per_tensor_out(
     const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
+void quantized_matmul_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& X,
+    int64_t X_zero_point,
+    const ::executorch::aten::Tensor& Y,
+    int64_t Y_zero_point,
+    const ::executorch::aten::optional<::executorch::aten::Tensor>& bias,
+    int64_t out_multiplier,
+    int64_t out_shift,
+    int64_t out_zero_point,
+    bool transposed,
+    ::executorch::aten::Tensor& out);
+
 void quantized_conv2d_nhwc_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
