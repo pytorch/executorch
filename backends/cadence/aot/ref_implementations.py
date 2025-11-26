@@ -788,9 +788,9 @@ def quantized_conv_per_tensor(
             (input_tensor - in_zero_point).float(),
             (weight - weight_zero_point).float(),
             (bias * bias_scale).float(),
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             groups,
         )
 
