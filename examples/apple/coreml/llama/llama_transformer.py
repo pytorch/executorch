@@ -238,6 +238,34 @@ class Rope(torch.nn.Module):
 
         return freqs_cos, freqs_sin
 
+class CoreMLRMSNormV2(torch.nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-6):
+        """
+        Initialize the RMSNorm normalization layer.
+        Args:
+            dim (int): The dimension of the input tensor.
+            eps (float, optional): A small value added to the denominator for numerical stability. Default is 1e-6.
+        Attributes:
+            eps (float): A small value added to the denominator for numerical stability.
+            weight (nn.Parameter): Learnable scaling parameter.
+        """
+        super().__init__()
+        self.dim = dim
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x):
+        """
+        Apply the RMSNorm normalization to the input tensor.
+        Args:
+            x (torch.Tensor): The input tensor.
+        Returns:
+            torch.Tensor: The normalized tensor.
+        """
+
+        return torch.nn.functional.rms_norm(x, normalized_shape=[self.dim], weight=self.weight, eps=None)
+
+_RMS_NORM = CoreMLRMSNorm
 
 class FeedForward(nn.Module):
     def __init__(self, args: ModelArgs):
@@ -327,8 +355,8 @@ class Attention(nn.Module):
         if self.use_qk_norm:
             q_norm_dim = self.head_dim
             k_norm_dim = self.head_dim
-            self.q_norm_fn = RMSNorm(q_norm_dim, eps=args.norm_eps)
-            self.k_norm_fn = RMSNorm(k_norm_dim, eps=args.norm_eps)
+            self.q_norm_fn = _RMS_NORM(q_norm_dim, eps=args.norm_eps)
+            self.k_norm_fn = _RMS_NORM(k_norm_dim, eps=args.norm_eps)
 
     def forward(
         self,
@@ -388,8 +416,8 @@ class TransformerBlock(nn.Module):
             self.block_sparse_moe = MOEFeedForward(args)
         else:
             self.feed_forward = FeedForward(args)
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.attention_norm = _RMS_NORM(args.dim, eps=args.norm_eps)
+        self.ffn_norm = _RMS_NORM(args.dim, eps=args.norm_eps)
 
     def forward(
         self,
@@ -422,7 +450,7 @@ class Transformer(nn.Module):
         self.layers = torch.nn.ModuleList()
         for layer_id in range(params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params, self.rope))
-        self.norm = RMSNorm(params.dim, eps=params.norm_eps)
+        self.norm = _RMS_NORM(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.generate_full_logits = params.generate_full_logits
         self.max_seq_len = params.max_seq_len
