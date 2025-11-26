@@ -83,7 +83,7 @@ class SliceTensorConverter(NodeConverter):
 
         # If slicing along non-channels dimension, we need to swap it with channels dimension.
         # Otherwise Neutron will not convert it.
-        if dim != -1:
+        if dim != -1 and dim != input_rank - 1:
             # Create permutation for swapping
             perm = list(range(0, input_rank))
             perm[dim], perm[-1] = perm[-1], perm[dim]

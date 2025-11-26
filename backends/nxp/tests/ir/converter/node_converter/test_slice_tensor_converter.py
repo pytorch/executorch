@@ -8,7 +8,6 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.tests.executorch_pipeline import (
     neutron_converter_flavor,
     to_quantized_edge_program,
@@ -98,12 +97,8 @@ def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends
     edge_program = to_quantized_edge_program(model, x_input_shape).exported_program()
     edge_nodes = list(edge_program.graph.nodes)
 
-    # Check if slices and potential transposes were delegated
-    node_delegated = edge_nodes[3]
-    assert (
-        node_delegated.op == "call_function"
-        and node_delegated.target.__name__ == "executorch_call_delegate"
-    )
+    # Check if slices were delegated
+    assert not any("slice" in n.name for n in edge_nodes)
 
     # Capture generated model
     tflite_flatbuffers_model, _ = converter_spy.spy_return
@@ -138,6 +133,9 @@ def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends
 def test_slice_tensor_w_conv_quant_conversion(
     mocker, x_input_shape, dims, starts, ends
 ):
+    if neutron_converter_flavor == "SDK_25_09":
+        pytest.skip("Neutron Software must be version 2.2.1 or higher.")
+
     model = SliceTensorConvModule(dims=dims, starts=starts, ends=ends)
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
@@ -148,12 +146,8 @@ def test_slice_tensor_w_conv_quant_conversion(
     ).exported_program()
     edge_nodes = list(edge_program.graph.nodes)
 
-    # Check if slices and transposes were delegated
-    node_delegated = edge_nodes[3]
-    assert (
-        node_delegated.op == "call_function"
-        and node_delegated.target.__name__ == "executorch_call_delegate"
-    )
+    # Check if slices were delegated
+    assert not any("slice" in n.name for n in edge_nodes)
 
     # Capture generated model
     tflite_flatbuffers_model, _ = converter_spy.spy_return
@@ -166,15 +160,12 @@ def test_slice_tensor_w_conv_quant_conversion(
     )
     input_data = {0: input_data}
 
-    conversion_config = ConversionConfig()
-    conversion_config.use_neutron_for_format_conversion = False
     convert_run_compare(
         exported_program,
         input_data=input_data,
         tflite_input_preprocess=ToChannelLastPreprocess(),
         tfl_model=tflite_flatbuffers_model,
         tflite_output_preprocess=ToChannelFirstPreprocess(),
-        conversion_config=conversion_config,
     )
 
 
