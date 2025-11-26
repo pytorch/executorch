@@ -35,6 +35,25 @@ test_data_suite = {
     "rank_4_no_max": lambda: (torch.rand(1, 10, 10, 1) - 3, -3.3, None),
 }
 
+test_data_suite_int32 = {
+    "int32_rank2": lambda: (torch.randint(-50, 50, (2, 3), dtype=torch.int32), -10, 10),
+    "int32_rank3_no_min": lambda: (
+        torch.randint(-100, 100, (1, 3, 3), dtype=torch.int32),
+        None,
+        25,
+    ),
+    "int32_rank3_no_max": lambda: (
+        torch.randint(-100, 100, (1, 3, 3), dtype=torch.int32),
+        -25,
+        None,
+    ),
+    "int32_rank4_large_range": lambda: (
+        torch.randint(-200, 200, (1, 2, 4, 4), dtype=torch.int32),
+        torch.iinfo(torch.int32).min,
+        torch.iinfo(torch.int32).max,
+    ),
+}
+
 
 class Clamp(torch.nn.Module):
     def __init__(
@@ -53,7 +72,6 @@ class Clamp(torch.nn.Module):
 
 @common.parametrize("test_data", test_data_suite)
 def test_clamp_tosa_FP(test_data):
-
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
 
@@ -69,7 +87,6 @@ def test_clamp_tosa_FP(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 def test_clamp_tosa_INT(test_data):
-
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
 
@@ -81,6 +98,22 @@ def test_clamp_tosa_INT(test_data):
     )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
 
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_int32)
+def test_clamp_tosa_INT_int32_inputs(test_data):
+    input_tensor, min_val, max_val = test_data()
+    model = Clamp(min_val, max_val)
+
+    pipeline = TosaPipelineINT[input_t](
+        model,
+        (input_tensor,),
+        aten_op,
+        exir_op,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.pop_stage("quantize")
     pipeline.run()
 
 
@@ -103,7 +136,6 @@ def test_clamp_tosa_INT_a16w8(test_data):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_clamp_u55_INT(test_data):
-
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
 
@@ -140,7 +172,6 @@ def test_clamp_16a8w_u55_INT16(test_data):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_clamp_u85_INT(test_data):
-
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
 
