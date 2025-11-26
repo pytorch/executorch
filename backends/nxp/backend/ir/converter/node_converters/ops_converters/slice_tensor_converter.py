@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
-from executorch.backends.nxp.backend.neutron_operator_support import transposition_is_supported_on_neutron
 from executorch.backends.nxp.backend.edge_helper import input_tensor
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
@@ -14,6 +13,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     slice_options,
+)
+from executorch.backends.nxp.backend.neutron_operator_support import (
+    transposition_is_supported_on_neutron,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
@@ -37,14 +39,16 @@ class SliceTensorConverter(NodeConverter):
         input_rank = len(input_shape)
         dim = node.args[1]
 
-        # Slicing is only allowed along the channel dimension. 
-        # Therefore, we must verify that Neutron supports swapping the channel dimension 
+        # Slicing is only allowed along the channel dimension.
+        # Therefore, we must verify that Neutron supports swapping the channel dimension
         # with the dimension intended for slicing.
         if dim != -1 and dim != input_rank - 1:
             perm = list(range(0, input_rank))
             perm[dim], perm[-1] = perm[-1], perm[dim]
-            
-            if not transposition_is_supported_on_neutron(list(input_shape), perm, neutron_target_spec):
+
+            if not transposition_is_supported_on_neutron(
+                list(input_shape), perm, neutron_target_spec
+            ):
                 return False
 
         # The shape of dimension that we want to slice must be divisible by num_macs
