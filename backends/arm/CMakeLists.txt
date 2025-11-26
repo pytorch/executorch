@@ -55,13 +55,13 @@ if(EXECUTORCH_BUILD_VGF)
   if(APPLE
      OR CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$"
      OR EXISTS
-        "${EXECUTORCH_ROOT}/examples/arm/ethos-u-scratch/ml-sdk-for-vulkan-manifest/"
+        "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ml-sdk-for-vulkan-manifest/"
   )
     message(STATUS "libvgf sourced from local scratch tree")
 
     # Legacy layout: libvgf sourced from local scratch tree
     set(LIBVGF_PATH
-        "${EXECUTORCH_ROOT}/examples/arm/ethos-u-scratch/ml-sdk-for-vulkan-manifest/sw/vgf-lib/"
+        "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ml-sdk-for-vulkan-manifest/sw/vgf-lib/"
     )
     set(LIBVGF_STATIC "${LIBVGF_PATH}/build/src/libvgf.a")
   else()

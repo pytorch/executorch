@@ -36,7 +36,7 @@ config=""
 memory_mode=""
 pte_placement="elf"
 et_build_root="${et_root_dir}/arm_test"
-ethos_u_scratch_dir=${script_dir}/ethos-u-scratch
+arm_scratch_dir=${script_dir}/arm-scratch
 scratch_dir_set=false
 toolchain=arm-none-eabi-gcc
 select_ops_list="aten::_softmax.out"
@@ -71,7 +71,7 @@ function help() {
     echo "  --memory_mode=<MODE>                   Ethos-U: Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U85 targets"
     echo "  --pte_placement=<elf|ADDR>             Ethos-U: Control if runtime has PTE baked into the elf or if its placed in memory outside of the elf, defaults to ${pte_placement}"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
-    echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
+    echo "  --scratch-dir=<FOLDER>                 Path to your Arm scrach dir if you not using default ${arm_scratch_dir}"
     echo "  --qdq_fusion_op                        Enable QDQ fusion op"
     echo "  --model_explorer                       Enable model explorer to visualize TOSA graph."
     echo "  --perf_overlay                         With --model_explorer, include performance data from FVP PMU trace."
@@ -101,7 +101,7 @@ for arg in "$@"; do
       --memory_mode=*) memory_mode="${arg#*=}";;
       --pte_placement=*) pte_placement="${arg#*=}";;
       --et_build_root=*) et_build_root="${arg#*=}";;
-      --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
+      --scratch-dir=*) arm_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
       --qdq_fusion_op) qdq_fusion_op=true;;
       --model_explorer) model_explorer=true ;;
       --perf_overlay) perf_overlay=true ;;
@@ -124,8 +124,8 @@ if ! [[ ${pte_placement} == "elf" ]]; then
 fi
 
 # Default Ethos-u tool folder override with --scratch-dir=<FOLDER>
-ethos_u_scratch_dir=$(realpath ${ethos_u_scratch_dir})
-setup_path_script=${ethos_u_scratch_dir}/setup_path.sh
+arm_scratch_dir=$(realpath ${arm_scratch_dir})
+setup_path_script=${arm_scratch_dir}/setup_path.sh
 if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
 elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
@@ -341,7 +341,7 @@ for i in "${!test_model[@]}"; do
         fi
 
         set -x
-        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file_or_mem}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
+        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file_or_mem}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${arm_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
 

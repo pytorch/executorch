@@ -21,7 +21,7 @@ The target system must include an Ethos-U NPU.
 ```{tip}
 All requirements can be downloaded using `examples/arm/setup.sh --i-agree-to-the-contained-eula` and added to the path using
 set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}")
-`source examples/arm/ethos-u-scratch/setup_path.sh`. Note that this means accepting the End-User License Agreements (EULA:s) required for using the downloaded software.
+`source examples/arm/arm-scratch/setup_path.sh`. Note that this means accepting the End-User License Agreements (EULA:s) required for using the downloaded software.
 ```
 
 For the AOT flow, compilation of a model to `.pte` format using the Ethos-U backend, the requirements are:
