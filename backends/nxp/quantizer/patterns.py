@@ -698,9 +698,11 @@ class MulTensorPattern(QuantizationPattern):
             qscheme=torch.per_tensor_affine,
         )
 
-        # Directly setting output_qspec on input nodes avoids inserting redundant dequantize-quantize sequences
-        # before the "Mul" operator. This ensures only one dequantize-quantize sequence is present,
-        # with the correct quantization parameters, allowing the partitioner to function properly.
+        # The "Mul" operator in Neutron IR requires a specific scale and zero_point
+        # (defined above) for its inputs.
+        # Since these input nodes have already been annotated by their own patterns
+        # which didn't take the requirements of "Mul" into account, we need to overwrite
+        # the existing "quantization_annotation".
         for input_node in input_nodes:
             input_node.meta["quantization_annotation"].output_qspec = qspec
 
