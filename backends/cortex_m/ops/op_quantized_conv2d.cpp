@@ -44,7 +44,7 @@ bool validate_conv2d_arguments(
   executorch::aten::ArrayRef<executorch::aten::DimOrderType>
       channels_last_order(kChannelsLastDimOrder, 4);
 
-  if (input.size(1) > 1 && input.dim_order() != channels_last_order) {
+  if (input.size(1) > 1 && !is_channels_last_tensor(input)) {
     ET_LOG(
         Error,
         "quantized_conv2d_out: input must have channels_last dim_order (NHWC)");
@@ -52,7 +52,7 @@ bool validate_conv2d_arguments(
     return false;
   }
 
-  if (output.size(1) > 1 && output.dim_order() != channels_last_order) {
+  if (output.size(1) > 1 && !is_channels_last_tensor(input)) {
     ET_LOG(
         Error,
         "quantized_conv2d_out: output must have channels_last dim_order (NHWC)");

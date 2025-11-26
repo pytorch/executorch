@@ -102,7 +102,7 @@ class QuantizedOpFusionPass(ExportPass):
         return exir_ops.edge.cortex_m.quantized_mul.default, args
 
     def _get_minimum_replacement(self, args, meta):
-        if args[0].data.dtype != torch.int8:
+        if args[0].data.dtype not in (torch.int8, torch.int32):
             return exir_ops.edge.aten.minimum.default, args
 
         return exir_ops.edge.cortex_m.minimum.default, args
