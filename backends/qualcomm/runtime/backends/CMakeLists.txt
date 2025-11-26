@@ -49,9 +49,7 @@ set(HOST_ARCHITECTURE_GPU
 set(HOST_ARCHITECTURE_HTP
     ${CMAKE_CURRENT_LIST_DIR}/htp/${CMAKE_SYSTEM_PROCESSOR}
 )
-set(HOST_ARCHITECTURE_IR
-    ${CMAKE_CURRENT_LIST_DIR}/ir/${CMAKE_SYSTEM_PROCESSOR}
-)
+set(HOST_ARCHITECTURE_IR ${CMAKE_CURRENT_LIST_DIR}/ir/${CMAKE_SYSTEM_PROCESSOR})
 
 # qnn_device
 target_sources(
@@ -76,15 +74,14 @@ target_sources(
          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContext.h
          ${CMAKE_CURRENT_LIST_DIR}/ir/IrContext.h
          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuContext.h
-  PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContext.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContextCustomConfig.h
-    ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuContext.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuContextCustomConfig.h
-    ${HOST_ARCHITECTURE_GPU}/GpuContextCustomConfig.cpp
-    ${HOST_ARCHITECTURE_HTP}/HtpContextCustomConfig.cpp
-    ${HOST_ARCHITECTURE_IR}/IrContext.cpp
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContext.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContextCustomConfig.h
+          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuContext.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuContextCustomConfig.h
+          ${HOST_ARCHITECTURE_GPU}/GpuContextCustomConfig.cpp
+          ${HOST_ARCHITECTURE_HTP}/HtpContextCustomConfig.cpp
+          ${HOST_ARCHITECTURE_IR}/IrContext.cpp
 )
 
 # qnn_backend_cache
@@ -157,6 +154,5 @@ target_sources(
 target_sources(
   qnn_dlc_manager
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnDlcManager.h
-  PRIVATE
-    ${HOST_ARCHITECTURE_IR}/QnnDlcManager.cpp
+  PRIVATE ${HOST_ARCHITECTURE_IR}/QnnDlcManager.cpp
 )
