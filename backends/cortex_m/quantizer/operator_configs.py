@@ -24,12 +24,21 @@ BINARY_OP_PATTERNS = [
 LINEAR_OP_PATTERNS = [
     [torch.ops.aten.linear.default],
     [torch.ops.aten.linear.default, torch.ops.aten.relu.default],
+    [torch.ops.aten.linear.default, torch.ops.aten.relu_.default],
+    [torch.ops.aten.linear.default, torch.ops.aten.hardtanh.default],
+    [torch.ops.aten.linear.default, torch.ops.aten.hardtanh_.default],
+    [torch.ops.aten.linear.default, torch.ops.aten.hardsigmoid.default],
+    [torch.ops.aten.linear.default, torch.ops.aten.hardsigmoid_.default],
 ]
 
 CONV_OP_PATTERNS = [
-    [torch.ops.aten.conv1d.default],
     [torch.ops.aten.conv2d.default],
-    [torch.ops.aten.conv3d.default],
+    [torch.ops.aten.conv2d.default, torch.ops.aten.relu.default],
+    [torch.ops.aten.conv2d.default, torch.ops.aten.relu_.default],
+    [torch.ops.aten.conv2d.default, torch.ops.aten.hardtanh.default],
+    [torch.ops.aten.conv2d.default, torch.ops.aten.hardtanh_.default],
+    [torch.ops.aten.conv2d.default, torch.ops.aten.hardsigmoid.default],
+    [torch.ops.aten.conv2d.default, torch.ops.aten.hardsigmoid_.default],
 ]
 
 # ----------------- OPERATOR CONFIG PRESETS -----------------

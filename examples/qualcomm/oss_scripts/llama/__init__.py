@@ -16,6 +16,8 @@ from executorch.examples.models.codegen import (
 )
 from executorch.examples.models.gemma import convert_weights as convert_gemma_weights
 from executorch.examples.models.gemma3 import convert_weights as convert_gemma3_weights
+
+from executorch.examples.models.glm import convert_weights as convert_glm_weights
 from executorch.examples.models.granite import (
     convert_weights as convert_granite_weights,
 )
@@ -44,6 +46,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
     CodegenQuantRecipe,
     Gemma3QuantRecipe,
     Gemma_2BQuantRecipe,
+    GLM_1_5B_InstructQuantRecipe,
     Granite_3_3_2B_InstructQuantRecipe,
     Llama3_1BQuantRecipe,
     Llama3_3BQuantRecipe,
@@ -291,6 +294,26 @@ class Gemma3(LLMModelConfig):
     r2 = False
     r3 = False
     quant_recipe = Gemma3QuantRecipe
+
+
+@register_llm_model("glm-1_5b")
+@dataclass(init=False, frozen=True)
+class GLM_1_5B(LLMModelConfig):
+    repo_id: str = "THUDM/glm-edge-1.5b-chat"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/glm/config/1_5b_config.json"
+    )
+    convert_weights = convert_glm_weights
+    transform_weight = True
+    instruct_model = True
+    num_sharding = 1
+    group_size = 32
+    masked_softmax = False
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = GLM_1_5B_InstructQuantRecipe
 
 
 @register_llm_model("granite_3_3-2b_instruct")
