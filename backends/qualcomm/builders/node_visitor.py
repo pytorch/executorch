@@ -30,6 +30,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_SCALE,
     QCOM_SCALE_OFFSET,
     QCOM_SCALES,
+    QCOM_TENSOR_NAME,
     QCOM_ZERO_POINT,
     QCOM_ZERO_POINTS,
 )
@@ -395,6 +396,13 @@ class NodeVisitor:
             tensor_name = f"output_mutbuf_{position_index}_{tensor_name}"
         elif is_graph_output(node):
             tensor_name = f"output_{tensor_name}"
+
+        # Save this for intermediate debugger
+        # Needs idx since node like topk has 2 outputs
+        if QCOM_TENSOR_NAME in node.meta:
+            node.meta[QCOM_TENSOR_NAME][wrapper_idx] = tensor_name
+        else:
+            node.meta[QCOM_TENSOR_NAME] = {wrapper_idx: tensor_name}
         return tensor_name
 
     def define_custom_tensor_wrapper(
