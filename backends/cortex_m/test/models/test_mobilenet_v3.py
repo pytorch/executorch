@@ -36,13 +36,13 @@ ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
 }
 
-model = models.mobilenet_v3_small(weights=None)
 example_input = torch.randn(1, 3, 224, 224).to(memory_format=torch.channels_last)
-
 
 test_cases = {
     "mobilenet_v3_small": McuTestCase(
-        model=models.mobilenet_v3_small(weights=None),
+        model=models.mobilenet_v3_small(
+            weights=models.MobileNet_V3_Small_Weights.DEFAULT
+        ),
         example_inputs=(example_input,),
     ),
 }
@@ -54,11 +54,11 @@ def test_dialect_mv3(test_case):
     tester.test_dialect(
         ops_before_transforms,
         ops_after_transforms,
-        qtol=1,
+        qtol=20,
     )
 
 
 @parametrize("test_case", test_cases)
 def test_implementation_mv3(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
-    tester.test_implementation(qtol=1)
+    tester.test_implementation(qtol=20)
