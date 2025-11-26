@@ -65,6 +65,7 @@ from executorch.backends.arm._passes import (
     DecomposeMaxPool2dPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
+    DecomposeQuantNodesPass,
     DecomposeRemainderPass,
     DecomposeRoundPass,
     DecomposeScaledDotProductAttentionPass,
@@ -186,7 +187,7 @@ class ArmPassManager(PassManager):
             ]
         )
 
-        # Fold Q/DQ nodes, insert INT8/INT32 rescales.
+        # Fold Q/DQ nodes, insert INT8/INT32 rescales, decompose quantization nodes.
         self.add_passes(
             [
                 FoldAndAnnotateQParamsPass(exported_program),
@@ -197,6 +198,7 @@ class ArmPassManager(PassManager):
                 DecomposeLinearPass(),
                 InsertRescaleInt32Pass(),
                 InsertControlFlowRescalesPass(),
+                DecomposeQuantNodesPass(),
             ]
         )
 
