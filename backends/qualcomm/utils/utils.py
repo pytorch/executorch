@@ -948,9 +948,10 @@ def generate_gpu_compiler_spec(
 
     Args:
         precision:
-            kGpuPerfHintHigh - best inference latency at the expense of power consumption.
-            kGpuPerfHintNormal - balanced performance dependent upon power management.
-            kGpuPerfHintLow - lowest power consumption at the expense of inference latency.
+            kGpuPrecisionFp32 - Sets the precision mode to floating point 32-bit (FP32).
+            kGpuPrecisionFp16 - Sets the precision mode to floating point 16-bit (FP16).
+            kGpuPrecisionHybrid - Sets the precision mode to FP16 for storage and FP32 for calculations.
+            kGpuPrecisionUserProvided - Uses the tensor data type provided by the user.
         use_memory_optimizations: If true, backend will share NATIVE tensor memory
             based upon analysis of the network topology.
         use_node_optimizations: If true, backend will fuse compatible operations into
