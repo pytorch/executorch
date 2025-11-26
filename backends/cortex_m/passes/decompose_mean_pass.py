@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,10 +14,7 @@ from torch.fx.node import Argument
 
 class DecomposeMeanPass(ExportPass):
     """
-    Adds a clamp operation before hardswish to ensure input is in the range [-3, inf).
-
-    By doing this before quantization the output range of the preceeding op is minimized,
-    potentially improving accuracy.
+    Decomposes AdaptiveAvgPool2d into AvgPool2d operation.
     """
 
     def call_operator(

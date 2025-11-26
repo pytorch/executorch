@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -28,7 +28,8 @@ ops_before_transforms: dict[str, int] = {
 ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 6,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 2,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 52,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 41,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 11,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_mul_default": 28,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_avg_pool2d_default": 10,
     "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 2,
