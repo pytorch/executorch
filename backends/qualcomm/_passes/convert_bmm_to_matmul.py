@@ -25,7 +25,7 @@ class ConvertBmmToMatmul(ExportPass):
     bmm = exir_ops.edge.aten.bmm.default
     matmul = exir_ops.edge.aten.matmul.default
     patterns = [
-        {view_copy:3, bmm: 1},
+        {view_copy: 3, bmm: 1},
         {expand_copy: 2, view_copy: 3, bmm: 1},
         {expand_copy: 2, view_copy: 3, bmm: 1, clone: 1},
         {bmm: 1},

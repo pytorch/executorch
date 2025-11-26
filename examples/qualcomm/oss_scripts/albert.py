@@ -17,9 +17,13 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_masked_language_model_dataset,
     make_output_dir,
     parse_skip_delegation_node,
@@ -61,12 +65,17 @@ def main(args):
     config = AlbertConfig.from_pretrained(model_name)
     config.hidden_act = "gelu"
     module = AutoModelForMaskedLM.from_pretrained(model_name, config=config).eval()
-    pte_filename = "albert_qnn_q16"
+    pte_filename = "albert_qnn"
 
     # Skip lowering/compilation if using pre-generated PTE
     if not args.pre_gen_pte:
         # lower to QNN
         passes_job = get_capture_program_passes()
+        backend = get_backend_type(args.backend)
+        quant_dtype = {
+            QnnExecuTorchBackendType.kGpuBackend: None,
+            QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_16a16w,
+        }[backend]
         build_executorch_binary(
             module,
             inputs[0],
@@ -75,9 +84,11 @@ def main(args):
             dataset=inputs,
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
-            quant_dtype=QuantDtype.use_16a16w,
+            quant_dtype=quant_dtype,
+            backend=backend,
             passes_job=passes_job,
             shared_buffer=args.shared_buffer,
+            online_prepare=args.online_prepare,
         )
 
     if args.compile_only:
@@ -100,6 +111,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
+        backend=backend,
     )
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
