@@ -43,6 +43,8 @@ select_ops_list="aten::_softmax.out"
 qdq_fusion_op=false
 model_explorer=false
 perf_overlay=false
+visualize_tosa=false
+visualize_pte=false
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -73,8 +75,11 @@ function help() {
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Arm scrach dir if you not using default ${arm_scratch_dir}"
     echo "  --qdq_fusion_op                        Enable QDQ fusion op"
-    echo "  --model_explorer                       Enable model explorer to visualize TOSA graph."
-    echo "  --perf_overlay                         With --model_explorer, include performance data from FVP PMU trace."
+    echo "  --model_explorer                       Enable model explorer to visualize a TOSA or PTE model graph."
+    echo "  --visualize_pte                        With --model_explorer, visualize PTE flatbuffer model and delegates. Cannot be used with --visualize_tosa"
+    echo "                                            NOTE:  If PTE contains an Ethos-U delegate, the Ethos-U subgraph will be visualized if aot_arm_compiler_flags is set with the -i flag to include intermediate tosa files."
+    echo "  --visualize_tosa                       With --model_explorer, visualize TOSA flatbuffer model. Cannot be used with --visualize_pte"
+    echo "  --perf_overlay                         With --model_explorer and --visualize_tosa, include performance data from FVP PMU trace."
     exit 0
 }
 
@@ -105,6 +110,8 @@ for arg in "$@"; do
       --qdq_fusion_op) qdq_fusion_op=true;;
       --model_explorer) model_explorer=true ;;
       --perf_overlay) perf_overlay=true ;;
+      --visualize_tosa) visualize_tosa=true ;;
+      --visualize_pte) visualize_pte=true ;;
       *)
       ;;
     esac
@@ -351,12 +358,21 @@ for i in "${!test_model[@]}"; do
     fi
 
     if [ "$model_explorer" = true ]; then
-        tosa_flatbuffer_path=$(find ${output_folder} -name "*TOSA*.tosa" | head -n 1)
         perf_flags=""
         if [ "$perf_overlay" = true ]; then
             perf_flags+="--trace ${output_folder}/pmu_trace.gz --tables ${output_folder}/output/out_debug.xml"
         fi
-        python3 ${script_dir}/visualize.py --model_path ${tosa_flatbuffer_path} ${perf_flags}
+
+        visualization_file=""
+        if [ "$visualize_tosa" = true ]; then
+            visualization_file+="--tosa"
+        fi
+        if [ "$visualize_pte" = true ]; then
+            visualization_file+="--pte"
+        fi
+
+        me_flags="${visualization_file} ${perf_flags}"
+        python3 ${script_dir}/visualize.py --model_dir ${output_folder} ${me_flags}
     fi
 done
 
