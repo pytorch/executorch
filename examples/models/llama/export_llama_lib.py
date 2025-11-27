@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, Union
 
 import torch
+from executorch.backends.openvino.quantization import apply_nncf_data_aware_compression
 
 from executorch.devtools.backend_debug import print_delegation_info
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
@@ -245,6 +246,19 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--adapter_config",
         required=False,
         help="Path to the adapter_config.json file. Used if the model has trained LoRA adapters. Must provide adapter_checkpoint.",
+    )
+
+    parser.add_argument(
+        "--nncf_awq",
+        required=False,
+        action="store_true",
+        help="Whether to use AWQ from NNCF. Applicable only for the Openvino backend.",
+    )
+
+    parser.add_argument(
+        "--nncf_scale_estimation",
+        action="store_true",
+        help="Whether to use Scale Estimation algorithm from NNCF. Applicable only for the Openvino backend",
     )
 
     parser.add_argument(
@@ -920,6 +934,8 @@ def _to_edge_and_lower_llama_openvino(
     modelname,
     quantizers,
     additional_passes,
+    awq,
+    scale_estimation,
     openvino_device: str = "CPU",
     verbose: bool = False,
 ) -> LLMEdgeManager:  # noqa: C901
@@ -933,9 +949,14 @@ def _to_edge_and_lower_llama_openvino(
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
-    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
-        partitioners
-    )
+    if awq or scale_estimation:
+        builder = apply_nncf_data_aware_compression(
+            builder_exported, quantizers, awq, scale_estimation
+        )
+    else:
+        builder = builder_exported.pt2e_quantize(quantizers)
+
+    builder = builder.to_edge_transform_and_lower(partitioners)
 
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
@@ -1172,6 +1193,8 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             modelname,
             quantizers,
             additional_passes,
+            awq=llm_config.backend.openvino.awq,
+            scale_estimation=llm_config.backend.openvino.scale_estimation,
             openvino_device=llm_config.backend.openvino.device,
             verbose=llm_config.debug.verbose,
         )

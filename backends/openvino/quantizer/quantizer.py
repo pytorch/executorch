@@ -19,7 +19,8 @@ from executorch.backends.openvino.quantizer.observers import (
     INT4WeightObserver,
     INT8WeightObserver,
 )
-from nncf.common.graph.graph import NNCFGraph  # type: ignore[import-untyped]
+from nncf.common.graph.graph import NNCFGraph, NNCFNode  # type: ignore[import-untyped]
+from nncf.experimental.common.tensor_statistics.statistics import WCTensorStatistic
 from nncf.quantization.algorithms.weight_compression.config import (  # type: ignore[import-untyped]
     WeightCompressionParameters,
 )
@@ -96,30 +97,25 @@ class OpenVINOQuantizer(Quantizer):
         """
         self.mode = mode
         if self.mode not in OpenVINOQuantizer.WEIGHTS_ONLY_COMPRESSION_MODES:
-            if mode == QuantizationMode.INT8_SYM:
-                preset = quantization.structs.QuantizationPreset.PERFORMANCE
-                model_type = None
-            elif mode == QuantizationMode.INT8_MIXED:
-                preset = quantization.structs.QuantizationPreset.MIXED
-                model_type = None
-            else:
-                preset = None
-                model_type = nncf.parameters.ModelType.TRANSFORMER
             self._algo = (
                 nncf.quantization.algorithms.min_max.algorithm.MinMaxQuantization(
-                    preset=preset, model_type=model_type, **kwargs
+                    **kwargs
                 )
             )
         else:
-            weight_compression_configuration = get_weight_compression_configuration(
-                mode.value.replace(
-                    "wo", ""
-                ),  # Mode value has to match NNCF CompressWeightsMode
-                **kwargs,
-            )
+            mode = mode.value.replace(
+                "wo", ""
+            )  # Mode value has to match NNCF CompressWeightsMode
             subset_size = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
+            self.weight_compression_configuration = (
+                get_weight_compression_configuration(
+                    mode,
+                    **kwargs,
+                )
+            )
+            _weight_compression_configuration = self.weight_compression_configuration
             self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
-                subset_size=subset_size, **weight_compression_configuration
+                subset_size=subset_size, **_weight_compression_configuration
             )
 
     def set_ignored_scope(
@@ -157,6 +153,16 @@ class OpenVINOQuantizer(Quantizer):
         self._algo._set_backend_entity(model)
         return self._algo.find_quantization_setup(model, nncf_graph)
 
+    def get_nncf_weight_compression_parameters(
+        self,
+        model: torch.fx.GraphModule,
+        nncf_graph: NNCFGraph,
+    ) -> tuple[
+        list[WeightCompressionParameters], Optional[dict[str, WCTensorStatistic]]
+    ]:
+        self._algo.set_backend_entity(model)
+        return self._algo.get_weight_compression_parameters(model, nncf_graph)
+
     def _annotate_weight_compression(
         self,
         model: torch.fx.GraphModule,
@@ -176,12 +182,13 @@ class OpenVINOQuantizer(Quantizer):
         :param node_vs_torch_annotation: A mapping of FX nodes to quantization annotations.
         :return: Updated mapping of FX nodes with weight compression annotations.
         """
-        self._algo.set_backend_entity(model)
-        all_wc_params, _ = self._algo.get_weight_compression_parameters(
+        all_wc_params, *_ = self.get_nncf_weight_compression_parameters(
             model, nncf_graph
         )
 
         for wc_param in all_wc_params:
+            if not wc_param.compression_config:
+                continue
             node_with_weight = wc_param.node_with_weight
             target_node = nncf_fx.node_utils.get_graph_node_by_name(
                 graph, node_with_weight.node_name
@@ -384,7 +391,7 @@ class OpenVINOQuantizer(Quantizer):
         """
         ip = qp.insertion_point
         if qp.is_weight_quantization_point():
-            OpenVINOQuantizer._get_weight_edge(target_node, nncf_graph)
+            return OpenVINOQuantizer._get_weight_edge(target_node, nncf_graph)
 
         if ip.input_port_id is None:
             return target_node
