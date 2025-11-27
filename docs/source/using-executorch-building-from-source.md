@@ -28,7 +28,7 @@ ExecuTorch is tested on the following systems, although it should also work in s
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
-* `python` version 3.10-3.12
+* `python` version 3.10-3.13
 * `ccache` (optional) - A compiler cache that speeds up recompilation
 * **macOS**
   - `Xcode Command Line Tools`
