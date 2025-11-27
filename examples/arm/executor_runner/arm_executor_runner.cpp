@@ -470,6 +470,12 @@ Error prepare_input_tensors(
                 tensor.mutable_data_ptr<int8_t>() + tensor.numel(),
                 1);
             break;
+          case ScalarType::Bool:
+            std::fill(
+                tensor.mutable_data_ptr<int8_t>(),
+                tensor.mutable_data_ptr<int8_t>() + tensor.numel(),
+                1);
+            break;
           default:
             ET_LOG(Error, "Unhandled ScalarType");
             err = Error::InvalidArgument;

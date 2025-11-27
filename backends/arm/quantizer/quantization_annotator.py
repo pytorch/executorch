@@ -697,7 +697,6 @@ def get_quant_properties(  # noqa: C901
     elif node.target in [
         torch.ops.aten.full.default,
         torch.ops.aten.full,
-        torch.ops.aten.zeros.default,
         torch.ops.aten.ones.default,
         torch.ops.aten.fill_.Scalar,
         torch.ops.aten.scalar_tensor.default,
@@ -798,7 +797,6 @@ def annotate_graph(  # type: ignore[return]
             torch.ops.aten.full,
             torch.ops.aten.fill_.Scalar,
             torch.ops.aten.scalar_tensor.default,
-            torch.ops.aten.zeros.default,
             torch.ops.aten.ones.default,
         ]:
             node.kwargs = {}
