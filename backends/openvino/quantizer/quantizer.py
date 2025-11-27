@@ -103,7 +103,20 @@ class OpenVINOQuantizer(Quantizer):
         """
         self.mode = mode
         if self.mode not in OpenVINOQuantizer.WEIGHTS_ONLY_COMPRESSION_MODES:
-            self._algo = MinMaxQuantization(**kwargs)
+            if mode == QuantizationMode.INT8_SYM:
+                preset = quantization.structs.QuantizationPreset.PERFORMANCE
+                model_type = None
+            elif mode == QuantizationMode.INT8_MIXED:
+                preset = quantization.structs.QuantizationPreset.MIXED
+                model_type = None
+            else:
+                preset = None
+                model_type = nncf.parameters.ModelType.TRANSFORMER
+            self._algo = (
+                nncf.quantization.algorithms.min_max.algorithm.MinMaxQuantization(
+                    preset=preset, model_type=model_type, **kwargs
+                )
+            )
         else:
             mode = mode.value.replace(
                 "wo", ""
