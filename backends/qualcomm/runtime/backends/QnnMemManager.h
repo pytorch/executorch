@@ -39,16 +39,6 @@ class QnnMemManager {
       const std::shared_ptr<TensorWrapper>& tensor_wrapper,
       int32_t mem_fd,
       void* mem_ptr,
-      void* unaligned_custom_mem_base,
-      size_t total_custom_mem_size,
-      size_t tensor_offset,
-      const CustomMemTensorInfo& info);
-
-  // Pre-register custom mem handle from SharedBuffer. Bring forward the
-  // memHandle creating time from execution to initialization.
-  executorch::runtime::Error PreRegisterCustomMemHandle(
-      int32_t mem_fd,
-      void* unaligned_custom_mem_base,
       size_t total_custom_mem_size,
       size_t tensor_offset,
       const CustomMemTensorInfo& info);
