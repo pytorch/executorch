@@ -34,7 +34,15 @@ Tensor& quantized_mul_out(
     const Scalar& output_shift,
     Tensor& out) {
   // Validate tensor types and quantization parameters
-  validate_cmsis_nn_tensor_requirements(input1_int8, input2_int8, out);
+
+  bool channel_broadcast = is_channel_broadcast(input1_int8, input2_int8);
+  validate_cmsis_nn_tensor_requirements(
+      input1_int8,
+      input2_int8,
+      out,
+      ScalarType::Char,
+      /*require_channels_last=*/channel_broadcast,
+      /*require_same_sizes=*/!channel_broadcast);
 
   const Scalar kIdentityMultiplier(/*value=*/1);
   const Scalar kZeroShift(/*value=*/0);
@@ -51,12 +59,26 @@ Tensor& quantized_mul_out(
       out);
 
   // Extract quantization parameters
-  const int32_t zp1 = extractScalarToInt32(input1_zero_point);
-  const int32_t zp2 = extractScalarToInt32(input2_zero_point);
+  int8_t* input1_ptr = input1_int8.data_ptr<int8_t>();
+  int8_t* input2_ptr = input2_int8.data_ptr<int8_t>();
+  int32_t zp1 = extractScalarToInt32(input1_zero_point);
+  int32_t zp2 = extractScalarToInt32(input2_zero_point);
   const int32_t out_zp = extractScalarToInt32(output_zero_point);
   const int32_t output_mult = extractScalarToInt32(output_multiplier);
   const int32_t output_shift_val = extractScalarToInt32(output_shift);
 
+  int32_t muls_per_loop = 0;
+
+  if (channel_broadcast) {
+    if (input1_int8.numel() < input2_int8.numel()) {
+      std::swap<int32_t>(zp1, zp2);
+      std::swap<int8_t*>(input1_ptr, input2_ptr);
+    }
+
+    muls_per_loop = input1_int8.size(1);
+  } else {
+    muls_per_loop = out.numel();
+  }
   // Note 1: The CMSIS-NN kernel implementation uses offsets which are always
   // added to the data, whereas zero_points are subtracted when dequantizing
   // (for the inputs) and added when quantizing (for the  output). Hence the
@@ -72,29 +94,31 @@ Tensor& quantized_mul_out(
   //    effective_scale = (scale_in1 * scale_in2 / scale_out)
   // Hence no input quantization params required here.
 
-  // Call CMSIS-NN elementwise multiply kernel
-  arm_cmsis_nn_status status = arm_elementwise_mul_s8(
-      input1_int8.const_data_ptr<int8_t>(),
-      input2_int8.const_data_ptr<int8_t>(),
-      -static_cast<int32_t>(zp1),
-      -static_cast<int32_t>(zp2),
-      out.mutable_data_ptr<int8_t>(),
-      static_cast<int32_t>(out_zp),
-      output_mult,
-      output_shift_val,
-      kInt8ActivationMin,
-      kInt8ActivationMax,
-      static_cast<int32_t>(out.numel()));
+  for (int32_t broadcast_offset = 0; broadcast_offset < out.numel();
+       broadcast_offset += muls_per_loop) {
+    // Call CMSIS-NN elementwise multiply kernel
+    arm_cmsis_nn_status status = arm_elementwise_mul_s8(
+        input1_ptr + broadcast_offset,
+        input2_ptr,
+        -static_cast<int32_t>(zp1),
+        -static_cast<int32_t>(zp2),
+        out.mutable_data_ptr<int8_t>() + broadcast_offset,
+        static_cast<int32_t>(out_zp),
+        output_mult,
+        output_shift_val,
+        kInt8ActivationMin,
+        kInt8ActivationMax,
+        muls_per_loop);
 
-  if (status != ARM_CMSIS_NN_SUCCESS) {
-    ET_LOG(
-        Error,
-        "quantized_mul_out: arm_elementwise_mul_s8 failed with status [%d]",
-        status);
-    context.fail(Error::Internal);
-    return out;
+    if (status != ARM_CMSIS_NN_SUCCESS) {
+      ET_LOG(
+          Error,
+          "quantized_mul_out: arm_elementwise_mul_s8 failed with status [%d]",
+          status);
+      context.fail(Error::Internal);
+      return out;
+    }
   }
-
   return out;
 }
 

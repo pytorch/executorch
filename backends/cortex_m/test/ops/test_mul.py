@@ -103,6 +103,27 @@ test_cases = {
             ramp_tensor(-5, 5, (1, 2, 1, 2)),
         ),
     ),
+    "broadcast_channels_1": McuTestCase(
+        CortexMTensorMul(),
+        (
+            ramp_tensor(-2, 2, (1, 8, 1, 1)).to(memory_format=torch.channels_last),
+            ramp_tensor(-5, 5, (1, 8, 5, 5)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "broadcast_channels_2": McuTestCase(
+        CortexMTensorMul(),
+        (
+            ramp_tensor(-5, 5, (2, 8, 5, 5)).to(memory_format=torch.channels_last),
+            ramp_tensor(-2, 2, (1, 8, 1, 1)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "broadcast_channels_continous": McuTestCase(
+        CortexMTensorMul(),
+        (
+            ramp_tensor(-5, 5, (2, 8, 5, 5)),
+            ramp_tensor(-2, 2, (1, 8, 1, 1)),
+        ),
+    ),
 }
 
 
@@ -112,6 +133,7 @@ xfail_cases_dialect = {
     "broadcast_1": "Broadcasting is not supported in Cortex-M backend",
     "broadcast_2": "Broadcasting is not supported in Cortex-M backend",
     "broadcast_3": "Broadcasting is not supported in Cortex-M backend",
+    "broadcast_channels_continous": "Broadcasting channels is not supported in continous memory_format in Cortex-M backend.",
 }
 
 
