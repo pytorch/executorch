@@ -113,7 +113,7 @@ class OpenVINOQuantizer(Quantizer):
                 preset = None
                 model_type = nncf.parameters.ModelType.TRANSFORMER
             self._algo = (
-                nncf.quantization.algorithms.min_max.algorithm.MinMaxQuantization(
+                MinMaxQuantization(
                     preset=preset, model_type=model_type, **kwargs
                 )
             )
