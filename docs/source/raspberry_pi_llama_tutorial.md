@@ -4,7 +4,7 @@
 
 This tutorial demonstrates how to deploy **Llama models on Raspberry Pi 4/5 devices** using ExecuTorch:
 
-- **Prerequisites**: Linux host machine, Python 3.10-3.12, conda environment, Raspberry Pi 4/5
+- **Prerequisites**: Linux host machine, Python 3.10-3.13, conda environment, Raspberry Pi 4/5
 - **Setup**: Automated cross-compilation using `setup.sh` script for ARM toolchain installation
 - **Export**: Convert Llama models to optimized `.pte` format with quantization options
 - **Deploy**: Transfer binaries to Raspberry Pi and configure runtime libraries
@@ -19,7 +19,7 @@ This tutorial demonstrates how to deploy **Llama models on Raspberry Pi 4/5 devi
 
 **Software Dependencies**:
 
-- **Python 3.10-3.12** (ExecuTorch requirement)
+- **Python 3.10-3.13** (ExecuTorch requirement)
 - **conda** or **venv** for environment management
 - **CMake 3.29.6+**
 - **Git** for repository cloning
@@ -42,7 +42,7 @@ uname -s  # Should output: Linux
 uname -m  # Should output: x86_64
 
 # Check Python version
-python3 --version  # Should be 3.10-3.12
+python3 --version  # Should be 3.10-3.13
 
 # Check required tools
 hash cmake git md5sum 2>/dev/null || echo "Missing required tools"
