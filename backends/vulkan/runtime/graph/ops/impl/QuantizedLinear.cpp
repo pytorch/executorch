@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
@@ -18,10 +19,6 @@ namespace vkcompute {
 //
 // Shader dispatch utilities
 //
-
-bool is_gemv(ComputeGraph* graph, const ValueRef& fp_input) {
-  return graph->size_at<uint32_t>(-2, fp_input) == 1;
-}
 
 void resize_linear_qw_node(
     ComputeGraph* graph,
@@ -77,6 +74,10 @@ utils::uvec3 quantized_linear_global_wg_size(
     M_per_tile = 1;
   }
 
+  if (shader.kernel_name.find("q8ta_q8csw_tiled") != std::string::npos) {
+    N_per_tile = 8;
+  }
+
   const uint32_t num_N_tiles = utils::div_up(N, N_per_tile);
   const uint32_t num_M_tiles = utils::div_up(M, M_per_tile);
 
@@ -99,120 +100,6 @@ utils::uvec3 quantized_linear_local_wg_size(
     return pick_hw_square_wg_size(
         graph, shader, global_workgroup_size, args, resize_args);
   }
-}
-
-std::tuple<int64_t, int64_t> get_quantized_input_num_blocks(
-    ComputeGraph& graph,
-    const ValueRef input) {
-  std::vector<int64_t> input_sizes = graph.sizes_of(input);
-  const int64_t ndim = graph.dim_of(input);
-
-  const int64_t M = input_sizes.at(ndim - 2);
-  const int64_t K = input_sizes.at(ndim - 1);
-
-  const int64_t num_blocks_M = utils::div_up(M, int64_t(4));
-  const int64_t num_blocks_K = utils::div_up(K, int64_t(4));
-
-  return std::make_tuple(num_blocks_M, num_blocks_K);
-}
-
-utils::uvec3 quant_pack_input_global_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef input = args.at(1).refs.at(0);
-  int64_t num_blocks_M, num_blocks_K;
-  std::tie(num_blocks_M, num_blocks_K) =
-      get_quantized_input_num_blocks(*graph, input);
-
-  return {
-      utils::safe_downcast<uint32_t>(num_blocks_K),
-      utils::safe_downcast<uint32_t>(num_blocks_M),
-      1u};
-}
-
-vkapi::ShaderInfo pick_quantize_and_pack_input_with_sums_shader(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef packed_int_input = args.at(0).refs.at(0);
-  const ValueRef fp_input = args.at(1).refs.at(0);
-  const ValueRef group_size = resize_args.at(0);
-
-  const int64_t group_size_val = graph->extract_scalar<int64_t>(group_size);
-
-  std::string shader_name = "quantize_and_pack_linear_input_with_sums";
-  if (group_size_val >= 128) {
-    shader_name += "_o2w32";
-  } else {
-    shader_name += "_o4w16";
-  }
-
-  add_storage_type_suffix(
-      shader_name, graph->storage_type_of(packed_int_input));
-  add_storage_type_suffix(shader_name, graph->storage_type_of(fp_input));
-  add_dtype_suffix(shader_name, graph->dtype_of(fp_input));
-
-  return VK_KERNEL_FROM_STR(shader_name);
-}
-
-utils::uvec3 pick_quantize_and_pack_input_with_sums_global_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef fp_input = args.at(1).refs.at(0);
-  // For gemv cases, skip the quantize and pack input step in favor of computing
-  // the quantized linear as a weight only quantized linear operation. The
-  // rationale for this is that gemv is a memory bound operation and may not
-  // necessarily benefit from quantizing the input and computing with integer
-  // accumulation.
-  if (is_gemv(graph, fp_input)) {
-    return {0u, 0u, 0u};
-  }
-
-  const ValueRef group_size = resize_args.at(0);
-  int64_t num_blocks_M, num_blocks_K;
-  std::tie(num_blocks_M, num_blocks_K) =
-      get_quantized_input_num_blocks(*graph, fp_input);
-
-  const int64_t group_size_val = graph->extract_scalar<int64_t>(group_size);
-  const int64_t blocks_per_group = group_size_val / 4;
-
-  const int64_t num_groups = num_blocks_K / blocks_per_group;
-
-  return {
-      utils::safe_downcast<uint32_t>(num_groups),
-      utils::safe_downcast<uint32_t>(num_blocks_M),
-      1u};
-}
-
-utils::uvec3 pick_quantize_and_pack_input_with_sums_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)resize_args;
-
-  const ValueRef fp_input = args.at(1).refs.at(0);
-  // For gemv, skip the quantize input step since the quantized linear is
-  // computed as a weight only quantized linear operation.
-  if (is_gemv(graph, fp_input)) {
-    return {1u, 1u, 1u};
-  }
-
-  uint32_t groups_per_wg = 2u;
-  uint32_t workers_per_group = 32u;
-
-  if (shader.kernel_name.find("o4w16") != std::string::npos) {
-    groups_per_wg = 4u;
-    workers_per_group = 16u;
-  }
-
-  return {groups_per_wg, 1u, workers_per_group};
 }
 
 vkapi::ShaderInfo pick_linear_qw_shader(
@@ -417,7 +304,7 @@ ValueRef prepack_quantized_linear_weight(
 /*
  * Shader dispatch for linear with quantized weight but fp activations.
  */
-DynamicDispatchNode make_linear_qw_node(
+void add_linear_qw_node(
     ComputeGraph& graph,
     const QuantizationConfig& weight_quant_config,
     const ValueRef fp_input,
@@ -454,7 +341,7 @@ DynamicDispatchNode make_linear_qw_node(
   const ValueRef is_4bit_flag =
       weight_quant_config.nbits == 4 ? group_size : kDummyValueRef;
 
-  return DynamicDispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_linear_qw_shader,
       quantized_linear_global_wg_size,
@@ -472,98 +359,10 @@ DynamicDispatchNode make_linear_qw_node(
       // Resize args
       {is_4bit_flag, weight_data},
       // Resizing Logic
-      resize_linear_qw_node);
+      resize_linear_qw_node));
 }
 
-DynamicDispatchNode make_quantize_and_pack_linear_input_node(
-    ComputeGraph& graph,
-    const QuantizationConfig& input_quant_config,
-    const ValueRef fp_input,
-    const ValueRef packed_input_scale,
-    const ValueRef packed_input_zp,
-    const ValueRef input_scale_data,
-    const ValueRef input_zp_data,
-    const ValueRef packed_int_input,
-    const ValueRef group_size) {
-  // Only certain quantization types supported at the moment
-  VK_CHECK_COND(input_quant_config.granularity == kPerTensor);
-
-  int64_t num_blocks_M, num_blocks_K;
-  std::tie(num_blocks_M, num_blocks_K) =
-      get_quantized_input_num_blocks(graph, fp_input);
-
-  float inv_scale = 1.0f / graph.extract_scalar<float>(input_scale_data);
-  int32_t zp = graph.extract_scalar<int32_t>(input_zp_data);
-
-  std::string shader_name = "quantize_and_pack_linear_input_per_tensor";
-  add_storage_type_suffix(shader_name, graph.storage_type_of(packed_int_input));
-  add_storage_type_suffix(shader_name, graph.storage_type_of(fp_input));
-  add_dtype_suffix(shader_name, graph.dtype_of(fp_input));
-
-  vkapi::ParamsBindList param_buffers = {graph.sizes_ubo(fp_input)};
-
-  std::vector<PushConstantDataInfo> push_constants = {
-      PushConstantDataInfo(&inv_scale, sizeof(inv_scale)),
-      PushConstantDataInfo(&zp, sizeof(zp)),
-  };
-
-  return DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(shader_name),
-      quant_pack_input_global_wg_size,
-      default_pick_local_wg_size,
-      // Inputs and Outputs
-      {{packed_int_input, vkapi::kWrite}, {fp_input, vkapi::kRead}},
-      // Shader params buffers
-      param_buffers,
-      // Push Constants
-      push_constants,
-      // Specialization Constants
-      {},
-      // Resize args
-      {});
-}
-
-DynamicDispatchNode make_quantize_and_pack_linear_input_with_sums_node(
-    ComputeGraph& graph,
-    const QuantizationConfig& input_quant_config,
-    const ValueRef fp_input,
-    const ValueRef int_input_sums,
-    const ValueRef packed_input_scales,
-    const ValueRef packed_input_zps,
-    const ValueRef packed_int_input,
-    const ValueRef group_size) {
-  // Only certain quantization types supported at the moment
-  VK_CHECK_COND(input_quant_config.granularity == kPerChannel);
-
-  int64_t num_blocks_M, num_blocks_K;
-  std::tie(num_blocks_M, num_blocks_K) =
-      get_quantized_input_num_blocks(graph, fp_input);
-
-  vkapi::ParamsBindList param_buffers = {graph.sizes_ubo(fp_input)};
-
-  const int32_t group_size_val = graph.extract_scalar<int32_t>(group_size);
-  const int32_t blocks_per_group = utils::div_up(group_size_val, int32_t(4));
-
-  return DynamicDispatchNode(
-      graph,
-      pick_quantize_and_pack_input_with_sums_shader,
-      pick_quantize_and_pack_input_with_sums_global_wg_size,
-      pick_quantize_and_pack_input_with_sums_local_wg_size,
-      // Inputs and Outputs
-      {{{packed_int_input, int_input_sums}, vkapi::kWrite},
-       {{fp_input, packed_input_scales, packed_input_zps}, vkapi::kRead}},
-      // Shader params buffers
-      param_buffers,
-      // Push Constants
-      {},
-      // Specialization Constants
-      {blocks_per_group},
-      // Resize args
-      {group_size});
-}
-
-DynamicDispatchNode make_linear_qa_qw_node(
+void add_linear_qa_qw_node(
     ComputeGraph& graph,
     const QuantizationConfig& input_quant_config,
     const QuantizationConfig& weight_quant_config,
@@ -611,8 +410,7 @@ DynamicDispatchNode make_linear_qa_qw_node(
     apply_bias = 0;
   }
 
-  // Add the compute node
-  return DynamicDispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       quantized_linear_global_wg_size,
@@ -634,10 +432,10 @@ DynamicDispatchNode make_linear_qa_qw_node(
       // Resize args
       {fp_input},
       // Resizing Logic
-      nullptr);
+      nullptr));
 }
 
-DynamicDispatchNode make_linear_dqa_qw_node(
+void add_linear_dqa_qw_node(
     ComputeGraph& graph,
     const QuantizationConfig& input_quant_config,
     const QuantizationConfig& weight_quant_config,
@@ -681,8 +479,7 @@ DynamicDispatchNode make_linear_dqa_qw_node(
   const ValueRef is_4bit_flag =
       weight_quant_config.nbits == 4 ? group_size : kDummyValueRef;
 
-  // Add the compute node
-  return DynamicDispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_linear_dqa_qw_shader,
       quantized_linear_global_wg_size,
@@ -708,7 +505,7 @@ DynamicDispatchNode make_linear_dqa_qw_node(
       // Resize args
       {is_4bit_flag, weight_data},
       // Resizing Logic
-      resize_linear_qw_node);
+      resize_linear_qw_node));
 }
 
 //
@@ -766,7 +563,7 @@ void quantized_linear_impl(
   // 2. Input is not quantized
   if (!graph.can_use_int8_dot_product() ||
       input_quant_config.granularity == kNoQuantization) {
-    DynamicDispatchNode linear_qw_node(make_linear_qw_node(
+    add_linear_qw_node(
         graph,
         weight_quant_config,
         fp_input,
@@ -777,9 +574,8 @@ void quantized_linear_impl(
         group_size,
         bias_data,
         packed_bias,
-        output));
+        output);
 
-    graph.execute_nodes().emplace_back(new DynamicDispatchNode(linear_qw_node));
     return;
   }
   // Otherwise, use input and weight quantized linear computed with integer
@@ -802,39 +598,27 @@ void quantized_linear_impl(
       graph, weight_sums_data, utils::kBuffer, utils::kWidthPacked);
 
   // Allocate temporary tensor to store quantized and packed input
-
-  int64_t num_blocks_M, num_blocks_K;
-  std::tie(num_blocks_M, num_blocks_K) =
-      get_quantized_input_num_blocks(graph, fp_input);
-
-  const int64_t int_input_height = num_blocks_M;
-  const int64_t int_input_width = num_blocks_K * 4;
-
   TmpTensor packed_int_input(
       &graph,
-      {int_input_height, int_input_width},
-      vkapi::kInt,
+      graph.sizes_of(fp_input),
+      vkapi::kInt8x4,
       utils::kBuffer,
-      utils::kWidthPacked);
+      utils::kPackedInt8_4H4W);
 
   // Non dynamically quantized input case
   if (!input_quant_config.is_dynamic) {
-    DynamicDispatchNode quantize_and_pack_linear_node(
-        make_quantize_and_pack_linear_input_node(
-            graph,
-            input_quant_config,
-            fp_input,
-            packed_input_scale,
-            packed_input_zp,
-            input_scale,
-            input_zp,
-            packed_int_input,
-            group_size));
+    add_quantize_and_pack_4h4w_node(
+        graph,
+        input_quant_config,
+        fp_input,
+        packed_input_scale,
+        packed_input_zp,
+        input_scale,
+        input_zp,
+        packed_int_input,
+        group_size);
 
-    graph.execute_nodes().emplace_back(
-        new DynamicDispatchNode(quantize_and_pack_linear_node));
-
-    DynamicDispatchNode linear_qa_qw_node(make_linear_qa_qw_node(
+    add_linear_qa_qw_node(
         graph,
         input_quant_config,
         weight_quant_config,
@@ -851,10 +635,7 @@ void quantized_linear_impl(
         group_size,
         bias_data,
         packed_bias,
-        output));
-
-    graph.execute_nodes().emplace_back(
-        new DynamicDispatchNode(linear_qa_qw_node));
+        output);
 
     return;
   }
@@ -875,21 +656,17 @@ void quantized_linear_impl(
       utils::kBuffer,
       utils::kWidthPacked);
 
-  DynamicDispatchNode quantize_and_pack_input_with_sums_node(
-      make_quantize_and_pack_linear_input_with_sums_node(
-          graph,
-          input_quant_config,
-          fp_input,
-          int_input_sums,
-          packed_input_scale,
-          packed_input_zp,
-          packed_int_input,
-          group_size));
+  add_quantize_and_pack_4h4w_with_group_sums_node(
+      graph,
+      input_quant_config,
+      fp_input,
+      int_input_sums,
+      packed_input_scale,
+      packed_input_zp,
+      packed_int_input,
+      group_size);
 
-  graph.execute_nodes().emplace_back(
-      new DynamicDispatchNode(quantize_and_pack_input_with_sums_node));
-
-  DynamicDispatchNode linear_dqa_qw_node(make_linear_dqa_qw_node(
+  add_linear_dqa_qw_node(
       graph,
       input_quant_config,
       weight_quant_config,
@@ -907,10 +684,7 @@ void quantized_linear_impl(
       group_size,
       bias_data,
       packed_bias,
-      output));
-
-  graph.execute_nodes().emplace_back(
-      new DynamicDispatchNode(linear_dqa_qw_node));
+      output);
 }
 
 void linear_q8ta_q8csw(ComputeGraph& graph, const std::vector<ValueRef>& args) {

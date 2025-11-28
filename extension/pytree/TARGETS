@@ -15,8 +15,10 @@ runtime.cxx_python_extension(
     ],
     base_module = "executorch.extension.pytree",
     deps = [
-        "fbsource//third-party/pybind11:pybind11",
         ":pytree",
+    ],
+    external_deps = [
+        "pybind11",
     ],
 )
 
@@ -27,8 +29,10 @@ runtime.cxx_python_extension(
     ],
     base_module = "executorch.extension.pytree",
     deps = [
-        "fbsource//third-party/pybind11:pybind11",
         ":pytree",
+    ],
+    external_deps = [
+        "pybind11",
     ],
 )
 

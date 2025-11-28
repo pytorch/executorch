@@ -105,17 +105,33 @@ target_include_directories(
     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
 )
 
+# vulkan runtime utils files
+
+file(GLOB_RECURSE vulkan_runtime_utils_cpp ${RUNTIME_PATH}/utils/*.cpp)
+
 # vulkan_backend
+
+# Try to find boost to log stack traces when throwing exceptions
+find_package(Boost 1.89 COMPONENTS stacktrace_basic stacktrace_addr2line)
 
 file(GLOB vulkan_backend_cpp ${RUNTIME_PATH}/*.cpp)
 list(APPEND vulkan_backend_cpp ${vulkan_graph_cpp})
 list(APPEND vulkan_backend_cpp ${vulkan_standard_shaders_cpp})
+list(APPEND vulkan_backend_cpp ${vulkan_runtime_utils_cpp})
 
 add_library(vulkan_backend ${vulkan_backend_cpp})
 target_include_directories(
   vulkan_backend PRIVATE ${SCHEMA_INCLUDE_DIR} ${COMMON_INCLUDES}
 )
 target_link_libraries(vulkan_backend PRIVATE vulkan_schema executorch_core)
+# Optionally link boost for stacktraces if boost is available
+if(DEFINED Boost_STACKTRACE_BASIC_LIBRARY)
+  target_link_libraries(
+    vulkan_backend PRIVATE ${Boost_STACKTRACE_LIBRARY}
+                           ${Boost_STACKTRACE_ADDR2LINE_LIBRARY}
+  )
+  list(APPEND VULKAN_CXX_FLAGS "-DETVK_BOOST_STACKTRACE_AVAILABLE")
+endif()
 target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 # Link this library with --whole-archive due to dynamic backend registration
 executorch_target_link_options_shared_lib(vulkan_backend)
@@ -127,7 +143,7 @@ set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
 install(
   TARGETS vulkan_backend vulkan_schema
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${COMMON_INCLUDES}
 )

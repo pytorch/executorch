@@ -11,7 +11,7 @@ linear_q8ta_q8csw_tiled:
     PACKED_INT8_INPUT_STORAGE: buffer
     WEIGHT_STORAGE: texture2d
     TILE_M4: 1
-    TILE_N4: 1
+    TILE_N4: 2
     TILE_K4: 1
   generate_variant_forall:
     DTYPE:

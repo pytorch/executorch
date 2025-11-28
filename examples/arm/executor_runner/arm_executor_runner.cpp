@@ -410,8 +410,7 @@ Error prepare_input_tensors(
       "Wrong number of inputs allocated compared to method");
 #endif
 
-  EValue* input_evalues =
-      static_cast<EValue*>(allocator.allocate(num_inputs * sizeof(EValue*)));
+  EValue* input_evalues = allocator.allocateList<EValue>(num_inputs);
   ET_CHECK_OR_RETURN_ERROR(
       input_evalues != nullptr,
       MemoryAllocationFailed,
@@ -470,6 +469,10 @@ Error prepare_input_tensors(
                 tensor.mutable_data_ptr<int8_t>(),
                 tensor.mutable_data_ptr<int8_t>() + tensor.numel(),
                 1);
+            break;
+          default:
+            ET_LOG(Error, "Unhandled ScalarType");
+            err = Error::InvalidArgument;
             break;
         }
       } else {

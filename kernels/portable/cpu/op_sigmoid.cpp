@@ -47,7 +47,7 @@ Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::FLOATHBF16>(
-        [](const auto val_in) {
+        [](const auto& val_in) {
           const auto one = static_cast<decltype(val_in)>(1.0);
           auto out_val = one / (one + executorch::math::exp(-val_in));
           return out_val;

@@ -287,7 +287,7 @@ class MemoryPlanningPass(PassBase):
         return PassResult(graph_module, True)
 
     def run_multimethod(self):
-        "Resolve any memory planning done across entry points"
+        """Resolve any memory planning done across entry points, called after run is called on all entry points."""
         if self.share_mutable_buffers:
             arena: int = 0
 

@@ -117,6 +117,12 @@ def _patch_build_mode_flags(kwargs):
             "ovr_config//os:macos": ["-fvisibility=default"],
     })
 
+    # Add -O2 compiler flag when the compiler_flag_O2 config is set
+    kwargs["compiler_flags"] = kwargs["compiler_flags"] + select({
+        "DEFAULT": [],
+        # @oss-disable: "fbsource//xplat/assistant/oacr/native/scripts:compiler_flag_O2": ["-O2"],
+    })
+
     return kwargs
 
 def _patch_test_compiler_flags(kwargs):
@@ -346,6 +352,7 @@ def _python_binary(*args, **kwargs):
 
 def _python_test(*args, **kwargs):
     _patch_kwargs_common(kwargs)
+    _remove_caffe2_deps(kwargs)
     env.python_test(*args, **kwargs)
 
 def get_oss_build_kwargs():

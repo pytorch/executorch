@@ -155,17 +155,17 @@ test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using 
 
 
 test_pytest_ops_vkml() { # Same as test_pytest but also sometime verify using VKML runtime
-    echo "${TEST_SUITE_NAME}: Run pytest with VKML"
+    echo "${TEST_SUITE_NAME}: Run pytest operator tests with VKML runtime"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing_vkml.sh
 
-    pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models
+    pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ \
+            --ignore=backends/arm/test/models -k _vgf_
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
 test_pytest_models_vkml() { # Same as test_pytest but also sometime verify VKML runtime
-    echo "${TEST_SUITE_NAME}: Run pytest with VKML"
+    echo "${TEST_SUITE_NAME}: Run pytest model tests with VKML runtime"
 
     backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing_vkml.sh
@@ -173,7 +173,7 @@ test_pytest_models_vkml() { # Same as test_pytest but also sometime verify VKML 
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k _vgf_
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -189,11 +189,11 @@ test_run_vkml() { # End to End model tests using run.sh
 
     echo "${TEST_SUITE_NAME}: Test VKML"
     out_folder="arm_test/test_run"
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=add --output=${out_folder}/runner
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=mul --output=${out_folder}/runner
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=add --output=${out_folder}/runner --bundleio
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=mul --output=${out_folder}/runner --bundleio
 
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qadd --output=${out_folder}/runner
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qops --output=${out_folder}/runner
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qadd --output=${out_folder}/runner --bundleio
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qops --output=${out_folder}/runner --bundleio
 
     echo "${TEST_SUITE_NAME}: PASS"
 }
@@ -253,8 +253,8 @@ test_models_vkml() { # End to End model tests using model_test.py
 
     # VKML
     echo "${TEST_SUITE_NAME}: Test target VKML"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=mv2
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --no_quantize --model=mv2
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=resnet18 --extra_runtime_flags="--bundleio_atol=0.2 --bundleio_rtol=0.2"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=resnet50 --extra_runtime_flags="--bundleio_atol=0.2 --bundleio_rtol=0.2"
 
     echo "${TEST_SUITE_NAME}: PASS"
 }
@@ -339,6 +339,19 @@ test_full_vkml() { # All End to End model tests
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_model_smollm2-135M() {
+    echo "${TEST_SUITE_NAME}: Test SmolLM2-135M on Ethos-U85"
+
+    # Build common libs once
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --build_libs
+
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=smollm2 --extra_flags="-DEXECUTORCH_SELECT_OPS_LIST=dim_order_ops::_to_dim_order_copy.out"
+
+    echo "${TEST_SUITE_NAME}: PASS"
+
+
+}
+
 test_smaller_stories_llama() {
     echo "${TEST_SUITE_NAME}: Test smaller_stories_llama"
 
@@ -365,5 +378,30 @@ test_smaller_stories_llama() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_memory_allocation() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation with run.sh"
+
+    mkdir -p arm_test/test_run
+    # Ethos-U85
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py &> arm_test/test_run/full.log
+    python3 backends/arm/test/test_memory_allocator_log.py --log arm_test/test_run/full.log \
+            --require "model_pte_program_size" "<= 3000 B" \
+            --require "method_allocator_planned" "<= 64 B" \
+            --require "method_allocator_loaded" "<= 1024 B" \
+            --require "method_allocator_input" "<= 16 B" \
+            --require "Total DRAM used" "<= 0.06 KiB"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_undefinedbehavior_sanitizer() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u executor_runner with UBSAN"
+
+    mkdir -p arm_test/test_run
+    # Ethos-U85
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py --build_type=UndefinedSanitizer
+    echo "${TEST_SUITE_NAME}: PASS"
+}
 
 ${TEST_SUITE}

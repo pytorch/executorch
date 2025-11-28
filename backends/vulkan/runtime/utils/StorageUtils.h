@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <ostream>
 
 namespace vkcompute {
@@ -84,9 +85,24 @@ enum class GPUMemoryLayout : uint8_t {
    * 2. For texture backed tensors, the packed dim will be the specified dim.
    *    The axis map will be `{0, 1, 2, 2}`.
    */
+
   TENSOR_WIDTH_PACKED = 0u,
   TENSOR_HEIGHT_PACKED = 1u,
   TENSOR_CHANNELS_PACKED = 2u,
+
+  /*
+   * The following memory layouts are used for quantized int8 tensors. For the
+   * above "standard" memory layouts, 4 elements along the packed dim are stored
+   * in each texel (4-component vectorized type). However, for packed int8
+   * memory layouts, an additional level of packing is used where 4 int8 values
+   * are packed into each int32, and each int32 is packed into each ivec4.
+   * Conceptually, this allows an additional packed dimension to be used.
+   * When loading a ivec4 from the GPU storage buffer / texture, data for a
+   * 16 element block is loaded, rather than 4 elements along one dimension.
+   */
+
+  TENSOR_PACKED_INT8_4W4C = 3u,
+  TENSOR_PACKED_INT8_4H4W = 4u,
 };
 
 static constexpr GPUMemoryLayout kWidthPacked =
@@ -98,6 +114,12 @@ static constexpr GPUMemoryLayout kHeightPacked =
 static constexpr GPUMemoryLayout kChannelsPacked =
     GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
 
+static constexpr GPUMemoryLayout kPackedInt8_4W4C =
+    GPUMemoryLayout::TENSOR_PACKED_INT8_4W4C;
+
+static constexpr GPUMemoryLayout kPackedInt8_4H4W =
+    GPUMemoryLayout::TENSOR_PACKED_INT8_4H4W;
+
 template <typename T>
 T to_packed_dim(const GPUMemoryLayout layout) {
   switch (layout) {
@@ -107,10 +129,16 @@ T to_packed_dim(const GPUMemoryLayout layout) {
       return 1;
     case kChannelsPacked:
       return 2;
+    case kPackedInt8_4W4C:
+      return 2;
+    case kPackedInt8_4H4W:
+      return 0;
   };
   // Should be unreachable
   return 0;
 }
+
+bool is_packed_int8_layout(const GPUMemoryLayout layout);
 
 inline std::ostream& operator<<(
     std::ostream& os,
@@ -141,6 +169,12 @@ inline std::ostream& operator<<(
       break;
     case kChannelsPacked:
       os << "TENSOR_CHANNELS_PACKED";
+      break;
+    case kPackedInt8_4W4C:
+      os << "TENSOR_PACKED_INT8_4W4C";
+      break;
+    case kPackedInt8_4H4W:
+      os << "TENSOR_PACKED_INT8_4H4W";
       break;
   }
   return os;

@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import final, Optional, Sequence
 
@@ -15,6 +14,14 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 @final
 class VgfPartitioner(TOSAPartitioner):
+    """
+    Partitions subgraphs supported by the Arm Vgf backend.
+
+    Args:
+        compile_spec: The Vgf compilation specification.
+        additional_checks: Optional sequence of additional operator support checks.
+    """
+
     def __init__(
         self,
         compile_spec: VgfCompileSpec,

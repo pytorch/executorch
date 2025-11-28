@@ -281,6 +281,7 @@ def create_llava_config_from_args(args):
     llm_config = LlmConfig()
 
     llm_config.model.use_sdpa_with_kv_cache = args.use_sdpa_with_kv_cache
+    llm_config.export.max_context_length = args.max_context_len
     llm_config.export.max_seq_length = args.max_seq_len
     llm_config.export.output_name = args.pte_name
     llm_config.debug.profile_memory = args.profile_memory
@@ -295,6 +296,12 @@ def main():
         default=True,
         action=BooleanOptionalAction,
         help="Use sdpa_with_kv_cache custom op in LLava text model.",
+    )
+    parser.add_argument(
+        "--max-context-len",
+        required=True,
+        type=int,
+        help="Maximum context length for the text model.",
     )
     parser.add_argument(
         "--max-seq-len",
@@ -325,12 +332,13 @@ def main():
     llm_config = create_llava_config_from_args(args)
 
     logging.info(
-        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {llm_config.model.use_sdpa_with_kv_cache}, max_seq_len: {llm_config.export.max_seq_length}"
+        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {llm_config.model.use_sdpa_with_kv_cache}, max_seq_len: {llm_config.export.max_seq_length}, max_context_len: {llm_config.export.max_context_length}"
     )
 
     llava_model = LlavaModel(
         use_sdpa_with_kv_cache_op=llm_config.model.use_sdpa_with_kv_cache,
         max_seq_len=llm_config.export.max_seq_length,
+        max_context_len=llm_config.export.max_context_length,
     )
 
     executorch_program = export_all(llava_model)

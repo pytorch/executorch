@@ -23,7 +23,7 @@ The MediaTek backend enables acceleration of PyTorch models on edge devices with
   ```
 - NeuroPilot SDK Python wheels (download from [NeuroPilot Express SDK](https://neuropilot.mediatek.com/resources/public/npexpress/en/docs/npexpress)):
   ```bash
-  pip3 install mtk_neuron-8.2.19-py3-none-linux_x86_64.whl
+  pip3 install mtk_neuron-8.2.23-py3-none-linux_x86_64.whl
   pip3 install mtk_converter-8.13.0+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
   ```
 
@@ -37,6 +37,17 @@ cd executorch
 ./examples/mediatek/shell_scripts/export_oss.sh mobilenetv3
 ```
 The exported `.pte` file is saved in a directory named after the model.
+
+### Quantizer API
+
+Quantizer can be configured with different precision. We currently support A16W16, A16W8, A16W4, A8W8 and A8W4
+
+The example code will be
+```python
+precision = "A16W16"
+quantizer = NeuropilotQuantizer()
+quantizer.setup_precision(getattr(Precision, precision))
+```
 
 ### Partitioner API
 

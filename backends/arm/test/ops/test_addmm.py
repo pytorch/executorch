@@ -211,9 +211,6 @@ def get_symmetric_a16w8_addmm_quantizer(per_channel_quantization=False):
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.xfail(
-    reason="missing int16 addmm ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13979"
-)
 def test_addmm_16a8w_tosa_INT(test_data: input_t1):
     """Test addmm (FC layer) operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -253,7 +250,6 @@ def test_addmm_16a8w_u55_INT16(test_data: input_t1):
         exir_ops=[],
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
 
     pipeline.change_args(
@@ -267,9 +263,6 @@ def test_addmm_16a8w_u55_INT16(test_data: input_t1):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 addmm operations"
-)
 def test_addmm_16a8w_u85_INT16(test_data: input_t1):
     """Test addmm (FC layer) operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -281,7 +274,6 @@ def test_addmm_16a8w_u85_INT16(test_data: input_t1):
         exir_ops=[],
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
 
     pipeline.change_args(

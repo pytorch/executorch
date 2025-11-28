@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,12 +7,14 @@ import numpy as np
 import pytest
 import torch
 
+from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.tests.executorch_pipeline import (
     to_edge_program,
     to_quantized_edge_program,
 )
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
+    graph_contains_any_of_ops,
     ToNCHWPreprocess,
     ToNHWCPreprocess,
 )
@@ -20,6 +22,7 @@ from executorch.backends.nxp.tests.models import (
     ConstantPadNDConvModule,
     ConstantPadNDModule,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 @pytest.fixture(autouse=True)
@@ -99,6 +102,9 @@ def test_constant_pad_nd_conversion__channels_first(input_shape, paddings):
         input_data,
         tflite_input_preprocess=ToNHWCPreprocess(),
         tflite_output_preprocess=ToNCHWPreprocess(),
+        conversion_config=ConversionConfig(
+            {"use_neutron_for_format_conversion": False}
+        ),
     )
 
 
@@ -121,3 +127,51 @@ def test_constant_pad_nd__unsupported_paddings(input_shape, paddings):
     nodes = list(exec_program.graph.nodes)
     # There is at least one non-delegated Pad node
     assert any(node.name == "aten_constant_pad_nd_default" for node in nodes)
+
+
+def test_constant_pad_nd__delegation__formatless__supported_padding():
+    input_shape = (2, 4, 6, 8)  # Formatless -> the last dim (8) will be padded.
+    paddings = [0, 0, 1, 2, 3, 4]  # The last dim is padded using the first 2 paddings.
+    model = ConstantPadNDModule(paddings)
+    exec_program = to_quantized_edge_program(model, input_shape).exported_program()
+
+    # Make sure the `pad` was delegated.
+    assert not graph_contains_any_of_ops(
+        exec_program.graph, [exir_ops.edge.aten.constant_pad_nd.default]
+    )
+
+
+def test_constant_pad_nd__delegation__formatless__unsupported_padding():
+    input_shape = (2, 4, 6, 8)  # Formatless -> the last dim (8) will be padded.
+    paddings = [0, 1]  # The last dim is padded using the first 2 paddings.
+    model = ConstantPadNDModule(paddings)
+    exec_program = to_quantized_edge_program(model, input_shape).exported_program()
+
+    # Make sure the `pad` was NOT delegated.
+    assert graph_contains_any_of_ops(
+        exec_program.graph, [exir_ops.edge.aten.constant_pad_nd.default]
+    )
+
+
+def test_constant_pad_nd__delegation__channels_first__supported_padding():
+    input_shape = (2, 4, 6, 8)  # Channels first -> the second dim (4) will be padded.
+    paddings = [1, 2, 3, 4, 0, 0]  # The second dim is padded using the paddings[4:6].
+    model = ConstantPadNDConvModule(paddings)
+    exec_program = to_quantized_edge_program(model, input_shape).exported_program()
+
+    # Make sure the `pad` was delegated.
+    assert not graph_contains_any_of_ops(
+        exec_program.graph, [exir_ops.edge.aten.constant_pad_nd.default]
+    )
+
+
+def test_constant_pad_nd__delegation__channels_first__unsupported_padding():
+    input_shape = (2, 3, 6, 8)  # Channels first -> the second dim (3) will be padded.
+    paddings = [0, 0, 0, 0, 1, 0]  # The second dim is padded using the paddings[4:6].
+    model = ConstantPadNDConvModule(paddings)
+    exec_program = to_quantized_edge_program(model, input_shape).exported_program()
+
+    # Make sure the `pad` was NOT delegated.
+    assert graph_contains_any_of_ops(
+        exec_program.graph, [exir_ops.edge.aten.constant_pad_nd.default]
+    )

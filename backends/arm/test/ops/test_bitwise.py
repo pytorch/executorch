@@ -109,8 +109,8 @@ class Or(BitwiseBinary):
 
 
 class AndScalar(BitwiseBinaryScalar):
-    aten_op = "torch.ops.aten.bitwise_and.Scalar"
     # Tensor because it gets converted from Scalar -> Tensor in lowering
+    aten_op = "torch.ops.aten.bitwise_and.Tensor"
     exir_op = "executorch_exir_dialects_edge__ops_aten_bitwise_and_Tensor"
     exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_bitwise_and_Scalar"
 
@@ -119,8 +119,8 @@ class AndScalar(BitwiseBinaryScalar):
 
 
 class XorScalar(BitwiseBinaryScalar):
-    aten_op = "torch.ops.aten.bitwise_xor.Scalar"
     # Tensor because it gets converted from Scalar -> Tensor in lowering
+    aten_op = "torch.ops.aten.bitwise_xor.Tensor"
     exir_op = "executorch_exir_dialects_edge__ops_aten_bitwise_xor_Tensor"
     exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_bitwise_xor_Scalar"
 
@@ -129,8 +129,8 @@ class XorScalar(BitwiseBinaryScalar):
 
 
 class OrScalar(BitwiseBinaryScalar):
-    aten_op = "torch.ops.aten.bitwise_or.Scalar"
     # Tensor because it gets converted from Scalar -> Tensor in lowering
+    aten_op = "torch.ops.aten.bitwise_or.Tensor"
     exir_op = "executorch_exir_dialects_edge__ops_aten_bitwise_or_Tensor"
     exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_bitwise_or_Scalar"
 
@@ -174,8 +174,6 @@ def test_bitwise_and_tensor_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -190,8 +188,6 @@ def test_bitwise_and_scalar_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -235,13 +231,10 @@ def test_bitwise_and_scalar_u85_INT(test_data: input_t2):
         test_data(),
         AndScalar.aten_op,
         AndScalar.exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -253,13 +246,10 @@ def test_bitwise_and_tensor_u85_INT(test_data: input_t2):
         test_data(),
         And().aten_op,
         And().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -298,8 +288,6 @@ def test_bitwise_and_tensor_vgf_INT(test_data: input_t2):
         qtol=0,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -316,8 +304,6 @@ def test_bitwise_and_scalar_vgf_INT(test_data: input_t2):
         qtol=0,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -357,8 +343,6 @@ def test_bitwise_xor_tensor_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -373,8 +357,6 @@ def test_bitwise_xor_scalar_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -418,13 +400,10 @@ def test_bitwise_xor_tensor_u85_INT(test_data: input_t2):
         test_data(),
         Xor().aten_op,
         Xor().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -436,13 +415,10 @@ def test_bitwise_xor_scalar_u85_INT(test_data: input_t2):
         test_data(),
         XorScalar.aten_op,
         XorScalar.exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -481,8 +457,6 @@ def test_bitwise_xor_tensor_vgf_INT(test_data: input_t2):
         qtol=0,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -499,8 +473,6 @@ def test_bitwise_xor_scalar_vgf_INT(test_data: input_t2):
         qtol=0,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -540,8 +512,6 @@ def test_bitwise_or_tensor_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -556,8 +526,6 @@ def test_bitwise_or_scalar_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -601,13 +569,10 @@ def test_bitwise_or_tensor_u85_INT(test_data: input_t2):
         test_data(),
         Or().aten_op,
         Or().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -619,13 +584,10 @@ def test_bitwise_or_scalar_u85_INT(test_data: input_t2):
         test_data(),
         OrScalar.aten_op,
         OrScalar.exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -664,8 +626,6 @@ def test_bitwise_or_tensor_vgf_INT(test_data: input_t2):
         qtol=0,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -682,8 +642,6 @@ def test_bitwise_or_scalar_vgf_INT(test_data: input_t2):
         qtol=0,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 

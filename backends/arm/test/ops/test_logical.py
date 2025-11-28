@@ -111,8 +111,6 @@ def test_logical_and_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -137,13 +135,10 @@ def test_logical_and_u85_INT(test_data: input_t2):
         test_data(),
         And().aten_op,
         And().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -170,8 +165,6 @@ def test_logical_and_vgf_INT(test_data: input_t2):
         And().exir_op,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -205,8 +198,6 @@ def test_logical_xor_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -231,13 +222,10 @@ def test_logical_xor_u85_INT(test_data: input_t2):
         test_data(),
         Xor().aten_op,
         Xor().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -264,8 +252,6 @@ def test_logical_xor_vgf_INT(test_data: input_t2):
         Xor().exir_op,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -299,8 +285,6 @@ def test_logical_or_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -325,13 +309,10 @@ def test_logical_or_u85_INT(test_data: input_t2):
         test_data(),
         Or().aten_op,
         Or().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -358,8 +339,6 @@ def test_logical_or_vgf_INT(test_data: input_t2):
         Or().exir_op,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -393,8 +372,6 @@ def test_logical_not_tosa_INT(test_data: input_t2):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -419,13 +396,10 @@ def test_logical_not_u85_INT(test_data: input_t2):
         test_data(),
         Not().aten_op,
         Not().exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -452,6 +426,4 @@ def test_logical_not_vgf_INT(test_data: input_t2):
         Not().exir_op,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

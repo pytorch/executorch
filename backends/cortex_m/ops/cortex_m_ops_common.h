@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -17,10 +18,23 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <limits>
+#include <optional>
+
+extern "C" {
+#include "arm_nn_types.h"
+}
+
 using Tensor = torch::executor::Tensor;
 using ScalarType = executorch::aten::ScalarType;
 using Scalar = torch::executor::Scalar;
 using Error = executorch::runtime::Error;
+using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
+using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
+
+// From arm_nn_math_types.h
+#define ARM_NN_Q31_MAX ((int32_t)(0x7FFFFFFFL))
+#define ARM_NN_Q31_MIN ((int32_t)(0x80000000L))
 
 // Basic tensor type / layout validation and dimension order checking
 inline void validate_cmsis_nn_tensor_requirements(
@@ -28,20 +42,32 @@ inline void validate_cmsis_nn_tensor_requirements(
     const Tensor& input2,
     Tensor& output,
     ScalarType expected_dtype = ScalarType::Char,
-    bool require_channels_last = false) {
+    bool require_channels_last = false,
+    bool require_same_sizes = true) {
   // Basic dtype validation
   ET_CHECK_MSG(
       input1.scalar_type() == expected_dtype,
-      "Input1 dtype must be %hhd",
-      expected_dtype);
+      "Input1 dtype must be %hhd, got %hhd",
+      expected_dtype,
+      input1.scalar_type());
   ET_CHECK_MSG(
       input2.scalar_type() == expected_dtype,
-      "Input2 dtype must be %hhd",
-      expected_dtype);
+      "Input2 dtype must be %hhd, got %hhd",
+      expected_dtype,
+      input2.scalar_type());
   ET_CHECK_MSG(
       output.scalar_type() == expected_dtype,
-      "Output dtype must be %hhd",
-      expected_dtype);
+      "Output dtype must be %hhd, got %hhd",
+      expected_dtype,
+      output.scalar_type());
+  if (require_same_sizes) {
+    ET_CHECK_MSG(
+        input1.sizes() == input2.sizes(),
+        "Input1 and Input2 must have the same sizes");
+    ET_CHECK_MSG(
+        output.sizes() == input1.sizes(),
+        "Output must have the same sizes as inputs");
+  }
 
   // Dim order consistency
   ET_CHECK_MSG(
@@ -112,6 +138,33 @@ inline void validate_quantization_params(
       output_multiplier,
       output_shift,
       "Single quant Output");
+}
+
+// Refer to CMSIS-NN 'arm_nn_requantize' implementation for details:
+// https://github.com/ARM-software/CMSIS-NN/blob/main/Include/arm_nnsupportfunctions.h#L1625
+// multiplier: Range {ARM_NN_Q31_MIN + 1, Q32_MAX}
+// shift     : Range {-31, 30}
+inline bool validate_per_channel_quant_params(
+    const int32_t* multipliers,
+    const int32_t* shifts,
+    int num_channels) {
+  for (int i = 0; i < num_channels; ++i) {
+    // Multiplier: {ARM_NN_Q31_MIN + 1, ARM_NN_Q31_MAX}
+    if (multipliers[i] <= ARM_NN_Q31_MIN || multipliers[i] > ARM_NN_Q31_MAX) {
+      ET_LOG(
+          Error,
+          "weight_multiplier[%d] out of CMSIS-NN range: %d",
+          i,
+          multipliers[i]);
+      return false;
+    }
+    // Shift: {-31, 30} for arm_nn_requantize
+    if (shifts[i] < -31 || shifts[i] > 30) {
+      ET_LOG(Error, "weight_shift[%d] out of range: %d", i, shifts[i]);
+      return false;
+    }
+  }
+  return true;
 }
 
 inline Error resize_to_broadcast_target_size(

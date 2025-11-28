@@ -194,7 +194,6 @@ def test_var_dim_u55_INT_no_dim(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -208,7 +207,6 @@ def test_var_dim_u85_INT_no_dim(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -276,7 +274,6 @@ def test_var_dim_u55_INT(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -290,7 +287,6 @@ def test_var_dim_u85_INT(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -348,7 +344,17 @@ def test_var_dim_tosa_INT_correction(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", VarCorrection.test_parameters)
+# TODO: Xfail "var_3d_dims_keep_dim_0_correction" until the Ethos-U Vela compiler ships commit
+# 642f7517d3a6bd053032e1942822f6e38ccd546f. That patch fixes the bug that causes the test to fail.
+@common.parametrize(
+    "test_data",
+    VarCorrection.test_parameters,
+    xfails={
+        "var_3d_dims_keep_dim_0_correction": (
+            "Blocked by Vela commit 642f7517d3a6bd053032e1942822f6e38ccd546f"
+        ),
+    },
+)
 @common.XfailIfNoCorstone300
 def test_var_dim_u55_INT_correction(test_data: Tuple):
     test_data, dim, keepdim, correction = test_data()
@@ -357,7 +363,6 @@ def test_var_dim_u55_INT_correction(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -371,7 +376,6 @@ def test_var_dim_u85_INT_correction(test_data: Tuple):
         (test_data,),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 

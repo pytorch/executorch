@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -21,7 +21,9 @@ def test_neutron_backend__single_conv_model():
 
 def test_neutron_backend__single_conv_model__payload_header_channels_last():
     edge_program_manager = to_quantized_edge_program(
-        Conv2dModule(bias=False), (1, 4, 32, 32)
+        Conv2dModule(bias=False),
+        (1, 4, 32, 32),
+        use_neutron_for_format_conversion=False,
     )
     payload = (
         edge_program_manager.exported_program().graph_module.lowered_module_0.processed_bytes

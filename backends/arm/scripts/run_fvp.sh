@@ -22,6 +22,7 @@ data_file=""
 target="ethos-u55-128"
 timeout="600"
 etrecord_file=""
+trace_file=""
 
 help() {
     echo "Usage: $(basename $0) [options]"
@@ -31,6 +32,7 @@ help() {
     echo "  --target=<TARGET>        Target to build and run for Default: ${target}"
     echo "  --timeout=<TIME_IN_SEC>  Maximum target runtime, used to detect hanging, might need to be higer on large models Default: ${timeout}"
     echo "  --etrecord=<FILE>        If ETDump is used you can supply a ETRecord file matching the PTE"
+    echo "  --trace_file=<FILE>      File to write PMU trace output to"
     exit 0
 }
 
@@ -42,6 +44,7 @@ for arg in "$@"; do
       --target=*) target="${arg#*=}";;
       --timeout=*) timeout="${arg#*=}";;
       --etrecord=*) etrecord_file="${arg#*=}";;
+      --trace_file=*) trace_file="${arg#*=}";;
       *)
       ;;
     esac
@@ -86,6 +89,14 @@ fi
 
 log_file=$(mktemp)
 
+extra_args_u55=()
+extra_args_u85=()
+
+if [[ -n "${trace_file}" ]]; then
+    extra_args_u55+=(-C "ethosu.extra_args=--pmu-trace ${trace_file}")
+    extra_args_u85+=(-C "mps4_board.subsystem.ethosu.extra_args=--pmu-trace ${trace_file}")
+fi
+
 if [[ ${target} == *"ethos-u55"*  ]]; then
     ${nobuf} ${fvp_model}                                   \
         -C ethosu.num_macs=${num_macs}                      \
@@ -93,6 +104,7 @@ if [[ ${target} == *"ethos-u55"*  ]]; then
         -C mps3_board.telnetterminal0.start_telnet=0        \
         -C mps3_board.uart0.out_file='-'                    \
         -C mps3_board.uart0.shutdown_on_eot=1               \
+        "${extra_args_u55[@]}"                              \
         -a "${elf_file}"                                    \
         ${data_file}                                        \
         --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true # seconds
@@ -105,6 +117,7 @@ elif [[ ${target} == *"ethos-u85"*  ]]; then
         -C mps4_board.telnetterminal0.start_telnet=0        \
         -C mps4_board.uart0.out_file='-'                    \
         -C mps4_board.uart0.shutdown_on_eot=1               \
+        "${extra_args_u85[@]}"                              \
         -a "${elf_file}"                                    \
         ${data_file}                                        \
         --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true # seconds

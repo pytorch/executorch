@@ -3,8 +3,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 from executorch.backends.arm._passes import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 edge_elu_ops = (exir_ops.edge.aten.elu.default,)
 
@@ -55,9 +58,19 @@ class DecomposeEluPass(ArmPass):
         - exir_ops.edge.aten.mul.Scalar
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in edge_elu_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
+
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
+            return super().call_operator(op, args, kwargs, meta)
 
         (
             expm1_op,
@@ -70,8 +83,17 @@ class DecomposeEluPass(ArmPass):
         alpha = args[1] if len(args) > 1 else 1.0
 
         if alpha == 0:
-            relu_op = exir_ops.edge.aten.relu.default
-            return super().call_operator(relu_op, (input,), {}, meta, updated=True)
+            relu_op = exir_ops.edge.aten.clamp.default
+            return super().call_operator(
+                relu_op,
+                (
+                    input,
+                    0,
+                ),
+                {},
+                meta,
+                updated=True,
+            )
 
         expm1_node = super().call_operator(expm1_op, (input,), {}, meta, updated=True)
         mul_node = super().call_operator(

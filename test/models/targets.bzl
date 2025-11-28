@@ -71,6 +71,7 @@ def define_common_targets():
         "ModuleDynamicCatUnallocatedIO",
         "ModuleSimpleTrain",
         "ModuleStateful",
+        "ModuleSharedState",
     ]
 
     # Generates Executorch .pte program files for various modules at build time.
@@ -93,6 +94,7 @@ def define_common_targets():
         # Allow the xplat entry in the visibility list. This is an exceptional
         # case, and typically shouldn't be done.
         _is_external_target = True,
+        labels = ["reads_configerator", "justknobs"],
     )
 
     # Class names of nn.Modules for :exported_programs to export.

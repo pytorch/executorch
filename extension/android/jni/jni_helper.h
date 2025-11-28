@@ -23,4 +23,11 @@ namespace executorch::jni_helper {
  */
 void throwExecutorchException(uint32_t errorCode, const std::string& details);
 
+// Define the JavaClass wrapper
+struct JExecutorchRuntimeException
+    : public facebook::jni::JavaClass<JExecutorchRuntimeException> {
+  static constexpr auto kJavaDescriptor =
+      "Lorg/pytorch/executorch/ExecutorchRuntimeException;";
+};
+
 } // namespace executorch::jni_helper

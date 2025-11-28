@@ -1665,9 +1665,10 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(values[5].val, Double(double_val=float("-inf")))
 
         # Confirm that we can also deserialize the model with infinity in it.
-        pte_data = deserialize_pte_binary(model.buffer)
+        deserialize = deserialize_pte_binary(model.buffer)
         self.assertEqual(
-            pte_data.execution_plan, model.executorch_program.execution_plan
+            deserialize.program.execution_plan,
+            model.executorch_program.execution_plan,
         )
 
     def test_mutate_input_tensor(self) -> None:
@@ -1716,8 +1717,114 @@ class TestEmit(unittest.TestCase):
         external_map = emitter_output.external_constant_map[
             "_default_external_constant"
         ]
+        self.assertEqual(len(external_map), 2)
         self.assertEqual(external_map["linear.weight"], 0)
         self.assertEqual(external_map["linear.bias"], 1)
+
+    def test_constant_tagged_tensors_custom(self) -> None:
+        class LinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(5, 5)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        model = to_edge(
+            export(LinearModule(), (torch.ones(5, 5),), strict=True)
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                external_constants=lambda x: (
+                    "linear_weight" if "weight" in x.name else None
+                ),
+            )
+        )
+        emitter_output = model._emitter_output
+        # constant_buffer contains placeholder and linear bias.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 2)
+        # external constant buffer contains linear weight.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 1)
+        # The lambda saves all constants to the key 'linear_weight'.
+        external_map = emitter_output.external_constant_map["linear_weight"]
+        self.assertEqual(len(external_map), 1)
+        self.assertEqual(external_map["linear.weight"], 0)
+
+    def test_constant_tagged_tensor_dedup(self) -> None:
+        class ConstantModule(nn.Module):
+            def __init__(self):
+                super().__init__()
+                constant = torch.tensor([1.0, 2.0, 3.0])
+
+                # Register the same value with two different names as persistent buffers
+                self.register_buffer("c0", constant.clone(), persistent=True)
+                self.register_buffer("c1", constant.clone(), persistent=True)
+
+            def forward(self, x):
+                return x + self.c0 + self.c1
+
+        model = to_edge(
+            export(ConstantModule(), (torch.ones(1, 3),), strict=True)
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                external_constants=True,
+            )
+        )
+        emitter_output = model._emitter_output
+        # constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # only one item in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 1)
+        # Setting external_constants=True, saves all constants to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(len(external_map), 2)
+        self.assertEqual(external_map["c0"], 0)
+        self.assertEqual(external_map["c1"], 0)
+
+    def test_constant_tagged_tensor_dedup_2(self) -> None:
+        class ConstantModule(nn.Module):
+            def __init__(self):
+                super().__init__()
+                constant0_4 = torch.tensor([1.0, 2.0, 3.0])
+                constant4_5 = torch.tensor([2.0, 3.0, 4.0])
+
+                # Register the same value with two different names as persistent buffers
+                self.register_buffer("c0", constant0_4.clone(), persistent=True)
+                self.register_buffer("c1", constant0_4.clone(), persistent=True)
+                self.register_buffer("c2", constant0_4.clone(), persistent=True)
+                self.register_buffer("c3", constant0_4.clone(), persistent=True)
+                self.register_buffer("c4", constant4_5.clone(), persistent=True)
+                self.register_buffer("c5", constant4_5.clone(), persistent=True)
+
+            def forward(self, x):
+                return x + self.c0 + self.c1 + self.c2 + self.c3 + self.c4 + self.c5
+
+        model = to_edge(
+            export(ConstantModule(), (torch.ones(1, 3),), strict=True)
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                external_constants=True,
+            )
+        )
+        emitter_output = model._emitter_output
+        # constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # Two items in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 2)
+        # Setting external_constants=True, saves all constants to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(len(external_map), 6)
+        self.assertEqual(external_map["c0"], 0)
+        self.assertEqual(external_map["c1"], 0)
+        self.assertEqual(external_map["c2"], 0)
+        self.assertEqual(external_map["c3"], 0)
+        self.assertEqual(external_map["c4"], 1)
+        self.assertEqual(external_map["c5"], 1)
 
     def test_delegate_deduplicate(self) -> None:
         class SharedModule(torch.nn.Module):
@@ -1769,6 +1876,60 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(
             len(edge_program_manager.executorch_program.backend_delegate_data), 1
         )
+
+    def test_delegate_deduplicate_with_different_compile_specs(self) -> None:
+        class LowerableSubModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        lowered = LowerableSubModel()
+        example_input = (torch.ones(1),)
+
+        lowered_edge = to_edge(export(lowered, example_input))
+
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+        compile_specs1 = [CompileSpec("config", b"fast")]
+        compile_specs2 = [CompileSpec("config", b"small")]
+        lowered_module1 = to_backend(
+            "BackendWithCompilerDemo", lowered_edge.exported_program(), compile_specs1
+        )
+        lowered_module2 = to_backend(
+            "BackendWithCompilerDemo", lowered_edge.exported_program(), compile_specs2
+        )
+
+        class CompositeModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowerable1 = lowered_module1
+                self.lowerable2 = lowered_module2
+
+            def forward(self, x):
+                a = self.lowerable1(x)
+                b = self.lowerable2(a)
+                return a, b
+
+        composite_model = CompositeModel()
+        model_inputs = (torch.ones(1),)
+        edge_prog = to_edge(export(composite_model, model_inputs)).to_executorch()
+
+        exported_program = edge_prog.exported_program()
+        program = emit_program({"method1": exported_program}, False).program
+        self.assertEqual(len(program.execution_plan), 1)
+
+        plan = program.execution_plan[0]
+        # Two delegates that point to the same blob.
+        self.assertEqual(len(plan.delegates), 2)
+        self.assertEqual(plan.delegates[0].processed.index, 0)
+        self.assertEqual(plan.delegates[1].processed.index, 0)
+        # Compile specs are different.
+        self.assertEqual(plan.delegates[0].compile_specs, compile_specs1)
+        self.assertEqual(plan.delegates[1].compile_specs, compile_specs2)
+        # Only one delegate blob in the backend_delegate_data.
+        self.assertEqual(len(program.backend_delegate_data), 1)
 
     def test_constant_tagged_mutable_tensors(self) -> None:
         class Net(nn.Module):
@@ -1920,7 +2081,7 @@ class TestEmit(unittest.TestCase):
             program_buffer = et_program.buffer
             et_module = _load_for_executorch_from_buffer(program_buffer)
             for _, (inp, expected) in enumerate(zip(test_inputs, reference_outputs)):
-                # Execute with ExecutorTorch
+                # Execute with ExecuTorch
                 et_output = et_module.forward([inp])
                 et_result = et_output[0]  # Get first output
                 # Compare results

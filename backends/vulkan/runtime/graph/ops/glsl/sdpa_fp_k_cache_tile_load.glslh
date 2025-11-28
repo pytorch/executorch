@@ -44,7 +44,6 @@ void load_k_cache_tile_no_checks(
     const int context_len,
     const int C,
     const int KV_H) {
-  bool should_print = d4_start == 0 && c_start == 0 && kv_h == 0;
   [[unroll]] for (int c = 0; c < TILE_N; ++c) {
     const int c4 = div_4(c);
     const int c4i = mod_4(c);

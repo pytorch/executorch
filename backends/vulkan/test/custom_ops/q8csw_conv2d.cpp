@@ -8,6 +8,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <iostream>
 #include <vector>
+#include "conv2d_utils.h"
 #include "utils.h"
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
@@ -17,76 +18,6 @@ using namespace executorch::vulkan::prototyping;
 using namespace vkcompute;
 
 static constexpr int64_t kRefDimSizeLimit = 100;
-
-// Component structs for better readability
-struct KernelSize {
-  int32_t h;
-  int32_t w;
-
-  KernelSize(int32_t height, int32_t width) : h(height), w(width) {}
-};
-
-struct Stride {
-  int32_t h;
-  int32_t w;
-
-  Stride(int32_t height, int32_t width) : h(height), w(width) {}
-};
-
-struct Padding {
-  int32_t h;
-  int32_t w;
-
-  Padding(int32_t height, int32_t width) : h(height), w(width) {}
-};
-
-struct Dilation {
-  int32_t h;
-  int32_t w;
-
-  Dilation(int32_t height = 1, int32_t width = 1) : h(height), w(width) {}
-};
-
-struct OutInChannels {
-  int32_t out;
-  int32_t in;
-
-  OutInChannels(int32_t out_channels, int32_t in_channels)
-      : out(out_channels), in(in_channels) {}
-};
-
-struct InputSize2D {
-  int32_t h;
-  int32_t w;
-
-  InputSize2D(int32_t height, int32_t width) : h(height), w(width) {}
-};
-
-// Conv2d configuration struct
-struct Conv2dConfig {
-  OutInChannels channels;
-  InputSize2D input_size;
-  KernelSize kernel;
-  Stride stride;
-  Padding padding;
-  Dilation dilation;
-  int32_t groups; // Number of groups for grouped convolution
-  std::string test_case_name = "placeholder";
-  std::string op_name = "conv2d_q8ta_q8csw";
-
-  // Calculate output dimensions
-  int64_t get_output_height() const {
-    return (input_size.h + 2 * padding.h - dilation.h * (kernel.h - 1) - 1) /
-        stride.h +
-        1;
-  }
-
-  int64_t get_output_width() const {
-    return (input_size.w + 2 * padding.w - dilation.w * (kernel.w - 1) - 1) /
-        stride.w +
-        1;
-  }
-};
 
 // Utility function to create a test case from a Conv2dConfig
 TestCase create_test_case_from_config(
@@ -366,12 +297,19 @@ std::vector<TestCase> generate_quantized_conv2d_test_cases() {
        Stride(1, 1),
        Padding(1, 1),
        Dilation(1, 1),
-       8},
+       1},
       {OutInChannels(128, 64),
        InputSize2D(128, 128),
        KernelSize(3, 3),
        Stride(1, 1),
        Padding(1, 1),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(128, 1024),
+       InputSize2D(128, 128),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
        Dilation(1, 1),
        1}};
 
@@ -394,6 +332,7 @@ std::vector<TestCase> generate_quantized_conv2d_test_cases() {
           std::to_string(config.kernel.h) + "/" +
           std::to_string(config.kernel.w);
 
+      config.op_name = "conv2d_q8ta_q8csw";
       config.test_case_name = prefix + suffix;
       // The default operator tested is activation + weight quantized conv2d;
       // however, only test this if the int8 dot product extension is supported
@@ -763,7 +702,7 @@ int64_t quantized_conv2d_flop_calculator(const TestCase& test_case) {
 int main(int argc, char* argv[]) {
   set_debugging(false);
   set_print_output(false);
-  set_print_latencies(false);
+  set_print_latencies(true);
   set_use_gpu_timestamps(true);
 
   print_performance_header();

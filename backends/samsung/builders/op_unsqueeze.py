@@ -31,4 +31,5 @@ class UnsqueezeVisitor(NodeVisitor):
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        enn_graph.define_op(node.name, "RESHAPE", [input_id], [output_id])
+        params = {"new_shape": [*node.meta["val"].shape]}
+        enn_graph.define_op(node.name, "RESHAPE", [input_id], [output_id], params)

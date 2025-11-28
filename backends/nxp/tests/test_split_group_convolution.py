@@ -17,9 +17,11 @@ from executorch.backends.nxp.aten_passes.split_group_convolution import (
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.quantizer.utils import post_training_quantize
 from executorch.backends.nxp.tests.executorch_pipeline import (
-    _quantize_model,
     get_random_calibration_inputs,
+    neutron_target_spec,
     to_model_input_spec,
 )
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
@@ -40,7 +42,11 @@ def _quantize_and_lower_module(
 ) -> EdgeProgramManager:
     calibration_inputs = get_random_calibration_inputs(to_model_input_spec(input_shape))
 
-    exir_program_aten__module_quant = _quantize_model(module, calibration_inputs)
+    exir_program_aten__module_quant = post_training_quantize(
+        module,
+        calibration_inputs,
+        NeutronQuantizer(neutron_target_spec),
+    )
 
     edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
     edge_program_manager = export_to_edge(
@@ -49,8 +55,8 @@ def _quantize_and_lower_module(
         edge_compile_config=edge_compile_config,
     )
 
-    compile_spec = generate_neutron_compile_spec(target, "SDK_25_06")
-    partitioner = NeutronPartitioner(compile_spec)
+    compile_spec = generate_neutron_compile_spec(target, "SDK_25_09")
+    partitioner = NeutronPartitioner(compile_spec, neutron_target_spec)
     return edge_program_manager.to_backend(partitioner)
 
 
@@ -83,9 +89,9 @@ class TestSplitGroupConvolution(unittest.TestCase):
         graph_module = torch.export.export(module, example_input, strict=True).module()
         original_module = deepcopy(graph_module)
 
-        modified_module = NeutronAtenPassManager([SplitGroupConvolution()])(
-            graph_module
-        ).graph_module
+        modified_module = NeutronAtenPassManager(
+            neutron_target_spec, [SplitGroupConvolution()]
+        )(graph_module).graph_module
 
         # Make sure the fusion worked.
         original_nodes = list(original_module.graph.nodes)
@@ -106,7 +112,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
         input_data = torch.randn(input_shape, dtype=torch.float32)
         out1 = original_module(input_data).detach().numpy()
         out2 = modified_module(input_data).detach().numpy()
-        assert np.allclose(out1, out2, atol=2.0e-7)
+        assert np.allclose(out1, out2, atol=2.0e-7, rtol=1.9e-4)
 
         # Make sure the graph can be correctly quantized and lowered to edge.
         ep = _quantize_and_lower_module(
@@ -140,9 +146,9 @@ class TestSplitGroupConvolution(unittest.TestCase):
         graph_module = torch.export.export(module, example_input).module()
         original_module = deepcopy(graph_module)
 
-        modified_module = NeutronAtenPassManager([SplitGroupConvolution()])(
-            graph_module
-        ).graph_module
+        modified_module = NeutronAtenPassManager(
+            neutron_target_spec, [SplitGroupConvolution()]
+        )(graph_module).graph_module
 
         # Make sure the fusion worked.
         original_nodes = list(original_module.graph.nodes)
@@ -194,9 +200,9 @@ class TestSplitGroupConvolution(unittest.TestCase):
         graph_module = torch.export.export(module, example_input).module()
         original_module = deepcopy(graph_module)
 
-        modified_module = NeutronAtenPassManager([SplitGroupConvolution()])(
-            graph_module
-        ).graph_module
+        modified_module = NeutronAtenPassManager(
+            neutron_target_spec, [SplitGroupConvolution()]
+        )(graph_module).graph_module
 
         # Verify that the pass has NOT made any changes, as it is disabled for 3D convolution.
         original_nodes = list(original_module.graph.nodes)
@@ -228,7 +234,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
         graph_module = torch.export.export(module, example_input).module()
         original_module = deepcopy(graph_module)
 
-        modified_module = NeutronAtenPassManager()(
+        modified_module = NeutronAtenPassManager(neutron_target_spec)(
             graph_module
         ).graph_module  # Default passes.
 

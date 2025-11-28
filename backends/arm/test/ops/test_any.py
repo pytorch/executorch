@@ -149,8 +149,6 @@ def test_any_tosa_INT(test_data: input_t1):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -177,13 +175,10 @@ def test_any_u85_INT(test_data: input_t1):
         test_input(),
         op.aten_op,
         op.exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -212,6 +207,4 @@ def test_any_vgf_INT(test_data: input_t1):
         op.exir_op,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

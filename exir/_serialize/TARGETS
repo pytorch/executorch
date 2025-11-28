@@ -10,7 +10,6 @@ runtime.cxx_python_extension(
         "bindings.cpp",
     ],
     visibility = [
-        "//executorch/backends/fb/qnnpack/...",
         "//executorch/backends/vulkan/...",
         "//executorch/backends/xnnpack/...",
         "//executorch/devtools/bundled_program/...",
@@ -65,5 +64,6 @@ runtime.python_library(
     deps = [
         "//executorch/exir:schema",
         "//executorch/exir:tensor",
+        "//executorch/exir:tensor_layout",
     ],
 )

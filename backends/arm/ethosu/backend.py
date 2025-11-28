@@ -3,13 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 #
 # Main implementation of AoT flow to partition and preprocess for Arm target
 # backends. Converts via TOSA as an intermediate form supported by AoT and
 # JIT compiler flows.
 #
+"""Ahead-of-time Arm Ethos-U backend built on the shared TOSA pipeline."""
 
 import logging
 from typing import final, List
@@ -28,19 +28,28 @@ logger = logging.getLogger(__name__)
 
 @final
 class EthosUBackend(BackendDetails):
-    """
-    BackendDetails subclass for delegation to Ethos-U. Deduce the TOSA lowering from
-    the compile spec list by filtering out the compile spec values that are of interest
-    for the TOSABackend.
+    """BackendDetails subclass for delegation to Ethos-U.
+
+    Deduce the TOSA lowering from the compile spec list by filtering out the
+    compile spec values that are of interest for the TOSABackend.
+
     """
 
     @staticmethod
     def _compile_tosa_flatbuffer(
         tosa_flatbuffer: bytes, compile_spec: EthosUCompileSpec
     ) -> bytes:
-        """
-        Static helper method to do the compilation of the TOSA flatbuffer
-        representation to a target specific binary stream.
+        """Compile a TOSA flatbuffer into a target-specific binary stream.
+
+        Args:
+            tosa_flatbuffer (bytes): Serialized TOSA graph produced by
+                ``TOSABackend``.
+            compile_spec (EthosUCompileSpec): Compile specification providing
+                Vela flags and intermediate paths.
+
+        Returns:
+            bytes: Target-specific binary stream produced by Vela.
+
         """
         compile_flags = compile_spec.compiler_flags
 
@@ -51,11 +60,21 @@ class EthosUBackend(BackendDetails):
                 "compile_flags are required in the CompileSpec list for EthosUBackend"
             )
 
+        # Vela tooling only supports flatbuffers up to 2 GiB.
+        max_flatbuffer_size = 2 * 1024 * 1024 * 1024
+        flatbuffer_size = len(tosa_flatbuffer)
+        if flatbuffer_size > max_flatbuffer_size:
+            raise RuntimeError(
+                "TOSA flatbuffer is too large for Vela "
+                f"({flatbuffer_size} bytes > {max_flatbuffer_size} bytes limit)."
+            )
+
         # Pass on the TOSA flatbuffer to the vela compiler.
         binary = vela_compile(
             tosa_flatbuffer,
             compile_flags,
-            verbose=logger.getEffectiveLevel() == logging.INFO,
+            verbose=logger.getEffectiveLevel() <= logging.INFO,
+            intermediate_path=compile_spec.get_intermediate_path(),
         )
         return binary
 
@@ -64,6 +83,17 @@ class EthosUBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
+        """Lower the exported program and compile it for an Ethos-U target.
+
+        Args:
+            edge_program (ExportedProgram): Program to lower to Ethos-U.
+            compile_specs (List[CompileSpec]): Serialized Ethos-U compile specs
+                supplied by the frontend.
+
+        Returns:
+            PreprocessResult: Result containing the compiled Ethos-U binary.
+
+        """
         logger.info(f"{EthosUBackend.__name__} preprocess")
 
         compile_spec = EthosUCompileSpec.from_list(compile_specs)

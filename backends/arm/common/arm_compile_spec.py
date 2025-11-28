@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 #
 # Main implementation of AoT flow to partition and preprocess for Arm target
@@ -36,6 +35,7 @@ class ArmCompileSpec(ABC):
     _OUTPUT_FORMAT_KEY = "output_format"
     _DEBUG_ARTIFACT_KEY = "debug_artifact_path"
     _DEBUG_MODE_KEY = "dump_debug_info"
+    _OUTPUT_REORDER_KEY = "ouput_reorder_workaround"
 
     def _set_compile_specs(
         self,
@@ -43,12 +43,14 @@ class ArmCompileSpec(ABC):
         compiler_flags: list[str],
         path_for_intermediates: str | None = None,
         tosa_debug_mode: DebugMode | None = None,
+        output_order_workaround: bool = True,
     ):
         """Set all values of dataclass directly."""
         self.tosa_spec = tosa_spec
         self.compiler_flags = compiler_flags
         self.path_for_intermediates = path_for_intermediates
         self.tosa_debug_mode = tosa_debug_mode
+        self.output_order_workaround = output_order_workaround
 
     @classmethod
     def from_list(cls, compile_specs: list[CompileSpec]):  # noqa: C901
@@ -57,10 +59,15 @@ class ArmCompileSpec(ABC):
         compiler_flags: list[str] | None = None
         path_for_intermediates: str | None = None
         tosa_debug_mode: ArmCompileSpec.DebugMode | None = None
+        output_order_workaround: bool = True
         unknown_specs: dict[str, str] = {}
         for spec in compile_specs:
             key = spec.key
-            val = spec.value.decode()
+            val = (
+                spec.value.decode()
+                if isinstance(spec.value, (bytes, bytearray))
+                else spec.value
+            )
             if key == ArmCompileSpec._TOSA_SPEC_KEY:
                 if tosa_spec is not None:
                     raise ValueError("More than one tosa_spec entry in compile spec.")
@@ -89,6 +96,8 @@ class ArmCompileSpec(ABC):
                         "More than one tosa_debug_mode entry in compile spec."
                     )
                 tosa_debug_mode = ArmCompileSpec.DebugMode[val]
+            elif key == ArmCompileSpec._OUTPUT_REORDER_KEY:
+                output_order_workaround = val  # type: ignore[assignment]
             else:
                 unknown_specs[key] = val
 
@@ -110,6 +119,7 @@ class ArmCompileSpec(ABC):
             compiler_flags=compiler_flags,
             path_for_intermediates=path_for_intermediates,
             tosa_debug_mode=tosa_debug_mode,
+            output_order_workaround=output_order_workaround,
         )
         cls.from_list_hook(compile_spec, unknown_specs)
         compile_spec.validate()
@@ -126,7 +136,8 @@ class ArmCompileSpec(ABC):
 
     def to_list(self):
         """Get the ArmCompileSpec in list form."""
-        assert self.tosa_spec
+        if not self.tosa_spec:
+            raise ValueError("tosa_spec must be set before calling to_list()")
 
         # Always supply a TOSA version
         compile_spec = [
@@ -170,24 +181,51 @@ class ArmCompileSpec(ABC):
                 )
             )
 
+        if not self.output_order_workaround:
+            compile_spec.append(
+                CompileSpec(
+                    ArmCompileSpec._OUTPUT_REORDER_KEY,
+                    self.output_order_workaround,
+                )
+            )
+
         return compile_spec
 
     def get_intermediate_path(self) -> str | None:
+        """
+        Gets the path used for dumping intermediate results such as tosa and pte.
+
+        Returns:
+            Path where intermediate results are saved.
+        """
         return self.path_for_intermediates
 
     def dump_intermediate_artifacts_to(self, output_path: str | None):
         """
         Sets a path for dumping intermediate results during such as tosa and pte.
+
+        Args:
+            output_path: Path to dump intermediate results to.
         """
         self.path_for_intermediates = output_path
         return self
 
     def dump_debug_info(self, debug_mode: DebugMode | None):
         """
-        Dump debugging information into the intermediates path
+        Dump debugging information into the intermediates path.
+
+        Args:
+            debug_mode: The debug mode to use for dumping debug information.
         """
         self.tosa_debug_mode = debug_mode
         return self
+
+    def set_output_order_workaround(self, output_order_workaround: bool):
+        self.output_order_workaround = output_order_workaround
+        return self
+
+    def get_output_order_workaround(self) -> bool:
+        return self.output_order_workaround
 
     @classmethod
     @abstractmethod

@@ -16,7 +16,8 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
         "//executorch/kernels/portable/cpu/util:elementwise_util",
         "//executorch/kernels/portable/cpu/pattern:bitwise_op",
         "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions",
-        "//executorch/kernels/portable/cpu/pattern:comparison_op"
+        "//executorch/kernels/portable/cpu/pattern:comparison_op",
+        "//executorch/backends/cadence/common:xt_macros"
     ]
     if deps == None:
         deps = []
@@ -44,6 +45,7 @@ OPERATORS = [
     "cat",
     "clamp",
     "dequantize_per_tensor",
+    "dequantize_per_tensor_asym8s",
     "div",
     "embedding",
     "eq",
@@ -95,6 +97,7 @@ OPERATORS = [
     "quantized_relu_asym8s_asym8s_per_tensor_out",
     "quantized_relu_asym8u_asym8u_per_tensor_out",
     "quantize_per_tensor",
+    "quantize_per_tensor_asym8s",
     "remainder",
     "rsqrt",
     "select_copy",

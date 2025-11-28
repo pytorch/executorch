@@ -3,12 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
-from typing import cast, TypeAlias
+from typing import cast, Set, Type, TypeAlias
 
 import torch.fx
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.rewrite_conv2d_pass import RewriteConv2dPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -112,17 +113,17 @@ def is_valid_operator(node: torch.fx.Node) -> bool:
         dilation = node.args[4] if len(node.args) >= 5 else 1
         ceil_mode = node.args[5] if len(node.args) >= 6 else False
 
-        # Dilation should be handled first by DecomposeMaxPool2DPass
+        # Dilation should be handled first by DecomposeMaxPool2dPass
         if isinstance(dilation, int):
             if dilation > 1:
                 raise ValueError(
-                    "Expected max_pool2d with dilation = 1, has DecomposeMaxPool2DPass been run?"
+                    "Expected max_pool2d with dilation = 1, has DecomposeMaxPool2dPass been run?"
                 )
         else:
             dilation = cast(list, dilation)
             if dilation[0] > 1 or dilation[1] > 1:
                 raise ValueError(
-                    "Expected max_pool2d with dilation = [1, 1], has DecomposeMaxPool2DPass been run?"
+                    "Expected max_pool2d with dilation = [1, 1], has DecomposeMaxPool2dPass been run?"
                 )
 
         # If using ceil mode for rounding, the input does not need adjusting
@@ -137,7 +138,7 @@ def is_valid_operator(node: torch.fx.Node) -> bool:
     return False
 
 
-class SizeAdjustInputPass(ExportPass):
+class SizeAdjustInputPass(ArmPass):
     """
     Adjusts the input size to Conv2D and Pooling operators. PyTorch allows
     the input and kernel shape to not "match", in which case the remaining
@@ -185,6 +186,8 @@ class SizeAdjustInputPass(ExportPass):
     input.
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = {RewriteConv2dPass}
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         modified_graph = False
@@ -204,7 +207,9 @@ class SizeAdjustInputPass(ExportPass):
             with graph_module.graph.inserting_before(node):
                 last_node = cast(torch.fx.Node, parent_node)
                 for args in slice_args:
-                    slice_node = create_node(graph, slice_op, (last_node,) + args)
+                    slice_node = create_node(
+                        graph, slice_op, (last_node,) + args, from_node=node
+                    )
                     last_node = slice_node
                 node.replace_input_with(cast(torch.fx.Node, parent_node), last_node)
                 modified_graph = True

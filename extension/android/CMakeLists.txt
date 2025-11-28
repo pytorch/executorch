@@ -18,7 +18,10 @@ endif()
 
 set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+)
 if(NOT ANDROID_PLATFORM)
   set(ANDROID_PLATFORM android-30)
 endif()
@@ -30,7 +33,7 @@ endif()
 # libc++ dependencies are consistent. WARNING # Users need to use the SAME fbjni
 # version here and in app gradle dependency for runtime compatibility!
 if(NOT FBJNI_VERSION)
-  set(FBJNI_VERSION 0.5.1)
+  set(FBJNI_VERSION 0.7.0)
 endif()
 
 set(FBJNI_AAR_URL
