@@ -280,10 +280,15 @@ class BasePipelineMaker(Generic[T]):
         self.add_stage_after(stage_id, self.tester.dump_artifact, suffix=suffix)
         return self
 
-    def dump_operator_distribution(self, stage_id: str, suffix: str | None = None):
+    def dump_operator_distribution(
+        self, stage_id: str, suffix: str | None = None, include_dtypes: bool = False
+    ):
         """Adds a dump_operator_distribution stage after the given stage id."""
         self.add_stage_after(
-            stage_id, self.tester.dump_operator_distribution, suffix=suffix
+            stage_id,
+            self.tester.dump_operator_distribution,
+            suffix=suffix,
+            include_dtypes=include_dtypes,
         )
         return self
 
