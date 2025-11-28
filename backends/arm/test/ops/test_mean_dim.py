@@ -356,14 +356,12 @@ class MeanDefault(torch.nn.Module):
         return tensor.mean()
 
     test_data_suite: dict[str, Callable[[], mean_input_t]] = {
-        "rank1": lambda: (
-            torch.rand(
-                1,
-            ),
+        "rank_2": lambda: (
+            torch.rand(1, 2),
             False,
         ),
-        "rank2": lambda: (torch.rand(5, 5), True),
-        "rank4": lambda: (torch.rand(5, 1, 10, 1), False),
+        "rank_2_keepdim": lambda: (torch.rand(5, 5), True),
+        "rank_4": lambda: (torch.rand(5, 1, 10, 1), False),
     }
 
 

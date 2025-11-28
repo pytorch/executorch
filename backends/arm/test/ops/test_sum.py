@@ -66,7 +66,7 @@ def test_sum_dim_intlist_tosa_INT(test_data: input_t1):
 
 @common.parametrize("test_data", Sum.test_parameters)
 @common.XfailIfNoCorstone300
-def test_view_u55_INT_1_0(test_data: Tuple):
+def test_sum_u55_INT_1_0(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Sum(),
         test_data(),
@@ -78,7 +78,7 @@ def test_view_u55_INT_1_0(test_data: Tuple):
 
 @common.parametrize("test_data", Sum.test_parameters)
 @common.XfailIfNoCorstone320
-def test_view_u85_INT_1_0(test_data: Tuple):
+def test_sum_u85_INT_1_0(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Sum(),
         test_data(),
@@ -122,7 +122,7 @@ reject_inputs = {
 
 
 @common.parametrize("test_data", reject_inputs)
-def test_view_u55_INT_failure_set(test_data: Tuple):
+def test_sum_u55_INT_failure_set(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Sum(),
         test_data(),
