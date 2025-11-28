@@ -18,6 +18,7 @@ from executorch.backends.xnnpack.utils.utils import (
     get_param_tensor,
     get_tensor_name,
     is_param_node,
+    sanitize_node_name,
 )
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -208,13 +209,13 @@ class FuseBatchNormPass(XNNPACKPass):
             # Otherwise, this is a linear node.
             fused_weight, fused_bias = fuse_linear_bn_weights(*fuse_args)
 
-        fused_weight_name = (input_node_weight_name + "_fused_bn").replace(".", "_")
+        fused_weight_name = sanitize_node_name(input_node_weight_name + "_fused_bn")
         if input_node_bias_name == "":
-            fused_bias_name = (input_node_weight_name + "_bias_fused_bn").replace(
-                ".", "_"
+            fused_bias_name = sanitize_node_name(
+                input_node_weight_name + "_bias_fused_bn"
             )
         else:
-            fused_bias_name = (input_node_bias_name + "_fused_bn").replace(".", "_")
+            fused_bias_name = sanitize_node_name(input_node_bias_name + "_fused_bn")
 
         # Modify the graph by updating the weight and bias of the conv or linear op
         # with the fused weight and bias params, and replacing all the users
