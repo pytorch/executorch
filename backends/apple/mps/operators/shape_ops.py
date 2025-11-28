@@ -248,7 +248,7 @@ class SplitWithSizesVisitor(NodeVisitor):
 
         if dim < 0 or dim >= len(input_shape):
             raise RuntimeError(
-                f"split_copy: dim {dim} out of range for input tensor with {len(input_shape)} dimensions"
+                f"split_copy: dim {cast(int, node.args[2])} out of range for input tensor with {len(input_shape)} dimensions"
             )
 
         mps_node = MPSNode(
