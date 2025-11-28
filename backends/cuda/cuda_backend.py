@@ -10,6 +10,9 @@ from typing import Any, Dict, final, List
 
 import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
+from executorch.backends.cuda.passes.keep_cond_predicate_on_cpu import (
+    KeepCondPredicateOnCpuPass,
+)
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
@@ -49,7 +52,7 @@ class CudaBackend(AotiBackend, BackendDetails):
     @classmethod
     def get_custom_passes(cls) -> List[typing.Any]:
         """Return CUDA-specific passes: ReplaceEdgeOpWithTritonOpPass"""
-        return [ReplaceEdgeOpWithTritonOpPass()]
+        return [KeepCondPredicateOnCpuPass(), ReplaceEdgeOpWithTritonOpPass()]
 
     @classmethod
     def get_aoti_compile_options(

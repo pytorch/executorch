@@ -166,7 +166,10 @@ class AotiBackend(ABC):
         # Apply custom backend-specific passes
         custom_passes = cls.get_custom_passes()
         for custom_pass in custom_passes:
-            custom_pass(device_edge_program.graph_module)
+            if getattr(custom_pass, "requires_exported_program", False):
+                custom_pass(device_edge_program)
+            else:
+                custom_pass(device_edge_program.graph_module)
 
         # Run decompositions if any
         if decomposition_table:
@@ -187,9 +190,10 @@ class AotiBackend(ABC):
         missing_fallback_kernels: Set[str] = set()
 
         # Compile with fallback kernel collection
-        with cls.collect_unsupported_fallback_kernels(
-            missing_fallback_kernels
-        ), torch.no_grad():
+        with (
+            cls.collect_unsupported_fallback_kernels(missing_fallback_kernels),
+            torch.no_grad(),
+        ):
             paths = torch._inductor.aot_compile(
                 edge_program_module, tuple(user_input_placeholders), options=options
             )
