@@ -1,11 +1,11 @@
 import unittest
 
 import torch
-from executorch.backends.qualcomm._passes import InsertReshapeForReduceOps
+from executorch.backends.qualcomm._passes import InsertReshapeForReduceOps, ConvertPadToSliceConcat
 
 
 class TestPasses(unittest.TestCase):
-    def test_insert_reshape_for_argmax(self):
+    def test_insert_reshape_for_reduced_ops(self):
         class ArgmaxModule(torch.nn.Module):
             def forward(self, x):
                 return torch.argmax(x, dim=None)
@@ -48,6 +48,49 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(
             torch.equal(*out, ref), f"Output mismatch: got {out}, expected {ref}"
         )
+
+    def test_convert_pad_to_slice_concat(self):
+        # Test with circular and replicate modes, the pass should remove the pad node and insert slice and concat nodes
+        class Pad(torch.nn.Module):
+            def __init__(self, mode):
+                super().__init__()
+                self.mode = mode
+
+            def forward(self, x):
+                # pad order = [left, right, top, bottom]
+                return torch.ops.aten.pad.default(x, (1, 1, 1, 1), mode=self.mode)
+
+        modes = ["circular", "replicate"]
+        for mode in modes:
+            mod = Pad(mode)
+            x = torch.arange(1.0, 17.0).reshape(1, 1, 4, 4)
+            ep = torch.export.export(mod, (x,))
+            # Run original module for reference
+            ref = mod(x)
+
+            circular_pad_nodes = [
+                n for n in ep.graph.nodes if n.target == torch.ops.aten.pad.default and mode in n.args
+            ]
+            self.assertTrue(len(circular_pad_nodes) == 1, "Circular pad node missing")
+
+            ConvertPadToSliceConcat()(ep.graph_module)
+
+            out = ep.graph_module(x)
+            # Check graph structure: argmax should take a reshape as input
+            slice_nodes = [
+                n for n in ep.graph.nodes if n.target == torch.ops.aten.slice.Tensor
+            ]
+            circular_pad_nodes = [
+                n for n in ep.graph.nodes if n.target == torch.ops.aten.pad.default and mode in n.args
+            ]
+            self.assertTrue(len(slice_nodes) >= 1, "Slice node should be inserted")
+            self.assertTrue(len(circular_pad_nodes) == 0, "Pad node should be removed")
+
+            # Execute new graph and compare with reference
+            out = ep.graph_module(x)
+            self.assertTrue(
+                torch.equal(*out, ref), f"Output mismatch: got {out}, expected {ref}"
+            )
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from executorch.backends.qualcomm._passes import (
     AnnotateUnbind,
     CanonicalizeConv,
     ConvertBmmToMatmul,
+    ConvertPadToSliceConcat,
     ConvertLinearToConv2d,
     ConvertSquareToPow,
     DecomposeAny,
@@ -211,12 +212,14 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(ReplaceInfValues())
         self.add_pass(LiftConstantScalarOperands())
+        self.add_pass(ConvertPadToSliceConcat())
         self.add_pass(InsertReshapeForReduceOps())
         return self._transform(graph_module)
 
     def transform_for_export_pipeline(
         self, exported_program: ExportedProgram, convert_linear_to_conv2d: bool = False
     ):
+        self.add_pass(ConvertPadToSliceConcat())
         self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
