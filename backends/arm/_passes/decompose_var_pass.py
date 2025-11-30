@@ -12,7 +12,9 @@ from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
 from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
-from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -52,7 +54,7 @@ class DecomposeVarPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
-        ComputeConstantOpsAOT,
+        ComputeConstantOpsAOTPass,
         DecomposeMeanDimPass,
         DecomposeSumPass,
     }

@@ -27,7 +27,7 @@ setup_android_ndk() {
     mkdir -p "${NDK_INSTALL_DIR}"
     NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
 
-    curl --retry 3 -Lo "/tmp/${NDK_ZIP}" "https://dl.google.com/android/repository/${NDK_ZIP}"
+    curl --retry 3 --retry-delay 5 --retry-connrefused --continue-at - -Lo "/tmp/${NDK_ZIP}" "https://dl.google.com/android/repository/${NDK_ZIP}"
     unzip -q "/tmp/${NDK_ZIP}" -d "${NDK_INSTALL_DIR}"
     mv "${NDK_INSTALL_DIR}/android-ndk-${NDK_VERSION}" "${NDK_INSTALL_DIR}/ndk"
 

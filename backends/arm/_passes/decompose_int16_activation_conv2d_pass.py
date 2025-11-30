@@ -10,7 +10,7 @@ import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.quant_args import QuantArgs
 
-from executorch.backends.arm.tosa.specification import get_context_spec, Tosa_1_00
+from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -40,9 +40,7 @@ class DecomposeConv2dWithInt16ActivationPass(ArmPass):
         if args[0].data.dtype == torch.int8:
             return super().call_operator(op, args, kwargs, meta)
         elif args[0].data.dtype == torch.int16:
-            if isinstance(tosa_spec, Tosa_1_00) and not tosa_spec.support_extension(
-                "int16"
-            ):
+            if not tosa_spec.support_extension("int16"):
                 raise ValueError(
                     "int16 activation for convolution requires TOSA int16 extension"
                 )

@@ -16,7 +16,7 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 @final
-class QnnBackend(BackendDetails):
+class DemoBackend(BackendDetails):
     @staticmethod
     def preprocess(
         edge_program: ExportedProgram,

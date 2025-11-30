@@ -57,7 +57,6 @@ import shutil
 import site
 import subprocess
 import sys
-
 from distutils import log  # type: ignore[import-not-found]
 from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
 from pathlib import Path
@@ -552,7 +551,7 @@ class CustomBuildPy(build_py):
         # package subdirectory.
         if self.editable_mode:
             # In editable mode, the package directory is the original source directory
-            dst_root = self.get_package_dir(".")
+            dst_root = self.get_package_dir("executorch")
         else:
             dst_root = os.path.join(self.build_lib, "executorch")
         # Create the version file.
