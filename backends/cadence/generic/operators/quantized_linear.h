@@ -8,8 +8,13 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
-#include <executorch/backends/cadence/generic/operators/operators.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
+constexpr size_t kTensorDimensionLimit = 16;
 
 template <typename T>
 inline __attribute__((always_inline)) void quantized_linear_per_tensor_(

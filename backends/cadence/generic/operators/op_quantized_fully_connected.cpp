@@ -5,21 +5,24 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#include <executorch/backends/cadence/generic/kernels/kernels.h>
-#include <executorch/backends/cadence/generic/operators/operators.h>
-#include <executorch/backends/cadence/generic/operators/quantized_ops.h>
+
+#include <executorch/backends/cadence/generic/operators/op_quantized_fully_connected.h>
+
+#include <executorch/backends/cadence/generic/operators/cadence_type_util.h>
+#include <executorch/backends/cadence/generic/operators/quantized_linear.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 namespace impl {
 namespace generic {
 namespace native {
 
+using ::executorch::aten::optional;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
-using std::optional;
 
-void quantized_fully_connected_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
+Tensor& quantized_fully_connected_out(
+    ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const Tensor& bias,
@@ -28,7 +31,7 @@ void quantized_fully_connected_out(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
+    ET_UNUSED const optional<Tensor>& offset,
     Tensor& out) {
 #define typed_quantized_linear(ctype, dtype) \
   case ScalarType::dtype: {                  \
@@ -47,16 +50,17 @@ void quantized_fully_connected_out(
 
   ScalarType dtype = out.scalar_type();
   switch (dtype) {
-    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_linear);
+    ET_FORALL_CADENCE_QUANTIZED_TYPES_WITH_INT16(typed_quantized_linear);
     default:
       ET_DCHECK_MSG(
           false, "Unhandled dtype %s", torch::executor::toString(dtype));
   }
 #undef typed_quantized_linear
+  return out;
 }
 
-void quantized_fully_connected_per_tensor_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
+Tensor& quantized_fully_connected_per_tensor_out(
+    ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const Tensor& bias,
@@ -65,7 +69,7 @@ void quantized_fully_connected_per_tensor_out(
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
+    ET_UNUSED const optional<Tensor>& offset,
     Tensor& out) {
 #define typed_quantized_linear(ctype, dtype) \
   case ScalarType::dtype: {                  \
@@ -84,16 +88,17 @@ void quantized_fully_connected_per_tensor_out(
 
   ScalarType dtype = out.scalar_type();
   switch (dtype) {
-    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_linear);
+    ET_FORALL_CADENCE_QUANTIZED_TYPES_WITH_INT16(typed_quantized_linear);
     default:
       ET_DCHECK_MSG(
           false, "Unhandled dtype %s", torch::executor::toString(dtype));
   }
 #undef typed_quantized_linear
+  return out;
 }
 
-void quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
+Tensor& quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_out(
+    ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const Tensor& bias,
@@ -102,7 +107,7 @@ void quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_out(
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
+    ET_UNUSED const optional<Tensor>& offset,
     Tensor& out) {
 #define typed_quantized_linear(ctype, dtype) \
   case ScalarType::dtype: {                  \
@@ -121,16 +126,17 @@ void quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_out(
 
   ScalarType dtype = out.scalar_type();
   switch (dtype) {
-    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_linear);
+    ET_FORALL_CADENCE_QUANTIZED_TYPES_WITH_INT16(typed_quantized_linear);
     default:
       ET_DCHECK_MSG(
           false, "Unhandled dtype %s", torch::executor::toString(dtype));
   }
 #undef typed_quantized_linear
+  return out;
 }
 
-void quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
+Tensor& quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out(
+    ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const Tensor& bias,
@@ -139,7 +145,7 @@ void quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out(
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
+    ET_UNUSED const optional<Tensor>& offset,
     Tensor& out) {
 #define typed_quantized_linear(ctype, dtype) \
   case ScalarType::dtype: {                  \
@@ -158,12 +164,13 @@ void quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out(
 
   ScalarType dtype = out.scalar_type();
   switch (dtype) {
-    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_linear);
+    ET_FORALL_CADENCE_QUANTIZED_TYPES_WITH_INT16(typed_quantized_linear);
     default:
       ET_DCHECK_MSG(
           false, "Unhandled dtype %s", torch::executor::toString(dtype));
   }
 #undef typed_quantized_linear
+  return out;
 }
 
 } // namespace native
