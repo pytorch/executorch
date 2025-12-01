@@ -862,7 +862,12 @@ jobs:
         # Install Node.js and Emscripten
         source .ci/scripts/setup-emscripten.sh
         
-        npm install -g pnpm@10.24.0 --ignore-scripts
+        curl -fsSL https://get.pnpm.io/install.sh | sh -
+
+        export PNPM_HOME="$HOME/.local/share/pnpm"
+        export PATH="$PNPM_HOME:$PATH"
+
+        pnpm --version
 
         # Test selective build
         bash scripts/build_wasm_tests.sh ${{ matrix.enable-etdump }}
