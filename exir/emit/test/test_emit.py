@@ -886,30 +886,6 @@ class TestEmit(unittest.TestCase):
         # 8. Verify we have the body operations (add from combine_fn)
         self.assertIn("aten::add", op_names, "Should have add from combine_fn body")
 
-    def test_load_emit_scan(self) -> None:
-        """Test that scan program can be loaded by the runtime."""
-        from torch._higher_order_ops.scan import scan
-
-        class ScanCumSum(torch.nn.Module):
-            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-                def combine_fn(carry, x):
-                    new_carry = carry + x
-                    return new_carry, new_carry.clone()
-
-                init = torch.zeros_like(xs[0])
-                return scan(combine_fn, init, xs)
-
-        f = ScanCumSum()
-        # Use contiguous tensor to avoid stride=0 issue
-        inputs = (torch.arange(15).float().reshape(5, 3),)
-
-        module = to_edge(
-            export(f, inputs, strict=True),
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
-        )
-        # This should not raise - verifies the program is loadable
-        _load_for_executorch_from_buffer(module.to_executorch().buffer)
-
     def test_run_emit_scan_cumsum(self) -> None:
         """Test scan execution correctness: cumulative sum."""
         from torch._higher_order_ops.scan import scan
