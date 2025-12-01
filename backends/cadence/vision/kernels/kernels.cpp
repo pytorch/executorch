@@ -18,8 +18,20 @@ namespace vision {
 namespace kernels {
 
 void* allocate_temp_memory(KernelRuntimeContext& ctx, size_t size) {
-  Result<void*> temp_mem_res = ctx.allocate_temp(size);
-  return temp_mem_res.ok() ? temp_mem_res.get() : nullptr;
+  ET_LOG(Info, "yo");
+  constexpr size_t kAlignment =
+      8; // 16-byte alignment for vectorized operations
+  Result<void*> temp_mem_res = ctx.allocate_temp(size, kAlignment);
+  if (temp_mem_res.ok()) {
+    void* ptr = temp_mem_res.get();
+    return ptr;
+  } else {
+    ET_LOG(
+        Error,
+        "Failed to allocate temp memory, error: 0x%x",
+        static_cast<uint32_t>(temp_mem_res.error()));
+    return nullptr;
+  }
 }
 
 // Quantize a fp32 value to an int8_t/uint8_t value
