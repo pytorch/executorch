@@ -862,14 +862,14 @@ jobs:
         # Install Node.js and Emscripten
         source .ci/scripts/setup-emscripten.sh
 
-        npm install -g pnpm
+        npm install -g pnpm@10.24.0
 
         # Test selective build
         bash scripts/build_wasm_tests.sh ${{ matrix.enable-etdump }}
 
         # Install Jest
         cd cmake-out-wasm/extension/wasm/test
-        pnpm add -D jest --ignore-scripts
+        pnpm add -D jest@30.2.0 --ignore-scripts
 
         # Run unit test
         pnpm test
