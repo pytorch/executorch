@@ -381,7 +381,7 @@ adb logcat | grep -E "ExecuTorch"
 
 **Symptoms**:
 ```
-W [Qnn ExecuTorch]: Qnn API version X.XX.X is mismatched
+W [Qnn ExecuTorch]: Qnn API version 2.33.0 is mismatched
 E [Qnn ExecuTorch]: Using newer context binary on old SDK
 E [Qnn ExecuTorch]: Can't create context from binary. Error 5000
 ```
