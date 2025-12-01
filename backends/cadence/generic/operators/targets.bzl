@@ -247,22 +247,75 @@ def define_common_targets():
         ],
     )
 
-    # Combined target for backward compatibility
-    # NOTE: cadence_aot_lib now uses individual targets directly for better linking
     runtime.cxx_library(
-        name = "cadence_generic_ops",
-        srcs = glob([
-            "*.cpp",
-        ]),
-        exported_headers = glob([
-            "*.h",
-        ]),
+        name = "op_softmax",
+        srcs = ["op_softmax.cpp"],
+        exported_headers = ["op_softmax.h"],
         platforms = CXX,
         deps = [
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:reduce_util",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/kernel:kernel_runtime_context",
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_conv1d",
+        srcs = ["op_conv1d.cpp"],
+        exported_headers = ["op_conv1d.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_conv2d",
+        srcs = ["op_conv2d.cpp"],
+        exported_headers = ["op_conv2d.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_conv3d",
+        srcs = ["op_conv3d.cpp"],
+        exported_headers = ["op_conv3d.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_avg_pool2d",
+        srcs = ["op_avg_pool2d.cpp"],
+        exported_headers = ["op_avg_pool2d.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/kernel:kernel_runtime_context",
         ],
         visibility = [
             "//executorch/backends/cadence/...",
