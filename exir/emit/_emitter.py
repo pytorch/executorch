@@ -992,7 +992,6 @@ class _Emitter(torch.fx.Interpreter):
 
         num_carry = len(init)
         num_xs = len(xs)
-        num_additional = len(additional_inputs)
 
         # Split output values into carry outputs and y outputs
         carry_outputs = list(subemitter_binding_output_values[:num_carry])
@@ -1048,7 +1047,7 @@ class _Emitter(torch.fx.Interpreter):
             overload="int_out",
         )
         xs_slice_instructions = []
-        for i, x in enumerate(xs):
+        for x in xs:
             kernel = Instruction(
                 KernelCall(
                     op_index=op_index_select,
