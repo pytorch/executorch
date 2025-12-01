@@ -112,17 +112,15 @@ class OpenVINOQuantizer(Quantizer):
             else:
                 preset = None
                 model_type = nncf.parameters.ModelType.TRANSFORMER
-            self._algo = (
-                MinMaxQuantization(
-                    preset=preset, model_type=model_type, **kwargs
-                )
+            self._algo = MinMaxQuantization(
+                preset=preset, model_type=model_type, **kwargs
             )
         else:
-            mode = mode.value.replace(
+            compression_mode = mode.value.replace(
                 "wo", ""
             )  # Mode value has to match NNCF CompressWeightsMode
             weight_compression_configuration = get_weight_compression_configuration(
-                nncf.CompressWeightsMode(mode),
+                nncf.CompressWeightsMode(compression_mode),
                 **kwargs,
             )
             subset_size = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
@@ -362,9 +360,7 @@ class OpenVINOQuantizer(Quantizer):
         :return: Edge represented by a Tuple of (weight_node, target_node), where weight_node is the FX node supplying the weight.
         """
         nncf_node = nncf_graph.get_node_by_name(target_node.name)
-        weights_ports_ids = get_weight_tensor_port_ids(
-            nncf_node, nncf_graph
-        )
+        weights_ports_ids = get_weight_tensor_port_ids(nncf_node, nncf_graph)
         if len(weights_ports_ids) > 1:
             # TODO(dlyakhov): support quantization for nodes with several weights
             nncf_logger.warning(
