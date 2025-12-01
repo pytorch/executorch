@@ -39,7 +39,7 @@ build_cpp_runtime() {
     )
 
     if [[ "$llm_enabled" -eq 1 ]]; then
-	    CMAKE_ARGS+=("-DEXECUTORCH_BUILD_EXTENSION_LLM=ON -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON")
+        CMAKE_ARGS+=("-DEXECUTORCH_BUILD_EXTENSION_LLM=ON -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON")
     fi
 
     # Configure the project with CMake
