@@ -391,6 +391,7 @@ E [Qnn ExecuTorch]: Can't create context from binary. Error 5000
 **Solution**: 
 1. Update `build.gradle.kts` with matching QNN runtime version
 
+> **Note:** The version numbers below (`2.33.0` and `2.37.0`) are examples only. Please check for the latest compatible QNN runtime version or match your QNN SDK version to avoid API mismatches.
 **Before**:
 ```kotlin
 implementation("com.qualcomm.qti:qnn-runtime:2.33.0")
