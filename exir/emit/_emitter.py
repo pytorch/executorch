@@ -1022,15 +1022,18 @@ class _Emitter(torch.fx.Interpreter):
 
         # Initialize carry_outputs from init by copying init -> carry_outputs
         # This is necessary because we shouldn't mutate the original init tensors
-        op_index_copy, _ = self._get_operator(
-            name="aten::copy_",
-            overload="default",
-        )
-        for i, (init_val, carry_out) in enumerate(zip(init, carry_outputs)):
+        # Use aten::copy_.default which copies src to self in-place
+        op_index_copy, _ = self._get_operator(name="aten::copy_")
+        for init_val, carry_out in zip(init, carry_outputs):
             kernel = Instruction(
                 KernelCall(
                     op_index=op_index_copy,
-                    args=[carry_out.id, init_val.id],
+                    args=[
+                        carry_out.id,
+                        init_val.id,
+                        self._emit_evalue(EValue(Bool(False))).id,
+                        carry_out.id,
+                    ],
                 )
             )
             self.chain.instructions.append(kernel)
@@ -1083,8 +1086,9 @@ class _Emitter(torch.fx.Interpreter):
         binding_input_values.extend(additional_inputs)  # Additional inputs
 
         # combine_fn outputs: (*next_carry, *y_slice)
-        # We don't bind outputs to the final destinations directly because we need
-        # to copy them explicitly (in-place is unsafe)
+        # Pass binding_output_values=None so the combine_fn writes directly to its
+        # own output buffers (concrete_output_ids). We then copy from these directly
+        # to the final carry/y buffers, avoiding unnecessary temp buffers and MOVEs.
         scan_emitter = _Emitter(
             combine_fn,
             self.emitter_state,
@@ -1092,14 +1096,14 @@ class _Emitter(torch.fx.Interpreter):
             instruction_start_offset=self.instruction_start_offset
             + len(self.chain.instructions),
             binding_input_values=binding_input_values,
-            binding_output_values=None,  # Let combine_fn use its own output buffers
+            binding_output_values=None,  # Use concrete outputs directly
         )
         scan_emitter.run()
 
         # Merge combine_fn instructions
         self._merge_chain(scan_emitter.chain)
-        # Remove the return instruction from combine_fn
-        self.chain.instructions.pop()
+        # NOTE: When binding_output_values=None, no return/move instruction is added
+        # by the output() method, so we don't need to pop anything.
 
         # Update xs_slice instructions with the actual placeholder EValue ids
         # The xs placeholders start after the carry inputs in combine_fn
@@ -1111,7 +1115,8 @@ class _Emitter(torch.fx.Interpreter):
         # === COPY OUTPUTS ===
 
         # Get combine_fn's actual output EValues
-        # concrete_output_ids contains: (*carry_temp, *y_temp)
+        # concrete_output_ids contains the actual EValues that the combine_fn
+        # graph operations write to: (*carry_temp, *y_temp)
         concrete_outputs = scan_emitter.concrete_output_ids
         carry_temp = concrete_outputs[:num_carry]
         y_temp = concrete_outputs[num_carry:]
@@ -1129,11 +1134,17 @@ class _Emitter(torch.fx.Interpreter):
 
         # Copy carry_temp -> carry_outputs for next iteration
         # This explicit copy is required because in-place op.out(x, out=x) is unsafe
+        # aten::copy_ signature: (self, src, non_blocking, out) -> self
         for carry_t, carry_out in zip(carry_temp, carry_outputs):
             kernel = Instruction(
                 KernelCall(
                     op_index=op_index_copy,
-                    args=[carry_out.id, carry_t.id],
+                    args=[
+                        carry_out.id,
+                        carry_t.id,
+                        self._emit_evalue(EValue(Bool(False))).id,
+                        carry_out.id,
+                    ],
                 )
             )
             self.chain.instructions.append(kernel)
@@ -1455,7 +1466,7 @@ class _Emitter(torch.fx.Interpreter):
 
         return delegate_ret
 
-    def _get_operator(self, name: str, overload: str) -> Tuple[int, Operator]:
+    def _get_operator(self, name: str, overload: str = "") -> Tuple[int, Operator]:
         """Given a fully qualified name, lookups the operator in the ExecuTorch Program, or adds it
         if it is not already present"""
         key = (name, overload)
