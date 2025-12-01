@@ -6,8 +6,8 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "im2row_out",
-        srcs = ["im2row_out.cpp"],
-        exported_headers = ["operators.h"],
+        srcs = ["op_im2row.cpp"],
+        exported_headers = ["op_im2row.h"],
         platforms = CXX,
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -32,11 +32,10 @@ def define_common_targets():
         ],
     )
 
-    # Quantized operators that need cadence kernels for quantize/dequantize
     runtime.cxx_library(
         name = "dequantize_per_tensor",
-        srcs = ["dequantize_per_tensor.cpp"],
-        exported_headers = ["quantized_ops.h"],
+        srcs = ["op_dequantize_per_tensor.cpp"],
+        exported_headers = ["op_dequantize_per_tensor.h"],
         platforms = CXX,
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -50,8 +49,8 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "quantize_per_tensor",
-        srcs = ["quantize_per_tensor.cpp"],
-        exported_headers = ["quantized_ops.h"],
+        srcs = ["op_quantize_per_tensor.cpp"],
+        exported_headers = ["op_quantize_per_tensor.h"],
         platforms = CXX,
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
