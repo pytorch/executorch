@@ -6,28 +6,25 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#pragma once
+#include <executorch/backends/cadence/generic/operators/op_fully_connected.h>
 
-#include <executorch/runtime/core/array_ref.h>
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
-#include <optional>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace impl {
 namespace generic {
 namespace native {
-namespace {
+
+using ::executorch::aten::optional;
+using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
+using ::executorch::runtime::KernelRuntimeContext;
 
-#define ET_FORALL_CADENCE_QUANTIZED_TYPES(_) \
-  _(uint8_t, Byte)                           \
-  _(int8_t, Char)
-
-inline __attribute__((always_inline)) void linear_(
-    const ::executorch::aten::Tensor& input,
-    const ::executorch::aten::Tensor& weight,
-    const std::optional<::executorch::aten::Tensor>& bias,
-    ::executorch::aten::Tensor& output) {
+void linear(
+    const Tensor& input,
+    const Tensor& weight,
+    const optional<Tensor>& bias,
+    Tensor& output) {
   const float* __restrict__ input_data = input.const_data_ptr<float>();
   const float* __restrict__ weight_data = weight.const_data_ptr<float>();
   const float* __restrict__ bias_data = bias.value().const_data_ptr<float>();
@@ -55,7 +52,16 @@ inline __attribute__((always_inline)) void linear_(
   }
 }
 
-} // namespace
+Tensor& fully_connected_out(
+    ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const optional<Tensor>& bias,
+    Tensor& output) {
+  linear(input, weight, bias, output);
+  return output;
+}
+
 } // namespace native
 } // namespace generic
 } // namespace impl

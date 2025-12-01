@@ -15,6 +15,11 @@
   _(uint8_t, Byte)                           \
   _(int8_t, Char)
 
+#define ET_FORALL_CADENCE_QUANTIZED_TYPES_WITH_INT16(_) \
+  _(uint8_t, Byte)                                      \
+  _(int8_t, Char)                                       \
+  _(int16_t, Short)
+
 namespace impl {
 namespace HiFi {
 namespace native {
