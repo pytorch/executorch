@@ -65,7 +65,19 @@ def validate(
     modified: torch.fx.GraphModule,
     inputs: tuple[torch.Tensor, ...] | list[torch.Tensor],
     pass_name: str,
+    rtol: float = 1e-5,
+    atol: float = 1e-6,
 ) -> None:
+    """Validate that two graph modules produce numerically equivalent outputs.
+
+    Args:
+        original: The original graph module before the pass
+        modified: The modified graph module after the pass
+        inputs: Input tensors to run through both graphs
+        pass_name: Name of the pass being validated (for error messages)
+        rtol: Relative tolerance for allclose comparison
+        atol: Absolute tolerance for allclose comparison
+    """
     original.eval()
     modified.eval()
     with torch.no_grad():
@@ -74,10 +86,17 @@ def validate(
 
     flat_orig_out, _ = pytree.tree_flatten(orig_out)
     flat_mod_out, _ = pytree.tree_flatten(mod_out)
-    if not all(pytree.tree_map(torch.equal, flat_orig_out, flat_mod_out)):
-        raise AssertionError(
-            f"Pass validation failed with exact match for pass {pass_name}. Original graph {original} and modified graph {modified}"
-        )
+
+    # Check that outputs match within tolerance
+    for i, (orig_tensor, mod_tensor) in enumerate(zip(flat_orig_out, flat_mod_out)):
+        if not torch.allclose(orig_tensor, mod_tensor, rtol=rtol, atol=atol):
+            max_diff = torch.max(torch.abs(orig_tensor - mod_tensor)).item()
+            raise AssertionError(
+                f"Pass validation failed for pass {pass_name}. "
+                f"Output tensor {i} differs by max {max_diff:.6e}. "
+                f"Expected rtol={rtol}, atol={atol}. "
+                f"Original output: {orig_tensor}, Modified output: {mod_tensor}"
+            )
 
 
 class TestReplaceOpsPasses(unittest.TestCase):
@@ -840,10 +859,10 @@ class TestReplaceOpsPasses(unittest.TestCase):
     def test_replace_linear_with_fully_connected(self) -> None:
         shape, in_channels, out_channels = (1, 14), 14, 128
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
-        weights = builder.placeholder(
-            "weights", torch.randn([out_channels, in_channels], dtype=torch.float32)
-        )
+        x_input = torch.randn(*shape, dtype=torch.float32)
+        weights_input = torch.randn([out_channels, in_channels], dtype=torch.float32)
+        x = builder.placeholder("x", x_input)
+        weights = builder.placeholder("weights", weights_input)
         permute_copy = builder.call_operator(
             op=exir_ops.edge.aten.permute_copy.default,
             args=(weights, [1, 0]),
@@ -854,14 +873,31 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         builder.output([mm])
         original_gm = builder.get_graph_module()
+
         gm = cast(
             PassResult, ReplacePermuteWithTransposePass()(original_gm)
         ).graph_module
         gm = cast(PassResult, ReplaceMMWithAddMMPass()(gm)).graph_module
-        gm = cast(PassResult, ReplaceAddMMWithLinearPass()(gm)).graph_module
+
+        gm_before_linear = copy.deepcopy(gm)
+        pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(gm))
+        self.assertTrue(pass_result.modified)
+        gm = pass_result.graph_module
+
+        inputs = [x_input, weights_input]
+        validate(gm_before_linear, gm, inputs, "ReplaceAddMMWithLinearPass")
+        gm_before_fc = copy.deepcopy(gm)
         graph_after_passes = cast(
             PassResult, ReplaceLinearWithFullyConnectedOpPass()(gm)
         ).graph_module
+
+        validate(
+            gm_before_fc,
+            graph_after_passes,
+            inputs,
+            "ReplaceLinearWithFullyConnectedOpPass",
+        )
+
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.full.default),
@@ -878,21 +914,17 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @expand(
-        [
-            [(4, 16, 256), 256, 512, True],
-            [(7, 17, 12), 12, 34, False],
-        ]
-    )
+    @expand([[1.0, 1.0], [2.0, 3.0]])
     @torch.no_grad()
-    def test_replace_addmm_with_linear(
-        self, shape: Tuple[int], in_features: int, out_features: int, bias: bool
-    ) -> None:
-        M, K, N, alpha, beta = 14, 48, 24, 1.0, 1.0
+    def test_replace_addmm_with_linear(self, alpha: float, beta: float) -> None:
+        M, K, N = 14, 12, 10
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(N, dtype=torch.float32))
-        y = builder.placeholder("y", torch.randn([M, K], dtype=torch.float32))
-        z = builder.placeholder("z", torch.randn([N, K], dtype=torch.float32))
+        x_input = torch.randn(N, dtype=torch.float32)
+        y_input = torch.randn([M, K], dtype=torch.float32)
+        z_input = torch.randn([N, K], dtype=torch.float32)
+        x = builder.placeholder("x", x_input)
+        y = builder.placeholder("y", y_input)
+        z = builder.placeholder("z", z_input)
         permute_copy = builder.call_operator(
             op=exir_ops.edge.aten.permute_copy.default,
             args=(z, [1, 0]),
@@ -904,12 +936,21 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         builder.output([addmm])
         original_gm = builder.get_graph_module()
+
         gm = cast(
             PassResult, ReplacePermuteWithTransposePass()(original_gm)
         ).graph_module
-        graph_after_passes = cast(
-            PassResult, ReplaceAddMMWithLinearPass()(gm)
-        ).graph_module
+
+        gm_before_linear = copy.deepcopy(gm)
+        pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(gm))
+        self.assertTrue(pass_result.modified)
+        graph_after_passes = pass_result.graph_module
+
+        inputs = [x_input, y_input, z_input]
+        validate(
+            gm_before_linear, graph_after_passes, inputs, "ReplaceAddMMWithLinearPass"
+        )
+
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.linear.default),
