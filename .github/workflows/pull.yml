@@ -867,10 +867,10 @@ jobs:
 
         # Install Jest
         cd cmake-out-wasm/extension/wasm/test
-        npm install --save-dev jest
+        pnpm install --save-dev jest
 
         # Run unit test
-        npm test
+        pnpm test
 
   unittest-nxp-neutron:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
