@@ -127,6 +127,8 @@ Runner<T>::Runner(
   } else if (decoder_model_version == "gemma3") {
     decoder_model_version_ = DecoderModelVersion::kGemma3;
     cache_mode_ = CacheMode::HybridCache;
+  } else if (decoder_model_version == "granite") {
+    decoder_model_version_ = DecoderModelVersion::kGranite;
   } else if (decoder_model_version == "phi_4_mini") {
     decoder_model_version_ = DecoderModelVersion::kPhi4;
   } else if (decoder_model_version == "qwen2_5") {
@@ -139,6 +141,8 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kSmollm3;
   } else if (decoder_model_version == "codegen") {
     decoder_model_version_ = DecoderModelVersion::kCodegen;
+  } else if (decoder_model_version == "glm") {
+    decoder_model_version_ = DecoderModelVersion::kGlm;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
@@ -209,6 +213,8 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kCodegen) {
     eos_ids->insert(tokenizer_->encode("<|endoftext|>", 0, 0).get()[0]);
+  } else if (decoder_model_version_ == DecoderModelVersion::kGlm) {
+    eos_ids->insert(tokenizer_->encode("<|user|>", 0, 0).get()[0]);
   }
 
   // Try avoid getMetadataHelper as it is time consuming.
@@ -376,7 +382,22 @@ Error Runner<T>::generate_from_prompt_or_file(
   stats_.inference_start_ms = time_in_ms();
 
   int32_t seq_len = config.seq_len;
-  seq_len = (seq_len > 0 && seq_len <= context_len_) ? seq_len : context_len_;
+  if (seq_len > context_len_) {
+    ET_LOG(
+        Info,
+        "Warning: Requested seq_len (%d) exceeds compiled max_seq_len (%d). Clamping to %d.",
+        seq_len,
+        context_len_,
+        context_len_);
+    seq_len = context_len_;
+  } else if (seq_len <= 0) {
+    ET_LOG(
+        Info,
+        "Warning: Invalid seq_len (%d). Using compiled max_seq_len (%d).",
+        seq_len,
+        context_len_);
+    seq_len = context_len_;
+  }
   int32_t n_bos = (cur_pos_ == 0) ? 1 : 0;
 
   // encode the (string) prompt into tokens sequence

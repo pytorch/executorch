@@ -34,12 +34,14 @@ enum DecoderModelVersion {
   kLlama3,
   kGemma,
   kGemma3,
+  kGranite,
   kPhi4,
   kQwen2_5,
   kQwen3,
   kSmollm2_135m,
   kSmollm3,
   kCodegen,
+  kGlm,
 };
 
 enum KvBitWidth {

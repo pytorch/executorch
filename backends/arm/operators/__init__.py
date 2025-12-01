@@ -2,6 +2,12 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Import and register Arm TOSA operator visitors.
+
+Importing this package loads all visitor modules so their classes can be
+registered via decorators and discovered at runtime.
+
+"""
 
 
 from . import (  # noqa
@@ -58,6 +64,7 @@ from . import (  # noqa
     op_tosa_transpose,
     op_view,
     op_where,
+    op_while,
     ops_binary,
     ops_identity,
 )

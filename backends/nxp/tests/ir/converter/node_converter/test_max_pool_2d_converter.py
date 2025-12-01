@@ -6,10 +6,11 @@
 import numpy as np
 import pytest
 import torch
-
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+
+from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.neutron_pass_manager import NeutronPassManager
 from executorch.backends.nxp.tests.executorch_pipeline import (
     to_edge_program,
@@ -76,6 +77,9 @@ def test_max_pool_2d_conversion(input_shape, padding):
         input_data,
         tflite_input_preprocess=ToNHWCPreprocess(),
         tflite_output_preprocess=ToNCHWPreprocess(),
+        conversion_config=ConversionConfig(
+            {"use_neutron_for_format_conversion": False}
+        ),
     )
 
 
@@ -103,7 +107,11 @@ def test_max_pool_2d_quant_conversion(mocker, input_shape, padding):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(MaxPool2dConvModule(padding=padding), input_shape)
+    _ = to_quantized_edge_program(
+        MaxPool2dConvModule(padding=padding),
+        input_shape,
+        use_neutron_for_format_conversion=False,
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
