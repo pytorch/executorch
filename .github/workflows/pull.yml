@@ -862,15 +862,17 @@ jobs:
         # Install Node.js and Emscripten
         source .ci/scripts/setup-emscripten.sh
 
+        npm install -g pnpm
+
         # Test selective build
         bash scripts/build_wasm_tests.sh ${{ matrix.enable-etdump }}
 
         # Install Jest
         cd cmake-out-wasm/extension/wasm/test
-        npm install --save-dev jest
+        pnpm add -D jest --ignore-scripts
 
         # Run unit test
-        npm test
+        pnpm test
 
   unittest-nxp-neutron:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
