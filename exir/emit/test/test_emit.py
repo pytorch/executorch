@@ -812,6 +812,198 @@ class TestEmit(unittest.TestCase):
         outputs = loaded_model(inputs)[0]
         torch.allclose(outputs, f(*inputs))
 
+    def test_emit_scan_basic(self) -> None:
+        """Test basic scan emission: verifies instruction structure for cumulative sum."""
+
+        class ScanCumSum(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return torch.scan(combine_fn, init, xs)
+
+        f = ScanCumSum()
+        inputs = (torch.arange(5).float().unsqueeze(1).expand(5, 3),)
+
+        module = to_edge(
+            export(f, inputs, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        program = module.to_executorch().executorch_program
+
+        op_table = program.execution_plan[0].operators
+        instructions = program.execution_plan[0].chains[0].instructions
+
+        # Verify the instruction structure for scan:
+        # 1. First instruction should be sym_size to get scan length
+        self.assertEqual(
+            op_table[instructions[0].instr_args.op_index].name,
+            "aten::sym_size",
+        )
+
+        # 2. Should have copy_ instructions to initialize carry from init
+        copy_found = False
+        for instr in instructions:
+            if hasattr(instr.instr_args, "op_index"):
+                op_name = op_table[instr.instr_args.op_index].name
+                if op_name == "aten::copy_":
+                    copy_found = True
+                    break
+        self.assertTrue(copy_found, "Should have aten::copy_ for carry initialization")
+
+        # 3. Should have select_copy to slice xs
+        select_copy_found = False
+        for instr in instructions:
+            if hasattr(instr.instr_args, "op_index"):
+                op_name = op_table[instr.instr_args.op_index].name
+                if op_name == "aten::select_copy":
+                    select_copy_found = True
+                    break
+        self.assertTrue(select_copy_found, "Should have select_copy for xs slicing")
+
+        # 4. Should have et_copy_index to accumulate y outputs
+        et_copy_index_found = False
+        for instr in instructions:
+            if hasattr(instr.instr_args, "op_index"):
+                op_name = op_table[instr.instr_args.op_index].name
+                if op_name == "executorch_prim::et_copy_index":
+                    et_copy_index_found = True
+                    break
+        self.assertTrue(
+            et_copy_index_found, "Should have et_copy_index for y accumulation"
+        )
+
+        # 5. Loop control: should have add, eq for iteration control
+        add_found = False
+        eq_found = False
+        for instr in instructions:
+            if hasattr(instr.instr_args, "op_index"):
+                op_name = op_table[instr.instr_args.op_index].name
+                if op_name == "executorch_prim::add":
+                    add_found = True
+                if op_name == "executorch_prim::eq":
+                    eq_found = True
+        self.assertTrue(
+            add_found, "Should have executorch_prim::add for iter increment"
+        )
+        self.assertTrue(
+            eq_found, "Should have executorch_prim::eq for completion check"
+        )
+
+        # 6. Should have JumpFalseCall for loop back
+        jump_false_found = False
+        for instr in instructions:
+            if isinstance(instr.instr_args, JumpFalseCall):
+                jump_false_found = True
+                break
+        self.assertTrue(jump_false_found, "Should have JumpFalseCall for loop control")
+
+        # 7. Last instruction should be sub to reset iter_idx
+        self.assertEqual(
+            op_table[instructions[-1].instr_args.op_index].name,
+            "executorch_prim::sub",
+        )
+
+    def test_load_emit_scan(self) -> None:
+        """Test that scan program can be loaded by the runtime."""
+
+        class ScanCumSum(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return torch.scan(combine_fn, init, xs)
+
+        f = ScanCumSum()
+        inputs = (torch.arange(5).float().unsqueeze(1).expand(5, 3),)
+
+        module = to_edge(
+            export(f, inputs, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        # This should not raise - verifies the program is loadable
+        _load_for_executorch_from_buffer(module.to_executorch().buffer)
+
+    def test_run_emit_scan_cumsum(self) -> None:
+        """Test scan execution correctness: cumulative sum."""
+
+        class ScanCumSum(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return torch.scan(combine_fn, init, xs)
+
+        f = ScanCumSum()
+        inputs = (torch.arange(5).float().unsqueeze(1).expand(5, 3),)
+
+        module = to_edge(
+            export(f, inputs, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        buffer = module.to_executorch().buffer
+        loaded_model = _load_for_executorch_from_buffer(buffer)
+
+        # Run through executorch
+        et_outputs = loaded_model(inputs)
+
+        # Run through eager PyTorch
+        eager_outputs = f(*inputs)
+
+        # Compare final carry
+        self.assertTrue(
+            torch.allclose(et_outputs[0], eager_outputs[0]),
+            f"Final carry mismatch: {et_outputs[0]} vs {eager_outputs[0]}",
+        )
+
+        # Compare stacked outputs
+        self.assertTrue(
+            torch.allclose(et_outputs[1], eager_outputs[1]),
+            f"Stacked outputs mismatch: {et_outputs[1]} vs {eager_outputs[1]}",
+        )
+
+    def test_emit_scan_add_mul(self) -> None:
+        """Test scan with add operation in combine_fn."""
+
+        class ScanAddMul(torch.nn.Module):
+            def forward(
+                self, xs: torch.Tensor, y: torch.Tensor
+            ) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    # Multiply carry by 2 and add x
+                    new_carry = carry * 2 + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return torch.scan(combine_fn, init, xs)
+
+        f = ScanAddMul()
+        inputs = (torch.ones(4, 3), torch.ones(3))
+
+        module = to_edge(
+            export(f, inputs, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        program = module.to_executorch().executorch_program
+
+        # Verify we have the expected operators
+        op_names = [op.name for op in program.execution_plan[0].operators]
+
+        # Should have mul and add operations from the combine_fn body
+        self.assertIn("aten::mul", op_names)
+        self.assertIn("aten::add", op_names)
+
+        # Should have scan control flow operators
+        self.assertIn("aten::sym_size", op_names)
+        self.assertIn("aten::select_copy", op_names)
+        self.assertIn("executorch_prim::et_copy_index", op_names)
+
     def test_dim_order(self) -> None:
         class SimpleLinear(torch.nn.Module):
             def __init__(self) -> None:

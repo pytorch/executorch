@@ -142,6 +142,74 @@ class SpecPropPass(ExportPass):
         meta["spec"] = pytree.tree_map(make_spec, map_fake_tensor)
         return super().call_map(f, mapped_args, operands, meta)
 
+    def call_scan(
+        self,
+        combine_fn: torch.fx.GraphModule,
+        init: List[ProxyValue],
+        xs: List[ProxyValue],
+        additional_inputs: List[ProxyValue],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        """
+        Propagate specs for scan higher-order operation.
+
+        Scan returns (final_carry, stacked_outputs) where:
+        - final_carry: Same shape as init (NOT stacked, just the final carry state)
+        - stacked_outputs: Outputs stacked along dim 0 with scan_length
+
+        The combine_fn signature is:
+            combine_fn(*init, *xs_slice, *additional_inputs) -> (*next_carry, *y_slice)
+
+        So the combine_fn outputs are split into:
+        - First len(init) outputs: carry values (same shape as init)
+        - Remaining outputs: y values (to be stacked)
+
+        Memory Layout Note:
+        The specs created here are for the FINAL outputs of the scan operation:
+        - carry specs: Working carry buffers that persist across iterations.
+          These are SEPARATE from combine_fn's output buffers. The emitter
+          must copy from combine_fn's temporary carry output to these buffers
+          after each iteration (in-place op.out(x, out=x) is unsafe).
+        - y specs: Pre-allocated stacked buffers filled via et_copy_index.
+
+        The combine_fn's internal temporary buffers are allocated separately
+        via memory planning with alloc_graph_input=True, alloc_graph_output=True.
+        """
+        # Get scan length from first xs tensor
+        scan_length = [arg.data for arg in xs][0].size(0)
+
+        # Get the output node from combine_fn
+        *_, body_out_node = combine_fn.graph.nodes
+        body_out_fake = body_out_node.meta["val"]
+
+        # The combine_fn outputs are: (*next_carry, *y_slice)
+        # Split them based on the number of init values
+        num_carry = len(init)
+
+        # Flatten the outputs to handle them uniformly
+        flat_body_out, out_spec = pytree.tree_flatten(body_out_fake)
+
+        # Split into carry outputs and y outputs
+        carry_out = flat_body_out[:num_carry]
+        y_out = flat_body_out[num_carry:]
+
+        # Create specs:
+        # - Carry: same shape as combine_fn output (NOT stacked)
+        #   These are working buffers that get updated each iteration
+        # - Y: stacked along dim 0 with scan_length
+        carry_fake = carry_out  # Carry keeps same shape
+
+        y_fake = [
+            x.new_empty(scan_length, *x.shape) if isinstance(x, torch.Tensor) else x
+            for x in y_out
+        ]
+
+        # Combine carry and stacked y outputs
+        combined_fake = carry_fake + y_fake
+
+        meta["spec"] = pytree.tree_map(make_spec, combined_fake)
+        return super().call_scan(combine_fn, init, xs, additional_inputs, meta)
+
     # pyre-ignore
     def call_delegate(self, lowered_module, args, kwargs, meta):
         args_data, kwargs_data = pytree.tree_map_only(
