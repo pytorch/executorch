@@ -13,8 +13,8 @@
 """Ahead-of-time Arm VGF backend built on the shared TOSA pipeline."""
 
 import logging
-import os
-import subprocess
+import os  # nosec B404 - used alongside subprocess for tool invocation
+import subprocess  # nosec B404 - required to drive external converter CLI
 import tempfile
 from typing import final, List
 
@@ -150,7 +150,7 @@ def vgf_compile(
             f"{converter_binary} {additional_flags} -i {tosa_path} -o {vgf_path}"
         )
         try:
-            subprocess.run(
+            subprocess.run(  # nosec B602 - shell invocation constrained to trusted converter binary
                 [conversion_command], shell=True, check=True, capture_output=True
             )
         except subprocess.CalledProcessError as process_error:
@@ -164,7 +164,9 @@ def vgf_compile(
             logger.info(f"Emitting debug output to: {vgf_path=}")
             os.makedirs(artifact_path, exist_ok=True)
             cp = f"cp {vgf_path} {artifact_path}"
-            subprocess.run(cp, shell=True, check=True, capture_output=False)
+            subprocess.run(  # nosec B602 - shell copy of trusted artifact for debugging
+                cp, shell=True, check=True, capture_output=False
+            )
 
         vgf_bytes = open(vgf_path, "rb").read()
         return vgf_bytes
