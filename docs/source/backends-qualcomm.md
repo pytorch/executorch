@@ -290,7 +290,7 @@ The model, inputs, and output location are passed to `qnn_executorch_runner` by 
 
 ### Run [Android LlamaDemo](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android/LlamaDemo) with QNN backend
 
-`$DEMO_APP` refers to the root of executorch android demo root, i.e., the directory containing `build.gradle.kts`.
+`$DEMO_APP` refers to the root of the executorch android demo, i.e., the directory containing `build.gradle.kts`.
 
 ***Step 1***: Rebuild ExecuTorch AAR
 
