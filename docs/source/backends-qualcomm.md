@@ -347,7 +347,7 @@ adb push tokenizer.bin /data/local/tmp/llama
 ```bash
 # Check for debug strings in the AAR
 unzip -p $DEMO_APP/app/libs/executorch.aar jni/arm64-v8a/libexecutorch.so | \
-  strings | grep "YOUR DEBUG INFO"
+  strings | grep "QNN"   # Replace "QNN" with your actual debug string if needed
 ```
 
 If found, your changes are in the AAR.
