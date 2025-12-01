@@ -329,7 +329,7 @@ adb push model.pte /data/local/tmp/llama
 adb push tokenizer.bin /data/local/tmp/llama
 ```
 
-***Step 5***: Run the Llama Demo
+***Step 6***: Run the Llama Demo
 
 - Open the App on Android
 - Select `QUALCOMM` backend
