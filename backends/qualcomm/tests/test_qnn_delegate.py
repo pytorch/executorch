@@ -2054,6 +2054,39 @@ class TestQNNQuantizedOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(converted, sample_input)
 
+    def test_qnn_backend_16a4w_block_conv2d_qat(self):
+        in_c = 512
+        out_c = 32
+        kernel = 1
+        padding = 0
+        modules = [
+            Conv2dSingle(  # noqa: F405
+                in_channel=in_c,
+                out_channel=out_c,
+                kernel_size=kernel,
+                padding=padding,
+            ),
+            Conv2dSingle(  # noqa: F405
+                in_channel=in_c,
+                out_channel=out_c,
+                kernel_size=kernel,
+                padding=padding,
+            ),
+        ]  # noqa: F405
+        sample_input = (torch.randn([1, 512, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                prepared = self.get_prepared_qat_module(
+                    module,
+                    sample_input,
+                    quant_dtype=QuantDtype.use_16a4w_block,
+                    block_size_map={"conv2d": (1, 32, 1, 1)},
+                )
+                converted = self.get_converted_sgd_trained_module(
+                    module, prepared, sample_input
+                )
+                self.lower_module_and_test_output(converted, sample_input)
+
     def test_qnn_backend_16a4w_layer_norm(self):
         module = LayerNorm()  # noqa: F405
         sample_input = (torch.randn(196, 768),)
