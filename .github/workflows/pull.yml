@@ -861,8 +861,8 @@ jobs:
 
         # Install Node.js and Emscripten
         source .ci/scripts/setup-emscripten.sh
-
-        npm install -g pnpm@10.24.0
+        
+        npm install -g pnpm@10.24.0 --ignore-scripts
 
         # Test selective build
         bash scripts/build_wasm_tests.sh ${{ matrix.enable-etdump }}
