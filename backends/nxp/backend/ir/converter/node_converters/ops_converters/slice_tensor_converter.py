@@ -18,6 +18,7 @@ from executorch.backends.nxp.backend.neutron_operator_support import (
     transposition_is_supported_on_neutron,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -36,8 +37,18 @@ class SliceTensorConverter(NodeConverter):
             return False
 
         input_shape = input_tensor(node, 0).shape
-        input_rank = len(input_shape)
         dim = node.args[1]
+        if node.args[0].meta[NXP_NODE_FORMAT].is_channels_first():
+            dim = translator.create_channels_last_to_channels_first_permutation(
+                len(input_shape)
+            )[dim]
+            input_shape = translator.apply_permutation_to(
+                input_shape,
+                translator.create_channels_first_to_channels_last_permutation(
+                    len(input_shape)
+                ),
+            )
+        input_rank = len(input_shape)
 
         # Slicing is only allowed along the channel dimension.
         # Therefore, we must verify that Neutron supports swapping the channel dimension
