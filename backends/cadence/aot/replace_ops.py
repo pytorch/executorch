@@ -21,7 +21,6 @@ import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import (
     get_shape,
-    get_tensor_from_attr,
     get_zero_point,
     is_node_with_op,
     quantize_tensor_multiplier,
@@ -321,90 +320,106 @@ class ReplaceMMWithAddMMPass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class ReplaceAddMMWithLinearPass(ExportPass):
+class ReplaceAddMMWithLinearPass(RemoveOrReplacePassInterface):
     """
     This pass replaces addmm with linear op.
+
+    AddMM computes: beta*bias + alpha*mm(mat1, mat2)
+    Linear computes: mat1 @ weight.T + bias
+
     """
 
-    def __init__(self):
-        super().__init__()
-        self.counter = 0
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.addmm.default]
 
-    def replace_addmm_with_linear(self, graph_module: torch.fx.GraphModule):
-        graph = graph_module.graph
-        for node in graph.nodes:
-            # We are only interested in admm nodes
-            if node.target != exir_ops.edge.aten.addmm.default:
-                continue
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # The addmm op has three concrete args: bias, mat1, mat2
+        assert len(node.args) >= 3
+        (bias, mat1, mat2) = node.args[0:3]
 
-            # The addmm op has three concrete args: input, mat1, mat2
-            assert len(node.args) >= 3
-            (bias, mat1, mat2) = node.args[0:3]
-            # The other two args are optional scale args
-            beta = node.kwargs.get("beta", 1.0)
-            alpha = node.kwargs.get("alpha", 1.0)
+        # The other two args are optional scale args
+        beta = float(node.kwargs.get("beta", 1.0))
+        alpha = float(node.kwargs.get("alpha", 1.0))
 
-            # AddMM performs beta*bias + alpha*mm(mat1, mat2). We can convert
-            # it to linear op by multiplying beta to bias, and alpha to mat2.t().
-            # However, the following two conditions must hold:
-            # a. If bias is not a param, then beta must be 1.0
-            # b. If mat2 is not a param, then mat2 must be a transpose op. Also,
-            # the input to the transpose must be a param, or alpha must be 1.0.
-            fit_bias = is_node_with_op(bias, "get_attr") or beta == 1.0
-            fit_mat2 = is_node_with_op(mat2, "get_attr")
-            transposed_mat2 = False
-            if (
-                not fit_mat2
-                and is_node_with_op(mat2, "call_function")
-                and mat2.target == exir_ops.edge.aten.transpose_copy.int
-            ):
-                mat2, transposed_mat2 = mat2.args[0], True
-                fit_mat2 = is_node_with_op(mat2, "get_attr") or alpha == 1.0
+        bias, mat1, mat2 = cast(
+            tuple[torch.fx.Node, torch.fx.Node, torch.fx.Node],
+            (bias, mat1, mat2),
+        )
 
-            if not fit_bias or not fit_mat2:
-                continue
+        graph = node.graph
 
-            # Multiply bias by beta
-            if beta != 1.0:
-                assert is_node_with_op(bias, "get_attr")
-                bias_tensor = get_tensor_from_attr(graph_module, bias)
-                assert isinstance(bias_tensor, torch.Tensor)
-                bias_tensor = beta * bias_tensor
-                with graph.inserting_before(node):
-                    bias_name = f"_bias_addmm_to_linear_{self.counter}"
-                    graph_module.register_buffer(bias_name, bias_tensor)
-                    bias = graph.get_attr(bias_name)
+        # Handle transpose: if mat2 is a transpose op, extract the original tensor
+        transposed_mat2 = False
+        if (
+            mat2.op == "call_function"
+            and mat2.target == exir_ops.edge.aten.transpose_copy.int
+        ):
+            # mat2 is already transposed, so we use the input to the transpose
+            mat2 = cast(torch.fx.Node, mat2.args[0])
+            transposed_mat2 = True
 
-            # Use associativity of scalar multiplication, and multiply alpha to mat2
-            if is_node_with_op(mat2, "get_attr"):
-                mat2_tensor = get_tensor_from_attr(graph_module, mat2)
-                assert isinstance(mat2_tensor, torch.Tensor)
-                mat2_tensor = alpha * mat2_tensor
-                # transpose mat2
-                mat2_tensor = mat2_tensor if transposed_mat2 else mat2_tensor.t()
-                with graph.inserting_before(node):
-                    mat2_name = f"_mat2_addmm_to_linear_{self.counter}"
-                    graph_module.register_buffer(mat2_name, mat2_tensor)
-                    mat2 = graph.get_attr(mat2_name)
-
-            # Construct the linear node
-            linear_args = (mat1, mat2, bias)
+        # Multiply bias by beta if needed
+        if beta != 1.0:
+            # Create a scaled bias using element-wise multiplication in the graph
             with graph.inserting_before(node):
-                linear_node = graph.call_function(
-                    exir_ops.edge.aten.linear.default, args=linear_args
+                beta_scalar = graph.call_function(
+                    exir_ops.edge.aten.full.default,
+                    args=([1], beta),
+                    kwargs={"dtype": torch.float32},
                 )
-                linear_node.meta = node.meta
-            # Replace all the uses of the addmm op with linear op
-            node.replace_all_uses_with(linear_node)
-            self.counter += 1
+                beta_scalar.meta = node.meta
+                bias = graph.call_function(
+                    exir_ops.edge.aten.mul.Tensor,
+                    args=(bias, beta_scalar),
+                )
 
-        graph_module.recompile()
-        graph_module.graph.eliminate_dead_code()
+                # Metadata copy important
+                bias.meta = node.meta
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        self.replace_addmm_with_linear(graph_module)
-        result = super().call(graph_module)
-        return result
+        # Multiply mat2 by alpha if needed
+        if alpha != 1.0:
+            with graph.inserting_before(node):
+                alpha_scalar = graph.call_function(
+                    exir_ops.edge.aten.full.default,
+                    args=([1], alpha),
+                    kwargs={"dtype": torch.float32},
+                )
+                alpha_scalar.meta = node.meta
+                mat2 = graph.call_function(
+                    exir_ops.edge.aten.mul.Tensor,
+                    args=(mat2, alpha_scalar),
+                )
+
+                # Metadata copy important
+                mat2.meta = node.meta
+
+        # Transpose mat2 if it wasn't already transposed
+        if not transposed_mat2:
+            with graph.inserting_before(node):
+                mat2 = graph.call_function(
+                    exir_ops.edge.aten.transpose_copy.int,
+                    args=(mat2, -1, -2),
+                )
+
+                # Metadata copy important
+                mat2.meta = node.meta
+
+        # Construct the linear node: linear(input, weight, bias)
+        # linear computes: input @ weight.T + bias
+        linear_args = (mat1, mat2, bias)
+        with graph.inserting_before(node):
+            linear_node = graph.call_function(
+                exir_ops.edge.aten.linear.default,
+                args=linear_args,
+            )
+
+            # Metadata copy important
+            linear_node.meta = node.meta
+
+        # Replace all uses of the addmm op with linear op
+        node.replace_all_uses_with(linear_node)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
