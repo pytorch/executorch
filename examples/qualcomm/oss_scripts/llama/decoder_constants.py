@@ -14,6 +14,7 @@ VISION_ENCODER = "vision_encoder"
 TEXT_ENCODER = "text_encoder"
 TEXT_EMBEDDING = "text_embedding"
 TEXT_DECODER = "text_decoder"
+ATTENTION_SINK_EVICTOR = "attention_sink_evictor"
 
 # Text embedding graph names
 TEXT_EMBEDDING_GRAPH_NAMES = [
