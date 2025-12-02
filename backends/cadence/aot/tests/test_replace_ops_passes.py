@@ -195,15 +195,28 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self, _, shape: Tuple[int], padding: Tuple[int]
     ) -> None:
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
+        x_input = torch.randn(*shape, dtype=torch.float32)
+        x = builder.placeholder("x", x_input)
         matmul = builder.call_operator(
             op=exir_ops.edge.aten.constant_pad_nd.default,
             args=(x, [0, 0, 0, 0]),
         )
         builder.output([matmul])
         original_gm = builder.get_graph_module()
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(original_gm)
         p = ReplaceConstantPadNdWithSlicePass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate(
+            gm_before, graph_after_passes, inputs, "ReplaceConstantPadNdWithSlicePass"
+        )
+
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.slice.Tensor),
             1,
@@ -691,18 +704,19 @@ class TestReplaceOpsPasses(unittest.TestCase):
     ) -> None:
         groups = in_channels if depthwise else 1
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
-        weights = builder.placeholder(
-            "weights",
-            torch.randn([in_channels, out_channels, kernel], dtype=torch.float32),
+        x_input = torch.randn(*shape, dtype=torch.float32)
+        weights_input = torch.randn(
+            [out_channels, in_channels // groups, kernel], dtype=torch.float32
         )
-        bias = (
-            builder.placeholder(
-                "bias", torch.randn([out_channels], dtype=torch.float32)
-            )
-            if bias_enabled
-            else None
-        )
+        x = builder.placeholder("x", x_input)
+        weights = builder.placeholder("weights", weights_input)
+        bias_input = None
+        if bias_enabled:
+            bias_input = torch.randn([out_channels], dtype=torch.float32)
+            bias = builder.placeholder("bias", bias_input)
+        else:
+            bias = None
+
         convolution = builder.call_operator(
             op=exir_ops.edge.cadence.conv1d.default,
             args=(
@@ -717,8 +731,23 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         builder.output([convolution])
         original_gm = builder.get_graph_module()
+
+        gm_before = copy.deepcopy(original_gm)
         p = ReplaceConvolutionOptionalArgsWithConcreteArgsPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        inputs = [x_input, weights_input] + (
+            [bias_input] if bias_input is not None else []
+        )
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceConvolutionOptionalArgsWithConcreteArgsPass",
+        )
+
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.full.default),
             1,
@@ -764,8 +793,16 @@ class TestReplaceOpsPasses(unittest.TestCase):
             op=exir_ops.edge.aten.repeat.default,
             args=(x, [1, 2]),
         )
+
+        gm_before = copy.deepcopy(original_gm)
         p = ReplaceRepeatWithCatPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        inputs = [x]
+        validate(gm_before, graph_after_passes, inputs, "ReplaceRepeatWithCatPass")
+
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.cat.default),
             1,
@@ -1279,8 +1316,16 @@ class TestReplaceOpsPasses(unittest.TestCase):
             op=exir_ops.edge.aten.permute_copy.default,
             args=(x, dims),
         )
+
+        gm_before = copy.deepcopy(original_gm)
         p = ReplacePermuteWithTransposePass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+        inputs = [x]
+        validate(
+            gm_before, graph_after_passes, inputs, "ReplacePermuteWithTransposePass"
+        )
 
         # Assert that permute op was replaced by a transpose op
         self.assertEqual(

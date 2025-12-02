@@ -8,6 +8,7 @@ import logging
 
 import executorch.backends.cortex_m.ops.operators  # noqa: F401
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.cortex_m.passes.passes_utils import quantize_val
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -33,15 +34,13 @@ class ActivationFusionPass(ExportPass):
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten.hardtanh.default,
         exir_ops.edge.aten.hardsigmoid.default,
+        exir_ops.edge.aten.clamp.default,
     }
 
     FUSE_OPS = {
         exir_ops.edge.aten.linear.default,
         exir_ops.edge.aten.convolution.default,
     }
-
-    def _quantize(self, val, scale, zp, qmin, qmax):
-        return min(max(round(val / scale + zp), qmin), qmax)
 
     def _get_validated_qparams(self, node, input_node):
 
@@ -65,14 +64,26 @@ class ActivationFusionPass(ExportPass):
 
         match node.target:
             case exir_ops.edge.aten.relu.default:
-                quantized_min_val = self._quantize(0, scale, zp, qmin, qmax)
+                quantized_min_val = quantize_val(0, scale, zp, qmin, qmax)
                 quantized_max_val = qmax
             case exir_ops.edge.aten.hardtanh.default:
-                quantized_min_val = self._quantize(node.args[1], scale, zp, qmin, qmax)
-                quantized_max_val = self._quantize(node.args[2], scale, zp, qmin, qmax)
+                quantized_min_val = quantize_val(node.args[1], scale, zp, qmin, qmax)
+                quantized_max_val = quantize_val(node.args[2], scale, zp, qmin, qmax)
             case exir_ops.edge.aten.hardsigmoid.default:
-                quantized_min_val = self._quantize(0, scale, zp, qmin, qmax)
-                quantized_max_val = self._quantize(1, scale, zp, qmin, qmax)
+                quantized_min_val = quantize_val(0, scale, zp, qmin, qmax)
+                quantized_max_val = quantize_val(1, scale, zp, qmin, qmax)
+            case exir_ops.edge.aten.clamp.default:
+                quantized_min_val = (
+                    quantize_val(node.args[1], scale, zp, qmin, qmax)
+                    if node.args[1] is not None
+                    else qmin
+                )
+                # Last arg is removed if none, so check length of args here
+                quantized_max_val = (
+                    quantize_val(node.args[2], scale, zp, qmin, qmax)
+                    if len(node.args) == 3
+                    else qmax
+                )
             case _:
                 raise RuntimeError("Unexpected target {node.target}.")
 
