@@ -93,7 +93,9 @@ class RmsNormVisitor(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        epsilon = node.args[3]
+        epsilon = torch.finfo(torch.float32).eps
+        if len(node.args) > 3:
+            epsilon = node.args[3]
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,

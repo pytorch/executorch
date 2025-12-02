@@ -423,98 +423,120 @@ class ReplaceAddMMWithLinearPass(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class ReplacePermuteWithTransposePass(ExportPass):
+class ReplacePermuteWithTransposePass(RemoveOrReplacePassInterface):
     """
     Replace permute op with transpose if the permutation is only along
     two dimensions.
     """
 
-    def call_operator(self, op, args, kwargs, meta):
-        if op != exir_ops.edge.aten.permute_copy.default:
-            return super().call_operator(op, args, kwargs, meta)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.permute_copy.default]
 
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Get the old dim and new dim order
-        in_tensor = args[0].to_tensor()
-        old_dims = tuple(range(in_tensor.dim()))
-        new_dims = args[1]
+        in_tensor = node.args[0]
+        assert isinstance(in_tensor, torch.fx.Node)
+        in_shape = in_tensor.meta["val"].shape
+        old_dims = tuple(range(len(in_shape)))
+        new_dims = cast(Sequence[int], node.args[1])
 
         # Compute the number of positions in which the old and new order differ
         diff = [od for od, nd in zip(old_dims, new_dims) if od != nd]
 
+        # If the difference is zero, replace with identity (just the input)
+        if len(diff) == 0:
+            node.replace_all_uses_with(in_tensor)
+            return True
+
         # If the difference is in two dimensions, we can replace this permute op
         # with transpose op.
         if len(diff) == 2:
-            new_args = (args[0], diff[0], diff[1])
-            return super().call_operator(
-                exir_ops.edge.aten.transpose_copy.int, new_args, kwargs, meta
-            )
+            with node.graph.inserting_before(node):
+                new_node = node.graph.call_function(
+                    exir_ops.edge.aten.transpose_copy.int,
+                    args=(node.args[0], diff[0], diff[1]),
+                )
+                new_node.meta = node.meta
+            node.replace_all_uses_with(new_node)
+            return True
 
-        return (
-            args[0] if len(diff) == 0 else super().call_operator(op, args, kwargs, meta)
-        )
+        return False
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceConvolutionOptionalArgsWithConcreteArgsPass(ExportPass):
+class ReplaceConvolutionOptionalArgsWithConcreteArgsPass(RemoveOrReplacePassInterface):
     """
     Replace optional tensors with concrete tensors. Currently, we
     replace the optional bias tensor with a zero tensor.
     """
 
-    def call_operator(self, op, args, kwargs, meta):
-        op_packet = get_edge_overload_packet(op)
-        if op_packet not in {
-            exir_ops.edge.cadence.conv1d,
-            exir_ops.edge.cadence.conv2d,
-            exir_ops.edge.cadence.conv3d,
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
+            exir_ops.edge.cadence.conv1d.default,
+            exir_ops.edge.cadence.conv2d.default,
+            exir_ops.edge.cadence.conv3d.default,
             exir_ops.edge.cadence.transposed_convolution,
-        }:
-            return super().call_operator(op, args, kwargs, meta)
+        ]
 
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # Check if this is a transposed convolution
+        assert isinstance(node.target, EdgeOpOverload)
+        op_packet = get_edge_overload_packet(node.target)
         is_transposed = op_packet == exir_ops.edge.cadence.transposed_convolution
         num_expected_args = 9 if is_transposed else 7
-        assert len(args) == num_expected_args
-        # Check if the bias is already concrete
-        if args[2] is not None:
-            return super().call_operator(op, args, kwargs, meta)
+        assert len(node.args) == num_expected_args
+        # Check if the bias is concrete
+        if node.args[2] is not None:
+            return False
 
         # The bias length is the number of out channels.
-        out_shape = meta["val"].shape
+        out_shape = node.meta["val"].shape
         bias_size = out_shape[1]
         # Create a zero bias tensor (bias is not a constant tensor,
-        # so it needs to be the result of a graph operation).
-        zero_bias = super().call_operator(
-            exir_ops.edge.aten.full.default,
-            ([bias_size], 0.0),
-            {"dtype": torch.float32},
-            meta,
-        )
+        with node.graph.inserting_before(node):
+            zero_bias = node.graph.call_function(
+                exir_ops.edge.aten.full.default,
+                args=([bias_size], 0.0),
+                kwargs={"dtype": torch.float32},
+            )
+            zero_bias.meta = node.meta
+            new_args = list(node.args)
+            new_args[2] = zero_bias
+            new_args = tuple(new_args)
 
-        # Replace bias with zero_bias
-        args = list(args)
-        args[2] = zero_bias
-        args = tuple(args)
+            new_node = node.graph.call_function(
+                # pyre-ignore[6]: Target is a call func, but type is union call func and str
+                node.target,
+                args=new_args,
+                kwargs=node.kwargs,
+            )
+            new_node.meta = node.meta
 
-        return super().call_operator(op, args, kwargs, meta)
+        node.replace_all_uses_with(new_node)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceRepeatWithCatPass(ExportPass):
+class ReplaceRepeatWithCatPass(RemoveOrReplacePassInterface):
     """
     Replace repeat op as successive cat ops along different dimensions.
     repeat is not supported, so this is an opt_level=0 pass.
     """
 
-    def call_operator(self, op, args, kwargs, meta):
-        if op != exir_ops.edge.aten.repeat.default:
-            return super().call_operator(op, args, kwargs, meta)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.repeat.default]
 
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Extract the input tensor, and the repeats from the args
-        in_tensor = args[0]
-        repeats = args[1]
+        in_tensor = node.args[0]
+        assert isinstance(in_tensor, torch.fx.Node)
+        repeats = cast(Sequence[int], node.args[1])
 
         # Glean the shapes of input tensor
-        in_shape = list(in_tensor.to_tensor().shape)
+        in_shape = list(in_tensor.meta["val"].shape)
 
         # If the size of repeats is more than the dimensionality of the tensor,
         # the output of repeat will be a higher-dimensional tensor. We reshape
@@ -524,17 +546,20 @@ class ReplaceRepeatWithCatPass(ExportPass):
             diff >= 0
         ), "Repeat arg malformed: expected a repeat along each dimension of input tensor"
 
+        graph = node.graph
+        result_node = in_tensor
+
         if diff > 0:
             # Extend the input shape with 1's along the higher dimensions
             in_shape = ([1] * diff) + in_shape
             # Insert a view op that reshapes the input tensor to have same
             # dimensionality as the output tensor.
-            in_tensor = super().call_operator(
-                exir_ops.edge.aten.view_copy.default,
-                (in_tensor, in_shape),
-                kwargs,
-                meta,
-            )
+            with graph.inserting_before(node):
+                result_node = graph.call_function(
+                    exir_ops.edge.aten.view_copy.default,
+                    args=(in_tensor, in_shape),
+                )
+                result_node.meta = node.meta
             assert len(repeats) == len(in_shape)
 
         # Repeat op is nothing but successive cat ops along each dimension.
@@ -542,12 +567,15 @@ class ReplaceRepeatWithCatPass(ExportPass):
             # We do not need to do anything if repeat factor is 1
             if repeat == 1:
                 continue
-            cat_arg = [in_tensor] * repeat
-            in_tensor = super().call_operator(
-                exir_ops.edge.aten.cat.default, (cat_arg, dim), kwargs, meta
-            )
+            cat_arg = [result_node] * repeat
+            with graph.inserting_before(node):
+                result_node = graph.call_function(
+                    exir_ops.edge.aten.cat.default, args=(cat_arg, dim)
+                )
+                result_node.meta = node.meta
 
-        return in_tensor
+        node.replace_all_uses_with(result_node)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -632,41 +660,48 @@ class ReplacePadWithCatPass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class ReplaceConstantPadNdWithSlicePass(ExportPass):
+class ReplaceConstantPadNdWithSlicePass(RemoveOrReplacePassInterface):
     """
     Replace constant pad nd op that does padding on outer-most dimension
     with exir_ops slice(left_padding_constant_tensor, X, right_padding_constant_tensor)
     """
 
-    def call_operator(self, op, args, kwargs, meta):
-        if op != exir_ops.edge.aten.constant_pad_nd.default:
-            return super().call_operator(op, args, kwargs, meta)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.constant_pad_nd.default]
 
-        assert len(args) >= 2
-        input_node, orig_padding = args[:2]
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        assert len(node.args) >= 2
+        input_node = node.args[0]
+        orig_padding = cast(Sequence[int], node.args[1])
+        assert isinstance(input_node, torch.fx.Node)
 
         # if there is no padding, this op will be treated in removal pass.
         if not orig_padding:
-            return super().call_operator(op, args, kwargs, meta)
+            return False
 
-        padding = orig_padding + ([0] * (len(orig_padding) % 2 != 0))
+        padding = list(orig_padding) + ([0] * (len(orig_padding) % 2 != 0))
         assert len(padding) >= 2
+
+        # pyre-ignore[6]
         (start, diff) = map(neg, padding[-2:])
         # Replace only if constant_pad_nd is along the innermost padding dimension.
         if any(x != 0 for x in padding[0:-2]) or start < 0 or diff < 0:
-            return super().call_operator(op, args, kwargs, meta)
+            return False
 
-        arg_shape = input_node.to_tensor().shape
+        arg_shape = input_node.meta["val"].shape
         dim = len(arg_shape) - len(padding) // 2
         stop = arg_shape[dim] - diff
         assert start <= stop
-        new_args = (input_node, dim, start, stop)
-        return super().call_operator(
-            exir_ops.edge.aten.slice.Tensor,
-            new_args,
-            kwargs,
-            meta,
-        )
+
+        with node.graph.inserting_before(node):
+            new_node = node.graph.call_function(
+                exir_ops.edge.aten.slice.Tensor,
+                args=(input_node, dim, start, stop),
+            )
+            new_node.meta = node.meta
+        node.replace_all_uses_with(new_node)
+        return True
 
 
 # Make that pass runnable standalone at opt level 0.
