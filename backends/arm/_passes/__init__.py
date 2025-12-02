@@ -52,6 +52,7 @@ from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
 from .decompose_int16_activation_conv2d_pass import (  # noqa
     DecomposeConv2dWithInt16ActivationPass,
 )
+from .decompose_int32_clamp_pass import DecomposeInt32ClampPass  # noqa
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
