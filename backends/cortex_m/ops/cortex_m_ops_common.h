@@ -69,7 +69,7 @@ inline void validate_cmsis_nn_tensor_requirements(
         "Output must have the same sizes as inputs");
   }
 
-  // TBD: Validate dim_order
+  // TBD (#16032): Validate dim_order
   // TBD: Validate memory alignment (CMSIS-NN requirement)
 }
 
