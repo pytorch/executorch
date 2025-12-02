@@ -40,7 +40,7 @@ class GpuContextCustomConfig {
   }
   std::vector<std::unique_ptr<QnnGpuContext_CustomConfig_t>>
       gpu_context_config_;
-  const QnnExecuTorchGpuBackendOptions* gpu_options_;
+  [[maybe_unused]] const QnnExecuTorchGpuBackendOptions* gpu_options_;
 };
 
 } // namespace qnn
