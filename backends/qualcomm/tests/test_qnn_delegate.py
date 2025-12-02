@@ -8425,8 +8425,8 @@ class TestUtilsScript(TestQNN):
             sample_input = torch.randn(1, 2, 3, 4)
             sample_input2 = torch.randn(1, 2, 3, 4)
             ep = torch.export.export(
-                Sub_y_x_from_x_y(), (sample_input, sample_input2)
-            )  # noqa: F405
+                Sub_y_x_from_x_y(), (sample_input, sample_input2)  # noqa: F405
+            )
             torch.export.save(ep, f"{tmp_dir}/sub.pt2")
             torch.save(sample_input, f"{tmp_dir}/input_0_0.pt")
             torch.save(sample_input2, f"{tmp_dir}/input_0_1.pt")
