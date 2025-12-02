@@ -12,44 +12,6 @@
 namespace torch {
 namespace executor {
 
-bool check_grid_sampler_2d_args(
-    const Tensor& input,
-    const Tensor& grid,
-    const Tensor& out) {
-  // Input must be 4D (N, C, H, W)
-  ET_LOG_AND_RETURN_IF_FALSE(input.dim() == 4);
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_dim_order(input));
-
-  // Grid must be 4D (N, H_out, W_out, 2)
-  ET_LOG_AND_RETURN_IF_FALSE(grid.dim() == 4);
-  ET_LOG_AND_RETURN_IF_FALSE(grid.size(3) == 2);
-
-  // Output must be 4D (N, C, H_out, W_out)
-  ET_LOG_AND_RETURN_IF_FALSE(out.dim() == 4);
-
-  // Batch sizes must match
-  ET_LOG_AND_RETURN_IF_FALSE(input.size(0) == grid.size(0));
-  ET_LOG_AND_RETURN_IF_FALSE(input.size(0) == out.size(0));
-
-  // Channel dimension must match between input and output
-  ET_LOG_AND_RETURN_IF_FALSE(input.size(1) == out.size(1));
-
-  // Output spatial dimensions must match grid dimensions
-  ET_LOG_AND_RETURN_IF_FALSE(out.size(2) == grid.size(1));
-  ET_LOG_AND_RETURN_IF_FALSE(out.size(3) == grid.size(2));
-
-  // Input and output must have same dtype
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, out));
-
-  // Grid and input must have same dtype
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, grid));
-
-  // Output must have same dim order as input
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dim_order(input, out));
-
-  return true;
-}
-
 Error check_grid_sampler_2d_args_and_resize_out(
     const Tensor& input,
     const Tensor& grid,

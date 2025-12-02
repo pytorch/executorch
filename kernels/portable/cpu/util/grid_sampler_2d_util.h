@@ -156,12 +156,6 @@ inline scalar_t cubic_interp1d(
   return x0 * coeffs[0] + x1 * coeffs[1] + x2 * coeffs[2] + x3 * coeffs[3];
 }
 
-// Argument checking for grid_sampler_2d
-bool check_grid_sampler_2d_args(
-    const Tensor& input,
-    const Tensor& grid,
-    const Tensor& out);
-
 // Argument checking and output tensor resizing for grid_sampler_2d
 Error check_grid_sampler_2d_args_and_resize_out(
     const Tensor& input,

@@ -376,6 +376,7 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
                         self.run_executorch_test(
                             input_tensor, grid, mode, "zeros", align_corners, atol=atol
                         )
+                        print(f"  ✓ grid {i}/{mode}/align={align_corners}")
 
         print("✓ Passed exact boundary coordinate tests")
 
