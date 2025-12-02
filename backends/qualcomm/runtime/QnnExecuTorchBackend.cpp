@@ -90,7 +90,11 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
   }
 
   ET_CHECK_OR_RETURN_ERROR(
-      qnn_manager->Init() == Error::Ok,
+      qnn_manager->InitBackend() == Error::Ok,
+      Internal,
+      "Fail to initialize Qnn Manager");
+  ET_CHECK_OR_RETURN_ERROR(
+      qnn_manager->InitContext() == Error::Ok,
       Internal,
       "Fail to initialize Qnn Manager");
 

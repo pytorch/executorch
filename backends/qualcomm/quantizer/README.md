@@ -9,7 +9,7 @@ Thank you for contributing to Qualcomm AI Engine Direct delegate for ExecuTorch.
 
 ## References
 ### Qualcomm AI Engine Direct
-- [Operator Definitions for HTP](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/HtpOpDefSupplement.html)
+- [Operator Definitions for HTP](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/HtpOpDefSupplement.html)
 
 ### PyTorch
 - [ATen Operator Definitions](https://github.com/pytorch/pytorch/tree/main/aten/src/ATen/native)
@@ -66,7 +66,7 @@ def annotate_xxx(node: Node, quantization_config: QuantizationConfig) -> None:
 - __quantization_config__: data structure describing quantization configurations for IO activation / weight / bias
 
 ### Example of Conv2d Annotation
-Conv2d accepts up to three input tensors: `input activation`, `kernel`, `bias`. There are constraints imposed by [Qualcomm AI Engine Direct Manual](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/HtpOpDefSupplement.html#conv2d).<br/>
+Conv2d accepts up to three input tensors: `input activation`, `kernel`, `bias`. There are constraints imposed by [Qualcomm AI Engine Direct Manual](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/HtpOpDefSupplement.html#conv2d).<br/>
 Take 8-bit fixed point as example:
 - __weight__: must be symmetrically quantized if per-channel observer is applied
 - __bias__: must have `QNN_DATATYPE_SFIXED_POINT_32` and be symmetrically quantized with expected encoding `scales = weight.scales * input.scale`, `offset = 0` if per-channel observer is applied.
@@ -147,13 +147,13 @@ Now, we can start to fill in the function body:
 
 - Update node's meta with framework compatible data structure
     ```python
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
         )
     ```
-    After done processing `input_qspec_map`, it's required to have it in node's meta with special tag (`QUANT_ANNOTATION_KEY`) for `convert_pt2e` to properly insert observers.
+    After done processing `input_qspec_map`, it's required to have it in node's meta with special tag (`Q_ANNOTATION_KEY`) for `convert_pt2e` to properly insert observers.
 
 ### Common Annotators
 For operators without extra parameters to be observed, there are pre-defined annotation method for convenience:

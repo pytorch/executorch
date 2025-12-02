@@ -4564,10 +4564,8 @@ class TestQNNFloatingPointUtils(TestQNN):
             generate_qnn_executorch_compiler_spec(
                 soc_model=self.chipset_table[TestQNN.model],
                 backend_options=backend_options,
-                graph_name=graph_name,
             )
-            for graph_name in graph_names
-        ]
+        ] * len(graph_names)
 
         modules_dict = {}
         sample_inputs_dict = {}
@@ -4772,11 +4770,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             lowered_module = edge_prog_mgr.exported_program().graph_module._modules[
                 "lowered_module_0"
             ]
-            qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-                lowered_module.compile_specs[0].value
-            )
-            qnn_mgr.Init()
-            binary = qnn_mgr.StripProtocol(lowered_module.processed_bytes)
+            binary = PyQnnManagerAdaptor.StripProtocol(lowered_module.processed_bytes)
             validate(binary)
 
     def test_qnn_backend_dump_context_from_pte(self):
@@ -5381,10 +5375,8 @@ class TestQNNQuantizedUtils(TestQNN):
             generate_qnn_executorch_compiler_spec(
                 soc_model=self.chipset_table[TestQNN.model],
                 backend_options=backend_options,
-                graph_name=graph_name,
             )
-            for graph_name in graph_names
-        ]
+        ] * len(graph_names)
         modules_dict = {}
         sample_inputs_dict = {}
         compiler_specs_dict = {}
@@ -5599,11 +5591,7 @@ class TestQNNQuantizedUtils(TestQNN):
             lowered_module = edge_prog_mgr.exported_program().graph_module._modules[
                 "lowered_module_0"
             ]
-            qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-                lowered_module.compile_specs[0].value
-            )
-            qnn_mgr.Init()
-            binary = qnn_mgr.StripProtocol(lowered_module.processed_bytes)
+            binary = PyQnnManagerAdaptor.StripProtocol(lowered_module.processed_bytes)
             validate(binary)
 
     def test_qnn_backend_dump_context_from_pte(self):
@@ -8412,6 +8400,8 @@ class TestUtilsScript(TestQNN):
                 "--input_list",
                 f"{tmp_dir}/input_list",
             ]
+            if self.host:
+                cmds.extend(["--host", self.host])
             subprocess.run(cmds, stdout=subprocess.DEVNULL)
             self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/output_0_0.pt"))
 
