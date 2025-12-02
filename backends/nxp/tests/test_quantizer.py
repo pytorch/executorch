@@ -620,9 +620,9 @@ def test_qat_train(loss_tolerance: float = 0.02):
 
 
 def test_qat_produces_same_graph_as_ptq():
-    model = models.Conv2dModule(in_channels=8, out_channels=32, kernel_size=5)
+    model = models.MiniConvNetWithRegressionHead()
     model.eval()
-    exported_model = export(model, ((torch.randn(1, 8, 32, 32),)), strict=True)
+    exported_model = export(model, ((torch.randn(1, 3, 32, 32),)), strict=True)
 
     qat_prepared_model = _prepare_for_quantization(exported_model, is_qat=True)
     qat_quantized_model = convert_pt2e(qat_prepared_model)
