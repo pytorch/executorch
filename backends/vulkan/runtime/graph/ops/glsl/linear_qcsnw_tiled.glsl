@@ -121,17 +121,15 @@ void main() {
             packed_weight_tex = texelFetch(
               t_weight, ivec2(weight_txcol + ${c}, pos + r), 0);
 
-          const uvec4 tmp1 = packed_weight_tex >> 4;
-          qmat2[${c} * 4 * TILE_TXCOLS + 0] = T(tmp1.x);
-          qmat2[${c} * 4 * TILE_TXCOLS + 1] = T(tmp1.y);
-          qmat2[${c} * 4 * TILE_TXCOLS + 2] = T(tmp1.z);
-          qmat2[${c} * 4 * TILE_TXCOLS + 3] = T(tmp1.w);
+          qmat2[${c} * 4 * TILE_TXCOLS + 0] = T(packed_weight_tex.x >> 4);
+          qmat2[${c} * 4 * TILE_TXCOLS + 1] = T(packed_weight_tex.y >> 4);
+          qmat2[${c} * 4 * TILE_TXCOLS + 2] = T(packed_weight_tex.z >> 4);
+          qmat2[${c} * 4 * TILE_TXCOLS + 3] = T(packed_weight_tex.w >> 4);
 
-          const uvec4 tmp2 = packed_weight_tex & 0x0F;
-          qmat2[${c} * 4 * TILE_TXCOLS + 4] = T(tmp2.x);
-          qmat2[${c} * 4 * TILE_TXCOLS + 5] = T(tmp2.y);
-          qmat2[${c} * 4 * TILE_TXCOLS + 6] = T(tmp2.z);
-          qmat2[${c} * 4 * TILE_TXCOLS + 7] = T(tmp2.w);
+          qmat2[${c} * 4 * TILE_TXCOLS + 4] = T(packed_weight_tex.x & 0xF);
+          qmat2[${c} * 4 * TILE_TXCOLS + 5] = T(packed_weight_tex.y & 0xF);
+          qmat2[${c} * 4 * TILE_TXCOLS + 6] = T(packed_weight_tex.z & 0xF);
+          qmat2[${c} * 4 * TILE_TXCOLS + 7] = T(packed_weight_tex.w & 0xF);
       $else:
         $for c in range(TILE_TXCOLS):
           $if WEIGHT_STORAGE == "buffer":
