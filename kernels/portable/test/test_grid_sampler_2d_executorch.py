@@ -402,14 +402,10 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
         for grid, desc in test_cases:
             with self.subTest(desc=desc):
                 # Test with zeros padding (most common for out-of-bounds)
-                try:
-                    self.run_executorch_test(
-                        input_tensor, grid, "bilinear", "zeros", False
-                    )
-                    print(f"  ✓ {desc}")
-                except Exception as e:
-                    # Special values might cause issues, which is acceptable
-                    print(f"  ⚠ {desc}: {str(e)}")
+                self.run_executorch_test(
+                    input_tensor, grid, "bilinear", "zeros", False
+                )
+                print(f"  ✓ {desc}")
 
         print("✓ Passed special value tests")
 
