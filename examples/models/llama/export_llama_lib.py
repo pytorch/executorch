@@ -396,7 +396,6 @@ def build_args_parser() -> argparse.ArgumentParser:
         " [16] pattern specifies all layers have sliding window of 16.",
     )
 
-    parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument(
         "-X",

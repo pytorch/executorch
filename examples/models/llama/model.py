@@ -21,17 +21,6 @@ from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 from torchao.utils import TorchAOBaseTensor
 
-try:
-    from .fairseq2 import convert_to_llama_checkpoint
-
-except ImportError:
-
-    def convert_to_llama_checkpoint(**kwargs):
-        raise NotImplementedError(
-            "Please install fairseq2 with `pip install fairseq2`."
-        )
-
-
 from ..model_base import EagerModelBase
 
 
@@ -70,32 +59,9 @@ class Llama2Model(EagerModelBase):
         checkpoint = {}
         if checkpoint_path:
             checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
-
-        # If given checkpoint is fairseq, convert to llama checkpoint.
-        fairseq2_checkpoint = self.llm_config.base.fairseq2
-        if fairseq2_checkpoint:
-            print("Using fairseq2 checkpoint")
-            checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
         if "model" in checkpoint:
             # NB: some checkpoint contains a "model" field, which is the actual weights dict
             checkpoint = checkpoint["model"]
-
-        # Check if user gave a fairseq2 checkpoint unknowingly without specifying --fairseq2.
-        if (not fairseq2_checkpoint) and checkpoint.get(
-            "final_proj.weight", None
-        ) is not None:
-            raise ValueError(
-                """
-************************************************************
-This looks like a Fairseq2 checkpoint (based on the presence
-of `final_proj.weight`.
-
-You can import Fairseq2 checkpoints using the --fairseq2
-option, but --fairseq2 was not specified.  Please verify
-the checkpoint format to avoid generating faulty models.
-************************************************************
-"""
-            )
 
         # Get optional params.
         params = {}
