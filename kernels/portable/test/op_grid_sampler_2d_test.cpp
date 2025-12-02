@@ -200,6 +200,9 @@ TEST_F(OpGridSampler2dTest, BicubicSimple) {
       out);
 
   // Bicubic at center should be close to 8.5 (average of middle pixels)
+  // Note: The tolerance of 0.5 is intentionally large because the expected value (8.5)
+  // is a rough estimate (average of the middle pixels), not the exact bicubic interpolation result.
+  // Bicubic interpolation can produce values that differ from this average due to its mathematical properties.
   const auto expected = tf.make({1, 1, 1, 1}, {8.5});
   EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, 0, 0.5);
 }

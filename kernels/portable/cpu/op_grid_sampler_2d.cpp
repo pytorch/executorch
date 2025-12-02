@@ -194,8 +194,10 @@ void grid_sample_2d_nearest_kernel_impl_nchw(
               y, inp_H, padding_mode, align_corners);
 
           // Get nearest pixel coordinates
-          // Use nearbyint (not round) to match ATen's rounding behavior
-          // see: aten/src/ATen/native/GridSampler.cpp
+          // Use nearbyint (not round) to match ATen's rounding behavior.
+          // nearbyint uses the current rounding mode (typically round-to-even),
+          // which matches PyTorch's (ATen's) behavior. In contrast, round may
+          // not always respect the rounding mode. See: aten/src/ATen/native/GridSampler.cpp
           int64_t ix_nearest = static_cast<int64_t>(std::nearbyint(ix));
           int64_t iy_nearest = static_cast<int64_t>(std::nearbyint(iy));
 
@@ -213,8 +215,8 @@ void grid_sample_2d_nearest_kernel_impl_nchw(
           } else {
             // For border/reflection padding, clip coordinates after rounding
             // Rounding can push coordinates out of bounds even after grid_sampler_compute_source_index
-            ix_nearest = std::max(static_cast<int64_t>(0), std::min(ix_nearest, inp_W - 1));
-            iy_nearest = std::max(static_cast<int64_t>(0), std::min(iy_nearest, inp_H - 1));
+            ix_nearest = clip_coordinates(ix_nearest, inp_W);
+            iy_nearest = clip_coordinates(iy_nearest, inp_H);
             out_val = in_data
                 [in_channel_offset + iy_nearest * in.strides()[2] +
                  ix_nearest * in.strides()[3]];

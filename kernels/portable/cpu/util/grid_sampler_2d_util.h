@@ -17,6 +17,7 @@ namespace executor {
 
 // Ported from aten/src/ATen/native/GridSampler.h
 // note that these need to be in the SAME ORDER as the enum in GridSampler.h
+// as they are mapped to integer values (0, 1, 2) in this order
 enum class GridSamplerInterpolation {Bilinear, Nearest, Bicubic};
 enum class GridSamplerPadding {Zeros, Border, Reflection};
 

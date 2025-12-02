@@ -87,9 +87,8 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
             executorch_output = fwd_method.execute((input_tensor, grid))[0]
 
             # Compare results
-            self.assertEqual(
-                executorch_output.shape,
-                pytorch_output.shape,
+            self.assertTrue(
+                executorch_output.shape == pytorch_output.shape,
                 msg=f"Shape mismatch: ET={executorch_output.shape} vs PT={pytorch_output.shape}",
             )
 
