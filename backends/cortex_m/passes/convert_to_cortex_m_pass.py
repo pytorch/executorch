@@ -10,6 +10,7 @@ import executorch.backends.cortex_m.ops.operators  # noqa
 
 import torch
 import torch.fx
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.cortex_m.passes.passes_utils import quantize_multiplier_aot
 
 from executorch.backends.transforms.utils import (
@@ -137,7 +138,8 @@ class ConvertToCortexMPass(XNNPACKPass):
         input_zero_point = node.meta["input_qparams"][0].zp
         weight_scales = node.meta["input_qparams"][1].scale
         if not isinstance(weight_scales, list):
-            weight_scales = [weight_scales] * weight.data.shape[0]
+            weight_tensor = get_first_fake_tensor(weight)
+            weight_scales = [weight_scales] * weight_tensor.shape[0]
 
         output_qparams = node.meta["output_qparams"][0]
         output_scale = output_qparams.scale

@@ -69,11 +69,7 @@ inline void validate_cmsis_nn_tensor_requirements(
         "Output must have the same sizes as inputs");
   }
 
-  // Dim order consistency
-  ET_CHECK_MSG(
-      executorch::runtime::tensors_have_same_dim_order(input1, input2, output),
-      "Tensors must have same dimension order");
-
+  // TBD (#16032): Validate dim_order
   // TBD: Validate memory alignment (CMSIS-NN requirement)
 }
 
