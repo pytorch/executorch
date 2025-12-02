@@ -2178,15 +2178,31 @@ def conv1d_meta(
     dilation: Tuple[int],
     groups: int,
 ) -> torch.Tensor:
+    # Validate tensor dimensions
+    assert len(input.shape) == 3, f"Conv1d expects 3D input, got {len(input.shape)}D"
+    assert len(weight.shape) == 3, f"Conv1d expects 3D weight, got {len(weight.shape)}D"
+
+    # Extract dimensions
+    batch_size, in_channels, length = input.shape
+    out_channels, weight_in_channels, kernel_size = weight.shape
+
+    # Validate groups parameter and channel consistency
+    assert groups > 0, f"groups must be positive, got {groups}"
     assert (
-        len(weight.shape) == 3
-    ), f"Conv1d expects a 3D weight, got {len(weight.shape)}D"
-    out_channels, _, kernel_size = weight.shape
-    in_size = input.shape
-    assert len(in_size) == 3, f"conv1d expects 3D input, got {len(in_size)}D"
+        in_channels % groups == 0
+    ), f"in_channels ({in_channels}) must be divisible by groups ({groups})"
+    assert (
+        out_channels % groups == 0
+    ), f"out_channels ({out_channels}) must be divisible by groups ({groups})"
+
+    # Validate weight channels match input channels divided by groups
+    expected_weight_in_channels = in_channels // groups
+    assert (
+        weight_in_channels == expected_weight_in_channels
+    ), f"Expected weight to have {expected_weight_in_channels} input channels (in_channels/groups), but got {weight_in_channels}"
 
     output_size = get_conv1d_output_size(
-        in_size,
+        input.shape,
         out_channels,
         stride[0],
         padding[0],
