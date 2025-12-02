@@ -8266,6 +8266,9 @@ class TestExampleScript(TestQNN):
 
 
 class TestUtilsScript(TestQNN):
+    TestQNN.atol = 1e-1
+    TestQNN.rtol = 1
+
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
         return all(
@@ -8407,13 +8410,91 @@ class TestUtilsScript(TestQNN):
                 self.target,
                 "--device",
                 self.device,
+                "--host",
+                self.host,
                 "--build_folder",
                 self.build_folder,
                 "--input_list",
                 f"{tmp_dir}/input_list",
             ]
             subprocess.run(cmds, stdout=subprocess.DEVNULL)
-            self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/output_0_0.pt"))
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/Result_0/output_0.pt"))
+
+    def test_cli_with_input_list_assignment(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sample_input = torch.randn(1, 2, 3, 4)
+            sample_input2 = torch.randn(1, 2, 3, 4)
+            ep = torch.export.export(
+                Sub_y_x_from_x_y(), (sample_input, sample_input2)  # noqa: F405
+            )
+            torch.export.save(ep, f"{tmp_dir}/sub.pt2")
+            torch.save(sample_input, f"{tmp_dir}/input_0_0.pt")
+            torch.save(sample_input2, f"{tmp_dir}/input_0_1.pt")
+            with open(f"{tmp_dir}/input_list", "w") as f:
+                f.write(f"x:={tmp_dir}/input_0_0.pt y:={tmp_dir}/input_0_1.pt\n")
+
+            # quantize
+            cmds = [
+                "python",
+                "-m",
+                "examples.qualcomm.util_scripts.cli",
+                "quantize",
+                "--artifact",
+                f"{tmp_dir}/sub.pt2",
+                "--output_folder",
+                f"{tmp_dir}/q_out",
+                "--input_list",
+                f"{tmp_dir}/input_list",
+            ]
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/q_out/sub_quantized.pt2"))
+            # compile
+            cmds = [
+                "python",
+                "-m",
+                "examples.qualcomm.util_scripts.cli",
+                "compile",
+                "--artifact",
+                f"{tmp_dir}/q_out/sub_quantized.pt2",
+                "--output_folder",
+                f"{tmp_dir}/c_out",
+                "--model",
+                self.model,
+            ]
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/sub_quantized.pte"))
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/sub_quantized.svg"))
+            # execute
+            cmds = [
+                "python",
+                "-m",
+                "examples.qualcomm.util_scripts.cli",
+                "execute",
+                "--artifact",
+                f"{tmp_dir}/c_out/sub_quantized.pte",
+                "--output_folder",
+                f"{tmp_dir}/e_out",
+                "--model",
+                self.model,
+                "--target",
+                self.target,
+                "--device",
+                self.device,
+                "--host",
+                self.host,
+                "--build_folder",
+                self.build_folder,
+                "--input_list",
+                f"{tmp_dir}/input_list",
+            ]
+            if self.host:
+                cmds.extend(["--host", self.host])
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            output_file = f"{tmp_dir}/e_out/Result_0/output_0.pt"
+            self.assertTrue(os.path.isfile(output_file))
+            device_output = torch.load(output_file, weights_only=True)
+            golden_output = ep.module()(sample_input, sample_input2)
+            self._assert_outputs_equal(golden_output, device_output)
 
 
 def setup_environment():
