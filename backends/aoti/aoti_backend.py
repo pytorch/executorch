@@ -70,9 +70,14 @@ class AotiBackend(ABC):
 
     @classmethod
     @abstractmethod
-    def get_custom_passes(cls) -> List[typing.Any]:
+    def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
         """Return the list of custom passes to apply after ReplaceViewCopyWithViewPass and before decomposition."""
         pass
+
+    @classmethod
+    def get_extra_aoti_compile_context_manager(cls):
+        """Return extra context manager to apply during aoti_compile stage. By default returns an empty context manager."""
+        return contextlib.nullcontext()
 
     @classmethod
     @contextlib.contextmanager
@@ -149,7 +154,7 @@ class AotiBackend(ABC):
         ReplaceViewCopyWithViewPass()(device_edge_program.graph_module)
 
         # Apply custom backend-specific passes
-        custom_passes = cls.get_custom_passes()
+        custom_passes = cls.get_custom_passes(compile_specs)
         for custom_pass in custom_passes:
             custom_pass(device_edge_program.graph_module)
 
@@ -174,7 +179,7 @@ class AotiBackend(ABC):
         # Compile with fallback kernel collection
         with cls.collect_unsupported_fallback_kernels(
             missing_fallback_kernels
-        ), torch.no_grad():
+        ), torch.no_grad(), cls.get_extra_aoti_compile_context_manager():
             paths = torch._inductor.aot_compile(
                 edge_program_module, tuple(user_input_placeholders), options=options
             )
