@@ -55,6 +55,7 @@ from executorch.backends.arm._passes import (
     DecomposeGluPass,
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
+    DecomposeInt32ClampPass,
     DecomposeIntPowPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
@@ -122,7 +123,6 @@ from torch.nn.modules import Module
 
 
 class ArmPassManager(PassManager):
-
     def __init__(self, tosa_spec: TosaSpecification) -> None:
         self.tosa_spec = tosa_spec
         super().__init__()
@@ -174,6 +174,7 @@ class ArmPassManager(PassManager):
                 FuseQuantizedActivationPass(),
                 RemoveGetItemPass(),
                 ConvertToClampPass(),
+                DecomposeInt32ClampPass(),
                 DecomposeGroupNormPass(),
                 DecomposeLayerNormPass(),
                 DecomposeBatchNormNoStatsPass(),
