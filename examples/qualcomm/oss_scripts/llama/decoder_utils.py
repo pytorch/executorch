@@ -301,11 +301,13 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             SentencePieceTokenizer, TiktokenTokenizer, HuggingFaceTokenizer
         ],
         runtime_tokenizer_path,
+        rope_pte_path=None,
     ):
         self.args = args
         self.pte_path = pte_path
         self.enable_x86_64 = args.enable_x86_64
         self.max_seq_length = args.max_seq_len
+        self.enable_attention_sink = args.use_attention_sink is not None
 
         if self.enable_x86_64:
             logging.warning(
@@ -319,6 +321,7 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
         # Retrieve vocab_size from get_metadata under static_llama that is passed to edge manager
         self.output_vocab_size = None
         pte_max_seq_len = None
+        pte_max_context_len = None
         self.logits_scale = None
         self.logits_zero_point = None
         self.kv_io_bit_width = 32
@@ -330,12 +333,18 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             if method.name == "get_max_seq_len":
                 # pyre-ignore
                 pte_max_seq_len = method.values[0].val.int_val
+            if method.name == "get_max_context_len":
+                # pyre-ignore
+                pte_max_context_len = method.values[0].val.int_val
             if method.name == "get_logits_scale":
                 self.logits_scale = method.values[0].val.double_val
             if method.name == "get_logits_zero_point":
                 self.logits_zero_point = method.values[0].val.int_val
             if method.name == "get_kv_io_bit_width":
                 self.kv_io_bit_width = method.values[0].val.int_val
+
+        if pte_max_context_len is None:
+            pte_max_context_len = pte_max_seq_len
 
         # FP has no scale/zero_point, use following values, which is equivalent to not performing dequantize.
         if self.kv_io_bit_width == 32:
@@ -347,25 +356,32 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             )
 
         assert self.output_vocab_size is not None, "Couldn't find the vocab size"
-        assert pte_max_seq_len is not None, "Couldn't find the max_seq_len from pte"
-        if pte_max_seq_len != self.max_seq_length:
+        if pte_max_context_len != self.max_seq_length:
             logging.warning(
-                f"The pte provided has a max_seq_len {pte_max_seq_len}, which is different from --max_seq_len {self.max_seq_length} provided to the script, please ensure this is desired."
+                f"The pte provided has a max_context_len {pte_max_context_len}, which is different from --max_seq_len {self.max_seq_length} provided to the script, please ensure this is desired."
             )
-            if pte_max_seq_len < self.max_seq_length:
+            # If attention sink is enabled, we can use a longer sequence length than max_context_len in the PTE
+            if (
+                not self.enable_attention_sink
+                and pte_max_context_len < self.max_seq_length
+            ):
                 logging.warning(
-                    f"The pte max_seq_len {pte_max_seq_len} is used since it is shorter than --max_seq_len {self.max_seq_length}"
+                    f"The pte max_context_len {pte_max_context_len} is used since it is shorter than --max_seq_len {self.max_seq_length}"
                 )
-                self.max_seq_length = pte_max_seq_len
+                self.max_seq_length = pte_max_context_len
         self.runtime_tokenizer_path = runtime_tokenizer_path
 
         self.output_dir = args.artifact
 
         self.workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama"
+        pte_paths = [pte_path]
+        if self.enable_attention_sink:
+            pte_paths.append(rope_pte_path)
+            self.rope_pte_path = rope_pte_path
         self.adb = SimpleADB(
             qnn_sdk=os.getenv("QNN_SDK_ROOT"),
             build_path=args.build_folder,
-            pte_path=pte_path,
+            pte_path=pte_paths,
             workspace=self.workspace,
             device_id=args.device,
             host_id=args.host,
@@ -385,7 +401,7 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
         super().__init__(None, tokenizer, self.max_seq_length - 1)
 
     def _model_call(self, inps):
-
+        _, seq_len = inps.shape
         input_file_name = f"{self.args.artifact}/input_tokens.raw"
         inps = inps.to(torch.uint64).numpy()
         inps.tofile(input_file_name)
@@ -422,6 +438,11 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
                     f"--decoder_model_version {DECODER_MODEL_VERSION[self.args.decoder_model]}",
                     f"--tokenizer_path {self.runtime_tokenizer_path}",
                     f"--model_path {self.pte_path}",
+                    (
+                        f"--attention_sink_rope_path {self.rope_pte_path}"
+                        if self.enable_attention_sink
+                        else ""
+                    ),
                     f"--seq_len {self.max_seq_length}",
                     f"--output_path {self.args.artifact}/outputs/outputs.txt",
                     f"--performance_output_path {self.args.artifact}/{performance_output_path}",
@@ -448,6 +469,11 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
                     f"--decoder_model_version {DECODER_MODEL_VERSION[self.args.decoder_model]}",
                     f"--tokenizer_path {os.path.basename(self.runtime_tokenizer_path)}",
                     f"--model_path {os.path.basename(self.pte_path)}",
+                    (
+                        f"--attention_sink_rope_path {os.path.basename(self.rope_pte_path)}"
+                        if self.enable_attention_sink
+                        else ""
+                    ),
                     f"--seq_len {self.max_seq_length}",
                     f"--output_path {outputs_path}",
                     f"--performance_output_path {performance_output_path}",
@@ -465,7 +491,27 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             self.adb.push(inputs=[], files=[input_file_name], init_env=False)
             self.adb.execute(custom_runner_cmd=runner_cmd)
             self.adb.pull(output_path=self.output_dir, callback=post_process)
-        return output_tensor_list[0]
+        return output_tensor_list[0][:, :seq_len, :]
+
+
+def evict_tokens(
+    ar_len: int,
+    atten_mask: AttentionMask,
+    pos,
+    k_caches,
+    v_caches,
+    rope_module,
+    position_shift,
+):
+    max_cache_len = k_caches[0].size(-1)
+    shifted_pos = pos + position_shift
+    if shifted_pos + ar_len > max_cache_len:
+        num_to_evict = rope_module.eviction_batch_size
+        k_caches, v_caches = rope_module(k_caches, v_caches)
+        position_shift -= num_to_evict
+        shifted_pos -= num_to_evict
+        atten_mask.smart_mask_init(shifted_pos)
+    return k_caches, v_caches, position_shift
 
 
 def smart_mask_updater(
@@ -479,29 +525,30 @@ def smart_mask_updater(
     # lookahead decoding related
     lade_token_offset=None,
     lade_pos_offset=None,
+    position_shift=0,
 ):
-    # ar_len is unused in smart mask
     max_cache_len = k_caches[0].size(-1)
 
-    if pos + n_updates <= max_cache_len:
+    shifted_pos = pos + position_shift
+    if shifted_pos + n_updates <= max_cache_len:
         if lade_token_offset is not None:
             # lookahead decode update
             for i, offset in enumerate(lade_token_offset):
-                current_pos = pos + i
+                current_pos = shifted_pos + i
                 for j, (k_cache, v_cache) in enumerate(zip(k_caches, v_caches)):
                     k_cache[:, :, :, current_pos] = new_k_caches[j][:, :, :, offset]
                     v_cache[:, :, current_pos, :] = new_v_caches[j][:, :, offset, :]
         else:
             for i, k_cache in enumerate(k_caches):
-                k_cache[:, :, :, pos : pos + n_updates] = new_k_caches[i][
-                    :, :, :, :n_updates
-                ]
+                k_cache[:, :, :, shifted_pos : shifted_pos + n_updates] = new_k_caches[
+                    i
+                ][:, :, :, :n_updates]
             for i, v_cache in enumerate(v_caches):
-                v_cache[:, :, pos : pos + n_updates, :] = new_v_caches[i][
-                    :, :, :n_updates, :
-                ]
+                v_cache[:, :, shifted_pos : shifted_pos + n_updates, :] = new_v_caches[
+                    i
+                ][:, :, :n_updates, :]
 
-        atten_mask.smart_mask_update(pos, n_updates, lade_pos_offset)
+        atten_mask.smart_mask_update(shifted_pos, n_updates, lade_pos_offset)
 
     pos += n_updates
     return pos, k_caches, v_caches

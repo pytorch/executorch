@@ -104,7 +104,8 @@ class MultimodalLhdTokenGenerator
       int64_t start_pos,
       int32_t seq_len,
       std::function<void(const std::string&)> token_callback,
-      bool dump_logits) override;
+      bool dump_logits,
+      AttentionSinkRopeRunner* attention_sink_rope_runner) override;
 
  private:
   /**
