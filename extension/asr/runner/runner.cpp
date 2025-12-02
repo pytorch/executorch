@@ -16,6 +16,8 @@
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
@@ -196,6 +198,17 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
     }
   }
 
+  // Tell CUDA backend to cache encoder output (slot 0) as "encoder_output"
+  {
+    ::executorch::runtime::BackendOptions<1> opts;
+    opts.set_option("cache_output", "0:encoder_output");
+    auto err =
+        ::executorch::runtime::set_option("CudaBackend", opts.view());
+    if (err != ::executorch::runtime::Error::Ok) {
+      ET_LOG(Info, "Failed to set cache_output option (backend may not support caching)");
+    }
+  }
+
   auto encoder_result =
       module_->execute(kEncoderMethodName, preprocessed_features);
   ET_CHECK_OK_OR_RETURN_ERROR(encoder_result.error());
@@ -249,6 +262,19 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
   decoder_inputs.emplace_back(decoder_input_ptr);
   decoder_inputs.emplace_back(encoder_output_ptr);
   decoder_inputs.emplace_back(cache_position_ptr);
+
+  // Tell CUDA backend to use cached encoder output for decoder input slot 2
+  // Note: Decoder input order in AOTI is: input_ids[0], cache_position[1], encoder_output[2]
+  {
+    ::executorch::runtime::BackendOptions<1> opts;
+    opts.set_option("use_cache_input", "2:encoder_output");
+    auto err =
+        ::executorch::runtime::set_option("CudaBackend", opts.view());
+    if (err != ::executorch::runtime::Error::Ok) {
+      ET_LOG(Info, "Failed to set use_cache_input option (backend may not support caching)");
+    }
+  }
+
   // Add some green coloring for the first generated token
   // token_callback("\033[1;32m");
   while (generated_tokens < config.max_new_tokens) {
