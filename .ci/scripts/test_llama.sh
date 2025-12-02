@@ -130,7 +130,6 @@ if [[ "${MODE}" =~ .*qnn.* ]]; then
   cp schema/program.fbs exir/_serialize/program.fbs
   cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
   cp -f build-x86/backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
-  cp -f build-x86/backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
 
 else
   QNN=OFF
