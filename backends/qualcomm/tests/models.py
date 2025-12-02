@@ -1377,6 +1377,19 @@ class LiftAddTensor(torch.nn.Module):
         return x + N
 
 
+class LinalgVectorNorm(torch.nn.Module):
+    def __init__(self, ord=2.0, dim=None, keepdim=False):
+        super().__init__()
+        self.ord = ord
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.linalg.vector_norm(
+            x, ord=self.ord, dim=self.dim, keepdim=self.keepdim
+        )
+
+
 class Linear(torch.nn.Module):
     def __init__(self, use_bias: bool = True):
         super().__init__()
@@ -1404,19 +1417,6 @@ class LinearNonConstantWeight(torch.nn.Module):
         k = torch.nn.functional.linear(x, w_k, b_k)
         v = torch.nn.functional.linear(x, w_v, b_v)
         return q * k * v
-
-
-class LinalgVectorNorm(torch.nn.Module):
-    def __init__(self, ord=2.0, dim=None, keepdim=False):
-        super().__init__()
-        self.ord = ord
-        self.dim = dim
-        self.keepdim = keepdim
-
-    def forward(self, x):
-        return torch.linalg.vector_norm(
-            x, ord=self.ord, dim=self.dim, keepdim=self.keepdim
-        )
 
 
 class Log(torch.nn.Module):
