@@ -967,6 +967,116 @@ class TestEmit(unittest.TestCase):
         self.assertIn("aten::select_copy", op_names)
         self.assertIn("executorch_prim::et_copy_index", op_names)
 
+    def test_emit_scan_gru(self) -> None:
+        """Test scan with a simple GRU-like computation."""
+        from torch._higher_order_ops.scan import scan
+
+        class SimpleGRU(torch.nn.Module):
+            """Simple single-layer unidirectional GRU using scan."""
+
+            def __init__(self, input_size: int, hidden_size: int):
+                super().__init__()
+                self.input_size = input_size
+                self.hidden_size = hidden_size
+
+                # GRU gates: reset, update, new
+                self.weight_ih = torch.nn.Parameter(
+                    torch.randn(3 * hidden_size, input_size), requires_grad=False
+                )
+                self.weight_hh = torch.nn.Parameter(
+                    torch.randn(3 * hidden_size, hidden_size), requires_grad=False
+                )
+                self.bias_ih = torch.nn.Parameter(
+                    torch.randn(3 * hidden_size), requires_grad=False
+                )
+                self.bias_hh = torch.nn.Parameter(
+                    torch.randn(3 * hidden_size), requires_grad=False
+                )
+
+            def forward(
+                self, x: torch.Tensor, h0: torch.Tensor
+            ) -> Tuple[torch.Tensor, torch.Tensor]:
+                """
+                Args:
+                    x: Input tensor of shape [seq_len, batch, input_size]
+                    h0: Initial hidden state of shape [batch, hidden_size]
+                Returns:
+                    output: Output tensor of shape [seq_len, batch, hidden_size]
+                    h_n: Final hidden state of shape [batch, hidden_size]
+                """
+                weight_ih = self.weight_ih
+                weight_hh = self.weight_hh
+                bias_ih = self.bias_ih
+                bias_hh = self.bias_hh
+
+                def gru_cell(
+                    h: torch.Tensor, x_t: torch.Tensor
+                ) -> Tuple[torch.Tensor, torch.Tensor]:
+                    # Compute gates
+                    gates_ih = torch.nn.functional.linear(x_t, weight_ih, bias_ih)
+                    gates_hh = torch.nn.functional.linear(h, weight_hh, bias_hh)
+
+                    # Split into reset, update, new gates
+                    r_ih, z_ih, n_ih = gates_ih.chunk(3, dim=-1)
+                    r_hh, z_hh, n_hh = gates_hh.chunk(3, dim=-1)
+
+                    r = torch.sigmoid(r_ih + r_hh)
+                    z = torch.sigmoid(z_ih + z_hh)
+                    n = torch.tanh(n_ih + r * n_hh)
+
+                    h_new = (1 - z) * n + z * h
+                    return h_new, h_new.clone()
+
+                final_h, outputs = scan(gru_cell, h0, x)
+                return outputs, final_h
+
+        # Create model and inputs
+        input_size = 4
+        hidden_size = 8
+        seq_len = 5
+        batch_size = 2
+
+        model = SimpleGRU(input_size, hidden_size)
+        x = torch.randn(seq_len, batch_size, input_size)
+        h0 = torch.randn(batch_size, hidden_size)
+        inputs = (x, h0)
+
+        # Run through eager PyTorch
+        eager_outputs = model(*inputs)
+
+        # Export and convert to edge
+        module = to_edge(
+            export(model, inputs, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        et = module.to_executorch()
+        program = et.executorch_program
+
+        # Verify the program has expected operators
+        op_names = [op.name for op in program.execution_plan[0].operators]
+
+        # Should have scan control flow operators
+        self.assertIn("aten::sym_size", op_names)
+        self.assertIn("aten::select_copy", op_names)
+        self.assertIn("executorch_prim::et_copy_index", op_names)
+
+        # Verify we can load the program
+        buffer = et.buffer
+        loaded_model = _load_for_executorch_from_buffer(buffer)
+
+        # Run through executorch
+        et_outputs = loaded_model(inputs)
+
+        # Compare outputs (with tolerance for floating point)
+        self.assertTrue(
+            torch.allclose(et_outputs[0], eager_outputs[0], atol=1e-5),
+            f"Output mismatch: {et_outputs[0]} vs {eager_outputs[0]}",
+        )
+        self.assertTrue(
+            torch.allclose(et_outputs[1], eager_outputs[1], atol=1e-5),
+            f"Final hidden state mismatch: {et_outputs[1]} vs {eager_outputs[1]}",
+        )
+
     def test_dim_order(self) -> None:
         class SimpleLinear(torch.nn.Module):
             def __init__(self) -> None:
