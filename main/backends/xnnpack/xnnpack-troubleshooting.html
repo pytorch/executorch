@@ -1228,6 +1228,30 @@ document.write(`
 <li><p>See general performance troubleshooting tips in <a class="reference internal" href="../../using-executorch-faqs.html#inference-is-slow-performance-troubleshooting"><span class="std std-ref">Performance Troubleshooting</span></a>.</p></li>
 </ul>
 </section>
+<section id="debugging-why-nodes-are-not-partitioned">
+<h2>Debugging Why Nodes Are Not Partitioned<a class="headerlink" href="#debugging-why-nodes-are-not-partitioned" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p>To debug cases where operators are not delegated to XNNPACK,
+you can enable internal debug logs before <strong>to_edge_transform_and_lower</strong> from the partitioner. This will print diagnostic messages explaining why specific nodes fail
+to partition.</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>
+<span class="c1"># caption: Enable internal partition debug logging</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;executorch.backends.xnnpack.partition&quot;</span><span class="p">)</span>
+<span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">logger</span><span class="o">.</span><span class="n">handlers</span><span class="p">:</span>
+    <span class="n">ch</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">()</span>
+    <span class="n">ch</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
+    <span class="n">formatter</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s2">&quot;[</span><span class="si">%(levelname)s</span><span class="s2">] </span><span class="si">%(name)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">ch</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">formatter</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">ch</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
 </section>
 
 
@@ -1349,6 +1373,7 @@ document.write(`
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#xnnpack-backend-not-found">XNNPACK Backend Not Found</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#slow-performance">Slow Performance</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#debugging-why-nodes-are-not-partitioned">Debugging Why Nodes Are Not Partitioned</a></li>
 </ul>
   </nav></div>
     
@@ -1574,7 +1599,7 @@ document.write(`
        "headline": "Troubleshooting",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/backends/xnnpack/xnnpack-troubleshooting.html",
-       "articleBody": "Troubleshooting# This page describes common issues that you may encounter when using the XNNPACK backend and how to debug and resolve them. XNNPACK Backend Not Found# This error indicates the XNNPACK backend is not registered with the runtime. This can happen because the backend was not compiled or linked, or because the registration code was optimized out. The XNNPACK backend is built by default for Python, Android, iOS, and in most CMake presets. Set the EXECUTORCH_BUILD_XNNPACK=ON CMake option option when building from source. Either by passing the option during CMake configuration or setting it inside the user CMake logic before including ExecuTorch. See Building from Source. On iOS, link the backend_xnnpack framework. If the backend is still not found, link with WHOLE_ARCHIVE. Pass \"LINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend\u003e\" to target_link_libraries in CMake. Slow Performance# Try reducing the thread count using _unsafe_reset_threadpool. Small models may benefit from using fewer threads than default. Try values between 1 and 4 threads and measure performance on your model. Use op-level profiling to understand which operators are taking the most time. The XNNPACK backend provides operator-level timing for delegated operators. See general performance troubleshooting tips in Performance Troubleshooting.",
+       "articleBody": "Troubleshooting# This page describes common issues that you may encounter when using the XNNPACK backend and how to debug and resolve them. XNNPACK Backend Not Found# This error indicates the XNNPACK backend is not registered with the runtime. This can happen because the backend was not compiled or linked, or because the registration code was optimized out. The XNNPACK backend is built by default for Python, Android, iOS, and in most CMake presets. Set the EXECUTORCH_BUILD_XNNPACK=ON CMake option option when building from source. Either by passing the option during CMake configuration or setting it inside the user CMake logic before including ExecuTorch. See Building from Source. On iOS, link the backend_xnnpack framework. If the backend is still not found, link with WHOLE_ARCHIVE. Pass \"LINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend\u003e\" to target_link_libraries in CMake. Slow Performance# Try reducing the thread count using _unsafe_reset_threadpool. Small models may benefit from using fewer threads than default. Try values between 1 and 4 threads and measure performance on your model. Use op-level profiling to understand which operators are taking the most time. The XNNPACK backend provides operator-level timing for delegated operators. See general performance troubleshooting tips in Performance Troubleshooting. Debugging Why Nodes Are Not Partitioned# To debug cases where operators are not delegated to XNNPACK, you can enable internal debug logs before to_edge_transform_and_lower from the partitioner. This will print diagnostic messages explaining why specific nodes fail to partition. # caption: Enable internal partition debug logging import logging logger = logging.getLogger(\"executorch.backends.xnnpack.partition\") logger.setLevel(logging.DEBUG) if not logger.handlers: ch = logging.StreamHandler() ch.setLevel(logging.DEBUG) formatter = logging.Formatter(\"[%(levelname)s] %(name)s: %(message)s\") ch.setFormatter(formatter) logger.addHandler(ch)",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
