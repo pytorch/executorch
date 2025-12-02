@@ -6,9 +6,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/generic/operators/operators.h>
+#include <executorch/backends/cadence/generic/operators/op_im2row.h>
 
 #include <algorithm>
+
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+
+#ifndef DISABLE_ALWAYS_INLINE
+#define ALWAYS_INLINE __attribute__((always_inline))
+#else
+#define ALWAYS_INLINE inline
+#endif
 
 namespace impl {
 namespace generic {
@@ -20,7 +28,7 @@ using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 
 template <typename T>
-__attribute__((always_inline)) void im2row_(
+ALWAYS_INLINE void im2row_(
     const T* __restrict__ data_im,
     const int32_t in_zero_point,
     /* input parameters*/
@@ -76,7 +84,7 @@ __attribute__((always_inline)) void im2row_(
             // 'channels' contiguous values. Otherwise we will fill the output
             // with 0's.
             if (h_im >= 0 && w_im >= 0 && h_im < height && w_im < width) {
-              std::memcpy(slice_col, slice_im, channels * sizeof(T));
+              memcpy(slice_col, slice_im, channels * sizeof(T));
             } else {
               std::fill_n(slice_col, channels, T(in_zero_point));
             }
@@ -115,8 +123,8 @@ __attribute__((always_inline)) void im2row_(
   }
 }
 
-void im2row_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
+Tensor& im2row_out(
+    ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef kernel_size,
     IntArrayRef dilation,
@@ -170,7 +178,7 @@ void im2row_out(
         in_zero_point.const_data_ptr<int32_t>();                       \
     int32_t in_plane = in_c * in_h * in_w;                             \
     int32_t out_plane = kernel_h * kernel_w * in_c * out_h * out_w;    \
-    for (size_t n = 0; n < batch_size; ++n) {                          \
+    for (int32_t n = 0; n < batch_size; ++n) {                         \
       im2row_<ctype>(                                                  \
           &in_data[n * in_plane],                                      \
           per_tensor_quantized ? zero_point[0] : zero_point[n],        \
@@ -205,10 +213,12 @@ void im2row_out(
           torch::executor::toString(dtype));
   }
 #undef typed_im2row
+
+  return out;
 }
 
-void im2row_per_tensor_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
+Tensor& im2row_per_tensor_out(
+    ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef kernel_size,
     IntArrayRef dilation,
@@ -291,6 +301,7 @@ void im2row_per_tensor_out(
           torch::executor::toString(dtype));
   }
 #undef typed_im2row_per_tensor
+  return out;
 }
 
 } // namespace native
