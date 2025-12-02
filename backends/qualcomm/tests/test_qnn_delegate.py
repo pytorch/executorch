@@ -8585,7 +8585,7 @@ class TestUtilsScript(TestQNN):
             device_output = torch.load(output_file, weights_only=True)
             golden_output = ep.module()(sample_input, sample_input2)
             self._assert_outputs_equal(golden_output, device_output)
-    
+
     def test_custom_op(self):
         if not self.required_envs([self.op_package_dir]):
             self.skipTest("missing required envs")
@@ -8621,7 +8621,7 @@ class TestUtilsScript(TestQNN):
             p.communicate()
             msg = json.loads(conn.recv())
             self.assertTrue(msg["is_close"])
-    
+
     def test_debugger_generate_optrace(self):
         cmds = [
             "python",
@@ -8660,7 +8660,7 @@ class TestUtilsScript(TestQNN):
                     with open(qhas, "r") as qhas_file:
                         qhas_data = json.load(qhas_file)
                         self.assertIn("data", qhas_data)
-    
+
     def test_intermediate_debugger(self):
         cmds = [
             "python",
