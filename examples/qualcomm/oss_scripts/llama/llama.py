@@ -1309,15 +1309,23 @@ def export_llama(args) -> None:
             # For Gemma, use tokenizer.model as it doesn't provide pre_tokenizer in tokenizer.json.
             runtime_tokenizer_path = tokenizer_artifacts[-3]
         else:
+            if args.decoder_model == "glm-1_5b":
+                with open(tokenizer_config, "r+") as file:
+                    data = json.load(file)
+                    # Verified with HF flow and it uses <|user|> as eos condition
+                    data["bos_token"] = "<|user|>"
+                    data["eos_token"] = "<|user|>"
+                    file.seek(0)
+                    json.dump(data, file, indent=4)
+                    file.truncate()
             runtime_tokenizer_path = tokenizer_artifacts[-1]
+
         tokenizer = get_tokenizer(runtime_tokenizer_path, tokenizer_config)
 
     if args.decoder_model == "codegen2_1b":
         # Override the default BOS and EOS token IDs for codegen2_1b
         tokenizer.bos_id = 1
         tokenizer.eos_id = 2
-
-    # TODO: Remove this once error is resolved.
     elif args.decoder_model == "phi_4_mini":
         with open(runtime_tokenizer_path, "r+") as file:
             data = json.load(file)
