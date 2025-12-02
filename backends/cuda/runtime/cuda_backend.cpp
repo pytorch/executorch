@@ -200,6 +200,7 @@ class ET_EXPERIMENTAL CudaBackend final
       DelegateHandle* handle_,
       Span<EValue*> args) const override {
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
+    cudaStream_t stream = static_cast<cudaStream_t>(handle->cuda_stream);
 
     size_t n_inputs;
     handle->get_num_inputs(handle->container_handle, &n_inputs);
@@ -215,87 +216,115 @@ class ET_EXPERIMENTAL CudaBackend final
         n_outputs,
         args.size())
 
-    // NOTE: ExecuTorch tensors are always on CPU/host memory
-    // We need to create GPU copies for CUDA kernel execution
-    std::vector<AOTITensorHandle> gpu_inputs(
-        n_inputs); // GPU copies for kernel execution
-    std::vector<AOTITensorHandle> gpu_outputs(
-        n_outputs); // GPU tensors for kernel output
+    // NOTE: ExecuTorch tensors are always on CPU/host memory (pageable)
+    // We use pinned staging buffers for efficient async transfers:
+    // CPU (pageable) -> Pinned -> GPU -> Pinned -> CPU (pageable)
+    std::vector<AOTITensorHandle> pinned_inputs(n_inputs);
+    std::vector<AOTITensorHandle> gpu_inputs(n_inputs);
+    std::vector<AOTITensorHandle> gpu_outputs(n_outputs);
+    std::vector<AOTITensorHandle> pinned_outputs(n_outputs);
 
-    // Process input tensors: ExecuTorch provides CPU tensors, create GPU
-    // copies
+    // Process input tensors: create pinned staging buffers and GPU tensors
     for (int i = 0; i < n_inputs; i++) {
-      // Get tensor dimensions and properties from ExecuTorch CPU tensor
       auto cpu_tensor = &(args[i]->toTensor());
       auto sizes = cpu_tensor->sizes();
       auto scalar_type = cpu_tensor->scalar_type();
-
-      // Create GPU tensor with same shape
       std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
 
-      AOTITensorHandle gpu_input_handle;
-      Error create_err = aoti_torch_empty_strided(
-          sizes_vec.size(),
-          sizes_vec.data(),
-          nullptr, // use default strides
-          static_cast<int32_t>(scalar_type),
-          1, // device_type = cuda
-          0, // device_index = 0
-          &gpu_input_handle);
-
+      // Create pinned staging buffer
+      AOTITensorHandle pinned_input_handle;
       ET_CHECK_OR_RETURN_ERROR(
-          create_err == Error::Ok,
+          aoti_torch_empty_strided_pinned(
+              sizes_vec.size(),
+              sizes_vec.data(),
+              nullptr, // use default strides
+              static_cast<int32_t>(scalar_type),
+              &pinned_input_handle) == Error::Ok,
+          Internal,
+          "Failed to create pinned staging buffer for input %d",
+          i);
+      pinned_inputs[i] = pinned_input_handle;
+
+      // Create GPU tensor
+      AOTITensorHandle gpu_input_handle;
+      ET_CHECK_OR_RETURN_ERROR(
+          aoti_torch_empty_strided(
+              sizes_vec.size(),
+              sizes_vec.data(),
+              nullptr, // use default strides
+              static_cast<int32_t>(scalar_type),
+              1, // device_type = cuda
+              0, // device_index = 0
+              &gpu_input_handle) == Error::Ok,
           Internal,
           "Failed to create GPU tensor for input %d",
           i);
-
       gpu_inputs[i] = gpu_input_handle;
 
-      // Copy data from CPU to GPU
+      // Copy from ExecuTorch CPU to pinned buffer (fast memcpy)
+      std::memcpy(
+          pinned_inputs[i]->mutable_data_ptr(),
+          cpu_tensor->data_ptr(),
+          cpu_tensor->nbytes());
+
+      // Async copy from pinned to GPU (truly async with DMA)
       ET_CHECK_OR_RETURN_ERROR(
-          aoti_torch_copy_(gpu_inputs[i], cpu_tensor, 0) == Error::Ok,
+          aoti_torch_copy_async(gpu_inputs[i], pinned_inputs[i], stream) ==
+              Error::Ok,
           Internal,
-          "Failed to copy input %d from CPU to GPU",
+          "Failed to async copy input %d from pinned to GPU",
           i);
     }
-    // Process output tensors: create GPU counterparts for ExecuTorch CPU
-    // tensors
+
+    // Process output tensors: create GPU tensors and pinned staging buffers
     for (int i = 0; i < n_outputs; i++) {
-      // Get output tensor dimensions from ExecuTorch CPU tensor
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       auto sizes = cpu_output_tensor->sizes();
       auto scalar_type = cpu_output_tensor->scalar_type();
-
-      // Create GPU tensor with same shape for kernel output
       std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
 
+      // Create GPU tensor for kernel output
       AOTITensorHandle gpu_output_handle;
-      Error create_err = aoti_torch_empty_strided(
-          sizes_vec.size(),
-          sizes_vec.data(),
-          nullptr, // use default strides
-          static_cast<int32_t>(scalar_type),
-          1, // device_type = cuda
-          0, // device_index = 0
-          &gpu_output_handle);
-
       ET_CHECK_OR_RETURN_ERROR(
-          create_err == Error::Ok,
+          aoti_torch_empty_strided(
+              sizes_vec.size(),
+              sizes_vec.data(),
+              nullptr, // use default strides
+              static_cast<int32_t>(scalar_type),
+              1, // device_type = cuda
+              0, // device_index = 0
+              &gpu_output_handle) == Error::Ok,
           Internal,
           "Failed to create GPU tensor for output %d",
           i);
-
       gpu_outputs[i] = gpu_output_handle;
+
+      // Create pinned staging buffer for output
+      AOTITensorHandle pinned_output_handle;
+      ET_CHECK_OR_RETURN_ERROR(
+          aoti_torch_empty_strided_pinned(
+              sizes_vec.size(),
+              sizes_vec.data(),
+              nullptr, // use default strides
+              static_cast<int32_t>(scalar_type),
+              &pinned_output_handle) == Error::Ok,
+          Internal,
+          "Failed to create pinned staging buffer for output %d",
+          i);
+      pinned_outputs[i] = pinned_output_handle;
     }
+
     // Run AOTI container with GPU tensors
+    // Note: kernel is queued on the same stream as H2D copies,
+    // so it will automatically wait for copies to complete
     AOTIRuntimeError error = handle->run(
         handle->container_handle,
-        gpu_inputs.data(), // Use GPU input tensors
+        gpu_inputs.data(),
         n_inputs,
-        gpu_outputs.data(), // Use GPU output tensors
+        gpu_outputs.data(),
         n_outputs,
-        handle->cuda_stream, // Pass the actual CUDA stream
-        nullptr); // proxy_executor_handle can remain nullptr
+        handle->cuda_stream,
+        nullptr);
 
     ET_CHECK_OR_RETURN_ERROR(
         error == Error::Ok,
@@ -303,7 +332,20 @@ class ET_EXPERIMENTAL CudaBackend final
         "AOTInductorModelContainerRun failed with error code %d",
         error);
 
-    // Copy GPU output results back to CPU output tensors
+    // Async copy GPU outputs to pinned staging buffers (truly async with DMA)
+    for (int i = 0; i < n_outputs; i++) {
+      ET_CHECK_OR_RETURN_ERROR(
+          aoti_torch_copy_async(pinned_outputs[i], gpu_outputs[i], stream) ==
+              Error::Ok,
+          Internal,
+          "Failed to async copy GPU output %d to pinned buffer",
+          i);
+    }
+
+    // Synchronize stream to ensure all async operations complete
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(stream));
+
+    // Copy from pinned buffers to ExecuTorch CPU output tensors (fast memcpy)
     for (int i = 0; i < n_outputs; i++) {
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       // For DYNAMIC_BOUND tensors we try to resize
@@ -311,10 +353,10 @@ class ET_EXPERIMENTAL CudaBackend final
           resize_tensor(*cpu_output_tensor, gpu_outputs[i]->sizes()),
           "Error resizing tensor at output index %d",
           i);
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0),
-          "Failed to copy GPU output %d back to CPU",
-          i);
+      std::memcpy(
+          cpu_output_tensor->mutable_data_ptr(),
+          pinned_outputs[i]->data_ptr(),
+          pinned_outputs[i]->nbytes());
     }
 
     return Error::Ok;

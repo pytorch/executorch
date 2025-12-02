@@ -82,6 +82,34 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
     Tensor** ret_new_tensor);
 
 /**
+ * Creates an uninitialized tensor with specified dimensions and strides
+ * using pinned (page-locked) host memory.
+ *
+ * Pinned memory enables faster host-to-device and device-to-host transfers
+ * via DMA, and is required for truly asynchronous cudaMemcpyAsync operations.
+ * Use this function to create staging buffers for high-performance data
+ * transfers between CPU and GPU.
+ *
+ * Note: Pinned memory is a limited resource. Excessive allocation can degrade
+ * system performance by reducing available memory for the OS page cache.
+ *
+ * @param ndim Number of dimensions in the tensor
+ * @param sizes_ptr Pointer to array of dimension sizes
+ * @param strides_ptr Pointer to array of strides for each dimension (or
+ *        nullptr for contiguous layout)
+ * @param dtype Data type identifier (matches PyTorch scalar types)
+ * @param ret_new_tensor Output parameter for the created tensor
+ * @return AOTITorchError error code (Error::Ok on success, or an error code on
+ *         failure)
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided_pinned(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    Tensor** ret_new_tensor);
+
+/**
  * Deletes a tensor object and frees its associated memory.
  *
  * @param tensor Pointer to the tensor object to be deleted
@@ -139,6 +167,35 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
  */
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
+
+/**
+ * Asynchronously copies data from source tensor to destination tensor.
+ *
+ * This function performs an asynchronous memory copy between tensors using
+ * cudaMemcpyAsync. The copy is queued on the specified CUDA stream and returns
+ * immediately without waiting for completion.
+ *
+ * Note: For host-to-host copies, std::memcpy is used and the operation
+ * completes synchronously before returning. Stream synchronization is only
+ * required when at least one tensor resides on the GPU.
+ *
+ * Requirements:
+ * - Both tensors must have the same dtype, dimensions, and number of elements
+ * - Both tensors must have identical strides (same memory layout)
+ * - For tensors with different strides, use aoti_torch_copy_ instead
+ *
+ * @param self Destination tensor (data will be overwritten)
+ * @param src Source tensor (data will be copied from this tensor)
+ * @param stream CUDA stream on which to queue the async copy. Pass 0 or
+ *        nullptr to use the default stream. Unused for host-to-host copies.
+ *
+ * @return Error::Ok on success, appropriate error code on failure:
+ *         - Error::InvalidArgument: null pointers, dtype mismatch, numel
+ *           mismatch, dimension mismatch, or stride mismatch
+ *         - Error::Internal: CUDA operation failures
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_copy_async(Tensor* self, Tensor* src, cudaStream_t stream);
 
 /**
  * Creates a new tensor handle from an existing one.

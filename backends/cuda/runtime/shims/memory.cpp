@@ -287,6 +287,64 @@ AOTITorchError aoti_torch_empty_strided(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_empty_strided_pinned(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    Tensor** ret_new_tensor) {
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
+
+  size_t element_size = dtype_to_element_size(dtype);
+  ET_CHECK_OR_RETURN_ERROR(
+      element_size != 0,
+      InvalidArgument,
+      "Invalid element size for dtype: %d",
+      dtype);
+
+  // Calculate storage size based on strides, matching PyTorch's behavior
+  int64_t storage_size = 1;
+  for (int64_t i = 0; i < ndim; i++) {
+    if (sizes_ptr[i] == 0) {
+      storage_size = 0;
+      break;
+    }
+    int64_t stride_i = (strides_ptr != nullptr) ? strides_ptr[i] : 1;
+    if (strides_ptr == nullptr) {
+      for (int64_t j = i + 1; j < ndim; j++) {
+        stride_i *= sizes_ptr[j];
+      }
+    }
+    storage_size += stride_i * (sizes_ptr[i] - 1);
+  }
+  int64_t nbytes = storage_size * element_size;
+
+  // Allocate pinned (page-locked) host memory
+  void* ptr = nullptr;
+  ET_CUDA_CHECK_OR_RETURN_ERROR(
+      cudaMallocHost(&ptr, static_cast<size_t>(nbytes)));
+
+  // ETensor sizes and strides
+  auto sizes = convert_sizes_to_vector(ndim, sizes_ptr);
+  auto strides = convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
+
+  // Create tensor wrapping the pinned memory
+  auto tensor = make_tensor(
+      sizes,
+      ptr,
+      {}, // dim_order (empty, will be auto-generated)
+      strides,
+      dtype_to_scalar_type(dtype));
+
+  // Store the tensor so it doesn't get destroyed
+  tensors.insert(tensor);
+  *ret_new_tensor = tensor.get();
+
+  // This tensor owns the memory it allocated, set reference count to 1
+  memory_to_n_tensor[ptr] = 1;
+  return Error::Ok;
+}
+
 void clear_all_tensors() {
   // Use aoti_torch_delete_tensor_object to properly delete each tensor
   // Note: We need to collect tensor pointers first since deletion modifies the
@@ -345,22 +403,32 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
           return Error::Ok;
         } else if (ref_count == 1) {
           // Only current tensor using this memory, free it
-          // Determine if it's GPU memory
+          // Determine memory type using CUDA pointer attributes
           cudaPointerAttributes attributes{};
           ET_CUDA_CHECK_OR_RETURN_ERROR(
               cudaPointerGetAttributes(&attributes, data_ptr));
 
           if (attributes.type == cudaMemoryTypeDevice) {
+            // Device memory - use async free
             ET_CUDA_CHECK_OR_RETURN_ERROR(
                 cudaFreeAsync(data_ptr, cudaStreamDefault));
+          } else if (attributes.type == cudaMemoryTypeHost) {
+            // Host memory - check if pinned or regular
+            // Pinned memory (cudaMallocHost) has a non-null devicePointer
+            if (attributes.devicePointer != nullptr) {
+              // Pinned host memory - use cudaFreeHost
+              ET_CUDA_CHECK_OR_RETURN_ERROR(cudaFreeHost(data_ptr));
+            } else {
+              // Regular host memory - use aligned_free
+              aligned_free(data_ptr);
+            }
+            data_ptr = nullptr;
           } else {
             ET_CHECK_OR_RETURN_ERROR(
-                attributes.type != cudaMemoryTypeManaged,
+                false,
                 Internal,
-                "Expected host memory but got managed!")
-            // This is CPU memory - free immediately
-            aligned_free(data_ptr);
-            data_ptr = nullptr;
+                "Unexpected memory type: %d",
+                static_cast<int>(attributes.type));
           }
 
           // Remove from memory tracking
@@ -577,6 +645,119 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking) {
     if (need_free_dst) {
       free(dst_host_data);
     }
+  }
+
+  return Error::Ok;
+}
+
+AOTITorchError
+aoti_torch_copy_async(Tensor* self, Tensor* src, cudaStream_t stream) {
+  // Check for null pointers first
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr,
+      InvalidArgument,
+      "aoti_torch_copy_async failed: self tensor is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      src != nullptr,
+      InvalidArgument,
+      "aoti_torch_copy_async failed: src tensor is null");
+
+  // Get dtype information and validate compatibility
+  int32_t self_dtype, src_dtype;
+  aoti_torch_get_dtype(self, &self_dtype);
+  aoti_torch_get_dtype(src, &src_dtype);
+
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(self_dtype));
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(src_dtype));
+
+  // Check dtype compatibility - both tensors must have the same dtype
+  ET_CHECK_OR_RETURN_ERROR(
+      self_dtype == src_dtype,
+      InvalidArgument,
+      "dtype mismatch. self.dtype=%d, src.dtype=%d. aoti_torch_copy_async requires same dtypes",
+      self_dtype,
+      src_dtype);
+
+  // Check total number of elements compatibility
+  int64_t self_numel = self->numel();
+  int64_t src_numel = src->numel();
+
+  ET_CHECK_OR_RETURN_ERROR(
+      self_numel == src_numel,
+      InvalidArgument,
+      "numel mismatch. self.numel()=%ld, src.numel()=%ld",
+      self_numel,
+      src_numel);
+
+  // Get tensor metadata
+  int64_t* self_strides;
+  int64_t* src_strides;
+  aoti_torch_get_strides(self, &self_strides);
+  aoti_torch_get_strides(src, &src_strides);
+
+  // Check if tensors have the same number of dimensions
+  ET_CHECK_OR_RETURN_ERROR(
+      self->dim() == src->dim(),
+      InvalidArgument,
+      "dimension mismatch. self.dim()=%ld, src.dim()=%ld. aoti_torch_copy_async requires tensors with same dimensions",
+      static_cast<long>(self->dim()),
+      static_cast<long>(src->dim()));
+
+  // Check if tensors have the same strides (required for async copy)
+  bool same_strides = true;
+  for (int i = 0; i < self->dim(); i++) {
+    if (self_strides[i] != src_strides[i]) {
+      same_strides = false;
+      break;
+    }
+  }
+
+  ET_CHECK_OR_RETURN_ERROR(
+      same_strides,
+      InvalidArgument,
+      "aoti_torch_copy_async requires tensors with identical strides. Use aoti_torch_copy_ for tensors with different strides");
+
+  // Determine device locations
+  cudaPointerAttributes srcAttributes{};
+  cudaPointerAttributes dstAttributes{};
+
+  ET_CUDA_CHECK_OR_RETURN_ERROR(
+      cudaPointerGetAttributes(&srcAttributes, src->data_ptr()));
+
+  ET_CUDA_CHECK_OR_RETURN_ERROR(
+      cudaPointerGetAttributes(&dstAttributes, self->data_ptr()));
+
+  bool srcIsDevice = srcAttributes.type == cudaMemoryTypeDevice;
+  bool dstIsDevice = dstAttributes.type == cudaMemoryTypeDevice;
+
+  size_t total_bytes = src->nbytes();
+
+  // Determine copy direction and perform async copy
+  if (srcIsDevice && dstIsDevice) {
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+        self->mutable_data_ptr(),
+        src->data_ptr(),
+        total_bytes,
+        cudaMemcpyDeviceToDevice,
+        stream));
+  } else if (srcIsDevice && !dstIsDevice) {
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+        self->mutable_data_ptr(),
+        src->data_ptr(),
+        total_bytes,
+        cudaMemcpyDeviceToHost,
+        stream));
+  } else if (!srcIsDevice && dstIsDevice) {
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+        self->mutable_data_ptr(),
+        src->data_ptr(),
+        total_bytes,
+        cudaMemcpyHostToDevice,
+        stream));
+  } else {
+    // Host to host - use regular memcpy (no async benefit)
+    std::memcpy(self->mutable_data_ptr(), src->data_ptr(), total_bytes);
   }
 
   return Error::Ok;
