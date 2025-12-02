@@ -1030,9 +1030,9 @@ def quantized_conv2d_nhwc_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1074,9 +1074,9 @@ def quantized_conv2d_nchw_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1118,9 +1118,9 @@ def quantized_conv2d_nchw_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1162,9 +1162,9 @@ def quantized_conv2d_nhwc_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1211,9 +1211,9 @@ def quantized_conv2d_nchw_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1260,9 +1260,9 @@ def quantized_conv2d_nchw_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1309,9 +1309,9 @@ def quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1358,9 +1358,9 @@ def quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1407,9 +1407,9 @@ def quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1456,9 +1456,9 @@ def quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1505,9 +1505,9 @@ def quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1554,9 +1554,9 @@ def quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1605,9 +1605,9 @@ def quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1656,9 +1656,9 @@ def quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1707,9 +1707,9 @@ def quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1758,9 +1758,9 @@ def quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
