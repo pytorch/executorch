@@ -1351,9 +1351,14 @@ class TestQNNFloatingPointOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_linear(self):
-        module = Linear()  # noqa: F405
+        modules = [
+            Linear(),  # noqa: F405
+            LinearNonConstantWeight(),  # noqa: F405
+        ]
         sample_input = (torch.randn([3, 512]),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_log(self):
         module = Log()  # noqa: F405
@@ -1576,9 +1581,14 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_rms_norm(self):
-        module = RmsNorm()  # noqa: F405
-        sample_input = (torch.abs(torch.randn([1, 1, 1, 4])),)
-        self.lower_module_and_test_output(module, sample_input)
+        modules = [
+            RmsNorm(),  # noqa: F405
+            RmsNorm(eps=1e-5),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 1, 4]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_roll(self):
         modules = [
@@ -1734,6 +1744,37 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_triu(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    Triu(),  # noqa: F405
+                    Triu(diagonal=1),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(3, 3),),
+                    (torch.randn(1, 2, 3, 3),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    TriuConstant(1),  # noqa: F405
+                    TriuConstant(1, constant_dtype=torch.bool),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.zeros(5, 5),),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_unflatten(self):
         module = Unflatten(dim=1, sizes=(2, 3, 4))  # noqa: F405
@@ -3501,10 +3542,15 @@ class TestQNNQuantizedOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_linear(self):
-        module = Linear()  # noqa: F405
+        modules = [
+            Linear(),  # noqa: F405
+            LinearNonConstantWeight(),  # noqa: F405
+        ]
         sample_input = (torch.randn([3, 512]),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     @unittest.skipIf(is_qnn_sdk_version_less_than("2.30"), "UT pass after QNN 2.30")
     def test_qnn_backend_linear_block(self):
@@ -3780,12 +3826,17 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_rms_norm(self):
-        module = RmsNorm()  # noqa: F405
-        sample_input = (torch.abs(torch.randn([1, 1, 1, 4])),)
-        module = self.get_qdq_module(
-            module, sample_input, quant_dtype=QuantDtype.use_16a4w
-        )
-        self.lower_module_and_test_output(module, sample_input)
+        modules = [
+            RmsNorm(),  # noqa: F405
+            RmsNorm(eps=1e-5),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 1, 4]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    module, sample_input, quant_dtype=QuantDtype.use_16a4w
+                )
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_roll(self):
         modules = [
@@ -3966,6 +4017,38 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 qdq_module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_triu(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    Triu(),  # noqa: F405
+                    Triu(diagonal=1),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(3, 3),),
+                    (torch.randn(1, 2, 3, 3),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    TriuConstant(1),  # noqa: F405
+                    TriuConstant(1, constant_dtype=torch.bool),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.zeros((5, 5)),),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_unflatten(self):
         module = Unflatten(dim=1, sizes=(2, 3, 4))  # noqa: F405
@@ -4476,9 +4559,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             skip_node_op_set={"aten.add.Tensor"},
         )
 
-    @unittest.expectedFailure
     def test_qnn_backend_spill_fill_buffer_size(self):
-        # TODO: Fix self.assertNotEqual(0, max_sf_size)
         module = LargeTensorLinear()  # noqa: F405
         sample_input = (torch.randn(1, 256, 512),)
         backend_options = generate_htp_compiler_spec(
