@@ -338,11 +338,13 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
     }
   }
 
-  // Clear cache input settings after decoder loop completes
-  // This prevents stale cache from being used in subsequent transcribe() calls
+  // Reset cache input settings after decoder loop completes.
+  // This disables the D2D copy optimization for subsequent execute() calls.
+  // Note: The stored GPU tensor remains in memory until the next encoder run
+  // (which overwrites it) or until the backend is destroyed.
   {
     ::executorch::runtime::BackendOptions<1> opts;
-    opts.set_option("clear_cache_input", true);
+    opts.set_option("reset_cache_input", true);
     ::executorch::runtime::set_option("CudaBackend", opts.view());
   }
 
