@@ -185,7 +185,7 @@ class ET_EXPERIMENTAL CudaBackend final
                 &option.value)) {
           store_output_name_ = std::string(arr->data());
         } else {
-          ET_LOG(Warning, "store_output option expects a string value");
+          ET_LOG(Error, "store_output option expects a string value");
           return Error::InvalidArgument;
         }
       }
@@ -196,7 +196,7 @@ class ET_EXPERIMENTAL CudaBackend final
                 &option.value)) {
           use_stored_input_name_ = std::string(arr->data());
         } else {
-          ET_LOG(Warning, "use_stored_input option expects a string value");
+          ET_LOG(Error, "use_stored_input option expects a string value");
           return Error::InvalidArgument;
         }
       }
@@ -209,7 +209,7 @@ class ET_EXPERIMENTAL CudaBackend final
             use_stored_input_name_.clear();
           }
         } else {
-          ET_LOG(Warning, "reset_stored_input option expects a boolean value");
+          ET_LOG(Error, "reset_stored_input option expects a boolean value");
           return Error::InvalidArgument;
         }
       }
@@ -228,7 +228,7 @@ class ET_EXPERIMENTAL CudaBackend final
             gpu_tensors_.erase(it);
           }
         } else {
-          ET_LOG(Warning, "clear_stored_tensor option expects a string value");
+          ET_LOG(Error, "clear_stored_tensor option expects a string value");
           return Error::InvalidArgument;
         }
       }
@@ -400,6 +400,10 @@ class ET_EXPERIMENTAL CudaBackend final
     };
     TensorCleanup cleanup{gpu_inputs, gpu_outputs, gpu_tensors_};
 
+    // Track which input index was matched for D2D copy (for duplicate
+    // detection)
+    ssize_t matched_input_idx = -1;
+
     // Process input tensors: ExecuTorch provides CPU tensors, create GPU
     // copies. For stored inputs, use GPU-to-GPU copy instead of CPU-to-GPU.
     for (size_t i = 0; i < n_inputs; i++) {
@@ -424,15 +428,12 @@ class ET_EXPERIMENTAL CudaBackend final
       ET_CHECK_OR_RETURN_ERROR(
           create_err == Error::Ok,
           Internal,
-          "Failed to create GPU tensor for input %d",
+          "Failed to create GPU tensor for input %zu",
           i);
 
       gpu_inputs[i] = gpu_input_handle;
 
       // Check if this input matches a stored GPU tensor (by size).
-      // Note: Size-based matching assumes only one input will match. If
-      // multiple inputs have the same byte size as the stored tensor, the first
-      // match wins.
       if (!use_stored_input_name_.empty()) {
         auto it = gpu_tensors_.find(use_stored_input_name_);
         if (it != gpu_tensors_.end()) {
@@ -443,29 +444,45 @@ class ET_EXPERIMENTAL CudaBackend final
 
           // Match by size: use stored tensor if sizes match
           if (copy_bytes == ref.size_bytes) {
-            ET_LOG(
-                Debug,
-                "Using stored tensor '%s' for input %d (%zu bytes, D2D copy)",
-                use_stored_input_name_.c_str(),
-                i,
-                copy_bytes);
+            if (matched_input_idx >= 0) {
+              // Another input already matched - warn about ambiguity
+              ET_LOG(
+                  Error,
+                  "Multiple inputs match stored tensor '%s' size (%zu bytes): "
+                  "input %zd was used, input %zu also matches. "
+                  "Consider using unique tensor sizes or a different matching strategy.",
+                  use_stored_input_name_.c_str(),
+                  copy_bytes,
+                  matched_input_idx,
+                  i);
+            } else {
+              // First match - perform D2D copy
+              matched_input_idx = static_cast<ssize_t>(i);
 
-            // GPU-to-GPU copy: fast DMA transfer, normalizes tensor format
-            cudaError_t cuda_err = cudaMemcpy(
-                gpu_inputs[i]->data_ptr(),
-                ref.data_ptr,
-                copy_bytes,
-                cudaMemcpyDeviceToDevice);
+              ET_LOG(
+                  Debug,
+                  "Using stored tensor '%s' for input %zu (%zu bytes, D2D copy)",
+                  use_stored_input_name_.c_str(),
+                  i,
+                  copy_bytes);
 
-            ET_CHECK_OR_RETURN_ERROR(
-                cuda_err == cudaSuccess,
-                Internal,
-                "Failed GPU-to-GPU copy for input %d: %s",
-                i,
-                cudaGetErrorString(cuda_err));
+              // GPU-to-GPU copy: fast DMA transfer, normalizes tensor format
+              cudaError_t cuda_err = cudaMemcpy(
+                  gpu_inputs[i]->data_ptr(),
+                  ref.data_ptr,
+                  copy_bytes,
+                  cudaMemcpyDeviceToDevice);
 
-            // Skip the CPU-to-GPU copy below
-            continue;
+              ET_CHECK_OR_RETURN_ERROR(
+                  cuda_err == cudaSuccess,
+                  Internal,
+                  "Failed GPU-to-GPU copy for input %zu: %s",
+                  i,
+                  cudaGetErrorString(cuda_err));
+
+              // Skip the CPU-to-GPU copy below
+              continue;
+            }
           }
         }
       }
@@ -474,7 +491,7 @@ class ET_EXPERIMENTAL CudaBackend final
       ET_CHECK_OR_RETURN_ERROR(
           aoti_torch_copy_(gpu_inputs[i], cpu_tensor, 0) == Error::Ok,
           Internal,
-          "Failed to copy input %d from CPU to GPU",
+          "Failed to copy input %zu from CPU to GPU",
           i);
     }
     // Process output tensors: create GPU counterparts for ExecuTorch CPU
@@ -501,7 +518,7 @@ class ET_EXPERIMENTAL CudaBackend final
       ET_CHECK_OR_RETURN_ERROR(
           create_err == Error::Ok,
           Internal,
-          "Failed to create GPU tensor for output %d",
+          "Failed to create GPU tensor for output %zu",
           i);
 
       gpu_outputs[i] = gpu_output_handle;
@@ -563,11 +580,11 @@ class ET_EXPERIMENTAL CudaBackend final
       // For DYNAMIC_BOUND tensors we try to resize
       ET_CHECK_OK_OR_RETURN_ERROR(
           resize_tensor(*cpu_output_tensor, gpu_outputs[i]->sizes()),
-          "Error resizing tensor at output index %d",
+          "Error resizing tensor at output index %zu",
           i);
       ET_CHECK_OK_OR_RETURN_ERROR(
           aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0),
-          "Failed to copy GPU output %d back to CPU",
+          "Failed to copy GPU output %zu back to CPU",
           i);
     }
 
