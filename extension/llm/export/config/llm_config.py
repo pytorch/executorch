@@ -86,7 +86,6 @@ class BaseConfig:
             e.g. '"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
         use_lora: Only for use with QAT. Rank of the LoRA adapter, disabled
             if set to 0.
-        fairseq2: For legacy internal use cases, this is safe to ignore.
         preq_mode: Legacy option to specify how prequantized weights are loaded.
             Going forward, ExecuTorch supports loading weights prequantized through
             TorchAo as-is, without any special handling.
@@ -103,7 +102,6 @@ class BaseConfig:
     tokenizer_path: Optional[str] = None
     metadata: Optional[str] = None
     use_lora: int = 0
-    fairseq2: bool = False
     preq_mode: Optional[PreqMode] = None
     preq_group_size: int = 32
     preq_embedding_quantize: str = "8,0"
@@ -535,8 +533,6 @@ class LlmConfig:
             llm_config.base.metadata = args.metadata
         if hasattr(args, "use_lora"):
             llm_config.base.use_lora = args.use_lora
-        if hasattr(args, "fairseq2"):
-            llm_config.base.fairseq2 = args.fairseq2
 
         # PreqMode settings
         if hasattr(args, "preq_mode") and args.preq_mode:
