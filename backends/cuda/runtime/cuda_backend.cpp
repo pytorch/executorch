@@ -57,50 +57,12 @@ struct GpuTensorRef {
   size_t size_bytes;        // Total size in bytes
 };
 
-// Parses "slot:name" format string. Returns true on success.
-// Uses character-by-character parsing to avoid std::stoi exceptions.
-static bool parse_slot_name(
-    const std::string& val,
-    int& out_slot,
-    std::string& out_name) {
-  auto colon_pos = val.find(':');
-  if (colon_pos == std::string::npos || colon_pos == 0) {
-    return false;
-  }
-
-  // Parse slot number manually to avoid exceptions
-  int slot = 0;
-  for (size_t i = 0; i < colon_pos; i++) {
-    char c = val[i];
-    if (c < '0' || c > '9') {
-      return false;  // Non-digit character
-    }
-    int digit = c - '0';
-    // Check for overflow
-    if (slot > (INT_MAX - digit) / 10) {
-      return false;
-    }
-    slot = slot * 10 + digit;
-  }
-
-  std::string name = val.substr(colon_pos + 1);
-  if (name.empty()) {
-    return false;
-  }
-
-  out_slot = slot;
-  out_name = std::move(name);
-  return true;
-}
-
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
-  // Cache control options (set via set_option before execute)
-  mutable int cache_output_slot_ = -1;        // Which output slot to cache (-1 = none)
-  mutable std::string cache_output_name_;     // Name to cache output under
-  mutable int use_cache_input_slot_ = -1;     // Which input slot to use cache for (-1 = none)
-  mutable std::string use_cache_input_name_;  // Name of cached tensor to use
+  // Storage control options (set via set_option before execute)
+  mutable std::string store_output_name_;     // Name to store output under (empty = none)
+  mutable std::string use_stored_input_name_; // Name of stored tensor to use (empty = none)
 
   // Per-instance map of named GPU tensor references.
   // Mutable because execute() is const but needs to modify this.
@@ -110,7 +72,7 @@ class ET_EXPERIMENTAL CudaBackend final
   // - Caller must ensure the producing execute() call (e.g., encoder) completes
   //   before any consuming execute() call (e.g., decoder) begins.
   // - Caller must not call destroy() while execute() is in progress.
-  // - Overwriting a tensor (same cache name) deletes the old tensor immediately,
+  // - Overwriting a tensor (same name) deletes the old tensor immediately,
   //   so caller must ensure no concurrent execute() is using it.
   mutable std::unordered_map<std::string, GpuTensorRef> gpu_tensors_;
 
@@ -173,49 +135,39 @@ class ET_EXPERIMENTAL CudaBackend final
           backend_options) override {
     for (size_t i = 0; i < backend_options.size(); i++) {
       const auto& option = backend_options[i];
-      // Handle cache_output: "slot:name" format (e.g., "0:encoder_output")
-      if (strcmp(option.key, "cache_output") == 0) {
+      // Handle store_output: expects a string name (e.g., "encoder_output")
+      if (strcmp(option.key, "store_output") == 0) {
         if (auto* arr = std::get_if<
                 std::array<char, executorch::runtime::kMaxOptionValueLength>>(
                 &option.value)) {
-          std::string val(arr->data());
-          int slot;
-          std::string name;
-          if (parse_slot_name(val, slot, name)) {
-            cache_output_slot_ = slot;
-            cache_output_name_ = std::move(name);
-          } else {
-            ET_LOG(Error, "Invalid cache_output format: '%s'", val.c_str());
-            return Error::InvalidArgument;
-          }
+          store_output_name_ = std::string(arr->data());
+        } else {
+          ET_LOG(Warning, "store_output option expects a string value");
+          return Error::InvalidArgument;
         }
       }
-      // Handle use_cache_input: "slot:name" format (e.g., "2:encoder_output")
-      else if (strcmp(option.key, "use_cache_input") == 0) {
+      // Handle use_stored_input: expects a string name (e.g., "encoder_output")
+      else if (strcmp(option.key, "use_stored_input") == 0) {
         if (auto* arr = std::get_if<
                 std::array<char, executorch::runtime::kMaxOptionValueLength>>(
                 &option.value)) {
-          std::string val(arr->data());
-          int slot;
-          std::string name;
-          if (parse_slot_name(val, slot, name)) {
-            use_cache_input_slot_ = slot;
-            use_cache_input_name_ = std::move(name);
-          } else {
-            ET_LOG(Error, "Invalid use_cache_input format: '%s'", val.c_str());
-            return Error::InvalidArgument;
-          }
+          use_stored_input_name_ = std::string(arr->data());
+        } else {
+          ET_LOG(Warning, "use_stored_input option expects a string value");
+          return Error::InvalidArgument;
         }
       }
-      // Handle reset_cache_input: disable cache input for subsequent execute() calls.
-      // Note: This only resets the slot/name settings. The stored GPU tensor
+      // Handle reset_stored_input: expects a boolean value
+      // Note: This only resets the name setting. The stored GPU tensor
       // remains in memory until overwritten or destroy() is called.
-      else if (strcmp(option.key, "reset_cache_input") == 0) {
+      else if (strcmp(option.key, "reset_stored_input") == 0) {
         if (auto* val = std::get_if<bool>(&option.value)) {
           if (*val) {
-            use_cache_input_slot_ = -1;
-            use_cache_input_name_.clear();
+            use_stored_input_name_.clear();
           }
+        } else {
+          ET_LOG(Warning, "reset_stored_input option expects a boolean value");
+          return Error::InvalidArgument;
         }
       }
     }
@@ -346,28 +298,6 @@ class ET_EXPERIMENTAL CudaBackend final
         n_outputs,
         args.size())
 
-    // Validate cache slot indices if set
-    if (use_cache_input_slot_ >= 0 &&
-        use_cache_input_slot_ >= static_cast<int>(n_inputs)) {
-      ET_LOG(
-          Warning,
-          "use_cache_input slot %d is out of bounds (n_inputs=%zu), ignoring",
-          use_cache_input_slot_,
-          n_inputs);
-      use_cache_input_slot_ = -1;
-      use_cache_input_name_.clear();
-    }
-    if (cache_output_slot_ >= 0 &&
-        cache_output_slot_ >= static_cast<int>(n_outputs)) {
-      ET_LOG(
-          Warning,
-          "cache_output slot %d is out of bounds (n_outputs=%zu), ignoring",
-          cache_output_slot_,
-          n_outputs);
-      cache_output_slot_ = -1;
-      cache_output_name_.clear();
-    }
-
     // NOTE: ExecuTorch tensors are always on CPU/host memory
     // We need to create GPU copies for CUDA kernel execution
     std::vector<AOTITensorHandle> gpu_inputs(
@@ -404,40 +334,35 @@ class ET_EXPERIMENTAL CudaBackend final
 
       gpu_inputs[i] = gpu_input_handle;
 
-      // Check if this input slot should use a stored GPU tensor
-      if (i == use_cache_input_slot_ && !use_cache_input_name_.empty()) {
-        auto it = gpu_tensors_.find(use_cache_input_name_);
+      // Check if this input matches a stored GPU tensor (by size)
+      if (!use_stored_input_name_.empty()) {
+        auto it = gpu_tensors_.find(use_stored_input_name_);
         if (it != gpu_tensors_.end()) {
           const GpuTensorRef& ref = it->second;
-          // GPU-to-GPU copy: fast DMA transfer, normalizes tensor format
           size_t numel = gpu_inputs[i]->numel();
           size_t elem_size = gpu_inputs[i]->element_size();
           size_t copy_bytes = numel * elem_size;
 
-          ET_CHECK_OR_RETURN_ERROR(
-              copy_bytes == ref.size_bytes,
-              Internal,
-              "Stored tensor size mismatch: expected %zu bytes, got %zu",
-              ref.size_bytes,
-              copy_bytes);
+          // Match by size: use stored tensor if sizes match
+          if (copy_bytes == ref.size_bytes) {
+            // GPU-to-GPU copy: fast DMA transfer, normalizes tensor format
+            cudaError_t cuda_err = cudaMemcpy(
+                gpu_inputs[i]->data_ptr(),
+                ref.data_ptr,
+                copy_bytes,
+                cudaMemcpyDeviceToDevice);
 
-          cudaError_t cuda_err = cudaMemcpy(
-              gpu_inputs[i]->data_ptr(),
-              ref.data_ptr,
-              copy_bytes,
-              cudaMemcpyDeviceToDevice);
+            ET_CHECK_OR_RETURN_ERROR(
+                cuda_err == cudaSuccess,
+                Internal,
+                "Failed GPU-to-GPU copy for input %d: %s",
+                i,
+                cudaGetErrorString(cuda_err));
 
-          ET_CHECK_OR_RETURN_ERROR(
-              cuda_err == cudaSuccess,
-              Internal,
-              "Failed GPU-to-GPU copy for input %d: %s",
-              i,
-              cudaGetErrorString(cuda_err));
-
-          // Skip the CPU-to-GPU copy below
-          continue;
+            // Skip the CPU-to-GPU copy below
+            continue;
+          }
         }
-        // Not found: fall through to normal CPU-to-GPU copy
       }
 
       // Copy data from CPU to GPU (normal path)
@@ -493,16 +418,16 @@ class ET_EXPERIMENTAL CudaBackend final
         error);
 
     // Store reference to output GPU tensor if requested.
+    // Always uses gpu_outputs[0] (encoder has single output).
     // The tensor will be kept alive for later D2D copy to decoder inputs.
-    // (Bounds already validated at start of execute())
-    if (cache_output_slot_ >= 0 && !cache_output_name_.empty()) {
-      auto* gpu_tensor = gpu_outputs[cache_output_slot_];
+    if (!store_output_name_.empty() && n_outputs > 0) {
+      auto* gpu_tensor = gpu_outputs[0];
       size_t numel = gpu_tensor->numel();
       size_t elem_size = gpu_tensor->element_size();
       size_t size_bytes = numel * elem_size;
 
       // Delete old tensor if overwriting (erase first to prevent double-free)
-      auto old_it = gpu_tensors_.find(cache_output_name_);
+      auto old_it = gpu_tensors_.find(store_output_name_);
       if (old_it != gpu_tensors_.end()) {
         AOTITensorHandle old_handle = old_it->second.handle;
         gpu_tensors_.erase(old_it);  // Remove from map before deleting
@@ -516,11 +441,10 @@ class ET_EXPERIMENTAL CudaBackend final
       ref.handle = gpu_tensor;
       ref.data_ptr = gpu_tensor->data_ptr();
       ref.size_bytes = size_bytes;
-      gpu_tensors_[cache_output_name_] = ref;
+      gpu_tensors_[store_output_name_] = ref;
 
-      // Reset cache_output settings after caching
-      cache_output_slot_ = -1;
-      cache_output_name_.clear();
+      // Reset store_output name after storing
+      store_output_name_.clear();
     }
 
     // Copy GPU output results back to CPU output tensors
@@ -538,12 +462,12 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 
     // Memory management notes:
-    // - use_cache_input settings persist across execute() calls to support
+    // - use_stored_input setting persists across execute() calls to support
     //   decoder loops that reuse the stored encoder output.
     // - Stored GPU tensors (in gpu_tensors_) remain in memory until:
     //   (a) overwritten by a new tensor with the same name, or
     //   (b) destroy() is called, which frees all stored tensors.
-    // - The "reset_cache_input" option only resets the input slot/name settings,
+    // - The "reset_stored_input" option only resets the input name setting,
     //   NOT the stored GPU tensors themselves.
 
     // Cleanup: delete GPU tensors to avoid memory leak across execute() calls.

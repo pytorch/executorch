@@ -198,14 +198,14 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
     }
   }
 
-  // Tell CUDA backend to cache encoder output (slot 0) as "encoder_output"
+  // Tell CUDA backend to store encoder output as "encoder_output"
   {
     ::executorch::runtime::BackendOptions<1> opts;
-    opts.set_option("cache_output", "0:encoder_output");
+    opts.set_option("store_output", "encoder_output");
     auto err =
         ::executorch::runtime::set_option("CudaBackend", opts.view());
     if (err != ::executorch::runtime::Error::Ok) {
-      ET_LOG(Info, "Failed to set cache_output option (backend may not support caching)");
+      ET_LOG(Warning, "Failed to set store_output option (backend may not support storage)");
     }
   }
 
@@ -263,22 +263,15 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
   decoder_inputs.emplace_back(encoder_output_ptr);
   decoder_inputs.emplace_back(cache_position_ptr);
 
-  // Tell CUDA backend to use cached encoder output for decoder input slot 2.
-  //
-  // Why slot 2? The AOTI-compiled decoder receives inputs in a different order
-  // than we pass them in decoder_inputs above. The AOTI input order was
-  // determined empirically by examining tensor shapes during execution.
-  //
-  // The "2:encoder_output" format tells the backend to use the stored GPU
-  // tensor named "encoder_output" for AOTI input slot 2. This avoids redundant
-  // CPU->GPU copies on each decoder iteration.
+  // Tell CUDA backend to use stored encoder output for matching decoder inputs.
+  // The backend matches by tensor size, avoiding redundant CPU->GPU copies.
   {
     ::executorch::runtime::BackendOptions<1> opts;
-    opts.set_option("use_cache_input", "2:encoder_output");
+    opts.set_option("use_stored_input", "encoder_output");
     auto err =
         ::executorch::runtime::set_option("CudaBackend", opts.view());
     if (err != ::executorch::runtime::Error::Ok) {
-      ET_LOG(Info, "Failed to set use_cache_input option (backend may not support caching)");
+      ET_LOG(Warning, "Failed to set use_stored_input option (backend may not support storage)");
     }
   }
 
@@ -338,14 +331,18 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
     }
   }
 
-  // Reset cache input settings after decoder loop completes.
+  // Reset stored input settings after decoder loop completes.
   // This disables the D2D copy optimization for subsequent execute() calls.
   // Note: The stored GPU tensor remains in memory until the next encoder run
   // (which overwrites it) or until the backend is destroyed.
   {
     ::executorch::runtime::BackendOptions<1> opts;
-    opts.set_option("reset_cache_input", true);
-    ::executorch::runtime::set_option("CudaBackend", opts.view());
+    opts.set_option("reset_stored_input", true);
+    auto err =
+        ::executorch::runtime::set_option("CudaBackend", opts.view());
+    if (err != ::executorch::runtime::Error::Ok) {
+      ET_LOG(Warning, "Failed to set reset_stored_input option");
+    }
   }
 
   // Reset coloring
