@@ -64,9 +64,9 @@ class ET_EXPERIMENTAL CudaBackend final
   // ============================================================================
   //
   // This backend supports storing GPU tensors between execute() calls to enable
-  // device-to-device (D2D) copies instead of slower host-to-device (H2D) copies.
-  // This is useful for encoder-decoder models where the encoder output is reused
-  // across many decoder iterations.
+  // device-to-device (D2D) copies instead of slower host-to-device (H2D)
+  // copies. This is useful for encoder-decoder models where the encoder output
+  // is reused across many decoder iterations.
   //
   // SUPPORTED OPTIONS (via set_option):
   //
@@ -75,7 +75,8 @@ class ET_EXPERIMENTAL CudaBackend final
   //       Only supports single-output methods.
   //       Example: opts.set_option("store_output", "encoder_output");
   //
-  //   "use_stored_input" (string): For inputs matching the stored tensor's size,
+  //   "use_stored_input" (string): For inputs matching the stored tensor's
+  //   size,
   //       use D2D copy from the stored tensor instead of H2D copy from CPU.
   //       This setting persists across execute() calls until reset.
   //       Example: opts.set_option("use_stored_input", "encoder_output");
@@ -401,7 +402,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
     // Process input tensors: ExecuTorch provides CPU tensors, create GPU
     // copies. For stored inputs, use GPU-to-GPU copy instead of CPU-to-GPU.
-    for (int i = 0; i < n_inputs; i++) {
+    for (size_t i = 0; i < n_inputs; i++) {
       // Get tensor dimensions and properties from ExecuTorch CPU tensor
       auto cpu_tensor = &(args[i]->toTensor());
       auto sizes = cpu_tensor->sizes();
@@ -478,7 +479,7 @@ class ET_EXPERIMENTAL CudaBackend final
     }
     // Process output tensors: create GPU counterparts for ExecuTorch CPU
     // tensors
-    for (int i = 0; i < n_outputs; i++) {
+    for (size_t i = 0; i < n_outputs; i++) {
       // Get output tensor dimensions from ExecuTorch CPU tensor
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       auto sizes = cpu_output_tensor->sizes();
@@ -557,7 +558,7 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 
     // Copy GPU output results back to CPU output tensors
-    for (int i = 0; i < n_outputs; i++) {
+    for (size_t i = 0; i < n_outputs; i++) {
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       // For DYNAMIC_BOUND tensors we try to resize
       ET_CHECK_OK_OR_RETURN_ERROR(

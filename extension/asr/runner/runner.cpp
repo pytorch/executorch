@@ -333,8 +333,9 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
     }
   }
 
-  // Reset stored input settings and free GPU memory after decoder loop completes.
-  // This disables the D2D copy optimization and releases the stored encoder output.
+  // Reset stored input settings and free GPU memory after decoder loop
+  // completes. This disables the D2D copy optimization and releases the stored
+  // encoder output.
   {
     ::executorch::runtime::BackendOptions<2> opts;
     opts.set_option("reset_stored_input", true);
