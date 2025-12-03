@@ -18,9 +18,8 @@ namespace executor {
 // Ported from aten/src/ATen/native/GridSampler.h
 // note that these need to be in the SAME ORDER as the enum in GridSampler.h
 // as they are mapped to integer values (0, 1, 2) in this order
-enum class GridSamplerInterpolation {Bilinear, Nearest, Bicubic};
-enum class GridSamplerPadding {Zeros, Border, Reflection};
-
+enum class GridSamplerInterpolation { Bilinear, Nearest, Bicubic };
+enum class GridSamplerPadding { Zeros, Border, Reflection };
 
 // Ported from aten/src/ATen/native/GridSampler.h
 // Unnormalizes a coordinate from the -1 to +1 scale to its pixel index value,
@@ -34,10 +33,8 @@ enum class GridSamplerPadding {Zeros, Border, Reflection};
 //     +1 --> (size - 1) + 0.5 == size - 0.5
 //     scale_factor = size / 2
 template <typename scalar_t>
-inline scalar_t grid_sampler_unnormalize(
-    scalar_t coord,
-    int64_t size,
-    bool align_corners) {
+inline scalar_t
+grid_sampler_unnormalize(scalar_t coord, int64_t size, bool align_corners) {
   if (align_corners) {
     // unnormalize coord from [-1, 1] to [0, size - 1]
     return ((coord + 1) / 2) * (size - 1);
@@ -61,10 +58,8 @@ inline scalar_t clip_coordinates(scalar_t in, int64_t clip_limit) {
 // The bounds are passed as twice their value so that half-integer values
 // can be represented as ints.
 template <typename scalar_t>
-inline scalar_t reflect_coordinates(
-    scalar_t in,
-    int64_t twice_low,
-    int64_t twice_high) {
+inline scalar_t
+reflect_coordinates(scalar_t in, int64_t twice_low, int64_t twice_high) {
   if (twice_low == twice_high) {
     return static_cast<scalar_t>(0);
   }
@@ -120,14 +115,16 @@ inline scalar_t cubic_convolution1(scalar_t x, scalar_t A) {
 }
 
 // Ported from aten/src/ATen/native/UpSample.h
-// Cubic convolution function 2 (for points between 1 and 2 units from the point)
+// Cubic convolution function 2 (for points between 1 and 2 units from the
+// point)
 template <typename scalar_t>
 inline scalar_t cubic_convolution2(scalar_t x, scalar_t A) {
   return ((A * x - 5 * A) * x + 8 * A) * x - 4 * A;
 }
 
 // Ported from aten/src/ATen/native/UpSample.h
-// Computes the 4 cubic interpolation coefficients for a given position t in [0, 1]
+// Computes the 4 cubic interpolation coefficients for a given position t in [0,
+// 1]
 template <typename scalar_t>
 inline void get_cubic_upsample_coefficients(scalar_t coeffs[4], scalar_t t) {
   // Standard bicubic interpolation uses alpha = -0.75
@@ -145,12 +142,8 @@ inline void get_cubic_upsample_coefficients(scalar_t coeffs[4], scalar_t t) {
 // Ported from aten/src/ATen/native/UpSample.h
 // Performs 1D cubic interpolation given 4 points and a position t in [0, 1]
 template <typename scalar_t>
-inline scalar_t cubic_interp1d(
-    scalar_t x0,
-    scalar_t x1,
-    scalar_t x2,
-    scalar_t x3,
-    scalar_t t) {
+inline scalar_t
+cubic_interp1d(scalar_t x0, scalar_t x1, scalar_t x2, scalar_t x3, scalar_t t) {
   scalar_t coeffs[4];
   get_cubic_upsample_coefficients<scalar_t>(coeffs, t);
 

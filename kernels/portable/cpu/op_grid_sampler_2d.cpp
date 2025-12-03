@@ -92,26 +92,26 @@ void grid_sample_2d_bilinear_kernel_impl_nchw(
             // For zeros padding, only sample if within bounds
             if (within_bounds_2d(iy_nw, ix_nw, inp_H, inp_W)) {
               out_val += in_data
-                  [in_channel_offset + iy_nw * in.strides()[2] +
-                   ix_nw * in.strides()[3]] *
+                             [in_channel_offset + iy_nw * in.strides()[2] +
+                              ix_nw * in.strides()[3]] *
                   nw_weight;
             }
             if (within_bounds_2d(iy_ne, ix_ne, inp_H, inp_W)) {
               out_val += in_data
-                  [in_channel_offset + iy_ne * in.strides()[2] +
-                   ix_ne * in.strides()[3]] *
+                             [in_channel_offset + iy_ne * in.strides()[2] +
+                              ix_ne * in.strides()[3]] *
                   ne_weight;
             }
             if (within_bounds_2d(iy_sw, ix_sw, inp_H, inp_W)) {
               out_val += in_data
-                  [in_channel_offset + iy_sw * in.strides()[2] +
-                   ix_sw * in.strides()[3]] *
+                             [in_channel_offset + iy_sw * in.strides()[2] +
+                              ix_sw * in.strides()[3]] *
                   sw_weight;
             }
             if (within_bounds_2d(iy_se, ix_se, inp_H, inp_W)) {
               out_val += in_data
-                  [in_channel_offset + iy_se * in.strides()[2] +
-                   ix_se * in.strides()[3]] *
+                             [in_channel_offset + iy_se * in.strides()[2] +
+                              ix_se * in.strides()[3]] *
                   se_weight;
             }
           } else {
@@ -119,19 +119,19 @@ void grid_sample_2d_bilinear_kernel_impl_nchw(
             out_val = in_data
                           [in_channel_offset + iy_nw * in.strides()[2] +
                            ix_nw * in.strides()[3]] *
-                      nw_weight +
-                  in_data
-                      [in_channel_offset + iy_ne * in.strides()[2] +
-                       ix_ne * in.strides()[3]] *
-                      ne_weight +
-                  in_data
-                      [in_channel_offset + iy_sw * in.strides()[2] +
-                       ix_sw * in.strides()[3]] *
-                      sw_weight +
-                  in_data
-                      [in_channel_offset + iy_se * in.strides()[2] +
-                       ix_se * in.strides()[3]] *
-                      se_weight;
+                    nw_weight +
+                in_data
+                        [in_channel_offset + iy_ne * in.strides()[2] +
+                         ix_ne * in.strides()[3]] *
+                    ne_weight +
+                in_data
+                        [in_channel_offset + iy_sw * in.strides()[2] +
+                         ix_sw * in.strides()[3]] *
+                    sw_weight +
+                in_data
+                        [in_channel_offset + iy_se * in.strides()[2] +
+                         ix_se * in.strides()[3]] *
+                    se_weight;
           }
 
           // Write output in NCHW order
@@ -197,7 +197,8 @@ void grid_sample_2d_nearest_kernel_impl_nchw(
           // Use nearbyint (not round) to match ATen's rounding behavior.
           // nearbyint uses the current rounding mode (typically round-to-even),
           // which matches PyTorch's (ATen's) behavior. In contrast, round may
-          // not always respect the rounding mode. See: aten/src/ATen/native/GridSampler.cpp
+          // not always respect the rounding mode. See:
+          // aten/src/ATen/native/GridSampler.cpp
           int64_t ix_nearest = static_cast<int64_t>(std::nearbyint(ix));
           int64_t iy_nearest = static_cast<int64_t>(std::nearbyint(iy));
 
@@ -214,7 +215,8 @@ void grid_sample_2d_nearest_kernel_impl_nchw(
             }
           } else {
             // For border/reflection padding, clip coordinates after rounding
-            // Rounding can push coordinates out of bounds even after grid_sampler_compute_source_index
+            // Rounding can push coordinates out of bounds even after
+            // grid_sampler_compute_source_index
             ix_nearest = clip_coordinates(ix_nearest, inp_W);
             iy_nearest = clip_coordinates(iy_nearest, inp_H);
             out_val = in_data
@@ -231,7 +233,6 @@ void grid_sample_2d_nearest_kernel_impl_nchw(
     }
   }
 }
-
 
 template <typename CTYPE>
 void grid_sample_2d_bicubic_kernel_impl_nchw(
@@ -277,8 +278,9 @@ void grid_sample_2d_bicubic_kernel_impl_nchw(
           const CTYPE y = grid_data[grid_idx + grid.strides()[3]];
 
           // Compute source coordinates in pixel space
-          // For bicubic, we need raw unnormalized coordinates without padding applied
-          // Padding is applied later when fetching individual pixels from the 4x4 neighborhood
+          // For bicubic, we need raw unnormalized coordinates without padding
+          // applied Padding is applied later when fetching individual pixels
+          // from the 4x4 neighborhood
           CTYPE ix = grid_sampler_unnormalize(x, inp_W, align_corners);
           CTYPE iy = grid_sampler_unnormalize(y, inp_H, align_corners);
 
@@ -309,12 +311,10 @@ void grid_sample_2d_bicubic_kernel_impl_nchw(
               return static_cast<CTYPE>(0);
             } else if (padding_mode == GridSamplerPadding::Border) {
               // For border padding, clip coordinates to valid range
-              int64_t iy_safe = std::max(
-                  static_cast<int64_t>(0),
-                  std::min(iy, inp_H - 1));
-              int64_t ix_safe = std::max(
-                  static_cast<int64_t>(0),
-                  std::min(ix, inp_W - 1));
+              int64_t iy_safe =
+                  std::max(static_cast<int64_t>(0), std::min(iy, inp_H - 1));
+              int64_t ix_safe =
+                  std::max(static_cast<int64_t>(0), std::min(ix, inp_W - 1));
               return in_data
                   [in_channel_offset + iy_safe * in.strides()[2] +
                    ix_safe * in.strides()[3]];
@@ -324,16 +324,22 @@ void grid_sample_2d_bicubic_kernel_impl_nchw(
               CTYPE ix_reflected = static_cast<CTYPE>(ix);
 
               if (align_corners) {
-                iy_reflected = reflect_coordinates(iy_reflected, 0, 2 * (inp_H - 1));
-                ix_reflected = reflect_coordinates(ix_reflected, 0, 2 * (inp_W - 1));
+                iy_reflected =
+                    reflect_coordinates(iy_reflected, 0, 2 * (inp_H - 1));
+                ix_reflected =
+                    reflect_coordinates(ix_reflected, 0, 2 * (inp_W - 1));
               } else {
-                iy_reflected = reflect_coordinates(iy_reflected, -1, 2 * inp_H - 1);
-                ix_reflected = reflect_coordinates(ix_reflected, -1, 2 * inp_W - 1);
+                iy_reflected =
+                    reflect_coordinates(iy_reflected, -1, 2 * inp_H - 1);
+                ix_reflected =
+                    reflect_coordinates(ix_reflected, -1, 2 * inp_W - 1);
               }
 
               // Clip to ensure we're in bounds (reflection + clip for safety)
-              int64_t iy_safe = static_cast<int64_t>(clip_coordinates(iy_reflected, inp_H));
-              int64_t ix_safe = static_cast<int64_t>(clip_coordinates(ix_reflected, inp_W));
+              int64_t iy_safe =
+                  static_cast<int64_t>(clip_coordinates(iy_reflected, inp_H));
+              int64_t ix_safe =
+                  static_cast<int64_t>(clip_coordinates(ix_reflected, inp_W));
 
               return in_data
                   [in_channel_offset + iy_safe * in.strides()[2] +
@@ -375,7 +381,11 @@ void grid_sample_2d_bicubic_kernel_impl_nchw(
 
           // Interpolate in y-direction
           CTYPE out_val = cubic_interp1d(
-              coefficients[0], coefficients[1], coefficients[2], coefficients[3], ty);
+              coefficients[0],
+              coefficients[1],
+              coefficients[2],
+              coefficients[3],
+              ty);
 
           // Write output in NCHW order
           const int64_t out_idx =
@@ -409,7 +419,8 @@ Tensor& grid_sampler_2d_out(
       "Failed to validate arguments and resize output tensor");
 
   // Convert integer mode parameters to enums
-  GridSamplerInterpolation mode = static_cast<GridSamplerInterpolation>(interpolation_mode);
+  GridSamplerInterpolation mode =
+      static_cast<GridSamplerInterpolation>(interpolation_mode);
   GridSamplerPadding padding = static_cast<GridSamplerPadding>(padding_mode);
 
   // Validate mode and padding values
@@ -453,7 +464,6 @@ Tensor& grid_sampler_2d_out(
 }
 // NOLINTEND(facebook-hte-ConstantArgumentPassByValue,
 // facebook-hte-ParameterMightThrowOnCopy)
-
 
 } // namespace native
 } // namespace executor

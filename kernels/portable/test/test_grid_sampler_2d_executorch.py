@@ -16,8 +16,8 @@ from typing import Tuple
 
 import torch
 import torch.nn as nn
-from executorch.runtime import Runtime
 from executorch.exir import to_edge
+from executorch.runtime import Runtime
 from torch.export import export
 
 
@@ -83,7 +83,11 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
 
             # Run through ExecuTorch
             runtime = Runtime.get()
-            fwd_method = runtime.load_program(executorch_program.buffer).load_method("forward")
+            fwd_method = runtime.load_program(executorch_program.buffer).load_method(
+                "forward"
+            )
+            if fwd_method is None:
+                self.fail(f"Failed to load forward method")
             executorch_output = fwd_method.execute((input_tensor, grid))[0]
 
             # Compare results
@@ -92,7 +96,9 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
                 msg=f"Shape mismatch: ET={executorch_output.shape} vs PT={pytorch_output.shape}",
             )
 
-            if not torch.allclose(executorch_output, pytorch_output, atol=atol, rtol=rtol):
+            if not torch.allclose(
+                executorch_output, pytorch_output, atol=atol, rtol=rtol
+            ):
                 max_diff = (executorch_output - pytorch_output).abs().max().item()
                 mean_diff = (executorch_output - pytorch_output).abs().mean().item()
                 self.fail(
@@ -140,7 +146,9 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
                 )
 
                 # Create grid with some values in [-1, 1] range
-                grid = torch.randn(batch_size, height_out, width_out, 2, dtype=torch.float32)
+                grid = torch.randn(
+                    batch_size, height_out, width_out, 2, dtype=torch.float32
+                )
                 grid = torch.clamp(grid, -1.2, 1.2)  # Include some out-of-bounds
 
                 # Bicubic may have slightly larger numerical errors
@@ -181,10 +189,10 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
 
         test_cases = [
             # (H_in, W_in, H_out, W_out)
-            (4, 4, 4, 4),      # Same size
-            (8, 8, 4, 4),      # Downsampling
-            (4, 4, 8, 8),      # Upsampling
-            (10, 5, 7, 3),     # Non-square, different aspect ratios
+            (4, 4, 4, 4),  # Same size
+            (8, 8, 4, 4),  # Downsampling
+            (4, 4, 8, 8),  # Upsampling
+            (10, 5, 7, 3),  # Non-square, different aspect ratios
         ]
 
         for h_in, w_in, h_out, w_out in test_cases:
@@ -232,10 +240,12 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
 
         # Grid sampling at corners
         grid = torch.tensor(
-            [[
-                [[-1.0, -1.0], [-1.0, 1.0]],
-                [[1.0, -1.0], [1.0, 1.0]],
-            ]],
+            [
+                [
+                    [[-1.0, -1.0], [-1.0, 1.0]],
+                    [[1.0, -1.0], [1.0, 1.0]],
+                ]
+            ],
             dtype=torch.float32,
         )
 
@@ -259,10 +269,12 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
 
         # Grid with out-of-bounds coordinates
         grid = torch.tensor(
-            [[
-                [[-1.5, -1.5], [-0.5, -0.5], [0.5, 0.5], [1.5, 1.5]],
-                [[-1.0, 1.5], [0.0, 0.0], [1.0, -1.5], [2.0, 2.0]],
-            ]],
+            [
+                [
+                    [[-1.5, -1.5], [-0.5, -0.5], [0.5, 0.5], [1.5, 1.5]],
+                    [[-1.0, 1.5], [0.0, 0.0], [1.0, -1.5], [2.0, 2.0]],
+                ]
+            ],
             dtype=torch.float32,
         )
 
@@ -342,9 +354,7 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
                 grid = torch.randn(1, h_out, w_out, 2, dtype=torch.float32)
                 grid = torch.clamp(grid, -1, 1)
 
-                self.run_executorch_test(
-                    input_tensor, grid, "bilinear", "zeros", False
-                )
+                self.run_executorch_test(input_tensor, grid, "bilinear", "zeros", False)
                 print(f"  ✓ {desc}")
 
         print("✓ Passed very small input tests")
@@ -360,11 +370,17 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
         # Test grid with exact boundary values
         grids = [
             # All corners
-            torch.tensor([[[[-1.0, -1.0], [-1.0, 1.0]], [[1.0, -1.0], [1.0, 1.0]]]], dtype=torch.float32),
+            torch.tensor(
+                [[[[-1.0, -1.0], [-1.0, 1.0]], [[1.0, -1.0], [1.0, 1.0]]]],
+                dtype=torch.float32,
+            ),
             # Center
             torch.tensor([[[[0.0, 0.0]]]], dtype=torch.float32),
             # Edges
-            torch.tensor([[[[-1.0, 0.0], [1.0, 0.0], [0.0, -1.0], [0.0, 1.0]]]], dtype=torch.float32),
+            torch.tensor(
+                [[[[-1.0, 0.0], [1.0, 0.0], [0.0, -1.0], [0.0, 1.0]]]],
+                dtype=torch.float32,
+            ),
         ]
 
         for i, grid in enumerate(grids):
@@ -391,20 +407,21 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
             # (grid, description)
             (
                 torch.tensor([[[[10.0, 10.0], [-10.0, -10.0]]]], dtype=torch.float32),
-                "Very large coordinates (far out of bounds)"
+                "Very large coordinates (far out of bounds)",
             ),
             (
-                torch.tensor([[[[2.0, 0.0], [0.0, 2.0], [-2.0, 0.0], [0.0, -2.0]]]], dtype=torch.float32),
-                "Moderately out of bounds coordinates"
+                torch.tensor(
+                    [[[[2.0, 0.0], [0.0, 2.0], [-2.0, 0.0], [0.0, -2.0]]]],
+                    dtype=torch.float32,
+                ),
+                "Moderately out of bounds coordinates",
             ),
         ]
 
         for grid, desc in test_cases:
             with self.subTest(desc=desc):
                 # Test with zeros padding (most common for out-of-bounds)
-                self.run_executorch_test(
-                    input_tensor, grid, "bilinear", "zeros", False
-                )
+                self.run_executorch_test(input_tensor, grid, "bilinear", "zeros", False)
                 print(f"  ✓ {desc}")
 
         print("✓ Passed special value tests")

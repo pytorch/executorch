@@ -55,6 +55,12 @@ Error check_grid_sampler_2d_args_and_resize_out(
       InvalidArgument,
       "Input and grid must have same dtype");
 
+  // Input and output must have the same dtype
+  ET_CHECK_OR_RETURN_ERROR(
+      tensors_have_same_dtype(input, out),
+      InvalidArgument,
+      "Input and output must have the same dtype");
+
   // Resize output tensor to [N, C, H_out, W_out]
   std::array<exec_aten::SizesType, 4> out_sizes = {
       static_cast<exec_aten::SizesType>(input.size(0)),
@@ -64,9 +70,7 @@ Error check_grid_sampler_2d_args_and_resize_out(
 
   Error err = resize_tensor(out, {out_sizes.data(), 4});
   ET_CHECK_OR_RETURN_ERROR(
-      err == Error::Ok,
-      InvalidArgument,
-      "Failed to resize output tensor");
+      err == Error::Ok, InvalidArgument, "Failed to resize output tensor");
 
   return Error::Ok;
 }
