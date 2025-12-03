@@ -165,8 +165,13 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         builder.output([matmul])
         original_gm = builder.get_graph_module()
+
+        gm_before = copy.deepcopy(original_gm)
         p = ReplaceMatmulWithTransposedMatmulPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = p.call(original_gm)
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int),
             1,
@@ -178,7 +183,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             1,
         )
         validate(
-            original_gm,
+            gm_before,
             graph_after_passes,
             (x_, y_),
             "ReplaceMatmulWithTransposedMatmulPass",
@@ -1439,7 +1444,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
 
     def test_replace_split_with_sizes_with_slice(self) -> None:
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(1, 16, 8, 4))
+        x_input = torch.randn(1, 16, 8, 4)
+        x = builder.placeholder("x", x_input)
         split = builder.call_operator(
             exir_ops.edge.aten.split_with_sizes_copy.default, (x, [8, 8], 1)
         )
@@ -1449,8 +1455,18 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder.output([out0, out1])
         graph_module = builder.get_graph_module()
 
+        gm_before = copy.deepcopy(graph_module)
         p = ReplaceSplitWithSlicePass()
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+        result = cast(PassResult, p(graph_module))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        validate(
+            gm_before,
+            graph_after_passes,
+            [x_input],
+            "ReplaceSplitWithSlicePass",
+        )
 
         self.assertEqual(
             count_node(
@@ -1465,14 +1481,22 @@ class TestReplaceOpsPasses(unittest.TestCase):
 
     @expand([[2], [3], [4]])
     def test_replace_pow_with_mul(self, exponent: int) -> None:
-        x = torch.randn(2, 1, 64)
+        x_input = torch.randn(2, 1, 64)
+        x = x_input
         original_gm = single_op_builder(
             placeholders=(x,),
             op=exir_ops.edge.aten.pow.Tensor_Scalar,
             args=(x, exponent),
         )
+
+        gm_before = copy.deepcopy(original_gm)
         p = ReplacePowWithMulPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        validate(gm_before, graph_after_passes, [x_input], "ReplacePowWithMulPass")
+
         self.assertEqual(
             count_node(
                 graph_after_passes,
