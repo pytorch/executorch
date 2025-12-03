@@ -546,7 +546,13 @@ class GraphModuleSerializer:
                 metadata=self.serialize_metadata(node),
             )
         else:
-            raise SerializeError(f"Serializing {node.target} is not supported")
+            ex_node = Node(
+                name=node.name,
+                target=node._pretty_print_target(node.target),
+                inputs=self.serialize_hoo_inputs(node.args, node.kwargs),
+                outputs=self.serialize_hoo_outputs(node),
+                metadata=self.serialize_metadata(node),
+            )
 
         self.graph_state.nodes.append(ex_node)
 
