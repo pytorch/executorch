@@ -59,6 +59,47 @@ struct GpuTensorRef {
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
+  // ============================================================================
+  // GPU Tensor Storage for D2D Copy Optimization
+  // ============================================================================
+  //
+  // This backend supports storing GPU tensors between execute() calls to enable
+  // device-to-device (D2D) copies instead of slower host-to-device (H2D) copies.
+  // This is useful for encoder-decoder models where the encoder output is reused
+  // across many decoder iterations.
+  //
+  // SUPPORTED OPTIONS (via set_option):
+  //
+  //   "store_output" (string): Store the output tensor under this name after
+  //       the next execute() call. The tensor remains on GPU until cleared.
+  //       Only supports single-output methods.
+  //       Example: opts.set_option("store_output", "encoder_output");
+  //
+  //   "use_stored_input" (string): For inputs matching the stored tensor's size,
+  //       use D2D copy from the stored tensor instead of H2D copy from CPU.
+  //       This setting persists across execute() calls until reset.
+  //       Example: opts.set_option("use_stored_input", "encoder_output");
+  //
+  //   "reset_stored_input" (bool): Clear the use_stored_input setting.
+  //       Does NOT delete the stored tensor - only stops using it for D2D.
+  //       Example: opts.set_option("reset_stored_input", true);
+  //
+  //   "clear_stored_tensor" (string): Delete the named tensor from storage,
+  //       freeing GPU memory. Use after decoder loop completes.
+  //       Example: opts.set_option("clear_stored_tensor", "encoder_output");
+  //
+  // TYPICAL USAGE PATTERN (encoder-decoder model):
+  //
+  //   1. Before encoder: set_option("store_output", "encoder_output")
+  //   2. Execute encoder (output is stored on GPU)
+  //   3. Before decoder loop: set_option("use_stored_input", "encoder_output")
+  //   4. Execute decoder N times (D2D copies for encoder output input)
+  //   5. After decoder loop:
+  //        set_option("reset_stored_input", true)
+  //        set_option("clear_stored_tensor", "encoder_output")
+  //
+  // ============================================================================
+
   // Storage control options (set via set_option before execute)
   mutable std::string
       store_output_name_; // Name to store output under (empty = none)
@@ -168,6 +209,25 @@ class ET_EXPERIMENTAL CudaBackend final
           }
         } else {
           ET_LOG(Warning, "reset_stored_input option expects a boolean value");
+          return Error::InvalidArgument;
+        }
+      }
+      // Handle clear_stored_tensor: expects a string name
+      // Deletes the named GPU tensor from storage, freeing GPU memory.
+      else if (strcmp(option.key, "clear_stored_tensor") == 0) {
+        if (auto* arr = std::get_if<
+                std::array<char, executorch::runtime::kMaxOptionValueLength>>(
+                &option.value)) {
+          std::string name(arr->data());
+          auto it = gpu_tensors_.find(name);
+          if (it != gpu_tensors_.end()) {
+            if (it->second.handle != nullptr) {
+              aoti_torch_delete_tensor_object(it->second.handle);
+            }
+            gpu_tensors_.erase(it);
+          }
+        } else {
+          ET_LOG(Warning, "clear_stored_tensor option expects a string value");
           return Error::InvalidArgument;
         }
       }

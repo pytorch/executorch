@@ -333,16 +333,15 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
     }
   }
 
-  // Reset stored input settings after decoder loop completes.
-  // This disables the D2D copy optimization for subsequent execute() calls.
-  // Note: The stored GPU tensor remains in memory until the next encoder run
-  // (which overwrites it) or until the backend is destroyed.
+  // Reset stored input settings and free GPU memory after decoder loop completes.
+  // This disables the D2D copy optimization and releases the stored encoder output.
   {
-    ::executorch::runtime::BackendOptions<1> opts;
+    ::executorch::runtime::BackendOptions<2> opts;
     opts.set_option("reset_stored_input", true);
+    opts.set_option("clear_stored_tensor", "encoder_output");
     auto err = ::executorch::runtime::set_option("CudaBackend", opts.view());
     if (err != ::executorch::runtime::Error::Ok) {
-      ET_LOG(Warning, "Failed to set reset_stored_input option");
+      ET_LOG(Warning, "Failed to reset stored input settings");
     }
   }
 
