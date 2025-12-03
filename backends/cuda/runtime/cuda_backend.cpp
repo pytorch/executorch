@@ -58,7 +58,27 @@ struct CachedGpuData {
 
 // Global device cache - maps name to cached GPU data
 // Using raw GPU pointers instead of tensor handles for format independence
+// Note: This cache is NOT thread-safe. Callers must ensure execute() is called
+// from a single thread.
 static std::unordered_map<std::string, CachedGpuData> g_device_cache;
+
+// Helper function to clear all cached GPU memory
+// Should be called during backend cleanup
+static void clear_device_cache() {
+  for (auto& pair : g_device_cache) {
+    if (pair.second.data_ptr != nullptr) {
+      cudaError_t err = cudaFree(pair.second.data_ptr);
+      if (err != cudaSuccess) {
+        ET_LOG(
+            Warning,
+            "Failed to free cached GPU memory for '%s': %s",
+            pair.first.c_str(),
+            cudaGetErrorString(err));
+      }
+    }
+  }
+  g_device_cache.clear();
+}
 
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
@@ -125,8 +145,17 @@ class ET_EXPERIMENTAL CudaBackend final
           std::string val(arr->data());
           auto colon_pos = val.find(':');
           if (colon_pos != std::string::npos) {
-            cache_output_slot_ = std::stoi(val.substr(0, colon_pos));
-            cache_output_name_ = val.substr(colon_pos + 1);
+            try {
+              cache_output_slot_ = std::stoi(val.substr(0, colon_pos));
+              cache_output_name_ = val.substr(colon_pos + 1);
+            } catch (const std::exception& e) {
+              ET_LOG(
+                  Error,
+                  "Invalid cache_output format '%s': %s",
+                  val.c_str(),
+                  e.what());
+              return Error::InvalidArgument;
+            }
           }
         }
       }
@@ -138,8 +167,17 @@ class ET_EXPERIMENTAL CudaBackend final
           std::string val(arr->data());
           auto colon_pos = val.find(':');
           if (colon_pos != std::string::npos) {
-            use_cache_input_slot_ = std::stoi(val.substr(0, colon_pos));
-            use_cache_input_name_ = val.substr(colon_pos + 1);
+            try {
+              use_cache_input_slot_ = std::stoi(val.substr(0, colon_pos));
+              use_cache_input_name_ = val.substr(colon_pos + 1);
+            } catch (const std::exception& e) {
+              ET_LOG(
+                  Error,
+                  "Invalid use_cache_input format '%s': %s",
+                  val.c_str(),
+                  e.what());
+              return Error::InvalidArgument;
+            }
           }
         }
       }
@@ -428,16 +466,27 @@ class ET_EXPERIMENTAL CudaBackend final
           gpu_tensor->data_ptr(),
           size_bytes,
           cudaMemcpyDeviceToDevice);
-      ET_CHECK_OR_RETURN_ERROR(
-          copy_err == cudaSuccess,
-          Internal,
-          "Failed to copy output to GPU cache: %s",
-          cudaGetErrorString(copy_err));
+      if (copy_err != cudaSuccess) {
+        // Free allocated memory before returning error
+        cudaFree(cache_ptr);
+        ET_LOG(
+            Error,
+            "Failed to copy output to GPU cache: %s",
+            cudaGetErrorString(copy_err));
+        return Error::Internal;
+      }
 
       // Free old cache if exists
       auto old_it = g_device_cache.find(cache_output_name_);
       if (old_it != g_device_cache.end()) {
-        cudaFree(old_it->second.data_ptr);
+        cudaError_t free_err = cudaFree(old_it->second.data_ptr);
+        if (free_err != cudaSuccess) {
+          ET_LOG(
+              Warning,
+              "Failed to free old cached GPU memory for '%s': %s",
+              cache_output_name_.c_str(),
+              cudaGetErrorString(free_err));
+        }
         g_device_cache.erase(old_it);
       }
 
@@ -469,6 +518,11 @@ class ET_EXPERIMENTAL CudaBackend final
           i);
     }
 
+    // Note: use_cache_input settings are intentionally NOT reset here.
+    // They persist across execute() calls to support decoder loops that
+    // reuse cached encoder output. The caller should explicitly clear
+    // these settings using the "clear_cache_input" option when done.
+
     return Error::Ok;
   }
 
@@ -477,6 +531,9 @@ class ET_EXPERIMENTAL CudaBackend final
       return;
     }
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
+
+    // Clear all cached GPU memory
+    clear_device_cache();
 
     // Destroy the CUDA stream if it exists
     if (handle->cuda_stream != nullptr) {
