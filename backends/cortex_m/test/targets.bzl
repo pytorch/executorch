@@ -23,7 +23,8 @@ def define_operator_test_target(op):
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/kernels/test:test_util",
             "//executorch/backends/cortex_m/ops:op_{}".format(op),
-            "//executorch/backends/cortex_m/ops:cortex_m_generated_lib",
+            "//executorch/backends/cortex_m/ops:op_quantize_per_tensor",
+            "//executorch/backends/cortex_m/ops:op_dequantize_per_tensor",
             "//executorch/backends/cortex_m/ops:cortex_m_generated_lib_headers",
         ]
     )

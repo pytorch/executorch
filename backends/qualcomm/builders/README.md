@@ -41,7 +41,7 @@ class MyModel(torch.nn.Module):
 ```
 At the time we try to lower it with Qualcomm backend:
 ```python
-from excutorch.examples.qualcomm.utils import build_executorch_binary
+from executorch.examples.qualcomm.utils import build_executorch_binary
 
 build_executorch_binary(
     model=MyModel(),

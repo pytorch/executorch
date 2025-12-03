@@ -87,7 +87,7 @@ class NodeVisitor:
             None: Mutates ``tosa_graph`` in place.
 
         """
-        op_location = ts.TosaOpLocation()
+        op_location = None
         if self.debug_hook:
             debug_info = self.debug_hook.add(
                 node,
@@ -96,7 +96,7 @@ class NodeVisitor:
             )
 
             if self.debug_hook.mode == ArmCompileSpec.DebugMode.TOSA:
-                op_location.text = json.dumps(debug_info.to_dict())
+                op_location = json.dumps(debug_info.to_dict())
 
         tosa_graph.addOperator(
             tosa_op,

@@ -148,23 +148,23 @@ class SimpleADB:
                 f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
                 f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
             ]
-        input_list_file, input_files = generate_inputs(
-            self.working_dir, self.input_list_filename, inputs
-        )
-
-        if input_list_file is not None:
-            # prepare input list
-            artifacts.append(input_list_file)
-
-        for artifact in artifacts:
-            self._adb(["push", artifact, self.workspace])
-
-        # input data
-        for file_name in input_files:
-            self._adb(["push", file_name, self.workspace])
-
-        # dynamic shape related
         with tempfile.TemporaryDirectory() as tmp_dir:
+            input_list_file, input_files = generate_inputs(
+                tmp_dir, self.input_list_filename, inputs
+            )
+
+            if input_list_file is not None:
+                # prepare input list
+                artifacts.append(input_list_file)
+
+            for artifact in artifacts:
+                self._adb(["push", artifact, self.workspace])
+
+            # input data
+            for file_name in input_files:
+                self._adb(["push", file_name, self.workspace])
+
+            # dynamic shape related
             if self.expected_input_shape and self.expected_output_shape:
                 shape_info = {
                     "input_shape": self.expected_input_shape,
@@ -956,6 +956,7 @@ def generate_inputs(dest_path: str, file_name: str, inputs=None):
     # Prepare input data
     if inputs is not None:
         input_list_file = f"{dest_path}/{file_name}"
+
         with open(input_list_file, "w") as f:
             for idx, data in enumerate(inputs):
                 sub_index = 0

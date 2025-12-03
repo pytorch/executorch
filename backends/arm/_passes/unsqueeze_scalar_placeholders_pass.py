@@ -11,6 +11,7 @@ from executorch.backends.arm._passes import ArmPass
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import is_buffer, is_param
+from torch.export.graph_signature import InputKind
 
 
 class UnsqueezeScalarPlaceholdersPass(ArmPass):
@@ -42,17 +43,30 @@ class UnsqueezeScalarPlaceholdersPass(ArmPass):
                 else:
                     continue
 
-                tensor = self.exported_program.state_dict[name]
+                tensor = self.exported_program.state_dict.get(name)
 
+                # If we have a persistent=False buffer with no entry in state_dict
+                spec = next(
+                    s
+                    for s in self.exported_program.graph_signature.input_specs
+                    if getattr(s.arg, "name", None) == node.name
+                )
+                is_non_persistent_buffer = (
+                    spec.kind is InputKind.BUFFER and spec.persistent is False
+                )
+                if tensor is None and is_non_persistent_buffer:
+                    fake = node.meta["val"]
+                    tensor = torch.ones_like(fake)
+
+                # If we have a scalar, unsqueeze it
                 if tensor.dim() == 0:
-                    self.exported_program.state_dict[name] = tensor.unsqueeze(0)
-                    node.meta["val"] = node.meta["val"].fake_mode.from_tensor(
-                        tensor.unsqueeze(0), static_shapes=True
-                    )
-                else:
-                    node.meta["val"] = node.meta["val"].fake_mode.from_tensor(
-                        tensor, static_shapes=True
-                    )
+                    tensor = tensor.unsqueeze(0)
+
+                # update or create entry in state_dict, recreate fake
+                self.exported_program.state_dict[name] = tensor
+                node.meta["val"] = node.meta["val"].fake_mode.from_tensor(
+                    tensor, static_shapes=True
+                )
 
         graph_module.recompile()
         graph_module = super().call(graph_module).graph_module

@@ -42,7 +42,7 @@ class MetalBackend(AotiBackend, BackendDetails):
         return {}
 
     @classmethod
-    def get_custom_passes(cls) -> List[typing.Any]:
+    def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
         """Return Metal-specific passes (currently none)"""
         return []
 

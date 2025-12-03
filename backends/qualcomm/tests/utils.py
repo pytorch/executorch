@@ -580,6 +580,7 @@ class TestQNN(unittest.TestCase):
         is_linear_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
+        block_size_map: Dict[str, Tuple] = None,
         submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     ) -> torch.fx.GraphModule:
         m = torch.export.export(module, inputs, strict=True).module()
@@ -592,6 +593,8 @@ class TestQNN(unittest.TestCase):
             is_qat=True,
             submodule_qconfig_list=submodule_qconfig_list,
         )
+        if block_size_map is not None:
+            quantizer.set_block_size_map(block_size_map)
 
         submodule_qconfig_list = submodule_qconfig_list or []
         quantizer.set_submodule_qconfig_list(submodule_qconfig_list)

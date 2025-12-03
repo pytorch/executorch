@@ -19,6 +19,8 @@ from torchao.quantization.pt2e.quantizer import OperatorConfig
 BINARY_OP_PATTERNS = [
     [torch.ops.aten.add.Tensor],
     [torch.ops.aten.mul.Tensor],
+    [torch.ops.aten.hardswish.default],
+    [torch.ops.aten.hardswish_.default],
 ]
 
 LINEAR_OP_PATTERNS = [
@@ -29,6 +31,8 @@ LINEAR_OP_PATTERNS = [
     [torch.ops.aten.linear.default, torch.ops.aten.hardtanh_.default],
     [torch.ops.aten.linear.default, torch.ops.aten.hardsigmoid.default],
     [torch.ops.aten.linear.default, torch.ops.aten.hardsigmoid_.default],
+    [torch.ops.aten.linear.default, torch.ops.aten.clamp.default],
+    [torch.ops.aten.linear.default, torch.ops.aten.clamp_.default],
 ]
 
 CONV_OP_PATTERNS = [
@@ -39,6 +43,8 @@ CONV_OP_PATTERNS = [
     [torch.ops.aten.conv2d.default, torch.ops.aten.hardtanh_.default],
     [torch.ops.aten.conv2d.default, torch.ops.aten.hardsigmoid.default],
     [torch.ops.aten.conv2d.default, torch.ops.aten.hardsigmoid_.default],
+    [torch.ops.aten.conv2d.default, torch.ops.aten.clamp.default],
+    [torch.ops.aten.conv2d.default, torch.ops.aten.clamp_.default],
 ]
 
 # ----------------- OPERATOR CONFIG PRESETS -----------------

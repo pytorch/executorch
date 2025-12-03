@@ -33,6 +33,40 @@ We offer the following modes to execute the model:
 
 - Lookahead Mode: Lookahead Mode introduces [lookahead decoding](https://arxiv.org/abs/2402.02057) and uses AR-N model to process prompt to enhance token generation speed. While decoding multiple tokens in a single step is infeasible, an LLM can generate multiple guess tokens in parallel. These guess tokens may fit into future parts of the generated sequence. The lookahead decoder generates and verifies these guess tokens, integrating them into the sequence if suitable. In some cases, it can obtain more than one token in a single step. Result is lossless.
 
+## Hardware Support
+
+We’ve validated this flow on the **Samsung Galaxy S23**, **Samsung Galaxy S24**, **Samsung Galaxy S25**, and **OnePlus 12**.  
+Support on other hardware depends on the **HTP architecture (HtpArch)** and the feature set available on that version.
+
+### HTP Minimum Version Requirements
+
+- **LPBQ (16a4w block-wise quantization)** requires **V69 or newer**
+- **Weight sharing** between prefill and decode requires **V73 or newer**
+- **16-bit activations + 16-bit weights for matmul** (e.g., 16-bit KV cache) requires **V73 or newer**
+
+### Quantization Guidance for Older Devices
+
+For older HTP versions, you may need to adjust the quantization strategy. Recommended starting points:
+
+- Use **16a4w** as the baseline
+- Optionally apply **SpinQuant**
+- Use **16a8w selectively on some layers** to further improve accuracy (mixed-precision quantization)
+
+### Memory Limit Errors (4 GB HTP Limit)
+
+If you encounter errors like the following, it typically means the model’s requested memory exceeds the **4 GB per-context limit** on HTP.  
+To resolve this, try **increasing the sharding number** (`num_sharding`) to reduce per-shard memory usage:
+
+```
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> Failed to find available PD for contextId 1 on deviceId 0 coreId 0 with context size estimate 4025634048
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> context create from binary failed on contextId 1
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> Fail to create context from binary with err 1002
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> Size Calculation encounter error! Doing Hard reset of reserved mem to 0.
+[ERROR] [Qnn ExecuTorch]: QnnDsp <E> Failed to create context from binary with err 0x3ea
+[ERROR] [Qnn ExecuTorch]: Can't create context from binary
+```
+
+
 ## Instructions
 ### Note
 1. For hybrid mode, the export time will be longer and can take up to 1-4 hours to complete, depending on the specific model users are exporting.

@@ -18,7 +18,6 @@ from executorch.backends.qualcomm.utils.constants import (
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpFullyConnected, QNN_OP_PACKAGE_NAME_QTI_AISW
-from .utils import get_parameter
 
 
 @register_node_visitor
@@ -55,32 +54,26 @@ class LinearVisitor(NodeVisitor):
             quant_attrs[QCOM_ZERO_POINTS] = quant_attrs[QCOM_ZERO_POINTS].reshape(
                 [-1, 1]
             )
-
-        weight_tensor = get_parameter(weight_node, self.edge_program)
+        weight_tensor = self.get_tensor(weight_node, node)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
             node,
             weight_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            # It will determine correct QNN tensor type in define_tensor.
+            # This param seems unnecessary, which we could possibly remove this in the future.
+            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         linear_input_tensors.append(weight_tensor_wrapper)
 
         if len(node.args) >= 3:
             bias_node = self.get_node(node.args[2])
-
-            bias_tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
-            bias_tensor = get_parameter(bias_node, self.edge_program)
-            # if bias_node is getitem
-            if bias_tensor is None:
-                bias_tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
-                bias_tensor = bias_node.meta["val"]
-
+            bias_tensor = self.get_tensor(bias_node, node)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
                 node,
                 bias_tensor,
-                bias_tensor_type,
+                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 nodes_to_wrappers,
             )
             linear_input_tensors.append(bias_tensor_wrapper)

@@ -17,21 +17,6 @@ import torch.nn.functional as F
 from executorch.extension.llm.export.builder import DType
 
 
-try:
-    from fairseq2.nn.embedding import (
-        Embedding as fsEmbedding,
-        StandardEmbedding as fsStandardEmbedding,
-    )
-
-    from fairseq2.nn.projection import Linear as fsLinear
-
-    print("Using fairseq2 modules.")
-except:
-    fsEmbedding = nn.Embedding
-    fsStandardEmbedding = nn.Embedding
-    fsLinear = nn.Linear
-
-
 def quantize(  # noqa C901
     model: torch.nn.Module,
     qmode: str,
@@ -400,7 +385,7 @@ class WeightOnlyInt8QuantHandler(QuantHandler):
 
         for fqn, mod in self.mod.named_modules():
             # print(f"maybe? quantize {fqn}...{type(mod)}")
-            if isinstance(mod, torch.nn.Linear) or isinstance(mod, fsLinear):
+            if isinstance(mod, torch.nn.Linear):
                 # print(f"candidate {fqn}, nodetype {self.node_type}")
                 if (
                     (self.node_type == "*")

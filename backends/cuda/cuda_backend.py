@@ -17,6 +17,7 @@ from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import BackendDetails
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.decomposition import conv1d_to_conv2d
+from torch.nn.attention import SDPBackend
 
 
 @final
@@ -47,9 +48,27 @@ class CudaBackend(AotiBackend, BackendDetails):
         }
 
     @classmethod
-    def get_custom_passes(cls) -> List[typing.Any]:
-        """Return CUDA-specific passes: ReplaceEdgeOpWithTritonOpPass"""
-        return [ReplaceEdgeOpWithTritonOpPass()]
+    def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
+        """
+        Return CUDA-specific passes: ReplaceEdgeOpWithTritonOpPass.
+
+        The Triton kernel replacement behavior can be controlled via compile_specs:
+        - triton_kernel_mode="ON": Always use Triton kernels
+        - triton_kernel_mode="OFF": Never use Triton kernels and fallback to other implementations like cuda or decomposed operator.
+        """
+        # Parse compile_specs for triton_kernel_mode
+        triton_kernel_mode = "ON"  # Default mode
+        for spec in compile_specs:
+            if spec.key == "triton_kernel_mode":
+                mode = spec.value.decode("utf-8").upper()
+                if mode not in ["ON", "OFF"]:
+                    raise ValueError(
+                        f"Invalid triton_kernel_mode: {mode}. "
+                        f"Expected 'ON' or 'OFF'."
+                    )
+                triton_kernel_mode = mode
+
+        return [ReplaceEdgeOpWithTritonOpPass()] if triton_kernel_mode == "ON" else []
 
     @classmethod
     def get_aoti_compile_options(
@@ -114,3 +133,21 @@ class CudaBackend(AotiBackend, BackendDetails):
             ), "shim_library_path should not be set for Linux"
 
         return options
+
+    @classmethod
+    def get_extra_aoti_compile_context_manager(cls):
+        """
+        Return SDPA MATH backend context manager for CUDA compilation.
+
+        This context manager plays as a fallback solution for any remaining PyTorch SDPA
+        operations to use the MATH backend (decomposed SDPA) during AOTInductor compilation.
+
+        Note:
+        - If SDPA ops are replaced with Triton kernels by ReplaceEdgeOpWithTritonOpPass,
+          this context manager will have no effect on those ops (they are no longer
+          PyTorch SDPA ops).
+        - If SDPA ops are NOT replaced (e.g., when triton_kernel_mode="OFF"), this
+          context manager will force them to use the MATH backend, causing them to
+          be automatically decomposed during compilation.
+        """
+        return torch.nn.attention.sdpa_kernel([SDPBackend.MATH])
