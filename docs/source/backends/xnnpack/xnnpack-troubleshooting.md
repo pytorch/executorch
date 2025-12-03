@@ -23,3 +23,27 @@ The XNNPACK backend is built by default for Python, Android, iOS, and in most CM
  * Use [op-level profiling](/tutorials/devtools-integration-tutorial) to understand which operators are taking the most time. <!-- @lint-ignore linter doesn't like this link for some reason -->
    * The XNNPACK backend provides operator-level timing for delegated operators.
  * See general performance troubleshooting tips in [Performance Troubleshooting](/using-executorch-faqs.md#inference-is-slow-performance-troubleshooting).
+
+
+## Debugging Why Nodes Are Not Partitioned
+
+* To debug cases where operators are not delegated to XNNPACK,
+you can enable internal debug logs before **to_edge_transform_and_lower** from the partitioner. This will print diagnostic messages explaining why specific nodes fail
+to partition.
+
+``` python
+
+# caption: Enable internal partition debug logging
+
+import logging
+
+logger = logging.getLogger("executorch.backends.xnnpack.partition")
+logger.setLevel(logging.DEBUG)
+
+if not logger.handlers:
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("[%(levelname)s] %(name)s: %(message)s")
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+```
