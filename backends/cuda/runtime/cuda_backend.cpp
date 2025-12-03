@@ -12,7 +12,6 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
-#include <climits>
 #include <cstdio>
 
 #include <filesystem>
@@ -49,20 +48,22 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
-// Structure to hold a reference to a GPU tensor for "keep on device" optimization.
-// Owns the tensor handle - must be deleted when no longer needed.
+// Structure to hold a reference to a GPU tensor for "keep on device"
+// optimization. Owns the tensor handle - must be deleted when no longer needed.
 struct GpuTensorRef {
-  AOTITensorHandle handle;  // Tensor handle (owned, for later deletion)
-  void* data_ptr;           // GPU memory pointer (for D2D copy)
-  size_t size_bytes;        // Total size in bytes
+  AOTITensorHandle handle; // Tensor handle (owned, for later deletion)
+  void* data_ptr; // GPU memory pointer (for D2D copy)
+  size_t size_bytes; // Total size in bytes
 };
 
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
   // Storage control options (set via set_option before execute)
-  mutable std::string store_output_name_;     // Name to store output under (empty = none)
-  mutable std::string use_stored_input_name_; // Name of stored tensor to use (empty = none)
+  mutable std::string
+      store_output_name_; // Name to store output under (empty = none)
+  mutable std::string
+      use_stored_input_name_; // Name of stored tensor to use (empty = none)
 
   // Per-instance map of named GPU tensor references.
   // Mutable because execute() is const but needs to modify this.
@@ -305,8 +306,41 @@ class ET_EXPERIMENTAL CudaBackend final
     std::vector<AOTITensorHandle> gpu_outputs(
         n_outputs); // GPU tensors for kernel output
 
+    // RAII helper to ensure GPU tensors are cleaned up on all exit paths.
+    // Prevents memory leaks when errors occur during execute().
+    struct TensorCleanup {
+      std::vector<AOTITensorHandle>& inputs;
+      std::vector<AOTITensorHandle>& outputs;
+      const std::unordered_map<std::string, GpuTensorRef>& stored_tensors;
+
+      ~TensorCleanup() {
+        // Clean up input tensors
+        for (auto* handle : inputs) {
+          if (handle != nullptr) {
+            aoti_torch_delete_tensor_object(handle);
+          }
+        }
+        // Clean up output tensors, except those that are stored
+        for (auto* handle : outputs) {
+          if (handle != nullptr) {
+            bool is_stored = false;
+            for (const auto& pair : stored_tensors) {
+              if (pair.second.handle == handle) {
+                is_stored = true;
+                break;
+              }
+            }
+            if (!is_stored) {
+              aoti_torch_delete_tensor_object(handle);
+            }
+          }
+        }
+      }
+    };
+    TensorCleanup cleanup{gpu_inputs, gpu_outputs, gpu_tensors_};
+
     // Process input tensors: ExecuTorch provides CPU tensors, create GPU
-    // copies. For cached inputs, use GPU-to-GPU copy instead of CPU-to-GPU.
+    // copies. For stored inputs, use GPU-to-GPU copy instead of CPU-to-GPU.
     for (int i = 0; i < n_inputs; i++) {
       // Get tensor dimensions and properties from ExecuTorch CPU tensor
       auto cpu_tensor = &(args[i]->toTensor());
@@ -334,7 +368,10 @@ class ET_EXPERIMENTAL CudaBackend final
 
       gpu_inputs[i] = gpu_input_handle;
 
-      // Check if this input matches a stored GPU tensor (by size)
+      // Check if this input matches a stored GPU tensor (by size).
+      // Note: Size-based matching assumes only one input will match. If
+      // multiple inputs have the same byte size as the stored tensor, the first
+      // match wins.
       if (!use_stored_input_name_.empty()) {
         auto it = gpu_tensors_.find(use_stored_input_name_);
         if (it != gpu_tensors_.end()) {
@@ -345,6 +382,13 @@ class ET_EXPERIMENTAL CudaBackend final
 
           // Match by size: use stored tensor if sizes match
           if (copy_bytes == ref.size_bytes) {
+            ET_LOG(
+                Debug,
+                "Using stored tensor '%s' for input %d (%zu bytes, D2D copy)",
+                use_stored_input_name_.c_str(),
+                i,
+                copy_bytes);
+
             // GPU-to-GPU copy: fast DMA transfer, normalizes tensor format
             cudaError_t cuda_err = cudaMemcpy(
                 gpu_inputs[i]->data_ptr(),
@@ -418,9 +462,14 @@ class ET_EXPERIMENTAL CudaBackend final
         error);
 
     // Store reference to output GPU tensor if requested.
-    // Always uses gpu_outputs[0] (encoder has single output).
     // The tensor will be kept alive for later D2D copy to decoder inputs.
-    if (!store_output_name_.empty() && n_outputs > 0) {
+    if (!store_output_name_.empty()) {
+      ET_CHECK_OR_RETURN_ERROR(
+          n_outputs == 1,
+          InvalidArgument,
+          "store_output only supports single-output methods, got %zu outputs",
+          n_outputs);
+
       auto* gpu_tensor = gpu_outputs[0];
       size_t numel = gpu_tensor->numel();
       size_t elem_size = gpu_tensor->element_size();
@@ -430,7 +479,7 @@ class ET_EXPERIMENTAL CudaBackend final
       auto old_it = gpu_tensors_.find(store_output_name_);
       if (old_it != gpu_tensors_.end()) {
         AOTITensorHandle old_handle = old_it->second.handle;
-        gpu_tensors_.erase(old_it);  // Remove from map before deleting
+        gpu_tensors_.erase(old_it); // Remove from map before deleting
         if (old_handle != nullptr) {
           aoti_torch_delete_tensor_object(old_handle);
         }
@@ -462,6 +511,7 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 
     // Memory management notes:
+    // - GPU tensor cleanup is handled by TensorCleanup RAII guard above.
     // - use_stored_input setting persists across execute() calls to support
     //   decoder loops that reuse the stored encoder output.
     // - Stored GPU tensors (in gpu_tensors_) remain in memory until:
@@ -469,26 +519,6 @@ class ET_EXPERIMENTAL CudaBackend final
     //   (b) destroy() is called, which frees all stored tensors.
     // - The "reset_stored_input" option only resets the input name setting,
     //   NOT the stored GPU tensors themselves.
-
-    // Cleanup: delete GPU tensors to avoid memory leak across execute() calls.
-    // Input tensors are no longer needed after AOTI execution.
-    for (size_t i = 0; i < n_inputs; i++) {
-      aoti_torch_delete_tensor_object(gpu_inputs[i]);
-    }
-    // Output tensors are no longer needed after copying to CPU,
-    // EXCEPT for tensors stored in gpu_tensors_ (for later D2D copy).
-    for (size_t i = 0; i < n_outputs; i++) {
-      bool is_stored = false;
-      for (const auto& pair : gpu_tensors_) {
-        if (pair.second.handle == gpu_outputs[i]) {
-          is_stored = true;
-          break;
-        }
-      }
-      if (!is_stored) {
-        aoti_torch_delete_tensor_object(gpu_outputs[i]);
-      }
-    }
 
     return Error::Ok;
   }

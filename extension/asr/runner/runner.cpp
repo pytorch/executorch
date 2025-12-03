@@ -202,10 +202,11 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
   {
     ::executorch::runtime::BackendOptions<1> opts;
     opts.set_option("store_output", "encoder_output");
-    auto err =
-        ::executorch::runtime::set_option("CudaBackend", opts.view());
+    auto err = ::executorch::runtime::set_option("CudaBackend", opts.view());
     if (err != ::executorch::runtime::Error::Ok) {
-      ET_LOG(Warning, "Failed to set store_output option (backend may not support storage)");
+      ET_LOG(
+          Warning,
+          "Failed to set store_output option (backend may not support storage)");
     }
   }
 
@@ -268,10 +269,11 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
   {
     ::executorch::runtime::BackendOptions<1> opts;
     opts.set_option("use_stored_input", "encoder_output");
-    auto err =
-        ::executorch::runtime::set_option("CudaBackend", opts.view());
+    auto err = ::executorch::runtime::set_option("CudaBackend", opts.view());
     if (err != ::executorch::runtime::Error::Ok) {
-      ET_LOG(Warning, "Failed to set use_stored_input option (backend may not support storage)");
+      ET_LOG(
+          Warning,
+          "Failed to set use_stored_input option (backend may not support storage)");
     }
   }
 
@@ -338,8 +340,7 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
   {
     ::executorch::runtime::BackendOptions<1> opts;
     opts.set_option("reset_stored_input", true);
-    auto err =
-        ::executorch::runtime::set_option("CudaBackend", opts.view());
+    auto err = ::executorch::runtime::set_option("CudaBackend", opts.view());
     if (err != ::executorch::runtime::Error::Ok) {
       ET_LOG(Warning, "Failed to set reset_stored_input option");
     }
