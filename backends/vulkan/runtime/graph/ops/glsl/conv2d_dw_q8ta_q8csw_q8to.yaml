@@ -13,7 +13,7 @@ conv2d_dw_q8ta_q8csw_q8to:
     combination:
       parameter_names: [IO_STORAGE, WEIGHT_STORAGE]
       combos:
-        - parameter_values: [buffer, texture2d]
+        - parameter_values: [buffer, buffer]
     DTYPE:
       - VALUE: float
   shader_variants:
