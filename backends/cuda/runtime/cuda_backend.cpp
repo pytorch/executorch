@@ -48,36 +48,26 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
-// Structure to hold cached GPU tensor data for "keep on device" optimization
-struct CachedGpuData {
-  void* data_ptr;           // GPU memory pointer
+// Structure to hold a reference to a GPU tensor for "keep on device" optimization.
+// Owns the tensor handle - must be deleted when no longer needed.
+struct GpuTensorRef {
+  AOTITensorHandle handle;  // Tensor handle (owned, for later deletion)
+  void* data_ptr;           // GPU memory pointer (for D2D copy)
   size_t size_bytes;        // Total size in bytes
-  int32_t scalar_type;      // Data type
-  std::vector<int64_t> sizes;  // Original shape
 };
 
-// Global device cache - maps name to cached GPU data
-// Using raw GPU pointers instead of tensor handles for format independence
-// Note: This cache is NOT thread-safe. Callers must ensure execute() is called
-// from a single thread.
-static std::unordered_map<std::string, CachedGpuData> g_device_cache;
+// Global map of named GPU tensor references.
+// Note: NOT thread-safe. Callers must ensure execute() is called from a single thread.
+static std::unordered_map<std::string, GpuTensorRef> g_gpu_tensors;
 
-// Helper function to clear all cached GPU memory
-// Should be called during backend cleanup
-static void clear_device_cache() {
-  for (auto& pair : g_device_cache) {
-    if (pair.second.data_ptr != nullptr) {
-      cudaError_t err = cudaFree(pair.second.data_ptr);
-      if (err != cudaSuccess) {
-        ET_LOG(
-            Warning,
-            "Failed to free cached GPU memory for '%s': %s",
-            pair.first.c_str(),
-            cudaGetErrorString(err));
-      }
+// Helper to clear stored GPU tensors and free their memory
+static void clear_gpu_tensors() {
+  for (auto& pair : g_gpu_tensors) {
+    if (pair.second.handle != nullptr) {
+      aoti_torch_delete_tensor_object(pair.second.handle);
     }
   }
-  g_device_cache.clear();
+  g_gpu_tensors.clear();
 }
 
 class ET_EXPERIMENTAL CudaBackend final
@@ -354,40 +344,40 @@ class ET_EXPERIMENTAL CudaBackend final
 
       gpu_inputs[i] = gpu_input_handle;
 
-      // Check if this input slot should use cached GPU data
+      // Check if this input slot should use a stored GPU tensor
       if (i == use_cache_input_slot_ && !use_cache_input_name_.empty()) {
-        auto cache_it = g_device_cache.find(use_cache_input_name_);
-        if (cache_it != g_device_cache.end()) {
-          const CachedGpuData& cached = cache_it->second;
+        auto it = g_gpu_tensors.find(use_cache_input_name_);
+        if (it != g_gpu_tensors.end()) {
+          const GpuTensorRef& ref = it->second;
           // GPU-to-GPU copy: fast DMA transfer, normalizes tensor format
           size_t numel = gpu_inputs[i]->numel();
           size_t elem_size = gpu_inputs[i]->element_size();
           size_t copy_bytes = numel * elem_size;
 
           ET_CHECK_OR_RETURN_ERROR(
-              copy_bytes == cached.size_bytes,
+              copy_bytes == ref.size_bytes,
               Internal,
-              "Cached tensor size mismatch: expected %zu bytes, got %zu",
+              "Stored tensor size mismatch: expected %zu bytes, got %zu",
               copy_bytes,
-              cached.size_bytes);
+              ref.size_bytes);
 
           cudaError_t cuda_err = cudaMemcpy(
               gpu_inputs[i]->data_ptr(),
-              cached.data_ptr,
+              ref.data_ptr,
               copy_bytes,
               cudaMemcpyDeviceToDevice);
 
           ET_CHECK_OR_RETURN_ERROR(
               cuda_err == cudaSuccess,
               Internal,
-              "Failed GPU-to-GPU copy for cached input %d: %s",
+              "Failed GPU-to-GPU copy for input %d: %s",
               i,
               cudaGetErrorString(cuda_err));
 
           // Skip the CPU-to-GPU copy below
           continue;
         }
-        // Cache miss: fall through to normal CPU-to-GPU copy
+        // Not found: fall through to normal CPU-to-GPU copy
       }
 
       // Copy data from CPU to GPU (normal path)
@@ -442,8 +432,8 @@ class ET_EXPERIMENTAL CudaBackend final
         "AOTInductorModelContainerRun failed with error code %d",
         error);
 
-    // Cache output GPU tensor data if requested
-    // We store the raw GPU pointer for later GPU-to-GPU copy
+    // Store reference to output GPU tensor if requested.
+    // The tensor will be kept alive for later D2D copy to decoder inputs.
     if (cache_output_slot_ >= 0 && cache_output_slot_ < static_cast<int>(n_outputs) &&
         !cache_output_name_.empty()) {
       auto* gpu_tensor = gpu_outputs[cache_output_slot_];
@@ -451,53 +441,18 @@ class ET_EXPERIMENTAL CudaBackend final
       size_t elem_size = gpu_tensor->element_size();
       size_t size_bytes = numel * elem_size;
 
-      // Allocate persistent GPU memory for the cache
-      void* cache_ptr = nullptr;
-      cudaError_t alloc_err = cudaMalloc(&cache_ptr, size_bytes);
-      ET_CHECK_OR_RETURN_ERROR(
-          alloc_err == cudaSuccess,
-          Internal,
-          "Failed to allocate GPU cache memory: %s",
-          cudaGetErrorString(alloc_err));
-
-      // Copy from tensor to cache (GPU-to-GPU)
-      cudaError_t copy_err = cudaMemcpy(
-          cache_ptr,
-          gpu_tensor->data_ptr(),
-          size_bytes,
-          cudaMemcpyDeviceToDevice);
-      if (copy_err != cudaSuccess) {
-        // Free allocated memory before returning error
-        cudaFree(cache_ptr);
-        ET_LOG(
-            Error,
-            "Failed to copy output to GPU cache: %s",
-            cudaGetErrorString(copy_err));
-        return Error::Internal;
+      // Delete old tensor if overwriting
+      auto old_it = g_gpu_tensors.find(cache_output_name_);
+      if (old_it != g_gpu_tensors.end() && old_it->second.handle != nullptr) {
+        aoti_torch_delete_tensor_object(old_it->second.handle);
       }
 
-      // Free old cache if exists
-      auto old_it = g_device_cache.find(cache_output_name_);
-      if (old_it != g_device_cache.end()) {
-        cudaError_t free_err = cudaFree(old_it->second.data_ptr);
-        if (free_err != cudaSuccess) {
-          ET_LOG(
-              Warning,
-              "Failed to free old cached GPU memory for '%s': %s",
-              cache_output_name_.c_str(),
-              cudaGetErrorString(free_err));
-        }
-        g_device_cache.erase(old_it);
-      }
-
-      // Store in cache
-      CachedGpuData cached;
-      cached.data_ptr = cache_ptr;
-      cached.size_bytes = size_bytes;
-      cached.scalar_type = static_cast<int32_t>(gpu_tensor->scalar_type());
-      auto sizes = gpu_tensor->sizes();
-      cached.sizes.assign(sizes.begin(), sizes.end());
-      g_device_cache[cache_output_name_] = std::move(cached);
+      // Store tensor reference (we now own this tensor)
+      GpuTensorRef ref;
+      ref.handle = gpu_tensor;
+      ref.data_ptr = gpu_tensor->data_ptr();
+      ref.size_bytes = size_bytes;
+      g_gpu_tensors[cache_output_name_] = ref;
 
       // Reset cache_output settings after caching
       cache_output_slot_ = -1;
@@ -523,6 +478,26 @@ class ET_EXPERIMENTAL CudaBackend final
     // reuse cached encoder output. The caller should explicitly clear
     // these settings using the "clear_cache_input" option when done.
 
+    // Cleanup: delete GPU tensors to avoid memory leak across execute() calls.
+    // Input tensors are no longer needed after AOTI execution.
+    for (size_t i = 0; i < n_inputs; i++) {
+      aoti_torch_delete_tensor_object(gpu_inputs[i]);
+    }
+    // Output tensors are no longer needed after copying to CPU,
+    // EXCEPT for tensors stored in g_gpu_tensors (for later D2D copy).
+    for (size_t i = 0; i < n_outputs; i++) {
+      bool is_stored = false;
+      for (const auto& pair : g_gpu_tensors) {
+        if (pair.second.handle == gpu_outputs[i]) {
+          is_stored = true;
+          break;
+        }
+      }
+      if (!is_stored) {
+        aoti_torch_delete_tensor_object(gpu_outputs[i]);
+      }
+    }
+
     return Error::Ok;
   }
 
@@ -532,8 +507,8 @@ class ET_EXPERIMENTAL CudaBackend final
     }
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
-    // Clear all cached GPU memory
-    clear_device_cache();
+    // Delete stored GPU tensors
+    clear_gpu_tensors();
 
     // Destroy the CUDA stream if it exists
     if (handle->cuda_stream != nullptr) {

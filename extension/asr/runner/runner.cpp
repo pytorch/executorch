@@ -265,16 +265,13 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
 
   // Tell CUDA backend to use cached encoder output for decoder input slot 2.
   //
-  // Why slot 2? AOTI reorders inputs alphabetically by name during compilation,
-  // so the decoder receives inputs in this order:
-  //   slot 0: input_ids (decoder token)
-  //   slot 1: cache_position (position in KV cache)
-  //   slot 2: encoder_output (audio features from encoder)
+  // Why slot 2? The AOTI-compiled decoder receives inputs in a different order
+  // than we pass them in decoder_inputs above. The AOTI input order was
+  // determined empirically by examining tensor shapes during execution.
   //
-  // This differs from the order we pass them in decoder_inputs above. The
-  // "2:encoder_output" format tells the backend to use the GPU-cached tensor
-  // named "encoder_output" for AOTI input slot 2, avoiding a CPU->GPU copy
-  // on each of the ~100+ decoder iterations.
+  // The "2:encoder_output" format tells the backend to use the stored GPU
+  // tensor named "encoder_output" for AOTI input slot 2. This avoids redundant
+  // CPU->GPU copies on each decoder iteration.
   {
     ::executorch::runtime::BackendOptions<1> opts;
     opts.set_option("use_cache_input", "2:encoder_output");
