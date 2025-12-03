@@ -7,7 +7,6 @@
 # pyre-unsafe
 
 import itertools
-import os
 import unittest
 
 import torch

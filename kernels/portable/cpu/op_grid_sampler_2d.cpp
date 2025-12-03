@@ -115,22 +115,31 @@ void grid_sample_2d_bilinear_kernel_impl_nchw(
                   se_weight;
             }
           } else {
-            // For border/reflection padding, coordinates are already clipped
+            // For border/reflection padding, clip corner indices to valid range
+            // Even though source coordinates are clipped, adding 1 can push corners out of bounds
+            const int64_t ix_nw_safe = clip_coordinates(ix_nw, inp_W);
+            const int64_t iy_nw_safe = clip_coordinates(iy_nw, inp_H);
+            const int64_t ix_ne_safe = clip_coordinates(ix_ne, inp_W);
+            const int64_t iy_ne_safe = clip_coordinates(iy_ne, inp_H);
+            const int64_t ix_sw_safe = clip_coordinates(ix_sw, inp_W);
+            const int64_t iy_sw_safe = clip_coordinates(iy_sw, inp_H);
+            const int64_t ix_se_safe = clip_coordinates(ix_se, inp_W);
+            const int64_t iy_se_safe = clip_coordinates(iy_se, inp_H);
             out_val = in_data
-                          [in_channel_offset + iy_nw * in.strides()[2] +
-                           ix_nw * in.strides()[3]] *
+                          [in_channel_offset + iy_nw_safe * in.strides()[2] +
+                           ix_nw_safe * in.strides()[3]] *
                     nw_weight +
                 in_data
-                        [in_channel_offset + iy_ne * in.strides()[2] +
-                         ix_ne * in.strides()[3]] *
+                        [in_channel_offset + iy_ne_safe * in.strides()[2] +
+                         ix_ne_safe * in.strides()[3]] *
                     ne_weight +
                 in_data
-                        [in_channel_offset + iy_sw * in.strides()[2] +
-                         ix_sw * in.strides()[3]] *
+                        [in_channel_offset + iy_sw_safe * in.strides()[2] +
+                         ix_sw_safe * in.strides()[3]] *
                     sw_weight +
                 in_data
-                        [in_channel_offset + iy_se * in.strides()[2] +
-                         ix_se * in.strides()[3]] *
+                        [in_channel_offset + iy_se_safe * in.strides()[2] +
+                         ix_se_safe * in.strides()[3]] *
                     se_weight;
           }
 

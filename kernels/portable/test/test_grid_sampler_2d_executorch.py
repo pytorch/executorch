@@ -12,7 +12,6 @@ Test grid_sampler_2d by exporting to ExecuTorch and comparing with PyTorch.
 import itertools
 import sys
 import unittest
-from typing import Tuple
 
 import torch
 import torch.nn as nn
@@ -87,7 +86,7 @@ class GridSampler2DExecutorchTest(unittest.TestCase):
                 "forward"
             )
             if fwd_method is None:
-                self.fail(f"Failed to load forward method")
+                self.fail("Failed to load forward method")
             executorch_output = fwd_method.execute((input_tensor, grid))[0]
 
             # Compare results
