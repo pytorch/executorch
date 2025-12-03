@@ -669,6 +669,7 @@ def _combine_aot_overlapped_intermediate_outputs(
     # Pick the last intermediate output
     last_int = runtime_debug_handle[negative_index]
     key = (last_int,)
+    print("key is:", key, " for out index:", negative_index)
     if key not in aot_map:
         # If the last intermediate output is not in the AOT map, return None
         return (-1,), None
@@ -947,6 +948,7 @@ def find_op_names(
     result = []
 
     for key_tuple, op_name in debug_handle_to_op_names.items():
+        print(f" debug handle {key_tuple} op name {op_name}")
         # Check if key is a subset of the target_debug_handle
         if set(key_tuple).issubset(dh_set):
             result.extend(op_name)

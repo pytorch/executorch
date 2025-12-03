@@ -32,6 +32,9 @@ class IntermediateOutputCapturer(Interpreter):
     # Runs the graph module and captures the intermediate outputs.
     def run_and_capture(self, *args, **kwargs) -> Dict[DebugHandle, Any]:
         captured_outputs = {}
+        print(*args)
+        print(**kwargs)
+        assert False
 
         def capture_run_node(n: torch.fx.Node) -> Any:
             result = super(IntermediateOutputCapturer, self).run_node(n)

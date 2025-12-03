@@ -135,6 +135,8 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         return False
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
+        if "delegation_tag" in node.meta:
+            return False
         # get_attr node can always be supported on any backend
         if node.op == "get_attr":
             return True
@@ -322,21 +324,6 @@ class SingleOpCoreMLPartitioner(Partitioner):
             partitions.append(partition)
             partition_id += 1
 
-        # Create single-node partitions for all other supported operations
-        for node in exported_program.graph_module.graph.nodes:
-            if node in pattern_nodes:
-                continue  # Skip nodes that are part of 4-bit patterns
-
-            if op_support.is_node_supported(None, node):
-                # Check if the node actually has tensor inputs/outputs to avoid empty delegates
-                # Skip operations that don't have meaningful computation (like constants)
-                if node.op == "get_attr":
-                    continue
-
-                partition = Partition(id=partition_id, nodes=[node])
-                partitions.append(partition)
-                partition_id += 1
-
         return partitions
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
@@ -347,6 +334,22 @@ class SingleOpCoreMLPartitioner(Partitioner):
         # Create single-op partitions with special 4-bit pattern handling
         partition_list = self._create_single_op_partitions(exported_program)
 
+        for partition in partition_list:
+            for node in partition.nodes:
+                tag = f"tag_x{partition.id}"
+                node.meta["delegation_tag"] = tag
+                partition_tags[tag] = self.delegation_spec
+
+        capability_partitioner = CapabilityBasedPartitioner(
+            exported_program.graph_module,
+            _OperatorsSupportedForCoreMLBackend(
+                self.skip_ops_for_coreml_delegation,
+                lower_full_graph=False,
+                log=True,
+            ),
+            allows_single_node_partition=True,
+        )
+        partition_list = capability_partitioner.propose_partitions()
         for partition in partition_list:
             for node in partition.nodes:
                 tag = f"tag{partition.id}"

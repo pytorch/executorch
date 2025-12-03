@@ -1407,7 +1407,7 @@ class Inspector:
         )
 
     def calculate_numeric_gap(
-        self, distance: str = "MSE", disable_debug_handle_valdiation: bool = False
+        self, distance: str = "MSE", record_intermediate_outputs = False, disable_debug_handle_valdiation: bool = False
     ):
         """
         Compares logged intermediate outputs from the exported graph (in ETRecord)
@@ -1471,19 +1471,34 @@ class Inspector:
                 and len(aot_intermediate_output) > 1
             ):
                 continue
-            rows.append(
-                {
-                    "aot_ops": find_op_names(
-                        aot_debug_handle, aot_debug_handle_to_op_names
-                    ),
-                    "aot_intermediate_output": aot_intermediate_output,
-                    "runtime_ops": find_op_names(
-                        runtime_debug_handle, runtime_debug_handle_to_op_names
-                    ),
-                    "runtime_intermediate_output": runtime_intermediate_output,
-                    "gap": compare_intermediate_outputs(
-                        aot_intermediate_output, runtime_intermediate_output, comparator
-                    ),
-                }
-            )
+            if record_intermediate_outputs:
+                rows.append(
+                    {
+                        "aot_ops": find_op_names(
+                            aot_debug_handle, aot_debug_handle_to_op_names
+                        ),
+                        "aot_intermediate_output": aot_intermediate_output,
+                        "runtime_ops": find_op_names(
+                            runtime_debug_handle, runtime_debug_handle_to_op_names
+                        ),
+                        "runtime_intermediate_output": runtime_intermediate_output,
+                        "gap": compare_intermediate_outputs(
+                            aot_intermediate_output, runtime_intermediate_output, comparator
+                        ),
+                    }
+                )
+            else:
+                rows.append(
+                    {
+                        "aot_ops": find_op_names(
+                            aot_debug_handle, aot_debug_handle_to_op_names
+                        ),
+                        "runtime_ops": find_op_names(
+                            runtime_debug_handle, runtime_debug_handle_to_op_names
+                        ),
+                        "gap": compare_intermediate_outputs(
+                            aot_intermediate_output, runtime_intermediate_output, comparator
+                        ),
+                    }
+                )
         return pd.DataFrame(rows)

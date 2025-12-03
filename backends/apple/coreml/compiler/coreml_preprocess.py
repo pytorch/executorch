@@ -415,7 +415,8 @@ class CoreMLBackend(BackendDetails):
         mlmodel: ct.models.MLModel, model_type: MODEL_TYPE
     ) -> PreprocessResult:
         identifier = "executorch_" + str(uuid.uuid4())
-        dir_path: Path = Path("tmp") / identifier
+        import tempfile
+        dir_path: Path = Path(tempfile.gettempdir()) / identifier
         model_dir_path: Path = dir_path / "lowered_module"
         model_spec: ct.proto.Model_pb2 = mlmodel.get_spec()
         logger.warning(

@@ -349,6 +349,7 @@ class StaticAttentionIOManager:
         logits = None
         all_logits = None
         for i in range(0, tokens.size(1), self.input_len):
+            print(f"Running the {i} th ieration for input_len {self.input_len}")
             logits = self._run_once(model, tokens[:, i : i + self.input_len])[0]
             if self.config.generate_full_logits:
                 if all_logits is None:
@@ -534,12 +535,19 @@ class StaticAttentionIOManager:
             freqs_cos_override = self.freqs_cos[self.pos : self.pos + self.input_len]
         if freqs_sin_override is None:
             freqs_sin_override = self.freqs_sin[self.pos : self.pos + self.input_len]
+        attn_options = {
+            "masks": self.masks,
+            "freqs_cos_override": freqs_cos_override.contiguous(),
+            "freqs_sin_override": freqs_sin_override.contiguous(),
+            "in_cache_state": (self.k_caches, self.v_caches),
+        }
+        self.last_model_inputs = (tokens, attn_options)
         y, attn_updates = model(
             tokens,
             {
                 "masks": self.masks,
-                "freqs_cos_override": freqs_cos_override,
-                "freqs_sin_override": freqs_sin_override,
+                "freqs_cos_override": freqs_cos_override.contiguous(),
+                "freqs_sin_override": freqs_sin_override.contiguous(),
                 "in_cache_state": (self.k_caches, self.v_caches),
             },
         )

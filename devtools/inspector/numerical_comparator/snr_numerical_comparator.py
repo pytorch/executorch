@@ -23,6 +23,11 @@ class SNRComparator(NumericalComparatorBase):
 
         t_a = convert_to_float_tensor(a)
         t_b = convert_to_float_tensor(b)
+        if t_a.size(1) == 128:
+          t_a = t_a[:, :53, :]
+          t_b = t_b[:, :53, :]
+        print(f"shape of a {t_a.size()}")
+        print(f"shape of b {t_b.size()}")
 
         # Calculate the signal power and noise power
         original_power = torch.mean(torch.pow(t_a, 2))
@@ -36,4 +41,6 @@ class SNRComparator(NumericalComparatorBase):
 
         # Calculate SNR
         snr = 10 * torch.log10(original_power / error_power)
+        print(f"snr {snr}")
+        print("-------")
         return snr.item()
