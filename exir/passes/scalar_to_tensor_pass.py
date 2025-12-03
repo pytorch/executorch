@@ -7,26 +7,40 @@
 # pyre-strict
 
 import torch
-from executorch.exir.pass_base import ExportPass, map_args
+from executorch.exir.pass_base import ExportPass, PassResult, map_args
 
 
 class ScalarToTensorPass(ExportPass):
+    def __init__(self) -> None:
+        super().__init__()
+        self._modified = False
+
     # pyre-ignore
     def call_operator(self, op, args, kwargs, meta):
         # pyre-ignore
         def try_coerce(value, arg):
             # Note: we want to create tensor constants instead of
-            # FakeTensor or ProxyTensor. If python_dispatcher is enabled,
+            # FakeTensor or ProxyTensor. If python_dispatcher is enabled,was
             # the fake_tensor_mode of inputs will be used so that we won't
             # get a constant tensor with torch.tensor() call but instead
             # a fake tensor is created.
             with torch.utils._python_dispatch._disable_current_modes():
-                return (
-                    torch.tensor(value)
-                    if isinstance(value, (float, int, bool))
-                    and isinstance(arg.type, torch.TensorType)
-                    else value
+                should_coerce = isinstance(value, (float, int, bool)) and isinstance(
+                    arg.type, torch.TensorType
                 )
+                if should_coerce:
+                    self._modified = True
+                    return torch.tensor(value)
+                return value
 
         args, kwargs = map_args(op, try_coerce, args, kwargs)
         return super().call_operator(op, args, kwargs, meta)
+
+    # pyre-ignore
+    def call(self, graph_module):
+
+        self._modified = False
+        result = super().call(graph_module)
+        if result is not None:
+            return PassResult(result.graph_module, self._modified)
+        return result
