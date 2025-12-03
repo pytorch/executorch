@@ -347,8 +347,8 @@ def main():
     parser.add_argument(
         "--iterations",
         type=int,
-        default=100,
-        help="Number of benchmark iterations (default: 100)",
+        default=10,
+        help="Number of benchmark iterations (default: 10)",
     )
 
     parser.add_argument(
