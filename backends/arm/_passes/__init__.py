@@ -9,7 +9,6 @@ from .arm_pass import ArmPass  # noqa  # usort: skip
 from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
 from .annotate_output_dim_order_pass import AnnotateOutputDimOrderPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
-from .cast_bool_to_int8_pass import CastBoolToInt8Pass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
@@ -101,6 +100,7 @@ from .insert_table_ops import InsertTableOpsPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
+from .promote_bool_operands_pass import PromoteBoolOperandsPass  # noqa
 from .remove_getitem_pass import RemoveGetItemPass  # noqa
 from .remove_graph_asserts_pass import RemoveGraphAssertsPass  # noqa
 from .remove_noop_pass import RemoveNoopPass  # noqa
