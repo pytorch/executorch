@@ -20,7 +20,6 @@ from typing import cast, Dict, Iterable, Optional, Sequence, Tuple
 import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import (
-    get_shape,
     get_zero_point,
     is_node_with_op,
     quantize_tensor_multiplier,
@@ -1807,23 +1806,59 @@ class ReplaceWhereWithFullArgsWithWhereScalar(ExportPass):
 
 # Adapted from fbcode/pyspeech/opt_passes/replace_ops.py
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
-class ReplaceSplitWithSlicePass(ExportPass):
+class ReplaceSplitWithSlicePass(RemoveOrReplacePassInterface):
     """
     split_with_sizes() delegates to slice() op, so perform this replacement here.
     This avoids the expense of delegation from ATen.
     """
 
-    # For split_with_sizes, return the slice dim and extent for each split.
-    def get_split_sizes(
-        self, graph_module: torch.fx.GraphModule, node: torch.fx.Node
-    ) -> Optional[list[tuple[int, ...]]]:
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.split_with_sizes_copy.default]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # All the users of this split_with_sizes op must be getitem ops
+        if any(user.target != operator.getitem for user in node.users):
+            return False
+
+        # Get the slice dim and extent for each split
+        slice_ops = self._get_split_sizes(node)
+        if slice_ops is None:
+            return False
+
+        graph = node.graph
+
+        # Go over each getitem user, and replace it with slice op
+        for user in list(node.users.keys()):
+            assert user.target == operator.getitem
+            item_idx = int(user.args[1])
+            assert item_idx < len(slice_ops)
+            cur_slice = slice_ops[item_idx]
+            with graph.inserting_before(user):
+                cur_slice_node = graph.call_function(
+                    exir_ops.edge.aten.slice_copy.Tensor,
+                    (node.args[0], cur_slice[0], cur_slice[1], cur_slice[2], 1),
+                )
+                # Metadata copy important
+                cur_slice_node.meta = user.meta
+            user.replace_all_uses_with(cur_slice_node)
+
+        # Return True to indicate the split node should be removed
+        return True
+
+    def _get_split_sizes(self, node: torch.fx.Node) -> Optional[list[tuple[int, ...]]]:
+        """For split_with_sizes, return the slice dim and extent for each split."""
         # Parse the args of the split_with_sizes op
         tensor_arg, split_sizes = node.args[0:2]
         assert isinstance(tensor_arg, torch.fx.Node)
-        in_shape = get_shape(graph_module, tensor_arg)
-        split_dim = 0 if len(node.args) < 3 else node.args[2]
-        if in_shape is None:
+
+        # Get shape from node metadata
+        val = tensor_arg.meta.get("val")
+        if val is None:
             return None
+        in_shape = val.shape
+
+        split_dim = 0 if len(node.args) < 3 else node.args[2]
 
         # Canonicalize the split dimension
         assert isinstance(split_dim, int)
@@ -1841,103 +1876,69 @@ class ReplaceSplitWithSlicePass(ExportPass):
 
         return slice_ops
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        graph = graph_module.graph
-        for node in graph.nodes:
-            if not isinstance(node.target, EdgeOpOverload):
-                continue
-            if (
-                get_edge_overload_packet(node.target)
-                != exir_ops.edge.aten.split_with_sizes_copy
-            ):
-                continue
-            # All the users of this split_with_sizes op must be getitem ops
-            if any(user.target != operator.getitem for user in node.users):
-                continue
-
-            # Get the slice dim and extent for each split
-            slice_ops = self.get_split_sizes(graph_module, node)
-            if slice_ops is None:
-                continue
-
-            # Go over each getitem user, and replace it with slice op
-            for user in list(node.users.keys()):
-                assert user.target == operator.getitem
-                item_idx = user.args[1]
-                assert item_idx < len(slice_ops)
-                cur_slice = slice_ops[item_idx]
-                with graph.inserting_before(user):
-                    cur_slice_node = graph.call_function(
-                        exir_ops.edge.aten.slice_copy.Tensor,
-                        (node.args[0], cur_slice[0], cur_slice[1], cur_slice[2], 1),
-                    )
-                user.replace_all_uses_with(cur_slice_node)
-                graph.erase_node(user)
-
-            graph.erase_node(node)
-
-        graph_module.recompile()
-        result = super().call(graph_module)
-        return result
-
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class ReplacePowWithMulPass(ExportPass):
+class ReplacePowWithMulPass(RemoveOrReplacePassInterface):
     """
-    Replace the pow op for a mul op.
+    Replace the pow op with successive mul ops when the exponent is an
+    integer between 2 and 4 (inclusive).
     """
 
-    def call_operator(
-        self,
-        op,
-        args: Tuple[Argument, ...],
-        kwargs: Dict[str, Argument],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
-        if not (
-            len(args) > 1
-            and isinstance(args[1], int)
-            and cast(int, args[1]) > 1
-            and cast(int, args[1]) < 5
-            and op
-            in {
-                exir_ops.edge.aten.pow.Tensor_Scalar,
-            }
-        ):
-            return super().call_operator(op, args, kwargs, meta)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.pow.Tensor_Scalar]
 
-        x = args[0]
-        exponent = cast(int, args[1])
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # Check if we have at least 2 args and the exponent is an int
+        if len(node.args) < 2 or not isinstance(node.args[1], int):
+            return False
 
-        if exponent > 2:
-            for _ in range(exponent, 2, -1):
-                x = super().call_operator(
+        exponent = cast(int, node.args[1])
+
+        # Only replace if exponent is between 2 and 4 (inclusive)
+        if exponent < 2 or exponent > 4:
+            return False
+
+        x = node.args[0]
+        assert isinstance(x, torch.fx.Node)
+
+        graph = node.graph
+        result_node = x
+
+        # Create successive mul operations
+        # For exponent=2: x * x (1 mul)
+        # For exponent=3: (x * x) * x (2 muls)
+        # For exponent=4: ((x * x) * x) * x (3 muls)
+        for _ in range(exponent - 1):
+            with graph.inserting_before(node):
+                result_node = graph.call_function(
                     exir_ops.edge.aten.mul.Tensor,
-                    (x, args[0]),
-                    {},
-                    meta,
+                    args=(result_node, x),
                 )
-        return super().call_operator(
-            exir_ops.edge.aten.mul.Tensor,
-            (x, args[0]),
-            {},
-            meta,
-        )
+                result_node.meta = node.meta
+
+        node.replace_all_uses_with(result_node)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceMatmulWithTransposedMatmulPass(ExportPass):
+class ReplaceMatmulWithTransposedMatmulPass(RemoveOrReplacePassInterface):
     """
     For certain backends, we have efficient kernels for transposed matmul. We
     replace AxB with AxB' for such backends.
     """
 
-    def call_operator(self, op, args, kwargs, meta):
-        if op != exir_ops.edge.cadence.quantized_matmul.default or args[-1] is True:
-            return super().call_operator(op, args, kwargs, meta)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.cadence.quantized_matmul.default]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # If already transposed, bail
+        if len(node.args) >= 9 and node.args[-1] is True:
+            return False
 
         # Get the args
-        if len(args) == 9:
+        if len(node.args) == 9:
             (
                 X_arg,
                 X_zero_point,
@@ -1948,8 +1949,8 @@ class ReplaceMatmulWithTransposedMatmulPass(ExportPass):
                 out_shift,
                 out_zero_point,
                 transposed,
-            ) = args
-        elif len(args) == 8:
+            ) = node.args
+        elif len(node.args) == 8:
             (
                 X_arg,
                 X_zero_point,
@@ -1959,37 +1960,43 @@ class ReplaceMatmulWithTransposedMatmulPass(ExportPass):
                 out_multiplier,
                 out_shift,
                 out_zero_point,
-            ) = args
+            ) = node.args
             transposed = False
         else:
             raise AssertionError(
-                f"Unexpected number of args for quantized_matmul: {len(args)}"
+                f"Unexpected number of args for quantized_matmul: {len(node.args)}"
             )
 
         # If the matmul is already transposed, bail
         if transposed:
-            return super().call_operator(op, args, kwargs, meta)
+            return False
 
-        # Get the second tensor
-        Y_tensor = Y_arg.to_tensor()
-        # Concretize the bias
-        zero_bias = super().call_operator(
-            exir_ops.edge.aten.full.default,
-            ([Y_tensor.size(-1)], 0),
-            {"dtype": torch.int32},
-            meta,
-        )
+        # Get the second tensor from metadata
+        assert isinstance(Y_arg, torch.fx.Node)
+        Y_tensor_val = Y_arg.meta.get("val")
+        if Y_tensor_val is None:
+            return False
 
-        # Y_arg is always a ProxyValue, so we insert a transpose node
-        transpose_args = (Y_arg, -1, -2)
-        Y_arg_t = super().call_operator(
-            exir_ops.edge.aten.transpose_copy.int,
-            transpose_args,
-            {},
-            meta,
-        )
+        graph = node.graph
 
-        # Construct the new args, and return the transposed matmult op
+        # Create zero bias
+        with graph.inserting_before(node):
+            zero_bias = graph.call_function(
+                exir_ops.edge.aten.full.default,
+                args=([Y_tensor_val.size(-1)], 0),
+                kwargs={"dtype": torch.int32},
+            )
+            zero_bias.meta = node.meta
+
+        # Transpose Y_arg
+        with graph.inserting_before(node):
+            Y_arg_t = graph.call_function(
+                exir_ops.edge.aten.transpose_copy.int,
+                args=(Y_arg, -1, -2),
+            )
+            Y_arg_t.meta = node.meta
+
+        # Construct the new args, and create the transposed matmul op
         new_args = (
             X_arg,
             X_zero_point,
@@ -2001,18 +2008,32 @@ class ReplaceMatmulWithTransposedMatmulPass(ExportPass):
             out_zero_point,
             True,
         )
-        return super().call_operator(op, new_args, kwargs, meta)
+
+        with graph.inserting_before(node):
+            new_node = graph.call_function(
+                exir_ops.edge.cadence.quantized_matmul.default,
+                args=new_args,
+                kwargs=node.kwargs,
+            )
+            new_node.meta = node.meta
+
+        node.replace_all_uses_with(new_node)
+        return True
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        modified = False
         result = super().call(graph_module)
-        # Fuse any inserted transpose node with transpose/permute nodes
-        # surrounding it.
-        result = FuseCascadedTransposeOrPermuteOps()(result.graph_module)
-        assert result is not None
-        # Replace permute with transpose.
-        result = ReplacePermuteWithTransposePass()(result.graph_module)
-        assert result is not None
-        return result
+        modified = modified or result.modified
+        if modified:
+            # Fuse any inserted transpose node with transpose/permute nodes
+            # surrounding it.
+            result = FuseCascadedTransposeOrPermuteOps().call(result.graph_module)
+            modified = modified or result.modified
+            # Replace permute with transpose.
+            result = ReplacePermuteWithTransposePass().call(result.graph_module)
+            modified = modified or result.modified
+
+        return PassResult(result.graph_module, modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
