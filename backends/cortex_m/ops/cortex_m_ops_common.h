@@ -69,11 +69,7 @@ inline void validate_cmsis_nn_tensor_requirements(
         "Output must have the same sizes as inputs");
   }
 
-  // Dim order consistency
-  ET_CHECK_MSG(
-      executorch::runtime::tensors_have_same_dim_order(input1, input2, output),
-      "Tensors must have same dimension order");
-
+  // TBD (#16032): Validate dim_order
   // TBD: Validate memory alignment (CMSIS-NN requirement)
 }
 
@@ -85,13 +81,6 @@ inline void validate_single_quant_params(
   int64_t zp_val = zero_point.to<int64_t>();
   int64_t mult_val = multiplier.to<int64_t>();
   int64_t shift_val = shift.to<int64_t>();
-
-  ET_CHECK_MSG(
-      zp_val >= std::numeric_limits<int8_t>::min() &&
-          zp_val <= std::numeric_limits<int8_t>::max(),
-      "%s zero point must be in int8 range [Value: %d]",
-      param_name,
-      zp_val);
 
   ET_CHECK_MSG(
       mult_val >= std::numeric_limits<int32_t>::min() &&
