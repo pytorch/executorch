@@ -373,53 +373,60 @@ adb logcat | grep -E "ExecuTorch"
 
 ##### Issue 1: Error 18 (InvalidArgument)
 
-**Cause**: Wrong parameter order in Runner constructor or missing QNN config
+- **Cause**: Wrong parameter order in Runner constructor or missing QNN config
 
-**Solution**: Check `$EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/llama/runner/runner.h` for the correct constructor signature.
+- **Solution**: Check `$EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/llama/runner/runner.h` for the correct constructor signature.
 
 ##### Issue 2: Error 1 (Internal) with QNN API Version Mismatch
 
-**Symptoms**:
-```
-W [Qnn ExecuTorch]: Qnn API version 2.33.0 is mismatched
-E [Qnn ExecuTorch]: Using newer context binary on old SDK
-E [Qnn ExecuTorch]: Can't create context from binary. Error 5000
-```
+- **Symptoms**:
 
-**Cause**: Model compiled with QNN SDK version X but APK uses QNN runtime version Y
+    ```
+    W [Qnn ExecuTorch]: Qnn API version 2.33.0 is mismatched
+    E [Qnn ExecuTorch]: Using newer context binary on old SDK
+    E [Qnn ExecuTorch]: Can't create context from binary. Error 5000
+    ```
 
-**Solution**: 
-1. Update `build.gradle.kts` with matching QNN runtime version
+- **Cause**: Model compiled with QNN SDK version X but APK uses QNN runtime version Y
 
-> **Note:** The version numbers below (`2.33.0` and `2.37.0`) are examples only. Please check for the latest compatible QNN runtime version or match your QNN SDK version to avoid API mismatches.
-**Before**:
-```kotlin
-implementation("com.qualcomm.qti:qnn-runtime:2.33.0")
-```
+- **Solution**:
+    - Update `build.gradle.kts` with matching QNN runtime version
 
-**After**:
-```kotlin
-implementation("com.qualcomm.qti:qnn-runtime:2.37.0")
-```
+    > **Note:** The version numbers below (`2.33.0` and `2.37.0`) are examples only. Please check for the latest compatible QNN runtime version or match your QNN SDK version to avoid API mismatches.
 
-2. Or recompile model with matching QNN SDK version
+    **Before**:
+    ```kotlin
+    implementation("com.qualcomm.qti:qnn-runtime:2.33.0")
+    ```
+    
+    **After**:
+    ```kotlin
+    implementation("com.qualcomm.qti:qnn-runtime:2.37.0")
+    ```
+
+    - Or recompile model with matching QNN SDK version
 
 ##### Issue 3: Native Code Changes Not Applied
 
-**Symptoms**: Debug logs don't appear, behavior doesn't change
+- **Symptoms**:
+    - Debug logs don't appear
+    - Behavior doesn't change
 
-**Cause**: Gradle using Maven dependency instead of local AAR
+- **Cause**:
+    - Gradle using Maven dependency instead of local AAR
 
-**Solution**: Always build with `-PuseLocalAar=true` flag
+- **Solution**:
+    - Always build with `-PuseLocalAar=true` flag
 
 ##### Issue 4: Logs Not Appearing
 
-**Cause**: Wrong logging tag filter
+- **Cause**: Wrong logging tag filter
 
-**Solution**: QNN uses "ExecuTorch" tag:
-```bash
-adb logcat | grep "ExecuTorch"
-```
+- **Solution**: QNN uses "ExecuTorch" tag:
+
+    ```bash
+    adb logcat | grep "ExecuTorch"
+    ```
 
 ## Supported model list
 
