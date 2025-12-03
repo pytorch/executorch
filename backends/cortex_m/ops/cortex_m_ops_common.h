@@ -83,13 +83,6 @@ inline void validate_single_quant_params(
   int64_t shift_val = shift.to<int64_t>();
 
   ET_CHECK_MSG(
-      zp_val >= std::numeric_limits<int8_t>::min() &&
-          zp_val <= std::numeric_limits<int8_t>::max(),
-      "%s zero point must be in int8 range [Value: %d]",
-      param_name,
-      zp_val);
-
-  ET_CHECK_MSG(
       mult_val >= std::numeric_limits<int32_t>::min() &&
           mult_val <= std::numeric_limits<int32_t>::max(),
       "%s multiplier must be in int32 range [Value: %d]",
