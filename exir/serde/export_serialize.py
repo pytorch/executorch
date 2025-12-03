@@ -54,6 +54,8 @@ from torch.utils._pytree import treespec_dumps, treespec_loads
 from torch.utils._sympy.numbers import int_oo
 from torch.utils._sympy.value_ranges import ValueRanges
 
+import executorch.exir as exir
+
 # pyre-ignore
 
 from .schema import (  # type: ignore[attr-defined]
@@ -202,6 +204,11 @@ _SYM_BOOL_OPS = {
     operator.lt,
     operator.gt,
     torch.sym_not,
+}
+
+
+_KNOWN_FUNCTIONS = {
+    exir.memory.view,
 }
 
 
@@ -545,7 +552,7 @@ class GraphModuleSerializer:
                 outputs=self.serialize_hoo_outputs(node),
                 metadata=self.serialize_metadata(node),
             )
-        else:
+        elif node.target in _KNOWN_FUNCTIONS:
             ex_node = Node(
                 name=node.name,
                 target=node._pretty_print_target(node.target),
@@ -553,6 +560,8 @@ class GraphModuleSerializer:
                 outputs=self.serialize_hoo_outputs(node),
                 metadata=self.serialize_metadata(node),
             )
+        else:
+            raise SerializeError(f"Serializing {node.target} is not supported")
 
         self.graph_state.nodes.append(ex_node)
 

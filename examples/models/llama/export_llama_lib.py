@@ -230,12 +230,6 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--checkpoint_dir",
-        default=None,
-        help="checkpoint directory. Use with a sharded checkpoint, not for the standard llama2 model. Note, checkpoint_dir takes precedence over checkpoint if both are set.",
-    )
-
-    parser.add_argument(
         "--adapter_checkpoint",
         required=False,
         help="Path to the adapter.pt file from torchtune. Used if the model has trained LoRA adapters. Must provide adapter_config.json",
@@ -402,7 +396,6 @@ def build_args_parser() -> argparse.ArgumentParser:
         " [16] pattern specifies all layers have sliding window of 16.",
     )
 
-    parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument(
         "-X",
@@ -678,18 +671,12 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
         if llm_config.base.checkpoint
         else None
     )
-    checkpoint_dir = (
-        canonical_path(llm_config.base.checkpoint_dir)
-        if llm_config.base.checkpoint_dir
-        else None
-    )
     params_path = (
         canonical_path(llm_config.base.params) if llm_config.base.params else None
     )
     output_dir_path = canonical_path(llm_config.export.output_dir, dir=True)
 
     llm_config.base.checkpoint = checkpoint_path
-    llm_config.base.checkpoint_dir = checkpoint_dir
     llm_config.base.params = params_path
     llm_config.export.output_dir = output_dir_path
 
