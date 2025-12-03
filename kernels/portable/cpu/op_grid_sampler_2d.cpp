@@ -116,7 +116,8 @@ void grid_sample_2d_bilinear_kernel_impl_nchw(
             }
           } else {
             // For border/reflection padding, clip corner indices to valid range
-            // Even though source coordinates are clipped, adding 1 can push corners out of bounds
+            // Even though source coordinates are clipped, adding 1 can push
+            // corners out of bounds
             const int64_t ix_nw_safe = clip_coordinates(ix_nw, inp_W);
             const int64_t iy_nw_safe = clip_coordinates(iy_nw, inp_H);
             const int64_t ix_ne_safe = clip_coordinates(ix_ne, inp_W);
