@@ -217,11 +217,11 @@ void grid_sample_2d_nearest_kernel_impl_nchw(
             // For border/reflection padding, clip coordinates after rounding
             // Rounding can push coordinates out of bounds even after
             // grid_sampler_compute_source_index
-            ix_nearest = clip_coordinates(ix_nearest, inp_W);
-            iy_nearest = clip_coordinates(iy_nearest, inp_H);
+            int64_t ix_clipped = clip_coordinates(ix_nearest, inp_W);
+            int64_t iy_clipped = clip_coordinates(iy_nearest, inp_H);
             out_val = in_data
-                [in_channel_offset + iy_nearest * in.strides()[2] +
-                 ix_nearest * in.strides()[3]];
+                [in_channel_offset + iy_clipped * in.strides()[2] +
+                 ix_clipped * in.strides()[3]];
           }
 
           // Write output in NCHW order
