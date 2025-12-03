@@ -450,19 +450,23 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             fx_node.meta.update(self.deserialize_metadata(serialized_node.metadata))
             return
         elif isinstance(target, str):
-            # Create a dummy fake op if the target does not exist
-            # because we cannot create a call_function node w/o a
-            # callable target
-            log.warning(
-                f"Could not find operator {target}. Returning fake operator."
-            )  # noqa: G004
+            # Special handling for memory ops, which are not EdgeOpOverload but
+            # are still somewhat expected in serialized graphs.
+            if target == "executorch.exir.memory.view":
+                target = exir.memory.view
+            else:
+                # Otherwise, create a dummy fake op if the target does not exist
+                # because we cannot create a call_function node w/o a callable
+                # target
+                log.warning(
+                    f"Could not find operator {target}. Returning fake operator."
+                )  # noqa: G004
+                # pyre-ignore
+                def fake_op(x):
+                    raise NotImplementedError("Fake op is not meant to be run.")
 
-            # pyre-ignore
-            def fake_op(x):
-                raise NotImplementedError("Fake op is not meant to be run.")
-
-            fake_op.__name__ = target
-            target = fake_op
+                fake_op.__name__ = target
+                target = fake_op
 
             args = self.deserialize_inputs_no_schema(serialized_node)
             fx_node = self.graph.create_node("call_function", target, args, None, None)
