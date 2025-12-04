@@ -65,7 +65,6 @@ OPERATORS = [
     "ne",
     "permute_copy",
     "pow",
-    "quantized_conv2d_nchw_out",
     "quantized_conv2d_nchw_asym8sxsym8s_asym8s_per_tensor_out",
     "quantized_conv2d_nchw_asym8uxsym8u_asym8u_per_tensor_out",
     "quantized_conv1d_ncl_asym8sxsym8s_asym8s_per_tensor_out",
@@ -74,7 +73,6 @@ OPERATORS = [
     "quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_out",
     "quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_out",
     "quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_out",
-    "quantized_conv2d_nhwc_out",
     "quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_out",
     "quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor_out",
     "quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor_out",
@@ -125,3 +123,7 @@ def define_common_targets():
     # quantized_linear_out and quantized_linear_per_tensor_out needs additional dependency for int16 support
     define_operator("quantized_linear_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators/generic:op_quantized_linear"])
     define_operator("quantized_linear_per_tensor_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators/generic:op_quantized_linear"])
+
+    # quantized_conv2d_nchw_out and quantized_conv2d_nhwc_out need additional dependency for int16 support
+    define_operator("quantized_conv2d_nchw_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators/generic:op_quantized_conv2d"])
+    define_operator("quantized_conv2d_nhwc_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators/generic:op_quantized_conv2d"])
