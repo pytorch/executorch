@@ -1,7 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -29,7 +29,7 @@ using Tensor = torch::executor::Tensor;
 using ScalarType = executorch::aten::ScalarType;
 using Scalar = torch::executor::Scalar;
 using Error = executorch::runtime::Error;
-using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
+using Int64ArrayRef = executorch::aten::ArrayRef<int64_t>;
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
 // From arm_nn_math_types.h
@@ -167,8 +167,8 @@ inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
 // multiplier: Range {ARM_NN_Q31_MIN + 1, Q32_MAX}
 // shift     : Range {-31, 30}
 inline bool validate_per_channel_quant_params(
-    const IntArrayRef multipliers,
-    const IntArrayRef shifts,
+    const Int64ArrayRef multipliers,
+    const Int64ArrayRef shifts,
     int num_channels) {
   for (int i = 0; i < num_channels; ++i) {
     // Multiplier: {ARM_NN_Q31_MIN + 1, ARM_NN_Q31_MAX}

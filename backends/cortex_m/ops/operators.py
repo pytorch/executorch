@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -307,13 +307,13 @@ lib.define(
     "Tensor weights, "
     "Tensor? bias, "
     "Tensor? kernel_sum, "
-    "Scalar input_offset, "
-    "Scalar filter_offset, "
-    "Scalar output_offset, "
+    "int input_offset, "
+    "int filter_offset, "
+    "int output_offset, "
     "int[] requantize_multipliers, "
     "int[] requantize_shifts, "
-    "Scalar activation_max, "
-    "Scalar activation_min, "
+    "int activation_max, "
+    "int activation_min, "
     "*, Tensor(a!) out"
     ") -> Tensor(a!)"
 )
@@ -325,13 +325,13 @@ lib.define(
     "Tensor weights, "
     "Tensor? bias, "
     "Tensor? kernel_sum, "
-    "Scalar input_offset, "
-    "Scalar filter_offset, "
-    "Scalar output_offset, "
+    "int input_offset, "
+    "int filter_offset, "
+    "int output_offset, "
     "int[] requantize_multipliers, "
     "int[] requantize_shifts, "
-    "Scalar activation_max, "
-    "Scalar activation_min"
+    "int activation_max, "
+    "int activation_min"
     ") -> Tensor"
 )
 
