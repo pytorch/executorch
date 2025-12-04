@@ -14,7 +14,6 @@ from executorch.backends.arm._passes import (
     AnnotateDecomposedMatmulPass,
     AnnotateOutputDimOrderPass,
     BroadcastArgsPass,
-    CastBoolToInt8Pass,
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
@@ -55,6 +54,7 @@ from executorch.backends.arm._passes import (
     DecomposeGluPass,
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
+    DecomposeInt32ClampPass,
     DecomposeIntPowPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
@@ -92,6 +92,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
+    PromoteBoolOperandsPass,
     QuantizeClampArgumentsPass,
     RemoveGetItemPass,
     RemoveGraphAssertsPass,
@@ -122,7 +123,6 @@ from torch.nn.modules import Module
 
 
 class ArmPassManager(PassManager):
-
     def __init__(self, tosa_spec: TosaSpecification) -> None:
         self.tosa_spec = tosa_spec
         super().__init__()
@@ -173,6 +173,7 @@ class ArmPassManager(PassManager):
             [
                 FuseQuantizedActivationPass(),
                 ConvertToClampPass(),
+                DecomposeInt32ClampPass(),
                 DecomposeGroupNormPass(),
                 DecomposeLayerNormPass(),
                 DecomposeVarPass(),
@@ -217,7 +218,7 @@ class ArmPassManager(PassManager):
                 DecomposeEluPass(),
                 DecomposeExpm1Pass(),
                 DecomposeIntPowPass(),
-                CastBoolToInt8Pass(),
+                PromoteBoolOperandsPass(),
                 DecomposeSinhPass(),
                 DecomposeSignPass(),
                 DecomposeFloorDividePass(),
@@ -329,7 +330,7 @@ class ArmPassManager(PassManager):
                 DecomposeScaledDotProductAttentionPass(),
                 DecomposeRoundPass(),
                 DecomposeLogitPass(),
-                CastBoolToInt8Pass(),
+                PromoteBoolOperandsPass(),
                 DecomposeSignPass(),
                 DecomposeAddmmPass(),
                 DecomposeRemainderPass(),
