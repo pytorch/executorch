@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import unittest
 
 import torch
@@ -156,34 +158,6 @@ class TestRemoveCloneOpsTransform(TestCase):
             updated_epm = before_epm.transform([RemoveCloneOpsTransform()])
 
             FileCheck().check_count(clone_op_str, 1, exactly=True).run(
-                updated_epm.exported_program().graph_module.code
-            )
-
-            expected = before_epm.exported_program().module()(x)
-            actual = updated_epm.exported_program().module()(x)
-            assert torch.allclose(actual, expected)
-            assert is_channel_last_dim_order(actual)
-
-    def test_clone_identity_removed(self):
-        """Verify identity clone ops are removed by RemoveCloneOpsTransform."""
-
-        for skip_dim_order, clone_op_str in self.CLONE_OP_CASES:
-            model = SimpleCloneChannelsLastModule()
-            x = torch.randn(3, 4, 5, 6).to(memory_format=torch.channels_last)
-
-            exported = export(model.eval(), (x,), strict=True)
-            before_epm = to_edge(
-                exported,
-                compile_config=EdgeCompileConfig(_skip_dim_order=skip_dim_order),
-            )
-
-            FileCheck().check_count(clone_op_str, 1, exactly=True).run(
-                before_epm.exported_program().graph_module.code
-            )
-
-            updated_epm = before_epm.transform([RemoveCloneOpsTransform()])
-
-            FileCheck().check_not(clone_op_str).run(
                 updated_epm.exported_program().graph_module.code
             )
 

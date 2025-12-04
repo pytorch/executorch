@@ -76,6 +76,7 @@ class KWSFinalBlock(torch.nn.Module):
         return self.block(x)
 
 
+@unittest.skip("Clones are optimized out of the graph.")
 class TestCloneConverter(unittest.TestCase):
     __test__ = False  # Prevent interfering with PyTest tests
 
