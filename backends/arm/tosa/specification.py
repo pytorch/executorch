@@ -386,3 +386,21 @@ def get_context_spec() -> TosaSpecification:
         return TosaLoweringContext.tosa_spec_var.get()
     except LookupError:
         raise RuntimeError("Function must be executed within a TosaLoweringContext")
+
+
+def tosa_spec_in_set(spec: TosaSpecification, specs: Set[TosaSpecification]) -> bool:
+    """Check if a specification matches any in a set, considering base specs.
+
+    Args:
+        spec (TosaSpecification): Specification to check.
+        specs (Set[TosaSpecification]): Set of specifications to match against.
+
+    Returns:
+        bool: True if a match is found, False otherwise.
+
+    """
+    base_specs = TosaSpecMapping._get_base_specs(spec)
+    for base in base_specs:
+        if base in specs:
+            return True
+    return False
