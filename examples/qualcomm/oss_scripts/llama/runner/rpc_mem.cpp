@@ -44,20 +44,10 @@ void RpcMem::add_memory_info(
       it == io_pos_map_.end()) {
     ET_LOG(Error, "Shared buffer pointer %p is not found", data_ptr);
   }
-  size_t pos = io_pos_map_[static_cast<std::byte*>(data_ptr)];
-  uint32_t* shape = const_cast<uint32_t*>(
-      reinterpret_cast<const uint32_t*>(tensor_info.sizes().data()));
-  uint32_t rank = static_cast<uint32_t>(tensor_info.sizes().size());
-  executorch::aten::ScalarType scalar_type = tensor_info.scalar_type();
-  CustomMemTensorInfo info = {
-      shared_buffer_base_ptr_,
-      data_ptr,
-      pos,
-      data_size,
-      shape,
-      rank,
-      scalar_type};
-  QnnExecuTorchAddCustomMemTensorInfo(info);
+  if (binded_tensor_addr_set_.find(data_ptr) == binded_tensor_addr_set_.end()) {
+    QnnExecuTorchAddCustomMemTensorAddr(data_ptr, shared_buffer_base_ptr_);
+    binded_tensor_addr_set_.insert(data_ptr);
+  }
 };
 
 } // namespace example
