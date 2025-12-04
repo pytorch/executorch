@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,10 +15,14 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     is_param_node,
     set_node_arg,
 )
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm._passes.remove_noop_pass import RemoveNoopPass
+from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir import ExportedProgram
 
@@ -230,15 +233,37 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 submodule.graph.erase_node(node_to_remove)
         return
 
+    @staticmethod
+    def is_foldable(node: Node) -> bool:
+        if node.op != "call_function":
+            return False
+        # Don't fold chains of quant-ops into each other.
+        if node.target in (*Q_OPS, *DQ_OPS):
+            return False
+
+        # Always fold q-dq into constant ops.
+        if node.target in (
+            exir_ops.edge.aten.full_like.default,
+            *ComputeConstantOpsAOTPass.targeted_ops,
+        ):
+            return True
+
+        # We should not fold q-dq nodes into non-quantized nodes.
+        if not (
+            ArmAnnotationInfo.CUSTOM_META_KEY in node.meta.get("custom", {})
+            and ArmAnnotationInfo(
+                node.meta["custom"][ArmAnnotationInfo.CUSTOM_META_KEY]
+            ).quantized
+        ):
+            return False
+        return True
+
     def call(self, graph_module: GraphModule) -> PassResult:  # noqa: C901
 
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
-            if n.op != "call_function":
-                continue
-            # Don't fold chains of quant-ops into each other.
-            if n.target in (*Q_OPS, *DQ_OPS):
+            if not FoldAndAnnotateQParamsPass.is_foldable(n):
                 continue
 
             # Make sure we haven't already set qparams meta information on the node

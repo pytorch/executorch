@@ -114,7 +114,7 @@ test_cases = {
 }
 
 
-xfail_cases = {
+xfail_cases_implementation = {
     "self_scalar": (
         "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
         AttributeError,
@@ -123,13 +123,17 @@ xfail_cases = {
         "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
         AttributeError,
     ),
-    "broadcast_1": "Broadcasting not yet supported in Cortex-M backend",
-    "broadcast_2": "Broadcasting not yet supported in Cortex-M backend",
-    "broadcast_3": "Broadcasting not yet supported in Cortex-M backend",
+}
+xfail_cases_dialect = xfail_cases_implementation | {
+    # Cortex-M quantizer will not quantize multiplicaitons that require broadcasting
+    # leading to the mul op not being replaced by a cortex-m specific implementation
+    "broadcast_1": "Broadcasting is not supported in Cortex-M backend",
+    "broadcast_2": "Broadcasting is not supported in Cortex-M backend",
+    "broadcast_3": "Broadcasting is not supported in Cortex-M backend",
 }
 
 
-@parametrize("test_case", test_cases, xfails=xfail_cases)
+@parametrize("test_case", test_cases, xfails=xfail_cases_dialect)
 def test_dialect_mul(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_dialect(
@@ -139,7 +143,7 @@ def test_dialect_mul(test_case):
     )
 
 
-@parametrize("test_case", test_cases, xfails=xfail_cases)
+@parametrize("test_case", test_cases, xfails=xfail_cases_implementation)
 def test_implementation_mul(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_implementation(qtol=1)
