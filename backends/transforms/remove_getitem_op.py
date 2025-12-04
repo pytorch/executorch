@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -77,6 +78,8 @@ class RemoveGetItemPass(ExportPass):
                                 args=node.args,
                                 kwargs=node.kwargs,
                             )
+                        new_max_wd.meta = node.meta.copy()
+                        new_max_wd.meta["val"] = new_max_wd.meta["val"][0]
 
                     getitem_node.replace_all_uses_with(new_max_wd)
 
