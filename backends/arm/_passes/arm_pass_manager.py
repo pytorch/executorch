@@ -70,6 +70,7 @@ from executorch.backends.arm._passes import (
     DecomposeRoundPass,
     DecomposeScaledDotProductAttentionPass,
     DecomposeSelectPass,
+    DecomposeSelectScatterPass,
     DecomposeSignPass,
     DecomposeSiluPass,
     DecomposeSinhPass,
@@ -174,18 +175,14 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 FuseQuantizedActivationPass(),
-                RemoveGetItemPass(),
                 ConvertToClampPass(),
                 DecomposeInt32ClampPass(),
                 DecomposeGroupNormPass(),
                 DecomposeLayerNormPass(),
-                DecomposeBatchNormNoStatsPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
                 AnnotateDecomposedMatmulPass(),
                 ConvertELUParamsPass(),
-                ConvertSplitToSlicePass(),
-                QuantizeClampArgumentsPass(),
             ]
         )
 
@@ -207,6 +204,10 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post q/dq folding)
         self.add_passes(
             [
+                ConvertSplitToSlicePass(),
+                QuantizeClampArgumentsPass(),
+                RemoveGetItemPass(),
+                DecomposeBatchNormNoStatsPass(),
                 DecomposeLogitPass(),
                 DecomposeMaskedFillPass(),
                 DecomposeRoundPass(),
@@ -330,6 +331,7 @@ class ArmPassManager(PassManager):
         # Transformation passes (pre scalar -> tensor)
         self.add_passes(
             [
+                DecomposeSelectScatterPass(),
                 ConvertInt64ConstOpsToInt32Pass(),
                 ConvertInt64OutputOpsToInt32Pass(),
                 InsertInt32CastsAfterInt64PlaceholdersPass(),

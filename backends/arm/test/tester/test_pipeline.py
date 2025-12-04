@@ -38,6 +38,8 @@ from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
+
+from executorch.backends.arm.util._factory import create_quantizer
 from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
 
@@ -219,6 +221,23 @@ class BasePipelineMaker(Generic[T]):
         logger.debug(f"Added stage {stage_id} to {type(self).__name__}")
 
         return self
+
+    @property
+    def quantizer(self) -> TOSAQuantizer:
+        quantize_pipeline_stage = self._stages[self.find_pos("quantize")]
+        quantize_stage = quantize_pipeline_stage.args[0]
+        if isinstance(quantize_stage, Quantize):
+            quantizer = quantize_stage.quantizer
+            if isinstance(quantizer, TOSAQuantizer):
+                return quantizer
+            else:
+                raise RuntimeError(
+                    f"Quantizer in pipeline was {type(quantizer).__name__}, not TOSAQuantizer as expected."
+                )
+        else:
+            raise RuntimeError(
+                f"First argument of quantize stage was {type(quantize_stage).__name__}, not Quantize as expected."
+            )
 
     def pop_stage(self, identifier: int | str):
         """Removes and returns the stage at postion pos"""
@@ -925,7 +944,10 @@ class OpNotSupportedPipeline(TOSAPipelineMaker, Generic[T]):
         )
 
         if tosa_spec.support_integer():
-            self.add_stage(self.tester.quantize, pos=0)
+            quantizer = create_quantizer(compile_spec)
+            quantizer.set_global(get_symmetric_quantization_config())
+            quant_stage = Quantize(quantizer)
+            self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
         self.change_args("check_not.exir", [])
         self.change_args(
