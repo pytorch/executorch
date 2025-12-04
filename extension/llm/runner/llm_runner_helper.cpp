@@ -226,7 +226,6 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   } else {
     module = std::make_unique<Module>(
         model_path,
-        model_path,
         Module::LoadMode::File,
         std::move(event_tracer), // event tracer
         nullptr, // memory allocator

@@ -374,6 +374,11 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
         )
 
 
+_KNOWN_FUNCTIONS_MAP = {
+    "executorch.exir.memory.view": exir.memory.view,
+}
+
+
 class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
     def deserialize_operator(self, serialized_target: str) -> str:
         def find_operator(module: _DialectNamespace, serialized_target: str) -> str:
@@ -450,19 +455,23 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             fx_node.meta.update(self.deserialize_metadata(serialized_node.metadata))
             return
         elif isinstance(target, str):
-            # Create a dummy fake op if the target does not exist
-            # because we cannot create a call_function node w/o a
-            # callable target
-            log.warning(
-                f"Could not find operator {target}. Returning fake operator."
-            )  # noqa: G004
+            # Special handling for known functions, which are serialized as a
+            # string but are still somewhat expected in serialized graphs.
+            if target in _KNOWN_FUNCTIONS_MAP:
+                target = _KNOWN_FUNCTIONS_MAP[target]
+            else:
+                # Otherwise, create a dummy fake op if the target does not exist
+                # because we cannot create a call_function node w/o a callable
+                # target
+                log.warning(
+                    f"Could not find operator {target}. Returning fake operator."
+                )  # noqa: G004
+                # pyre-ignore
+                def fake_op(x):
+                    raise NotImplementedError("Fake op is not meant to be run.")
 
-            # pyre-ignore
-            def fake_op(x):
-                raise NotImplementedError("Fake op is not meant to be run.")
-
-            fake_op.__name__ = target
-            target = fake_op
+                fake_op.__name__ = target
+                target = fake_op
 
             args = self.deserialize_inputs_no_schema(serialized_node)
             fx_node = self.graph.create_node("call_function", target, args, None, None)
