@@ -584,8 +584,8 @@ int main(int argc, char* argv[]) {
       generate_quantized_conv2d_dw_test_cases,
       quantized_conv2d_dw_flop_calculator,
       "QuantizedDepthwiseInt8Conv2d",
-      0,
-      1,
+      3,
+      10,
       ref_fn);
 
   return 0;
