@@ -629,6 +629,13 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+            name = "op_grid_sampler_2d",
+            deps = [
+                "//executorch/kernels/portable/cpu/util:grid_sampler_2d_util",
+                "//executorch/runtime/core/exec_aten/util:tensor_util",
+            ],
+        ),
+    op_target(
         name = "op_gt",
         deps = [
             ":scalar_utils",
