@@ -53,10 +53,18 @@ Before you begin, ensure you have openvino installed and configured on your syst
 
 2. Extract the release package from the archive and set the environment variables.
 
+   For Linux
    ```bash
    tar -zxf openvino_toolkit_<your_release_configuration>.tgz
    cd openvino_toolkit_<your_release_configuration>
    source setupvars.sh
+   ```
+
+   For Windows (Powershell)
+   ```powershell
+   tar -zxf openvino_toolkit_<your_release_configuration>.zip
+   cd openvino_toolkit_<your_release_configuration>
+   . ./setupvars.ps1
    ```
 
 ### (Optional) Build OpenVINO from Source
@@ -85,10 +93,18 @@ Follow the steps below to setup your build environment:
 
 1. **Create a Virtual Environment**
 - Create a virtual environment and activate it by executing the commands below.
+   For Linux
    ```bash
    python -m venv env
    source env/bin/activate
    ```
+
+   For Windows (Powershell)
+   ```powershell
+   python -m venv env
+   env/Scripts/activate
+   ```
+   
 2. **Clone ExecuTorch Repository from Github**
 - Clone Executorch repository by executing the command below.
    ```bash
