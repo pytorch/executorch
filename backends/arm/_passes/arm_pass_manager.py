@@ -244,7 +244,6 @@ class ArmPassManager(PassManager):
                 # passes. Ticket: MLETORCH-1540
                 DecomposeNotEqualPass(),
                 MatchArgRanksPass(exported_program),
-                FuseConstantArgsPass(exported_program),
             ]
         )
 
@@ -266,6 +265,7 @@ class ArmPassManager(PassManager):
                 DecomposeAvgPool2dPass(),
                 DecorateFp32toInt32CastingPass(),
                 ComputeConstantOpsAOTPass(exported_program),
+                FuseConstantArgsPass(exported_program),
                 ConvertExpandCopyToRepeatPass(),
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
