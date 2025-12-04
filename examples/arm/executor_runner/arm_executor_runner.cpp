@@ -584,7 +584,7 @@ void runner_init(
   }
 #endif
   auto loader = BufferDataLoader(program_data, ctx.program_data_len);
-  ET_LOG(Info, "PTE Model data loaded. Size: %lu bytes.", ctx.program_data_len);
+  ET_LOG(Info, "PTE Model data loaded. Size: %zu bytes.", ctx.program_data_len);
 
   // Parse the program file. This is immutable, and can also be reused
   // between multiple execution invocations across multiple threads.
@@ -597,7 +597,7 @@ void runner_init(
         program.error());
   }
 
-  ET_LOG(Info, "Model buffer loaded, has %lu methods", program->num_methods());
+  ET_LOG(Info, "Model buffer loaded, has %zu methods", program->num_methods());
 
   {
     const auto method_name_result = program->get_method_name(0);
@@ -617,7 +617,7 @@ void runner_init(
 
   ET_LOG(
       Info,
-      "Setup Method allocator pool. Size: %lu bytes.",
+      "Setup Method allocator pool. Size: %zu bytes.",
       method_allocation_pool_size);
 
   ctx.method_allocator.reset(
@@ -817,15 +817,15 @@ void log_mem_status(RunnerContext& ctx) {
 #if defined(ET_MODEL_PTE_ADDR)
   ET_LOG(
       Info,
-      "model_pte_program_size:     %lu bytes. (pte size unknown when not baked into elf)",
+      "model_pte_program_size:     %zu bytes. (pte size unknown when not baked into elf)",
       ctx.program_data_len);
   ET_LOG(
       Info,
-      "model_pte_loaded_size:      %lu bytes. (pte size unknown when not baked into elf)",
+      "model_pte_loaded_size:      %zu bytes. (pte size unknown when not baked into elf)",
       ctx.pte_size);
 #else
-  ET_LOG(Info, "model_pte_program_size:     %lu bytes.", ctx.program_data_len);
-  ET_LOG(Info, "model_pte_loaded_size:      %lu bytes.", ctx.pte_size);
+  ET_LOG(Info, "model_pte_program_size:     %zu bytes.", ctx.program_data_len);
+  ET_LOG(Info, "model_pte_loaded_size:      %zu bytes.", ctx.pte_size);
 #endif
 
 #if defined(SEMIHOSTING)
