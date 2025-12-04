@@ -175,18 +175,14 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 FuseQuantizedActivationPass(),
-                RemoveGetItemPass(),
                 ConvertToClampPass(),
                 DecomposeInt32ClampPass(),
                 DecomposeGroupNormPass(),
                 DecomposeLayerNormPass(),
-                DecomposeBatchNormNoStatsPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
                 AnnotateDecomposedMatmulPass(),
                 ConvertELUParamsPass(),
-                ConvertSplitToSlicePass(),
-                QuantizeClampArgumentsPass(),
             ]
         )
 
@@ -208,6 +204,10 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post q/dq folding)
         self.add_passes(
             [
+                ConvertSplitToSlicePass(),
+                QuantizeClampArgumentsPass(),
+                RemoveGetItemPass(),
+                DecomposeBatchNormNoStatsPass(),
                 DecomposeLogitPass(),
                 DecomposeMaskedFillPass(),
                 DecomposeRoundPass(),
