@@ -81,12 +81,12 @@ Or you can use the predefined function for post training quantization from NXP b
 ```python
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from executorch.backends.nxp.quantizer.utils import post_training_quantize
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 
 ...
 
 target_spec = NeutronTargetSpec(target="imxrt700", converter_flavor="SDK_25_09")
-quantized_graph_module = post_training_quantize(
+quantized_graph_module = calibrate_and_quantize(
     aten_model,
     calibration_inputs,
     NeutronQuantizer(neutron_target_spec=target_spec),

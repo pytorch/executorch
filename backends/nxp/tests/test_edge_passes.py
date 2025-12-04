@@ -87,6 +87,8 @@ def _assert_nodes_form_a_view_copy_qdq_cluster(graph: Graph, node_indices: list[
 
 
 class TestEdgePasses(unittest.TestCase):
+    __test__ = False  # Prevent interfering with PyTest tests
+
     @classmethod
     def setUpClass(cls):
         torch.manual_seed(23)

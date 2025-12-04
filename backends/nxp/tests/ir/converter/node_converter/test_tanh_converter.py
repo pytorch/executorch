@@ -34,18 +34,18 @@ class TestTanhConverter(unittest.TestCase):
 
     @parameterized.expand(
         input=[
-            (
-                "inplace",
-                True,
-            ),
-            (
-                "not_inplace",
-                False,
-            ),
+            ("QAT inplace", True, True),
+            ("PTQ inplace", True, False),
+            ("QAT not-inplace", False, True),
+            ("PTQ not-inplace", False, False),
         ]
     )
     def test_conv_tanh(
-        self, _: str, inplace: bool, input_shape: tuple[int] = (1, 3, 112, 112)
+        self,
+        _: str,
+        inplace: bool,
+        use_qat: bool,
+        input_shape: tuple[int] = (1, 3, 112, 112),
     ):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program,
@@ -62,7 +62,10 @@ class TestTanhConverter(unittest.TestCase):
                 )
 
             quantized_program = to_quantized_edge_program(
-                model, input_shape, use_neutron_for_format_conversion=False
+                model,
+                input_shape,
+                use_qat=use_qat,
+                use_neutron_for_format_conversion=False,
             ).exported_program()
             tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
