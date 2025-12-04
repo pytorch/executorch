@@ -74,26 +74,22 @@ inline void validate_cmsis_nn_tensor_requirements(
 }
 
 inline void validate_single_quant_params(
-    const Scalar& zero_point,
-    const Scalar& multiplier,
-    const Scalar& shift,
+    const int64_t zero_point,
+    const int64_t multiplier,
+    const int64_t shift,
     const char* param_name) {
-  int64_t zp_val = zero_point.to<int64_t>();
-  int64_t mult_val = multiplier.to<int64_t>();
-  int64_t shift_val = shift.to<int64_t>();
-
   ET_CHECK_MSG(
-      mult_val >= std::numeric_limits<int32_t>::min() &&
-          mult_val <= std::numeric_limits<int32_t>::max(),
+      multiplier >= std::numeric_limits<int32_t>::min() &&
+          multiplier <= std::numeric_limits<int32_t>::max(),
       "%s multiplier must be in int32 range [Value: %d]",
       param_name,
-      mult_val);
+      multiplier);
 
   ET_CHECK_MSG(
-      shift_val >= -31 && shift_val <= 31,
+      shift >= -31 && shift <= 31,
       "%s shift must be in range [-31, 31] [Value: %d]",
       param_name,
-      shift_val);
+      shift);
 }
 
 /**
@@ -108,15 +104,15 @@ inline void validate_single_quant_params(
  * Raises errors via ET_KERNEL_CHECK if any check fails.
  */
 inline void validate_quantization_params(
-    const Scalar& zero_point1,
-    const Scalar& multiplier1,
-    const Scalar& shift1,
-    const Scalar& zero_point2,
-    const Scalar& multiplier2,
-    const Scalar& shift2,
-    const Scalar& output_zero_point,
-    const Scalar& output_multiplier,
-    const Scalar& output_shift,
+    const int64_t zero_point1,
+    const int64_t multiplier1,
+    const int64_t shift1,
+    const int64_t zero_point2,
+    const int64_t multiplier2,
+    const int64_t shift2,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
     Tensor& output) {
   validate_single_quant_params(
       zero_point1, multiplier1, shift1, "Single quant Input1");
@@ -171,8 +167,8 @@ inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
 // multiplier: Range {ARM_NN_Q31_MIN + 1, Q32_MAX}
 // shift     : Range {-31, 30}
 inline bool validate_per_channel_quant_params(
-    const int32_t* multipliers,
-    const int32_t* shifts,
+    const IntArrayRef multipliers,
+    const IntArrayRef shifts,
     int num_channels) {
   for (int i = 0; i < num_channels; ++i) {
     // Multiplier: {ARM_NN_Q31_MIN + 1, ARM_NN_Q31_MAX}

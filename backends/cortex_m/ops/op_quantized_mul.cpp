@@ -26,12 +26,12 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 Tensor& quantized_mul_out(
     KernelRuntimeContext& context,
     const Tensor& input1_int8,
-    const Scalar& input1_zero_point,
+    const int64_t input1_zero_point,
     const Tensor& input2_int8,
-    const Scalar& input2_zero_point,
-    const Scalar& output_zero_point,
-    const Scalar& output_multiplier,
-    const Scalar& output_shift,
+    const int64_t input2_zero_point,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
     Tensor& out) {
   // Validate tensor types and quantization parameters
 
@@ -44,8 +44,8 @@ Tensor& quantized_mul_out(
       /*require_channels_last=*/channel_broadcast,
       /*require_same_sizes=*/!channel_broadcast);
 
-  const Scalar kIdentityMultiplier(/*value=*/1);
-  const Scalar kZeroShift(/*value=*/0);
+  const int32_t kIdentityMultiplier(/*value=*/1);
+  const int32_t kZeroShift(/*value=*/0);
   validate_quantization_params(
       input1_zero_point,
       kIdentityMultiplier,

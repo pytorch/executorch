@@ -21,16 +21,16 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 Tensor& quantized_add_out(
     KernelRuntimeContext& context,
     const Tensor& input1_int8,
-    const Scalar& input1_zero_point,
-    const Scalar& input1_multiplier,
-    const Scalar& input1_shift,
+    const int64_t input1_zero_point,
+    const int64_t input1_multiplier,
+    const int64_t input1_shift,
     const Tensor& input2_int8,
-    const Scalar& input2_zero_point,
-    const Scalar& input2_multiplier,
-    const Scalar& input2_shift,
-    const Scalar& output_zero_point,
-    const Scalar& output_multiplier,
-    const Scalar& output_shift,
+    const int64_t input2_zero_point,
+    const int64_t input2_multiplier,
+    const int64_t input2_shift,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
     Tensor& out) {
   // Validate tensor types and dim order
   bool channel_broadcast = is_channel_broadcast(input1_int8, input2_int8);

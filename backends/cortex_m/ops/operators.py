@@ -114,17 +114,17 @@ def dequantize_per_tensor_impl(
 # Define the operator schema with multipliers and shifts (11 args)
 lib.define(
     "quantized_add("
-    "Tensor self, Scalar self_zero_point, Scalar self_multiplier, Scalar self_shift, "
-    "Tensor other, Scalar other_zero_point, Scalar other_multiplier, Scalar other_shift, "
-    "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift) -> Tensor"
+    "Tensor self, int self_zero_point, int self_multiplier, int self_shift, "
+    "Tensor other, int other_zero_point, int other_multiplier, int other_shift, "
+    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
 )
 
 # Define the operator schema with multipliers and shifts (11 args + out tensor)
 lib.define(
     "quantized_add.out("
-    "Tensor self, Scalar self_zero_point, Scalar self_multiplier, Scalar self_shift, "
-    "Tensor other, Scalar other_zero_point, Scalar other_multiplier, Scalar other_shift, "
-    "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift, "
+    "Tensor self, int self_zero_point, int self_multiplier, int self_shift, "
+    "Tensor other, int other_zero_point, int other_multiplier, int other_shift, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -591,9 +591,9 @@ lib.define(
     "int[] kernel_size, "
     "int[] stride, "
     "int[] padding, "
-    "Scalar zero_point, "
-    "Scalar multiplier, "
-    "Scalar shift"
+    "int zero_point, "
+    "int multiplier, "
+    "int shift"
     ") -> Tensor"
 )
 lib.define(
@@ -602,9 +602,9 @@ lib.define(
     "int[] kernel_size, "
     "int[] stride, "
     "int[] padding, "
-    "Scalar zero_point, "
-    "Scalar multiplier, "
-    "Scalar shift, "
+    "int zero_point, "
+    "int multiplier, "
+    "int shift, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 

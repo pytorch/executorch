@@ -22,9 +22,9 @@ Tensor& quantized_avg_pool2d_out(
     const IntArrayRef kernel_size,
     const IntArrayRef stride,
     const IntArrayRef padding,
-    const Scalar& zero_point,
-    const Scalar& multiplier,
-    const Scalar& shift,
+    const int64_t zero_point,
+    const int64_t multiplier,
+    const int64_t shift,
     Tensor& out) {
   if (input.dim() != 4 || out.dim() != 4) {
     ET_LOG(Error, "quantized_avg_pool2d_out: tensors must be 4-D");
