@@ -6,7 +6,6 @@ namespace executorch::extension {
 
 namespace {
 size_t get_alignment_adjusted_size(size_t size, size_t alignment) {
-  alignment = std::max(alignment, kCachingAllocatorDefaultAlignment);
   if (size % alignment != 0) {
     // Adjust size to the next multiple of alignment
     // This is needed for aligned_alloc to work
@@ -30,6 +29,7 @@ void* CPUCachingAllocator::allocate(size_t size, size_t alignment) {
     ET_LOG(Error, "Alignment %zu is not a power of 2", alignment);
     return nullptr;
   }
+  alignment = std::max(alignment, kCachingAllocatorDefaultAlignment);
   size = get_alignment_adjusted_size(size, alignment);
 
   std::lock_guard<std::mutex> guard(mutex_);
@@ -39,14 +39,14 @@ void* CPUCachingAllocator::allocate(size_t size, size_t alignment) {
   // 2. Allocate new memory
   // 2 can lead to current_size > max_size_
   if (it == available_map_.end() || it->second.empty()) {
-    void* ptr = std::aligned_alloc(alignment, size);
+    void* ptr = std::malloc(size);
     if (ptr == nullptr) {
       ET_LOG(Error, "Failed to allocate memory");
       return nullptr;
     }
     current_size_ += size;
     allocation_map_[ptr] = size;
-    return ptr;
+    return alignPointer(ptr, alignment);
   }
   void* ptr = it->second.back();
   it->second.pop_back();
