@@ -775,7 +775,7 @@ void cpu_flash_attention(
     buf = scratch.get();
   }
   void* buf_reduced = nullptr;
-  int64_t size_per_thread_qdq_vec = qSplitSize * kvSplitSize * headSize;
+  int64_t size_per_thread_qdq_vec = kvSplitSize * headSize;
   // Lets align size_per_thread_qdq_vec to 64 bytes, for coalesced cache reads,
   // by padding with right number of per thread elements
   int64_t size_per_thread_qdq_bytes = size_per_thread_qdq_vec * sizeof(accum_t);
@@ -825,6 +825,7 @@ void cpu_flash_attention(
       // Initialize max and sum
       fill_stub(
           qk_max_data, -std::numeric_limits<accum_t>::infinity(), qBlockSize);
+      fill_stub(qk_sum_data, static_cast<accum_t>(0), qBlockSize);
       // Original flash sdpa wasnt really meant to be used
       // for decode the way we are using via start_pos here.
       // Thus when num_keys is 1 during decode phase, we
@@ -856,6 +857,7 @@ void cpu_flash_attention(
           is_causal ? std::min(m + start_pos + qBlockSize, kvSize) : kvSize;
       int64_t m_start_pos = m + start_pos;
       auto j_kv = j / num_reps;
+      fill_stub(dst_data, static_cast<accum_t>(0), qSplitSize * headSize);
       for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
         int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
         // Calculate scale * q @ k.T
