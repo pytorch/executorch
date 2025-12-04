@@ -80,6 +80,8 @@ class RemoveGetItemPass(ExportPass):
                                 args=node.args,
                                 kwargs=node.kwargs,
                             )
+                        new_max_wd.meta = node.meta.copy()
+                        new_max_wd.meta["val"] = new_max_wd.meta["val"][0]
 
                     _copy_node_metadata(node, new_max_wd)
 
