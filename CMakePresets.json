@@ -217,6 +217,28 @@
       }
     },
     {
+      "name": "executor-runner-xnnpack",
+      "displayName": "Build executor_runner with XNNPack backend",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out",
+        "EXECUTORCH_BUILD_EXECUTOR_RUNNER": "ON",
+        "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER": "ON",
+        "EXECUTORCH_BUILD_EXTENSION_MODULE": "ON",
+        "EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP": "ON",
+        "EXECUTORCH_BUILD_EXTENSION_TENSOR": "ON",
+        "EXECUTORCH_BUILD_XNNPACK": "ON",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "PYTHON_EXECUTABLE": "python"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Darwin", "Linux", "Windows"]
+      }
+    },
+    {
       "name": "profiling",
       "displayName": "Build ExecuTorch with Profiling Enabled",
       "inherits": [
@@ -316,9 +338,14 @@
       "name": "llm-debug-metal-install",
       "displayName": "Build and install LLM extension debug artifacts (Metal)",
       "configurePreset": "llm-debug-metal",
-      "targets": [
-        "install"
-      ],
+      "targets": ["install"],
+      "jobs": 0
+    },
+    {
+      "name": "executor-runner-xnnpack-install",
+      "displayName": "Build and install executor_runner with XNNPack",
+      "configurePreset": "executor-runner-xnnpack",
+      "targets": ["install"],
       "jobs": 0
     }
   ],
@@ -404,6 +431,20 @@
         {
           "type": "build",
           "name": "llm-debug-metal-install"
+        }
+      ]
+    },
+    {
+      "name": "executor-runner-xnnpack",
+      "displayName": "Configure, build and install executor_runner with XNNPack backend",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "executor-runner-xnnpack"
+        },
+        {
+          "type": "build",
+          "name": "executor-runner-xnnpack-install"
         }
       ]
     }
