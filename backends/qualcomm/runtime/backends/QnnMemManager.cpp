@@ -56,13 +56,10 @@ Error QnnMemManager::RegisterIonMem(
   return Error::Ok;
 }
 
-// TODO: Find a better way to unify RegisterCustomMem and
-// PreRegisterCustomMemHandle
 Error QnnMemManager::RegisterCustomMem(
     const std::shared_ptr<TensorWrapper>& tensor_wrapper,
     int32_t mem_fd,
     void* mem_ptr,
-    void* unaligned_custom_mem_base,
     size_t total_custom_mem_size,
     size_t tensor_offset,
     const CustomMemTensorInfo& info) {
@@ -104,46 +101,6 @@ Error QnnMemManager::RegisterCustomMem(
         "Tensor %s is successfully registered to custom shared memory.",
         tensor_wrapper->GetName().c_str());
   }
-  return Error::Ok;
-}
-
-Error QnnMemManager::PreRegisterCustomMemHandle(
-    int32_t mem_fd,
-    void* unaligned_custom_mem_base,
-    size_t total_custom_mem_size,
-    size_t tensor_offset,
-    const CustomMemTensorInfo& info) {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
-  Qnn_MemDescriptor_t descriptor = {
-      {info.rank, info.shape, nullptr},
-      scalar_type_to_qnn_dtype_[info.dtype],
-      QNN_MEM_TYPE_CUSTOM,
-      {{mem_fd}}};
-  Qnn_MemHandle_t handle = nullptr;
-  Qnn_ErrorHandle_t error = QNN_SUCCESS;
-
-  QnnMemHtp_Descriptor_t htp_descriptor;
-  htp_descriptor.type = QNN_HTP_MEM_SHARED_BUFFER;
-  htp_descriptor.size = total_custom_mem_size;
-
-  QnnHtpMem_SharedBufferConfig_t htpSharedBuffConfig = {mem_fd, tensor_offset};
-  htp_descriptor.sharedBufferConfig = htpSharedBuffConfig;
-
-  descriptor.customInfo = &htp_descriptor;
-
-  error = qnn_interface.qnn_mem_register(
-      context_->GetHandle(),
-      &descriptor,
-      /*numDescriptors=*/1,
-      &handle);
-  if (error != QNN_SUCCESS) {
-    QNN_EXECUTORCH_LOG_WARN(
-        "PreRegisterCustomMemHandle fail", QNN_GET_ERROR_CODE(error));
-    return Error::Internal;
-  }
-
-  pre_registered_handles_.insert({info, handle});
-  registered_map_.insert({handle, nullptr});
   return Error::Ok;
 }
 

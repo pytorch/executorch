@@ -74,7 +74,7 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)
 
 
-def _load_example_inputs(model_input: str | None) -> Any:
+def _load_example_inputs(model_input: str | None) -> Any:  # nosec B614
     """Load example inputs from a `.pt` file when a path is provided."""
     if model_input is None:
         return None
@@ -82,7 +82,9 @@ def _load_example_inputs(model_input: str | None) -> Any:
     logging.info(f"Load model input from {model_input}")
 
     if model_input.endswith(".pt"):
-        return torch.load(model_input, weights_only=False)
+        return torch.load(
+            model_input, weights_only=False
+        )  # nosec B614 trusted artifacts
 
     raise RuntimeError(
         f"Model input data '{model_input}' is not a valid name. Use --model_input "
@@ -167,14 +169,14 @@ def _load_python_module_model(
 
 def _load_serialized_model(
     model_name: str, example_inputs: Any
-) -> Optional[Tuple[torch.nn.Module, Any]]:
+) -> Optional[Tuple[torch.nn.Module, Any]]:  # nosec B614
     """Load a serialized Torch model saved via `torch.save`."""
     if not model_name.endswith((".pth", ".pt")):
         return None
 
     logging.info(f"Load model file {model_name}")
 
-    model = torch.load(model_name, weights_only=False)
+    model = torch.load(model_name, weights_only=False)  # nosec B614 trusted inputs
     if example_inputs is None:
         raise RuntimeError(
             f"Model '{model_name}' requires input data specify --model_input <FILE>.pt"
