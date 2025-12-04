@@ -12,6 +12,11 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
+)
 from executorch.backends.arm.tosa.mapping import TosaArg
 
 from executorch.backends.arm.tosa.utils import build_reshape_tosa_1_0
@@ -45,10 +50,16 @@ class IndexSelectVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        if len(inputs) != 3:
-            raise ValueError(f"Number of inputs are not 3: {len(inputs)}")
+        validate_num_inputs(self.target, inputs, 3)
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
-        weights, index, indices = inputs
+        weights, _, indices = inputs
 
         if len(weights.shape) == 2:
             weights_new_shape = [1, weights.shape[0], weights.shape[1]]

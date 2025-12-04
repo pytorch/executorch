@@ -78,10 +78,12 @@ class EthosU55DtypeSupport(OperatorSupportBase):
 
     targeted_ops_i8_i16_i32 = [
         exir_ops.edge.aten.cat.default,
+        exir_ops.edge.aten.expand_copy.default,
         exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.view.default,
         exir_ops.edge.aten.permute.default,
+        exir_ops.edge.aten.permute_copy.default,
     ]
 
     target_ops_i8 = tuple(TableOps.included_ops())
