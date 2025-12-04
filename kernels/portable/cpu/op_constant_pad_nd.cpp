@@ -83,6 +83,15 @@ void apply_padding_to_dim(
     size_t copy_nbytes = copy_len * sizeof(CTYPE);
 
     if (copy_nbytes > 0) {
+      // Check that out_data and self_data do not overlap.
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          out_data != self_data &&
+              ((out_data + copy_len < self_data) ||
+               (self_data + copy_len < out_data)),
+          InvalidArgument,
+          /* void */,
+          "Out tensor overlaps with the input tensor. This is not supported.");
       memcpy(out_data, self_data, copy_nbytes);
       out_data += copy_len;
       self_data += copy_len;
