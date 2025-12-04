@@ -626,8 +626,8 @@ int main(int argc, char* argv[]) {
       generate_quantized_conv2d_test_cases,
       quantized_conv2d_flop_calculator,
       "QuantizedConv2dQ8ToQ8To",
-      0,
-      1,
+      3,
+      10,
       ref_fn);
 
   return 0;
