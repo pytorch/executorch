@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
-#include <numeric>
 
 namespace impl {
 namespace vision {
@@ -25,10 +24,10 @@ void* allocate_temp_memory(KernelRuntimeContext& ctx, size_t size) {
 // Quantize a fp32 value to an int8_t/uint8_t value
 template <typename T>
 T quantize(const float x, float scale, int32_t zero_point) {
-  constexpr float min_val = std::numeric_limits<T>::min();
-  constexpr float max_val = std::numeric_limits<T>::max();
+  constexpr float kMinValue = static_cast<float>(std::numeric_limits<T>::min());
+  constexpr float kMaxValue = static_cast<float>(std::numeric_limits<T>::max());
   float tmp = roundf(x * scale + zero_point);
-  return std::max(std::min(tmp, max_val), min_val);
+  return std::max(std::min(tmp, kMaxValue), kMinValue);
 }
 
 // Quantize an fp32 array to an int8_t/uint8_t array
