@@ -17,6 +17,13 @@ def combine_op_dicts(*dicts):
     return {op: dict(counts) for op, counts in merged.items()}
 
 
+def repeat_op_dict(op_dict, times):
+    repeated = {}
+    for op, dtypes in op_dict.items():
+        repeated[op] = {dtype: count * times for (dtype, count) in dtypes.items()}
+    return repeated
+
+
 # TODO Figure out how to handle multiple dq/q nodes properly
 # See backends/arm/_passes/decompose_quant_nodes.py for details
 dq_tosa_ops = {
@@ -35,7 +42,6 @@ q_tosa_ops = {
     "CEIL": {"FP32": 1},  # for rounding
     "FLOOR": {"FP32": 1},  # for rounding
 }
-q_dq_tosa_ops = combine_op_dicts(dq_tosa_ops, q_tosa_ops)
 
 
 class AddSigmoidMul(torch.nn.Module):
@@ -61,7 +67,12 @@ def test_mixed_type_lowering():
             "ADD": {"INT32": 1},  # ADD should be executed in INT32
             "MUL": {"INT32": 1},  # MUL should be executed in INT32
         },
-        q_dq_tosa_ops,
+        repeat_op_dict(
+            q_tosa_ops, 3
+        ),  # Two decomposed boundary Q nodes + one for SIGMOID
+        repeat_op_dict(
+            dq_tosa_ops, 2
+        ),  # One decomposed boundary DQ nodes + one for SIGMOID
     )
 
     pipeline.add_stage_after(
