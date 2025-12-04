@@ -1367,9 +1367,6 @@ CUSTOM_OPS = (
     op_target(
         name = "op_allclose",
     ),
-    op_target(
-        name = "op_linear_scratch_example",
-    ),
 )
 
 def portable_source_list():
