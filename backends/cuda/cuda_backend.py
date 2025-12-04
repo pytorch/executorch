@@ -39,6 +39,8 @@ class CudaBackend(AotiBackend, BackendDetails):
     def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
         return {
             "at::_ops::_weight_int4pack_mm::call": None,
+            "at::_ops::_scaled_dot_product_flash_attention::call": None,
+            "at::_ops::_scaled_dot_product_efficient_attention::call": None,
         }
 
     @classmethod
@@ -68,7 +70,8 @@ class CudaBackend(AotiBackend, BackendDetails):
                     )
                 triton_kernel_mode = mode
 
-        return [ReplaceEdgeOpWithTritonOpPass()] if triton_kernel_mode == "ON" else []
+        return []
+        # return [ReplaceEdgeOpWithTritonOpPass()] if triton_kernel_mode == "ON" else []
 
     @classmethod
     def get_aoti_compile_options(
@@ -134,20 +137,20 @@ class CudaBackend(AotiBackend, BackendDetails):
 
         return options
 
-    @classmethod
-    def get_extra_aoti_compile_context_manager(cls):
-        """
-        Return SDPA MATH backend context manager for CUDA compilation.
+    # @classmethod
+    # def get_extra_aoti_compile_context_manager(cls):
+    #     """
+    #     Return SDPA MATH backend context manager for CUDA compilation.
 
-        This context manager plays as a fallback solution for any remaining PyTorch SDPA
-        operations to use the MATH backend (decomposed SDPA) during AOTInductor compilation.
+    #     This context manager plays as a fallback solution for any remaining PyTorch SDPA
+    #     operations to use the MATH backend (decomposed SDPA) during AOTInductor compilation.
 
-        Note:
-        - If SDPA ops are replaced with Triton kernels by ReplaceEdgeOpWithTritonOpPass,
-          this context manager will have no effect on those ops (they are no longer
-          PyTorch SDPA ops).
-        - If SDPA ops are NOT replaced (e.g., when triton_kernel_mode="OFF"), this
-          context manager will force them to use the MATH backend, causing them to
-          be automatically decomposed during compilation.
-        """
-        return torch.nn.attention.sdpa_kernel([SDPBackend.MATH])
+    #     Note:
+    #     - If SDPA ops are replaced with Triton kernels by ReplaceEdgeOpWithTritonOpPass,
+    #       this context manager will have no effect on those ops (they are no longer
+    #       PyTorch SDPA ops).
+    #     - If SDPA ops are NOT replaced (e.g., when triton_kernel_mode="OFF"), this
+    #       context manager will force them to use the MATH backend, causing them to
+    #       be automatically decomposed during compilation.
+    #     """
+    #     return torch.nn.attention.sdpa_kernel([SDPBackend.MATH])
