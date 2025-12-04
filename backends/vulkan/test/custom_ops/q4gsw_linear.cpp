@@ -552,7 +552,7 @@ int main(int argc, char* argv[]) {
       generate_quantized_linear_test_cases,
       quantized_linear_flop_calculator,
       "QuantizedLinearQ4GSW",
-      10,
+      3,
       10,
       ref_fn);
 
