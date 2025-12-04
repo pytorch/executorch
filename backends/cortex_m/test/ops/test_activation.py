@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
 import torch
 from executorch.backends.arm.test.common import parametrize
 from executorch.backends.cortex_m.test.tester import (
@@ -153,6 +152,32 @@ class CortexMLinearHardsigmoid(torch.nn.Module):
         return self.act(self.linear(x))
 
 
+class CortexMLinearHardswish(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_linear_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clamp_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_hardswish_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 4,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_minimum_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_mul_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self, in_features=8, out_features=8):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_features, out_features, bias=False)
+        self.act = torch.nn.Hardswish()
+
+    def forward(self, x):
+        return self.act(self.linear(x))
+
+
 class CortexMConv2DReLU(torch.nn.Module):
     ops_before_transforms = {
         "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
@@ -220,6 +245,34 @@ class CortexMConv2DHardtanh(torch.nn.Module):
         super().__init__()
         self.conv = torch.nn.Conv2d(4, 8, 3, padding=1, bias=True)
         self.act = torch.nn.Hardtanh(min_val=min_val, max_val=max_val)
+
+    def forward(self, x):
+        return self.act(self.conv(x))
+
+
+class CortexMConv2DHardswish(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clamp_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_hardswish_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_minimum_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_mul_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self, in_channels=1, out_channels=1):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(1, 1, 1, padding=0, bias=False)
+        self.act = torch.nn.Hardswish()
+        self.conv.weight.data.fill_(1)
 
     def forward(self, x):
         return self.act(self.conv(x))
@@ -297,6 +350,52 @@ class CortexMConv2DHardsigmoid(torch.nn.Module):
 
     def forward(self, x):
         return self.act(self.conv(x))
+
+
+class CortexMConv2DClampInplace(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clamp_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(1, 1, 1, bias=False)
+        self.conv.weight.data.fill_(1)
+
+    def forward(self, x):
+        return torch.clamp_(self.conv(x), min=0.0, max=None)
+
+
+class CortexMLinearClamp(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_linear_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clamp_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self, in_features=4, out_features=3):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_features, out_features, bias=False)
+
+    def forward(self, x):
+        return torch.clamp(self.linear(x), min=None, max=6.0)
 
 
 test_cases = {
@@ -384,11 +483,31 @@ test_cases = {
         model=CortexMLinearHardsigmoid(in_features=6, out_features=4),
         example_inputs=(ramp_tensor(-8, 8, (2, 6)),),
     ),
+    "linear_hardswish": McuTestCase(
+        model=CortexMLinearHardswish(in_features=12, out_features=6),
+        example_inputs=(ramp_tensor(-2, 0, (1, 12)),),
+    ),
     "conv2d_hardsigmoid_inplace": McuTestCase(
         model=CortexMConv2DHardsigmoid(),
         example_inputs=(
             ramp_tensor(-4, 4, (1, 1, 6, 6)).to(memory_format=torch.channels_last),
         ),
+    ),
+    "conv2d_hardswish": McuTestCase(
+        model=CortexMConv2DHardswish(in_channels=1, out_channels=1),
+        example_inputs=(
+            ramp_tensor(-3, 0, (1, 1, 1, 100)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "conv2d_clamp_inplace": McuTestCase(
+        model=CortexMConv2DClampInplace(),
+        example_inputs=(
+            ramp_tensor(-4, 4, (1, 1, 1, 10)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "linear_clamp": McuTestCase(
+        model=CortexMLinearClamp(in_features=4, out_features=3),
+        example_inputs=(ramp_tensor(-10, 10, (1, 4)),),
     ),
 }
 
