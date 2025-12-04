@@ -29,6 +29,7 @@ from .qconfig import (
     get_8a8w_qnn_qat_config,
     get_ptq_per_block_quant_config,
     get_ptq_per_channel_quant_config,
+    get_qat_per_block_quant_config,
     get_qat_per_channel_quant_config,
     QuantizationConfig,
 )
@@ -130,6 +131,19 @@ QUANT_CONFIG_DICT = {
             weight_dtype=torch.int4,
         ),
         None,
+    ),
+    (QuantDtype.use_16a4w_block, True): (
+        get_16a4w_qnn_qat_config,
+        partial(
+            get_qat_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int4,
+        ),
+        partial(
+            get_qat_per_block_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int4,
+        ),
     ),
     (QuantDtype.use_8a8w, True): (
         get_8a8w_qnn_qat_config,
