@@ -5,13 +5,7 @@
 
 import pytest
 import torch
-from executorch.backends.arm.quantizer import (
-    get_symmetric_quantization_config,
-    TOSAQuantizer,
-)
 from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineINT
-from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.xnnpack.test.tester import Quantize
 
 
 class AddSigmoidMul(torch.nn.Module):
@@ -21,15 +15,6 @@ class AddSigmoidMul(torch.nn.Module):
 
     def forward(self, x, y):
         return self.sigmoid(x + y) * x
-
-
-def get_selective_quantizer(modules):
-    quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
-    quantizer.set_global(get_symmetric_quantization_config())
-    for module in modules:
-        quantizer.set_module_type(module, None)
-
-    return Quantize(quantizer, get_symmetric_quantization_config())
 
 
 @pytest.mark.parametrize("fp_extension", [True, False])
@@ -52,7 +37,7 @@ def test_qdq_squeezed_fp_op(fp_extension: bool):
         exir_op=exir_op,
         tosa_extensions=["FP"] if fp_extension else None,
     )
-    pipeline.change_args("quantize", get_selective_quantizer([torch.nn.Sigmoid]))
+    pipeline.quantizer.set_module_type(torch.nn.Sigmoid, None)  # type: ignore
 
     if not fp_extension:
         # In case we don't have the FP extension, the unquantized part of the
@@ -114,7 +99,7 @@ def test_quantized_to_float_transition(fp_extension: bool):
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
             },
         )
-    pipeline.change_args(
-        "quantize", get_selective_quantizer([torch.nn.Sigmoid, torch.nn.Conv1d])
-    )
+    pipeline.quantizer.set_module_type(torch.nn.Sigmoid, None)  # type: ignore
+    pipeline.quantizer.set_module_type(torch.nn.Conv1d, None)  # type: ignore
+
     pipeline.run()
