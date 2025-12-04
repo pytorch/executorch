@@ -6,12 +6,38 @@
 
 #include "arm_memory_allocator.h"
 
+#if defined(EXECUTORCH_ENABLE_ADDRESS_SANITIZER)
+extern "C" {
+void __asan_poison_memory_region(void* addr, size_t size);
+void __asan_unpoison_memory_region(void* addr, size_t size);
+}
+
+static void asan_poison_buffer(uint8_t* base, size_t size) {
+  if (base != nullptr && size > 0) {
+    __asan_poison_memory_region(base, size);
+  }
+}
+
+static void asan_unpoison_buffer(void* base, size_t size) {
+  if (base != nullptr && size > 0) {
+    __asan_unpoison_memory_region(base, size);
+  }
+}
+#endif
+
 ArmMemoryAllocator::ArmMemoryAllocator(uint32_t size, uint8_t* base_address)
-    : MemoryAllocator(size, base_address), used_(0) {}
+    : MemoryAllocator(size, base_address), used_(0) {
+#if defined(EXECUTORCH_ENABLE_ADDRESS_SANITIZER)
+  asan_poison_buffer(base_address, size);
+#endif
+}
 
 void* ArmMemoryAllocator::allocate(size_t size, size_t alignment) {
   void* ret = executorch::runtime::MemoryAllocator::allocate(size, alignment);
   if (ret != nullptr) {
+#if defined(EXECUTORCH_ENABLE_ADDRESS_SANITIZER)
+    asan_unpoison_buffer(ret, size);
+#endif
     // Align with the same code as in MemoryAllocator::allocate() to keep
     // used_ "in sync" As alignment is expected to be power of 2 (checked by
     // MemoryAllocator::allocate()) we can check it the lower bits
@@ -37,4 +63,7 @@ size_t ArmMemoryAllocator::free_size() const {
 void ArmMemoryAllocator::reset() {
   executorch::runtime::MemoryAllocator::reset();
   used_ = 0;
+#if defined(EXECUTORCH_ENABLE_ADDRESS_SANITIZER)
+  asan_poison_buffer(base_address(), size());
+#endif
 }
