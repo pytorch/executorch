@@ -66,6 +66,13 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  const auto tick_ratio = et_pal_ticks_to_ns_multiplier();
+  constexpr auto NANOSECONDS_PER_MILLISECOND = 1000000;
+
+  et_timestamp_t time_spent_loading = 0;
+
+  const et_timestamp_t before_load = executorch::runtime::pal_current_ticks();
+
   // Create a loader to get the data of the program file. There are other
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.
@@ -155,13 +162,42 @@ int main(int argc, char** argv) {
   // the method can mutate the memory-planned buffers, so the method should only
   // be used by a single thread at at time, but it can be reused.
   //
+  {
+    Result<Method> method = program->load_method(method_name, &memory_manager);
+    ET_CHECK_MSG(
+        method.ok(),
+        "Loading of method %s failed with status 0x%" PRIx32,
+        method_name,
+        (uint32_t)method.error());
+    const et_timestamp_t after_load = executorch::runtime::pal_current_ticks();
 
+    time_spent_loading += after_load - before_load;
+    ET_LOG(
+        Info,
+        "Warm up: FF Model/Method loaded successfully in %f ms.",
+        static_cast<double>(time_spent_loading) * tick_ratio.numerator /
+            tick_ratio.denominator / NANOSECONDS_PER_MILLISECOND);
+
+    ET_LOG(Info, "Warm up: Method loaded.");
+  }
+
+  time_spent_loading = 0;
+  const et_timestamp_t after_unload = executorch::runtime::pal_current_ticks();
   Result<Method> method = program->load_method(method_name, &memory_manager);
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
       method_name,
       (uint32_t)method.error());
+  const et_timestamp_t after_load_again = executorch::runtime::pal_current_ticks();
+
+  time_spent_loading += after_load_again - after_unload;
+  ET_LOG(
+      Info,
+      "FF Model/Method loaded again successfully in %f ms.",
+      static_cast<double>(time_spent_loading) * tick_ratio.numerator /
+          tick_ratio.denominator / NANOSECONDS_PER_MILLISECOND);
+
   ET_LOG(Info, "Method loaded.");
 
   // Allocate input tensors and set all of their elements to 1. The `inputs`
@@ -173,6 +209,20 @@ int main(int argc, char** argv) {
       "Could not prepare inputs: 0x%" PRIx32,
       (uint32_t)inputs.error());
   ET_LOG(Info, "Inputs prepared.");
+
+  // force warm up
+  {
+  auto before_warmup = std::chrono::high_resolution_clock::now();
+  Error status_warmup = Error::Ok;
+  status_warmup = method->execute();
+  auto after_warmup = std::chrono::high_resolution_clock::now();
+  double warmup_elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(
+                            after_warmup - before_warmup)
+                            .count() / 1000.0;
+  ET_LOG(
+      Info,
+      "FF Warmup inference took %f ms", warmup_elapsed_time);
+  }
 
   // Run the model.
   auto before_exec = std::chrono::high_resolution_clock::now();
