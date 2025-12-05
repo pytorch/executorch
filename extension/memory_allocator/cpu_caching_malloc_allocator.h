@@ -70,7 +70,13 @@ class CPUCachingAllocator : public executorch::runtime::MemoryAllocator {
   /*
     max_size: Maximum size of memory to cache. Never cache more than that.
   */
-  CPUCachingAllocator(uint32_t max_size);
+  explicit CPUCachingAllocator(uint32_t max_size);
+  // No copies allowed
+  CPUCachingAllocator(const CPUCachingAllocator&) = delete;
+  CPUCachingAllocator& operator=(const CPUCachingAllocator&) = delete;
+  // No moves allowed
+  CPUCachingAllocator(CPUCachingAllocator&&) = delete;
+  CPUCachingAllocator& operator=(CPUCachingAllocator&&) = delete;
   // Checks the cache to see if allocation of size bytes can be found.
   // If so return cached memory, else
   // allocates memory, records it for caching and returns.
