@@ -1,6 +1,7 @@
 #include <cstdlib>
 
 #include <executorch/extension/memory_allocator/cpu_caching_malloc_allocator.h>
+#include <executorch/extension/memory_allocator/memory_allocator_utils.h>
 
 namespace executorch::extension {
 
@@ -18,6 +19,11 @@ void* CPUCachingAllocator::allocate(size_t size, size_t alignment) {
     return nullptr;
   }
   alignment = std::max(alignment, kCachingAllocatorDefaultAlignment);
+  size_t adjusted_size = executorch::extension::utils::get_aligned_size(size, alignment);
+  if (adjusted_size == 0) {
+    return nullptr;
+  }
+  size = adjusted_size;
 
   std::lock_guard<std::mutex> guard(mutex_);
   const auto& it = available_map_.find(size);
@@ -26,14 +32,7 @@ void* CPUCachingAllocator::allocate(size_t size, size_t alignment) {
   // 2. Allocate new memory
   // 2 can lead to current_size > max_size_
   if (it == available_map_.end() || it->second.empty()) {
-    void* ptr = nullptr;
-#if defined(__ANDROID__)
-    ptr = memalign(alignment, size);
-#elif defined(_MSC_VER)
-    ptr = _aligned_malloc(size, alignment);
-#else
-    ptr = std::aligned_alloc(alignment, size);
-#endif
+    void* ptr = std::malloc(size);
     if (ptr == nullptr) {
       ET_LOG(Error, "Failed to allocate memory");
       return nullptr;
