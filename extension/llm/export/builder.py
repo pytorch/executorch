@@ -38,7 +38,6 @@ from torch.export import export, ExportedProgram
 from torch.nn.attention import SDPBackend
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer
-from torchao.utils import unwrap_tensor_subclass
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -203,11 +202,6 @@ class LLMEdgeManager:
         return edge_config
 
     def _export(self, module: Optional[torch.nn.Module] = None) -> ExportedProgram:
-        if module is not None:
-            unwrap_tensor_subclass(module)
-        else:
-            unwrap_tensor_subclass(self.model)
-
         dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
@@ -226,6 +220,12 @@ class LLMEdgeManager:
                 dynamic_shapes=dynamic_shape,
                 strict=True,
             )
+        # Functionalize the graph, and decompose subclasses from torchao quantize.
+        from executorch.exir.tracer import _default_decomposition_table
+
+        exported_module = exported_module.run_decompositions(
+            _default_decomposition_table()
+        )
         return exported_module
 
     def export(self) -> "LLMEdgeManager":
