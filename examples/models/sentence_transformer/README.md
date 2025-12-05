@@ -29,13 +29,11 @@ The following models have been validated to export and run correctly:
 
 **Option 1: Quick Install (Recommended)**
 
-
 ```bash
 # Install all dependencies with one command
 cd examples/models/sentence_transformer
 ./install_requirements.sh
 ```
-
 
 **Option 2: Manual Install**
 
@@ -53,20 +51,22 @@ pip install transformers tokenizers scikit-learn numpy
 cd examples/models/sentence_transformer
 
 # Export all-MiniLM-L6-v2 with XNNPack backend (recommended)
-python export_sentence_transformer.py \
+python examples/models/sentence_transformer/export_sentence_transformer.py \
     --model sentence-transformers/all-MiniLM-L6-v2 \
     --backend xnnpack \
-    --output-dir ./my_model
+    --output-dir ./xnnpack_model
 
 # Export all-MiniLM-L12-v2 (larger, better quality)
-python export_sentence_transformer.py \
+python examples/models/sentence_transformer/export_sentence_transformer.py \
     --model sentence-transformers/all-MiniLM-L12-v2 \
-    --backend xnnpack
+    --backend xnnpack \
+    --output-dir ./xnnpack_model
 
 # Export all-mpnet-base-v2 (highest quality, 768-dim)
-python export_sentence_transformer.py \
+python examples/models/sentence_transformer/export_sentence_transformer.py \
     --model sentence-transformers/all-mpnet-base-v2 \
-    --backend xnnpack
+    --backend xnnpack \
+    --output-dir ./xnnpack_model
 ```
 
 **Output:** `model.pte` file in the output directory
@@ -75,8 +75,8 @@ python export_sentence_transformer.py \
 
 ```bash
 # Compare exported model with original transformers model
-python compare_embeddings.py \
-    --model-path my_model/model.pte \
+python examples/models/sentence_transformer/compare_embeddings.py \
+    --model-path ./xnnpack_model/model.pte \
     --model-name sentence-transformers/all-MiniLM-L6-v2 \
     --sentences "This is a test sentence."
 ```
@@ -95,7 +95,7 @@ Verdict: EXCELLENT - ExecuTorch model matches original model perfectly!
 
 ```bash
 # Compare XNNPack vs CPU backend performance
-python benchmark_backends.py --iterations 100
+python examples/models/sentence_transformer/benchmark_backends.py --iterations 100
 ```
 
 ## Running with C++ (executor_runner)
@@ -105,43 +105,56 @@ After exporting your model, you can run it using the generic `executor_runner` t
 ### Build executor_runner
 
 ```bash
-# Navigate to repo root
-cd /path/to/executorch
-
-# Clean build
-rm -rf cmake-out
-mkdir cmake-out
-
-# Configure CMake with XNNPack support
-cmake \
-    -DCMAKE_INSTALL_PREFIX=cmake-out \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DEXECUTORCH_ENABLE_LOGGING=ON \
-    -DPYTHON_EXECUTABLE=python \
-    -Bcmake-out .
-
-# Build
-cmake --build cmake-out -j9 --target install --config Release
+make executor-runner-xnnpack
 ```
 
 ### Run Your Model
 
-```bash
-# Run with XNNPack backend model
-./cmake-out/executor_runner --model_path=./my_model/model.pte
+**Step 1: Create input binary files**
 
-# Run with CPU backend model
-./cmake-out/executor_runner --model_path=./cpu_model/model.pte
+The `executor_runner` requires binary input files (not text strings). Use the provided script to tokenize text and generate these files:
+
+```bash
+# Default text: "This is an example sentence."
+python examples/models/sentence_transformer/create_input_bins.py
+
+# Custom text with output directory
+python examples/models/sentence_transformer/create_input_bins.py \
+    --text "Machine learning is great" \
+    --output-dir ./my_inputs
 ```
 
-**Note:** The `executor_runner` is a generic tool that runs the forward pass with example inputs. For production use with text input, you'll need to:
+This creates:
 
-1. Tokenize text to `input_ids` and `attention_mask` (using a C++ tokenizer)
+- `input_ids.bin` - Tokenized input IDs
+- `attention_mask.bin` - Attention mask
+
+**Step 2: Run executor_runner**
+
+```bash
+# Run with the generated inputs
+./cmake-out/executor_runner \
+    --model_path=./xnnpack_model/model.pte \
+    --inputs=input_ids.bin,attention_mask.bin
+
+# Optionally save the output
+./cmake-out/executor_runner \
+    --model_path=./xnnpack_model/model.pte \
+    --inputs=input_ids.bin,attention_mask.bin \
+    --output_file=./output
+```
+
+**Alternative: Quick test with default inputs**
+
+If you don't provide `--inputs`, the runner fills tensors with ones (not meaningful embeddings):
+
+```bash
+./cmake-out/executor_runner --model_path=./xnnpack_model/model.pte
+```
+
+**Note:** For production use with text input, you'll need to:
+
+1. Tokenize text to `input_ids` and `attention_mask` (using a C++ tokenizer or the Python script above)
 2. Pass tensors to the model
 3. Extract the embedding output
 
@@ -320,87 +333,18 @@ python benchmark_backends.py --iterations 1000
 python benchmark_backends.py --skip-export
 ```
 
-## Use Cases
-
-### 1. Semantic Search
-
-Find documents similar to a query based on meaning:
-
-```python
-# Index documents
-documents = ["doc1 text", "doc2 text", "doc3 text"]
-doc_embeddings = [get_embedding(doc, model, tokenizer) for doc in documents]
-
-# Search
-query_emb = get_embedding("search query", model, tokenizer)
-similarities = cosine_similarity([query_emb], doc_embeddings)[0]
-top_docs = similarities.argsort()[-5:][::-1]
-```
-
-### 2. Text Clustering
-
-Group similar texts together:
-
-```python
-from sklearn.cluster import KMeans
-
-# Generate embeddings
-texts = ["text1", "text2", ...]
-embeddings = [get_embedding(text, model, tokenizer) for text in texts]
-
-# Cluster
-kmeans = KMeans(n_clusters=5)
-clusters = kmeans.fit_predict(embeddings)
-```
-
-### 3. Duplicate Detection
-
-Find duplicate or near-duplicate content:
-
-```python
-# Compare two texts
-emb1 = get_embedding(text1, model, tokenizer)
-emb2 = get_embedding(text2, model, tokenizer)
-similarity = cosine_similarity([emb1], [emb2])[0][0]
-
-is_duplicate = similarity > 0.85  # Threshold
-```
-
-### 4. Text Similarity
-
-Measure semantic similarity between texts:
-
-```python
-sentences = [
-    "A man is eating food.",
-    "A person is having a meal.",
-    "The weather is nice today.",
-]
-
-# Compute all pairwise similarities
-embeddings = [get_embedding(s, model, tokenizer) for s in sentences]
-similarity_matrix = cosine_similarity(embeddings)
-```
-
 ## Performance
 
 ### Backend Comparison
 
-Based on benchmarking with all-MiniLM-L6-v2:
+Based on benchmarking with all-MiniLM-L6-v2 on **Apple M3 Pro**:
 
-| Backend     | Average Latency | Throughput      | Speedup         |
-| ----------- | --------------- | --------------- | --------------- |
-| **XNNPack** | ~X ms           | Y sentences/sec | ~Zx             |
-| **CPU**     | ~X ms           | Y sentences/sec | 1.0x (baseline) |
+| Backend     | Average Latency | Throughput       | Speedup         |
+| ----------- | --------------- | ---------------- | --------------- |
+| **XNNPack** | **~15.9 ms**    | **~63 sent/sec** | **~76x**        |
+| **CPU**     | ~1,212 ms       | ~0.83 sent/sec   | 1.0x (baseline) |
 
-_Note: Run `benchmark_backends.py` on your hardware for actual numbers_
-
-### Optimization Tips
-
-1. **Batch Processing**: Process multiple sentences together
-2. **Sequence Length**: Use shorter max_length for short texts
-3. **Model Selection**: Use smaller models (L6-v2) for speed, larger (MPNet) for quality
-4. **Backend**: Use XNNPack for best CPU performance
+_**Note:** XNNPack provides a massive **76x speedup** over baseline CPU! Run `benchmark_backends.py` on your hardware for platform-specific numbers._
 
 ## Validation Results
 
@@ -411,37 +355,6 @@ All tested models produce **identical embeddings** to the original transformers 
 | all-MiniLM-L6-v2  | 1.000000          | 0.000005    | ✅ Perfect |
 | all-MiniLM-L12-v2 | 1.000000          | 0.000006    | ✅ Perfect |
 | all-mpnet-base-v2 | 1.000000          | 0.000004    | ✅ Perfect |
-
-## Troubleshooting
-
-### Import Errors
-
-```bash
-pip install transformers tokenizers torch
-pip install executorch
-```
-
-### Model Download Issues
-
-Set HuggingFace cache:
-
-```bash
-export HF_HOME=/path/to/cache
-```
-
-### Out of Memory
-
-Use a smaller model or reduce `max_seq_length`:
-
-```bash
-python export_sentence_transformer.py --max-seq-length 64
-```
-
-## References
-
-- [Sentence Transformers Documentation](https://www.sbert.net/)
-- [HuggingFace Model Hub](https://huggingface.co/sentence-transformers)
-- [ExecuTorch Documentation](https://pytorch.org/executorch/)
 
 ## License
 
