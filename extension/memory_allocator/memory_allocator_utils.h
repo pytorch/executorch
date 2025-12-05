@@ -13,12 +13,15 @@
 #include <cstdlib>
 
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
+using executorch::runtime::Error;
+using executorch::runtime::Result;
 namespace executorch::extension::utils {
 
 // Util to get alighment adjusted allocation size
-inline size_t get_aligned_size(size_t size, size_t alignment) {
+inline Result<size_t> get_aligned_size(size_t size, size_t alignment) {
   // The minimum alignment that malloc() is guaranteed to provide.
   static constexpr size_t kMallocAlignment = alignof(std::max_align_t);
   if (alignment > kMallocAlignment) {
@@ -28,7 +31,7 @@ inline size_t get_aligned_size(size_t size, size_t alignment) {
     const size_t extra = alignment - 1;
     if ET_UNLIKELY (extra >= SIZE_MAX - size) {
       ET_LOG(Error, "Malloc size overflow: size=%zu + extra=%zu", size, extra);
-      return 0;
+      return Result<size_t>(Error::InvalidArgument);
     }
     size += extra;
   }
