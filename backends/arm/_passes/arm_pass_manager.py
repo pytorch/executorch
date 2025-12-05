@@ -99,7 +99,7 @@ from executorch.backends.arm._passes import (
     RemoveGetItemPass,
     RemoveGraphAssertsPass,
     RemoveNoopPass,
-    ReplaceInfValuesPass,
+    ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
     RewriteConv2dPass,
     RewriteMatmulPass,
@@ -385,7 +385,7 @@ class ArmPassManager(PassManager):
         # Postprocessing passes
         self.add_passes(
             [
-                ReplaceInfValuesPass(),
+                ReplaceInfAndLimitValuesPass(),
                 DecomposeMaskedFillPass() if not self.tosa_spec.is_U55_subset else None,
             ]
         )
