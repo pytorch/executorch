@@ -218,7 +218,7 @@ class RewriteConvPass(ArmPass):
             )
         return rescale_node
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult: # noqa: C901
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         modified = False
         for node in graph_module.graph.nodes:
             if (
