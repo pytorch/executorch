@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
 
@@ -24,8 +24,8 @@ class BMM(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         bmm_input_tensors = []
         for index in range(2):
             input_node = self.get_node(node.args[index])
@@ -35,7 +35,7 @@ class BMM(NodeVisitor):
                 input_node,
                 node,
                 input_tensor,
-                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 nodes_to_wrappers,
             )
             bmm_input_tensors.append(input_tensor_wrapper)
@@ -45,12 +45,12 @@ class BMM(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         bmm_output_tensors = [output_tensor_wrapper]
 
-        bmm_op = PyQnnWrapper.PyQnnOpWrapper(
+        bmm_op = PyQnnManager.PyQnnOpWrapper(
             node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpMatMul.op_name
         )
         bmm_op.AddInputTensors(bmm_input_tensors)

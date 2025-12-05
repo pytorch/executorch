@@ -172,7 +172,7 @@ The content should have exact match with literal values mentioned in [Qualcomm A
 Next, create a new file with name in snake case format (e.g. `op_layer_norm.py`) and import required modules (please check comments for getting the ideas of usage):
 ```python
 # pybind interface for invoking QNN APIs
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 # tensors or other numerics will be shipped in numpy format
 import numpy as np
 import torch
@@ -199,8 +199,8 @@ class LayerNormVisitor(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
 ```
 It's mandatory to have `target` member in list form, since there would have multiple targets map to the same implementation. e.g. `aten.leaky_relu.default`, `aten.prelu.default` have similar equations but only differ in negative slope.<br/>
 The `nodes_to_wrappers` is a dictionary maintaining relationship between graph node and its output tensor. `nodes_to_wrappers` acts as an memo for not creating tensor objects to nodes that have already been traversed.<br/>
@@ -214,7 +214,7 @@ Now, we can start to fill in function body step by step:
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
     ```
@@ -238,7 +238,7 @@ Now, we can start to fill in function body step by step:
             weight_node,
             node,
             weight_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
         )
 
@@ -248,7 +248,7 @@ Now, we can start to fill in function body step by step:
             bias_node,
             node,
             bias_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
         )
     ```
@@ -276,7 +276,7 @@ Now, we can start to fill in function body step by step:
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
     ```
@@ -284,7 +284,7 @@ Now, we can start to fill in function body step by step:
 
 5. Generate operator object in QNN graph:
     ```python
-        layer_norm_op = PyQnnWrapper.PyQnnOpWrapper(
+        layer_norm_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpLayerNorm.op_name,
@@ -304,12 +304,12 @@ Now, we can start to fill in function body step by step:
     ```python
         layer_norm_op.AddScalarParam(
             OpLayerNorm.param_epsilon,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
             {QCOM_DATA: np.float32(epsilon)},
         )
         layer_norm_op.AddTensorParam(
             OpLayerNorm.param_axes,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(axis_shape),
             axis_shape,
             np.array(axis, dtype=np.uint32),

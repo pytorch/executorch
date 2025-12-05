@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Tuple
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import pandas as pd
 import torch
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
@@ -21,7 +21,7 @@ class DrawGraph:
         self,
         filename: str,
         directory: str,
-        py_op_wrapper_list: [PyQnnWrapper.PyQnnOpWrapper],
+        py_op_wrapper_list: [PyQnnManager.PyQnnOpWrapper],
         dot_string=False,
     ):
         self.filename = filename
@@ -98,13 +98,13 @@ class DrawGraph:
             offset = []
             if (
                 quantization_encoding
-                == PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET
+                == PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET
             ):
                 scale.append(node.quantizeParams.scaleOffsetEncoding.scale)
                 offset.append(node.quantizeParams.scaleOffsetEncoding.offset)
             elif (
                 quantization_encoding
-                == PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET
+                == PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET
             ):
                 for i in range(
                     node.quantizeParams.axisScaleOffsetEncoding.numScaleOffsets
@@ -159,7 +159,7 @@ class DrawGraph:
             offset = entry["offset"]
             if (
                 entry["tensor_type"]
-                == PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
+                == PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
             ):
                 param_rows.append({"name": name, "scale": scale, "offset": offset})
             else:
