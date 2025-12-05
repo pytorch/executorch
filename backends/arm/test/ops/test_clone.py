@@ -17,11 +17,43 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.exir import EdgeCompileConfig
 
 aten_op = "torch.ops.aten.clone.default"
-exir_op = "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
+clone_identity_edge = "executorch_exir_dialects_edge__ops_aten_clone_default"
+clone_dim_order_edge = (
+    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
+)
 
 input_t = Tuple[torch.Tensor]
+
+
+def _run_with_skip_dim_order(pipeline):
+    config = EdgeCompileConfig(_skip_dim_order=True)
+    if pipeline.has_stage("to_edge_transform_and_lower"):
+        pipeline.change_args("to_edge_transform_and_lower", edge_compile_config=config)
+    elif pipeline.has_stage("to_edge"):
+        pipeline.change_args("to_edge", config=config)
+    else:
+        raise AssertionError("Pipeline lacks a stage to apply _skip_dim_order.")
+    pipeline.run()
+
+
+class CloneIdentity(torch.nn.Module):
+    """
+    Mirrors the alias-copy identity coverage but exercises ``aten.clone`` without
+    any memory-format change so it lowers directly to a TOSA IDENTITY op.
+    """
+
+    test_data: dict[str, input_t] = {
+        "1d_ramp": lambda: (torch.arange(-8, 8, 0.5),),
+        "2d_ones": lambda: (torch.ones(5, 5),),
+        "3d_rand": lambda: (torch.rand(3, 4, 4),),
+        "4d_zeros": lambda: (torch.zeros(1, 4, 4, 4),),
+    }
+
+    def forward(self, x: torch.Tensor):
+        return torch.clone(x) * 1  # Keep the op through partitioning.
 
 
 class CloneFirstArg(torch.nn.Module):
@@ -87,7 +119,7 @@ def test_clone_tosa_INT(input_data):
         module(),
         input_tensor,
         aten_op,
-        exir_op,
+        clone_dim_order_edge,
     )
     pipeline.run()
 
@@ -101,7 +133,7 @@ def test_clone_u55_INT(input_data):
         module(),
         input_tensor,
         aten_op,
-        exir_op,
+        clone_dim_order_edge,
     )
 
     pipeline.run()
@@ -116,7 +148,7 @@ def test_clone_u85_INT(input_data):
         module(),
         input_tensor,
         aten_op,
-        exir_op,
+        clone_dim_order_edge,
     )
 
     pipeline.run()
@@ -127,7 +159,11 @@ def test_clone_u85_INT(input_data):
 def test_clone_vgf_FP(test_data):
     module, input_tensor = test_data()
     pipeline = VgfPipeline[input_t](
-        module(), input_tensor, aten_op, exir_op, tosa_version="TOSA-1.0+FP"
+        module(),
+        input_tensor,
+        aten_op,
+        clone_dim_order_edge,
+        tosa_version="TOSA-1.0+FP",
     )
     pipeline.run()
 
@@ -140,7 +176,79 @@ def test_clone_vgf_INT(test_data):
         module(),
         input_tensor,
         aten_op,
-        exir_op,
+        clone_dim_order_edge,
         tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
+
+
+@common.parametrize("test_data", CloneIdentity.test_data)
+def test_clone_tosa_FP_identity(test_data: input_t):
+    pipeline = TosaPipelineFP[input_t](
+        CloneIdentity(),
+        test_data(),
+        aten_op,
+        clone_identity_edge,
+    )
+    _run_with_skip_dim_order(pipeline)
+
+
+@common.parametrize("test_data", CloneIdentity.test_data)
+def test_clone_tosa_INT_identity(test_data: input_t):
+    pipeline = TosaPipelineINT[input_t](
+        CloneIdentity(),
+        test_data(),
+        aten_op,
+        clone_identity_edge,
+    )
+    _run_with_skip_dim_order(pipeline)
+
+
+@common.parametrize("test_data", CloneIdentity.test_data)
+@common.XfailIfNoCorstone300
+def test_clone_u55_INT_identity(test_data: input_t):
+    pipeline = EthosU55PipelineINT[input_t](
+        CloneIdentity(),
+        test_data(),
+        aten_op,
+        clone_identity_edge,
+    )
+    _run_with_skip_dim_order(pipeline)
+
+
+@common.parametrize("test_data", CloneIdentity.test_data)
+@common.XfailIfNoCorstone320
+def test_clone_u85_INT_identity(test_data: input_t):
+    pipeline = EthosU85PipelineINT[input_t](
+        CloneIdentity(),
+        test_data(),
+        aten_op,
+        clone_identity_edge,
+    )
+    _run_with_skip_dim_order(pipeline)
+
+
+@common.parametrize("test_data", CloneIdentity.test_data)
+@common.SkipIfNoModelConverter
+def test_clone_vgf_FP_identity(test_data: input_t):
+    pipeline = VgfPipeline[input_t](
+        CloneIdentity(),
+        test_data(),
+        aten_op,
+        clone_identity_edge,
+        tosa_version="TOSA-1.0+FP",
+    )
+    _run_with_skip_dim_order(pipeline)
+
+
+@common.parametrize("test_data", CloneIdentity.test_data)
+@common.SkipIfNoModelConverter
+def test_clone_vgf_INT_identity(test_data: input_t):
+    pipeline = VgfPipeline[input_t](
+        CloneIdentity(),
+        test_data(),
+        aten_op,
+        clone_identity_edge,
+        tosa_version="TOSA-1.0+INT",
+    )
+    _run_with_skip_dim_order(pipeline)
