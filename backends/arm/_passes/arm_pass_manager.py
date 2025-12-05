@@ -70,6 +70,7 @@ from executorch.backends.arm._passes import (
     DecomposeRoundPass,
     DecomposeScaledDotProductAttentionPass,
     DecomposeSelectPass,
+    DecomposeSelectScatterPass,
     DecomposeSignPass,
     DecomposeSiluPass,
     DecomposeSinhPass,
@@ -112,6 +113,7 @@ from executorch.backends.arm._passes import (
 
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.tosa.specification import (
+    tosa_spec_in_set,
     TosaLoweringContext,
     TosaSpecification,
 )
@@ -173,18 +175,14 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 FuseQuantizedActivationPass(),
-                RemoveGetItemPass(),
                 ConvertToClampPass(),
                 DecomposeInt32ClampPass(),
                 DecomposeGroupNormPass(),
                 DecomposeLayerNormPass(),
-                DecomposeBatchNormNoStatsPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
                 AnnotateDecomposedMatmulPass(),
                 ConvertELUParamsPass(),
-                ConvertSplitToSlicePass(),
-                QuantizeClampArgumentsPass(),
             ]
         )
 
@@ -206,6 +204,10 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post q/dq folding)
         self.add_passes(
             [
+                ConvertSplitToSlicePass(),
+                QuantizeClampArgumentsPass(),
+                RemoveGetItemPass(),
+                DecomposeBatchNormNoStatsPass(),
                 DecomposeLogitPass(),
                 DecomposeMaskedFillPass(),
                 DecomposeRoundPass(),
@@ -242,7 +244,6 @@ class ArmPassManager(PassManager):
                 # passes. Ticket: MLETORCH-1540
                 DecomposeNotEqualPass(),
                 MatchArgRanksPass(exported_program),
-                FuseConstantArgsPass(exported_program),
             ]
         )
 
@@ -264,6 +265,7 @@ class ArmPassManager(PassManager):
                 DecomposeAvgPool2dPass(),
                 DecorateFp32toInt32CastingPass(),
                 ComputeConstantOpsAOTPass(exported_program),
+                FuseConstantArgsPass(exported_program),
                 ConvertExpandCopyToRepeatPass(),
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
@@ -308,15 +310,19 @@ class ArmPassManager(PassManager):
         self, exported_program: ExportedProgram, graph_module: GraphModule
     ):
         """Apply passes before transforming program to backend"""
-        if self.tosa_spec in (
-            TosaSpecification.create_from_string("TOSA-1.0+FP"),
-            TosaSpecification.create_from_string("TOSA-1.0+INT"),
+
+        if not tosa_spec_in_set(
+            self.tosa_spec,
+            {
+                TosaSpecification.create_from_string("TOSA-1.0+FP"),
+                TosaSpecification.create_from_string("TOSA-1.0+INT"),
+            },
         ):
-            return self._tosa_pipeline(exported_program, graph_module)
-        else:
-            raise NotImplementedError(
-                f"No pass pipeline implemented for {self.tosa_spec}"
+            raise RuntimeError(
+                f"No pass pipeline found for TOSA specification: {self.tosa_spec}"
             )
+
+        return self._tosa_pipeline(exported_program, graph_module)
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
         # Preprocessing passes
@@ -325,6 +331,7 @@ class ArmPassManager(PassManager):
         # Transformation passes (pre scalar -> tensor)
         self.add_passes(
             [
+                DecomposeSelectScatterPass(),
                 ConvertInt64ConstOpsToInt32Pass(),
                 ConvertInt64OutputOpsToInt32Pass(),
                 InsertInt32CastsAfterInt64PlaceholdersPass(),

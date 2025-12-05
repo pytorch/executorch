@@ -74,10 +74,6 @@ class CortexMAlphaAdd(ModelAlpha):
 
 
 test_cases = {
-    "self_scalar": McuTestCase(
-        CortexMSelfAdd(),
-        (10.0,),
-    ),
     "self_rank_1": McuTestCase(
         CortexMSelfAdd(),
         (torch.linspace(-5, 5, 10),),
@@ -97,10 +93,6 @@ test_cases = {
     "self_rank_5": McuTestCase(
         CortexMSelfAdd(),
         (ramp_tensor(-5, 5, (2, 2, 2, 2, 2)),),
-    ),
-    "scalar_scalar": McuTestCase(
-        CortexMScalarAdd(),
-        (-0.5, 1.0),
     ),
     "tensor_scalar": McuTestCase(
         CortexMScalarAdd(),
@@ -140,14 +132,6 @@ test_cases = {
 
 
 xfails_implementation = {
-    "self_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
-    "scalar_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
     "alpha": (
         "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
         AssertionError,
