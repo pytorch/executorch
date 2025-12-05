@@ -9,6 +9,9 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "malloc_memory_allocator",
+        headers = [
+            "memory_allocator_utils.h",
+        ],
         exported_headers = [
             "malloc_memory_allocator.h",
         ],
@@ -23,6 +26,9 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "cpu_caching_allocator",
+        headers = [
+            "memory_allocator_utils.h",
+        ],
         srcs = [
             "cpu_caching_malloc_allocator.cpp",
         ],
