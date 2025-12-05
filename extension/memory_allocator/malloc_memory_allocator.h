@@ -52,7 +52,12 @@ class MallocMemoryAllocator : public executorch::runtime::MemoryAllocator {
       return nullptr;
     }
 
-    size = executorch::extension::utils::get_aligned_size(size, alignment);
+    auto adjusted_size_value =
+        executorch::extension::utils::get_aligned_size(size, alignment);
+    if (!adjusted_size_value.ok()) {
+      return nullptr;
+    }
+    size = adjusted_size_value.get();
     void* mem_ptr = std::malloc(size);
     if (!mem_ptr) {
       ET_LOG(Error, "Malloc failed to allocate %zu bytes", size);
