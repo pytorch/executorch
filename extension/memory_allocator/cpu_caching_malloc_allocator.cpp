@@ -4,18 +4,6 @@
 
 namespace executorch::extension {
 
-namespace {
-size_t get_alignment_adjusted_size(size_t size, size_t alignment) {
-  if (size % alignment != 0) {
-    // Adjust size to the next multiple of alignment
-    // This is needed for aligned_alloc to work
-    return (size + alignment) & ~(alignment - 1);
-  } else {
-    return size;
-  }
-}
-} // namespace
-
 CPUCachingAllocator::CPUCachingAllocator(uint32_t max_size)
     : MemoryAllocator(0, nullptr) {
   max_size_ = max_size;
@@ -30,7 +18,6 @@ void* CPUCachingAllocator::allocate(size_t size, size_t alignment) {
     return nullptr;
   }
   alignment = std::max(alignment, kCachingAllocatorDefaultAlignment);
-  size = get_alignment_adjusted_size(size, alignment);
 
   std::lock_guard<std::mutex> guard(mutex_);
   const auto& it = available_map_.find(size);
@@ -39,7 +26,14 @@ void* CPUCachingAllocator::allocate(size_t size, size_t alignment) {
   // 2. Allocate new memory
   // 2 can lead to current_size > max_size_
   if (it == available_map_.end() || it->second.empty()) {
-    void* ptr = std::malloc(size);
+    void* ptr = nullptr;
+#if defined(__ANDROID__)
+    ptr = memalign(alignment, size);
+#elif defined(_MSC_VER)
+    ptr = _aligned_malloc(size, alignment);
+#else
+    ptr = std::aligned_alloc(alignment, size);
+#endif
     if (ptr == nullptr) {
       ET_LOG(Error, "Failed to allocate memory");
       return nullptr;
@@ -51,7 +45,7 @@ void* CPUCachingAllocator::allocate(size_t size, size_t alignment) {
   void* ptr = it->second.back();
   it->second.pop_back();
   allocation_map_[ptr] = size;
-  return ptr;
+  return alignPointer(ptr, alignment);
 }
 
 void CPUCachingAllocator::free_everything() {
