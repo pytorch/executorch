@@ -11,6 +11,7 @@ from typing import List, Optional
 import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
+from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx.node import Node
@@ -134,9 +135,16 @@ class SpecPropPass(ExportPass):
         mapped_dim_size = [arg.data for arg in mapped_args][0].size(0)
         *_, body_out_node = f.graph.nodes
         body_out_node_fake_tensor = body_out_node.meta["val"]
+
+        # For dynamic shapes, initialize with size 0 in the mapped dimension.
+        # The et_copy_index op will resize as it writes to each index.
+        # Check if the mapped dimension is symbolic (dynamic).
+        is_dynamic = isinstance(mapped_dim_size, torch.SymInt)
+        init_size = 0 if is_dynamic else mapped_dim_size
+
         map_fake_tensor = pytree.tree_map_only(
             torch.Tensor,
-            lambda x: x.new_empty(mapped_dim_size, *x.shape),
+            lambda x: x.new_empty(init_size, *x.shape),
             body_out_node_fake_tensor,
         )
         meta["spec"] = pytree.tree_map(make_spec, map_fake_tensor)
@@ -150,7 +158,9 @@ class SpecPropPass(ExportPass):
         additional_inputs: List[ProxyValue],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        scan_length = [arg.data for arg in xs][0].size(0)
+        # Get the scan length - this may be symbolic for dynamic shapes
+        xs_tensor = [arg.data for arg in xs][0]
+        scan_length = xs_tensor.size(0)
 
         *_, body_out_node = combine_fn.graph.nodes
         body_out_fake = body_out_node.meta["val"]
@@ -161,15 +171,43 @@ class SpecPropPass(ExportPass):
         carry_out = flat_body_out[:num_carry]
         y_out = flat_body_out[num_carry:]
 
+        # Check if the scan dimension is symbolic (dynamic)
+        is_dynamic = isinstance(scan_length, torch.SymInt)
+
+        # For the y outputs, we need to use the upper bound size to allocate memory,
+        # but also mark the tensor spec as DYNAMIC_BOUND so it can be resized at runtime.
+        if is_dynamic:
+            # Get the upper bound by evaluating the symbolic int
+            # Using hint gives us the concrete upper bound value
+            upper_bound_size = scan_length.node.shape_env.size_hint(
+                scan_length.node.expr
+            )
+        else:
+            upper_bound_size = scan_length
+
         carry_fake = carry_out
         y_fake = [
-            x.new_empty(scan_length, *x.shape) if isinstance(x, torch.Tensor) else x
+            (
+                x.new_empty(upper_bound_size, *x.shape)
+                if isinstance(x, torch.Tensor)
+                else x
+            )
             for x in y_out
         ]
 
         combined_fake = carry_fake + y_fake
 
-        meta["spec"] = pytree.tree_map(make_spec, combined_fake)
+        # Create specs from the fake tensors
+        specs = pytree.tree_map(make_spec, combined_fake)
+
+        # For dynamic shapes, mark the y_output specs as DYNAMIC_BOUND
+        # so that et_copy_index can resize them at runtime
+        if is_dynamic and isinstance(specs, list):
+            for i in range(num_carry, len(specs)):
+                if isinstance(specs[i], TensorSpec):
+                    specs[i].shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
+
+        meta["spec"] = specs
         return super().call_scan(combine_fn, init, xs, additional_inputs, meta)
 
     # pyre-ignore

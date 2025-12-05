@@ -62,9 +62,9 @@ from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
 from executorch.runtime import Runtime
-
-from functorch.experimental import control_flow
 from torch import nn
+
+from torch._higher_order_ops import cond as torch_cond, map as torch_map
 
 from torch.export import Dim, export
 from torch.export.experimental import _export_forward_backward
@@ -674,7 +674,7 @@ class TestEmit(unittest.TestCase):
                 def false_fn(y: torch.Tensor) -> torch.Tensor:
                     return torch.mm(y, y)
 
-                ret = control_flow.cond(pred, true_fn, false_fn, [x])
+                ret = torch_cond(pred, true_fn, false_fn, [x])
                 return ret
 
         module = to_edge(
@@ -708,7 +708,7 @@ class TestEmit(unittest.TestCase):
                 def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
                     return x + y
 
-                return control_flow.map(map_fn, x, y)
+                return torch_map(map_fn, x, y)
 
         f = Foo()
 
@@ -781,7 +781,7 @@ class TestEmit(unittest.TestCase):
                 def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
                     return x + y
 
-                return control_flow.map(map_fn, x, y)
+                return torch_map(map_fn, x, y)
 
         f = Foo()
 
@@ -798,7 +798,7 @@ class TestEmit(unittest.TestCase):
                 def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
                     return x + y
 
-                return control_flow.map(map_fn, x, y)
+                return torch_map(map_fn, x, y)
 
         f = Foo()
 
@@ -1076,6 +1076,58 @@ class TestEmit(unittest.TestCase):
             torch.allclose(et_outputs[1], eager_outputs[1], atol=1e-5),
             f"Final hidden state mismatch: {et_outputs[1]} vs {eager_outputs[1]}",
         )
+
+    def test_run_emit_scan_dynamic_shape(self) -> None:
+        """Test scan execution with dynamic sequence length."""
+        from torch._higher_order_ops.scan import scan
+
+        class ScanCumSum(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return scan(combine_fn, init, xs)
+
+        f = ScanCumSum()
+
+        upper_bound_inputs = (torch.arange(24).float().reshape(8, 3),)
+
+        seq_dim = Dim("seq", max=8)
+        dynamic_shapes = {"xs": {0: seq_dim}}
+
+        module = to_edge(
+            export(f, upper_bound_inputs, dynamic_shapes=dynamic_shapes, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        et = module.to_executorch(
+            config=exir.ExecutorchBackendConfig(
+                sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+            )
+        )
+        et.dump_executorch_program(True)
+        buffer = et.buffer
+        loaded_model = _load_for_executorch_from_buffer(buffer)
+
+        test_cases = [
+            (torch.arange(15).float().reshape(5, 3),),  # seq_len=5
+            (torch.arange(9).float().reshape(3, 3),),  # seq_len=3
+            (torch.arange(21).float().reshape(7, 3),),  # seq_len=7
+        ]
+
+        for test_inputs in test_cases:
+            et_outputs = loaded_model(test_inputs)
+            eager_outputs = f(*test_inputs)
+
+            self.assertTrue(
+                torch.allclose(et_outputs[0], eager_outputs[0]),
+                f"Final carry mismatch for shape {test_inputs[0].shape}: {et_outputs[0]} vs {eager_outputs[0]}",
+            )
+            self.assertTrue(
+                torch.allclose(et_outputs[1], eager_outputs[1]),
+                f"Stacked outputs mismatch for shape {test_inputs[0].shape}: {et_outputs[1]} vs {eager_outputs[1]}",
+            )
 
     def test_dim_order(self) -> None:
         class SimpleLinear(torch.nn.Module):
