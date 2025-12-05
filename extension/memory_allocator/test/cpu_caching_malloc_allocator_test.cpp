@@ -241,6 +241,7 @@ TEST_F(CPUCachingAllocatorTest, ThreadSafety) {
   };
 
   // Create threads
+  threads.reserve(num_threads);
   for (int i = 0; i < num_threads; ++i) {
     threads.emplace_back(thread_work);
   }
@@ -284,7 +285,7 @@ TEST_F(CPUCachingAllocatorTest, SizeAlignmentAdjustment) {
   EXPECT_NE(p1, nullptr);
   EXPECT_ALIGNED(p1, 256);
 
-  auto p2 = allocator.allocate(100, 256);
+  allocator.allocate(100, 256);
   // Should not get cached pointer since size was adjusted during first
   // allocation
   allocator.reset();
