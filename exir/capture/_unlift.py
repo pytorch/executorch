@@ -97,49 +97,6 @@ def _unlift(gm, inp_pos_to_param_buffer_name, in_spec, out_spec, state_dict):
             _unlift(
                 body_gm, inp_pos_to_buffer_name_for_submod, in_spec, None, state_dict
             )
-        if node.op == "call_function" and node.target.__name__ == "scan":
-            # scan signature: scan(combine_fn, init, xs, additional_inputs)
-            # - combine_fn: GraphModule for the scan body
-            # - init: list of initial carry tensors
-            # - xs: list of input tensors to scan over
-            # - additional_inputs: tuple of additional arguments (may contain lifted params/buffers)
-            combine_fn, init, xs, additional_inputs = node.args
-            combine_gm = getattr(gm, combine_fn.name)
-            inp_pos_to_buffer_name_for_submod = {}
-            real_additional_inputs = []
-
-            # additional_inputs may contain lifted parameters/buffers that need to be
-            # registered in the combine_fn submodule
-            for ix, operand in enumerate(additional_inputs):
-                if (
-                    hasattr(operand, "target")
-                    and operand.target in inp_pos_to_param_buffer_name.values()
-                ):
-                    # This is a lifted param/buffer, register it in the submodule
-                    # The index needs to account for init and xs inputs to combine_fn
-                    # combine_fn inputs: (*init, *xs_slice, *additional_inputs)
-                    num_init = len(init) if isinstance(init, (list, tuple)) else 1
-                    num_xs = len(xs) if isinstance(xs, (list, tuple)) else 1
-                    adjusted_ix = num_init + num_xs + ix
-                    inp_pos_to_buffer_name_for_submod[adjusted_ix] = operand.target
-                    combine_gm.register_buffer(
-                        operand.target, state_dict[operand.target]
-                    )
-                else:
-                    real_additional_inputs.append(operand)
-
-            # Update node args with the filtered additional_inputs
-            node.args = (combine_fn, init, xs, tuple(real_additional_inputs))
-
-            _, in_spec = pytree.tree_flatten((init, xs, tuple(real_additional_inputs)))
-
-            _unlift(
-                combine_gm,
-                inp_pos_to_buffer_name_for_submod,
-                in_spec,
-                None,
-                state_dict,
-            )
     gm.graph.lint()
     gm.graph.eliminate_dead_code()
     gm.recompile()
