@@ -158,7 +158,6 @@ class FTScanWithAdditionalInputs(Module):
         self, xs: torch.Tensor, scale: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         def combine_fn(carry, x):
-            # Scale is captured from outer scope
             new_carry = carry + x * scale
             return new_carry, new_carry.clone()
 

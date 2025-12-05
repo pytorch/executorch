@@ -993,19 +993,14 @@ class _Emitter(torch.fx.Interpreter):
         num_carry = len(init)
         num_xs = len(xs)
 
-        # Split output values into carry outputs and y outputs
         carry_outputs = list(subemitter_binding_output_values[:num_carry])
         y_outputs = list(subemitter_binding_output_values[num_carry:])
 
         if num_xs < 1:
             raise RuntimeError("Scan requires at least one xs tensor to scan over.")
 
-        # === INITIALIZATION ===
-
-        # Generate iterator index EValue
         iter_idx = self._emit_evalue(EValue(Int(0)))
 
-        # Get scan length from first xs tensor
         op_index, op = self._get_operator(
             name="aten::sym_size",
             overload="int",
@@ -1019,9 +1014,7 @@ class _Emitter(torch.fx.Interpreter):
         )
         self.chain.instructions.append(kernel)
 
-        # Initialize carry_outputs from init by copying init -> carry_outputs
-        # This is necessary because we shouldn't mutate the original init tensors
-        # Use aten::copy_.default which copies src to self in-place
+        # Initialize carry_outputs from init
         op_index_copy, _ = self._get_operator(name="aten::copy_")
         for init_val, carry_out in zip(init, carry_outputs):
             kernel = Instruction(
@@ -1037,11 +1030,7 @@ class _Emitter(torch.fx.Interpreter):
             )
             self.chain.instructions.append(kernel)
 
-        # === LOOP START ===
-
         # Slice each xs tensor for the current iteration
-        # We use -1 as placeholder for the output tensor id, which will be filled
-        # after the scan_emitter runs and allocates the input placeholder EValues
         op_index_select, _ = self._get_operator(
             name="aten::select_copy",
             overload="int_out",
@@ -1053,41 +1042,28 @@ class _Emitter(torch.fx.Interpreter):
                     op_index=op_index_select,
                     args=[
                         x.id,
-                        self._emit_evalue(EValue(Int(0))).id,  # dim=0
+                        self._emit_evalue(EValue(Int(0))).id,
                         iter_idx.id,
-                        -1,  # placeholder for output tensor id
-                        -1,  # placeholder (repeated for out variant)
+                        -1,
+                        -1,
                     ],
                 )
             )
             xs_slice_instructions.append(kernel)
 
-        # Store jump target - this is where we jump back to after each iteration
         jump_to_instruction = self.instruction_start_offset + len(
             self.chain.instructions
         )
 
-        # Add all xs slice instructions
         for kernel in xs_slice_instructions:
             self.chain.instructions.append(kernel)
 
-        # === EMIT COMBINE_FN SUBMODULE ===
-
-        # combine_fn inputs: (*carry, *xs_slice, *additional_inputs)
-        # We bind carry inputs to carry_outputs (the working carry buffers)
-        # xs_slice inputs will be filled in after emitter runs (using -1 placeholder)
-        # additional_inputs are passed through directly
+        # Emit combine_fn submodule
         binding_input_values: List[Any] = []
-        binding_input_values.extend(
-            carry_outputs
-        )  # Carry inputs bound to carry_outputs
-        binding_input_values.extend([-1] * num_xs)  # Placeholders for xs slices
-        binding_input_values.extend(additional_inputs)  # Additional inputs
+        binding_input_values.extend(carry_outputs)
+        binding_input_values.extend([-1] * num_xs)
+        binding_input_values.extend(additional_inputs)
 
-        # combine_fn outputs: (*next_carry, *y_slice)
-        # Pass binding_output_values=None so the combine_fn writes directly to its
-        # own output buffers (concrete_output_ids). We then copy from these directly
-        # to the final carry/y buffers, avoiding unnecessary temp buffers and MOVEs.
         scan_emitter = _Emitter(
             combine_fn,
             self.emitter_state,
@@ -1095,27 +1071,17 @@ class _Emitter(torch.fx.Interpreter):
             instruction_start_offset=self.instruction_start_offset
             + len(self.chain.instructions),
             binding_input_values=binding_input_values,
-            binding_output_values=None,  # Use concrete outputs directly
+            binding_output_values=None,
         )
         scan_emitter.run()
 
-        # Merge combine_fn instructions
         self._merge_chain(scan_emitter.chain)
-        # NOTE: When binding_output_values=None, no return/move instruction is added
-        # by the output() method, so we don't need to pop anything.
 
-        # Update xs_slice instructions with the actual placeholder EValue ids
-        # The xs placeholders start after the carry inputs in combine_fn
         for i, kernel in enumerate(xs_slice_instructions):
             xs_placeholder_id = scan_emitter.binding_input_values[num_carry + i].id
             kernel.instr_args.args[-1] = xs_placeholder_id
             kernel.instr_args.args[-2] = xs_placeholder_id
 
-        # === COPY OUTPUTS ===
-
-        # Get combine_fn's actual output EValues
-        # concrete_output_ids contains the actual EValues that the combine_fn
-        # graph operations write to: (*carry_temp, *y_temp)
         concrete_outputs = scan_emitter.concrete_output_ids
         carry_temp = concrete_outputs[:num_carry]
         y_temp = concrete_outputs[num_carry:]
@@ -1132,8 +1098,6 @@ class _Emitter(torch.fx.Interpreter):
         )
 
         # Copy carry_temp -> carry_outputs for next iteration
-        # This explicit copy is required because in-place op.out(x, out=x) is unsafe
-        # aten::copy_ signature: (self, src, non_blocking, out) -> self
         for carry_t, carry_out in zip(carry_temp, carry_outputs):
             kernel = Instruction(
                 KernelCall(
@@ -1148,7 +1112,7 @@ class _Emitter(torch.fx.Interpreter):
             )
             self.chain.instructions.append(kernel)
 
-        # Copy y_temp to stacked y_outputs using et_copy_index
+        # Copy y_temp to stacked y_outputs
         op_index_copy_index, _ = self._get_operator(
             name="executorch_prim::et_copy_index",
             overload="tensor",
@@ -1161,8 +1125,6 @@ class _Emitter(torch.fx.Interpreter):
                 )
             )
             self.chain.instructions.append(kernel)
-
-        # === LOOP CONTROL ===
 
         # Increment iter_idx
         op_index_add, _ = self._get_operator(
@@ -1191,7 +1153,6 @@ class _Emitter(torch.fx.Interpreter):
         )
         self.chain.instructions.append(kernel)
 
-        # Jump back to loop start if not done
         jf_beginning_loop = Instruction(
             JumpFalseCall(
                 cond_value_index=jump_bool_value.id,
@@ -1200,9 +1161,7 @@ class _Emitter(torch.fx.Interpreter):
         )
         self.chain.instructions.append(jf_beginning_loop)
 
-        # === CLEANUP ===
-
-        # Reset iter_idx for potential re-runs of the model
+        # Reset iter_idx for potential re-runs
         op_index_sub, _ = self._get_operator(
             name="executorch_prim::sub",
             overload="Scalar",

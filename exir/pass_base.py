@@ -558,29 +558,10 @@ class _ExportPassBase(PassBase):
         additional_inputs: List[ProxyValue],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        """
-        Process a scan higher-order operation.
-
-        Scan applies combine_fn iteratively, carrying state across iterations:
-            combine_fn(carry, x_slice) -> (next_carry, y_slice)
-
-        Args:
-            combine_fn: GraphModule implementing the scan body
-            init: Initial carry state values
-            xs: Input tensors to scan over (along dim 0)
-            additional_inputs: Additional arguments passed to combine_fn
-            meta: Node metadata
-
-        Returns:
-            ProxyValue containing (final_carry, stacked_outputs)
-        """
-        # Get the first slice of xs to determine input shapes for combine_fn
-        # combine_fn inputs: (*init, *xs_slice, *additional_inputs)
         xs_first_slice = _unstack_pytree([arg.data for arg in xs])[0]
         init_data = [arg.data for arg in init]
         additional_data = [arg.data for arg in additional_inputs]
 
-        # Call submodule with representative inputs
         combine_fn_result = self.call_submodule(
             combine_fn, tuple(init_data + xs_first_slice + additional_data)
         )

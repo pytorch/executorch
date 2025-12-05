@@ -1024,11 +1024,6 @@ def get_map_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
 
 
 def get_scan_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
-    """Get all scan nodes in the graph module.
-
-    Scan nodes have the signature: scan(combine_fn, init, xs, additional_inputs)
-    where combine_fn is a submodule at args[0].
-    """
     for nd in graph_module.graph.nodes:
         if nd.target is torch.ops.higher_order.scan:
             yield nd
@@ -1172,12 +1167,6 @@ def _apply_algo_to_submodules(
     for map_node in get_map_nodes(graph_module):
         _handle(cast(torch.fx.Node, map_node.args[0]), alloc_graph_input=True)
 
-    # Handle scan nodes
-    # Scan signature: scan(combine_fn, init, xs, additional_inputs)
-    # combine_fn is at args[0]
-    # Like map, scan needs alloc_graph_input=True because the runtime slices
-    # xs tensors during each iteration, requiring allocated input buffers.
-    # Additionally, scan has carry state that flows between iterations.
     for scan_node in get_scan_nodes(graph_module):
         _handle(cast(torch.fx.Node, scan_node.args[0]), alloc_graph_input=True)
 
