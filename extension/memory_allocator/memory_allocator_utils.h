@@ -27,8 +27,7 @@ inline size_t get_aligned_size(size_t size, size_t alignment) {
     // this is the only portable way to get aligned memory from the heap.
     const size_t extra = alignment - 1;
     if ET_UNLIKELY (extra >= SIZE_MAX - size) {
-      ET_LOG(
-          Error, "Malloc size overflow: size=%zu + extra=%zu", size, extra);
+      ET_LOG(Error, "Malloc size overflow: size=%zu + extra=%zu", size, extra);
       return 0;
     }
     size += extra;

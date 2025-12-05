@@ -19,7 +19,8 @@ void* CPUCachingAllocator::allocate(size_t size, size_t alignment) {
     return nullptr;
   }
   alignment = std::max(alignment, kCachingAllocatorDefaultAlignment);
-  size_t adjusted_size = executorch::extension::utils::get_aligned_size(size, alignment);
+  size_t adjusted_size =
+      executorch::extension::utils::get_aligned_size(size, alignment);
   if (adjusted_size == 0) {
     return nullptr;
   }
