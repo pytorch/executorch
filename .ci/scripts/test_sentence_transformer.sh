@@ -106,6 +106,30 @@ python benchmark_backends.py \
 
 echo "✓ Benchmark tool runs successfully"
 
+# Test 6: Create input bins tool
+echo ""
+echo "========================================="
+echo "Test 6: Create input bins tool"
+echo "========================================="
+python create_input_bins.py \
+    --text "CI test sentence for binary input generation." \
+    --model "${MODEL_NAME}" \
+    --max-length 128 \
+    --output-dir "${TEST_OUTPUT_DIR}/input_bins_test"
+
+# Verify binary files were created
+if [ ! -f "${TEST_OUTPUT_DIR}/input_bins_test/input_ids.bin" ]; then
+    echo "ERROR: input_ids.bin not created"
+    exit 1
+fi
+
+if [ ! -f "${TEST_OUTPUT_DIR}/input_bins_test/attention_mask.bin" ]; then
+    echo "ERROR: attention_mask.bin not created"
+    exit 1
+fi
+
+echo "✓ Input bins creation succeeded"
+
 # Clean up
 echo ""
 echo "Cleaning up test outputs..."
