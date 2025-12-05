@@ -19,12 +19,12 @@ void* CPUCachingAllocator::allocate(size_t size, size_t alignment) {
     return nullptr;
   }
   alignment = std::max(alignment, kCachingAllocatorDefaultAlignment);
-  size_t adjusted_size =
+  auto adjusted_size_value =
       executorch::extension::utils::get_aligned_size(size, alignment);
-  if (adjusted_size == 0) {
+  if (!adjusted_size_value.ok()) {
     return nullptr;
   }
-  size = adjusted_size;
+  size = adjusted_size_value.get();
 
   std::lock_guard<std::mutex> guard(mutex_);
   const auto& it = available_map_.find(size);
