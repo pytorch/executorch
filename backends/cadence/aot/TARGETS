@@ -641,6 +641,9 @@ python_unittest(
     typing = True,
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/cadence/aot:graph_builder",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/exir:pass_base",
+        "//pytorch/ao:torchao",
     ],
 )
