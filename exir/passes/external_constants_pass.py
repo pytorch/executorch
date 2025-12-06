@@ -111,3 +111,23 @@ def delegate_external_constants_pass_unlifted(
                     node.meta["custom"]["delegate_constant_tag"] = gen_tag_fn(node)
                     mutated = True
     return PassResult(module, mutated)
+
+def delegate_external_constants_pass_lifted(
+      ep: ExportedProgram,
+      gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
+  ) -> PassResult:
+      """
+      Tag constants in an ExportedProgram for external storage.
+      Works on the lifted graph directly, no re-export needed.
+      """
+      mutated = False
+      gm = ep.graph_module
+
+      for node in gm.graph.nodes:
+          if node.op == "placeholder" and is_param_node(ep, node):
+              if gen_tag_fn is not None:
+                  node.meta.setdefault("custom", {})
+                  node.meta["custom"]["delegate_constant_tag"] = gen_tag_fn(node)
+                  mutated = True
+
+      return PassResult(gm, mutated)

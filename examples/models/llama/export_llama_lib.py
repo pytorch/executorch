@@ -879,16 +879,21 @@ def _to_edge_and_lower_llama_xnnpack(
         builder_exported.generate_etrecord = True
 
     builder = builder_exported.pt2e_quantize(quantizers)
+
+    # re-export required here?
+    # run decomps
+    builder = builder.run_decompositions()
+    # tag EP
     if gen_tag_fn is not None:
         from executorch.exir.passes.external_constants_pass import (
-            delegate_external_constants_pass_unlifted,
+            delegate_external_constants_pass_lifted,
         )
 
         assert (
             builder_exported.pre_autograd_graph_module is not None
         ), "pre_autograd_graph_module shouldn't be None here"
-        delegate_external_constants_pass_unlifted(
-            module=builder_exported.pre_autograd_graph_module,
+        delegate_external_constants_pass_lifted(
+            ep=builder_exported.exported_module,
             gen_tag_fn=gen_tag_fn,
         )
 
