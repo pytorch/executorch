@@ -110,6 +110,23 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_test(
+        name = "test_bitwise_shift",
+        srcs = ["test_bitwise_shift.py"],
+        preload_deps = [
+            "//executorch/kernels/portable:custom_ops_generated_lib",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/extension/export_util:export_util",
+            "//executorch/runtime:runtime",
+        ],
+        env = {
+            "PYTORCH_DISABLE_JUSTKNOBS": "1",
+        },
+    )
+
     runtime.genrule(
         name = "supported_feature_header_gen",
         cmd = "$(exe //executorch/kernels/test:gen_supported_features) ${SRCS} > $OUT/supported_features.h",
@@ -198,8 +215,10 @@ def define_common_targets():
     _common_op_test("op_atanh_test", ["aten", "portable"])
     _common_op_test("op_avg_pool2d_test", ["aten", "portable"])
     _common_op_test("op_bitwise_and_test", ["aten", "portable"])
+    _common_op_test("op_bitwise_left_shift_test", ["portable"])
     _common_op_test("op_bitwise_not_test", ["aten", "portable"])
     _common_op_test("op_bitwise_or_test", ["aten", "portable"])
+    _common_op_test("op_bitwise_right_shift_test", ["portable"])
     _common_op_test("op_bitwise_xor_test", ["aten", "portable"])
     _common_op_test("op_bmm_test", ["aten", "portable", "optimized"])
     _common_op_test("op_cat_test", ["aten", "portable"])
