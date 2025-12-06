@@ -26,8 +26,7 @@ def _lib_test_bin(name, extra_deps = [], in_cpu = False):
             "//executorch/test/utils:utils",
             "//executorch/kernels/optimized{}:{}".format(cpu_path, lib_root),
         ] + extra_deps,
-        cxx_platform_preprocessor_flags = get_vec_cxx_preprocessor_flags(),
-        preprocessor_flags = get_vec_preprocessor_flags(),
+        preprocessor_flags = get_vec_preprocessor_flags() + get_vec_cxx_preprocessor_flags(),
     )
 
 def define_common_targets():
