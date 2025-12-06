@@ -24,7 +24,8 @@ static constexpr int64_t kRefDimSizeLimit = 100;
 TestCase create_test_case_from_config(
     const Conv2dConfig& config,
     utils::StorageType storage_type,
-    vkapi::ScalarType input_dtype) {
+    vkapi::ScalarType input_dtype,
+    utils::StorageType interm_storage_type) {
   TestCase test_case;
 
   // Create a descriptive name for the test case
@@ -36,8 +37,15 @@ TestCase create_test_case_from_config(
       config.test_case_name + "_" + storage_str + "_" + dtype_str;
   test_case.set_name(test_name);
 
+  std::string operator_suffix = ".test";
+  if (interm_storage_type == utils::kTexture3D) {
+    operator_suffix += "_texture";
+  } else {
+    operator_suffix += "_buffer";
+  }
+
   // Set the operator name for the test case
-  std::string operator_name = "etvk." + config.op_name + ".test";
+  std::string operator_name = "etvk." + config.op_name + operator_suffix;
   test_case.set_operator_name(operator_name);
 
   // Calculate output dimensions
@@ -202,8 +210,10 @@ std::vector<TestCase> generate_quantized_conv2d_dw_easy_cases() {
   // Generate test cases for each combination
   for (const auto& storage_type : storage_types) {
     for (const auto& input_dtype : float_types) {
-      test_cases.push_back(
-          create_test_case_from_config(config, storage_type, input_dtype));
+      test_cases.push_back(create_test_case_from_config(
+          config, storage_type, input_dtype, utils::kBuffer));
+      test_cases.push_back(create_test_case_from_config(
+          config, storage_type, input_dtype, utils::kTexture3D));
     }
   }
 
@@ -325,8 +335,10 @@ std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
       if (vkcompute::api::context()
               ->adapter_ptr()
               ->supports_int8_dot_product()) {
-        test_cases.push_back(
-            create_test_case_from_config(config, storage_type, vkapi::kFloat));
+        test_cases.push_back(create_test_case_from_config(
+            config, storage_type, vkapi::kFloat, utils::kBuffer));
+        test_cases.push_back(create_test_case_from_config(
+            config, storage_type, vkapi::kFloat, utils::kTexture3D));
       }
     }
   }
@@ -584,8 +596,8 @@ int main(int argc, char* argv[]) {
       generate_quantized_conv2d_dw_test_cases,
       quantized_conv2d_dw_flop_calculator,
       "QuantizedDepthwiseInt8Conv2d",
-      0,
-      1,
+      3,
+      10,
       ref_fn);
 
   return 0;
