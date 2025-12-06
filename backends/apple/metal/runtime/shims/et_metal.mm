@@ -377,6 +377,63 @@ void ETMetalKernelFunction::setArg(unsigned idx, int64_t val) {
     ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set int64_t value %lld at index %u", val, idx);
 }
 
+void ETMetalKernelFunction::setArg(unsigned idx, uint32_t val) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
+        return;
+    }
+
+    [encoder_ setBytes:&val length:sizeof(uint32_t) atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set uint32_t value %u at index %u", val, idx);
+}
+
+void ETMetalKernelFunction::setArg(unsigned idx, float val) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
+        return;
+    }
+
+    [encoder_ setBytes:&val length:sizeof(float) atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set float value %f at index %u", val, idx);
+}
+
+void ETMetalKernelFunction::setArg(unsigned idx, bool val) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
+        return;
+    }
+
+    [encoder_ setBytes:&val length:sizeof(bool) atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set bool value %s at index %u", val ? "true" : "false", idx);
+}
+
+void ETMetalKernelFunction::setArg(unsigned idx, const void* data, size_t size) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
+        return;
+    }
+
+    [encoder_ setBytes:data length:size atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set bytes at index %u (size: %zu)", idx, size);
+}
+
+void ETMetalKernelFunction::setArgUint3(unsigned idx, uint32_t x, uint32_t y, uint32_t z) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArgUint3: No active encoder");
+        return;
+    }
+
+    // Metal's uint3 is a packed struct of 3 uint32_t values
+    struct uint3 {
+        uint32_t x;
+        uint32_t y;
+        uint32_t z;
+    };
+    uint3 val = {x, y, z};
+    [encoder_ setBytes:&val length:sizeof(uint3) atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArgUint3: Set uint3{%u, %u, %u} at index %u", x, y, z, idx);
+}
+
 void ETMetalKernelFunction::dispatchSingle(uint64_t length) {
     if (!encoder_) {
         ET_LOG(Error, "ETMetalKernelFunction::dispatchSingle: No active encoder");
@@ -500,6 +557,23 @@ void ETMetalKernelFunction::dispatchArrayWithGroupSize(const uint64_t* length, s
            length_size, size.width, size.height, size.depth,
            threadGroupSize.width, threadGroupSize.height, threadGroupSize.depth);
 
+}
+
+void ETMetalKernelFunction::dispatchThreadgroups(uint64_t gridX, uint64_t gridY, uint64_t gridZ,
+                                                  uint64_t threadsX, uint64_t threadsY, uint64_t threadsZ) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::dispatchThreadgroups: No active encoder");
+        return;
+    }
+
+    MTLSize threadgroupsPerGrid = MTLSizeMake(gridX, gridY, gridZ);
+    MTLSize threadsPerThreadgroup = MTLSizeMake(threadsX, threadsY, threadsZ);
+
+    [encoder_ dispatchThreadgroups:threadgroupsPerGrid threadsPerThreadgroup:threadsPerThreadgroup];
+
+    ET_LOG(Debug, "ETMetalKernelFunction::dispatchThreadgroups: Dispatched grid [%llu, %llu, %llu] with threadgroup [%llu, %llu, %llu]",
+           (unsigned long long)gridX, (unsigned long long)gridY, (unsigned long long)gridZ,
+           (unsigned long long)threadsX, (unsigned long long)threadsY, (unsigned long long)threadsZ);
 }
 
 void ETMetalKernelFunction::runCommandBlock(std::function<void(void)> f) {
