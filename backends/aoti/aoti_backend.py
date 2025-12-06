@@ -214,6 +214,8 @@ class AotiBackend(ABC):
         with open(so_path, "rb") as f:
             so_data = f.read()
 
+        print("so_path: ", so_path)
+
         # Read weights blob
         with open(blob_path, "rb") as f:
             blob_data = f.read()
@@ -229,9 +231,9 @@ class AotiBackend(ABC):
             method_name + "_weights_blob", blob_data, 1, weights_blob_data_type
         )
 
-        # Clean up the generated files
-        os.remove(so_path)
-        os.remove(blob_path)
+        # # Clean up the generated files
+        # os.remove(so_path)
+        # os.remove(blob_path)
 
         return PreprocessResult(
             processed_bytes=b"",

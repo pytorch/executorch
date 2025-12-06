@@ -53,6 +53,7 @@ runtime.cxx_library(
         "shims/cuda_guard.cpp",
         "shims/int4mm.cu",
         "shims/memory.cpp",
+        "shims/sdpa.cu",
         "shims/tensor_attribute.cpp",
     ],
     headers = [
@@ -61,6 +62,8 @@ runtime.cxx_library(
         "shims/int4mm.cuh",
         "shims/int4mm.h",
         "shims/memory.h",
+        "shims/sdpa.cuh",
+        "shims/sdpa.h",
         "shims/tensor_attribute.h",
         "utils.h",
     ],
@@ -84,6 +87,7 @@ runtime.cxx_library(
     ],
     external_deps = [
         ("cuda", None, "cuda-lazy"),
+        ("cuda", None, "cublas-lazy"),
     ],
 )
 

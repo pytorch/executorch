@@ -126,7 +126,7 @@ case "$HF_MODEL" in
 esac
 
 echo "::group::Setup ExecuTorch Requirements"
-./install_requirements.sh
+# ./install_requirements.sh
 pip list
 echo "::endgroup::"
 
