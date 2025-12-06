@@ -14,6 +14,7 @@ CUSTOM_EDGE_OPS = [
     "hardsigmoid.default",
     "hardswish.default",
     "linear.default",
+    "matmul.default",
     "maximum.default",
     "mean.default",
     "multihead_attention.default",
