@@ -368,6 +368,15 @@ class XNNScaledDotProductAttention:
     flags: int
 
 
+@dataclass
+class XNNExpandDims:
+    num_new_dims: int
+    new_dim_indices: List[int]
+    input_id: int
+    output_id: int
+    flags: int
+
+
 XNodeUnion = Union[
     XNNAdd,
     XNNFullyConnected,
