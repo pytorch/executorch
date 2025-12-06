@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <vector>
 
+#include <executorch/extension/memory_allocator/memory_allocator_utils.h>
 #include <executorch/runtime/core/memory_allocator.h>
 
 namespace executorch {
@@ -51,20 +52,12 @@ class MallocMemoryAllocator : public executorch::runtime::MemoryAllocator {
       return nullptr;
     }
 
-    // The minimum alignment that malloc() is guaranteed to provide.
-    static constexpr size_t kMallocAlignment = alignof(std::max_align_t);
-    if (alignment > kMallocAlignment) {
-      // To get higher alignments, allocate extra and then align the returned
-      // pointer. This will waste an extra `alignment - 1` bytes every time, but
-      // this is the only portable way to get aligned memory from the heap.
-      const size_t extra = alignment - 1;
-      if ET_UNLIKELY (extra >= SIZE_MAX - size) {
-        ET_LOG(
-            Error, "Malloc size overflow: size=%zu + extra=%zu", size, extra);
-        return nullptr;
-      }
-      size += extra;
+    auto adjusted_size_value =
+        executorch::extension::utils::get_aligned_size(size, alignment);
+    if (!adjusted_size_value.ok()) {
+      return nullptr;
     }
+    size = adjusted_size_value.get();
     void* mem_ptr = std::malloc(size);
     if (!mem_ptr) {
       ET_LOG(Error, "Malloc failed to allocate %zu bytes", size);
