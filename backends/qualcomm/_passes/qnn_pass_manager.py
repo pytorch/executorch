@@ -16,6 +16,7 @@ from executorch.backends.qualcomm._passes import (
     CanonicalizeConv,
     ConvertBmmToMatmul,
     ConvertLinearToConv2d,
+    ConvertMhaToSha,
     ConvertSquareToPow,
     DecomposeAny,
     DecomposeBinaryAlpha,
@@ -88,7 +89,6 @@ def get_capture_program_passes():
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
-        (CanonicalizeConv, True),
         (ConvertBmmToMatmul, False),
         (DecomposeAny, True),
         (DecomposeColIm, True),
@@ -245,8 +245,12 @@ class QnnPassManager(PassManager):
         ep = lift_constant_tensor_pass(exported_program)
         return ep
 
-    def transform_for_preprocess_pipeline(self, exported_program: ExportedProgram):
+    def transform_for_preprocess_pipeline(
+        self, exported_program: ExportedProgram, use_mha2sha=False
+    ):
         self.add_pass(FoldQDQ(exported_program, force_fold=True))
+        if use_mha2sha:
+            self.add_pass(ConvertMhaToSha(exported_program))
         self.add_pass(InsertRequantize())
         self.add_pass(InsertIOQDQ(exported_program))
         self.add_pass(LayoutTransform(exported_program, insert_permute=True))
