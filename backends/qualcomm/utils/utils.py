@@ -34,6 +34,8 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchBackendOptions,
     QnnExecuTorchBackendType,
+    QnnExecuTorchGpuBackendOptions,
+    QnnExecuTorchGpuPrecision,
     QnnExecuTorchHtpBackendOptions,
     QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchHtpPrecision,
@@ -932,6 +934,47 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule):
     graph = passes.graph_drawer.FxGraphDrawer(graph_module, title)
     with open(f"{path}/{title}.svg", "wb") as f:
         f.write(graph.get_dot_graph().create_svg())
+
+
+def generate_gpu_compiler_spec(
+    precision: QnnExecuTorchGpuPrecision = QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided,
+    use_memory_optimizations: bool = True,
+    use_node_optimizations: bool = True,
+    use_queue_recording: bool = True,
+    use_weight_sharing: bool = False,
+) -> QnnExecuTorchBackendOptions:
+    """
+    Helper function generating backend options for QNN HTP
+
+    Args:
+        precision:
+            kGpuPrecisionFp32 - Sets the precision mode to floating point 32-bit (FP32).
+            kGpuPrecisionFp16 - Sets the precision mode to floating point 16-bit (FP16).
+            kGpuPrecisionHybrid - Sets the precision mode to FP16 for storage and FP32 for calculations.
+            kGpuPrecisionUserProvided - Uses the tensor data type provided by the user.
+        use_memory_optimizations: If true, backend will share NATIVE tensor memory
+            based upon analysis of the network topology.
+        use_node_optimizations: If true, backend will fuse compatible operations into
+            one operation to improve performance.
+        use_queue_recording: If true, backend will use queue recording to improve performance.
+        use_weight_sharing: Used with multiple_graphs, where model size will be
+            reduced when operations have the same weights across multiple graphs.
+
+    Returns:
+        QnnExecuTorchGpuBackendOptions: backend options for QNN GPU.
+    """
+    # TODO: enable performance hint mechanism in runtime and make this as an option
+    gpu_options = QnnExecuTorchGpuBackendOptions()
+    gpu_options.precision = precision
+    gpu_options.use_memory_optimizations = use_memory_optimizations
+    gpu_options.use_node_optimizations = use_node_optimizations
+    gpu_options.use_queue_recording = use_queue_recording
+    gpu_options.use_weight_sharing = use_weight_sharing
+
+    return QnnExecuTorchBackendOptions(
+        backend_type=QnnExecuTorchBackendType.kGpuBackend,
+        gpu_options=gpu_options,
+    )
 
 
 def generate_htp_compiler_spec(
