@@ -1036,7 +1036,12 @@ class StaticAttention(Attention):
         if masks:
             cache_len = k.size(-2) - seq_len
             mask = masks[cache_len]
-        y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+        # y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+        attn = q @ k.transpose(-2, -1)
+        attn = attn * self.inv_scale
+        attn = attn + mask
+        attn = F.softmax(attn, dim=-1)
+        y = attn @ v
 
         return y.transpose(1, 2).contiguous().view(bsz, seq_len, -1), out_cache_state
 
