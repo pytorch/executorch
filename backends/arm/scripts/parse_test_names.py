@@ -102,6 +102,7 @@ def parse_test_name(
     # Special case for convolution
     op = op.removesuffix("_1d")
     op = op.removesuffix("_2d")
+    op = op.removesuffix("_3d")
 
     # Remove suffix for 16 bit activation and 8 bit weight test cases
     op = op.removesuffix("_16a8w")

@@ -12,6 +12,7 @@ from executorch.backends.arm._passes import ArmPass
 
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
+    expand_around_channel,
     get_first_fake_tensor,
     get_param_tensor,
     is_buffer,
@@ -29,7 +30,7 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.export.graph_signature import InputKind
 
 
-class RewriteConv2dPass(ArmPass):
+class RewriteConvPass(ArmPass):
     """Rewrites aten.convolution to tosa.CONV2D or tosa.DEPTHWISE_CONV2D."""
 
     def __init__(self, exported_program: torch.export.ExportedProgram):
@@ -88,10 +89,26 @@ class RewriteConv2dPass(ArmPass):
             or node.target != exir_ops.edge.aten.convolution.default
         ):
             return False
+        input_tensor = get_first_fake_tensor(node.all_input_nodes[0])
+        if len(input_tensor.shape) != 4:
+            return False
         groups = node.args[-1]
-        in_channels = get_first_fake_tensor(node.all_input_nodes[0]).shape[1]
+        in_channels = input_tensor.shape[1]
         out_channels = get_first_fake_tensor(node).shape[1]
         return (in_channels == groups) and (out_channels % in_channels) == 0
+
+    def _is_conv3d(self, rank, groups) -> bool:
+        if rank == 5:
+            # A Conv3D is considered depthwise if Group == InChannels and
+            # Group * N == OutChannels, where N is a possitive integer.
+            # Currently we do not support depthwise or grouped conv3d.
+            # @TODO Add grouped/depthwise conv3d support or reject in partitioner.
+            if groups != 1:
+                raise RuntimeError(
+                    "CONV3D with groups != 1 is not supported in the Arm backend."
+                )
+            return True
+        return False
 
     def _reshape_weights(self, weight_node: torch.fx.Node, in_channels: int) -> None:
         """Reshape the weights for depthwise convolution such that when serialized to TOSA,
@@ -201,7 +218,7 @@ class RewriteConv2dPass(ArmPass):
             )
         return rescale_node
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         modified = False
         for node in graph_module.graph.nodes:
             if (
@@ -224,30 +241,40 @@ class RewriteConv2dPass(ArmPass):
                 group,
             ) = node.args
 
-            pad = [val for val in pad for _ in (0, 1)]
             input_fake_tensor = get_first_fake_tensor(x)
             weight_fake_tensor = get_first_fake_tensor(weight)
-            # Adjust the pad value if needed to meet the
-            # strict convolution output shape calculation.
-            pad[1] = self._adjust_pad_if_needed(
-                input_fake_tensor.shape[2],
-                weight_fake_tensor.shape[2],
-                stride[0],
-                pad[1],
-                dilation[0],
-            )
-            pad[3] = self._adjust_pad_if_needed(
-                input_fake_tensor.shape[3],
-                weight_fake_tensor.shape[3],
-                stride[1],
-                pad[3],
-                dilation[1],
-            )
+            input_shape = input_fake_tensor.shape
+            weight_shape = weight_fake_tensor.shape
+            spatial_rank = len(input_shape) - 2
+            stride_list = expand_around_channel(stride, spatial_rank)
+            dilation_list = expand_around_channel(dilation, spatial_rank)
+            pad_list = expand_around_channel(pad, spatial_rank)
+
+            pad_attr: list[int] = []
+            for value in pad_list:
+                pad_attr.extend([value, value])  # duplicate pad before/after per axis
+
+            for axis_index in range(spatial_rank):
+                pad_index = axis_index * 2 + 1  # adjust trailing pad entry
+                pad_attr[pad_index] = self._adjust_pad_if_needed(
+                    input_shape[axis_index + 2],
+                    weight_shape[axis_index + 2],
+                    stride_list[axis_index],
+                    pad_attr[pad_index],
+                    dilation_list[axis_index],
+                )
+
+            stride = tuple(stride_list)
+            dilation = tuple(dilation_list)
+            pad = pad_attr
+
             has_bias = bias is not None
             if not has_bias:
                 bias = self._add_bias(graph_module, node, weight)
 
-            if self._is_depthwise_conv2d(node):
+            if self._is_conv3d(len(input_shape), group):
+                target_op = exir_ops.backend.tosa.CONV3D.default
+            elif self._is_depthwise_conv2d(node):
                 target_op = exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
                 # If there are any TOSA.DEPTHWISE_CONV2D nodes using the weights, we've already reshaped them.
                 if all(user.target != target_op for user in weight.users):
@@ -256,7 +283,7 @@ class RewriteConv2dPass(ArmPass):
             else:
                 target_op = exir_ops.backend.tosa.CONV2D.default
 
-            conv2d_args = (
+            conv_args = (
                 x,
                 weight,
                 bias,
@@ -272,7 +299,7 @@ class RewriteConv2dPass(ArmPass):
                 tosa_op = create_node(
                     graph=graph_module.graph,
                     op_target=target_op,
-                    args=conv2d_args,
+                    args=conv_args,
                     from_node=node,
                     inherit_qparams=True,
                 )
@@ -281,7 +308,7 @@ class RewriteConv2dPass(ArmPass):
                 input_fake_tensor,
                 weight_fake_tensor,
                 bias_fake_tensor,
-                *conv2d_args[3:],
+                *conv_args[3:],
             )
 
             if (
