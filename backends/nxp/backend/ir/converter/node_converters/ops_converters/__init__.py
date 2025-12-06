@@ -53,6 +53,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sigmoid_converter import (
     SigmoidConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.slice_tensor_converter import (
+    SliceTensorConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.softmax_converter import (
     SoftmaxConverter,
 )
@@ -67,27 +70,28 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 )
 
 __all__ = [
-    "AddMMConverter",
-    "CatConverter",
-    "ConvolutionConverter",
-    "MMConverter",
-    "PermuteCopyConverter",
-    "SoftmaxConverter",
-    "ViewCopyConverter",
-    "QDQPerTensorDequantizeConverter",
-    "QDQPerChannelDequantizeConverter",
-    "QDQQuantizeConverter",
-    "ConstantPadNDConverter",
-    "ReLUConverter",
-    "MeanDimConverter",
-    "MaxPool2dConverter",
-    "AvgPool2dConverter",
-    "AddTensorConverter",
-    "SubTensorConverter",
-    "CloneConverter",
     "AbsConverter",
     "AdaptiveAvgPool2dConverter",
+    "AddMMConverter",
+    "AddTensorConverter",
+    "AvgPool2dConverter",
+    "CatConverter",
+    "CloneConverter",
+    "ConstantPadNDConverter",
+    "ConvolutionConverter",
     "HardTanhConverter",
+    "MaxPool2dConverter",
+    "MeanDimConverter",
+    "MMConverter",
+    "PermuteCopyConverter",
+    "QDQPerChannelDequantizeConverter",
+    "QDQPerTensorDequantizeConverter",
+    "QDQQuantizeConverter",
+    "ReLUConverter",
     "SigmoidConverter",
+    "SliceTensorConverter",
+    "SoftmaxConverter",
+    "SubTensorConverter",
     "TanhConverter",
+    "ViewCopyConverter",
 ]
