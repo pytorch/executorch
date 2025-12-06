@@ -235,8 +235,8 @@ class InsertTableOpsPass(ArmPass):
         for node in graph_module.graph.nodes:
             if node.op != "call_function" or node not in self.table_ops:
                 continue
-            input_qparams = node.meta["input_qparams"]
-            output_qparams = node.meta["output_qparams"]
+            input_qparams = node.meta.get("input_qparams", {})
+            output_qparams = node.meta.get("output_qparams", {})
             if len(input_qparams) == 0 or len(output_qparams) == 0:
                 # We only want to replace the node if it's quantized
                 continue

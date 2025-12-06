@@ -146,6 +146,61 @@ def register_tosa_support_check(checker: Type[SupportedTOSAOperatorCheck]):
     return checker
 
 
+def _is_quantized_constant(node: torch.fx.Node) -> bool:
+    if node.target not in (
+        exir_ops.edge.aten.full_like.default,
+        *ComputeConstantOpsAOTPass.targeted_ops,
+    ):
+        return False
+
+    users = tuple(node.users)
+    if users and all(user.target in Q_OPS for user in users):
+        # The node feeds directly into only quantized ops.
+        return True
+
+    for user in users:
+        if user.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
+            dim_order_dtype = get_first_fake_tensor(user).dtype
+            if dim_order_dtype.is_complex or dim_order_dtype.is_floating_point:
+                return False
+        else:
+            return False
+
+    return len(users) > 0
+
+
+def is_quantized(node: torch.fx.Node) -> bool:
+    """Checks if the node is quantized.
+
+    A node is considered quantized if any of the following is true:
+    - Its output dtype is not floating point or complex => integer
+    - It is an op that produces a constant that in turn feeds only quantized users
+    - It has been marked as quantized in the ArmAnnotationInfo custom meta.
+
+    Args:
+        node (torch.fx.Node): The FX node to check.
+
+    Returns:
+        bool: True if the node is quantized, False otherwise.
+    """
+
+    node_dtype = get_first_fake_tensor(node).dtype
+    # Integer-like dtype implies the node is already quantized.
+    if not node_dtype.is_complex and not node_dtype.is_floating_point:
+        return True
+
+    # Nodes introduced during lowering that exclusively feed quantized users.
+    if _is_quantized_constant(node):
+        return True
+
+    # Finally, fall back to the explicit annotation emitted by Arm passes.
+    custom_meta = node.meta.get("custom", {})
+    if ArmAnnotationInfo.CUSTOM_META_KEY in custom_meta:
+        return custom_meta[ArmAnnotationInfo.CUSTOM_META_KEY]["quantized"]
+
+    return False
+
+
 def get_registered_tosa_support_checks(
     tosa_spec: TosaSpecification,
 ) -> list[Type[SupportedTOSAOperatorCheck]]:
@@ -194,9 +249,11 @@ def tosa_support_factory(
         ControlFlowOpSupported(exported_program, tosa_spec, reporter),
     ]
 
-    if tosa_spec.support_integer():
+    if tosa_spec.support_integer() and tosa_spec.support_float():
+        positive_checks.append(TOSAProINTFPSupportList())
+    elif tosa_spec.support_integer():
         positive_checks.append(TOSAProINTSupportList())
-    if tosa_spec.support_float():
+    elif tosa_spec.support_float():
         positive_checks.append(TOSAProFPSupportList())
     # TODO: Refactor to use TOSAProSupportLists + negtive checks
     positive_checks += [
@@ -268,6 +325,27 @@ class TOSAProFPSupportList(OperatorSupportBase):
         return node.op == "call_function" and node.target in TOSA_PRO_FP_SupportList
 
 
+class TOSAProINTFPSupportList(OperatorSupportBase):
+    """
+    TOSA_PRO_INT_FP_SupportList:
+        Ops supported in INT+FP profile via native TOSA ops, decomposition/transformation, pre-compute, or TableOp.
+    """
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        if node.op != "call_function":
+            return False
+
+        # Select list based on whether the node is quantized.
+        if is_quantized(node) or node.target in (*Q_OPS, *DQ_OPS):
+            support_list = TOSA_PRO_INT_SupportList
+        else:
+            support_list = TOSA_PRO_FP_SupportList
+
+        return node.target in support_list
+
+
 class CheckArmQuantized(OperatorSupportBase):
     """
     Check if the node was marked as quantized in the Arm backend.
@@ -278,52 +356,6 @@ class CheckArmQuantized(OperatorSupportBase):
     def __init__(self, reporter: WhyNoPartitionReporter):
         self.reporter = reporter
 
-    def _is_quantized(self, node: torch.fx.Node) -> bool:
-        """Checks if the node is quantized.
-
-        A node is considered quantized if at least one criteria is met:
-        - Its dtype is not floating point or complex => integer
-        - It is one of the special cases where the node has been created in to_edge, e.g.
-          .Scalar operations that have been promoted .Tensor operations
-          where the scalar is replaced by a full op.
-        - It has been marked as quantized in the ArmAnnotationInfo custom meta.
-
-        Args:
-            node (torch.fx.Node): The FX node to check.
-
-        Returns:
-            bool: True if the node is quantized, False otherwise.
-        """
-        node_dtype = get_first_fake_tensor(node).dtype
-        if not node_dtype.is_complex and not node_dtype.is_floating_point:
-            return True
-        if node.target in (
-            exir_ops.edge.aten.full_like.default,
-            *ComputeConstantOpsAOTPass.targeted_ops,
-        ):
-            # Special cases where nodes have been created in to_edge, e.g.
-            # .Scalar operations that have been promoted .Tensor operations
-            # where the scalar is replaced by a full op.
-            if all(user.target in Q_OPS for user in node.users):
-                return True
-            for user in node.users:
-                if (
-                    user.target
-                    == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
-                ):
-                    dim_order_dtype = get_first_fake_tensor(user).dtype
-                    if dim_order_dtype.is_complex or dim_order_dtype.is_floating_point:
-                        return False
-                else:
-                    return False
-            return True
-        return (
-            ArmAnnotationInfo.CUSTOM_META_KEY in node.meta.get("custom", {})
-            and ArmAnnotationInfo(
-                node.meta["custom"][ArmAnnotationInfo.CUSTOM_META_KEY]
-            ).quantized
-        )
-
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
@@ -331,7 +363,7 @@ class CheckArmQuantized(OperatorSupportBase):
         if node.target in (*DQ_OPS, *Q_OPS):
             return True
 
-        if not self._is_quantized(node):
+        if not is_quantized(node):
             self.reporter.report_reject(
                 node, "Node was not marked as quantized in the Arm backend."
             )

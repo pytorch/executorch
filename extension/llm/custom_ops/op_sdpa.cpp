@@ -273,7 +273,6 @@ Tensor& flash_attention_kernel_out(
         // we might consider another appraoch
         if (seq_len >= 768) {
           sdpa::impl::cpu_flash_attention<CTYPE, 256, 512>(
-              ctx,
               output,
               query,
               key,
@@ -290,7 +289,6 @@ Tensor& flash_attention_kernel_out(
               nullopt);
         } else if (seq_len >= 192) {
           sdpa::impl::cpu_flash_attention<CTYPE, 64, 512>(
-              ctx,
               output,
               query,
               key,
@@ -307,7 +305,6 @@ Tensor& flash_attention_kernel_out(
               nullopt);
         } else {
           sdpa::impl::cpu_flash_attention<CTYPE, 32, 512>(
-              ctx,
               output,
               query,
               key,
@@ -421,7 +418,6 @@ Tensor& custom_sdpa_out_impl(
         // we might consider another appraoch
         if (seq_len >= 768) {
           sdpa::impl::cpu_flash_attention<CTYPE, 256, 512>(
-              ctx,
               output,
               q,
               k,
@@ -441,7 +437,6 @@ Tensor& custom_sdpa_out_impl(
               num_keys_for_causal_attention);
         } else if (seq_len >= 192) {
           sdpa::impl::cpu_flash_attention<CTYPE, 64, 512>(
-              ctx,
               output,
               q,
               k,
@@ -461,7 +456,6 @@ Tensor& custom_sdpa_out_impl(
               num_keys_for_causal_attention);
         } else {
           sdpa::impl::cpu_flash_attention<CTYPE, 32, 512>(
-              ctx,
               output,
               q,
               k,

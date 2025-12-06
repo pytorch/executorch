@@ -56,4 +56,5 @@ from . import (  # noqa
     op_sub,
     op_tanh,
     op_to_copy,
+    op_view_copy,
 )

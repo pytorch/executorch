@@ -74,10 +74,6 @@ class CortexMAlphaAdd(ModelAlpha):
 
 
 test_cases = {
-    "self_scalar": McuTestCase(
-        CortexMSelfAdd(),
-        (10.0,),
-    ),
     "self_rank_1": McuTestCase(
         CortexMSelfAdd(),
         (torch.linspace(-5, 5, 10),),
@@ -97,10 +93,6 @@ test_cases = {
     "self_rank_5": McuTestCase(
         CortexMSelfAdd(),
         (ramp_tensor(-5, 5, (2, 2, 2, 2, 2)),),
-    ),
-    "scalar_scalar": McuTestCase(
-        CortexMScalarAdd(),
-        (-0.5, 1.0),
     ),
     "tensor_scalar": McuTestCase(
         CortexMScalarAdd(),
@@ -139,26 +131,22 @@ test_cases = {
 }
 
 
-xfails = {
-    "self_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
-    "scalar_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
+xfails_implementation = {
     "alpha": (
         "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
         AssertionError,
     ),
-    "broadcast_1": "Broadcasting not yet supported in Cortex-M backend",
-    "broadcast_2": "Broadcasting not yet supported in Cortex-M backend",
-    "broadcast_3": "Broadcasting not yet supported in Cortex-M backend",
+}
+xfails_dialect = xfails_implementation | {
+    # Cortex-M quantizer will not quantize additions that require broadcasting
+    # leading to the add op not being replaced by a cortex-m specific implementation
+    "broadcast_1": "Broadcasting is not supported in Cortex-M backend",
+    "broadcast_2": "Broadcasting is not supported in Cortex-M backend",
+    "broadcast_3": "Broadcasting is not supported in Cortex-M backend",
 }
 
 
-@parametrize("test_case", test_cases, xfails=xfails)
+@parametrize("test_case", test_cases, xfails=xfails_dialect)
 def test_dialect_add(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_dialect(
@@ -166,7 +154,7 @@ def test_dialect_add(test_case):
     )
 
 
-@parametrize("test_case", test_cases, xfails=xfails)
+@parametrize("test_case", test_cases, xfails=xfails_implementation)
 def test_implementation_add(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_implementation()
