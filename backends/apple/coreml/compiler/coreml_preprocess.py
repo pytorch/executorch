@@ -225,7 +225,7 @@ class CoreMLBackend(BackendDetails):
     def generate_pass_pipeline_compile_spec(pass_names: List[str]) -> CompileSpec:
         """
         Creates a compile spec representing the pass pipeline to be used by the CoreML backend
-        :param pass_names the list of pass names
+        :param pass_names: the list of pass names
         """
         str_representation = json.dumps(pass_names)
         byte_representation = str_representation.encode("utf-8")
