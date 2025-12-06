@@ -63,9 +63,7 @@ class Module {
   explicit Module(
       const std::string& file_path,
       const LoadMode load_mode = LoadMode::File,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
-      std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
-      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr);
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
   /**
    * Constructs an instance by loading a program from a file with specified
@@ -80,9 +78,7 @@ class Module {
       const std::string& file_path,
       const std::string& data_map_path,
       const LoadMode load_mode = LoadMode::File,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
-      std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
-      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr);
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
   /**
    * Constructs an instance by loading a program from a file with specified
@@ -97,9 +93,7 @@ class Module {
       const std::string& file_path,
       std::vector<std::string> data_files,
       const LoadMode load_mode = LoadMode::File,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
-      std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
-      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr);
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
   /**
    * Constructs an instance with the provided data loader and memory allocator.
