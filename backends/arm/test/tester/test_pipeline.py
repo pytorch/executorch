@@ -376,7 +376,7 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
         qtol: int = 1,
         dynamic_shapes: Optional[Tuple[Any]] = None,
         tosa_extensions: Optional[List[str]] = None,
-        epsilon: float = 2**12,
+        epsilon: float = 2**-12,
     ):
         if tosa_extensions is None:
             tosa_extensions = []
@@ -570,7 +570,7 @@ class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
-        epsilon: float = 2**12,
+        epsilon: float = 2**-12,
     ):
         compile_spec = common.get_u55_compile_spec(
             custom_path=custom_path,
@@ -671,7 +671,7 @@ class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
-        epsilon: float = 2**12,
+        epsilon: float = 2**-12,
     ):
         compile_spec = common.get_u85_compile_spec(
             custom_path=custom_path,
