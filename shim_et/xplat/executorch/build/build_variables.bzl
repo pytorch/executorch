@@ -140,7 +140,6 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_le.cpp",
     "kernels/portable/cpu/op_leaky_relu.cpp",
     "kernels/portable/cpu/op_lift_fresh_copy.cpp",
-    "kernels/portable/cpu/op_linear_scratch_example.cpp",
     "kernels/portable/cpu/op_log.cpp",
     "kernels/portable/cpu/op_log10.cpp",
     "kernels/portable/cpu/op_log1p.cpp",
