@@ -76,7 +76,7 @@ std::tuple<Tensor&, Tensor&> native_dropout_out(
               out);
         });
   } else if (input.numel() > 0) {
-    std::memcpy(out.mutable_data_ptr(), input.data_ptr(), input.nbytes());
+    std::memcpy(out.mutable_data_ptr(), input.const_data_ptr(), input.nbytes());
     std::memset(mask.mutable_data_ptr(), true, mask.nbytes());
   }
   return ret;

@@ -85,11 +85,48 @@ class ConvertSplitToSlicePass(ArmPass):
                         graph,
                         self.slice,
                         (input_node, dim, starts[index], ends[index]),
+                        from_node=node,
                     )
-                    slice_node.meta = split_node.meta.copy()
-                    slice_node.meta["val"] = slice_node.meta["val"][index]
+                    slice_node.meta = _copy_user_node_qparams(
+                        split_node, output_node, index
+                    )
                     output_node.replace_all_uses_with(slice_node)
         graph.eliminate_dead_code()
         graph_module.recompile()
         graph_module = super().call(graph_module).graph_module
         return PassResult(graph_module, True)
+
+
+def _copy_user_node_qparams(
+    split_node: torch.fx.Node, output_node: torch.fx.Node, index: int
+) -> dict:
+    """
+    Construct metadata for the slice node that will replace the split output.
+
+    Note that output quantization parameters are copied from the user nodes
+    of the split node. The split node itself does not have output quantization
+    parameters.
+
+    Args:
+        split_node: The split node being replaced.
+        output_node: The getitem node that is user of the split node.
+        index: The index of the output being processed.
+    Returns:
+        Updated metadata dictionary for the slice node.
+    """
+
+    def _select_index(value):
+        if isinstance(value, (list, tuple)):
+            return value[index]
+        return value
+
+    meta = split_node.meta.copy()
+    if "val" in meta:
+        meta["val"] = _select_index(meta["val"])
+    if "tensor_meta" in meta:
+        meta["tensor_meta"] = _select_index(meta["tensor_meta"])
+    if "input_qparams" in meta:
+        meta["input_qparams"] = dict(meta["input_qparams"])
+    if "output_qparams" in meta:
+        meta["output_qparams"] = dict(output_node.meta["output_qparams"])
+    return meta
