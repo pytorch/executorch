@@ -34,7 +34,7 @@ list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
 set(runner_deps executorch_core extension_module extension_tensor
-                extension_memory_allocator tokenizers::tokenizers
+                tokenizers::tokenizers
 )
 
 # depend on arange_utils
