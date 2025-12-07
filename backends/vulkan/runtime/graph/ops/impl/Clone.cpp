@@ -48,9 +48,9 @@ void add_clone_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter Buffers
-      {graph.logical_limits_ubo(out)},
-      // Push Constants
       {},
+      // Push Constants
+      {graph.logical_limits_pc_of(out)},
       // Specialization Constants
       {},
       // Resize Args
