@@ -326,11 +326,43 @@ endif()
 
 # Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
 # bin size as we link in a number of other symbols
-target_link_libraries(arm_executor_runner ${arm_executor_runner_link})
+target_link_libraries(arm_executor_runner PUBLIC ${arm_executor_runner_link})
 
 target_link_options(
   arm_executor_runner PUBLIC LINKER:-Map=arm_executor_runner.map
 )
+
+# Sanitizers
+if(CMAKE_BUILD_TYPE MATCHES "UndefinedSanitizer")
+  set(_et_runner_ubsan_flag -fsanitize=undefined)
+  target_compile_options(arm_executor_runner PRIVATE ${_et_runner_ubsan_flag})
+  target_link_options(arm_executor_runner PRIVATE ${_et_runner_ubsan_flag})
+  if(NOT TARGET executorch_ubsan)
+    add_subdirectory(
+      ${ET_DIR_PATH}/examples/arm/ubsan
+      ${CMAKE_CURRENT_BINARY_DIR}/ubsan_runtime
+    )
+  endif()
+  target_link_directories(
+    arm_executor_runner PRIVATE $<TARGET_FILE_DIR:executorch_ubsan>
+  )
+  target_link_libraries(arm_executor_runner PRIVATE executorch_ubsan)
+endif()
+
+if(CMAKE_BUILD_TYPE MATCHES "AddressSanitizer")
+  set(_et_runner_asan_flags -fsanitize=kernel-address -fasan-shadow-offset=0x0)
+  target_compile_options(arm_executor_runner PRIVATE ${_et_runner_asan_flags})
+  target_link_options(arm_executor_runner PRIVATE ${_et_runner_asan_flags})
+  if(NOT TARGET executorch_asan)
+    add_subdirectory(
+      ${ET_DIR_PATH}/examples/arm/asan ${CMAKE_CURRENT_BINARY_DIR}/asan_runtime
+    )
+  endif()
+  target_link_libraries(arm_executor_runner PRIVATE executorch_asan)
+  target_compile_definitions(
+    arm_executor_runner PRIVATE EXECUTORCH_ENABLE_ADDRESS_SANITIZER
+  )
+endif()
 
 # ET headers and generated headers includes
 target_include_directories(

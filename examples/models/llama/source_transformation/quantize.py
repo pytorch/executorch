@@ -17,21 +17,6 @@ import torch.nn.functional as F
 from executorch.extension.llm.export.builder import DType
 
 
-try:
-    from fairseq2.nn.embedding import (
-        Embedding as fsEmbedding,
-        StandardEmbedding as fsStandardEmbedding,
-    )
-
-    from fairseq2.nn.projection import Linear as fsLinear
-
-    print("Using fairseq2 modules.")
-except:
-    fsEmbedding = nn.Embedding
-    fsStandardEmbedding = nn.Embedding
-    fsLinear = nn.Linear
-
-
 def quantize(  # noqa C901
     model: torch.nn.Module,
     qmode: str,
@@ -159,13 +144,27 @@ def quantize(  # noqa C901
         from torchao.utils import unwrap_tensor_subclass
 
         def filter_fn(m, fqn):
+            # Check if it's a regular nn.Linear
             is_linear = isinstance(m, nn.Linear)
+
+            # Check if it's a LoRALinear (which has a base weight parameter to quantize)
+            is_lora_linear = False
+            try:
+                from executorch.examples.models.llama.lora import LoRALinear
+
+                is_lora_linear = isinstance(m, LoRALinear)
+            except ImportError:
+                pass
+
+            # Check if the weight shape is compatible with group size
             has_shape_compatible_with_group_size = False
-            if is_linear:
+            if is_linear or is_lora_linear:
                 has_shape_compatible_with_group_size = (
                     m.weight.shape[1] % group_size == 0
                 )
-            return is_linear and has_shape_compatible_with_group_size
+            return (
+                is_linear or is_lora_linear
+            ) and has_shape_compatible_with_group_size
 
         quantize_(
             model,
@@ -386,7 +385,7 @@ class WeightOnlyInt8QuantHandler(QuantHandler):
 
         for fqn, mod in self.mod.named_modules():
             # print(f"maybe? quantize {fqn}...{type(mod)}")
-            if isinstance(mod, torch.nn.Linear) or isinstance(mod, fsLinear):
+            if isinstance(mod, torch.nn.Linear):
                 # print(f"candidate {fqn}, nodetype {self.node_type}")
                 if (
                     (self.node_type == "*")

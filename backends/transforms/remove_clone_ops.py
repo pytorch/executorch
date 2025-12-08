@@ -25,11 +25,18 @@ class RemoveCloneOpsTransform(ExportPass):
         exir_ops.edge.dim_order_ops._clone_dim_order.default,
     }
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        preserve_input_output_copies: bool = False,
+        eliminate_quant_dequant_pairs: bool = True,
+    ) -> None:
         super().__init__()
+        self._preserve_input_output_copies = preserve_input_output_copies
+        self._eliminate_quant_dequant_pairs = eliminate_quant_dequant_pairs
 
-    def _remove(self, graph_module: torch.fx.GraphModule) -> None:
+    def _remove(self, graph_module: torch.fx.GraphModule) -> bool:
         dequant_nodes = []
+        modified = False
 
         for n in graph_module.graph.nodes:
             if n.target not in self.clone_ops:
@@ -38,6 +45,12 @@ class RemoveCloneOpsTransform(ExportPass):
             if self._is_non_identity_clone(n):
                 continue
 
+            # If preserve_input_output_copies is set, don't remove clones that directly
+            # copy from input to output.
+            if self._is_input_output_copy(n) and self._preserve_input_output_copies:
+                continue
+
+            modified = True
             to_be_removed = n
             for user_n in list(n.users.keys()):
                 user_n.replace_input_with(n, n.args[0])
@@ -45,13 +58,18 @@ class RemoveCloneOpsTransform(ExportPass):
                 dequant_nodes += [n.args[0]]
             graph_module.graph.erase_node(to_be_removed)
 
-        eliminate_dq_q(graph_module, dequant_nodes)
+        if self._eliminate_quant_dequant_pairs:
+            eliminate_dq_q(graph_module, dequant_nodes)
+
+        return modified
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        self._remove(graph_module)
-        graph_module.recompile()
-        dead_code_elimination_pass(graph_module)
-        return PassResult(graph_module, True)
+        if self._remove(graph_module):
+            graph_module.recompile()
+            dead_code_elimination_pass(graph_module)
+            return PassResult(graph_module, True)
+        else:
+            return PassResult(graph_module, False)
 
     def _is_non_identity_clone(self, node: torch.fx.Node) -> bool:
         """Return True if clone has modified memory layout or dim order."""
@@ -74,5 +92,18 @@ class RemoveCloneOpsTransform(ExportPass):
                 and "val" in input_meta
                 and node.meta["val"].dim_order() != input_meta["val"].dim_order()
             )
+
+        return False
+
+    def _is_input_output_copy(self, node: torch.fx.Node) -> bool:
+        """Return True if the node input is a graph input and output goes into an output node."""
+
+        input_node = node.args[0]
+        if input_node.op != "placeholder":
+            return False
+
+        for users in node.users:
+            if users.op == "output":
+                return True
 
         return False
