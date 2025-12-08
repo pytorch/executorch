@@ -386,3 +386,16 @@ class CadenceWith16BitConvActivationsQuantizer(CadenceQuantizer):
         quantizers.append(CadenceAtenQuantizer(Conv1dPattern(), qconfig_A16))
         quantizers.append(CadenceAtenQuantizer(Conv2dPattern(), qconfig_A16))
         super().__init__(quantizers)
+
+
+class CadenceWith16BitMatmulActivationsQuantizer(CadenceQuantizer):
+    """
+    Quantizer including A16 matmul
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = []
+        # Add 16-bit quantizers for MatmulPattern
+        quantizers.append(CadenceAtenQuantizer(MatmulPattern(), qconfig_A16))
+        super().__init__(quantizers)

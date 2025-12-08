@@ -52,6 +52,19 @@ def define_common_targets():
                 ],
             )
 
+            python_unittest(
+                name = "op_grid_sampler_2d_test",
+                srcs = [
+                    "op_grid_sampler_2d_test.py",
+                ],
+                preload_deps = [
+                    ":aot_ops_test_lib",
+                ],
+                deps = [
+                    "//caffe2:torch",
+                ],
+            )
+
         op_test(name = "op_allclose_test")
         op_test(name = "op_div_test")
         op_test(name = "op_gelu_test")

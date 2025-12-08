@@ -2,7 +2,7 @@ load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 
-def define_operator(name: str, deps: list[str] | None = None) -> None:
+def define_operator(name: str, deps: list[str] | None = None, exported_headers: list[str] | None = None) -> None:
     op_name = "op_{}".format(name)
 
     # Deps used by all operators.
@@ -21,6 +21,8 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
     ]
     if deps == None:
         deps = []
+    if exported_headers == None:
+        exported_headers = ["operators.h"]
 
     runtime.cxx_library(
         name = op_name,
@@ -32,7 +34,7 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
         ],
         compatible_with = ["ovr_config//cpu:xtensa"],
         deps = deps + common_deps,
-        exported_headers = ["operators.h"],
+        exported_headers = exported_headers,
     )
 
 OPERATORS = [
@@ -87,7 +89,6 @@ OPERATORS = [
     "quantized_layer_norm",
     "quantized_linear_asym8sxasym8s_asym8s_per_tensor_out",
     "quantized_linear_asym8uxasym8u_asym8u_per_tensor_out",
-    "quantized_matmul_out",
     "quantized_matmul_asym8sxasym8s_asym8s_out",
     "quantized_matmul_asym8uxasym8u_asym8u_out",
     "quantized_relu_out",
@@ -127,3 +128,6 @@ def define_common_targets():
     # quantized_conv2d_nchw_out and quantized_conv2d_nhwc_out need additional dependency for int16 support
     define_operator("quantized_conv2d_nchw_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators/generic:op_quantized_conv2d"])
     define_operator("quantized_conv2d_nhwc_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators/generic:op_quantized_conv2d"])
+
+    # quantized_matmul_out needs additional dependency for int16 support
+    define_operator("quantized_matmul_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators/generic:op_quantized_matmul"], exported_headers=["op_quantized_matmul_out.h"])

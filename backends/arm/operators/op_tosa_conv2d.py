@@ -23,7 +23,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
+from executorch.backends.arm.tosa.specification import TosaSpecification
 
 
 @register_node_visitor
@@ -64,9 +64,7 @@ class Conv2dVisitor(NodeVisitor):
         if self.tosa_spec.support_integer():
             valid_input_dtypes.append(ts.DType.INT8)
 
-        if isinstance(self.tosa_spec, Tosa_1_00) and self.tosa_spec.support_extension(
-            "int16"
-        ):
+        if self.tosa_spec.support_extension("int16"):
             valid_input_dtypes.append(ts.DType.INT16)
             # Check constraints for int16 activations
             if inputs[0].dtype == ts.DType.INT16:

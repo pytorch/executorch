@@ -185,6 +185,7 @@ set(all_test_sources
     "op_ge_test.cpp"
     "op_gelu_test.cpp"
     "op_glu_test.cpp"
+    "op_grid_sampler_2d_test.cpp"
     "op_gt_test.cpp"
     "op_hardtanh_test.cpp"
     "op_index_put_test.cpp"
