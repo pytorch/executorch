@@ -128,7 +128,7 @@ static std::string get_sdpa_metal_source() {
   return R"(
 // Ported from PyTorch's Attention.metal
 // https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/mps/kernels/Attention.metal
-// Largely influeneced by
+// Largely influenced by
 // https://github.com/ml-explore/mlx/blob/main/mlx/backend/metal/kernels/scaled_dot_product_attention.metal
 // Modified to support floating point masks and transposed middle dimensions (dims 1 & 2)
 
@@ -137,9 +137,6 @@ static std::string get_sdpa_metal_source() {
 #include <metal_math>
 
 using namespace metal;
-
-typedef half float16_t;
-typedef bfloat bfloat16_t;
 
 // PyTorch's sdpa_vector kernel (one-pass variant)
 template <typename T, int D, int V = D>
@@ -334,7 +331,6 @@ template <typename T, int D, int V = D>
   INSTANTIATE_SDPA_VECTOR(DTYPE, 128, 128);
 
 INSTANTIATE_SDPA_VECTOR_HEADS(float);
-INSTANTIATE_SDPA_VECTOR_HEADS(half);
 INSTANTIATE_SDPA_VECTOR_HEADS(bfloat);
 )";
 }
@@ -342,11 +338,13 @@ INSTANTIATE_SDPA_VECTOR_HEADS(bfloat);
 // Global shader library cache for SDPA
 static std::unique_ptr<ETMetalShaderLibrary> sdpa_shader_library = nullptr;
 
+static std::once_flag sdpa_shader_library_once_flag;
+
 static ETMetalShaderLibrary* get_sdpa_shader_library() {
-  if (!sdpa_shader_library) {
+  std::call_once(sdpa_shader_library_once_flag, []() {
     std::string source = get_sdpa_metal_source();
     sdpa_shader_library = std::make_unique<ETMetalShaderLibrary>(source);
-  }
+  });
   return sdpa_shader_library.get();
 }
 
@@ -1165,6 +1163,19 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
     return Error::InvalidArgument;
   }
 
+  if (is_causal) {
+    ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: is_causal=True not implemented");
+    return Error::NotImplemented;
+  }
+  if (dropout_p != 0.0) {
+    ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: dropout_p != 0 not implemented (dropout_p=%f)", dropout_p);
+    return Error::NotImplemented;
+  }
+  if (dropout_mask && *dropout_mask) {
+    ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: dropout_mask provided not implemented");
+    return Error::NotImplemented;
+  }
+
   // Use the same dispatch pattern as other MPS operations for consistent synchronization
   ETMetalStream* stream = getCurrentMetalStream();
   if (!stream) {
@@ -1182,7 +1193,7 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
       ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Converted tensor handles to ET tensors");
 
       // Log query tensor shape and strides
-      ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Query tensor - dim=%d, shape=[%lld, %lld, %lld, %lld], strides=[%lld, %lld, %lld, %lld]",
+      ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Query tensor - dim=%d, shape=[%d, %d, %d, %d], strides=[%d, %d, %d, %d]",
               (int)query_tensor->dim(),
               query_tensor->dim() > 0 ? query_tensor->sizes()[0] : 0,
               query_tensor->dim() > 1 ? query_tensor->sizes()[1] : 0,
@@ -1194,7 +1205,7 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
               query_tensor->dim() > 3 ? query_tensor->strides()[3] : 0);
 
       // Log key tensor shape and strides
-      ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Key tensor - dim=%d, shape=[%lld, %lld, %lld, %lld], strides=[%lld, %lld, %lld, %lld]",
+      ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Key tensor - dim=%d, shape=[%d, %d, %d, %d], strides=[%d, %d, %d, %d]",
               (int)key_tensor->dim(),
               key_tensor->dim() > 0 ? key_tensor->sizes()[0] : 0,
               key_tensor->dim() > 1 ? key_tensor->sizes()[1] : 0,
@@ -1206,7 +1217,7 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
               key_tensor->dim() > 3 ? key_tensor->strides()[3] : 0);
 
       // Log value tensor shape and strides
-      ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Value tensor - dim=%d, shape=[%lld, %lld, %lld, %lld], strides=[%lld, %lld, %lld, %lld]",
+      ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Value tensor - dim=%d, shape=[%d, %d, %d, %d], strides=[%d, %d, %d, %d]",
               (int)value_tensor->dim(),
               value_tensor->dim() > 0 ? value_tensor->sizes()[0] : 0,
               value_tensor->dim() > 1 ? value_tensor->sizes()[1] : 0,
@@ -1254,6 +1265,13 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
       if (headSize == 0) {
         ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: headSize is zero");
         throw std::runtime_error("headSize must be non-zero for scaled dot product attention");
+      }
+
+      // Validate key tensor head dimension to avoid division by zero in gqa_factor calculation
+      int64_t key_num_heads = key_tensor->sizes()[1];
+      if (key_num_heads == 0) {
+        ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: key tensor head dimension (sizes()[1]) is zero");
+        throw std::runtime_error("key tensor must have non-zero head dimension for scaled dot product attention");
       }
 
       // Calculate scale factor
@@ -1416,7 +1434,7 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
       uint mask_kv_seq_stride = 0;
       uint mask_q_seq_stride = 0;
       if (has_mask_val) {
-          auto* mask_tensor = reinterpret_cast<Tensor*>(*attn_mask);
+        auto* mask_tensor = reinterpret_cast<Tensor*>(*attn_mask);
         int nd = mask_tensor->dim();
         mask_kv_seq_stride = (nd >= 1 && mask_tensor->sizes()[nd - 1] > 1) ? static_cast<uint>(mask_tensor->strides()[nd - 1]) : 0;
         mask_q_seq_stride = (nd >= 2 && mask_tensor->sizes()[nd - 2] > 1) ? static_cast<uint>(mask_tensor->strides()[nd - 2]) : 0;
@@ -1487,9 +1505,6 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
       });
 
       ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Command block completed");
-
-      // Create attention weights tensor handle (zero-filled)
-      std::memset(attn_contents_ptr, 0, attn_size_bytes);
 
       AOTITensorHandle attn_tensor_handle = nullptr;
       AOTITorchError create_attn_result = aoti_torch_create_tensor_from_blob_v2(

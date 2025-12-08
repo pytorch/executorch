@@ -199,8 +199,13 @@ class ETMetalKernelFunction {
       size_t group_size_size);
 
   // Dispatch with explicit threadgroup count (not thread count)
-  void dispatchThreadgroups(uint64_t gridX, uint64_t gridY, uint64_t gridZ,
-                            uint64_t threadsX, uint64_t threadsY, uint64_t threadsZ);
+  void dispatchThreadgroups(
+      uint64_t gridX,
+      uint64_t gridY,
+      uint64_t gridZ,
+      uint64_t threadsX,
+      uint64_t threadsY,
+      uint64_t threadsZ);
 
   void runCommandBlock(std::function<void(void)> f);
 

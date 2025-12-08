@@ -10,6 +10,7 @@
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #import <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 #import <Foundation/Foundation.h>
+#include <simd/simd.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
@@ -423,14 +424,9 @@ void ETMetalKernelFunction::setArgUint3(unsigned idx, uint32_t x, uint32_t y, ui
         return;
     }
 
-    // Metal's uint3 is a packed struct of 3 uint32_t values
-    struct uint3 {
-        uint32_t x;
-        uint32_t y;
-        uint32_t z;
-    };
-    uint3 val = {x, y, z};
-    [encoder_ setBytes:&val length:sizeof(uint3) atIndex:idx];
+    // Use SIMD library's uint3 type which matches Metal shader's uint3 layout
+    simd_uint3 val = {x, y, z};
+    [encoder_ setBytes:&val length:sizeof(simd_uint3) atIndex:idx];
     ET_LOG(Debug, "ETMetalKernelFunction::setArgUint3: Set uint3{%u, %u, %u} at index %u", x, y, z, idx);
 }
 
@@ -563,6 +559,23 @@ void ETMetalKernelFunction::dispatchThreadgroups(uint64_t gridX, uint64_t gridY,
                                                   uint64_t threadsX, uint64_t threadsY, uint64_t threadsZ) {
     if (!encoder_) {
         ET_LOG(Error, "ETMetalKernelFunction::dispatchThreadgroups: No active encoder");
+        return;
+    }
+
+    if (!cps_) {
+        ET_LOG(Error, "ETMetalKernelFunction::dispatchThreadgroups: No compute pipeline state");
+        return;
+    }
+
+    // Calculate total threads per threadgroup
+    uint64_t totalThreads = threadsX * threadsY * threadsZ;
+
+    const auto maxThreadsPerGroup = static_cast<uint64_t>([cps_ maxTotalThreadsPerThreadgroup]);
+
+    // Validate total thread count
+    if (totalThreads > maxThreadsPerGroup) {
+        ET_LOG(Error, "ETMetalKernelFunction::dispatchThreadgroups: Requested %llu total threads per threadgroup exceeds device maximum of %llu",
+               (unsigned long long)totalThreads, (unsigned long long)maxThreadsPerGroup);
         return;
     }
 
