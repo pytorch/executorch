@@ -121,7 +121,7 @@ def _single_input_case(
     module_factory: Callable[[], torch.nn.Module],
 ) -> Callable[[], Tuple[torch.nn.Module, input_single]]:
     def _create() -> Tuple[torch.nn.Module, input_single]:
-        return module_factory(), (torch.ones(2, 3),)
+        return module_factory(), (torch.ones(2, 3, 4, 6),)
 
     return _create
 
