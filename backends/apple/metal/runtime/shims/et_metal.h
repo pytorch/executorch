@@ -181,6 +181,13 @@ class ETMetalKernelFunction {
   void startEncoding();
   void setArg(unsigned idx, const executorch::runtime::etensor::Tensor& tensor);
   void setArg(unsigned idx, int64_t val);
+  void setArg(unsigned idx, uint32_t val);
+  void setArg(unsigned idx, float val);
+  void setArg(unsigned idx, bool val);
+  void setArg(unsigned idx, const void* data, size_t size);
+
+  // Helper for Metal uint3 struct
+  void setArgUint3(unsigned idx, uint32_t x, uint32_t y, uint32_t z);
 
   void dispatchSingle(uint64_t length);
   void dispatchSingleWithGroupSize(uint64_t length, uint64_t group_size);
@@ -190,6 +197,15 @@ class ETMetalKernelFunction {
       size_t length_size,
       const uint64_t* group_size,
       size_t group_size_size);
+
+  // Dispatch with explicit threadgroup count (not thread count)
+  void dispatchThreadgroups(
+      uint64_t gridX,
+      uint64_t gridY,
+      uint64_t gridZ,
+      uint64_t threadsX,
+      uint64_t threadsY,
+      uint64_t threadsZ);
 
   void runCommandBlock(std::function<void(void)> f);
 
