@@ -19,11 +19,16 @@ from executorch.backends.openvino.quantizer.observers import (
     INT4WeightObserver,
     INT8WeightObserver,
 )
-from nncf.common.graph.graph import NNCFGraph, NNCFNode  # type: ignore[import-untyped]
-from nncf.experimental.common.tensor_statistics.statistics import WCTensorStatistic
+from nncf.common.graph.graph import NNCFGraph  # type: ignore[import-untyped]
 from nncf.common.logging import nncf_logger  # type: ignore[import-untyped]
+from nncf.experimental.common.tensor_statistics.statistics import (  # type: ignore[import-untyped]
+    WCTensorStatistic,
+)
 from nncf.quantization.algorithms.min_max.algorithm import (  # type: ignore[import-untyped]
     MinMaxQuantization,
+)
+from nncf.quantization.algorithms.weight_compression.algorithm import (  # type: ignore[import-untyped]
+    WeightCompression,
 )
 from nncf.quantization.algorithms.weight_compression.config import (  # type: ignore[import-untyped]
     WeightCompressionParameters,
@@ -125,15 +130,8 @@ class OpenVINOQuantizer(Quantizer):
                 **kwargs,
             )
             subset_size = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
-            self.weight_compression_configuration = (
-                get_weight_compression_configuration(
-                    mode,
-                    **kwargs,
-                )
-            )
-            _weight_compression_configuration = self.weight_compression_configuration
-            self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
-                subset_size=subset_size, **_weight_compression_configuration
+            self._algo = WeightCompression(
+                subset_size=subset_size, **weight_compression_configuration
             )
 
     def set_ignored_scope(

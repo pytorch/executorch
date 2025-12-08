@@ -1,2 +1,2 @@
 transformers
-git+https://github.com/openvinotoolkit/nncf@an/fx/compress_pt2e#egg=nncf
+git+https://github.com/openvinotoolkit/nncf#egg=nncf
