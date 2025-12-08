@@ -17,6 +17,10 @@ from torch.fx import Node
 SHIFT_INT8 = 20
 
 
+def quantize_val(val, scale, zp, qmin, qmax):
+    return min(max(round(val / scale + zp), qmin), qmax)
+
+
 def dequantize_per_tensor_cmsis(
     qtensor: torch.Tensor, zero_point: int, multiplier: int, shift: int
 ) -> torch.Tensor:
