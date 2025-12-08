@@ -136,3 +136,51 @@ def get_quantization_parameters_for(node: Node) -> tuple[Scale, ZeroPoint] | Non
         return None
 
     return node.args[1], node.args[2]  # Scale and zero_point
+
+
+def get_non_qdq_users(node: Node) -> list[Node]:
+    """Return a list of nodes which consume the output of `node`, but Quantize/Dequantize nodes from QDQ clusters are
+     ignored. Meaning, the list of nodes [<user_1>, ..., <user_N>] from the illustration below is returned.
+
+    If the graph does not follow the QDQ pattern, an empty list is returned.
+
+                │
+            ┌───▼────┐
+            │ `node` │
+            └───┬────┘
+           ┌────▼─────┐
+           │ Quantize │
+           └────┬─────┘
+                ├─────── ... ──────┐
+          ┌─────▼──────┐     ┌─────▼──────┐
+          │ Dequantize │ ... │ Dequantize │
+          └─────┬──────┘     └─────┬──────┘
+           ┌────▼─────┐       ┌────▼─────┐
+           │ <user_1> │  ...  │ <user_N> │
+           └────┬─────┘       └────┬─────┘
+
+    """
+
+    quant_nodes = list(node.users)
+    if len(quant_nodes) != 1 or quant_nodes[0].target not in [
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    ]:
+        return []
+
+    dequant_nodes = list(quant_nodes[0].users)
+    if any(
+        dequant_node.target
+        not in [
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        ]
+        for dequant_node in dequant_nodes
+    ):
+        return []
+
+    res = []
+    for dequant_node in dequant_nodes:
+        res.extend(list(dequant_node.users))
+
+    return res
