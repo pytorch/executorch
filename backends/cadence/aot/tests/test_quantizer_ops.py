@@ -6,20 +6,28 @@
 
 # pyre-strict
 
+import inspect
 import unittest
 from typing import Callable
 
 import torch
 from executorch.backends.cadence.aot.graph_builder import GraphBuilder
+from executorch.backends.cadence.aot.quantizer import quantizer as quantizer_module
 from executorch.backends.cadence.aot.quantizer.patterns import AddmmPattern
 
 from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceAtenQuantizer,
     CadenceDefaultQuantizer,
+    CadenceFusedConvReluQuantizer,
+    CadenceNopQuantizer,
     CadenceQuantizer,
     CadenceW8A32MixedQuantizer,
+    CadenceWakeWordQuantizer,
+    CadenceWith16BitConvActivationsQuantizer,
     CadenceWith16BitLinearActivationsQuantizer,
     CadenceWith16BitMatmulActivationsQuantizer,
+    CadenceWithLayerNormQuantizer,
+    CadenceWithSoftmaxQuantizer,
     qconfig_A16,
     qconfig_A8W8,
 )
@@ -32,10 +40,65 @@ from torchao.quantization.pt2e.quantizer.quantizer import (
     QuantizationSpec,
 )
 
-# Type alias for graph builder functions
+# Type alias for graph builder functions.
+# These functions take a test instance and return a graph module and the target op node.
 GraphBuilderFn = Callable[
     ["QuantizerAnnotationTest"], tuple[torch.fx.GraphModule, torch.fx.Node]
 ]
+
+
+# Quantizers intentionally excluded from annotation testing.
+# These should be explicitly justified when added.
+EXCLUDED_FROM_ANNOTATION_TESTING: set[type[CadenceQuantizer]] = {
+    CadenceDefaultQuantizer,  # TODO: T247438143 Add test coverage
+    CadenceFusedConvReluQuantizer,  # TODO: T247438151 Add test coverage
+    CadenceNopQuantizer,  # No-op quantizer, doesn't annotate anything
+    CadenceW8A32MixedQuantizer,  # TODO: T247438158 Add test coverage
+    CadenceWakeWordQuantizer,  # TODO: T247438162 Add test coverage
+    CadenceWith16BitConvActivationsQuantizer,  # TODO: T247438221 Add test coverage
+    CadenceWithLayerNormQuantizer,  # TODO: T247438410 Add test coverage
+    CadenceWithSoftmaxQuantizer,  # TODO: T247438418 Add test coverage
+}
+
+
+# Test case definitions for quantizer annotation tests.
+# Format: (name, graph_builder_fn, quantizer_instance, target_op, expected_output_qspec, expected_input_qspecs)
+# Adding a new quantizer test only requires adding a tuple to this list.
+QUANTIZER_ANNOTATION_TEST_CASES: list[
+    tuple[
+        str,
+        GraphBuilderFn,
+        CadenceQuantizer,
+        OpOverload,
+        QuantizationSpec,
+        list[QuantizationSpec],
+    ]
+] = [
+    (
+        "matmul_A16",
+        lambda self: self._build_matmul_graph(),
+        CadenceWith16BitMatmulActivationsQuantizer(),
+        torch.ops.aten.matmul.default,
+        qconfig_A16.output_activation,
+        # For matmul, both inputs are activations
+        [qconfig_A16.input_activation, qconfig_A16.input_activation],
+    ),
+    (
+        "linear_A16",
+        lambda self: self._build_linear_graph(),
+        CadenceWith16BitLinearActivationsQuantizer(),
+        torch.ops.aten.linear.default,
+        qconfig_A16.output_activation,
+        # For linear: [input_activation, weight]
+        [qconfig_A16.input_activation, qconfig_A16.weight],
+    ),
+]
+
+# Derive the set of tested quantizer classes from the test cases.
+# This ensures TESTED_QUANTIZER_CLASSES stays in sync with actual tests.
+TESTED_QUANTIZER_CLASSES: set[type[CadenceQuantizer]] = {
+    type(case[2]) for case in QUANTIZER_ANNOTATION_TEST_CASES
+}
 
 
 class QuantizerAnnotationTest(unittest.TestCase):
@@ -85,28 +148,7 @@ class QuantizerAnnotationTest(unittest.TestCase):
         self.assertEqual(len(linear_nodes), 1, "Should find exactly one linear node")
         return gm, linear_nodes[0]
 
-    @parameterized.expand(
-        [
-            (
-                "matmul_A16",
-                lambda self: self._build_matmul_graph(),
-                CadenceWith16BitMatmulActivationsQuantizer(),
-                torch.ops.aten.matmul.default,
-                qconfig_A16.output_activation,
-                # For matmul, both inputs are activations
-                [qconfig_A16.input_activation, qconfig_A16.input_activation],
-            ),
-            (
-                "linear_A16",
-                lambda self: self._build_linear_graph(),
-                CadenceWith16BitLinearActivationsQuantizer(),
-                torch.ops.aten.linear.default,
-                qconfig_A16.output_activation,
-                # For linear: [input_activation, weight]
-                [qconfig_A16.input_activation, qconfig_A16.weight],
-            ),
-        ]
-    )
+    @parameterized.expand(QUANTIZER_ANNOTATION_TEST_CASES)
     def test_quantizer_annotation(
         self,
         name: str,
@@ -128,22 +170,45 @@ class QuantizerAnnotationTest(unittest.TestCase):
         self.assertEqual(annotation.output_qspec, expected_output_qspec)
 
         # Verify input annotations
-        # Build actual_specs in the fixed order defined by op_node.args
         self.assertEqual(len(annotation.input_qspec_map), len(expected_input_qspecs))
-        actual_specs = []
-        for i in range(len(expected_input_qspecs)):
-            arg = op_node.args[i]
-            assert isinstance(arg, torch.fx.Node)
-            actual_specs.append(annotation.input_qspec_map[arg])
-
-        # Compare expected vs actual specs
-        for i, (expected, actual) in enumerate(
-            zip(expected_input_qspecs, actual_specs)
+        for i, (input_node, input_qspec) in enumerate(
+            annotation.input_qspec_map.items()
         ):
+            expected_arg = op_node.args[i]
+            assert isinstance(expected_arg, torch.fx.Node)
             self.assertEqual(
-                actual,
-                expected,
+                input_node,
+                expected_arg,
+                f"Input node mismatch at index {i}",
+            )
+            self.assertEqual(
+                input_qspec,
+                expected_input_qspecs[i],
                 f"Input qspec mismatch at index {i}",
+            )
+
+    def test_all_quantizers_have_annotation_tests(self) -> None:
+        """Ensure every CadenceQuantizer subclass is either tested or explicitly excluded."""
+        # Get all CadenceQuantizer subclasses defined in the quantizer module
+        all_quantizers: set[type[CadenceQuantizer]] = set()
+        for _, obj in inspect.getmembers(quantizer_module, inspect.isclass):
+            if (
+                issubclass(obj, CadenceQuantizer)
+                and obj is not CadenceQuantizer
+                and obj.__module__ == quantizer_module.__name__
+            ):
+                all_quantizers.add(obj)
+
+        # Check for missing tests
+        untested = (
+            all_quantizers - TESTED_QUANTIZER_CLASSES - EXCLUDED_FROM_ANNOTATION_TESTING
+        )
+        if untested:
+            untested_names = sorted(cls.__name__ for cls in untested)
+            self.fail(
+                f"The following CadenceQuantizer subclasses are not tested in "
+                f"test_quantizer_annotation and not in EXCLUDED_FROM_ANNOTATION_TESTING: "
+                f"{untested_names}. Please add test cases or explicitly exclude them."
             )
 
 
