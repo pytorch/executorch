@@ -47,7 +47,7 @@ jobs:
           VERSION="${{ steps.set_version.outputs.version }}"
           BRANCH="swiftpm-${VERSION}"
 
-          if git ls-remote --exit-code "https://github.com/${{ github.repository }}" "refs/heads/${BRANCH}" > /dev/null; then
+          if git ls-remote --exit-code "https://github.com/${{ github.repository }}" "refs/heads/${BRANCH}" > /dev/null 2>&1; then
             echo "Branch '${BRANCH}' already exists!"
             echo "Aborting workflow to prevent overwriting S3 binaries. The branch existence indicates this version was already published with specific checksums."
             echo "Please delete the remote branch '${BRANCH}' and re-run this workflow."
