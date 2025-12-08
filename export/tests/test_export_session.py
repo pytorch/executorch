@@ -817,3 +817,157 @@ class TestExportSessionExtendedInputTypes(unittest.TestCase):
 
         # Should not raise during validation
         session._validate_pipeline_sequence(recipe.pipeline_stages)
+
+
+class TestIntermediateStateGetters(unittest.TestCase):
+    """Test convenience getters for intermediate pipeline states."""
+
+    def setUp(self) -> None:
+        self.model = SimpleTestModel()
+        self.example_inputs = [(torch.randn(2, 10),)]
+
+    def test_get_exported_program_after_torch_export(self) -> None:
+        """Test that get_exported_program works after torch export stage."""
+        recipe = ExportRecipe(
+            name="test",
+            pipeline_stages=[
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ],
+        )
+
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+
+        session.export()
+
+        exported_program = session.get_exported_program()
+        self.assertIsNotNone(exported_program)
+        self.assertIsInstance(exported_program, torch.export.ExportedProgram)
+
+    def test_get_exported_program_before_export_fails(self) -> None:
+        """Test that get_exported_program fails before torch export stage."""
+        recipe = ExportRecipe(name="test")
+
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+
+        with self.assertRaises(RuntimeError) as cm:
+            session.get_exported_program()
+        self.assertIn("Exported program is not available", str(cm.exception))
+
+    def test_get_exported_program_invalid_method_name(self) -> None:
+        """Test that get_exported_program fails with invalid method name."""
+        recipe = ExportRecipe(name="test")
+
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+
+        session.export()
+
+        with self.assertRaises(KeyError) as cm:
+            session.get_exported_program("nonexistent_method")
+        self.assertIn("Method name 'nonexistent_method' not found", str(cm.exception))
+
+    def test_get_exported_program_multi_method(self) -> None:
+        """Test get_exported_program with multi-method model."""
+        model_dict = {
+            "forward": self.model,
+            "inference": SimpleTestModel(),
+        }
+        inputs_dict = {
+            "forward": self.example_inputs,
+            "inference": [(torch.randn(1, 10),)],
+        }
+
+        recipe = ExportRecipe(name="multi_method_test")
+
+        session = ExportSession(
+            model=model_dict,
+            example_inputs=inputs_dict,
+            export_recipe=recipe,
+        )
+
+        session.export()
+
+        forward_ep = session.get_exported_program("forward")
+        inference_ep = session.get_exported_program("inference")
+
+        self.assertIsNotNone(forward_ep)
+        self.assertIsNotNone(inference_ep)
+        self.assertIsInstance(forward_ep, torch.export.ExportedProgram)
+        self.assertIsInstance(inference_ep, torch.export.ExportedProgram)
+
+    def test_get_edge_program_manager_with_transform_and_lower(self) -> None:
+        """Test get_edge_program_manager with TO_EDGE_TRANSFORM_AND_LOWER stage."""
+        recipe = ExportRecipe(
+            name="test",
+            pipeline_stages=[
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ],
+        )
+
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+
+        session.export()
+
+        edge_manager = session.get_edge_program_manager()
+        self.assertIsNotNone(edge_manager)
+
+    def test_get_edge_program_manager_with_separate_stages(self) -> None:
+        """Test get_edge_program_manager with separate TO_EDGE and TO_BACKEND stages."""
+        recipe = ExportRecipe(
+            name="test",
+            pipeline_stages=[
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE,
+                StageType.TO_BACKEND,
+                StageType.TO_EXECUTORCH,
+            ],
+        )
+
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+
+        session.export()
+
+        edge_manager = session.get_edge_program_manager()
+        self.assertIsNotNone(edge_manager)
+
+    def test_get_edge_program_manager_before_edge_stage_fails(self) -> None:
+        """Test that get_edge_program_manager fails before edge stages."""
+        recipe = ExportRecipe(
+            name="test",
+            pipeline_stages=[StageType.TORCH_EXPORT],
+        )
+
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+
+        session.export()
+
+        with self.assertRaises(RuntimeError) as cm:
+            session.get_edge_program_manager()
+        self.assertIn("Edge program manager is not available", str(cm.exception))
