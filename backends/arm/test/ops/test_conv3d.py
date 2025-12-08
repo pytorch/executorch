@@ -584,6 +584,7 @@ def test_convolution_3d_vgf_INT(test_data):
     pipeline.run()
 
 
+@common.SkipIfNoModelConverter
 def test_convolution_3d_vgf_FP_multi_op():
     """Ensure mixed Conv3d/Conv2d graphs keep correct spatial annotations."""
     model = Conv3dMultiOp()
@@ -597,6 +598,7 @@ def test_convolution_3d_vgf_FP_multi_op():
     pipeline.run()
 
 
+@common.SkipIfNoModelConverter
 def test_convolution_3d_vgf_INT_multi_op():
     """Ensure mixed Conv3d/Conv2d graphs keep correct spatial annotations."""
     model = Conv3dMultiOp()
