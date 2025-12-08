@@ -61,10 +61,11 @@ class TestExportSessionCoreFlow(unittest.TestCase):
             mock_stage.can_start_pipeline = True
         elif stage_type == StageType.TO_EDGE_TRANSFORM_AND_LOWER:
             mock_stage.valid_predecessor_stages = [StageType.TORCH_EXPORT]
-            mock_stage.can_start_pipeline = False
+            mock_stage.can_start_pipeline = True
         elif stage_type == StageType.TO_EXECUTORCH:
             mock_stage.valid_predecessor_stages = [
-                StageType.TO_EDGE_TRANSFORM_AND_LOWER
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_BACKEND,
             ]
             mock_stage.can_start_pipeline = True
         else:
@@ -279,7 +280,7 @@ class TestPipelineValidation(unittest.TestCase):
                 StageType.TO_EDGE_TRANSFORM_AND_LOWER,
                 StageType.TO_EXECUTORCH,
             ],
-            # Skip source transform and tart with quantize
+            # Skip source transform and start with quantize
             [
                 StageType.QUANTIZE,
                 StageType.TORCH_EXPORT,
@@ -290,6 +291,17 @@ class TestPipelineValidation(unittest.TestCase):
             [
                 StageType.TORCH_EXPORT,
                 StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ],
+            # Start with edge transform and lower (ExportedProgram input)
+            [
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ],
+            # Start with to_edge and to_backend
+            [
+                StageType.TO_EDGE,
+                StageType.TO_BACKEND,
                 StageType.TO_EXECUTORCH,
             ],
         ]
@@ -306,9 +318,11 @@ class TestPipelineValidation(unittest.TestCase):
     def test_invalid_pipeline_start_stages(self) -> None:
         """Test stages that cannot start a pipeline."""
         invalid_stage_sequence = [
-            # Edge stage cannot start pipeline
-            [StageType.TO_EDGE_TRANSFORM_AND_LOWER],
-            [StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_EXECUTORCH],
+            # Executorch stage cannot start pipeline (requires edge stage first)
+            [StageType.TO_EXECUTORCH],
+            # Backend stage cannot start pipeline (requires TO_EDGE first)
+            [StageType.TO_BACKEND],
+            [StageType.TO_BACKEND, StageType.TO_EXECUTORCH],
         ]
 
         for i, stages in enumerate(invalid_stage_sequence):
@@ -485,3 +499,321 @@ class TestExportSessionPipelineBuilding(unittest.TestCase):
             StageType.TO_EXECUTORCH,
         ]
         self.assertListEqual(list(registered_stages.keys()), expected_types)
+
+
+class TestExportSessionExtendedInputTypes(unittest.TestCase):
+    """Test extended input type support (GraphModule, ExportedProgram, etc.)"""
+
+    def setUp(self) -> None:
+        self.model = SimpleTestModel()
+        self.example_inputs = (torch.randn(2, 10),)
+        self.recipe = ExportRecipe(name="test")
+
+    def test_nn_module_input_type_detection(self) -> None:
+        """Test that nn.Module input is detected correctly."""
+        session = ExportSession(
+            model=self.model,
+            example_inputs=[self.example_inputs],
+            export_recipe=self.recipe,
+        )
+
+        self.assertEqual(session._input_model_type, "nn.Module")
+
+        # Verify default pipeline includes quantization stages
+        pipeline = session._get_default_pipeline()
+        self.assertIn(StageType.SOURCE_TRANSFORM, pipeline)
+        self.assertIn(StageType.QUANTIZE, pipeline)
+        self.assertIn(StageType.TORCH_EXPORT, pipeline)
+        self.assertIn(StageType.TO_EDGE_TRANSFORM_AND_LOWER, pipeline)
+        self.assertIn(StageType.TO_EXECUTORCH, pipeline)
+
+    def test_graph_module_input_type_detection(self) -> None:
+        """Test that GraphModule input is detected correctly."""
+        # Create a GraphModule using fx.symbolic_trace
+        graph_module = torch.fx.symbolic_trace(self.model)
+
+        session = ExportSession(
+            model=graph_module,
+            example_inputs=[self.example_inputs],
+            export_recipe=self.recipe,
+        )
+
+        self.assertEqual(session._input_model_type, "GraphModule")
+
+        # Verify default pipeline skips quantization stages
+        pipeline = session._get_default_pipeline()
+        self.assertNotIn(StageType.SOURCE_TRANSFORM, pipeline)
+        self.assertNotIn(StageType.QUANTIZE, pipeline)
+        self.assertIn(StageType.TORCH_EXPORT, pipeline)
+        self.assertIn(StageType.TO_EDGE_TRANSFORM_AND_LOWER, pipeline)
+        self.assertIn(StageType.TO_EXECUTORCH, pipeline)
+
+    def test_exported_program_input_type_detection(self) -> None:
+        """Test that ExportedProgram input is detected correctly."""
+        # Create an ExportedProgram
+        exported_program = torch.export.export(self.model, self.example_inputs)
+
+        # ExportedProgram should not require example_inputs
+        session = ExportSession(
+            model=exported_program,
+            export_recipe=self.recipe,
+        )
+
+        self.assertEqual(session._input_model_type, "ExportedProgram")
+
+        # Verify default pipeline skips quantization and torch export stages
+        pipeline = session._get_default_pipeline()
+        self.assertNotIn(StageType.SOURCE_TRANSFORM, pipeline)
+        self.assertNotIn(StageType.QUANTIZE, pipeline)
+        self.assertNotIn(StageType.TORCH_EXPORT, pipeline)
+        self.assertIn(StageType.TO_EDGE_TRANSFORM_AND_LOWER, pipeline)
+        self.assertIn(StageType.TO_EXECUTORCH, pipeline)
+
+    def test_dict_nn_module_input_type_detection(self) -> None:
+        """Test that Dict[str, nn.Module] input is detected correctly."""
+        model_dict = {
+            "forward": self.model,
+            "method2": SimpleTestModel(),
+        }
+        inputs_dict = {
+            "forward": [self.example_inputs],
+            "method2": [(torch.randn(1, 10),)],
+        }
+
+        session = ExportSession(
+            model=model_dict,
+            example_inputs=inputs_dict,
+            export_recipe=self.recipe,
+        )
+
+        # Should detect type based on first value
+        self.assertEqual(session._input_model_type, "nn.Module")
+
+    def test_dict_graph_module_input_type_detection(self) -> None:
+        """Test that Dict[str, GraphModule] input is detected correctly."""
+        graph_module1 = torch.fx.symbolic_trace(self.model)
+        graph_module2 = torch.fx.symbolic_trace(SimpleTestModel())
+
+        model_dict = {
+            "forward": graph_module1,
+            "method2": graph_module2,
+        }
+        inputs_dict = {
+            "forward": [self.example_inputs],
+            "method2": [(torch.randn(1, 10),)],
+        }
+
+        session = ExportSession(
+            model=model_dict,
+            example_inputs=inputs_dict,
+            export_recipe=self.recipe,
+        )
+
+        # Should detect GraphModule type
+        self.assertEqual(session._input_model_type, "GraphModule")
+
+        # Verify pipeline skips quantization
+        pipeline = session._get_default_pipeline()
+        self.assertNotIn(StageType.QUANTIZE, pipeline)
+
+    def test_dict_exported_program_input_type_detection(self) -> None:
+        """Test that Dict[str, ExportedProgram] input is detected correctly."""
+        ep1 = torch.export.export(self.model, self.example_inputs)
+        ep2 = torch.export.export(SimpleTestModel(), (torch.randn(1, 10),))
+
+        model_dict = {
+            "forward": ep1,
+            "method2": ep2,
+        }
+
+        session = ExportSession(
+            model=model_dict,
+            export_recipe=self.recipe,
+        )
+
+        # Should detect ExportedProgram type
+        self.assertEqual(session._input_model_type, "ExportedProgram")
+
+        # Verify pipeline skips export stages
+        pipeline = session._get_default_pipeline()
+        self.assertNotIn(StageType.TORCH_EXPORT, pipeline)
+
+    def test_example_inputs_required_for_nn_module(self) -> None:
+        """Test that example_inputs are required for nn.Module."""
+        with self.assertRaises(ValueError) as cm:
+            ExportSession(
+                model=self.model,
+                export_recipe=self.recipe,
+            )
+        self.assertIn("example_inputs are required", str(cm.exception))
+        self.assertIn("nn.Module", str(cm.exception))
+
+    def test_example_inputs_required_for_graph_module(self) -> None:
+        """Test that example_inputs are required for GraphModule."""
+        graph_module = torch.fx.symbolic_trace(self.model)
+
+        with self.assertRaises(ValueError) as cm:
+            ExportSession(
+                model=graph_module,
+                export_recipe=self.recipe,
+            )
+        self.assertIn("example_inputs are required", str(cm.exception))
+        self.assertIn("GraphModule", str(cm.exception))
+
+    def test_example_inputs_optional_for_exported_program(self) -> None:
+        """Test that example_inputs are optional for ExportedProgram."""
+        exported_program = torch.export.export(self.model, self.example_inputs)
+
+        # Should not raise
+        session = ExportSession(
+            model=exported_program,
+            export_recipe=self.recipe,
+        )
+
+        self.assertEqual(session._input_model_type, "ExportedProgram")
+
+    def test_validation_graph_module_cannot_run_quantization(self) -> None:
+        """Test that GraphModule input cannot run quantization stages."""
+        graph_module = torch.fx.symbolic_trace(self.model)
+
+        # Try to force quantization stages
+        recipe = ExportRecipe(
+            pipeline_stages=[
+                StageType.QUANTIZE,
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ]
+        )
+
+        session = ExportSession(
+            model=graph_module,
+            example_inputs=[self.example_inputs],
+            export_recipe=recipe,
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            session.export()
+        self.assertIn("Cannot run", str(cm.exception))
+        self.assertIn("stage(s)", str(cm.exception))
+        self.assertIn("QUANTIZE", str(cm.exception))
+        self.assertIn("GraphModule", str(cm.exception))
+
+    def test_validation_graph_module_cannot_run_source_transform(self) -> None:
+        """Test that GraphModule input cannot run source transform stage."""
+        graph_module = torch.fx.symbolic_trace(self.model)
+
+        # Try to force source transform stage
+        recipe = ExportRecipe(
+            pipeline_stages=[
+                StageType.SOURCE_TRANSFORM,
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ]
+        )
+
+        session = ExportSession(
+            model=graph_module,
+            example_inputs=[self.example_inputs],
+            export_recipe=recipe,
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            session.export()
+        self.assertIn("Cannot run", str(cm.exception))
+        self.assertIn("stage(s)", str(cm.exception))
+        self.assertIn("SOURCE_TRANSFORM", str(cm.exception))
+        self.assertIn("GraphModule", str(cm.exception))
+
+    def test_validation_exported_program_cannot_run_torch_export(self) -> None:
+        """Test that ExportedProgram input cannot run torch export stage."""
+        exported_program = torch.export.export(self.model, self.example_inputs)
+
+        # Try to force torch export stage
+        recipe = ExportRecipe(
+            pipeline_stages=[
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ]
+        )
+
+        session = ExportSession(
+            model=exported_program,
+            export_recipe=recipe,
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            session.export()
+        self.assertIn("Cannot run", str(cm.exception))
+        self.assertIn("stage(s)", str(cm.exception))
+        self.assertIn("TORCH_EXPORT", str(cm.exception))
+        self.assertIn("ExportedProgram", str(cm.exception))
+
+    def test_validation_exported_program_cannot_run_quantization(self) -> None:
+        """Test that ExportedProgram input cannot run quantization stages."""
+        exported_program = torch.export.export(self.model, self.example_inputs)
+
+        # Try to force quantization stages
+        recipe = ExportRecipe(
+            pipeline_stages=[
+                StageType.QUANTIZE,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ]
+        )
+
+        session = ExportSession(
+            model=exported_program,
+            export_recipe=recipe,
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            session.export()
+        self.assertIn("Cannot run", str(cm.exception))
+        self.assertIn("stage(s)", str(cm.exception))
+        self.assertIn("QUANTIZE", str(cm.exception))
+        self.assertIn("ExportedProgram", str(cm.exception))
+
+    def test_graph_module_valid_pipeline(self) -> None:
+        """Test valid pipeline for GraphModule input."""
+        graph_module = torch.fx.symbolic_trace(self.model)
+
+        # Valid pipeline starting from torch export
+        recipe = ExportRecipe(
+            pipeline_stages=[
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ]
+        )
+
+        session = ExportSession(
+            model=graph_module,
+            example_inputs=[self.example_inputs],
+            export_recipe=recipe,
+        )
+
+        # Should not raise during validation
+        session._validate_pipeline_sequence(recipe.pipeline_stages)
+
+    def test_exported_program_valid_pipeline(self) -> None:
+        """Test valid pipeline for ExportedProgram input."""
+        exported_program = torch.export.export(self.model, self.example_inputs)
+
+        # Valid pipeline starting from edge stages
+        recipe = ExportRecipe(
+            pipeline_stages=[
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ]
+        )
+
+        session = ExportSession(
+            model=exported_program,
+            export_recipe=recipe,
+        )
+
+        # Should not raise during validation
+        session._validate_pipeline_sequence(recipe.pipeline_stages)
