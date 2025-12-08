@@ -74,6 +74,7 @@ from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
 from executorch.exir.program._program import lift_constant_tensor_pass
 from executorch.exir.schema import TensorShapeDynamism
+from executorch.exir.sym_util import eval_upper_bound
 from executorch.exir.tensor import TensorSpec
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.control_flow_models import FTCondDeadCode, FTMapBasic
@@ -113,6 +114,7 @@ lib = Library("DO_NOT_USE_TEST_ONLY", "DEF")
 
 lib.define("foo(Tensor self) -> (Tensor, Tensor)")
 lib.define("add_relu(Tensor self, Tensor other) -> Tensor")
+lib.define("unbacked(Tensor self) -> Tensor")
 
 
 @impl(lib, "foo", "CompositeExplicitAutograd")
@@ -130,6 +132,29 @@ def foo_out(
     a: torch.Tensor, out1: torch.Tensor, out2: torch.Tensor
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     return a + 1, None
+
+
+@impl(lib, "unbacked", "CPU")
+def unbacked(a: torch.Tensor) -> torch.Tensor:
+    return a[: a[0]]
+
+
+@torch.library.register_fake(f"{lib.ns}::unbacked")
+def meta_unbacked(x):
+    ctx = torch._custom_ops.get_ctx()
+    out_size = ctx.create_unbacked_symint()
+    return x.new_empty(out_size)
+
+
+lib.define("unbacked.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)")
+
+
+@impl(lib, "unbacked.out", "CPU")
+def unbacked_out(
+    x: torch.Tensor,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    return out.copy_(x[: x[0]])
 
 
 def simple_promote_dtype(
@@ -610,6 +635,115 @@ class TestPasses(unittest.TestCase):
             self.assertIs(node.meta["spec"][0], node.args[0][0].meta["spec"])
 
         self.assertEqual(counter, 1)
+
+    def test_spec_prop_pass_unbacked_symint(self) -> None:
+        # Verify that the spec prop pass picks up on guards for
+        # unbacked symints.
+        class Unbacked(torch.nn.Module):
+            def forward(self, x):
+                output = torch.ops.DO_NOT_USE_TEST_ONLY.unbacked(x)
+                torch._constrain_as_size(output.shape[0], max=10)
+                return output
+
+        model = Unbacked()
+        gm = (
+            to_edge(export(model, (torch.LongTensor([5, 4, 3, 2, 1, 0, 1, 2]),)))
+            .exported_program()
+            .graph_module
+        )
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the custom op node. It should have a max size of 10.
+        op_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if n.target == exir_ops.edge.DO_NOT_USE_TEST_ONLY.unbacked.default
+        )
+        self.assertIsNotNone(op_node)
+
+        spec: TensorSpec = op_node.meta["spec"]
+        self.assertEqual(len(spec.shape), 1)  # Should be rank 1
+        upper_bound = eval_upper_bound(spec.shape[0])
+        self.assertEqual(upper_bound, 10)  # Should be a concrete value
+
+    def test_spec_prop_pass_cond(self) -> None:
+        class ModelWithCond(torch.nn.Module):
+            def true_fn(self, val):
+                return val * 2
+
+            def false_fn(self, val):
+                return val + 1
+
+            def forward(self, x):
+                return torch.cond(x[0] > 0, self.true_fn, self.false_fn, [x])
+
+        model = ModelWithCond()
+        inputs = (torch.ones(10),)
+        dynamic_shapes = {"x": {0: torch.export.Dim("x", min=1, max=20)}}
+
+        # Run the spec prop pass and sanity check the spec on the cond.
+        edge_program = to_edge(export(model, inputs, dynamic_shapes=dynamic_shapes))
+        gm = edge_program.exported_program().graph_module
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the cond node. It should have a max size of 20 (matching the dynamic shape upper bound).
+        cond_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "cond"
+        )
+        self.assertIsNotNone(cond_node)
+
+        # Spec for the cond node should be a single-element tuple
+        spec: tuple[TensorSpec] = cond_node.meta["spec"]
+        self.assertTrue(isinstance(spec, tuple))
+        self.assertEqual(len(spec), 1)
+
+        self.assertEqual(len(spec[0].shape), 1)  # Should be rank 1
+        upper_bound = eval_upper_bound(spec[0].shape[0])
+        self.assertEqual(upper_bound, 20)  # Should match dynamic shape bound
+
+    def test_spec_prop_pass_while(self) -> None:
+        class ModelWithWhile(torch.nn.Module):
+            def forward(self, i):
+                def loop_cond(i, acc):
+                    return i[0] > 0
+
+                def loop_body(i, acc):
+                    return i - 1, acc + i
+
+                _, acc = torch._higher_order_ops.while_loop(
+                    loop_cond, loop_body, (i, torch.zeros(10))
+                )
+                return acc
+
+        model = ModelWithWhile()
+        inputs = (torch.Tensor([5]),)
+
+        # Run the spec prop pass and sanity check the spec on the while.
+        edge_program = to_edge(export(model, inputs))
+        gm = edge_program.exported_program().graph_module
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the while node. It should have a max size of 10 (matching the torch.zeros(10) in the model).
+        while_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "while_loop"
+        )
+        self.assertIsNotNone(while_node)
+
+        # Spec for the while node should be a two-element tuple
+        spec: tuple[TensorSpec] = while_node.meta["spec"]
+        self.assertTrue(isinstance(spec, tuple))
+        self.assertEqual(len(spec), 2)
+
+        self.assertEqual(len(spec[1].shape), 1)  # Should be rank 1
+        upper_bound = eval_upper_bound(spec[1].shape[0])
+        self.assertEqual(upper_bound, 10)
 
     def test_compile_fix_broken_ops(self) -> None:
         class ExportableLoop(nn.Module):
