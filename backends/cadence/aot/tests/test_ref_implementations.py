@@ -1813,7 +1813,7 @@ class TestRefImplementations(unittest.TestCase):
                 ),  # input: 1x1x2x2
                 torch.tensor(
                     [[[[1.0, 1.0], [1.0, 1.0]]]], dtype=torch.float32
-                ),  # weight: 1x1x2x2
+                ),  # weight: 1x1x2x2 (in PyTorch format, will be transformed to Cadence format)
                 torch.tensor([0.0], dtype=torch.float32),  # bias
                 (1, 1),  # stride
                 (0, 0),  # padding
@@ -1834,7 +1834,7 @@ class TestRefImplementations(unittest.TestCase):
                 ),  # input: 1x1x2x2
                 torch.tensor(
                     [[[[1.0, 0.0], [0.0, 1.0]]]], dtype=torch.float32
-                ),  # weight: 1x1x2x2
+                ),  # weight: 1x1x2x2 (in PyTorch format, will be transformed to Cadence format)
                 torch.tensor([5.0], dtype=torch.float32),  # bias=5.0
                 (1, 1),  # stride
                 (0, 0),  # padding
@@ -1863,9 +1863,19 @@ class TestRefImplementations(unittest.TestCase):
         channel_last: bool,
         expected_output: torch.Tensor,
     ) -> None:
+        # Apply the same transformations that ReplaceAtenConvolutionWithCadenceConvolutionPass
+        # applies to weights: transpose(0,1) then flip spatial dimensions.
+        # This converts weights from PyTorch format to Cadence format.
+        weight_dim = len(weight.shape)
+        flip_dims = [-1] if weight_dim == 3 else [-1, -2]
+
+        # Transform: transpose dims 0 and 1, then flip spatial dimensions
+        cadence_weight = weight.transpose(0, 1)
+        cadence_weight = torch.flip(cadence_weight, dims=flip_dims)
+
         output = torch.ops.cadence.transposed_convolution(
             input_tensor,
-            weight,
+            cadence_weight,
             bias,
             stride,
             padding,
@@ -2374,15 +2384,15 @@ class TestRefImplementations(unittest.TestCase):
                 torch.tensor(
                     [
                         [
-                            [1, 0, 0, 0],
-                            [1, 2, 0, 0],
-                            [0, 2, 0, 0],
-                            [1, 0, 3, 0],
+                            [0, 0, 0, 1],
+                            [0, 0, 1, 2],
+                            [0, 0, 2, 0],
+                            [0, 1, 0, 3],
                             [1, 2, 3, 4],
-                            [0, 2, 0, 4],
-                            [0, 0, 3, 0],
-                            [0, 0, 3, 4],
-                            [0, 0, 0, 4],
+                            [2, 0, 4, 0],
+                            [0, 3, 0, 0],
+                            [3, 4, 0, 0],
+                            [4, 0, 0, 0],
                         ]
                     ],
                     dtype=torch.int32,
@@ -2401,15 +2411,15 @@ class TestRefImplementations(unittest.TestCase):
                 torch.tensor(
                     [
                         [
-                            [1, 100, 100, 100],
-                            [1, 2, 100, 100],
-                            [100, 2, 100, 100],
-                            [1, 100, 3, 100],
+                            [100, 100, 100, 1],
+                            [100, 100, 1, 2],
+                            [100, 100, 2, 100],
+                            [100, 1, 100, 3],
                             [1, 2, 3, 4],
-                            [100, 2, 100, 4],
-                            [100, 100, 3, 100],
-                            [100, 100, 3, 4],
-                            [100, 100, 100, 4],
+                            [2, 100, 4, 100],
+                            [100, 3, 100, 100],
+                            [3, 4, 100, 100],
+                            [4, 100, 100, 100],
                         ]
                     ],
                     dtype=torch.int32,
@@ -2428,22 +2438,22 @@ class TestRefImplementations(unittest.TestCase):
                 torch.tensor(
                     [
                         [
-                            [1, 0, 0, 0],
+                            [0, 0, 0, 1],
+                            [0, 0, 1, 0],
+                            [0, 0, 0, 2],
+                            [0, 0, 2, 0],
+                            [0, 1, 0, 0],
                             [1, 0, 0, 0],
                             [0, 2, 0, 0],
-                            [0, 2, 0, 0],
-                            [1, 0, 0, 0],
-                            [1, 0, 0, 0],
-                            [0, 2, 0, 0],
-                            [0, 2, 0, 0],
-                            [0, 0, 3, 0],
+                            [2, 0, 0, 0],
+                            [0, 0, 0, 3],
                             [0, 0, 3, 0],
                             [0, 0, 0, 4],
-                            [0, 0, 0, 4],
-                            [0, 0, 3, 0],
-                            [0, 0, 3, 0],
-                            [0, 0, 0, 4],
-                            [0, 0, 0, 4],
+                            [0, 0, 4, 0],
+                            [0, 3, 0, 0],
+                            [3, 0, 0, 0],
+                            [0, 4, 0, 0],
+                            [4, 0, 0, 0],
                         ]
                     ],
                     dtype=torch.int32,
@@ -2468,26 +2478,26 @@ class TestRefImplementations(unittest.TestCase):
                 torch.tensor(
                     [
                         [
-                            [1, 100, 100, 100],
-                            [1, 2, 100, 100],
-                            [100, 2, 100, 100],
-                            [1, 100, 3, 100],
+                            [100, 100, 100, 1],
+                            [100, 100, 1, 2],
+                            [100, 100, 2, 100],
+                            [100, 1, 100, 3],
                             [1, 2, 3, 4],
-                            [100, 2, 100, 4],
-                            [100, 100, 3, 100],
-                            [100, 100, 3, 4],
-                            [100, 100, 100, 4],
+                            [2, 100, 4, 100],
+                            [100, 3, 100, 100],
+                            [3, 4, 100, 100],
+                            [4, 100, 100, 100],
                         ],
                         [
-                            [5, 200, 200, 200],
-                            [5, 6, 200, 200],
-                            [200, 6, 200, 200],
-                            [5, 200, 7, 200],
+                            [200, 200, 200, 5],
+                            [200, 200, 5, 6],
+                            [200, 200, 6, 200],
+                            [200, 5, 200, 7],
                             [5, 6, 7, 8],
-                            [200, 6, 200, 8],
-                            [200, 200, 7, 200],
-                            [200, 200, 7, 8],
-                            [200, 200, 200, 8],
+                            [6, 200, 8, 200],
+                            [200, 7, 200, 200],
+                            [7, 8, 200, 200],
+                            [8, 200, 200, 200],
                         ],
                     ],
                     dtype=torch.int32,
