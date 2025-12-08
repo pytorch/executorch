@@ -7,6 +7,7 @@
 # pyre-strict
 
 import unittest
+from typing import Callable
 
 import torch
 from executorch.backends.cadence.aot.graph_builder import GraphBuilder
@@ -15,6 +16,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import AddmmPattern
 from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceAtenQuantizer,
     CadenceDefaultQuantizer,
+    CadenceQuantizer,
     CadenceW8A32MixedQuantizer,
     CadenceWith16BitLinearActivationsQuantizer,
     CadenceWith16BitMatmulActivationsQuantizer,
@@ -22,10 +24,18 @@ from executorch.backends.cadence.aot.quantizer.quantizer import (
     qconfig_A8W8,
 )
 from executorch.exir.pass_base import NodeMetadata
+from parameterized import parameterized
+from torch._ops import OpOverload
 from torchao.quantization.pt2e.quantizer.quantizer import (
     Q_ANNOTATION_KEY,
     QuantizationAnnotation,
+    QuantizationSpec,
 )
+
+# Type alias for graph builder functions
+GraphBuilderFn = Callable[
+    ["QuantizerAnnotationTest"], tuple[torch.fx.GraphModule, torch.fx.Node]
+]
 
 
 class QuantizerAnnotationTest(unittest.TestCase):
@@ -53,22 +63,6 @@ class QuantizerAnnotationTest(unittest.TestCase):
         self.assertEqual(len(matmul_nodes), 1, "Should find exactly one matmul node")
         return gm, matmul_nodes[0]
 
-    def test_matmul_16bit_quantizer_annotation(self) -> None:
-        """Test that CadenceWith16BitMatmulActivationsQuantizer correctly annotates matmul."""
-        gm, matmul_node = self._build_matmul_graph()
-
-        quantizer = CadenceWith16BitMatmulActivationsQuantizer()
-        quantizer.annotate(gm)
-
-        annotation: QuantizationAnnotation = matmul_node.meta[Q_ANNOTATION_KEY]
-        self.assertTrue(annotation._annotated)
-
-        self.assertEqual(annotation.output_qspec, qconfig_A16.output_activation)
-
-        self.assertEqual(len(annotation.input_qspec_map), 2)
-        for _, input_qspec in annotation.input_qspec_map.items():
-            self.assertEqual(input_qspec, qconfig_A16.input_activation)
-
     def _build_linear_graph(self) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
         """Build a simple graph with a linear operation (no bias)."""
         builder = GraphBuilder()
@@ -91,28 +85,66 @@ class QuantizerAnnotationTest(unittest.TestCase):
         self.assertEqual(len(linear_nodes), 1, "Should find exactly one linear node")
         return gm, linear_nodes[0]
 
-    def test_linear_16bit_quantizer_annotation(self) -> None:
-        """Test that CadenceWith16BitLinearActivationsQuantizer correctly annotates linear."""
-        gm, linear_node = self._build_linear_graph()
+    @parameterized.expand(
+        [
+            (
+                "matmul_A16",
+                lambda self: self._build_matmul_graph(),
+                CadenceWith16BitMatmulActivationsQuantizer(),
+                torch.ops.aten.matmul.default,
+                qconfig_A16.output_activation,
+                # For matmul, both inputs are activations
+                [qconfig_A16.input_activation, qconfig_A16.input_activation],
+            ),
+            (
+                "linear_A16",
+                lambda self: self._build_linear_graph(),
+                CadenceWith16BitLinearActivationsQuantizer(),
+                torch.ops.aten.linear.default,
+                qconfig_A16.output_activation,
+                # For linear: [input_activation, weight]
+                [qconfig_A16.input_activation, qconfig_A16.weight],
+            ),
+        ]
+    )
+    def test_quantizer_annotation(
+        self,
+        name: str,
+        graph_builder_fn: GraphBuilderFn,
+        quantizer: CadenceQuantizer,
+        target: OpOverload,
+        expected_output_qspec: QuantizationSpec,
+        expected_input_qspecs: list[QuantizationSpec],
+    ) -> None:
+        """Parameterized test for quantizer annotations."""
+        gm, op_node = graph_builder_fn(self)
 
-        quantizer = CadenceWith16BitLinearActivationsQuantizer()
         quantizer.annotate(gm)
 
-        annotation: QuantizationAnnotation = linear_node.meta[Q_ANNOTATION_KEY]
+        annotation: QuantizationAnnotation = op_node.meta[Q_ANNOTATION_KEY]
         self.assertTrue(annotation._annotated)
 
-        # Verify output is annotated with qconfig_A16.output_activation (INT16)
-        self.assertEqual(annotation.output_qspec, qconfig_A16.output_activation)
+        # Verify output annotation
+        self.assertEqual(annotation.output_qspec, expected_output_qspec)
 
-        # Verify inputs: activation (INT16) and weight (INT8)
-        self.assertEqual(len(annotation.input_qspec_map), 2)
-        for input_node, input_qspec in annotation.input_qspec_map.items():
-            if input_node == linear_node.args[0]:
-                # Activation input - should be INT16
-                self.assertEqual(input_qspec, qconfig_A16.input_activation)
-            elif input_node == linear_node.args[1]:
-                # Weight - should be INT8
-                self.assertEqual(input_qspec, qconfig_A16.weight)
+        # Verify input annotations
+        # Build actual_specs in the fixed order defined by op_node.args
+        self.assertEqual(len(annotation.input_qspec_map), len(expected_input_qspecs))
+        actual_specs = []
+        for i in range(len(expected_input_qspecs)):
+            arg = op_node.args[i]
+            assert isinstance(arg, torch.fx.Node)
+            actual_specs.append(annotation.input_qspec_map[arg])
+
+        # Compare expected vs actual specs
+        for i, (expected, actual) in enumerate(
+            zip(expected_input_qspecs, actual_specs)
+        ):
+            self.assertEqual(
+                actual,
+                expected,
+                f"Input qspec mismatch at index {i}",
+            )
 
 
 class QuantizerOpsPreserveTest(unittest.TestCase):
