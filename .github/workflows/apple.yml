@@ -49,7 +49,7 @@ jobs:
 
           if git ls-remote --exit-code "https://github.com/${{ github.repository }}" "refs/heads/${BRANCH}" > /dev/null; then
             echo "Branch '${BRANCH}' already exists!"
-            echo "Aborting workflow to prevent overwriting S3 binaries with a version checksum that cannot be committed."
+            echo "Aborting workflow to prevent overwriting S3 binaries. The branch existence indicates this version was already published with specific checksums."
             echo "Please delete the remote branch '${BRANCH}' and re-run this workflow."
             exit 1
           fi
