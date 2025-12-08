@@ -126,4 +126,4 @@ jobs:
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           # This is to make sure that the job doesn't fail flakily
-          emulator-boot-timeout: 900
+          emulator-boot-timeout: 1800
