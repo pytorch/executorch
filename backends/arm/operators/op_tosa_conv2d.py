@@ -28,8 +28,6 @@ class Conv2dVisitor(NodeVisitor):
 
     target = "tosa.CONV2D.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 

@@ -25,8 +25,6 @@ from torch.fx import Node
 class AddVisitor(NodeVisitor):
     target = "aten.add.Tensor"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def define_node(
         self,
         node: Node,
