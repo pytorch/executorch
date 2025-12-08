@@ -1,13 +1,16 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
+
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import ExportPass, PassResult, PROTECTED_KEYS
 
 
 class RemoveGetItemPass(ExportPass):
@@ -77,6 +80,10 @@ class RemoveGetItemPass(ExportPass):
                                 args=node.args,
                                 kwargs=node.kwargs,
                             )
+                        new_max_wd.meta = node.meta.copy()
+                        new_max_wd.meta["val"] = new_max_wd.meta["val"][0]
+
+                    _copy_node_metadata(node, new_max_wd)
 
                     getitem_node.replace_all_uses_with(new_max_wd)
 
@@ -88,3 +95,15 @@ class RemoveGetItemPass(ExportPass):
         graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, True)
+
+
+def _copy_node_metadata(node: torch.fx.Node, new_max_wd: torch.fx.Node):
+    """Copy metadata from original node to new node."""
+
+    for key, value in node.meta.items():
+        if key in PROTECTED_KEYS:
+            continue
+        try:
+            new_max_wd.meta[key] = copy.deepcopy(value)
+        except Exception:
+            new_max_wd.meta[key] = value

@@ -8,7 +8,7 @@ import logging
 import os
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 - invoked only for trusted toolchain binaries
 import tempfile
 
 from pathlib import Path
@@ -572,7 +572,9 @@ def _run_cmd(cmd: List[str], check=True) -> subprocess.CompletedProcess[bytes]:
     cmd (List[str]): The command to run as a list.
     """
     try:
-        result = subprocess.run(cmd, check=check, capture_output=True)
+        result = subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
+            cmd, check=check, capture_output=True
+        )
         return result
     except subprocess.CalledProcessError as e:
         arg_string = " ".join(cmd)
@@ -637,8 +639,7 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
                             data = np.frombuffer(data, dtype=np.float32)
                         data = data.reshape(tensor["shape"])
                         tensor["data"] = data
-    except Exception:
-        # This is just nice-to-have if it works, don't care if it fails.
+    except Exception:  # nosec B110 - best-effort casting for debug output only
         pass
 
     return json_out

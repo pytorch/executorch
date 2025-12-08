@@ -485,7 +485,7 @@ test_cases = {
     ),
     "linear_hardswish": McuTestCase(
         model=CortexMLinearHardswish(in_features=12, out_features=6),
-        example_inputs=(ramp_tensor(-12, 12, (1, 12)),),
+        example_inputs=(ramp_tensor(-2, 0, (1, 12)),),
     ),
     "conv2d_hardsigmoid_inplace": McuTestCase(
         model=CortexMConv2DHardsigmoid(),

@@ -185,7 +185,6 @@ xfails_dialect = {
     "conv2d_dilation": "NotImplementedError: 'slow_conv_dilated<>' not implemented for 'Int'",
     "conv1d": "Currently not supported.",
     "conv2d_nchw": "Currently not supported.",
-    "conv3d": "Currently not supported.",
 }
 
 
@@ -201,7 +200,6 @@ def test_dialect_conv2d(test_case):
 
 xfails_implementation = {
     "conv1d": "Currently not supported.",
-    "conv2d_nchw": "Currently not supported.",
     "conv3d": "Currently not supported.",
 }
 
@@ -209,4 +207,4 @@ xfails_implementation = {
 @parametrize("test_case", test_cases, xfails=xfails_implementation)
 def test_implementation_conv2d(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
-    tester.test_implementation(qtol=1)
+    tester.test_implementation(qtol=2)

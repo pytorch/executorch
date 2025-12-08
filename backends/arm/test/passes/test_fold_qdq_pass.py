@@ -20,7 +20,7 @@ class SimpleQuantizeModel(torch.nn.Module):
     }
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        return x + torch.max((x + x), (y + y))
+        return x + torch.maximum((x + x), (y + y))
 
 
 @common.parametrize("test_data", SimpleQuantizeModel.test_data)

@@ -18,6 +18,9 @@ from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpe
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
+from executorch.backends.nxp.edge_passes.remove_additional_quantize_dequantize_nodes_pass import (
+    RemoveAdditionalQDQClustersPass,
+)
 from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
@@ -257,6 +260,10 @@ if __name__ == "__main__":  # noqa C901
         edge_program_manager = edge_program_manager.transform(
             [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
         )
+
+    edge_program_manager = edge_program_manager.transform(
+        NeutronEdgePassManager([RemoveAdditionalQDQClustersPass()])
+    )
 
     logging.debug(f"Lowered graph:\n{edge_program_manager.exported_program().graph}")
 

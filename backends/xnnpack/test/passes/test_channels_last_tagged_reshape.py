@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import unittest
 
 import torch
@@ -23,6 +25,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_quant,
     is_tagged_as_implicit_q_dq,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class TestChannelsLastTaggedReshapePass(unittest.TestCase):
@@ -480,3 +483,153 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
 
         # Compare outputs
         tester.run_method_and_compare_outputs()
+
+    def test_fp32_channels_last_tagged_reshape_pass_nhwc_view(self):
+        # Views are always run in NCHW for now.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = torch.nn.Conv2d(3, 3, 3)
+                self.conv2 = torch.nn.Conv2d(3, 3, 3)
+
+            def forward(self, x):
+                y = self.conv1(x)
+                y = y.view((1, 3, 3, -1))
+                return self.conv2(y)
+
+        inputs = (torch.randn(1, 3, 8, 8),)
+        (
+            Tester(Model(), inputs)
+            .export()
+            .to_edge()
+            .check_node_count(
+                {
+                    exir_ops.edge.aten.convolution.default: 2,
+                    exir_ops.edge.aten.view_copy.default: 1,
+                }
+            )
+            .run_passes(self.PassStage)
+            .run_method_and_compare_outputs()
+            .check_node_count(
+                {
+                    exir_ops.edge.aten.convolution.default: 2,
+                    exir_ops.edge.aten.view_copy.default: 1,
+                    # 4 dim order conversions - a pair at the start and end and a pair
+                    # around the view.
+                    exir_ops.edge.aten._to_copy.default: 4,
+                }
+            )
+        )
+
+    def test_fp32_channels_last_tagged_reshape_pass_nchw_view_channel_modified(self):
+        # View cannot run in NHWC because channel and/or batch are modified.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = torch.nn.Conv2d(3, 3, 3)
+                self.conv2 = torch.nn.Conv2d(6, 3, 3)
+
+            def forward(self, x):
+                y = self.conv1(x)
+                y = y.view((1, 6, 6, -1))
+                return self.conv2(y)
+
+        inputs = (torch.randn(1, 3, 8, 8),)
+        (
+            Tester(Model(), inputs)
+            .export()
+            .to_edge()
+            .check_node_count(
+                {
+                    exir_ops.edge.aten.convolution.default: 2,
+                    exir_ops.edge.aten.view_copy.default: 1,
+                }
+            )
+            .run_passes(self.PassStage)
+            .run_method_and_compare_outputs()
+            .check_node_count(
+                {
+                    exir_ops.edge.aten.convolution.default: 2,
+                    exir_ops.edge.aten.view_copy.default: 1,
+                    exir_ops.edge.aten._to_copy.default: 4,
+                }
+            )
+        )
+
+    def test_fp32_channels_last_tagged_reshape_pass_nchw_view_batch_modified(self):
+        # View cannot run in NHWC because channel and/or batch are modified.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = torch.nn.Conv2d(3, 3, 3)
+                self.conv2 = torch.nn.Conv2d(3, 3, 3)
+
+            def forward(self, x):
+                y = self.conv1(x)
+                y = y.view((2, 3, 6, -1))
+                return self.conv2(y)
+
+        inputs = (torch.randn(1, 3, 8, 8),)
+        (
+            Tester(Model(), inputs)
+            .export()
+            .to_edge()
+            .check_node_count(
+                {
+                    exir_ops.edge.aten.convolution.default: 2,
+                    exir_ops.edge.aten.view_copy.default: 1,
+                }
+            )
+            .run_passes(self.PassStage)
+            .run_method_and_compare_outputs()
+            .check_node_count(
+                {
+                    exir_ops.edge.aten.convolution.default: 2,
+                    exir_ops.edge.aten.view_copy.default: 1,
+                    exir_ops.edge.aten._to_copy.default: 4,
+                }
+            )
+        )
+
+    def test_fp32_channels_last_tagged_reshape_pass_flatten_view(self):
+        # View cannot run in NHWC because tensor rank changes.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = torch.nn.Conv2d(3, 3, 3)
+                self.linear1 = torch.nn.Linear(36 * 3, 1)
+
+            def forward(self, x):
+                y = self.conv1(x)
+                y = y.view((x.shape[0], -1))
+                return self.linear1(y)
+
+        inputs = (torch.randn(1, 3, 8, 8),)
+        tester = (
+            Tester(Model(), inputs)
+            .export()
+            .to_edge()
+            .check_node_count(
+                {
+                    exir_ops.edge.aten.convolution.default: 1,
+                    exir_ops.edge.aten.view_copy.default: 1,
+                }
+            )
+            .run_passes(self.PassStage)
+            .run_method_and_compare_outputs()
+            .check_node_count(
+                {
+                    exir_ops.edge.aten.convolution.default: 1,
+                    exir_ops.edge.aten.view_copy.default: 1,
+                    exir_ops.edge.aten._to_copy.default: 2,
+                }
+            )
+        )
+
+        # Verify view is not tagged.
+        graph = tester.get_artifact().exported_program().module().graph
+        view_nodes = [
+            n for n in graph.nodes if n.target == exir_ops.edge.aten.view_copy.default
+        ]
+        self.assertEqual(1, len(view_nodes))
+        self.assertTrue(ChannelsLastTaggedReshapePass(None).is_nchw_node(view_nodes[0]))

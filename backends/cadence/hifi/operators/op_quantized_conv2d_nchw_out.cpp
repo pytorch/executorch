@@ -9,6 +9,7 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <on_device_ai/Assistant/Jarvis/min_runtime/operators/generic/op_quantized_conv2d.h>
 
 #define ALIGN_PTR(x, bytes) ((((unsigned)(x)) + (bytes - 1)) & (~(bytes - 1)))
 
@@ -532,6 +533,30 @@ void quantized_conv2d_nchw_out(
     __ET_UNUSED const Tensor& out_multiplier,
     __ET_UNUSED const Tensor& out_shift,
     Tensor& out) {
+  // Handle W8A16 heterogeneous type (int16_t activations, int8_t weights)
+  if (out.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      input.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      weight.scalar_type() == ::executorch::aten::ScalarType::Char) {
+    ::impl::generic::native::quantized_conv2d_nchw_out(
+        ctx,
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+        out);
+    return;
+  }
+
   const float bias_scale_float = bias_scale.const_data_ptr<float>()[0];
   const int32_t weight_zero_point_int =
       weight_zero_point.const_data_ptr<int32_t>()[0];
@@ -596,6 +621,30 @@ void quantized_conv2d_nchw_per_tensor_out(
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
     Tensor& out) {
+  // Handle W8A16 heterogeneous type (int16_t activations, int8_t weights)
+  if (out.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      input.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      weight.scalar_type() == ::executorch::aten::ScalarType::Char) {
+    ::impl::generic::native::quantized_conv2d_nchw_per_tensor_out(
+        ctx,
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+        out);
+    return;
+  }
+
   bool optimized = 0;
 
   if ((input.scalar_type() == ScalarType::Char) ||

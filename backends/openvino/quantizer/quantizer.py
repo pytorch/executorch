@@ -21,11 +21,18 @@ from executorch.backends.openvino.quantizer.observers import (
 )
 from nncf.common.graph.graph import NNCFGraph, NNCFNode  # type: ignore[import-untyped]
 from nncf.experimental.common.tensor_statistics.statistics import WCTensorStatistic
+from nncf.common.logging import nncf_logger  # type: ignore[import-untyped]
+from nncf.quantization.algorithms.min_max.algorithm import (  # type: ignore[import-untyped]
+    MinMaxQuantization,
+)
 from nncf.quantization.algorithms.weight_compression.config import (  # type: ignore[import-untyped]
     WeightCompressionParameters,
 )
 from nncf.quantization.quantize_model import (  # type: ignore[import-untyped]
     get_weight_compression_configuration,
+)
+from nncf.torch.model_graph_manager import (  # type: ignore[import-untyped]
+    get_weight_tensor_port_ids,
 )
 from torchao.quantization.pt2e import (
     HistogramObserver,
@@ -97,15 +104,26 @@ class OpenVINOQuantizer(Quantizer):
         """
         self.mode = mode
         if self.mode not in OpenVINOQuantizer.WEIGHTS_ONLY_COMPRESSION_MODES:
-            self._algo = (
-                nncf.quantization.algorithms.min_max.algorithm.MinMaxQuantization(
-                    **kwargs
-                )
+            if mode == QuantizationMode.INT8_SYM:
+                preset = quantization.structs.QuantizationPreset.PERFORMANCE
+                model_type = None
+            elif mode == QuantizationMode.INT8_MIXED:
+                preset = quantization.structs.QuantizationPreset.MIXED
+                model_type = None
+            else:
+                preset = None
+                model_type = nncf.parameters.ModelType.TRANSFORMER
+            self._algo = MinMaxQuantization(
+                preset=preset, model_type=model_type, **kwargs
             )
         else:
-            mode = mode.value.replace(
+            compression_mode = mode.value.replace(
                 "wo", ""
             )  # Mode value has to match NNCF CompressWeightsMode
+            weight_compression_configuration = get_weight_compression_configuration(
+                nncf.CompressWeightsMode(compression_mode),
+                **kwargs,
+            )
             subset_size = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
             self.weight_compression_configuration = (
                 get_weight_compression_configuration(
@@ -361,12 +379,10 @@ class OpenVINOQuantizer(Quantizer):
         :return: Edge represented by a Tuple of (weight_node, target_node), where weight_node is the FX node supplying the weight.
         """
         nncf_node = nncf_graph.get_node_by_name(target_node.name)
-        weights_ports_ids = nncf.torch.model_graph_manager.get_weight_tensor_port_ids(
-            nncf_node, nncf_graph
-        )
+        weights_ports_ids = get_weight_tensor_port_ids(nncf_node, nncf_graph)
         if len(weights_ports_ids) > 1:
             # TODO(dlyakhov): support quantization for nodes with several weights
-            nncf.common.logging.nncf_logger.warning(
+            nncf_logger.warning(
                 f"Quantization of the weighted node {target_node.name}"
                 " is not yet supported by the OpenVINOQuantizer."
                 f" Only the weight on port ID {weights_ports_ids[0]} will be quantized."

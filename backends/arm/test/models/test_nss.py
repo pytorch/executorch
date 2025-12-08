@@ -36,7 +36,9 @@ def nss() -> AutoEncoderV1:
     """Get an instance of NSS with weights loaded."""
 
     weights = hf_hub_download(
-        repo_id="Arm/neural-super-sampling", filename="nss_v0.1.0_fp32.pt"
+        repo_id="Arm/neural-super-sampling",
+        filename="nss_v0.1.0_fp32.pt",
+        revision="2e9b606acd9fa25071825a12f0764f1c3bef9480",
     )
 
     nss_model = NSS()

@@ -110,7 +110,7 @@ def broadcast_tensors(
             tens_dtype,
         )
 
-        build_reshape_tosa_1_0(tosa_fb, node.name, new_shape, reshaped.name)
+        build_reshape_tosa(tosa_fb, node.name, new_shape, reshaped.name)
 
         tiled = tosa_fb.addIntermediate(common_shape, tens_dtype)
         multipliers = [
@@ -137,7 +137,7 @@ def broadcast_tensors(
     return broadcast_tensors
 
 
-def build_reshape_tosa_1_0(
+def build_reshape_tosa(
     tosa_graph, input_name, new_shape, output_name, shape_name_override=""
 ):
     """Insert a TOSA reshape operator using the v1.0 semantics.
