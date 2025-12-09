@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
-from typing import Callable, Collection, Union
+from typing import Callable, Collection, Union, Tuple
 
 import torch
 
@@ -571,3 +571,35 @@ class ConvActivationModule(torch.nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return self.activation(x)
+    
+
+class GRUModel(nn.Module):
+    def __init__(self, num_layers=1):
+        super().__init__()
+        self.gru = torch.nn.GRU(8, 8, num_layers=num_layers)
+
+    def forward(self, input_):
+        # `input_` has shape [sequence_length, batch_size, input_size] ([8, 1, 8])
+        return self.gru(
+            input_, None
+        )  # The initial hidden is `None`, which will result in a `Zeros` node being added.
+    
+
+class SplitWithSize(torch.nn.Module):
+    def __init__(self, split_size, dim):
+        super().__init__()
+        self.split_size = split_size
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor]:
+        return torch.split(x, self.split_size, self.dim)
+
+
+class SplitWithSections(torch.nn.Module):
+    def __init__(self, sections, dim):
+        super().__init__()
+        self.sections = sections
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor]:
+        return torch.split(x, self.sections, self.dim)
