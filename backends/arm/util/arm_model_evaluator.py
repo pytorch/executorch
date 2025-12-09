@@ -65,7 +65,9 @@ def _build_calibration_loader(
             seed = default_seed
     else:
         seed = default_seed
-    rng = random.Random(seed)
+    rng = random.Random(
+        seed
+    )  # nosec B311 - deterministic shuffling for evaluation only
     indices = list(range(len(dataset)))
     rng.shuffle(indices)
     selected = sorted(indices[:k])

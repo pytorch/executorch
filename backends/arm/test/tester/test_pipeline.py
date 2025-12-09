@@ -32,12 +32,14 @@ from executorch.backends.arm.quantizer import (
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
+
+from executorch.backends.arm.test.tester.quantize import ArmQuantize as Quantize
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
 
-from executorch.backends.xnnpack.test.tester.tester import Quantize
+from executorch.backends.arm.util._factory import create_quantizer
 from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
 
@@ -220,6 +222,23 @@ class BasePipelineMaker(Generic[T]):
 
         return self
 
+    @property
+    def quantizer(self) -> TOSAQuantizer:
+        quantize_pipeline_stage = self._stages[self.find_pos("quantize")]
+        quantize_stage = quantize_pipeline_stage.args[0]
+        if isinstance(quantize_stage, Quantize):
+            quantizer = quantize_stage.quantizer
+            if isinstance(quantizer, TOSAQuantizer):
+                return quantizer
+            else:
+                raise RuntimeError(
+                    f"Quantizer in pipeline was {type(quantizer).__name__}, not TOSAQuantizer as expected."
+                )
+        else:
+            raise RuntimeError(
+                f"First argument of quantize stage was {type(quantize_stage).__name__}, not Quantize as expected."
+            )
+
     def pop_stage(self, identifier: int | str):
         """Removes and returns the stage at postion pos"""
         if isinstance(identifier, int):
@@ -357,6 +376,7 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
         qtol: int = 1,
         dynamic_shapes: Optional[Tuple[Any]] = None,
         tosa_extensions: Optional[List[str]] = None,
+        epsilon: float = 2**-12,
     ):
         if tosa_extensions is None:
             tosa_extensions = []
@@ -377,7 +397,7 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
         # choose 16A8W quantization config when int16 extension is requested
         if "int16" in tosa_extensions:
             quantization_config = get_symmetric_a16w8_quantization_config(
-                is_per_channel=per_channel_quantization
+                is_per_channel=per_channel_quantization, epsilon=epsilon
             )
         else:
             quantization_config = get_symmetric_quantization_config(
@@ -550,6 +570,7 @@ class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
+        epsilon: float = 2**-12,
     ):
         compile_spec = common.get_u55_compile_spec(
             custom_path=custom_path,
@@ -559,7 +580,7 @@ class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
         # choose int8 or int16 activation quantization
         if a16w8_quantization:
             quantization_config = get_symmetric_a16w8_quantization_config(
-                is_per_channel=per_channel_quantization
+                is_per_channel=per_channel_quantization, epsilon=epsilon
             )
         else:
             quantization_config = get_symmetric_quantization_config(
@@ -650,6 +671,7 @@ class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
+        epsilon: float = 2**-12,
     ):
         compile_spec = common.get_u85_compile_spec(
             custom_path=custom_path,
@@ -659,7 +681,7 @@ class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
         # choose int8 or int16 activation quantization
         if a16w8_quantization:
             quantization_config = get_symmetric_a16w8_quantization_config(
-                is_per_channel=per_channel_quantization
+                is_per_channel=per_channel_quantization, epsilon=epsilon
             )
         else:
             quantization_config = get_symmetric_quantization_config(
@@ -806,7 +828,10 @@ class PassPipeline(TOSAPipelineMaker, Generic[T]):
             self.add_stage(self.tester.check_count, ops_after_pass, suffix="after")
         if ops_not_after_pass:
             self.add_stage(self.tester.check_not, ops_not_after_pass, suffix="after")
-        self.add_stage(self.tester.run_method_and_compare_outputs)
+        self.add_stage(
+            self.tester.run_method_and_compare_outputs,
+            inputs=self.test_data,
+        )
 
     def run(self):
         with TosaLoweringContext(self.tosa_spec):
@@ -919,7 +944,10 @@ class OpNotSupportedPipeline(TOSAPipelineMaker, Generic[T]):
         )
 
         if tosa_spec.support_integer():
-            self.add_stage(self.tester.quantize, pos=0)
+            quantizer = create_quantizer(compile_spec)
+            quantizer.set_global(get_symmetric_quantization_config())
+            quant_stage = Quantize(quantizer)
+            self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
         self.change_args("check_not.exir", [])
         self.change_args(

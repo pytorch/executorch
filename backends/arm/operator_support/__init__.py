@@ -6,6 +6,7 @@
 
 from . import (  # noqa
     clone_dim_order_support,
+    control_flow_support,
     convolution_support,
     embedding_support,
     ethos_u55_support,

@@ -164,7 +164,7 @@ class FuseConstantArgsPass(ArmPass):
         return PassResult(graph_module, True)
 
 
-class ComputeConstantOpsAOT(ArmPass):
+class ComputeConstantOpsAOTPass(ArmPass):
     """
     Evaluates call_functions that produce constant tensor outputs and replaces them with placeholders.
 
@@ -178,7 +178,10 @@ class ComputeConstantOpsAOT(ArmPass):
             return node_name_pre_computed
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {FuseEqualPlaceholdersPass}
+    _passes_required_after: Set[Type[ExportPass]] = {
+        FuseEqualPlaceholdersPass,
+        FuseConstantArgsPass,
+    }
 
     targeted_ops = [
         exir_ops.edge.aten.full.default,

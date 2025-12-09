@@ -34,7 +34,15 @@ class CortexMQuantize(Quantize):
 
 class CortexMToEdge(ToEdge):
     def __init__(self):
-        config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.linear.default])
+        config = EdgeCompileConfig(
+            preserve_ops=[
+                torch.ops.aten.linear.default,
+                torch.ops.aten.hardsigmoid.default,
+                torch.ops.aten.hardsigmoid_.default,
+                torch.ops.aten.hardswish.default,
+                torch.ops.aten.hardswish_.default,
+            ]
+        )
         super().__init__(config)
 
 

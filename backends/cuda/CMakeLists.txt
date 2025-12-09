@@ -192,11 +192,3 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION lib
 )
-
-if(BUILD_TESTING)
-  add_executable(multimodal_benchmark tests/multimodal_benchmark.cpp)
-  target_link_libraries(
-    multimodal_benchmark PUBLIC aoti_cuda_backend extension_module_static
-                                extension_flat_tensor portable_ops_lib
-  )
-endif()

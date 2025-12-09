@@ -33,6 +33,7 @@ CUSTOM_EDGE_OPS = [
     "alias_copy.default",
     "pixel_shuffle.default",
     "pixel_unshuffle.default",
+    "while_loop.default",
 ]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 

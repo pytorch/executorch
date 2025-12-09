@@ -23,6 +23,7 @@ TORCH_NIGHTLY_URL_BASE = "https://download.pytorch.org/whl/nightly"
 SUPPORTED_CUDA_VERSIONS = (
     (12, 6),
     (12, 8),
+    (12, 9),
     (13, 0),
 )
 

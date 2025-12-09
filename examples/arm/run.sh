@@ -61,7 +61,7 @@ function help() {
     echo "  --output=<FOLDER>                      Target build output folder Default: ${output_folder}"
     echo "  --bundleio                             Create Bundled pte using Devtools BundelIO with Input/RefOutput included"
     echo "  --etdump                               Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
-    echo "  --build_type=<TYPE>                    Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
+    echo "  --build_type=<TYPE>                    Build with Release, Debug, RelWithDebInfo, UndefinedSanitizer or AddressSanitizer, default is ${build_type}"
     echo "  --extra_build_flags=<FLAGS>            Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
     echo "  --build_only                           Only build, don't run"
     echo "  --toolchain=<TOOLCHAIN>                Ethos-U: Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
@@ -321,7 +321,8 @@ for i in "${!test_model[@]}"; do
         set -x
         backends/arm/scripts/build_executor_runner_vkml.sh --build_type=${build_type} \
                                                            --extra_build_flags="${extra_build_flags}" \
-                                                           --output="${output_folder}"
+                                                           --output="${output_folder}" \
+                                                           ${bundleio_flag}
         if [ "$build_only" = false ] ; then
             backends/arm/scripts/run_vkml.sh --model=${pte_file} --build_path=${output_folder}
         fi

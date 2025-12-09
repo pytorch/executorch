@@ -631,7 +631,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             )
 
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_neutron_for_format_conversion=False
             ).exported_program()
 
             # Make sure that all nodes were delegated.
@@ -822,7 +822,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                 )
 
                 edge_program = to_quantized_edge_program(
-                    model, input_shape
+                    model, input_shape, use_neutron_for_format_conversion=False
                 ).exported_program()
 
                 # Make sure that all nodes were delegated.

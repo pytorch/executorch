@@ -87,6 +87,7 @@
 #include <errno.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
@@ -95,6 +96,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 #include "arm_memory_allocator.h"
@@ -183,6 +185,7 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
+using executorch::runtime::toString;
 #if defined(ET_BUNDLE_IO)
 using executorch::bundled_program::compute_method_output_error_stats;
 using executorch::bundled_program::ErrorStats;
@@ -395,6 +398,19 @@ class Box {
   }
 };
 
+template <typename ValueType>
+void fill_tensor_with_default_value(Tensor& tensor) {
+  ValueType fill_value{};
+  if constexpr (std::is_same_v<ValueType, bool>) {
+    fill_value = true;
+  } else {
+    fill_value = ValueType(1);
+  }
+
+  ValueType* data_ptr = tensor.mutable_data_ptr<ValueType>();
+  std::fill(data_ptr, data_ptr + tensor.numel(), fill_value);
+}
+
 Error prepare_input_tensors(
     Method& method,
     MemoryAllocator& allocator,
@@ -452,23 +468,18 @@ Error prepare_input_tensors(
       if (input_evalues[i].isTensor()) {
         Tensor& tensor = input_evalues[i].toTensor();
         switch (tensor.scalar_type()) {
-          case ScalarType::Int:
-            std::fill(
-                tensor.mutable_data_ptr<int>(),
-                tensor.mutable_data_ptr<int>() + tensor.numel(),
-                1);
-            break;
-          case ScalarType::Float:
-            std::fill(
-                tensor.mutable_data_ptr<float>(),
-                tensor.mutable_data_ptr<float>() + tensor.numel(),
-                1.0);
-            break;
-          case ScalarType::Char:
-            std::fill(
-                tensor.mutable_data_ptr<int8_t>(),
-                tensor.mutable_data_ptr<int8_t>() + tensor.numel(),
-                1);
+#define HANDLE_SCALAR_TYPE(cpp_type, scalar_name)     \
+  case ScalarType::scalar_name:                       \
+    fill_tensor_with_default_value<cpp_type>(tensor); \
+    break;
+          ET_FORALL_SCALAR_TYPES(HANDLE_SCALAR_TYPE)
+#undef HANDLE_SCALAR_TYPE
+          default:
+            ET_LOG(
+                Error,
+                "Unhandled ScalarType %s",
+                toString(tensor.scalar_type()));
+            err = Error::InvalidArgument;
             break;
         }
       } else {
@@ -574,7 +585,7 @@ void runner_init(
   }
 #endif
   auto loader = BufferDataLoader(program_data, ctx.program_data_len);
-  ET_LOG(Info, "PTE Model data loaded. Size: %lu bytes.", ctx.program_data_len);
+  ET_LOG(Info, "PTE Model data loaded. Size: %zu bytes.", ctx.program_data_len);
 
   // Parse the program file. This is immutable, and can also be reused
   // between multiple execution invocations across multiple threads.
@@ -587,7 +598,7 @@ void runner_init(
         program.error());
   }
 
-  ET_LOG(Info, "Model buffer loaded, has %lu methods", program->num_methods());
+  ET_LOG(Info, "Model buffer loaded, has %zu methods", program->num_methods());
 
   {
     const auto method_name_result = program->get_method_name(0);
@@ -607,7 +618,7 @@ void runner_init(
 
   ET_LOG(
       Info,
-      "Setup Method allocator pool. Size: %lu bytes.",
+      "Setup Method allocator pool. Size: %zu bytes.",
       method_allocation_pool_size);
 
   ctx.method_allocator.reset(
@@ -807,15 +818,15 @@ void log_mem_status(RunnerContext& ctx) {
 #if defined(ET_MODEL_PTE_ADDR)
   ET_LOG(
       Info,
-      "model_pte_program_size:     %lu bytes. (pte size unknown when not baked into elf)",
+      "model_pte_program_size:     %zu bytes. (pte size unknown when not baked into elf)",
       ctx.program_data_len);
   ET_LOG(
       Info,
-      "model_pte_loaded_size:      %lu bytes. (pte size unknown when not baked into elf)",
+      "model_pte_loaded_size:      %zu bytes. (pte size unknown when not baked into elf)",
       ctx.pte_size);
 #else
-  ET_LOG(Info, "model_pte_program_size:     %lu bytes.", ctx.program_data_len);
-  ET_LOG(Info, "model_pte_loaded_size:      %lu bytes.", ctx.pte_size);
+  ET_LOG(Info, "model_pte_program_size:     %zu bytes.", ctx.program_data_len);
+  ET_LOG(Info, "model_pte_loaded_size:      %zu bytes.", ctx.pte_size);
 #endif
 
 #if defined(SEMIHOSTING)

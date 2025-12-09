@@ -230,12 +230,6 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--checkpoint_dir",
-        default=None,
-        help="checkpoint directory. Use with a sharded checkpoint, not for the standard llama2 model. Note, checkpoint_dir takes precedence over checkpoint if both are set.",
-    )
-
-    parser.add_argument(
         "--adapter_checkpoint",
         required=False,
         help="Path to the adapter.pt file from torchtune. Used if the model has trained LoRA adapters. Must provide adapter_config.json",
@@ -402,7 +396,6 @@ def build_args_parser() -> argparse.ArgumentParser:
         " [16] pattern specifies all layers have sliding window of 16.",
     )
 
-    parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument(
         "-X",
@@ -678,18 +671,12 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
         if llm_config.base.checkpoint
         else None
     )
-    checkpoint_dir = (
-        canonical_path(llm_config.base.checkpoint_dir)
-        if llm_config.base.checkpoint_dir
-        else None
-    )
     params_path = (
         canonical_path(llm_config.base.params) if llm_config.base.params else None
     )
     output_dir_path = canonical_path(llm_config.export.output_dir, dir=True)
 
     llm_config.base.checkpoint = checkpoint_path
-    llm_config.base.checkpoint_dir = checkpoint_dir
     llm_config.base.params = params_path
     llm_config.export.output_dir = output_dir_path
 
@@ -895,7 +882,6 @@ def _to_edge_and_lower_llama_xnnpack(
     if gen_tag_fn is not None:
         from executorch.exir.passes.external_constants_pass import (
             delegate_external_constants_pass_unlifted,
-            external_constants_pass,
         )
 
         assert (
@@ -906,18 +892,14 @@ def _to_edge_and_lower_llama_xnnpack(
             gen_tag_fn=gen_tag_fn,
         )
 
-        # Also add a pass for 'to_executorch' to tag weights that aren't delegated.
-        additional_passes.append(
-            partial(external_constants_pass, gen_tag_fn=gen_tag_fn)
-        )
-
     builder = builder.to_edge_transform_and_lower(partitioners)
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
 
-    # we need builder.export_program
-
-    return builder.to_executorch(passes=additional_passes)
+    # Add gen_tag_fn to tag non-delegated weights as well.
+    return builder.to_executorch(
+        passes=additional_passes, external_constants_tag=gen_tag_fn
+    )
 
 
 def _to_edge_and_lower_llama_openvino(

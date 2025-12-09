@@ -9,7 +9,9 @@ from typing import Set, Type
 import torch
 
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.decompose_avg_pool2d import DecomposeAvgPool2d
+from executorch.backends.arm._passes.decompose_avg_pool2d_pass import (
+    DecomposeAvgPool2dPass,
+)
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata
@@ -44,7 +46,7 @@ class DecomposeAdaptiveAvgPool2dPass(ArmPass):
     The output is of size output_size_h x output_size_w for any input.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {DecomposeAvgPool2d}
+    _passes_required_after: Set[Type[ExportPass]] = {DecomposeAvgPool2dPass}
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
         if op not in (edge_ops + aten_ops):

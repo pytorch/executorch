@@ -18,7 +18,7 @@ from executorch.devtools.bundled_program.core import BundledProgram
 from executorch.devtools.bundled_program.util.test_util import (
     get_common_executorch_program,
 )
-from executorch.exir._serialize import _serialize_pte_binary
+from executorch.exir._serialize import _PTEFile, _serialize_pte_binary
 
 
 class TestBundle(unittest.TestCase):
@@ -72,7 +72,11 @@ class TestBundle(unittest.TestCase):
 
         self.assertEqual(
             bundled_program.serialize_to_schema().program,
-            bytes(_serialize_pte_binary(executorch_program.executorch_program)),
+            bytes(
+                _serialize_pte_binary(
+                    pte_file=_PTEFile(program=executorch_program.executorch_program)
+                )
+            ),
         )
 
     def test_bundled_program_from_pte(self) -> None:

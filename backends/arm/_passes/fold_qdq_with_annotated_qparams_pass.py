@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,16 +8,21 @@ import copy
 
 from typing import cast, Optional, Set, Type
 
+import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_param_tensor,
     is_param_node,
     set_node_arg,
 )
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm._passes.remove_noop_pass import RemoveNoopPass
+from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir import ExportedProgram
 
@@ -152,15 +156,114 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 if len(n.users) == 0:
                     graph_module.graph.erase_node(n)
 
+    def _handle_control_flow_node(self, node: Node, graph_module: GraphModule):
+        """Fold outmost quant nodes inside submodule.
+        placeholders => qs => dqs => ... => qs => dqs => output
+        becomes
+        placeholders => dqs => ... => qs => output,
+        With output_qparams meta in the placeholders, and input_qparams meta in the output node.
+        """
+        match node.target:
+            case torch.ops.higher_order.cond:
+                submodule_nodes = cast(list[Node], node.args[1:3])
+                args = cast(list[Node], node.args[-1])
+            case torch.ops.higher_order.while_loop:
+                submodule_nodes = cast(list[Node], node.args[0:2])
+                args = cast(list[Node], node.args[-2])
+            case _:
+                raise ValueError(f"Unhandled target {node.target}")
+        submodules = (
+            graph_module.get_submodule(str(submodule_node.target))
+            for submodule_node in submodule_nodes
+        )
+        for submodule in submodules:
+            submodule = cast(GraphModule, submodule)
+            output_node = submodule.graph.output_node()
+            output_node.meta["input_qparams"] = {}
+            nodes_to_remove = []
+            arg_id = 0
+            for submodule_node in submodule.graph.nodes:
+                # Remove initial q nodes and ending dq nodes in the module.
+                submodule_node = cast(Node, submodule_node)
+                if (
+                    submodule_node.target in Q_OPS
+                    and list(submodule_node.all_input_nodes)[0].op == "placeholder"
+                ):
+                    input_node = cast(Node, submodule_node.args[0])
+                    input_node.meta["val"] = submodule_node.meta["val"]
+                    quant_args = QuantArgs.from_operator(
+                        submodule_node.target, submodule_node.args
+                    )
+                    input_node.meta["output_qparams"] = {0: quant_args}
+
+                    submodule_node.replace_all_uses_with(input_node)
+                    nodes_to_remove.append(submodule_node)
+                if submodule_node.target in DQ_OPS:
+                    has_non_output_user = False
+                    for user in copy.copy(submodule_node.users):
+                        if user.op != "output":
+                            has_non_output_user = True
+                        else:
+                            input_node = cast(Node, submodule_node.args[0])
+                            submodule_node.replace_all_uses_with(input_node)
+                            arg_index = cast(list[Node], output_node.args[0]).index(
+                                input_node
+                            )
+                            quant_args = QuantArgs.from_operator(
+                                submodule_node.target, submodule_node.args
+                            )
+                            output_node.meta["input_qparams"][arg_index] = quant_args
+
+                    # Remove dq node if it only has the output node as its user.
+                    if not has_non_output_user:
+                        nodes_to_remove.append(submodule_node)
+                # Placeholders without users won't be retraced with correct dtype, do it manually.
+                # Control flow node input is matched to placeholder nodes in the submodule by index.
+                # This means it will break if another pass inserts a placeholder before this pass.
+                if submodule_node.op == "placeholder":
+                    if len(submodule_node.users) == 0:
+                        submodule_node.meta["val"] = args[arg_id].meta["val"]
+                    arg_id += 1
+                    if arg_id > len(args):
+                        raise RuntimeError(
+                            "Submodule had more placeholders than calling node had inputs."
+                            " This is probably due to a placeholder being inserted in a pass."
+                        )
+            for node_to_remove in nodes_to_remove:
+                submodule.graph.erase_node(node_to_remove)
+        return
+
+    @staticmethod
+    def is_foldable(node: Node) -> bool:
+        if node.op != "call_function":
+            return False
+        # Don't fold chains of quant-ops into each other.
+        if node.target in (*Q_OPS, *DQ_OPS):
+            return False
+
+        # Always fold q-dq into constant ops.
+        if node.target in (
+            exir_ops.edge.aten.full_like.default,
+            *ComputeConstantOpsAOTPass.targeted_ops,
+        ):
+            return True
+
+        # We should not fold q-dq nodes into non-quantized nodes.
+        if not (
+            ArmAnnotationInfo.CUSTOM_META_KEY in node.meta.get("custom", {})
+            and ArmAnnotationInfo(
+                node.meta["custom"][ArmAnnotationInfo.CUSTOM_META_KEY]
+            ).quantized
+        ):
+            return False
+        return True
+
     def call(self, graph_module: GraphModule) -> PassResult:  # noqa: C901
 
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
-            if n.op != "call_function":
-                continue
-            # Don't fold chains of quant-ops into each other.
-            if n.target in (*Q_OPS, *DQ_OPS):
+            if not FoldAndAnnotateQParamsPass.is_foldable(n):
                 continue
 
             # Make sure we haven't already set qparams meta information on the node
@@ -181,8 +284,8 @@ class FoldAndAnnotateQParamsPass(ArmPass):
             n.meta["input_qparams"] = {}
             n.meta["output_qparams"] = {}
             for i, arg in enumerate(n.args):
-                if isinstance(arg, list):
-                    self.fold_and_annotate_arg(graph_module, n, arg, i)
+                if isinstance(arg, (list, tuple)):
+                    self.fold_and_annotate_arg(graph_module, n, arg, i)  # type: ignore
 
                 elif isinstance(arg, Node):
                     self.fold_and_annotate_arg(graph_module, n, [arg], i)
@@ -211,6 +314,12 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 output_dtype = output_qparams[0].dtype
                 set_node_arg(n, "dtype", output_dtype)
 
+            if n.target in (
+                torch.ops.higher_order.cond,
+                torch.ops.higher_order.while_loop,
+            ):
+                self._handle_control_flow_node(n, graph_module)
+
         # retrace the graph to update the fake tensor types
         graph_module = super().call(graph_module).graph_module
 
@@ -218,14 +327,14 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         return PassResult(graph_module, True)
 
 
-class QuantizeOperatorArguments(ArmPass):
+class QuantizeClampArgumentsPass(ArmPass):
     """
     This pass makes sure that the arguments to clamp.default are quantized correctly.
     More specifically, this pass:
         - Makes sure the min and max values to clamp.default are quantized, if it's a quantized operator.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {FoldAndAnnotateQParamsPass}
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
@@ -237,12 +346,15 @@ class QuantizeOperatorArguments(ArmPass):
             }:
                 continue
 
-            # Make sure we have a quantized operator
-            user = list(n.users)[0]
-            if user.target not in Q_OPS:
+            try:
+                output_qparams = get_output_qparams(n)
+            except ValueError:
+                continue
+            if len(output_qparams) == 0:
                 continue
 
-            qargs = QuantArgs.from_operator(user.target, user.args)
+            # Qparams are stored per user index; use the first entry.
+            qargs = next(iter(output_qparams.values()))
 
             if n.target == exir_ops.edge.aten.clamp.default:
                 # Quantize the min and max arguments of clamp, if they are not None
@@ -258,5 +370,10 @@ class QuantizeOperatorArguments(ArmPass):
                     n.update_arg(2, quantized_max_val)
 
                 modified = True
+
+        if modified:
+            # Retrace to refresh fake tensor metadata after updating clamp min/max.
+            graph_module = super().call(graph_module).graph_module
+            graph_module.recompile()
 
         return PassResult(graph_module, modified)

@@ -19,6 +19,7 @@ def define_common_targets():
                     "//executorch/extension/evalue_util:print_evalue",
                     "//executorch/extension/threadpool:threadpool",
                     "//executorch/extension/threadpool:cpuinfo_utils",
+                    "//executorch/devtools/etdump:etdump_flatcc" + aten_suffix,
                 ],
                 external_deps = [
                     "gflags",

@@ -13,7 +13,7 @@ used by the TOSA partitioner to decide if FX nodes are eligible for delegation.
 import itertools
 import operator
 import typing
-from typing import cast, final, Optional, Sequence, Type
+from typing import final, Optional, Sequence, Type
 
 import torch
 import torch.fx as fx
@@ -22,13 +22,19 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     is_submodule_node,
 )
-from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
+from executorch.backends.arm.operator_support.control_flow_support import (
+    ControlFlowOpSupported,
+    ControlFlowSubmoduleSupported,
+)
 from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55CastCheck,
     EthosU55DtypeSupport,
@@ -41,7 +47,6 @@ from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists im
     TOSA_PRO_INT_SupportList,
 )
 from executorch.backends.arm.tosa.specification import (
-    Tosa_1_00,
     TosaSpecification,
     TosaSpecMapping,
 )
@@ -141,6 +146,61 @@ def register_tosa_support_check(checker: Type[SupportedTOSAOperatorCheck]):
     return checker
 
 
+def _is_quantized_constant(node: torch.fx.Node) -> bool:
+    if node.target not in (
+        exir_ops.edge.aten.full_like.default,
+        *ComputeConstantOpsAOTPass.targeted_ops,
+    ):
+        return False
+
+    users = tuple(node.users)
+    if users and all(user.target in Q_OPS for user in users):
+        # The node feeds directly into only quantized ops.
+        return True
+
+    for user in users:
+        if user.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
+            dim_order_dtype = get_first_fake_tensor(user).dtype
+            if dim_order_dtype.is_complex or dim_order_dtype.is_floating_point:
+                return False
+        else:
+            return False
+
+    return len(users) > 0
+
+
+def is_quantized(node: torch.fx.Node) -> bool:
+    """Checks if the node is quantized.
+
+    A node is considered quantized if any of the following is true:
+    - Its output dtype is not floating point or complex => integer
+    - It is an op that produces a constant that in turn feeds only quantized users
+    - It has been marked as quantized in the ArmAnnotationInfo custom meta.
+
+    Args:
+        node (torch.fx.Node): The FX node to check.
+
+    Returns:
+        bool: True if the node is quantized, False otherwise.
+    """
+
+    node_dtype = get_first_fake_tensor(node).dtype
+    # Integer-like dtype implies the node is already quantized.
+    if not node_dtype.is_complex and not node_dtype.is_floating_point:
+        return True
+
+    # Nodes introduced during lowering that exclusively feed quantized users.
+    if _is_quantized_constant(node):
+        return True
+
+    # Finally, fall back to the explicit annotation emitted by Arm passes.
+    custom_meta = node.meta.get("custom", {})
+    if ArmAnnotationInfo.CUSTOM_META_KEY in custom_meta:
+        return custom_meta[ArmAnnotationInfo.CUSTOM_META_KEY]["quantized"]
+
+    return False
+
+
 def get_registered_tosa_support_checks(
     tosa_spec: TosaSpecification,
 ) -> list[Type[SupportedTOSAOperatorCheck]]:
@@ -185,12 +245,15 @@ def tosa_support_factory(
     """
     # Postive checks: Add nodes to partitioning
     positive_checks: list[OperatorSupportBase] = [
-        CondSupported(exported_program, tosa_spec, reporter)
+        ControlFlowSubmoduleSupported(exported_program, tosa_spec, reporter),
+        ControlFlowOpSupported(exported_program, tosa_spec, reporter),
     ]
 
-    if tosa_spec.support_integer():
+    if tosa_spec.support_integer() and tosa_spec.support_float():
+        positive_checks.append(TOSAProINTFPSupportList())
+    elif tosa_spec.support_integer():
         positive_checks.append(TOSAProINTSupportList())
-    if tosa_spec.support_float():
+    elif tosa_spec.support_float():
         positive_checks.append(TOSAProFPSupportList())
     # TODO: Refactor to use TOSAProSupportLists + negtive checks
     positive_checks += [
@@ -262,6 +325,27 @@ class TOSAProFPSupportList(OperatorSupportBase):
         return node.op == "call_function" and node.target in TOSA_PRO_FP_SupportList
 
 
+class TOSAProINTFPSupportList(OperatorSupportBase):
+    """
+    TOSA_PRO_INT_FP_SupportList:
+        Ops supported in INT+FP profile via native TOSA ops, decomposition/transformation, pre-compute, or TableOp.
+    """
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        if node.op != "call_function":
+            return False
+
+        # Select list based on whether the node is quantized.
+        if is_quantized(node) or node.target in (*Q_OPS, *DQ_OPS):
+            support_list = TOSA_PRO_INT_SupportList
+        else:
+            support_list = TOSA_PRO_FP_SupportList
+
+        return node.target in support_list
+
+
 class CheckArmQuantized(OperatorSupportBase):
     """
     Check if the node was marked as quantized in the Arm backend.
@@ -272,62 +356,14 @@ class CheckArmQuantized(OperatorSupportBase):
     def __init__(self, reporter: WhyNoPartitionReporter):
         self.reporter = reporter
 
-    def _is_quantized(self, node: torch.fx.Node) -> bool:
-        """Checks if the node is quantized.
-
-        A node is considered quantized if at least one criteria is met:
-        - Its dtype is not floating point or complex => integer
-        - It is one of the special cases where the node has been created in to_edge, e.g.
-          .Scalar operations that have been promoted .Tensor operations
-          where the scalar is replaced by a full op.
-        - It has been marked as quantized in the ArmAnnotationInfo custom meta.
-
-        Args:
-            node (torch.fx.Node): The FX node to check.
-
-        Returns:
-            bool: True if the node is quantized, False otherwise.
-        """
-        node_dtype = get_first_fake_tensor(node).dtype
-        if not node_dtype.is_complex and not node_dtype.is_floating_point:
-            return True
-        if node.target in (
-            exir_ops.edge.aten.full_like.default,
-            *ComputeConstantOpsAOT.targeted_ops,
-        ):
-            # Special cases where nodes have been created in to_edge, e.g.
-            # .Scalar operations that have been promoted .Tensor operations
-            # where the scalar is replaced by a full op.
-            if all(user.target in Q_OPS for user in node.users):
-                return True
-            for user in node.users:
-                if (
-                    user.target
-                    == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
-                ):
-                    dim_order_dtype = get_first_fake_tensor(user).dtype
-                    if dim_order_dtype.is_complex or dim_order_dtype.is_floating_point:
-                        return False
-                else:
-                    return False
-            return True
-        return (
-            ArmAnnotationInfo.CUSTOM_META_KEY in node.meta.get("custom", {})
-            and ArmAnnotationInfo(
-                node.meta["custom"][ArmAnnotationInfo.CUSTOM_META_KEY]
-            ).quantized
-        )
-
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        if node.op != "call_function":
-            return False
 
         if node.target in (*DQ_OPS, *Q_OPS):
             return True
 
-        if not self._is_quantized(node):
+        if not is_quantized(node):
             self.reporter.report_reject(
                 node, "Node was not marked as quantized in the Arm backend."
             )
@@ -546,7 +582,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
                 for output_node in node.users
             )
             if (
-                node.target in ComputeConstantOpsAOT.targeted_ops
+                node.target in ComputeConstantOpsAOTPass.targeted_ops
                 and users_output_non_int64
             ):
                 if not self.inside_int32_bounds(node):
@@ -588,7 +624,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
                 continue
             # Constant operator
             if input_node.op == "call_function":
-                if input_node.target in ComputeConstantOpsAOT.targeted_ops:
+                if input_node.target in ComputeConstantOpsAOTPass.targeted_ops:
                     # This is not perfect since the input_node can still be rejected by other checks but
                     # this should cover the majority of cases.
                     if self.is_node_supported({}, input_node):
@@ -690,131 +726,3 @@ class RankCheck(OperatorSupportBase):
                 )
                 return False
         return True
-
-
-class CondSupported(OperatorSupportBase):
-    """Check whether cond operator and submodule args should be partitioned.
-
-    Applies control-flow extension constraints before allowing delegation.
-
-    """
-
-    def __init__(
-        self,
-        exported_program: ExportedProgram,
-        tosa_spec: TosaSpecification,
-        reporter: WhyNoPartitionReporter,
-    ):
-        """Initialize conditional support checks for TOSA delegation.
-
-        Args:
-            exported_program (ExportedProgram): Program containing the cond
-                submodules to inspect.
-            tosa_spec (TosaSpecification): TOSA specification used to validate
-                supported operators.
-            reporter (WhyNoPartitionReporter): Reporter that records rejection
-                reasons for unsupported nodes.
-
-        """
-        self.exported_program = exported_program
-        self.reporter = reporter
-        self.tosa_spec = tosa_spec
-        super().__init__()
-
-    def _fully_partitioned(self, submodule: fx.GraphModule) -> bool:
-        """Check whether all call_function nodes share one delegation tag."""
-        partition_tag = None
-        for submodule_node in submodule.graph.nodes:
-            if submodule_node.op == "call_function":
-                # Input Q ops and output DQ ops will be de-tagged even if the submodule is fully supported.
-                if (
-                    submodule_node.target in Q_OPS
-                    and list(submodule_node.all_input_nodes)[0].op == "placeholder"
-                ):
-                    continue
-                if (
-                    submodule_node.target in DQ_OPS
-                    and list(submodule_node.users)[0].op == "output"
-                ):
-                    continue
-                if "delegation_tag" not in submodule_node.meta:
-                    return False
-                if partition_tag is None:
-                    partition_tag = submodule_node.meta["delegation_tag"]
-                elif submodule_node.meta["delegation_tag"] != partition_tag:
-                    return False
-        return True
-
-    def _cond_submodules_fully_partitioned(self, node: fx.Node) -> bool:
-        """Determine whether cond submodules were fully partitioned.
-
-        Update the "val" meta of the submodules when they are partitioned.
-
-        """
-        cond_submodules = (
-            (
-                self.exported_program.graph_module.get_submodule(
-                    str(cast(torch.fx.Node, submodule_node).target)
-                ),
-                cast(torch.fx.Node, submodule_node),
-            )
-            for submodule_node in node.args[1:3]
-        )
-        for submodule, submodule_node in cond_submodules:
-            submodule = cast(torch.fx.GraphModule, submodule)
-
-            if self._fully_partitioned(submodule):
-                submodule_node.meta["val"] = submodule.graph.output_node().meta["val"]
-            else:
-                return False
-        return True
-
-    def is_node_supported(  # noqa: C901
-        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
-    ) -> bool:
-        """Check whether a cond node and its submodules are partitionable."""
-        if is_submodule_node(node):
-            if not isinstance(self.tosa_spec, Tosa_1_00):
-                self.reporter.report_reject(
-                    node, "Control flow extension not supported for TOSA version <1.0"
-                )
-                return False
-            if not self.tosa_spec.support_extension("cf"):
-                self.reporter.report_reject(
-                    node,
-                    f"TOSA spec {self.tosa_spec} does not support control flow extension.",
-                )
-                return False
-            for user in node.users:
-                if user.target != torch.ops.higher_order.cond:
-                    self.reporter.report_reject(
-                        node, f"Submodule had unsupported user {user}"
-                    )
-                    return False
-                if not self._cond_submodules_fully_partitioned(user):
-                    self.reporter.report_reject(
-                        node, "One submodule was not fully partitioned"
-                    )
-                    return False
-            return True
-        if node.target == torch.ops.higher_order.cond:
-            if not isinstance(self.tosa_spec, Tosa_1_00):
-                self.reporter.report_reject(
-                    node, "Control flow extension not supported for TOSA version <1.0"
-                )
-                return False
-            if not self.tosa_spec.support_extension("cf"):
-                self.reporter.report_reject(
-                    node,
-                    f"TOSA spec {self.tosa_spec} does not support control flow extension.",
-                )
-                return False
-
-            if not self._cond_submodules_fully_partitioned(node):
-                self.reporter.report_reject(
-                    node, "Submodule was not fully partitioned."
-                )
-                return False
-            return True
-
-        return False

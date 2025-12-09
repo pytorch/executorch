@@ -101,39 +101,50 @@
 }
 
 + (nullable NSString *)assetsDirectoryPath {
-    static dispatch_once_t onceToken;
-    static NSString *result = nil;
-    dispatch_once(&onceToken, ^{
-        NSArray<NSString *> *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
-        if (paths.count > 0) {
-            result = [paths.lastObject stringByAppendingPathComponent:self.productName];
-        }
-    });
-    
-    return result;
+    #if defined(EXECUTORCH_COREML_ASSETS_DIRECTORY_PATH)
+        return @(EXECUTORCH_COREML_ASSETS_DIRECTORY_PATH);
+    #else
+        static dispatch_once_t onceToken;
+        static NSString *result = nil;
+        dispatch_once(&onceToken, ^{
+            NSArray<NSString *> *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
+            if (paths.count > 0) {
+                result = [paths.lastObject stringByAppendingPathComponent:self.productName];
+            }
+        });
+        
+        return result;
+    #endif
 }
 
 + (nullable NSString *)trashDirectoryPath {
-    static dispatch_once_t onceToken;
-    static NSString *result = nil;
-    dispatch_once(&onceToken, ^{
-        result = [NSTemporaryDirectory() stringByAppendingPathComponent:self.productName];
-    });
-    
-    return result;
+    #if defined(EXECUTORCH_COREML_TRASH_DIRECTORY_PATH)
+        return @(EXECUTORCH_COREML_TRASH_DIRECTORY_PATH);
+    #else
+        static dispatch_once_t onceToken;
+        static NSString *result = nil;
+        dispatch_once(&onceToken, ^{
+            result = [NSTemporaryDirectory() stringByAppendingPathComponent:self.productName];
+        });
+        
+        return result;
+    #endif
 }
 
 + (nullable NSString *)databaseDirectoryPath {
-    static dispatch_once_t onceToken;
-    static NSString *result = nil;
-    dispatch_once(&onceToken, ^{
-        NSArray<NSString *> *paths = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
-        if (paths.count > 0) {
-            result = [paths.lastObject stringByAppendingPathComponent:self.productName];
-        }
-    });
-    
-    return result;
+    #if defined(EXECUTORCH_COREML_DATABASE_DIRECTORY_PATH)
+        return @(EXECUTORCH_COREML_DATABASE_DIRECTORY_PATH);
+    #else
+        static dispatch_once_t onceToken;
+        static NSString *result = nil;
+        dispatch_once(&onceToken, ^{
+            NSArray<NSString *> *paths = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
+            if (paths.count > 0) {
+                result = [paths.lastObject stringByAppendingPathComponent:self.productName];
+            }
+        });
+        return result;
+    #endif
 }
 
 

@@ -18,11 +18,19 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <limits>
+#include <optional>
+
+extern "C" {
+#include "arm_nn_types.h"
+}
+
 using Tensor = torch::executor::Tensor;
 using ScalarType = executorch::aten::ScalarType;
 using Scalar = torch::executor::Scalar;
 using Error = executorch::runtime::Error;
 using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
+using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
 // From arm_nn_math_types.h
 #define ARM_NN_Q31_MAX ((int32_t)(0x7FFFFFFFL))
@@ -34,7 +42,8 @@ inline void validate_cmsis_nn_tensor_requirements(
     const Tensor& input2,
     Tensor& output,
     ScalarType expected_dtype = ScalarType::Char,
-    bool require_channels_last = false) {
+    bool require_channels_last = false,
+    bool require_same_sizes = true) {
   // Basic dtype validation
   ET_CHECK_MSG(
       input1.scalar_type() == expected_dtype,
@@ -51,18 +60,16 @@ inline void validate_cmsis_nn_tensor_requirements(
       "Output dtype must be %hhd, got %hhd",
       expected_dtype,
       output.scalar_type());
-  ET_CHECK_MSG(
-      input1.sizes() == input2.sizes(),
-      "Input1 and Input2 must have the same sizes");
-  ET_CHECK_MSG(
-      output.sizes() == input1.sizes(),
-      "Output must have the same sizes as inputs");
+  if (require_same_sizes) {
+    ET_CHECK_MSG(
+        input1.sizes() == input2.sizes(),
+        "Input1 and Input2 must have the same sizes");
+    ET_CHECK_MSG(
+        output.sizes() == input1.sizes(),
+        "Output must have the same sizes as inputs");
+  }
 
-  // Dim order consistency
-  ET_CHECK_MSG(
-      executorch::runtime::tensors_have_same_dim_order(input1, input2, output),
-      "Tensors must have same dimension order");
-
+  // TBD (#16032): Validate dim_order
   // TBD: Validate memory alignment (CMSIS-NN requirement)
 }
 
@@ -74,13 +81,6 @@ inline void validate_single_quant_params(
   int64_t zp_val = zero_point.to<int64_t>();
   int64_t mult_val = multiplier.to<int64_t>();
   int64_t shift_val = shift.to<int64_t>();
-
-  ET_CHECK_MSG(
-      zp_val >= std::numeric_limits<int8_t>::min() &&
-          zp_val <= std::numeric_limits<int8_t>::max(),
-      "%s zero point must be in int8 range [Value: %d]",
-      param_name,
-      zp_val);
 
   ET_CHECK_MSG(
       mult_val >= std::numeric_limits<int32_t>::min() &&

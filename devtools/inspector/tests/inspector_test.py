@@ -722,6 +722,79 @@ class TestInspector(unittest.TestCase):
                 # gap should equal 3.0
                 self.assertEqual(row["gap"][0], 3.0)
 
+    def test_calculate_numeric_gap_with_custom_comparator(self):
+        """Test calculate_numeric_gap with a custom NumericalComparatorBase implementation."""
+        from executorch.devtools.inspector.numerical_comparator import (
+            NumericalComparatorBase,
+        )
+
+        # Create a custom comparator that returns the max absolute difference
+        class MaxAbsDiffComparator(NumericalComparatorBase):
+            def compare(self, a, b):
+                if isinstance(a, torch.Tensor) and isinstance(b, torch.Tensor):
+                    return torch.max(torch.abs(a - b)).item()
+                return abs(a - b)
+
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ):
+            # Call the constructor of Inspector
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord=ETRECORD_PATH,
+            )
+
+            aot_intermediate_outputs = {
+                (0,): torch.tensor([1.0, 2.0, 3.0]),
+                (1,): torch.tensor([4.0, 5.0, 6.0]),
+            }
+
+            runtime_intermediate_outputs = {
+                (0,): ([torch.tensor([2.0, 1.0, 5.0])], 1),
+                (1,): ([torch.tensor([3.0, 6.0, 5.0])], 1),
+            }
+
+            aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+            runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda x: (
+                aot_intermediate_outputs,
+                aot_debug_handle_to_op_name,
+            )
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
+            )
+
+            # Create custom comparator instance
+            custom_comparator = MaxAbsDiffComparator()
+
+            # Test with custom comparator
+            df = inspector_instance.calculate_numeric_gap(distance=custom_comparator)
+            self.assertIsInstance(df, pd.DataFrame)
+            self.assertEqual(len(df), 2)
+            cols = set(df.columns)
+            expected_cols = {
+                "aot_ops",
+                "aot_intermediate_output",
+                "runtime_ops",
+                "runtime_intermediate_output",
+                "gap",
+            }
+            self.assertEqual(cols, expected_cols)
+
+            # Verify the custom comparator logic
+            # For (0,): max(|[1.0, 2.0, 3.0] - [2.0, 1.0, 5.0]|) = max([1.0, 1.0, 2.0]) = 2.0
+            self.assertEqual(df.iloc[0]["gap"][0], 2.0)
+            # For (1,): max(|[4.0, 5.0, 6.0] - [3.0, 6.0, 5.0]|) = max([1.0, 1.0, 1.0]) = 1.0
+            self.assertEqual(df.iloc[1]["gap"][0], 1.0)
+
     @unittest.skip("ci config values are not propagated")
     def test_intermediate_tensor_comparison_with_torch_export(self):
         """Test intermediate tensor comparison using torch.export.export and to_edge_transform_and_lower."""

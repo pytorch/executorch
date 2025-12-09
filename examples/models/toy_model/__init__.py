@@ -10,6 +10,7 @@ from .model import (
     Conv1dModule,
     LinearModule,
     MulModule,
+    SdpaModule,
     SoftmaxModule,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     Conv1dModule,
     LinearModule,
     MulModule,
+    SdpaModule,
     SoftmaxModule,
 ]
