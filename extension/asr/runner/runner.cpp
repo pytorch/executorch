@@ -16,6 +16,8 @@
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
@@ -196,6 +198,18 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
     }
   }
 
+  // Tell CUDA backend to store encoder output as "encoder_output"
+  {
+    ::executorch::runtime::BackendOptions<1> opts;
+    opts.set_option("store_output", "encoder_output");
+    auto err = ::executorch::runtime::set_option("CudaBackend", opts.view());
+    if (err != ::executorch::runtime::Error::Ok) {
+      ET_LOG(
+          Debug,
+          "Failed to set store_output option (backend may not support storage)");
+    }
+  }
+
   auto encoder_result =
       module_->execute(kEncoderMethodName, preprocessed_features);
   ET_CHECK_OK_OR_RETURN_ERROR(encoder_result.error());
@@ -249,6 +263,20 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
   decoder_inputs.emplace_back(decoder_input_ptr);
   decoder_inputs.emplace_back(encoder_output_ptr);
   decoder_inputs.emplace_back(cache_position_ptr);
+
+  // Tell CUDA backend to use stored encoder output for matching decoder inputs.
+  // The backend matches by tensor size, avoiding redundant CPU->GPU copies.
+  {
+    ::executorch::runtime::BackendOptions<1> opts;
+    opts.set_option("use_stored_input", "encoder_output");
+    auto err = ::executorch::runtime::set_option("CudaBackend", opts.view());
+    if (err != ::executorch::runtime::Error::Ok) {
+      ET_LOG(
+          Debug,
+          "Failed to set use_stored_input option (backend may not support storage)");
+    }
+  }
+
   // Add some green coloring for the first generated token
   // token_callback("\033[1;32m");
   while (generated_tokens < config.max_new_tokens) {
@@ -304,6 +332,20 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
       break;
     }
   }
+
+  // Reset stored input settings and free GPU memory after decoder loop
+  // completes. This disables the D2D copy optimization and releases the stored
+  // encoder output.
+  {
+    ::executorch::runtime::BackendOptions<2> opts;
+    opts.set_option("reset_stored_input", true);
+    opts.set_option("clear_stored_tensor", "encoder_output");
+    auto err = ::executorch::runtime::set_option("CudaBackend", opts.view());
+    if (err != ::executorch::runtime::Error::Ok) {
+      ET_LOG(Error, "Failed to reset stored input settings");
+    }
+  }
+
   // Reset coloring
   // token_callback("\033[0m");
   // Update stats and print report
