@@ -2,6 +2,8 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
+oncall("executorch")
+
 runtime.python_library(
     name = "models",
     srcs = ["models.py"],
