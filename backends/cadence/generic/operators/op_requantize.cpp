@@ -6,16 +6,26 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/generic/kernels/kernels.h>
+#include <executorch/backends/cadence/generic/operators/op_requantize.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+
+#include <executorch/backends/cadence/generic/kernels/kernels.h>
+#include <cstdint>
+#include <cstdlib>
 
 namespace impl {
 namespace generic {
 namespace native {
 
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
-using executorch::runtime::KernelRuntimeContext;
+using ::executorch::aten::IntArrayRef;
+using ::executorch::aten::optional;
+using ::executorch::aten::Scalar;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::KernelRuntimeContext;
+using ::impl::generic::kernels::dequantize;
+using ::impl::generic::kernels::quantize;
 
 // Requantize the int8_t/uint8_t input tensor to a uint8_t/int8_t out tensor.
 // The scale and zero_point for requantization are in the args.
@@ -86,15 +96,14 @@ Tensor& requantize_out(
       torch::executor::toString(out.scalar_type()),
       torch::executor::toString(out_dtype));
 
-#define typed_requantize(ctype, dtype)                                      \
-  const ctype* input_data = input.const_data_ptr<ctype>();                  \
-  dtype* out_data = out.mutable_data_ptr<dtype>();                          \
-  for (size_t i = 0; i < numel; ++i) {                                      \
-    float dequant =                                                         \
-        kernels::dequantize<ctype>(input_data[i], in_scale, in_zero_point); \
-    out_data[i] =                                                           \
-        kernels::quantize<dtype>(dequant, 1 / out_scale, out_zero_point);   \
+#define typed_requantize(ctype, dtype)                                         \
+  const ctype* input_data = input.const_data_ptr<ctype>();                     \
+  dtype* out_data = out.mutable_data_ptr<dtype>();                             \
+  for (size_t i = 0; i < numel; ++i) {                                         \
+    float dequant = dequantize<ctype>(input_data[i], in_scale, in_zero_point); \
+    out_data[i] = quantize<dtype>(dequant, 1 / out_scale, out_zero_point);     \
   };
+
 #define typed_requantize_in(ctype)               \
   switch (out_dtype) {                           \
     case ScalarType::Byte: {                     \
@@ -187,14 +196,12 @@ Tensor& requantize_per_tensor_out(
       torch::executor::toString(out.scalar_type()),
       torch::executor::toString(out_dtype));
 
-#define typed_requantize(ctype, dtype)                                      \
-  const ctype* input_data = input.const_data_ptr<ctype>();                  \
-  dtype* out_data = out.mutable_data_ptr<dtype>();                          \
-  for (size_t i = 0; i < numel; ++i) {                                      \
-    float dequant =                                                         \
-        kernels::dequantize<ctype>(input_data[i], in_scale, in_zero_point); \
-    out_data[i] =                                                           \
-        kernels::quantize<dtype>(dequant, 1 / out_scale, out_zero_point);   \
+#define typed_requantize(ctype, dtype)                                         \
+  const ctype* input_data = input.const_data_ptr<ctype>();                     \
+  dtype* out_data = out.mutable_data_ptr<dtype>();                             \
+  for (size_t i = 0; i < numel; ++i) {                                         \
+    float dequant = dequantize<ctype>(input_data[i], in_scale, in_zero_point); \
+    out_data[i] = quantize<dtype>(dequant, 1 / out_scale, out_zero_point);     \
   };
 
 #define typed_requantize_in(ctype)               \

@@ -30,6 +30,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     QuantizationPattern,
     ReluPattern0,
     ReluPattern1,
+    RmsNormPattern,
     SoftmaxPattern,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
@@ -37,9 +38,7 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     is_annotated,
     no_outside_users,
 )
-
 from torch import fx
-
 from torchao.quantization.pt2e import HistogramObserver, MinMaxObserver
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
@@ -285,6 +284,15 @@ class CadenceNopQuantizer(CadenceQuantizer):
         super().__init__([])
 
 
+class CadenceRmsNormNopQuantizer(CadenceQuantizer):
+    """
+    Nop quantizer that preserves rms_norm from decomposition.
+    """
+
+    def __init__(self) -> None:
+        super().__init__([CadenceAtenQuantizer(RmsNormPattern(), qconfig_A8W8)])
+
+
 class CadenceWithLayerNormQuantizer(CadenceQuantizer):
     """
     Quantizer including layer norm
@@ -385,4 +393,17 @@ class CadenceWith16BitConvActivationsQuantizer(CadenceQuantizer):
         # Add 16-bit quantizers for Conv patterns
         quantizers.append(CadenceAtenQuantizer(Conv1dPattern(), qconfig_A16))
         quantizers.append(CadenceAtenQuantizer(Conv2dPattern(), qconfig_A16))
+        super().__init__(quantizers)
+
+
+class CadenceWith16BitMatmulActivationsQuantizer(CadenceQuantizer):
+    """
+    Quantizer including A16 matmul
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = []
+        # Add 16-bit quantizers for MatmulPattern
+        quantizers.append(CadenceAtenQuantizer(MatmulPattern(), qconfig_A16))
         super().__init__(quantizers)

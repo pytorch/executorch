@@ -721,3 +721,18 @@ class MixedW8A32GruPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_w8a32_gru.default
+
+
+class RmsNormPattern(QuantizationPattern):
+    """Pattern that preserves rms_norm from decomposition without matching anything."""
+
+    def partition_types(self) -> list[torch._ops.OpOverload]:
+        return [torch.ops.aten.rms_norm.default]
+
+    def get_anchors(
+        self, gm: torch.fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        return PartitionAnchors(empty=True), None  # pyre-ignore[7]
+
+    def replacement_op(self) -> torch._ops.OpOverload:
+        return torch.ops.aten.rms_norm.default

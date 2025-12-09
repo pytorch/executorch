@@ -70,6 +70,7 @@ from executorch.backends.arm._passes import (
     DecomposeRoundPass,
     DecomposeScaledDotProductAttentionPass,
     DecomposeSelectPass,
+    DecomposeSelectScatterPass,
     DecomposeSignPass,
     DecomposeSiluPass,
     DecomposeSinhPass,
@@ -98,7 +99,7 @@ from executorch.backends.arm._passes import (
     RemoveGetItemPass,
     RemoveGraphAssertsPass,
     RemoveNoopPass,
-    ReplaceInfValuesPass,
+    ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
     RewriteConv2dPass,
     RewriteMatmulPass,
@@ -174,18 +175,14 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 FuseQuantizedActivationPass(),
-                RemoveGetItemPass(),
                 ConvertToClampPass(),
                 DecomposeInt32ClampPass(),
                 DecomposeGroupNormPass(),
                 DecomposeLayerNormPass(),
-                DecomposeBatchNormNoStatsPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
                 AnnotateDecomposedMatmulPass(),
                 ConvertELUParamsPass(),
-                ConvertSplitToSlicePass(),
-                QuantizeClampArgumentsPass(),
             ]
         )
 
@@ -207,6 +204,10 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post q/dq folding)
         self.add_passes(
             [
+                ConvertSplitToSlicePass(),
+                QuantizeClampArgumentsPass(),
+                RemoveGetItemPass(),
+                DecomposeBatchNormNoStatsPass(),
                 DecomposeLogitPass(),
                 DecomposeMaskedFillPass(),
                 DecomposeRoundPass(),
@@ -243,7 +244,6 @@ class ArmPassManager(PassManager):
                 # passes. Ticket: MLETORCH-1540
                 DecomposeNotEqualPass(),
                 MatchArgRanksPass(exported_program),
-                FuseConstantArgsPass(exported_program),
             ]
         )
 
@@ -265,6 +265,7 @@ class ArmPassManager(PassManager):
                 DecomposeAvgPool2dPass(),
                 DecorateFp32toInt32CastingPass(),
                 ComputeConstantOpsAOTPass(exported_program),
+                FuseConstantArgsPass(exported_program),
                 ConvertExpandCopyToRepeatPass(),
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
@@ -330,6 +331,7 @@ class ArmPassManager(PassManager):
         # Transformation passes (pre scalar -> tensor)
         self.add_passes(
             [
+                DecomposeSelectScatterPass(),
                 ConvertInt64ConstOpsToInt32Pass(),
                 ConvertInt64OutputOpsToInt32Pass(),
                 InsertInt32CastsAfterInt64PlaceholdersPass(),
@@ -383,7 +385,7 @@ class ArmPassManager(PassManager):
         # Postprocessing passes
         self.add_passes(
             [
-                ReplaceInfValuesPass(),
+                ReplaceInfAndLimitValuesPass(),
                 DecomposeMaskedFillPass() if not self.tosa_spec.is_U55_subset else None,
             ]
         )

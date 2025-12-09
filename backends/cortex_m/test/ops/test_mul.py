@@ -60,10 +60,6 @@ class CortexMTensorMul(Model):
 
 
 test_cases = {
-    "self_scalar": McuTestCase(
-        CortexMSelfMul(),
-        (10.0,),
-    ),
     "self_rank_1": McuTestCase(
         CortexMSelfMul(),
         (ramp_tensor(-5, 5, (10,)),),
@@ -83,10 +79,6 @@ test_cases = {
     "self_rank_5": McuTestCase(
         CortexMSelfMul(),
         (ramp_tensor(-5, 5, (2, 2, 2, 2, 2)),),
-    ),
-    "scalar_scalar": McuTestCase(
-        CortexMScalarMul(),
-        (-0.5, 1.0),
     ),
     "tensor_scalar": McuTestCase(
         CortexMScalarMul(),
@@ -114,17 +106,7 @@ test_cases = {
 }
 
 
-xfail_cases_implementation = {
-    "self_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
-    "scalar_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
-}
-xfail_cases_dialect = xfail_cases_implementation | {
+xfail_cases_dialect = {
     # Cortex-M quantizer will not quantize multiplicaitons that require broadcasting
     # leading to the mul op not being replaced by a cortex-m specific implementation
     "broadcast_1": "Broadcasting is not supported in Cortex-M backend",
@@ -143,7 +125,10 @@ def test_dialect_mul(test_case):
     )
 
 
-@parametrize("test_case", test_cases, xfails=xfail_cases_implementation)
+@parametrize(
+    "test_case",
+    test_cases,
+)
 def test_implementation_mul(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_implementation(qtol=1)

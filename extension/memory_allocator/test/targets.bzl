@@ -15,3 +15,13 @@ def define_common_targets():
             "//executorch/extension/memory_allocator:malloc_memory_allocator",
         ],
     )
+
+    runtime.cxx_test(
+        name = "cpu_caching_malloc_allocator_test",
+        srcs = [
+            "cpu_caching_malloc_allocator_test.cpp",
+        ],
+        deps = [
+            "//executorch/extension/memory_allocator:cpu_caching_allocator",
+        ],
+    )

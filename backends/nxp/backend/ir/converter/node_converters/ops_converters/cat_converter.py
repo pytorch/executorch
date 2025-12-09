@@ -156,7 +156,9 @@ class CatConverter(NodeConverter):
         node: Node,
         partition_list: list[Partition],
         custom_delegation_options: CustomDelegationOptions,
-    ):
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+    ) -> bool:
         # There is a bug in the NeutronConverter, where if none of the input dimensions before the one referenced by
         #  `dim` are `!= 1`, the `Concat` is not delegated.
         # This only happens when the inputs to the `Concat` are model inputs, and not outputs of other

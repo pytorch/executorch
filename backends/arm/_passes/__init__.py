@@ -67,6 +67,7 @@ from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
 from .decompose_sdpa_pass import DecomposeScaledDotProductAttentionPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
+from .decompose_select_scatter_pass import DecomposeSelectScatterPass  # noqa
 from .decompose_sign_pass import DecomposeSignPass  # noqa
 from .decompose_silu_pass import DecomposeSiluPass  # noqa
 from .decompose_sinh_pass import DecomposeSinhPass  # noqa
@@ -116,5 +117,7 @@ from .size_adjust_input_pass import SizeAdjustInputPass  # noqa
 from .to_tosa_memory_format_pass import ToTosaMemoryFormatPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa
 from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass  # noqa
-from .replace_inf_values_pass import ReplaceInfValuesPass  # noqa  # usort: skip
+from .replace_inf_and_limit_values_pass import (  # noqa  # usort: skip
+    ReplaceInfAndLimitValuesPass,
+)
 from .arm_pass_manager import ArmPassManager  # noqa  # usort: skip
