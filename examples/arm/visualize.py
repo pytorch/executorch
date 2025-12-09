@@ -7,7 +7,7 @@ import argparse
 import gzip
 import io
 import json
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405
 from pathlib import Path
 
 from typing import Any, Callable, Dict, Iterable, NamedTuple, Union
@@ -35,7 +35,7 @@ def parse_tables(tables_path: Path) -> Tables:
     """
     required_tables = {"queue", "group", "perf", "source"}
     try:
-        tree = ET.parse(tables_path)
+        tree = ET.parse(tables_path)  # nosec B314
     except ET.ParseError as e:
         raise ValueError(f"Failed to parse XML tables file {tables_path}: {e}")
 

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from enum import Enum
 from typing import Optional, Tuple
 
@@ -161,6 +163,9 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         return node.target in self.memory_sensitive_ops_nhwc
 
     def requires_nchw_inputs(self, node: torch.fx.Node) -> bool:
+        if node.target == exir_ops.edge.aten.view_copy.default:
+            return True
+
         return node.target in self.memory_sensitive_ops_nchw
 
     def can_be_converted_to_nhwc(self, node: torch.fx.Node) -> bool:

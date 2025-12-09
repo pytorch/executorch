@@ -42,7 +42,6 @@ class TestCLIPTextModelWithProjection:
 
     ops_after_partitioner_INT = {
         "executorch_exir_dialects_edge__ops_aten_argmax_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_full_default": 1,
         "executorch_exir_dialects_edge__ops_aten_index_select_default": 1,
         "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": 1,
         "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,

@@ -183,7 +183,7 @@ def get_fake_quant_model(
         logging.info(program.graph.print_tabular())
 
     # Get prepared graph module
-    prepared_gm = prepare_pt2(model, inputs, quantizer, dump_graphs=dump_graphs)
+    prepared_gm = prepare_traced_pt2(program, quantizer, dump_graphs=dump_graphs)
 
     # Calibrate
     # If no calibration data is provided, use the inputs

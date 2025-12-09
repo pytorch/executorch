@@ -11,9 +11,8 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
-    TOSAQuantizer,
 )
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -22,8 +21,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa.specification import TosaSpecification
-from executorch.backends.xnnpack.test.tester import Quantize
 
 input_t1 = Tuple[torch.Tensor]  # Input x
 
@@ -157,25 +154,6 @@ def test_cat_vgf_INT(test_data: Tuple):
     pipeline.run()
 
 
-def get_symmetric_a16w8_cat_quantizer(per_channel_quantization=False):
-    tosa_version = conftest.get_option("tosa_version")
-    tosa_profiles = {
-        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
-    }
-
-    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-    quantizer.set_global(
-        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
-    )
-
-    return Quantize(
-        quantizer,
-        get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization
-        ),
-    )
-
-
 @common.parametrize("test_data", Cat.test_parameters)
 def test_cat_16a8w_tosa_INT(test_data: Tuple):
     """Test cat operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
@@ -190,12 +168,8 @@ def test_cat_16a8w_tosa_INT(test_data: Tuple):
         use_to_edge_transform_and_lower=True,
         tosa_extensions=["int16"],
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_cat_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 
@@ -214,13 +188,10 @@ def test_cat_16a8w_u55_INT16(test_data: Tuple):
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_cat_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
+
     pipeline.run()
 
 
@@ -238,11 +209,7 @@ def test_cat_16a8w_u85_INT16(test_data: Tuple):
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     )
-
-    pipeline.change_args(
-        "quantize",
-        get_symmetric_a16w8_cat_quantizer(
-            per_channel_quantization=per_channel_quantization
-        ),
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
