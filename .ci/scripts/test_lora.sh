@@ -53,7 +53,11 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
 HF_QWEN_PATH=$(python -c "from huggingface_hub import snapshot_download; print(snapshot_download('unsloth/Qwen3-0.6B'))")
 echo "Model downloaded to: $HF_QWEN_PATH"
 
+<<<<<<< HEAD
 ### BUILD LLAMA RUNNER.
+=======
+# Build llama runner.
+>>>>>>> 3c0898753d (qwen lora test)
 cmake_install_executorch_libraries
 cmake_build_llama_runner
 
