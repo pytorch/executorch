@@ -245,7 +245,7 @@ def test_upsample_nearest2d_nearest_vgf_no_quant(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_upsample_nearest2d_interpolate_vgf_no_quant(test_data: torch.Tensor):
+def test_upsample_nearest2d_interpolate_vgf_FP(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
     pipeline = VgfPipeline[input_t1](
         Interpolate(size, scale_factor),
@@ -253,6 +253,8 @@ def test_upsample_nearest2d_interpolate_vgf_no_quant(test_data: torch.Tensor):
         aten_op,
         exir_op,
         quantize=False,
+        # Override tosa version to test FP-only path
+        tosa_version="TOSA-1.0+FP",
     )
     if not compare:
         pipeline.pop_stage(-1)
@@ -293,7 +295,7 @@ def test_upsample_nearest2d_nearest_vgf_quant(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_upsample_nearest2d_interpolate_vgf_quant(test_data: torch.Tensor):
+def test_upsample_nearest2d_interpolate_vgf_INT(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
     pipeline = VgfPipeline[input_t1](
         Interpolate(size, scale_factor),
@@ -301,6 +303,8 @@ def test_upsample_nearest2d_interpolate_vgf_quant(test_data: torch.Tensor):
         aten_op,
         exir_op,
         quantize=True,
+        # Override tosa version to test INT-only path
+        tosa_version="TOSA-1.0+INT",
     )
     if not compare:
         pipeline.pop_stage(-1)
