@@ -10,10 +10,12 @@ from typing import Any, Dict, final, List
 
 import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
+from executorch.backends.cuda.passes import FuseInt4WeightOnlyQuantMatmulPass
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
 from executorch.exir._warnings import experimental
+from torch.fx.passes.dialect.common.cse_pass import CSEPass
 from executorch.exir.backend.backend_details import BackendDetails
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.decomposition import conv1d_to_conv2d
@@ -50,12 +52,26 @@ class CudaBackend(AotiBackend, BackendDetails):
     @classmethod
     def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
         """
-        Return CUDA-specific passes: ReplaceEdgeOpWithTritonOpPass.
+        Return CUDA-specific passes.
+
+        Passes include:
+        - CSEPass: Common subexpression elimination to merge duplicate preprocessing chains
+        - FuseInt4WeightOnlyQuantMatmulPass: Fuses INT4 matmul ops sharing the same input
+        - ReplaceEdgeOpWithTritonOpPass: Replaces edge ops with Triton kernels (optional)
 
         The Triton kernel replacement behavior can be controlled via compile_specs:
         - triton_kernel_mode="ON": Always use Triton kernels
         - triton_kernel_mode="OFF": Never use Triton kernels and fallback to other implementations like cuda or decomposed operator.
         """
+        # Start with CSE pass to merge duplicate preprocessing chains
+        # This enables Int4 fusion to group operations with identical preprocessing
+        passes: List[typing.Any] = [CSEPass()]
+
+        # Fuse INT4 weight-only quantized matmul operations
+        # Reduces kernel launch overhead by fusing Q/K/V and Gate/Up projections
+        # REQUIRES: CSE pass to have run first (to merge preprocessing)
+        passes.append(FuseInt4WeightOnlyQuantMatmulPass())
+
         # Parse compile_specs for triton_kernel_mode
         triton_kernel_mode = "ON"  # Default mode
         for spec in compile_specs:
@@ -68,7 +84,10 @@ class CudaBackend(AotiBackend, BackendDetails):
                     )
                 triton_kernel_mode = mode
 
-        return [ReplaceEdgeOpWithTritonOpPass()] if triton_kernel_mode == "ON" else []
+        if triton_kernel_mode == "ON":
+            passes.append(ReplaceEdgeOpWithTritonOpPass())
+
+        return passes
 
     @classmethod
     def get_aoti_compile_options(

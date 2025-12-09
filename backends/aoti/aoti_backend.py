@@ -19,8 +19,10 @@ from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import ExportedProgram, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.program._program import _update_exported_program_graph_module
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch.export.passes import move_to_device_pass
+from torch.fx.passes.infra.pass_base import PassResult
 
 
 class COMPILE_SPEC_KEYS(Enum):
@@ -156,7 +158,40 @@ class AotiBackend(ABC):
         # Apply custom backend-specific passes
         custom_passes = cls.get_custom_passes(compile_specs)
         for custom_pass in custom_passes:
-            custom_pass(device_edge_program.graph_module)
+            result = custom_pass(device_edge_program.graph_module)
+            # Handle passes that return PassResult with a new graph_module
+            if isinstance(result, PassResult) and result.modified:
+                # Use a permissive verifier that allows all operator types including
+                # edge ops and custom triton ops. The default verifier only allows
+                # torch._ops.OpOverload and HigherOrderOperator, but edge dialect
+                # uses EdgeOpOverload, triton ops may use OpOverloadPacket or CustomOpDef.
+                from executorch.exir.dialects.edge._ops import EdgeOpOverload
+                from torch._export.verifier import Verifier
+                from torch._library.custom_ops import CustomOpDef
+                from torch._ops import (
+                    HigherOrderOperator,
+                    OpOverload,
+                    OpOverloadPacket,
+                )
+
+                class _PermissiveVerifier(Verifier):
+                    dialect = "EDGE"
+
+                    def allowed_op_types(self):
+                        return (
+                            OpOverload,
+                            OpOverloadPacket,
+                            HigherOrderOperator,
+                            EdgeOpOverload,
+                            CustomOpDef,
+                        )
+
+                    def check_valid_op(self, op):
+                        pass  # Allow all ops
+
+                device_edge_program = _update_exported_program_graph_module(
+                    device_edge_program, result.graph_module, override_verifiers=[_PermissiveVerifier]
+                )
 
         # Run decompositions if any
         if decomposition_table:
