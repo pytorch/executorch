@@ -90,7 +90,7 @@ ivec4 load_weight_block(
     const int Kw,
     const int Kh,
     const int OC4) {
-#ifdef PACKED_INT8_WEIGHTS_BUFFER
+#ifdef WEIGHT_BUFFER
   const int block_x = oc4 * Kw + kx;
   const int block_y = ky * IC4 + ic4;
   return t_packed_int8_weight[block_y * (Kw * OC4) + block_x];

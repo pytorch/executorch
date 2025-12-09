@@ -442,11 +442,7 @@ ValueRef prepack_quantized_conv2d_weight(
 
   std::vector<int64_t> packed_weight_sizes{output_height, output_width};
 
-  utils::StorageType storage_type = utils::kTexture2D;
-  uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
-  if (output_width > max_extent * 4 || output_height > max_extent) {
-    storage_type = utils::kBuffer;
-  }
+  utils::StorageType storage_type = utils::kBuffer;
 
   ValueRef packed_weight = graph.add_tensor(
       packed_weight_sizes,
