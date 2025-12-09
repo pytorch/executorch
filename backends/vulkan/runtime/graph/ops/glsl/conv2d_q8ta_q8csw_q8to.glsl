@@ -82,12 +82,7 @@ void main() {
     return;
   }
 
-  const int out_w = mul_4(out_block_idx.data.x);
-  const int w_start =
-      (out_w * conv2d_params.stride.x) - conv2d_params.padding.x;
-  const int w_end = ((out_w + 3) * conv2d_params.stride.x) -
-      conv2d_params.padding.x +
-      (conv2d_params.kernel_size.x - 1) * conv2d_params.dilation.x;
+  const int out_x_start = mul_4(out_block_idx.data.x);
 
   Conv2dBlockExtents in_block_extents = make_block_extents(input_sizes);
 
@@ -99,24 +94,29 @@ void main() {
 
   const int IC4_per_group = div_up_4(conv2d_params.in_channels_per_group);
 
-  const int n = mul_4(out_block_idx.data.z);
-  const int group_idx = n / conv2d_params.out_channels_per_group;
+  const int out_z = mul_4(out_block_idx.data.z);
+  const int group_idx = out_z / conv2d_params.out_channels_per_group;
   const int group_ic4_offset = group_idx * IC4_per_group;
 
   for (int ky = 0; ky < conv2d_params.kernel_size.y; ky++) {
-    const int h = out_block_idx.data.y * conv2d_params.stride.y -
+    const int in_y = out_block_idx.data.y * conv2d_params.stride.y -
         conv2d_params.padding.y + ky * conv2d_params.dilation.y;
 
-    for (int ic4 = 0; ic4 < IC4_per_group; ic4++) {
-      Int8InputWindow1D int8_input_window = load_input_window(
-          w_start,
-          w_end,
-          h,
-          group_ic4_offset + ic4,
-          in_block_extents,
-          input_zps);
+    for (int kx = 0; kx < conv2d_params.kernel_size.x; kx++) {
+      int in_x_load_start =
+          (out_x_start * conv2d_params.stride.x)
+          - conv2d_params.padding.x
+          + (kx * conv2d_params.dilation.x);
 
-      for (int kx = 0; kx < conv2d_params.kernel_size.x; kx++) {
+      int in_x_load_end =
+          ((out_x_start + 3) * conv2d_params.stride.x)
+          - conv2d_params.padding.x
+          + (kx * conv2d_params.dilation.x);
+
+      in_x_load_start = align_down_4(in_x_load_start);
+      in_x_load_end = align_down_4(in_x_load_end);
+
+      for (int ic4 = 0; ic4 < IC4_per_group; ic4++) {
         const ivec4 weight_block = load_weight_block(
             ic4,
             kx,
@@ -127,7 +127,22 @@ void main() {
             conv2d_params.kernel_size.y,
             out_block_extents.data.z);
 
-        perform_conv1d(out_accum, int8_input_window, weight_block, kx);
+        for (int in_x = in_x_load_start; in_x <= in_x_load_end; in_x+=4) {
+          const ivec4 in_block = load_input_block(
+              div_4(in_x),
+              in_y,
+              group_ic4_offset + ic4,
+              in_block_extents,
+              input_zps);
+
+          conv1d_accumulate(
+              out_accum,
+              in_block,
+              weight_block,
+              kx,
+              out_x_start,
+              in_x);
+        }
       }
     }
   }

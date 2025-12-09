@@ -44,6 +44,24 @@ bool in_bounds(
   return true;
 }
 
+ivec4 load_input_block(
+    const int in_x4,
+    const int in_y,
+    const int ic4,
+    const Conv2dBlockExtents in_block_extents,
+    const ivec4 input_zps) {
+  if (!in_bounds(in_x4, in_y, ic4, in_block_extents)) {
+    return input_zps;
+  }
+#ifdef PACKED_INT8_INPUT_BUFFER
+  const int buffer_idx =
+      in_y * in_block_extents.data_xz + in_x4 * in_block_extents.data.z + ic4;
+  return t_packed_int8_input[buffer_idx];
+#else
+  return texelFetch(t_packed_int8_input, ivec3(in_x4, in_y, ic4), 0);
+#endif
+}
+
 Int8InputWindow1D load_input_window(
     const int w_start,
     const int w_end,
@@ -100,6 +118,34 @@ ivec4 load_weight_block(
 #endif
 }
 
+void conv1d_accumulate(
+    inout Int32Accum accum,
+    const ivec4 in_block,
+    const ivec4 weight_block,
+    const int kx,
+    const int out_x_start,
+    const int in_x_start) {
+  [[unroll]] for (int out_x = 0; out_x < 4; ++out_x) {
+    int in_x_offset = (out_x_start + out_x) * conv2d_params.stride.x
+        - conv2d_params.padding.x
+        + (kx * conv2d_params.dilation.x);
+    in_x_offset -= in_x_start;
+
+    const bool in_bounds = in_x_offset >= 0 && in_x_offset < 4;
+
+    [[unroll]] for (int oc = 0; oc < 4; ++oc) {
+      int updated = accum.data[out_x][0][oc];
+      if (in_bounds) {
+        updated = dotPacked4x8AccSatEXT(
+            in_block[in_x_offset],
+            weight_block[oc],
+            updated);
+      }
+      accum.data[out_x][0][oc] = updated;
+    }
+  }
+}
+
 void perform_conv1d(
     inout Int32Accum accum,
     const Int8InputWindow1D input_window,
@@ -136,6 +182,20 @@ void printWeightBlock(const ivec4 weight_block) {
   debugPrintfEXT("WeightBlock contents: \\n");
   for (int i = 0; i < 4; ++i) {
     ivec4 unpacked = unpack_int8x4(weight_block[i]);
+    debugPrintfEXT(
+        "  [%d]: (%d, %d, %d, %d) \\n",
+        i,
+        unpacked.x,
+        unpacked.y,
+        unpacked.z,
+        unpacked.w);
+  }
+}
+
+void printInputBlock(const ivec4 input_block) {
+  debugPrintfEXT("InputBlock contents: \\n");
+  for (int i = 0; i < 4; ++i) {
+    ivec4 unpacked = unpack_int8x4(input_block[i]);
     debugPrintfEXT(
         "  [%d]: (%d, %d, %d, %d) \\n",
         i,
