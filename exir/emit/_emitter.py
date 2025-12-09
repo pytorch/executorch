@@ -1185,29 +1185,6 @@ class _Emitter(torch.fx.Interpreter):
         """
         specs = self.node.meta["spec"]
 
-        # For map and scan operations, the stacked output tensors are built up
-        # incrementally via et_copy_index. These tensors need to be marked as
-        # DYNAMIC_BOUND to allow resizing during execution, even if their shape
-        # appears static.
-        if target is torch.ops.higher_order.map_impl:
-            # Map stacks all outputs, so all output specs need DYNAMIC_BOUND
-            def mark_dynamic_bounded(spec: TensorSpec) -> TensorSpec:
-                spec.shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
-                return spec
-
-            specs = pytree.tree_map(mark_dynamic_bounded, specs)
-
-        elif target is torch.ops.higher_order.scan:
-            # Scan has (carry_outputs, y_outputs). Only y_outputs are stacked
-            # and need DYNAMIC_BOUND. carry_outputs keep their original dynamism.
-            init = args[1]
-            num_carry = len(init) if isinstance(init, (list, tuple)) else 1
-
-            flat_specs, spec_tree = pytree.tree_flatten(specs)
-            for i in range(num_carry, len(flat_specs)):
-                flat_specs[i].shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
-            specs = pytree.tree_unflatten(flat_specs, spec_tree)
-
         subemitter_binding_output_values = pytree.tree_map(
             lambda spec: self._emit_spec(spec),
             specs,
