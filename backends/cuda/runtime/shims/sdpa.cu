@@ -1,3 +1,5 @@
+
+
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
@@ -9,8 +11,12 @@
 #include <cublas_v2.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <atomic>
 #include <cfloat>
 #include <cmath>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/shims/sdpa.h>
@@ -20,9 +26,515 @@
 
 namespace executorch::backends::cuda {
 
+// ============================================================================
+// CUDA Error Tracking Infrastructure
+// ============================================================================
+
+// Global counter for tracking CUDA operations
+static std::atomic<int> g_cuda_op_counter{0};
+
+/**
+ * Check for CUDA errors at a specific point in code
+ * This helper function:
+ * 1. Calls cudaGetLastError() to retrieve and CLEAR any pending error
+ * 2. Prints detailed information about where the error occurred
+ * 3. Returns true if an error was found
+ *
+ * IMPORTANT: cudaGetLastError() both retrieves AND clears the error,
+ * so calling it multiple times will only report the error once.
+ */
+inline bool
+check_cuda_error_at(const char* file, int line, const char* operation) {
+  cudaError_t err = cudaGetLastError();
+  if (err != cudaSuccess) {
+    int op_id = g_cuda_op_counter.fetch_add(1);
+    printf("\n🔴 [CUDA ERROR #%d] at %s:%d\n", op_id, file, line);
+    printf("   Operation: %s\n", operation);
+    printf("   Error code: %d\n", static_cast<int>(err));
+    printf("   Error name: %s\n", cudaGetErrorName(err));
+    printf("   Error string: %s\n", cudaGetErrorString(err));
+    printf("\n");
+    fflush(stdout);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Synchronize and check for asynchronous errors
+ * This is more thorough - it waits for all GPU operations to complete
+ * and then checks for errors that may have occurred during execution.
+ */
+inline bool sync_and_check_cuda_error_at(
+    const char* file,
+    int line,
+    const char* operation) {
+  // First, synchronize to ensure all async operations complete
+  cudaError_t sync_err = cudaDeviceSynchronize();
+  if (sync_err != cudaSuccess) {
+    int op_id = g_cuda_op_counter.fetch_add(1);
+    printf("\n🔴 [CUDA SYNC ERROR #%d] at %s:%d\n", op_id, file, line);
+    printf("   Operation: %s\n", operation);
+    printf("   Sync error code: %d\n", static_cast<int>(sync_err));
+    printf("   Sync error name: %s\n", cudaGetErrorName(sync_err));
+    printf("   Sync error string: %s\n", cudaGetErrorString(sync_err));
+    printf("\n");
+    fflush(stdout);
+    return true;
+  }
+
+  // Then check for any pending errors
+  return check_cuda_error_at(file, line, operation);
+}
+
+// Macros for easy use
+#define CHECK_CUDA_ERROR_WITH_MSG(msg)                             \
+  {                                                                \
+    cudaError_t pre_err = cudaGetLastError();                      \
+    if (pre_err != cudaSuccess) {                                  \
+      printf(                                                      \
+          "⚠️  WARNING: Pre-existing CUDA error: %s with msg %s\n", \
+          cudaGetErrorString(pre_err),                             \
+          msg);                                                    \
+      fflush(stdout);                                              \
+      return nullptr;                                              \
+    }                                                              \
+  }
+
+#define SYNC_CHECK_CUDA_ERROR(operation) \
+  sync_and_check_cuda_error_at(__FILE__, __LINE__, operation)
+
+/**
+ * Clear any pending CUDA errors and report what was cleared
+ * Use this at the start of a function to start with a clean slate
+ */
+inline void clear_cuda_errors(const char* context) {
+  cudaError_t err = cudaGetLastError();
+  if (err != cudaSuccess) {
+    printf("\n⚠️  [CLEARED CUDA ERROR] in %s\n", context);
+    printf(
+        "   Cleared error: %s (%s)\n",
+        cudaGetErrorName(err),
+        cudaGetErrorString(err));
+    printf("   This error was inherited from a previous operation.\n");
+    printf("   Stack trace would be needed to find the original source.\n\n");
+    fflush(stdout);
+  }
+}
+
+// ============================================================================
+// Tensor Logging Infrastructure for Debugging
+// ============================================================================
+
+// Global counter for tracking kernel invocations
+static std::atomic<int> g_kernel_call_counter{0};
+
+/**
+ * Helper function to save tensor data to disk for debugging
+ *
+ * Saves tensor in a format that can be easily read from Python:
+ * - metadata.txt: Contains shape, strides, dtype info
+ * - data.bin: Raw binary data
+ *
+ * IMPORTANT: This function is for debugging only. It may introduce
+ * CUDA errors if the tensor pointer is invalid or if there are
+ * pre-existing CUDA errors. Consider disabling logging in production.
+ */
+template <typename scalar_t>
+bool save_tensor_to_file(
+    const std::string& base_path,
+    const std::string& tensor_name,
+    const scalar_t* data_ptr,
+    const std::vector<int64_t>& shape,
+    const std::vector<int64_t>& strides,
+    cudaStream_t stream) {
+  // Validate input pointer
+  if (data_ptr == nullptr) {
+    printf("  [SKIP] %s: data_ptr is nullptr\n", tensor_name.c_str());
+    fflush(stdout);
+    return false;
+  }
+
+  // Calculate total number of elements
+  int64_t total_elements = 1;
+  for (auto s : shape) {
+    total_elements *= s;
+  }
+
+  if (total_elements <= 0) {
+    printf(
+        "  [SKIP] %s: total_elements=%ld <= 0\n",
+        tensor_name.c_str(),
+        total_elements);
+    fflush(stdout);
+    return false;
+  }
+
+  // For very large tensors, skip to avoid memory issues
+  const int64_t MAX_ELEMENTS = 100 * 1024 * 1024; // 100M elements max
+  if (total_elements > MAX_ELEMENTS) {
+    printf(
+        "  [SKIP] %s: too large (%ld elements > %ld max)\n",
+        tensor_name.c_str(),
+        total_elements,
+        MAX_ELEMENTS);
+    fflush(stdout);
+    // Still save metadata
+    std::ofstream meta_file(base_path + "/" + tensor_name + "_meta.txt");
+    meta_file << "shape: ";
+    for (size_t i = 0; i < shape.size(); ++i) {
+      meta_file << shape[i];
+      if (i < shape.size() - 1)
+        meta_file << ",";
+    }
+    meta_file << "\n";
+    meta_file << "strides: ";
+    for (size_t i = 0; i < strides.size(); ++i) {
+      meta_file << strides[i];
+      if (i < strides.size() - 1)
+        meta_file << ",";
+    }
+    meta_file << "\n";
+    meta_file << "dtype: " << typeid(scalar_t).name() << "\n";
+    meta_file << "dtype_size: " << sizeof(scalar_t) << "\n";
+    meta_file << "skipped: true (too large)\n";
+    meta_file.close();
+    return true;
+  }
+
+  // Allocate host memory
+  std::vector<scalar_t> host_data;
+  try {
+    host_data.resize(total_elements);
+  } catch (const std::bad_alloc& e) {
+    printf(
+        "  [ERROR] %s: failed to allocate host memory for %ld elements\n",
+        tensor_name.c_str(),
+        total_elements);
+    fflush(stdout);
+    return false;
+  }
+
+  // Use synchronous copy to avoid async error propagation issues
+  // This is safer for debugging, though slower
+  cudaError_t err = cudaMemcpy(
+      host_data.data(),
+      data_ptr,
+      total_elements * sizeof(scalar_t),
+      cudaMemcpyDeviceToHost);
+
+  if (err != cudaSuccess) {
+    printf(
+        "  [ERROR] %s: cudaMemcpy failed: %s (code %d)\n",
+        tensor_name.c_str(),
+        cudaGetErrorString(err),
+        static_cast<int>(err));
+    printf(
+        "         data_ptr=%p, size=%ld bytes\n",
+        (void*)data_ptr,
+        total_elements * sizeof(scalar_t));
+    fflush(stdout);
+    // Clear the error so it doesn't propagate
+    cudaGetLastError();
+    return false;
+  }
+
+  // Save metadata
+  std::ofstream meta_file(base_path + "/" + tensor_name + "_meta.txt");
+  meta_file << "shape: ";
+  for (size_t i = 0; i < shape.size(); ++i) {
+    meta_file << shape[i];
+    if (i < shape.size() - 1)
+      meta_file << ",";
+  }
+  meta_file << "\n";
+
+  meta_file << "strides: ";
+  for (size_t i = 0; i < strides.size(); ++i) {
+    meta_file << strides[i];
+    if (i < strides.size() - 1)
+      meta_file << ",";
+  }
+  meta_file << "\n";
+
+  meta_file << "dtype: " << typeid(scalar_t).name() << "\n";
+  meta_file << "dtype_size: " << sizeof(scalar_t) << "\n";
+  meta_file.close();
+
+  // Save binary data
+  std::ofstream data_file(
+      base_path + "/" + tensor_name + "_data.bin", std::ios::binary);
+  data_file.write(
+      reinterpret_cast<const char*>(host_data.data()),
+      total_elements * sizeof(scalar_t));
+  data_file.close();
+
+  printf("  [OK] Saved %s (shape: ", tensor_name.c_str());
+  for (size_t i = 0; i < shape.size(); ++i) {
+    printf("%ld", shape[i]);
+    if (i < shape.size() - 1)
+      printf("x");
+  }
+  printf(", %ld elements)\n", total_elements);
+  fflush(stdout);
+
+  return true;
+}
+
+/**
+ * Helper to save Tensor object to file
+ */
+template <typename scalar_t>
+bool save_tensor_object_to_file(
+    const std::string& base_path,
+    const std::string& tensor_name,
+    const Tensor* tensor,
+    cudaStream_t stream) {
+  // Validate tensor pointer
+  if (tensor == nullptr) {
+    printf("  [SKIP] %s: tensor is nullptr\n", tensor_name.c_str());
+    fflush(stdout);
+    return false;
+  }
+
+  std::vector<int64_t> shape;
+  std::vector<int64_t> strides;
+
+  int dim = tensor->dim();
+  if (dim <= 0 || dim > 10) {
+    printf("  [SKIP] %s: invalid dim=%d\n", tensor_name.c_str(), dim);
+    fflush(stdout);
+    return false;
+  }
+
+  for (int i = 0; i < dim; ++i) {
+    shape.push_back(tensor->size(i));
+    strides.push_back(tensor->strides()[i]);
+  }
+
+  const scalar_t* data_ptr =
+      reinterpret_cast<const scalar_t*>(tensor->data_ptr());
+  return save_tensor_to_file(
+      base_path, tensor_name, data_ptr, shape, strides, stream);
+}
+
+/**
+ * Log kernel invocation inputs (before kernel call)
+ * Returns the call_id and base_path for later output logging
+ *
+ * NOTE: Set SDPA_DISABLE_LOGGING=1 environment variable to disable logging
+ */
+template <typename scalar_t>
+std::pair<int, std::string> log_kernel_call_inputs(
+    const std::string& kernel_name,
+    const Tensor* query,
+    const Tensor* key,
+    const Tensor* value,
+    const Tensor* attn_bias,
+    float scale_factor,
+    bool is_causal,
+    cudaStream_t stream) {
+  int call_id = g_kernel_call_counter.fetch_add(1);
+  std::string base_path = "";
+
+  // Check if logging is disabled
+  static bool logging_disabled = (getenv("SDPA_DISABLE_LOGGING") != nullptr);
+  if (logging_disabled) {
+    return std::make_pair(call_id, base_path);
+  }
+
+  // Clear any pre-existing CUDA errors before logging
+  // This prevents error propagation into the logging code
+  cudaError_t pre_err = cudaGetLastError();
+  if (pre_err != cudaSuccess) {
+    printf(
+        "\n⚠️  [LOG WARNING] Pre-existing CUDA error before logging: %s\n",
+        cudaGetErrorString(pre_err));
+    printf("   Logging may fail or produce incorrect results.\n");
+    fflush(stdout);
+  }
+
+  // Create directory for this call
+  std::stringstream ss;
+  ss << "/tmp/sdpa_debug_" << std::setfill('0') << std::setw(4) << call_id;
+  base_path = ss.str();
+
+  // Create directory
+  std::string mkdir_cmd = "mkdir -p " + base_path;
+  int ret = system(mkdir_cmd.c_str());
+  if (ret != 0) {
+    printf("\n[LOG ERROR] Failed to create directory %s\n", base_path.c_str());
+    fflush(stdout);
+    return std::make_pair(call_id, "");
+  }
+
+  printf(
+      "\n=== Logging %s call #%d INPUTS to %s ===\n",
+      kernel_name.c_str(),
+      call_id,
+      base_path.c_str());
+  fflush(stdout);
+
+  // Save metadata
+  std::ofstream meta_file(base_path + "/call_info.txt");
+  if (meta_file.is_open()) {
+    meta_file << "kernel_name: " << kernel_name << "\n";
+    meta_file << "call_id: " << call_id << "\n";
+    meta_file << "scale_factor: " << std::setprecision(10) << scale_factor
+              << "\n";
+    meta_file << "is_causal: " << (is_causal ? "true" : "false") << "\n";
+    if (query) {
+      meta_file << "dtype: " << static_cast<int>(query->dtype()) << "\n";
+    }
+    meta_file.close();
+  }
+
+  // Save input tensors (with error checking)
+  save_tensor_object_to_file<scalar_t>(base_path, "query", query, stream);
+  save_tensor_object_to_file<scalar_t>(base_path, "key", key, stream);
+  save_tensor_object_to_file<scalar_t>(base_path, "value", value, stream);
+
+  if (attn_bias != nullptr) {
+    save_tensor_object_to_file<scalar_t>(
+        base_path, "attn_bias", attn_bias, stream);
+  }
+
+  // Check if logging introduced any CUDA errors
+  cudaError_t post_err = cudaGetLastError();
+  if (post_err != cudaSuccess) {
+    printf(
+        "\n⚠️  [LOG WARNING] CUDA error occurred during logging: %s\n",
+        cudaGetErrorString(post_err));
+    printf(
+        "   This error has been cleared and will not affect kernel execution.\n");
+    fflush(stdout);
+  }
+
+  printf("=== Finished logging INPUTS for call #%d ===\n\n", call_id);
+  fflush(stdout);
+
+  return std::make_pair(call_id, base_path);
+}
+
+/**
+ * Log kernel invocation output (after kernel call)
+ */
+template <typename scalar_t>
+void log_kernel_call_output(
+    int call_id,
+    const std::string& base_path,
+    const Tensor* output,
+    cudaStream_t stream) {
+  // Check if logging is disabled or base_path is empty
+  static bool logging_disabled = (getenv("SDPA_DISABLE_LOGGING") != nullptr);
+  if (logging_disabled || base_path.empty()) {
+    return;
+  }
+
+  printf(
+      "\n=== Logging call #%d OUTPUT to %s ===\n", call_id, base_path.c_str());
+  fflush(stdout);
+
+  // Save output tensor
+  save_tensor_object_to_file<scalar_t>(base_path, "output", output, stream);
+
+  // Clear any CUDA errors from logging
+  cudaError_t err = cudaGetLastError();
+  if (err != cudaSuccess) {
+    printf(
+        "  [LOG WARNING] CUDA error during output logging: %s (cleared)\n",
+        cudaGetErrorString(err));
+    fflush(stdout);
+  }
+
+  printf("=== Finished logging OUTPUT for call #%d ===\n\n", call_id);
+  fflush(stdout);
+}
+
 using executorch::backends::aoti::AOTITorchError;
 using executorch::backends::aoti::Tensor;
 using executorch::runtime::Error;
+
+// ============================================================================
+// Input Validation Kernels - Check for Inf/NaN
+// ============================================================================
+
+/**
+ * Kernel to check if a tensor contains any inf or NaN values
+ * Sets flag to 1 if any invalid value is found
+ */
+template <typename scalar_t>
+__global__ void check_for_inf_nan_kernel(
+    const scalar_t* data,
+    const int64_t size,
+    int* has_invalid) {
+  const int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (idx < size) {
+    float val = static_cast<float>(data[idx]);
+    if (isinf(val) || isnan(val)) {
+      atomicExch(has_invalid, 1);
+    }
+  }
+}
+
+/**
+ * Host function to check if tensor contains inf or NaN values
+ * Returns true if tensor contains invalid values
+ */
+template <typename scalar_t>
+bool check_tensor_for_inf_nan(
+    const Tensor* tensor,
+    const char* tensor_name,
+    cudaStream_t stream) {
+  // Calculate total size
+  int64_t total_size = 1;
+  for (int i = 0; i < tensor->dim(); ++i) {
+    total_size *= tensor->size(i);
+  }
+
+  // Allocate flag on device
+  int* d_has_invalid = nullptr;
+  cudaMalloc(&d_has_invalid, sizeof(int));
+  cudaMemset(d_has_invalid, 0, sizeof(int));
+
+  // Launch kernel to check for inf/nan
+  const int threads_per_block = 256;
+  const int num_blocks =
+      (total_size + threads_per_block - 1) / threads_per_block;
+
+  const scalar_t* data_ptr =
+      reinterpret_cast<const scalar_t*>(tensor->data_ptr());
+
+  check_for_inf_nan_kernel<scalar_t>
+      <<<num_blocks, threads_per_block, 0, stream>>>(
+          data_ptr, total_size, d_has_invalid);
+
+  // Copy result back to host
+  int h_has_invalid = 0;
+  cudaMemcpy(
+      &h_has_invalid, d_has_invalid, sizeof(int), cudaMemcpyDeviceToHost);
+  cudaFree(d_has_invalid);
+
+  if (h_has_invalid) {
+    printf(
+        "\n⚠️  [SDPA ERROR] Tensor '%s' contains Inf or NaN values!\n",
+        tensor_name);
+    printf("  Shape: [");
+    for (int i = 0; i < tensor->dim(); ++i) {
+      printf("%ld", tensor->size(i));
+      if (i < tensor->dim() - 1)
+        printf(", ");
+    }
+    printf("]\n");
+    printf("  Total elements: %ld\n", total_size);
+    printf("  This will cause kernel launch failure!\n\n");
+    fflush(stdout);
+    return true;
+  }
+
+  return false;
+}
 
 // ============================================================================
 // CUDA Kernels for Softmax and Masking
@@ -518,6 +1030,8 @@ Tensor* sdpa_flash_attention_impl(
       &output);
 
   if (output == nullptr) {
+    printf("[FLASH ATTN ERROR] Failed to allocate output tensor\n");
+    fflush(stdout);
     ET_LOG(Error, "sdpa_flash_attention: Failed to allocate output tensor");
     return nullptr;
   }
@@ -536,6 +1050,243 @@ Tensor* sdpa_flash_attention_impl(
   const scalar_t* v_ptr = reinterpret_cast<const scalar_t*>(value->data_ptr());
   scalar_t* out_ptr = reinterpret_cast<scalar_t*>(output->data_ptr());
 
+  // //
+  // ============================================================================
+  // // DEBUG: Print all kernel launch parameters
+  // //
+  // ============================================================================
+  // printf("\n=== FLASH ATTENTION KERNEL LAUNCH DEBUG ===\n");
+
+  // // Print tensor metadata
+  // printf("\nQuery Tensor:\n");
+  // printf("  ptr: %p\n", (void*)q_ptr);
+  // printf(
+  //     "  shape: [%ld, %ld, %ld, %ld]\n", batch, num_heads, seq_len_q,
+  //     head_dim);
+  // printf(
+  //     "  dtype: %d (size=%zu bytes)\n",
+  //     static_cast<int>(query->dtype()),
+  //     sizeof(scalar_t));
+  // printf(
+  //     "  strides: [%d, %d, %d, %d]\n",
+  //     query->strides()[0],
+  //     query->strides()[1],
+  //     query->strides()[2],
+  //     query->strides()[3]);
+  // printf("  total_elements: %ld\n", batch * num_heads * seq_len_q *
+  // head_dim);
+
+  // printf("\nKey Tensor:\n");
+  // printf("  ptr: %p\n", (void*)k_ptr);
+  // printf(
+  //     "  shape: [%ld, %ld, %ld, %ld]\n", batch, num_heads, seq_len_k,
+  //     head_dim);
+  // printf(
+  //     "  dtype: %d (size=%zu bytes)\n",
+  //     static_cast<int>(key->dtype()),
+  //     sizeof(scalar_t));
+  // printf(
+  //     "  strides: [%d, %d, %d, %d]\n",
+  //     key->strides()[0],
+  //     key->strides()[1],
+  //     key->strides()[2],
+  //     key->strides()[3]);
+  // printf("  total_elements: %ld\n", batch * num_heads * seq_len_k *
+  // head_dim);
+
+  // printf("\nValue Tensor:\n");
+  // printf("  ptr: %p\n", (void*)v_ptr);
+  // printf(
+  //     "  shape: [%ld, %ld, %ld, %ld]\n",
+  //     batch,
+  //     num_heads,
+  //     seq_len_k,
+  //     head_dim_v);
+  // printf(
+  //     "  dtype: %d (size=%zu bytes)\n",
+  //     static_cast<int>(value->dtype()),
+  //     sizeof(scalar_t));
+  // printf(
+  //     "  strides: [%d, %d, %d, %d]\n",
+  //     value->strides()[0],
+  //     value->strides()[1],
+  //     value->strides()[2],
+  //     value->strides()[3]);
+  // printf("  total_elements: %ld\n", batch * num_heads * seq_len_k *
+  // head_dim_v);
+
+  // printf("\nOutput Tensor:\n");
+  // printf("  ptr: %p\n", (void*)out_ptr);
+  // printf(
+  //     "  shape: [%ld, %ld, %ld, %ld]\n",
+  //     batch,
+  //     num_heads,
+  //     seq_len_q,
+  //     head_dim_v);
+  // printf(
+  //     "  dtype: %d (size=%zu bytes)\n",
+  //     static_cast<int>(output->dtype()),
+  //     sizeof(scalar_t));
+  // printf(
+  //     "  expected_strides: [%ld, %ld, %ld, %ld]\n",
+  //     output_stride[0],
+  //     output_stride[1],
+  //     output_stride[2],
+  //     output_stride[3]);
+  // printf("  total_elements: %ld\n", batch * num_heads * seq_len_q *
+  // head_dim_v);
+
+  // // Print scalar parameters
+  // printf("\nScalar Parameters:\n");
+  // printf("  seq_len_q: %ld\n", seq_len_q);
+  // printf("  seq_len_k: %ld\n", seq_len_k);
+  // printf("  head_dim: %ld\n", head_dim);
+  // printf("  head_dim_v: %ld\n", head_dim_v);
+  // printf("  scale_factor: %.10f\n", scale_factor);
+  // printf("  is_causal: %d\n", is_causal);
+
+  // // Print grid/block configuration
+  // printf("\nKernel Configuration:\n");
+  // printf("  BLOCK_SIZE: %d\n", BLOCK_SIZE);
+  // printf("  grid: (%d, %ld, %ld)\n", 1, q_blocks, batch_head_count);
+  // printf("  block: (%d, 1, 1)\n", 256);
+  // printf("  shared_mem_size: %zu bytes\n", shared_mem_size);
+  // printf("  stream: %p\n", (void*)stream);
+
+  // // Print derived values
+  // printf("\nDerived Values:\n");
+  // printf("  batch: %ld\n", batch);
+  // printf("  num_heads: %ld\n", num_heads);
+  // printf("  q_blocks: %ld\n", q_blocks);
+  // printf("  batch_head_count: %ld\n", batch_head_count);
+
+  // // Check for potential issues
+  // printf("\nValidation Checks:\n");
+  // bool has_issues = false;
+
+  // if (q_ptr == nullptr) {
+  //   printf("  ✗ ERROR: query pointer is NULL!\n");
+  //   has_issues = true;
+  // } else {
+  //   printf("  ✓ query pointer is valid\n");
+  // }
+
+  // if (k_ptr == nullptr) {
+  //   printf("  ✗ ERROR: key pointer is NULL!\n");
+  //   has_issues = true;
+  // } else {
+  //   printf("  ✓ key pointer is valid\n");
+  // }
+
+  // if (v_ptr == nullptr) {
+  //   printf("  ✗ ERROR: value pointer is NULL!\n");
+  //   has_issues = true;
+  // } else {
+  //   printf("  ✓ value pointer is valid\n");
+  // }
+
+  // if (out_ptr == nullptr) {
+  //   printf("  ✗ ERROR: output pointer is NULL!\n");
+  //   has_issues = true;
+  // } else {
+  //   printf("  ✓ output pointer is valid\n");
+  // }
+
+  // if (head_dim_v > 64) {
+  //   printf(
+  //       "  ✗ WARNING: head_dim_v=%ld > 64 (max supported by kernel)\n",
+  //       head_dim_v);
+  //   has_issues = true;
+  // } else {
+  //   printf("  ✓ head_dim_v=%ld is within supported range\n", head_dim_v);
+  // }
+
+  // if (head_dim > 128) {
+  //   printf("  ✗ WARNING: head_dim=%ld > 128 (recommended max)\n", head_dim);
+  // } else {
+  //   printf("  ✓ head_dim=%ld is within recommended range\n", head_dim);
+  // }
+
+  // if (shared_mem_size > 48 * 1024) {
+  //   printf(
+  //       "  ✗ WARNING: shared_mem_size=%zu > 48KB (may fail on some GPUs)\n",
+  //       shared_mem_size);
+  //   has_issues = true;
+  // } else {
+  //   printf("  ✓ shared_mem_size=%zu is reasonable\n", shared_mem_size);
+  // }
+
+  // if (has_issues) {
+  //   printf("\n⚠️  POTENTIAL ISSUES DETECTED - see above\n");
+  // } else {
+  //   printf("\n✓ All validation checks passed\n");
+  // }
+
+  // printf("\n===========================================\n\n");
+  // fflush(stdout);
+
+  // //
+  // ============================================================================
+  // // Check for Inf/NaN in input tensors
+  // //
+  // ============================================================================
+  // printf("Checking input tensors for Inf/NaN values...\n");
+  // fflush(stdout);
+
+  // bool has_inf_nan = false;
+
+  // if (query->dtype() == executorch::aten::ScalarType::Float) {
+  //   has_inf_nan |= check_tensor_for_inf_nan<float>(query, "Query", stream);
+  //   has_inf_nan |= check_tensor_for_inf_nan<float>(key, "Key", stream);
+  //   has_inf_nan |= check_tensor_for_inf_nan<float>(value, "Value", stream);
+  // } else if (query->dtype() == executorch::aten::ScalarType::Half) {
+  //   has_inf_nan |= check_tensor_for_inf_nan<__half>(query, "Query", stream);
+  //   has_inf_nan |= check_tensor_for_inf_nan<__half>(key, "Key", stream);
+  //   has_inf_nan |= check_tensor_for_inf_nan<__half>(value, "Value", stream);
+  // } else if (query->dtype() == executorch::aten::ScalarType::BFloat16) {
+  //   has_inf_nan |=
+  //       check_tensor_for_inf_nan<__nv_bfloat16>(query, "Query", stream);
+  //   has_inf_nan |= check_tensor_for_inf_nan<__nv_bfloat16>(key, "Key",
+  //   stream); has_inf_nan |=
+  //       check_tensor_for_inf_nan<__nv_bfloat16>(value, "Value", stream);
+  // }
+
+  // if (has_inf_nan) {
+  //   printf("\n❌ [FATAL] Input tensors contain Inf or NaN values!\n");
+  //   printf(
+  //       "   This WILL cause kernel launch failure with 'invalid argument'
+  //       error.\n");
+  //   printf("   Aborting Flash Attention kernel launch.\n\n");
+  //   fflush(stdout);
+
+  //   aoti_torch_delete_tensor_object(output);
+  //   ET_LOG(
+  //       Error, "sdpa_flash_attention: Input tensors contain Inf or NaN
+  //       values");
+  //   return nullptr;
+  // }
+
+  // printf("✓ All input tensors are valid (no Inf/NaN detected)\n\n");
+  // fflush(stdout);
+
+  // ============================================================================
+  // DEBUG LOGGING: Log inputs before kernel call
+  // ============================================================================
+  // auto log_info = log_kernel_call_inputs<scalar_t>(
+  //     "flash_attention",
+  //     query,
+  //     key,
+  //     value,
+  //     attn_mask, // Will be nullptr for flash attention
+  //     scale_factor,
+  //     is_causal,
+  //     stream);
+  // int call_id = log_info.first;
+  // std::string base_path = log_info.second;
+
+  // ============================================================================
+  // Launch kernel
+  // ============================================================================
   flash_attention_kernel<scalar_t, BLOCK_SIZE>
       <<<grid, block, shared_mem_size, stream>>>(
           q_ptr,
@@ -551,6 +1302,10 @@ Tensor* sdpa_flash_attention_impl(
 
   cudaError_t cuda_err = cudaGetLastError();
   if (cuda_err != cudaSuccess) {
+    printf(
+        "[FLASH ATTN ERROR] Kernel launch failed: %s\n",
+        cudaGetErrorString(cuda_err));
+    fflush(stdout);
     ET_LOG(
         Error,
         "sdpa_flash_attention: Kernel launch failed: %s",
@@ -558,6 +1313,14 @@ Tensor* sdpa_flash_attention_impl(
     aoti_torch_delete_tensor_object(output);
     return nullptr;
   }
+
+  // //
+  // ============================================================================
+  // // DEBUG LOGGING: Log output after kernel call
+  // //
+  // ============================================================================
+  // log_kernel_call_output<scalar_t>(call_id, base_path, output, stream);
+
   return output;
 }
 
@@ -639,7 +1402,7 @@ __global__ void efficient_attention_kernel(
     const int64_t head_dim,
     const int64_t head_dim_v,
     const float scale,
-    const bool is_causal,
+    const int is_causal,
     // Query strides [batch, head, seq, dim]
     const int64_t q_stride_batch,
     const int64_t q_stride_head,
@@ -710,11 +1473,23 @@ __global__ void efficient_attention_kernel(
   float max_score = -FLT_MAX;
   float sum_exp = 0.0f;
 
+  // Online softmax algorithm for numerical stability
+  // Reference: "Online normalizer calculation for softmax" (Algorithm 3)
+  // from "Self-attention Does Not Need O(n²) Memory" paper
+  //
+  // The algorithm maintains:
+  // - max_score: running maximum of all scores seen so far
+  // - sum_exp: sum of exp(score_i - max_score) for all i seen so far
+  // - output_acc: weighted sum of values, properly rescaled
+  //
+  // When we see a new score that changes the max, we need to rescale
+  // all previous contributions by exp(old_max - new_max)
   for (int64_t k_idx = 0; k_idx < seq_len_k; ++k_idx) {
     if (is_causal && k_idx > q_idx) {
       continue;
     }
 
+    // Compute attention score: Q·K^T
     float score = 0.0f;
     for (int64_t d = 0; d < head_dim; ++d) {
       float q_val =
@@ -725,29 +1500,39 @@ __global__ void efficient_attention_kernel(
     }
     score *= scale;
 
-    // Add bias if provided
-    // Note: bias_stride_k should be 1, and we're indexing along the last
-    // dimension
+    // Add attention bias if provided (additive mask)
+    // Note: bias_stride_k should be 1 for contiguous last dimension
     if (bias_base != nullptr) {
       float bias_val = static_cast<float>(bias_base[k_idx * bias_stride_k]);
       score += bias_val;
     }
 
+    // Online softmax update - critical section for numerical stability
     float new_max = fmaxf(max_score, score);
     float exp_correction = expf(max_score - new_max);
 
+    // IMPORTANT: Compute exp_score only once to avoid numerical differences
+    // Previous bug: expf(score - new_max) was computed twice, which could
+    // lead to different rounding in FP arithmetic, causing incorrect results
+    float exp_score = expf(score - new_max);
+
+    // Step 1: Rescale all previous accumulators by exp(old_max - new_max)
+    // This maintains the invariant that all values are normalized relative
+    // to the current maximum
     for (int64_t d = 0; d < head_dim_v && d < MAX_HEAD_DIM_V; ++d) {
       output_acc[d] *= exp_correction;
     }
-    sum_exp = sum_exp * exp_correction + expf(score - new_max);
+    sum_exp *= exp_correction;
 
-    float exp_score = expf(score - new_max);
+    // Step 2: Add current contribution using the already-computed exp_score
+    sum_exp += exp_score;
     for (int64_t d = 0; d < head_dim_v && d < MAX_HEAD_DIM_V; ++d) {
       float v_val =
           static_cast<float>(v_base[k_idx * v_stride_seq + d * v_stride_dim]);
       output_acc[d] += exp_score * v_val;
     }
 
+    // Update max for next iteration
     max_score = new_max;
   }
 
@@ -770,6 +1555,9 @@ Tensor* sdpa_efficient_attention_impl(
     bool is_causal,
     float scale_factor,
     cudaStream_t stream) {
+  // printf("Running sdpa_efficient_attention_impl...\n");
+  // // Clear any previous CUDA errors before launch
+  // CHECK_CUDA_ERROR_WITH_MSG("sdpa_efficient_attention_impl");
   const int64_t batch = query->size(0);
   const int64_t num_heads = query->size(1);
   const int64_t seq_len_q = query->size(2);
@@ -797,9 +1585,13 @@ Tensor* sdpa_efficient_attention_impl(
       &output);
 
   if (output == nullptr) {
+    printf("sdpa_efficient_attention: Failed to allocate output tensor\n");
+    fflush(stdout);
     ET_LOG(Error, "sdpa_efficient_attention: Failed to allocate output tensor");
     return nullptr;
   }
+
+  // CHECK_CUDA_ERROR_WITH_MSG("Line 1420");
 
   const int64_t batch_head_count = batch * num_heads;
   const int threads_per_block = 128;
@@ -824,82 +1616,81 @@ Tensor* sdpa_efficient_attention_impl(
     bias_ptr = reinterpret_cast<const scalar_t*>(attn_bias->data_ptr());
 
     int64_t bias_dim = attn_bias->dim();
-    printf("  attn_bias: ptr=%p, dim=%ld\n", (void*)bias_ptr, bias_dim);
-    fflush(stdout);
-
-    if (bias_dim == 4) {
-      // Handle attention bias with shape [batch, num_heads, seq_len_q,
-      // seq_len_k] or broadcastable variants
-      auto bias_strides = attn_bias->strides();
-      auto bias_sizes = attn_bias->sizes();
-
-      // Extract sizes safely
-      int64_t bias_size_0 = bias_sizes[0];
-      int64_t bias_size_1 = bias_sizes[1];
-      int64_t bias_size_2 = bias_sizes[2];
-      int64_t bias_size_3 = bias_sizes[3];
-
-      // Extract strides safely
-      int64_t bias_stride_0 = bias_strides[0];
-      int64_t bias_stride_1 = bias_strides[1];
-      int64_t bias_stride_2 = bias_strides[2];
-      int64_t bias_stride_3 = bias_strides[3];
-
+    // printf("  attn_bias: ptr=%p, dim=%ld\n", (void*)bias_ptr, bias_dim);
+    // fflush(stdout);
+    if (bias_dim != 4) {
       printf(
-          "  bias dim=4, sizes=[%ld, %ld, %ld, %ld], strides=[%ld, %ld, %ld, %ld]\n",
-          bias_size_0,
-          bias_size_1,
-          bias_size_2,
-          bias_size_3,
-          bias_stride_0,
-          bias_stride_1,
-          bias_stride_2,
-          bias_stride_3);
+          "sdpa_efficient_attention: Attention bias larger than 0 is not supported\n");
       fflush(stdout);
-
-      bias_stride_batch = bias_stride_0;
-      bias_stride_head = bias_stride_1;
-      bias_stride_q = bias_stride_2;
-      bias_stride_k = bias_stride_3;
-    } else {
-      printf(
-          "  WARNING: attn_bias has unexpected dim=%ld (expected 4) tried to print its top 4 size and stride to see the value\n",
-          bias_dim);
-      fflush(stdout);
-
-      bias_dim = 4;
-
-      // Try to handle 1D or other dimensions
-      auto bias_strides = attn_bias->strides();
-      auto bias_sizes = attn_bias->sizes();
-      printf("  bias_sizes: ");
-      for (int64_t i = 0; i < bias_dim; ++i) {
-        printf("%d ", bias_sizes[i]);
-      }
-      printf("\n  bias_strides: ");
-      for (int64_t i = 0; i < bias_dim; ++i) {
-        printf("%d ", bias_strides[i]);
-      }
-      printf("\n");
-      fflush(stdout);
-      exit(1);
+      ET_LOG(
+          Error,
+          "sdpa_efficient_attention: Attention bias larger than 0 is not supported\n");
+      return nullptr;
     }
+
+    // Handle attention bias with shape [batch, num_heads, seq_len_q,
+    // seq_len_k] or broadcastable variants
+    auto bias_strides = attn_bias->strides();
+    auto bias_sizes = attn_bias->sizes();
+
+    // Extract sizes safely
+    int64_t bias_size_0 = bias_sizes[0];
+    int64_t bias_size_1 = bias_sizes[1];
+    int64_t bias_size_2 = bias_sizes[2];
+    int64_t bias_size_3 = bias_sizes[3];
+
+    // Extract strides safely
+    int64_t bias_stride_0 = bias_strides[0];
+    int64_t bias_stride_1 = bias_strides[1];
+    int64_t bias_stride_2 = bias_strides[2];
+    int64_t bias_stride_3 = bias_strides[3];
+
+    // printf(
+    //     "  bias dim=4, sizes=[%ld, %ld, %ld, %ld], strides=[%ld, %ld, %ld,
+    //     %ld]\n", bias_size_0, bias_size_1, bias_size_2, bias_size_3,
+    //     bias_stride_0,
+    //     bias_stride_1,
+    //     bias_stride_2,
+    //     bias_stride_3);
+    // fflush(stdout);
+
+    bias_stride_batch = bias_stride_0;
+    bias_stride_head = bias_stride_1;
+    bias_stride_q = bias_stride_2;
+    bias_stride_k = bias_stride_3;
   }
 
-  // Debug: Print query tensor info
-  auto query_strides = query->strides();
-  auto key_strides = key->strides();
-  auto value_strides = value->strides();
+  // CHECK_CUDA_ERROR_WITH_MSG("Line 1507");
 
-  printf("Launching efficient_attention_kernel:\n");
-  printf(
-      "  batch=%ld, num_heads=%ld, seq_len_q=%ld, seq_len_k=%ld, head_dim=%ld, head_dim_v=%ld\n",
-      batch,
-      num_heads,
-      seq_len_q,
-      seq_len_k,
-      head_dim,
-      head_dim_v);
+  // Debug: Print query tensor info
+  auto query_strides_raw = query->strides();
+  auto key_strides_raw = key->strides();
+  auto value_strides_raw = value->strides();
+
+  // Convert strides from int32_t to int64_t for kernel
+  int64_t query_strides[4] = {
+      static_cast<int64_t>(query_strides_raw[0]),
+      static_cast<int64_t>(query_strides_raw[1]),
+      static_cast<int64_t>(query_strides_raw[2]),
+      static_cast<int64_t>(query_strides_raw[3])};
+  int64_t key_strides[4] = {
+      static_cast<int64_t>(key_strides_raw[0]),
+      static_cast<int64_t>(key_strides_raw[1]),
+      static_cast<int64_t>(key_strides_raw[2]),
+      static_cast<int64_t>(key_strides_raw[3])};
+  int64_t value_strides[4] = {
+      static_cast<int64_t>(value_strides_raw[0]),
+      static_cast<int64_t>(value_strides_raw[1]),
+      static_cast<int64_t>(value_strides_raw[2]),
+      static_cast<int64_t>(value_strides_raw[3])};
+
+  // printf("Launching efficient_attention_kernel:\n");
+  // printf(
+  //     "  batch=%ld, num_heads=%ld, seq_len_q=%ld, seq_len_k=%ld,
+  //     head_dim=%ld, head_dim_v=%ld\n", batch, num_heads, seq_len_q,
+  //     seq_len_k,
+  //     head_dim,
+  //     head_dim_v);
   // printf(
   //     "  query_strides=[%ld, %ld, %ld, %ld]\n",
   //     query_strides[0],
@@ -921,119 +1712,376 @@ Tensor* sdpa_efficient_attention_impl(
   // auto key_strides = key->strides();
   // auto value_strides = value->strides();
 
-  printf("\n=== Efficient Attention Kernel Launch Details ===\n");
-  printf("Tensor Dimensions:\n");
-  printf(
-      "  batch=%ld, num_heads=%ld, seq_len_q=%ld, seq_len_k=%ld\n",
-      batch,
-      num_heads,
-      seq_len_q,
-      seq_len_k);
-  printf("  head_dim=%ld, head_dim_v=%ld\n", head_dim, head_dim_v);
+  // printf("\n=== Efficient Attention Kernel Launch Details ===\n");
+  // printf("Tensor Dimensions:\n");
+  // printf(
+  //     "  batch=%ld, num_heads=%ld, seq_len_q=%ld, seq_len_k=%ld\n",
+  //     batch,
+  //     num_heads,
+  //     seq_len_q,
+  //     seq_len_k);
+  // printf("  head_dim=%ld, head_dim_v=%ld\n", head_dim, head_dim_v);
 
-  printf(
-      "\nQuery Tensor (shape: [%ld, %ld, %ld, %ld]):\n",
-      batch,
-      num_heads,
-      seq_len_q,
-      head_dim);
-  printf(
-      "  strides=[%d, %d, %d, %d]\n",
-      query_strides[0],
-      query_strides[1],
-      query_strides[2],
-      query_strides[3]);
+  // printf(
+  //     "\nQuery Tensor (shape: [%ld, %ld, %ld, %ld]):\n",
+  //     batch,
+  //     num_heads,
+  //     seq_len_q,
+  //     head_dim);
+  // printf(
+  //     "  strides=[%ld, %ld, %ld, %ld] (converted from int32_t to int64_t)\n",
+  //     query_strides[0],
+  //     query_strides[1],
+  //     query_strides[2],
+  //     query_strides[3]);
 
-  printf(
-      "\nKey Tensor (shape: [%ld, %ld, %ld, %ld]):\n",
-      batch,
-      num_heads,
-      seq_len_k,
-      head_dim);
-  printf(
-      "  strides=[%d, %d, %d, %d]\n",
-      key_strides[0],
-      key_strides[1],
-      key_strides[2],
-      key_strides[3]);
+  // printf(
+  //     "\nKey Tensor (shape: [%ld, %ld, %ld, %ld]):\n",
+  //     batch,
+  //     num_heads,
+  //     seq_len_k,
+  //     head_dim);
+  // printf(
+  //     "  strides=[%ld, %ld, %ld, %ld] (converted from int32_t to int64_t)\n",
+  //     key_strides[0],
+  //     key_strides[1],
+  //     key_strides[2],
+  //     key_strides[3]);
 
-  printf(
-      "\nValue Tensor (shape: [%ld, %ld, %ld, %ld]):\n",
-      batch,
-      num_heads,
-      seq_len_k,
-      head_dim_v);
-  printf(
-      "  strides=[%d, %d, %d, %d]\n",
-      value_strides[0],
-      value_strides[1],
-      value_strides[2],
-      value_strides[3]);
+  // printf(
+  //     "\nValue Tensor (shape: [%ld, %ld, %ld, %ld]):\n",
+  //     batch,
+  //     num_heads,
+  //     seq_len_k,
+  //     head_dim_v);
+  // printf(
+  //     "  strides=[%ld, %ld, %ld, %ld] (converted from int32_t to int64_t)\n",
+  //     value_strides[0],
+  //     value_strides[1],
+  //     value_strides[2],
+  //     value_strides[3]);
 
-  if (attn_bias != nullptr) {
-    auto bias_sizes = attn_bias->sizes();
-    printf("\nAttention Bias Tensor (shape: [");
-    for (int64_t i = 0; i < attn_bias->dim(); ++i) {
-      printf("%d", bias_sizes[i]);
-      if (i < attn_bias->dim() - 1)
-        printf(", ");
-    }
-    printf("]):\n");
-    printf("  bias_ptr=%p\n", (void*)bias_ptr);
-    printf(
-        "  strides=[batch:%ld, head:%ld, q:%ld, k:%ld]\n",
-        bias_stride_batch,
-        bias_stride_head,
-        bias_stride_q,
-        bias_stride_k);
-  } else {
-    printf("\nAttention Bias: None (nullptr)\n");
-  }
+  // if (attn_bias != nullptr) {
+  //   auto bias_sizes = attn_bias->sizes();
+  //   printf("\nAttention Bias Tensor (shape: [");
+  //   for (int64_t i = 0; i < attn_bias->dim(); ++i) {
+  //     printf("%d", bias_sizes[i]);
+  //     if (i < attn_bias->dim() - 1)
+  //       printf(", ");
+  //   }
+  //   printf("]):\n");
+  //   printf("  bias_ptr=%p\n", (void*)bias_ptr);
+  //   printf(
+  //       "  strides=[batch:%ld, head:%ld, q:%ld, k:%ld]\n",
+  //       bias_stride_batch,
+  //       bias_stride_head,
+  //       bias_stride_q,
+  //       bias_stride_k);
+  //   printf("  dtype: %d\n", static_cast<int>(attn_bias->dtype()));
+  // } else {
+  //   printf("\nAttention Bias: None (nullptr)\n");
+  // }
 
-  printf("\nKernel Configuration:\n");
-  printf("  scale_factor=%.6f\n", scale_factor);
-  printf("  is_causal=%d\n", is_causal);
-  printf(
-      "  grid=(%ld, %ld, 1) [batch_head_count=%ld, q_blocks=%ld]\n",
-      batch_head_count,
-      q_blocks,
-      batch_head_count,
-      q_blocks);
-  printf(
-      "  block=(%d, 1, 1) [threads_per_block=%d]\n",
-      threads_per_block,
-      threads_per_block);
+  // printf("\nKernel Configuration:\n");
+  // printf("  scale_factor=%.6f\n", scale_factor);
+  // printf("  is_causal=%d\n", is_causal);
+  // printf(
+  //     "  grid=(%ld, %ld, 1) [batch_head_count=%ld, q_blocks=%ld]\n",
+  //     batch_head_count,
+  //     q_blocks,
+  //     batch_head_count,
+  //     q_blocks);
+  // printf(
+  //     "  block=(%d, 1, 1) [threads_per_block=%d]\n",
+  //     threads_per_block,
+  //     threads_per_block);
 
-  // Verify that Q/K/V are contiguous in the batch_head*seq*dim layout
-  bool q_is_contiguous =
-      (query_strides[0] == num_heads * seq_len_q * head_dim) &&
-      (query_strides[1] == seq_len_q * head_dim) &&
-      (query_strides[2] == head_dim) && (query_strides[3] == 1);
-  bool k_is_contiguous = (key_strides[0] == num_heads * seq_len_k * head_dim) &&
-      (key_strides[1] == seq_len_k * head_dim) &&
-      (key_strides[2] == head_dim) && (key_strides[3] == 1);
-  bool v_is_contiguous =
-      (value_strides[0] == num_heads * seq_len_k * head_dim_v) &&
-      (value_strides[1] == seq_len_k * head_dim_v) &&
-      (value_strides[2] == head_dim_v) && (value_strides[3] == 1);
+  // // Verify that Q/K/V are contiguous in the batch_head*seq*dim layout
+  // bool q_is_contiguous =
+  //     (query_strides[0] == num_heads * seq_len_q * head_dim) &&
+  //     (query_strides[1] == seq_len_q * head_dim) &&
+  //     (query_strides[2] == head_dim) && (query_strides[3] == 1);
+  // bool k_is_contiguous = (key_strides[0] == num_heads * seq_len_k * head_dim)
+  // &&
+  //     (key_strides[1] == seq_len_k * head_dim) &&
+  //     (key_strides[2] == head_dim) && (key_strides[3] == 1);
+  // bool v_is_contiguous =
+  //     (value_strides[0] == num_heads * seq_len_k * head_dim_v) &&
+  //     (value_strides[1] == seq_len_k * head_dim_v) &&
+  //     (value_strides[2] == head_dim_v) && (value_strides[3] == 1);
 
-  printf("\nMemory Layout Check:\n");
-  printf("  Q is contiguous: %s\n", q_is_contiguous ? "YES" : "NO");
-  printf("  K is contiguous: %s\n", k_is_contiguous ? "YES" : "NO");
-  printf("  V is contiguous: %s\n", v_is_contiguous ? "YES" : "NO");
+  // printf("\nMemory Layout Check:\n");
+  // printf("  Q is contiguous: %s\n", q_is_contiguous ? "YES" : "NO");
+  // printf("  K is contiguous: %s\n", k_is_contiguous ? "YES" : "NO");
+  // printf("  V is contiguous: %s\n", v_is_contiguous ? "YES" : "NO");
 
-  if (!q_is_contiguous || !k_is_contiguous || !v_is_contiguous) {
-    printf(
-        "  WARNING: Non-contiguous tensor detected! Kernel will use stride-based indexing.\n");
-  }
-  printf("==============================================\n\n");
-  fflush(stdout);
+  // if (!q_is_contiguous || !k_is_contiguous || !v_is_contiguous) {
+  //   printf(
+  //       "  WARNING: Non-contiguous tensor detected! Kernel will use
+  //       stride-based indexing.\n");
+  // }
+  // printf("==============================================\n\n");
+  // fflush(stdout);
+
+  // //
+  // ============================================================================
+  // // Check for Inf/NaN in input tensors
+  // //
+  // ============================================================================
+  // printf("Checking input tensors for Inf/NaN values...\n");
+  // fflush(stdout);
+
+  // CHECK_CUDA_ERROR_WITH_MSG("Line 1676");
+
+  // bool has_inf_nan = false;
+
+  // if (query->dtype() == executorch::aten::ScalarType::Float) {
+  //   has_inf_nan |= check_tensor_for_inf_nan<float>(query, "Query", stream);
+  //   has_inf_nan |= check_tensor_for_inf_nan<float>(key, "Key", stream);
+  //   has_inf_nan |= check_tensor_for_inf_nan<float>(value, "Value", stream);
+  //   // if (attn_bias != nullptr) {
+  //   //   has_inf_nan |=
+  //   //       check_tensor_for_inf_nan<float>(attn_bias, "AttnBias", stream);
+  //   // }
+  // } else if (query->dtype() == executorch::aten::ScalarType::Half) {
+  //   has_inf_nan |= check_tensor_for_inf_nan<__half>(query, "Query", stream);
+  //   has_inf_nan |= check_tensor_for_inf_nan<__half>(key, "Key", stream);
+  //   has_inf_nan |= check_tensor_for_inf_nan<__half>(value, "Value", stream);
+  //   // if (attn_bias != nullptr) {
+  //   //   has_inf_nan |=
+  //   //       check_tensor_for_inf_nan<__half>(attn_bias, "AttnBias", stream);
+  //   // }
+  // } else if (query->dtype() == executorch::aten::ScalarType::BFloat16) {
+  //   has_inf_nan |=
+  //       check_tensor_for_inf_nan<__nv_bfloat16>(query, "Query", stream);
+  //   has_inf_nan |= check_tensor_for_inf_nan<__nv_bfloat16>(key, "Key",
+  //   stream); has_inf_nan |=
+  //       check_tensor_for_inf_nan<__nv_bfloat16>(value, "Value", stream);
+  //   // if (attn_bias != nullptr) {
+  //   //   has_inf_nan |= check_tensor_for_inf_nan<__nv_bfloat16>(
+  //   //       attn_bias, "AttnBias", stream);
+  //   // }
+  // }
+
+  // if (has_inf_nan) {
+  //   printf("\n❌ [FATAL] Input tensors contain Inf or NaN values!\n");
+  //   printf(
+  //       "   This WILL cause kernel launch failure with 'invalid argument'
+  //       error.\n");
+  //   printf("   Aborting Efficient Attention kernel launch.\n\n");
+  //   fflush(stdout);
+
+  //   aoti_torch_delete_tensor_object(output);
+  //   ET_LOG(
+  //       Error,
+  //       "sdpa_efficient_attention: Input tensors contain Inf or NaN values");
+  //   return nullptr;
+  // }
+
+  // printf("✓ All input tensors are valid (no Inf/NaN detected)\n\n");
+  // fflush(stdout);
+
+  // CHECK_CUDA_ERROR_WITH_MSG("Line 1725");
+
+  // //
+  // ============================================================================
+  // // DEBUG LOGGING: Log inputs before kernel call
+  // //
+  // ============================================================================
+  // auto log_info = log_kernel_call_inputs<scalar_t>(
+  //     "efficient_attention",
+  //     query,
+  //     key,
+  //     value,
+  //     attn_bias,
+  //     scale_factor,
+  //     is_causal,
+  //     stream);
+
+  // CHECK_CUDA_ERROR_WITH_MSG("Line 1740");
+  // int call_id = log_info.first;
+  // std::string base_path = log_info.second;
 
   // Output strides (always contiguous)
   int64_t o_stride_batch = num_heads * seq_len_q * head_dim_v;
   int64_t o_stride_head = seq_len_q * head_dim_v;
   int64_t o_stride_seq = head_dim_v;
   int64_t o_stride_dim = 1;
+
+  // //
+  // ============================================================================
+  // // DETAILED PARAMETER DUMP - Print all parameters that will be passed to
+  // // kernel
+  // //
+  // ============================================================================
+  // printf("\n=== KERNEL PARAMETER DUMP ===\n");
+  // printf("Pointer arguments:\n");
+  // printf("  q_ptr=%p\n", (void*)q_ptr);
+  // printf("  k_ptr=%p\n", (void*)k_ptr);
+  // printf("  v_ptr=%p\n", (void*)v_ptr);
+  // printf("  bias_ptr=%p\n", (void*)bias_ptr);
+  // printf("  out_ptr=%p\n", (void*)out_ptr);
+
+  // printf("\nDimension arguments (int64_t):\n");
+  // printf("  num_heads=%ld (0x%lx)\n", num_heads, num_heads);
+  // printf("  seq_len_q=%ld (0x%lx)\n", seq_len_q, seq_len_q);
+  // printf("  seq_len_k=%ld (0x%lx)\n", seq_len_k, seq_len_k);
+  // printf("  head_dim=%ld (0x%lx)\n", head_dim, head_dim);
+  // printf("  head_dim_v=%ld (0x%lx)\n", head_dim_v, head_dim_v);
+
+  // printf("\nScale and flags:\n");
+  // printf("  scale_factor=%.10f\n", scale_factor);
+  // printf("  is_causal=%d\n", is_causal);
+
+  // printf("\nQuery strides (int64_t):\n");
+  // printf("  q_stride_batch=%ld (0x%lx)\n", query_strides[0],
+  // query_strides[0]); printf("  q_stride_head=%ld (0x%lx)\n",
+  // query_strides[1], query_strides[1]); printf("  q_stride_seq=%ld (0x%lx)\n",
+  // query_strides[2], query_strides[2]); printf("  q_stride_dim=%ld (0x%lx)\n",
+  // query_strides[3], query_strides[3]);
+
+  // printf("\nKey strides (int64_t):\n");
+  // printf("  k_stride_batch=%ld (0x%lx)\n", key_strides[0], key_strides[0]);
+  // printf("  k_stride_head=%ld (0x%lx)\n", key_strides[1], key_strides[1]);
+  // printf("  k_stride_seq=%ld (0x%lx)\n", key_strides[2], key_strides[2]);
+  // printf("  k_stride_dim=%ld (0x%lx)\n", key_strides[3], key_strides[3]);
+
+  // printf("\nValue strides (int64_t):\n");
+  // printf("  v_stride_batch=%ld (0x%lx)\n", value_strides[0],
+  // value_strides[0]); printf("  v_stride_head=%ld (0x%lx)\n",
+  // value_strides[1], value_strides[1]); printf("  v_stride_seq=%ld (0x%lx)\n",
+  // value_strides[2], value_strides[2]); printf("  v_stride_dim=%ld (0x%lx)\n",
+  // value_strides[3], value_strides[3]);
+
+  // printf("\nOutput strides (int64_t):\n");
+  // printf("  o_stride_batch=%ld (0x%lx)\n", o_stride_batch, o_stride_batch);
+  // printf("  o_stride_head=%ld (0x%lx)\n", o_stride_head, o_stride_head);
+  // printf("  o_stride_seq=%ld (0x%lx)\n", o_stride_seq, o_stride_seq);
+  // printf("  o_stride_dim=%ld (0x%lx)\n", o_stride_dim, o_stride_dim);
+
+  // printf("\nBias strides (int64_t):\n");
+  // printf(
+  //     "  bias_stride_batch=%ld (0x%lx)\n",
+  //     bias_stride_batch,
+  //     bias_stride_batch);
+  // printf(
+  //     "  bias_stride_head=%ld (0x%lx)\n", bias_stride_head,
+  //     bias_stride_head);
+  // printf("  bias_stride_q=%ld (0x%lx)\n", bias_stride_q, bias_stride_q);
+  // printf("  bias_stride_k=%ld (0x%lx)\n", bias_stride_k, bias_stride_k);
+
+  // printf("\nParameter count: %d arguments total\n", 29);
+  // printf("===========================\n\n");
+  // fflush(stdout);
+
+  // CHECK_CUDA_ERROR_WITH_MSG("Line 1809");
+
+  // //
+  // ============================================================================
+  // // DTYPE VALIDATION: Check that attn_bias has the same dtype as Q/K/V
+  // //
+  // ============================================================================
+  // if (attn_bias != nullptr) {
+  //   auto query_dtype = query->dtype();
+  //   auto bias_dtype = attn_bias->dtype();
+  //   if (query_dtype != bias_dtype) {
+  //     printf("\n❌ [CRITICAL ERROR] dtype mismatch detected!\n");
+  //     printf("   Query dtype: %d\n", static_cast<int>(query_dtype));
+  //     printf("   AttnBias dtype: %d\n", static_cast<int>(bias_dtype));
+  //     printf("   (Float=6, Half=5, BFloat16=15)\n");
+  //     printf("   This WILL cause 'invalid argument' error!\n");
+  //     printf(
+  //         "   The kernel assumes attn_bias has the same dtype as
+  //         Q/K/V.\n\n");
+  //     fflush(stdout);
+
+  //     ET_LOG(
+  //         Error,
+  //         "sdpa_efficient_attention: attn_bias dtype (%d) does not match
+  //         query dtype (%d)", static_cast<int>(bias_dtype),
+  //         static_cast<int>(query_dtype));
+  //     aoti_torch_delete_tensor_object(output);
+  //     return nullptr;
+  //   }
+  // }
+
+  // //
+  // ============================================================================
+  // // PRE-LAUNCH VALIDATION: Check CUDA device properties and kernel
+  // requirements
+  // //
+  // ============================================================================
+  // {
+  //   int device_id = 0;
+  //   cudaGetDevice(&device_id);
+  //   cudaDeviceProp prop;
+  //   cudaGetDeviceProperties(&prop, device_id);
+
+  //   printf("\n=== CUDA Device Validation ===\n");
+  //   printf("Device: %s (SM %d.%d)\n", prop.name, prop.major, prop.minor);
+  //   printf("Max threads per block: %d\n", prop.maxThreadsPerBlock);
+  //   printf(
+  //       "Max grid dimensions: [%d, %d, %d]\n",
+  //       prop.maxGridSize[0],
+  //       prop.maxGridSize[1],
+  //       prop.maxGridSize[2]);
+  //   printf("Shared memory per block: %zu bytes\n", prop.sharedMemPerBlock);
+
+  //   // Validate grid dimensions
+  //   if (batch_head_count > prop.maxGridSize[0]) {
+  //     printf(
+  //         "❌ ERROR: grid.x (%ld) exceeds max (%d)\n",
+  //         batch_head_count,
+  //         prop.maxGridSize[0]);
+  //     fflush(stdout);
+  //     return nullptr;
+  //   }
+  //   if (q_blocks > prop.maxGridSize[1]) {
+  //     printf(
+  //         "❌ ERROR: grid.y (%ld) exceeds max (%d)\n",
+  //         q_blocks,
+  //         prop.maxGridSize[1]);
+  //     fflush(stdout);
+  //     return nullptr;
+  //   }
+
+  //   // Validate block dimensions
+  //   if (threads_per_block > prop.maxThreadsPerBlock) {
+  //     printf(
+  //         "❌ ERROR: block size (%d) exceeds max (%d)\n",
+  //         threads_per_block,
+  //         prop.maxThreadsPerBlock);
+  //     fflush(stdout);
+  //     return nullptr;
+  //   }
+
+  //   printf("================================\n\n");
+  //   fflush(stdout);
+  // }
+
+  // // Clear any previous CUDA errors before launch
+  // cudaError_t pre_err = cudaGetLastError();
+  // if (pre_err != cudaSuccess) {
+  //   printf(
+  //       "⚠️  WARNING: Pre-existing CUDA error before kernel launch: %s\n",
+  //       cudaGetErrorString(pre_err));
+  //   fflush(stdout);
+  //   return nullptr;
+  // }
+
+  // printf(
+  //     "About to launch kernel with MAX_HEAD_DIM_V=%d...\n",
+  //     head_dim_v <= 64 ? 64 : 128);
+  // printf("  scalar_t size: %zu bytes\n", sizeof(scalar_t));
+  // printf(
+  //     "  Template instantiation: efficient_attention_kernel<%s, %d>\n",
+  //     sizeof(scalar_t) == 4
+  //         ? "float"
+  //         : (sizeof(scalar_t) == 2 ? "half/bfloat16" : "unknown"),
+  //     head_dim_v <= 64 ? 64 : 128);
+  // fflush(stdout);
+
+  // CHECK_CUDA_ERROR_WITH_MSG("Line 1910");
 
   if (head_dim_v <= 64) {
     efficient_attention_kernel<scalar_t, 64><<<grid, block, 0, stream>>>(
@@ -1117,6 +2165,10 @@ Tensor* sdpa_efficient_attention_impl(
 
   cudaError_t cuda_err = cudaGetLastError();
   if (cuda_err != cudaSuccess) {
+    printf(
+        "efficient_attention_kernel failed to launch: %s\n",
+        cudaGetErrorString(cuda_err));
+    fflush(stdout);
     ET_LOG(
         Error,
         "sdpa_efficient_attention: Kernel launch failed: %s",
@@ -1127,17 +2179,26 @@ Tensor* sdpa_efficient_attention_impl(
 
   // Synchronize to check for kernel execution errors
   cuda_err = cudaStreamSynchronize(stream);
-  if (cuda_err != cudaSuccess) {
-    ET_LOG(
-        Error,
-        "sdpa_efficient_attention: Kernel execution failed: %s",
-        cudaGetErrorString(cuda_err));
-    aoti_torch_delete_tensor_object(output);
-    return nullptr;
-  }
+  // if (cuda_err != cudaSuccess) {
+  //   printf("cudaStreamSynchronize failed to execute\n");
+  //   fflush(stdout);
+  //   ET_LOG(
+  //       Error,
+  //       "sdpa_efficient_attention: Kernel execution failed: %s",
+  //       cudaGetErrorString(cuda_err));
+  //   aoti_torch_delete_tensor_object(output);
+  //   return nullptr;
+  // }
 
-  printf("efficient_attention_kernel completed successfully\n");
-  fflush(stdout);
+  // printf("efficient_attention_kernel completed successfully\n");
+  // fflush(stdout);
+
+  // //
+  // ============================================================================
+  // // DEBUG LOGGING: Log output after kernel call
+  // //
+  // ============================================================================
+  // log_kernel_call_output<scalar_t>(call_id, base_path, output, stream);
 
   return output;
 }
@@ -1155,25 +2216,26 @@ Tensor* sdpa_efficient_attention(
     cudaStream_t stream) {
   auto dtype = query->dtype();
 
-  if (dtype == executorch::aten::ScalarType::Float) {
-    return sdpa_efficient_attention_impl<float>(
-        query,
-        key,
-        value,
-        attn_bias,
-        is_causal,
-        static_cast<float>(scale_factor),
-        stream);
-  } else if (dtype == executorch::aten::ScalarType::Half) {
-    return sdpa_efficient_attention_impl<__half>(
-        query,
-        key,
-        value,
-        attn_bias,
-        is_causal,
-        static_cast<float>(scale_factor),
-        stream);
-  } else if (dtype == executorch::aten::ScalarType::BFloat16) {
+  // if (dtype == executorch::aten::ScalarType::Float) {
+  //   return sdpa_efficient_attention_impl<float>(
+  //       query,
+  //       key,
+  //       value,
+  //       attn_bias,
+  //       is_causal,
+  //       static_cast<float>(scale_factor),
+  //       stream);
+  // } else if (dtype == executorch::aten::ScalarType::Half) {
+  //   return sdpa_efficient_attention_impl<__half>(
+  //       query,
+  //       key,
+  //       value,
+  //       attn_bias,
+  //       is_causal,
+  //       static_cast<float>(scale_factor),
+  //       stream);
+  // } else
+  if (dtype == executorch::aten::ScalarType::BFloat16) {
     return sdpa_efficient_attention_impl<__nv_bfloat16>(
         query,
         key,
@@ -1183,6 +2245,9 @@ Tensor* sdpa_efficient_attention(
         static_cast<float>(scale_factor),
         stream);
   } else {
+    printf(
+        "sdpa_efficient_attention: Unsupported dtype %d\n",
+        static_cast<int>(dtype));
     ET_LOG(Error, "sdpa_efficient_attention: Unsupported dtype");
     return nullptr;
   }
@@ -1599,6 +2664,8 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
     Tensor** ret6) { // debug_attn_mask (nullptr for inference)
   // Input validation
   if (!query || !key || !value || !ret0) {
+    printf("[FLASH ATTN ERROR] C API: Null pointer input\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: Null pointer input");
@@ -1607,6 +2674,8 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
 
   // Currently only support dropout_p = 0.0 for inference
   if (dropout_p != 0.0) {
+    printf("[FLASH ATTN ERROR] C API: dropout_p != 0.0 is not supported\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: dropout_p != 0.0 is not supported");
@@ -1615,6 +2684,8 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
 
   // Check tensor dimensions
   if (query->dim() != 4 || key->dim() != 4 || value->dim() != 4) {
+    printf("[FLASH ATTN ERROR] C API: Query, Key, Value must be 4D tensors\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: Query, Key, Value must be 4D tensors");
@@ -1623,6 +2694,9 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
 
   // Check that Q, K, V have the same dtype
   if (query->dtype() != key->dtype() || query->dtype() != value->dtype()) {
+    printf(
+        "[FLASH ATTN ERROR] C API: Query, Key, Value must have the same dtype\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: Query, Key, Value must have the same dtype");
@@ -1632,6 +2706,9 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
   // Check dtype support
   if (!is_supported_dtype(query) || !is_supported_dtype(key) ||
       !is_supported_dtype(value)) {
+    printf(
+        "[FLASH ATTN ERROR] C API: Unsupported dtype, only Float32/Float16/BFloat16 supported\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: Unsupported dtype, only Float32/Float16/BFloat16 supported");
@@ -1653,6 +2730,8 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
 
   // Validate shapes
   if (key->size(0) != batch || value->size(0) != batch) {
+    printf("[FLASH ATTN ERROR] C API: Batch size mismatch\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: Batch size mismatch");
@@ -1660,6 +2739,9 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
   }
 
   if (seq_len_k != seq_len_v) {
+    printf(
+        "[FLASH ATTN ERROR] C API: Key and Value sequence length mismatch\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: Key and Value sequence length mismatch");
@@ -1667,6 +2749,8 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
   }
 
   if (head_dim_q != head_dim_k) {
+    printf("[FLASH ATTN ERROR] C API: Query and Key head dimension mismatch\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: Query and Key head dimension mismatch");
@@ -1674,6 +2758,8 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
   }
 
   if (value->size(1) != num_heads_kv) {
+    printf("[FLASH ATTN ERROR] C API: Key and Value num_heads mismatch\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: Key and Value num_heads mismatch");
@@ -1686,11 +2772,16 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
   // GQA validation and check
   if (enable_gqa) {
     if (num_heads % num_heads_kv != 0) {
+      printf(
+          "[FLASH ATTN ERROR] C API: For GQA, num_heads must be divisible by num_heads_kv\n");
+      fflush(stdout);
       ET_LOG(
           Error,
           "aoti_torch_cuda__scaled_dot_product_flash_attention: For GQA, num_heads must be divisible by num_heads_kv");
       return Error::InvalidArgument;
     }
+    printf("[FLASH ATTN ERROR] C API: GQA support not yet implemented\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: GQA support not yet implemented");
@@ -1699,6 +2790,9 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
 
   // Check if flash attention can be used
   if (!supports_flash_attention()) {
+    printf(
+        "[FLASH ATTN ERROR] C API: Flash Attention not supported on this GPU\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: Flash Attention not supported on this GPU");
@@ -1706,6 +2800,9 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
   }
 
   if (!can_use_flash_attention(query, key, value, nullptr, is_causal != 0)) {
+    printf(
+        "[FLASH ATTN ERROR] C API: Input conditions not suitable for Flash Attention\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: Input conditions not suitable for Flash Attention");
@@ -1718,6 +2815,8 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
   // Get CUDA stream
   auto stream_result = getCurrentCUDAStream(0);
   if (!stream_result.ok()) {
+    printf("[FLASH ATTN ERROR] C API: Failed to get CUDA stream\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: Failed to get CUDA stream");
@@ -1736,6 +2835,8 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_flash_attention(
       stream);
 
   if (output == nullptr) {
+    printf("[FLASH ATTN ERROR] C API: Flash Attention computation failed\n");
+    fflush(stdout);
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_flash_attention: Flash Attention computation failed");
@@ -1775,6 +2876,20 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_efficient_attention(
     Tensor** ret1, // logsumexp (nullptr for inference)
     Tensor** ret2, // philox_seed (nullptr for inference)
     Tensor** ret3) { // philox_offset (nullptr for inference)
+
+  // printf(
+  //     "\n[SDPA DEBUG] C API:
+  //     aoti_torch_cuda__scaled_dot_product_efficient_attention called\n");
+  // printf(
+  //     "  query=%p, key=%p, value=%p, attn_bias=%p\n",
+  //     (void*)query,
+  //     (void*)key,
+  //     (void*)value,
+  //     (void*)attn_bias);
+  // if (attn_bias && *attn_bias) {
+  //   printf("  attn_bias tensor=%p\n", (void*)(*attn_bias));
+  // }
+  // fflush(stdout);
 
   // Input validation
   if (!query || !key || !value || !ret0) {
@@ -1880,7 +2995,8 @@ AOTITorchError aoti_torch_cuda__scaled_dot_product_efficient_attention(
   Tensor* attn_bias_tensor = (attn_bias && *attn_bias) ? *attn_bias : nullptr;
 
   // Check if efficient attention can be used
-  if (!can_use_efficient_attention(query, key, value, attn_bias_tensor, is_causal != 0)) {
+  if (!can_use_efficient_attention(
+          query, key, value, attn_bias_tensor, is_causal != 0)) {
     ET_LOG(
         Error,
         "aoti_torch_cuda__scaled_dot_product_efficient_attention: Input conditions not suitable for Efficient Attention");

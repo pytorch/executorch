@@ -153,4 +153,6 @@ class CudaBackend(AotiBackend, BackendDetails):
     #       context manager will force them to use the MATH backend, causing them to
     #       be automatically decomposed during compilation.
     #     """
-    #     return torch.nn.attention.sdpa_kernel([SDPBackend.MATH])
+    #     return torch.nn.attention.sdpa_kernel(
+    #         [SDPBackend.MATH, SDPBackend.FLASH_ATTENTION]
+    #     )
