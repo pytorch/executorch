@@ -515,7 +515,7 @@ class EdgeProgramManagerTransformStage(Stage):
         self,
         edge_transform_passes: (
             None | List[Callable[[str, ExportedProgram], List[PassType] | PassManager]]
-        )=None,
+        ) = None,
         edge_manager_transform_passes: (
             None | List[Callable[[EdgeProgramManager], List[PassType] | PassManager]]
         ) = None,
