@@ -171,6 +171,22 @@ class ConvertToCortexMPass(XNNPACKPass):
                 weight_permuted,
             )
 
+            quantized_multiplier_tensor = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_quantized_multiplier",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_multipliers, dtype=torch.int32),
+            )
+
+            quantized_shift_tensor = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_quantized_shift",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_shifts, dtype=torch.int32),
+            )
+
         new_args = (
             x,
             weight_nhwc,
@@ -180,8 +196,8 @@ class ConvertToCortexMPass(XNNPACKPass):
             dilation,
             -input_zero_point,
             output_zero_point,
-            torch.tensor(quantized_multipliers, dtype=torch.int32),
-            torch.tensor(quantized_shifts, dtype=torch.int32),
+            quantized_multiplier_tensor,
+            quantized_shift_tensor,
             output_qmin,
             output_qmax,
         )

@@ -425,6 +425,34 @@ class Conv2dReLUMaxPoolModule(torch.nn.Module):
         return self.pool(x)
 
 
+class MulTensorModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return x * y
+
+
+class MulTensorConvModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = Conv2dModule(padding=1, stride=1)
+
+    def forward(self, x, y):
+        x = self.conv(x)
+        return x * y
+
+
+class MulTensorOneInputModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x):
+        return x * x
+
+
 class AddTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
