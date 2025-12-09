@@ -145,7 +145,7 @@ executorch_generated_lib(
     visibility = ["PUBLIC"],
     deps = [
         "//executorch/backends/cadence/generic/kernels:cadence_kernels",
-        "//executorch/backends/cadence/generic/operators:op_requantize_out",
+        "//executorch/backends/cadence/generic/operators:op_requantize",
         "//executorch/backends/cadence/generic/operators:im2row_out",
         "//executorch/backends/cadence/generic/operators:dequantize_per_tensor",
         "//executorch/backends/cadence/generic/operators:quantize_per_tensor",
