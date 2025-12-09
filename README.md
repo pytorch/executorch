@@ -190,7 +190,7 @@ See [examples/models/llama](examples/models/llama/README.md) for complete workfl
 | iOS              | XNNPACK, MPS, CoreML (Neural Engine)                     |
 | Linux / Windows  | XNNPACK, OpenVINO, CUDA *(experimental)*                 |
 | macOS            | XNNPACK, MPS, Metal *(experimental)*                     |
-| Embedded / MCU   | XNNPACK, ARM Ethos-U, NXP, Cadence DSP                   |
+| Embedded / MCU   | ARM Ethos-U, CMSIS, NXP Neutron, Cadence DSP             |
 
 See [Backend Documentation](https://docs.pytorch.org/executorch/main/backends-overview.html) for detailed hardware requirements and optimization guides.
 
