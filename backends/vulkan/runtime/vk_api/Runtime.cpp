@@ -14,12 +14,6 @@
 #include <iostream>
 #include <sstream>
 
-#ifdef USE_VOLK_HEADER_ONLY
-// For volk.h, define this before including volk.h in exactly one CPP file.
-#define VOLK_IMPLEMENTATION
-#include <volk.h>
-#endif /* USE_VOLK_HEADER_ONLY */
-
 namespace vkcompute {
 namespace vkapi {
 

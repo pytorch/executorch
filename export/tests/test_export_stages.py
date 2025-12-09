@@ -7,7 +7,7 @@
 # pyre-strict
 
 import unittest
-from unittest.mock import Mock, patch, PropertyMock
+from unittest.mock import Mock, patch
 
 import torch
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager

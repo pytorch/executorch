@@ -317,7 +317,9 @@ class ExportSession:
             elif stage_type == StageType.TO_EDGE:
                 stage = ToEdgeStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.EDGE_PROGRAM_MANAGER_TRANSFORM:
-                stage = EdgeProgramManagerTransformStage.from_recipe(self._lowering_recipe)
+                stage = EdgeProgramManagerTransformStage.from_recipe(
+                    self._lowering_recipe
+                )
             elif stage_type == StageType.TO_BACKEND:
                 stage = ToBackendStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_EXECUTORCH:
