@@ -152,105 +152,105 @@ def test_atmatmul_mixed_pattern2_tosa_INT(test_data: input_t1):
 
 @common.parametrize("test_data", AtMatMulSingleInput.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_atmatmul_single_input_vgf_FP(test_data: input_t1):
+def test_atmatmul_single_input_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         AtMatMulSingleInput(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulDoubleInput.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_atmatmul_double_input_vgf_FP(test_data: input_t1):
+def test_atmatmul_double_input_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         AtMatMulDoubleInput(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulMixedPattern1.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_atmatmul_mixed_pattern1_vgf_FP(test_data: input_t1):
+def test_atmatmul_mixed_pattern1_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         AtMatMulMixedPattern1(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulMixedPattern2.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_atmatmul_mixed_pattern2_vgf_FP(test_data: input_t1):
+def test_atmatmul_mixed_pattern2_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         AtMatMulMixedPattern2(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulSingleInput.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_atmatmul_single_input_vgf_INT(test_data: input_t1):
+def test_atmatmul_single_input_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         AtMatMulSingleInput(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulDoubleInput.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_atmatmul_double_input_vgf_INT(test_data: input_t1):
+def test_atmatmul_double_input_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         AtMatMulDoubleInput(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulMixedPattern1.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_atmatmul_mixed_pattern1_vgf_INT(test_data: input_t1):
+def test_atmatmul_mixed_pattern1_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         AtMatMulMixedPattern1(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
         qtol=1,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulMixedPattern2.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_atmatmul_mixed_pattern2_vgf_INT(test_data: input_t1):
+def test_atmatmul_mixed_pattern2_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         AtMatMulMixedPattern2(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
         qtol=1,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

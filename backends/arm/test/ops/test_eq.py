@@ -242,20 +242,20 @@ def test_eq_scalar_vgf_FP_tensor(test_module):
         test_module().get_inputs(),
         Equal.aten_op_Tensor,
         Equal.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
 @common.SkipIfNoModelConverter
-def test_eq_scalar_vgf_FP(test_module):
+def test_eq_scalar_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         Equal.aten_op_Scalar,
         Equal.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
@@ -268,19 +268,19 @@ def test_eq_scalar_vgf_INT_tensor(test_module):
         test_module().get_inputs(),
         Equal.aten_op_Tensor,
         Equal.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
 @common.SkipIfNoModelConverter
-def test_eq_scalar_vgf_INT(test_module):
+def test_eq_scalar_vgf_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         Equal.aten_op_Tensor,
         Equal.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
