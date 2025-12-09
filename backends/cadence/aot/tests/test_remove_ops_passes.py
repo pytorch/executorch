@@ -21,7 +21,7 @@ from executorch.backends.cadence.aot.remove_ops import (
     RemoveAliasCopyOpPass,
     RemoveBranchedQuantDequant,
     RemoveCatFromSliceCopyPass,
-    RemoveCloneOpPass,
+    RemoveCloneOpsTransformImported,
     RemoveContiguousOpPass,
     RemoveDetachCopyPass,
     RemoveNopAddOpPass,
@@ -241,7 +241,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
         clone = builder.call_operator(op=exir_ops.edge.aten.clone.default, args=(x,))
         builder.output([clone])
         original = builder.get_graph_module()
-        p = RemoveCloneOpPass()
+        p = RemoveCloneOpsTransformImported()
         graph_after_passes = cast(PassResult, p(original)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, torch.ops.aten.clone.default), 0

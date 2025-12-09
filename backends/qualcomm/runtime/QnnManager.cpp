@@ -124,52 +124,6 @@ Error QnnManager::LoadQnnLibrary() {
   return ret;
 }
 
-Error QnnManager::PreRegisterMem() {
-  SharedBuffer& shared_buffer_manager = SharedBuffer::GetSharedBufferManager();
-  for (const auto info : shared_buffer_manager.GetCustomMemTensorInfoSet()) {
-    void* unaligned_custom_mem_base =
-        shared_buffer_manager.GetUnAlignedAddr(info.custom_mem);
-
-    size_t tensor_offset = (static_cast<char*>(info.custom_mem) -
-                            static_cast<char*>(unaligned_custom_mem_base)) +
-        info.pos;
-    size_t total_custom_mem_size =
-        shared_buffer_manager.GetAllocatedSize(info.custom_mem);
-
-    int32_t mem_fd = shared_buffer_manager.MemToFd(unaligned_custom_mem_base);
-    if (mem_fd == -1) {
-      QNN_EXECUTORCH_LOG_WARN(
-          "PreRegisterMem failed to get file descriptor.",
-          "custom_mem: %p",
-          "tensor_addr: %p",
-          "pos: %uz",
-          "tensor_bytes: %uz",
-          "shape: %p",
-          "rank: %zu",
-          "qnn_dtype: %X",
-          info.custom_mem,
-          info.tensor_addr,
-          info.pos,
-          info.tensor_bytes,
-          info.shape,
-          info.rank,
-          info.dtype);
-      return Error::Internal;
-    }
-
-    ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_mem_manager_ptr_->PreRegisterCustomMemHandle(
-            mem_fd,
-            unaligned_custom_mem_base,
-            total_custom_mem_size,
-            tensor_offset,
-            info) == Error::Ok,
-        Internal,
-        "Fail to register to shared memory.");
-  }
-  return Error::Ok;
-}
-
 Error QnnManager::RegisterMem(
     void* data_ptr,
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
@@ -256,6 +210,9 @@ Error QnnManager::RegisterCustomMem(
 
   Qnn_MemHandle_t pre_registered_handle =
       backend_params_ptr_->qnn_mem_manager_ptr_->GetPreRegisteredHandle(info);
+  // If this memory block has already been registered, we can use it directly.
+  // This applies when running llama in lookahead mode with the same AR-N model
+  // handling both the prompt processor and the token generator.
   if (pre_registered_handle != nullptr) {
     if (get_option(options_->log_level()) >=
         QnnExecuTorchLogLevel::kLogLevelInfo) {
@@ -268,15 +225,15 @@ Error QnnManager::RegisterCustomMem(
   }
 
   SharedBuffer& shared_buffer_manager = SharedBuffer::GetSharedBufferManager();
-  void* unaligned_custom_mem_base =
-      shared_buffer_manager.GetUnAlignedAddr(custom_mem_base);
 
-  size_t tensor_offset = static_cast<char*>(custom_mem_base) -
-      static_cast<char*>(unaligned_custom_mem_base) + info.pos;
+  size_t tensor_offset = info.pos;
   size_t total_custom_mem_size =
       shared_buffer_manager.GetAllocatedSize(custom_mem_base);
 
-  int32_t mem_fd = shared_buffer_manager.MemToFd(unaligned_custom_mem_base);
+  int32_t mem_fd = shared_buffer_manager.MemToFd(custom_mem_base);
+  // Note: If obtaining the file descriptor fails, it may be due to memory not
+  // being released with QnnExecuTorchFreeCustomMem. In this situation, we could
+  // consider adding a map to monitor it.
   if (mem_fd == -1) {
     QNN_EXECUTORCH_LOG_WARN(
         "Tensor name %s failed to get file descriptor.",
@@ -289,7 +246,6 @@ Error QnnManager::RegisterCustomMem(
           tensor_wrapper,
           mem_fd,
           data_ptr,
-          unaligned_custom_mem_base,
           total_custom_mem_size,
           tensor_offset,
           info) == Error::Ok,
@@ -354,13 +310,6 @@ Error QnnManager::Init() {
     backend_params_ptr_->backend_init_state_ =
         BackendInitializeState::INITIALIZED;
   }
-
-#if defined(__aarch64__)
-  ET_CHECK_OR_RETURN_ERROR(
-      PreRegisterMem() == Error::Ok,
-      Internal,
-      "Fail to pre register custom memory handle");
-#endif
 
   if (IsOnlinePrepare()) {
     Qnn_ApiVersion_t qnn_version = {QNN_VERSION_INIT};
@@ -696,9 +645,4 @@ void QnnExecuTorchFreeCustomMem(void* buffer_ptr) {
 void QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem) {
   executorch::backends::qnn::SharedBuffer::GetSharedBufferManager()
       .AddCusomMemTensorAddr(tensor_addr, custom_mem);
-}
-
-void QnnExecuTorchAddCustomMemTensorInfo(const CustomMemTensorInfo& info) {
-  executorch::backends::qnn::SharedBuffer::GetSharedBufferManager()
-      .AddCusomMemTensorInfo(info);
 }

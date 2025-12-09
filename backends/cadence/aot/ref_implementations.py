@@ -11,12 +11,25 @@ from typing import Callable, Protocol, TypeVar
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
 m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
-torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
+
+try:
+    torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
+except (OSError, RuntimeError):
+    # Fall back to path-based loading for CMake/OSS builds
+    from pathlib import Path
+
+    custom_libs: list[Path] = list(
+        Path(__file__)
+        .parent.parent.parent.resolve()
+        .glob("**/kernels/quantized/**/*custom_ops_generated_lib.*")
+    )
+    if custom_libs:
+        torch.ops.load_library(str(custom_libs[0]))
+    del Path
 
 # Registry to track all ops with reference implementations
 _REGISTERED_REF_IMPLEMENTATIONS: set[str] = set()
