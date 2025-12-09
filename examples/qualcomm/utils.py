@@ -305,6 +305,7 @@ def make_quantizer(
     act_observer=MovingAverageMinMaxObserver,
     is_qat=False,
     submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
+    eps=None,
 ):
     quantizer = QnnQuantizer()
     quantizer.add_custom_quant_annotations(custom_annotations)
@@ -314,6 +315,7 @@ def make_quantizer(
         is_conv_per_channel=per_channel_conv,
         is_linear_per_channel=per_channel_linear,
         act_observer=act_observer,
+        eps=eps,
     )
     submodule_qconfig_list = submodule_qconfig_list or []
     quantizer.set_submodule_qconfig_list(submodule_qconfig_list)

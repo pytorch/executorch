@@ -58,6 +58,23 @@ class QnnSeq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
             device="cpu",
             dtype=torch.float32,
         )
+        head_dim = getattr(
+            self.config,
+            "head_dim",
+            self.config.hidden_size // self.config.num_attention_heads,
+        )
+        num_heads = getattr(
+            self.config, "num_key_value_heads", self.config.num_attention_heads
+        )
+        self.static_cache.early_initialization(
+            batch_size, num_heads, head_dim, torch.float32, "cpu"
+        )
+        for idx in range(len(self.static_cache.layers)):
+            self.register_buffer(f"key_cache_{idx}", self.static_cache.layers[idx].keys)
+        for idx in range(len(self.static_cache.layers)):
+            self.register_buffer(
+                f"value_cache_{idx}", self.static_cache.layers[idx].values
+            )
         self.cache = EncoderDecoderCache(self.static_cache, DynamicCache())
 
     def forward(

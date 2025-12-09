@@ -160,6 +160,7 @@ class ModuleQConfig:
     is_conv_per_channel: bool = False
     is_linear_per_channel: bool = False
     act_observer: Optional[UniformQuantizationObserverBase] = None
+    eps: Optional[float] = None
 
     def __post_init__(self):
         if (self.quant_dtype, self.is_qat) not in QUANT_CONFIG_DICT:
@@ -172,9 +173,9 @@ class ModuleQConfig:
             per_block_quant_config_func,
         ) = QUANT_CONFIG_DICT[(self.quant_dtype, self.is_qat)]
         self.quant_config = (
-            quant_config_func(act_observer=self.act_observer)
+            quant_config_func(act_observer=self.act_observer, eps=self.eps)
             if self.act_observer
-            else quant_config_func()
+            else quant_config_func(eps=self.eps)
         )
 
         # Assume per_channel_quant/per_block_quant only happen on axis_0 or axis_1, increase the range if there's a need
@@ -185,10 +186,12 @@ class ModuleQConfig:
             self.per_channel_quant_config_list.append(
                 (
                     per_channel_quant_config_func(
-                        act_observer=self.act_observer, ch_axis=i
+                        act_observer=self.act_observer,
+                        ch_axis=i,
+                        eps=self.eps,
                     )
                     if self.act_observer
-                    else per_channel_quant_config_func(ch_axis=i)
+                    else per_channel_quant_config_func(ch_axis=i, eps=self.eps)
                 )
             )
 
@@ -409,6 +412,7 @@ class QnnQuantizer(Quantizer):
         is_conv_per_channel=False,
         is_linear_per_channel=False,
         act_observer=None,
+        eps=None,
     ) -> None:
         """
         Set the default quant config for quantizer.
@@ -419,6 +423,7 @@ class QnnQuantizer(Quantizer):
             is_conv_per_channel (bool, optional): Enables per-channel quantization for convolution operations.
             is_linear_per_channel (bool, optional): Enables per-channel quantization for linear (fully connected) operations.
             act_observer (Optional[UniformQuantizationObserverBase], optional): Custom observer for activation quantization. If not specified, the default observer is determined by `QUANT_CONFIG_DICT`.
+            eps (float): Minimum scale for quantization.
 
         """
         self.default_quant_config = ModuleQConfig(
@@ -427,6 +432,7 @@ class QnnQuantizer(Quantizer):
             is_conv_per_channel=is_conv_per_channel,
             is_linear_per_channel=is_linear_per_channel,
             act_observer=act_observer,
+            eps=eps,
         )
 
     def set_block_size_map(self, block_size_map: Dict[str, Tuple]) -> None:
