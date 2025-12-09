@@ -1400,7 +1400,7 @@ void static_quantized_conv2d_impl(
         &graph,
         input_im2col_sizes,
         vkapi::kInt8x4,
-        utils::kBuffer,
+        graph.storage_type_of(packed_int8_input),
         utils::kPackedInt8_4W4C);
 
     packed_int8_input_im2col = packed_int8_input_im2col_tensor.vref;
@@ -1492,7 +1492,8 @@ void conv2d_q8ta_q8csw_q8to(
 
 void conv2d_q8ta_q8csw_q8to_test(
     ComputeGraph& graph,
-    const std::vector<ValueRef>& args) {
+    const std::vector<ValueRef>& args,
+    utils::StorageType io_storage_type) {
   int32_t idx = 0;
   const ValueRef fp_input = args.at(idx++);
   const ValueRef input_scale = args.at(idx++);
@@ -1514,14 +1515,14 @@ void conv2d_q8ta_q8csw_q8to_test(
       &graph,
       graph.sizes_of(fp_input),
       vkapi::kInt8x4,
-      utils::kBuffer,
+      io_storage_type,
       utils::kPackedInt8_4W4C);
 
   TmpTensor packed_int8_output(
       &graph,
       graph.sizes_of(fp_output),
       vkapi::kInt8x4,
-      utils::kBuffer,
+      io_storage_type,
       utils::kPackedInt8_4W4C);
 
   add_quantize_and_pack_4w4c_node(
@@ -1550,10 +1551,27 @@ void conv2d_q8ta_q8csw_q8to_test(
       graph, packed_int8_output, output_scale, output_zp, fp_output);
 }
 
+void conv2d_q8ta_q8csw_q8to_test_buffer(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  conv2d_q8ta_q8csw_q8to_test(graph, args, utils::kBuffer);
+}
+
+void conv2d_q8ta_q8csw_q8to_test_texture(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  conv2d_q8ta_q8csw_q8to_test(graph, args, utils::kBuffer);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.conv2d_q8ta_q8csw.default, conv2d_q8ta_q8csw);
   VK_REGISTER_OP(et_vk.conv2d_q8csw.default, conv2d_q8csw);
-  VK_REGISTER_OP(etvk.conv2d_q8ta_q8csw_q8to.test, conv2d_q8ta_q8csw_q8to_test);
+  VK_REGISTER_OP(
+      etvk.conv2d_q8ta_q8csw_q8to.test_texture,
+      conv2d_q8ta_q8csw_q8to_test_texture);
+  VK_REGISTER_OP(
+      etvk.conv2d_q8ta_q8csw_q8to.test_buffer,
+      conv2d_q8ta_q8csw_q8to_test_buffer);
   VK_REGISTER_OP(et_vk.conv2d_q8ta_q8csw_q8to.default, conv2d_q8ta_q8csw_q8to);
   VK_REGISTER_OP(
       et_vk.conv2d_q8ta_q8csw_q8to_dw.default, conv2d_q8ta_q8csw_q8to);

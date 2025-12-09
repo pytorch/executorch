@@ -40,7 +40,7 @@ def pytest_addoption(parser):
     def try_addoption(*args, **kwargs):
         try:
             parser.addoption(*args, **kwargs)
-        except Exception:
+        except Exception:  # nosec B110 - pytest redefines options, safe to ignore
             pass
 
     try_addoption("--arm_quantize_io", action="store_true", help="Deprecated.")
@@ -85,7 +85,7 @@ def set_random_seed():
 
     if os.environ.get("ARM_TEST_SEED", "RANDOM") == "RANDOM":
         random.seed()  # reset seed, in case any other test has fiddled with it
-        seed = random.randint(0, 2**32 - 1)
+        seed = random.randint(0, 2**32 - 1)  # nosec B311 - non-crypto seed for tests
         torch.manual_seed(seed)
     else:
         seed_str = os.environ.get("ARM_TEST_SEED", "0")

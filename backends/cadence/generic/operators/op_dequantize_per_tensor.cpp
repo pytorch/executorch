@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/generic/operators/op_dequantize_per_tensor.h>
+
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 

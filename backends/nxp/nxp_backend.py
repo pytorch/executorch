@@ -283,6 +283,8 @@ class PayloadComposer:
         +----------------------------------------+------------------------------------------+
         | 1st output map (1B)                    | [nth* output map (1B)]                   |
         +----------------------------------------+------------------------------------------+
+        | Payload version (1B)                                                              |
+        +-----------------------------------------------------------------------------------+
 
         :param io_formats: IO tensors formats.
         :return: Bytes representation of payload header.
@@ -325,6 +327,7 @@ class PayloadComposer:
 
         header_data.extend(neutron_artifacts.input_indices)
         header_data.extend(neutron_artifacts.output_indices)
+        header_data.append(neutron_artifacts.payload_version)
 
         # noinspection PyTypeChecker
         return np.array(header_data, dtype=np.uint8)

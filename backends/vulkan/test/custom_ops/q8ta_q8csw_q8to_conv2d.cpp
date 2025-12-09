@@ -13,6 +13,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
+// #define DEBUG_MODE
+
 using namespace executorch::vulkan::prototyping;
 
 using namespace vkcompute;
@@ -23,7 +25,8 @@ static constexpr int64_t kRefDimSizeLimit = 100;
 TestCase create_test_case_from_config(
     const Conv2dConfig& config,
     utils::StorageType storage_type,
-    vkapi::ScalarType input_dtype) {
+    vkapi::ScalarType input_dtype,
+    utils::StorageType interm_storage_type) {
   TestCase test_case;
 
   // Create a descriptive name for the test case
@@ -35,8 +38,15 @@ TestCase create_test_case_from_config(
       config.test_case_name + "_" + storage_str + "_" + dtype_str;
   test_case.set_name(test_name);
 
+  std::string operator_suffix = ".test";
+  if (interm_storage_type == utils::kTexture3D) {
+    operator_suffix += "_texture";
+  } else {
+    operator_suffix += "_buffer";
+  }
+
   // Set the operator name for the test case
-  std::string operator_name = "etvk." + config.op_name + ".test";
+  std::string operator_name = "etvk." + config.op_name + operator_suffix;
   test_case.set_operator_name(operator_name);
 
   // Calculate output dimensions
@@ -56,7 +66,12 @@ TestCase create_test_case_from_config(
       input_dtype,
       storage_type,
       io_memory_layout,
-      DataGenType::RANDOM);
+#ifdef DEBUG_MODE
+      DataGenType::RANDOM
+#else
+      DataGenType::RANDOM
+#endif
+  );
 
   if (debugging()) {
     print_valuespec_data(input_tensor, "input_tensor");
@@ -193,8 +208,10 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
   // Generate test cases for each combination
   for (const auto& storage_type : storage_types) {
     for (const auto& input_dtype : float_types) {
-      test_cases.push_back(
-          create_test_case_from_config(config, storage_type, input_dtype));
+      test_cases.push_back(create_test_case_from_config(
+          config, storage_type, input_dtype, utils::kBuffer));
+      test_cases.push_back(create_test_case_from_config(
+          config, storage_type, input_dtype, utils::kTexture3D));
     }
   }
 
@@ -373,8 +390,10 @@ std::vector<TestCase> generate_quantized_conv2d_test_cases() {
       if (vkcompute::api::context()
               ->adapter_ptr()
               ->supports_int8_dot_product()) {
-        test_cases.push_back(
-            create_test_case_from_config(config, storage_type, vkapi::kFloat));
+        test_cases.push_back(create_test_case_from_config(
+            config, storage_type, vkapi::kFloat, utils::kBuffer));
+        test_cases.push_back(create_test_case_from_config(
+            config, storage_type, vkapi::kFloat, utils::kTexture3D));
       }
     }
   }
@@ -610,7 +629,11 @@ int64_t quantized_conv2d_flop_calculator(const TestCase& test_case) {
 int main(int argc, char* argv[]) {
   set_debugging(false);
   set_print_output(false);
+#ifdef DEBUG_MODE
+  set_print_latencies(true);
+#else
   set_print_latencies(false);
+#endif
   set_use_gpu_timestamps(true);
 
   print_performance_header();
@@ -623,11 +646,20 @@ int main(int argc, char* argv[]) {
 
   // Execute test cases using the new framework with custom FLOP calculator
   auto results = execute_test_cases(
+#ifdef DEBUG_MODE
+      generate_quantized_conv2d_easy_cases,
+#else
       generate_quantized_conv2d_test_cases,
+#endif
       quantized_conv2d_flop_calculator,
       "QuantizedConv2dQ8ToQ8To",
+#ifdef DEBUG_MODE
       0,
       1,
+#else
+      3,
+      10,
+#endif
       ref_fn);
 
   return 0;

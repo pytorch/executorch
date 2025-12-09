@@ -1002,6 +1002,7 @@ def generate_qnn_executorch_compiler_spec(
             SM8550(Snapdragon 8 Gen 2)
             SM8650(Snapdragon 8 Gen 3)
             SM8750(Snapdragon 8 Elite)
+            SM8850(Snapdragon 8 Elite Gen 5)
         backend_options: Options required by different backends.
         debug: Enable verbose logging. Disclaimer: this option must change in
             the near future.
@@ -1097,6 +1098,7 @@ def get_soc_to_arch_map():
         "SA8255": HtpArch.V73,
         "SM8650": HtpArch.V75,
         "SM8750": HtpArch.V79,
+        "SM8850": HtpArch.V81,
         "SSG2115P": HtpArch.V73,
         "SSG2125P": HtpArch.V73,
         "SXR1230P": HtpArch.V73,
@@ -1104,6 +1106,7 @@ def get_soc_to_arch_map():
         "SXR2330P": HtpArch.V79,
         "QCS9100": HtpArch.V73,
         "SAR2230P": HtpArch.V81,
+        "SW6100": HtpArch.V81,
     }
 
 
@@ -1117,6 +1120,7 @@ def get_soc_to_chipset_map():
         "SA8255": QcomChipset.SA8255,
         "SM8650": QcomChipset.SM8650,
         "SM8750": QcomChipset.SM8750,
+        "SM8850": QcomChipset.SM8850,
         "SSG2115P": QcomChipset.SSG2115P,
         "SSG2125P": QcomChipset.SSG2125P,
         "SXR1230P": QcomChipset.SXR1230P,
@@ -1124,6 +1128,7 @@ def get_soc_to_chipset_map():
         "SXR2330P": QcomChipset.SXR2330P,
         "QCS9100": QcomChipset.QCS9100,
         "SAR2230P": QcomChipset.SAR2230P,
+        "SW6100": QcomChipset.SW6100,
     }
 
 

@@ -3,12 +3,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import unittest
 
 import kgb
 import numpy as np
 import torch
 
+from executorch.backends.nxp.backend.custom_delegation_options import (
+    CustomDelegationOptions,
+)
 from executorch.backends.nxp.backend.edge_helper import _is_dequantize, _is_quantize
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
@@ -16,13 +20,29 @@ from executorch.backends.nxp.backend.edge_program_converter import (
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import (
     ViewCopyConverter,
 )
+from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
+    NeutronEdgePassManager,
+)
+from executorch.backends.nxp.edge_passes.remove_additional_quantize_dequantize_nodes_pass import (
+    RemoveAdditionalQDQClustersPass,
+)
+from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
+from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.quantizer.utils import post_training_quantize
 from executorch.backends.nxp.tests.executorch_pipeline import (
+    get_random_calibration_inputs,
     neutron_target_spec,
+    to_model_input_spec,
     to_quantized_edge_program,
 )
 from executorch.backends.nxp.tests.executors import (
+    compare_output_arrays,
     EdgeProgramExecutor,
     OverrideTargetSupportCheck,
+)
+from executorch.backends.nxp.tests.ir.converter.node_converter.test_permute_copy_converter import (
+    Conv2dPermuteModule,
 )
 from executorch.backends.nxp.tests.models import (
     ConvActivationModule,
@@ -30,6 +50,7 @@ from executorch.backends.nxp.tests.models import (
     LinearActivationModule,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.extension.export_util.utils import export_to_edge
 from parameterized import parameterized
 from torch.export import ExportedProgram
 from torch.fx import Graph, Node
@@ -117,7 +138,6 @@ class TestEdgePasses(unittest.TestCase):
             call_original=True,
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
-
             input_shape = (1, 4)
             model = LinearActivationModule(
                 activation=activation,
@@ -161,7 +181,6 @@ class TestEdgePasses(unittest.TestCase):
             call_original=True,
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
-
             input_shape = (1, 4)
             model = LinearActivationModule(
                 activation=activation,
@@ -205,7 +224,6 @@ class TestEdgePasses(unittest.TestCase):
             call_original=True,
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
-
             input_shape = (1, 4)
             model = LinearActivationModule(
                 activation=activation,
@@ -249,7 +267,6 @@ class TestEdgePasses(unittest.TestCase):
             call_original=True,
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
-
             input_shape = (1, 4, 8, 8)
             model = ConvActivationModule(
                 activation=activation, inplace=True, in_channels=input_shape[1]
@@ -273,3 +290,91 @@ class TestEdgePasses(unittest.TestCase):
                 nodes[13]
             )
             assert _is_quantize(nodes[14])
+
+    def test_remove_additional_quantize_dequantize_nodes_pass(self):
+        input_shape = (1, 3, 8, 16)
+        new_dims = (3, 2, 1, 0)
+        model = Conv2dPermuteModule(input_shape[1], new_dims)
+        target = "imxrt700"
+        custom_delegation_options = CustomDelegationOptions()
+
+        calibration_inputs = get_random_calibration_inputs(
+            to_model_input_spec(input_shape)
+        )
+
+        example_input = calibration_inputs[0]
+        exir_program_aten = torch.export.export(model, example_input, strict=True)
+
+        exir_program_aten_quant = post_training_quantize(
+            exir_program_aten,
+            calibration_inputs,
+            NeutronQuantizer(neutron_target_spec),
+        )
+        edge_program_manager = export_to_edge(
+            exir_program_aten_quant,
+            example_input,
+        )
+
+        edge_program_manager = edge_program_manager.transform(NeutronEdgePassManager())
+
+        compile_spec = generate_neutron_compile_spec(target, "SDK_25_09")
+        partitioner = NeutronPartitioner(
+            compile_spec, neutron_target_spec, custom_delegation_options
+        )
+
+        edge_program_manager = edge_program_manager.to_backend(partitioner)
+
+        # Make sure QDQ cluster for permute_copy is present.
+        edge_program_with_qdq_cluster = copy.deepcopy(
+            edge_program_manager.exported_program()
+        )
+        nodes = list(edge_program_with_qdq_cluster.graph.nodes)
+        assert len(nodes) == 10
+        assert (
+            nodes[5].target
+            == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+        )
+        assert nodes[6].target == exir_ops.edge.aten.permute_copy.default
+        assert "cluster" in nodes[6].meta
+        assert (
+            nodes[7].target
+            == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+        )
+
+        # Run pass for removal of additional QDQ nodes and compute in non-float types where possible
+        edge_program_manager = edge_program_manager.transform(
+            NeutronEdgePassManager([RemoveAdditionalQDQClustersPass()])
+        )
+
+        # Make sure QDQ cluster for permute_copy is removed.
+        edge_program_without_qdq_cluster = edge_program_manager.exported_program()
+        nodes = list(edge_program_without_qdq_cluster.graph.nodes)
+        assert len(nodes) == 8
+        assert nodes[4].name == "getitem"
+        assert nodes[5].target == exir_ops.edge.aten.permute_copy.default
+        assert "cluster" not in nodes[5].meta
+        assert (
+            nodes[6].target
+            == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+        )
+
+        edge_program_executor_without_qdq_cluster = EdgeProgramExecutor(
+            edge_program_without_qdq_cluster
+        )
+        edge_program_executor_with_qdq_cluster = EdgeProgramExecutor(
+            edge_program_with_qdq_cluster
+        )
+
+        input_data = np.random.random(input_shape).astype(np.float32)
+        edge_program_output_without_qdq_cluster = (
+            edge_program_executor_without_qdq_cluster.inference(input_data)
+        )
+        edge_program_output_with_qdq_cluster = (
+            edge_program_executor_with_qdq_cluster.inference(input_data)
+        )
+
+        compare_output_arrays(
+            edge_program_output_without_qdq_cluster,
+            edge_program_output_with_qdq_cluster,
+            "main output",
+        )

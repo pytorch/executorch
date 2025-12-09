@@ -16,7 +16,6 @@ from typing import Callable, cast, List, Optional, Sequence
 
 import torch
 import torch.fx
-import torch.nn.functional as F
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.quantizer import QuantizationConfig
@@ -477,7 +476,11 @@ def get_quant_properties(  # noqa: C901
     def any_or_hardtanh_min_zero(n: Node):
         """Return True for any op or hardtanh with ``min_val == 0``."""
         # Check that if the node is a hardtanh, its min_val is zero
-        return n.target != torch.ops.aten.hardtanh.default or n.args[1] == 0
+        return (
+            n.target
+            not in (torch.ops.aten.hardtanh.default, torch.ops.aten.hardtanh_.default)
+            or n.args[1] == 0
+        )
 
     if _match_pattern(
         node,
@@ -487,11 +490,14 @@ def get_quant_properties(  # noqa: C901
                 torch.ops.aten.conv2d.default,
                 torch.ops.aten.conv2d.padding,
             ],
-            [torch.ops.aten.batch_norm.default, F.batch_norm],
+            [
+                torch.ops.aten.batch_norm.default,
+            ],
             [
                 torch.ops.aten.relu.default,
                 torch.ops.aten.relu_.default,
                 torch.ops.aten.hardtanh.default,
+                torch.ops.aten.hardtanh_.default,
             ],
         ],
         filter_fn=any_or_hardtanh_min_zero,
@@ -510,6 +516,7 @@ def get_quant_properties(  # noqa: C901
             torch.ops.aten.relu.default,
             torch.ops.aten.relu_.default,
             torch.ops.aten.hardtanh.default,
+            torch.ops.aten.hardtanh_.default,
         ):
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
 
@@ -521,7 +528,9 @@ def get_quant_properties(  # noqa: C901
                 torch.ops.aten.conv2d.default,
                 torch.ops.aten.conv2d.padding,
             ],
-            [torch.ops.aten.batch_norm.default, F.batch_norm],
+            [
+                torch.ops.aten.batch_norm.default,
+            ],
         ],
     ):
         if node.target in (
@@ -534,7 +543,9 @@ def get_quant_properties(  # noqa: C901
                 _QuantProperty(1, weight_qspec, mark_annotated=True),
                 _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
             ]
-        elif node.target in [torch.ops.aten.batch_norm.default, F.batch_norm]:
+        elif node.target in [
+            torch.ops.aten.batch_norm.default,
+        ]:
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif _match_pattern(
         node,
@@ -549,6 +560,7 @@ def get_quant_properties(  # noqa: C901
                 torch.ops.aten.relu.default,
                 torch.ops.aten.relu_.default,
                 torch.ops.aten.hardtanh.default,
+                torch.ops.aten.hardtanh_.default,
             ],
         ],
         any_or_hardtanh_min_zero,

@@ -139,9 +139,9 @@ void add_softmax_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
-      {graph.logical_limits_ubo(out), graph.sizes_ubo(in)},
-      // Push Constants
       {},
+      // Push Constants
+      {graph.sizes_pc_of(in), graph.logical_limits_pc_of(out)},
       // Specialization Constants
       {graph.packed_dim_of(out), reduce_dim_xyz, group_dim},
       // Resize Args
