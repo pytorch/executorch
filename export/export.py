@@ -9,6 +9,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import torch
+from executorch.exir import EdgeProgramManager
 from executorch.exir._warnings import experimental
 from executorch.exir.program import ExecutorchProgramManager
 from executorch.exir.schema import Program
@@ -461,17 +462,65 @@ class ExportSession:
     def get_stage_artifacts(self) -> Dict[StageType, PipelineArtifact]:
         return self._stage_to_artifacts
 
-    def save_pte_file(self, path: str) -> None:
+    def get_exported_program(self, method_name: str = "forward") -> ExportedProgram:
         """
-        Save the exported program to a PTE file.
+        Get the ExportedProgram for a specific method after torch export.
 
         Args:
-            path: Path where the PTE file will be saved
+            method_name: Name of the method to get exported program for, defaults to "forward"
+
+        Returns:
+            The ExportedProgram for the specified method
 
         Raises:
-            RuntimeError: If the executorch program manager is not initialized
+            RuntimeError: If torch export stage has not been run
+            KeyError: If the method name is not found in exported programs
         """
-        self.get_executorch_program_manager().save(path)
+        artifact = self._stage_to_artifacts.get(StageType.TORCH_EXPORT)
+        if artifact is None or artifact.data is None:
+            raise RuntimeError(
+                "Exported program is not available. Run Torch Export Stage first."
+            )
+
+        exported_programs = artifact.data
+        if method_name not in exported_programs:
+            raise KeyError(
+                f"Method name '{method_name}' not found in exported programs. "
+                f"Available methods: {list(exported_programs.keys())}"
+            )
+
+        return exported_programs[method_name]
+
+    def get_edge_program_manager(self) -> "EdgeProgramManager":
+        """
+        Get the EdgeProgramManager after edge lowering stages.
+
+        This method checks multiple stages in order of preference:
+        1. TO_EDGE_TRANSFORM_AND_LOWER (combined stage)
+        2. TO_BACKEND (separate stage with backend delegation)
+        3. TO_EDGE (separate stage without backend delegation)
+
+        Returns:
+            The EdgeProgramManager
+
+        Raises:
+            RuntimeError: If no edge stage has been run
+        """
+        # Check stages in order of preference
+        for stage_type in [
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+            StageType.TO_BACKEND,
+            StageType.TO_EDGE,
+        ]:
+            artifact = self._stage_to_artifacts.get(stage_type)
+            if artifact is not None and artifact.data is not None:
+                logging.info(f"Returning edge program manager from stage {stage_type}")
+                return artifact.data
+
+        raise RuntimeError(
+            "Edge program manager is not available. "
+            "Run one of the edge stages first: TO_EDGE_TRANSFORM_AND_LOWER, TO_EDGE, or TO_BACKEND."
+        )
 
     def get_executorch_program(self) -> Program:
         """
