@@ -631,8 +631,15 @@ class ExportSession:
         Raises:
             RuntimeError: If the method cannot be loaded
         """
-        # Lazy import to avoid forcing portable_lib dependency at module load time
-        from executorch.runtime import Runtime, Verification
+        # Lazy import to avoid forcing portable_lib dependency at module load time.
+        try:
+            from executorch.runtime import Runtime, Verification
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError(
+                "executorch.runtime is not available. "
+                "In OSS: Please ensure executorch is properly installed via pip. "
+                "In fbcode: Please add //executorch/runtime:runtime to your dependencies."
+            ) from e
 
         et_runtime = Runtime.get()
         program = et_runtime.load_program(
