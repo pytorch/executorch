@@ -179,6 +179,7 @@ class EdgeTransformAndLowerStage(Stage):
         ) = None,
         compile_config: Optional[Any] = None,
     ) -> None:
+        super().__init__()
         self._partitioners = partitioners
         self._transform_passes = transform_passes
         self._compile_config = compile_config
@@ -206,7 +207,7 @@ class EdgeTransformAndLowerStage(Stage):
 
     @property
     def can_start_pipeline(self) -> bool:
-        return False
+        return True
 
     def run(self, artifact: PipelineArtifact) -> None:
         """
@@ -271,7 +272,10 @@ class ExecutorchStage(Stage):
 
     @property
     def valid_predecessor_stages(self) -> List["StageType"]:
-        return [StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_BACKEND]
+        return [
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+            StageType.TO_BACKEND,
+        ]
 
     @property
     def can_start_pipeline(self) -> bool:
@@ -468,7 +472,7 @@ class ToEdgeStage(Stage):
 
     @property
     def can_start_pipeline(self) -> bool:
-        return False
+        return True
 
     def run(self, artifact: PipelineArtifact) -> None:
         """
