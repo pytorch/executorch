@@ -179,9 +179,6 @@ def quantize(  # noqa C901
             ),
             filter_fn=filter_fn,
         )
-
-        model = unwrap_tensor_subclass(model)
-
         # TODO: deal with checkpoint / computation dtype decoupling.
 
         if verbose:
