@@ -22,6 +22,7 @@ from torch.fx import GraphModule
 
 from .recipe import ExportRecipe, LoweringRecipe, QuantizationRecipe
 from .stages import (
+    EdgeProgramManagerTransformStage,
     EdgeTransformAndLowerStage,
     ExecutorchStage,
     PipelineArtifact,
@@ -315,6 +316,10 @@ class ExportSession:
                 stage = EdgeTransformAndLowerStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_EDGE:
                 stage = ToEdgeStage.from_recipe(self._lowering_recipe)
+            elif stage_type == StageType.EDGE_PROGRAM_MANAGER_TRANSFORM:
+                stage = EdgeProgramManagerTransformStage.from_recipe(
+                    self._lowering_recipe
+                )
             elif stage_type == StageType.TO_BACKEND:
                 stage = ToBackendStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_EXECUTORCH:
@@ -504,7 +509,8 @@ class ExportSession:
         This method checks multiple stages in order of preference:
         1. TO_EDGE_TRANSFORM_AND_LOWER (combined stage)
         2. TO_BACKEND (separate stage with backend delegation)
-        3. TO_EDGE (separate stage without backend delegation)
+        3. EDGE_PROGRAM_MANAGER_TRANSFORM (separate stage after TO_EDGE)
+        4. TO_EDGE (separate stage without backend delegation)
 
         Returns:
             The EdgeProgramManager
@@ -516,6 +522,7 @@ class ExportSession:
         for stage_type in [
             StageType.TO_EDGE_TRANSFORM_AND_LOWER,
             StageType.TO_BACKEND,
+            StageType.EDGE_PROGRAM_MANAGER_TRANSFORM,
             StageType.TO_EDGE,
         ]:
             artifact = self._stage_to_artifacts.get(stage_type)
@@ -525,7 +532,7 @@ class ExportSession:
 
         raise RuntimeError(
             "Edge program manager is not available. "
-            "Run one of the edge stages first: TO_EDGE_TRANSFORM_AND_LOWER, TO_EDGE, or TO_BACKEND."
+            "Run one of the edge stages first: TO_EDGE_TRANSFORM_AND_LOWER, TO_EDGE, EDGE_PROGRAM_MANAGER_TRANSFORM, or TO_BACKEND."
         )
 
     def get_executorch_program(self) -> Program:
