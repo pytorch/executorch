@@ -113,26 +113,26 @@ def test_squeeze_dim_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", Squeeze.test_parameters)
 @common.SkipIfNoModelConverter
-def test_squeeze_dim_vgf_FP(test_data: Tuple):
+def test_squeeze_dim_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Squeeze(),
         test_data(),
         "torch.ops.aten.squeeze.default",
         [],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Squeeze.test_parameters)
 @common.SkipIfNoModelConverter
-def test_squeeze_dim_vgf_INT(test_data: Tuple):
+def test_squeeze_dim_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Squeeze(),
         test_data(),
         "torch.ops.aten.squeeze.default",
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -190,26 +190,26 @@ def test_squeeze_dim_u85_INT_2(test_data: Tuple):
 
 @common.parametrize("test_data", SqueezeDim.test_parameters)
 @common.SkipIfNoModelConverter
-def test_squeeze_dim_vgf_FP_2(test_data: Tuple):
+def test_squeeze_dim_2_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SqueezeDim(),
         test_data(),
         "torch.ops.aten.squeeze.dim",
         [],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", SqueezeDim.test_parameters)
 @common.SkipIfNoModelConverter
-def test_squeeze_dim_vgf_INT_2(test_data: Tuple):
+def test_squeeze_dim_2_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SqueezeDim(),
         test_data(),
         "torch.ops.aten.squeeze.dim",
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -267,25 +267,25 @@ def test_squeeze_dims_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", SqueezeDims.test_parameters)
 @common.SkipIfNoModelConverter
-def test_squeeze_dims_vgf_FP(test_data: Tuple):
+def test_squeeze_dims_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SqueezeDims(),
         test_data(),
         "torch.ops.aten.squeeze.dims",
         [],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", SqueezeDims.test_parameters)
 @common.SkipIfNoModelConverter
-def test_squeeze_dims_vgf_INT(test_data: Tuple):
+def test_squeeze_dims_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SqueezeDims(),
         test_data(),
         "torch.ops.aten.squeeze.dims",
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

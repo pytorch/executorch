@@ -213,14 +213,14 @@ def test_upsample_nearest2d_vec_tosa_INT_a16w8(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_upsample_nearest2d_vgf_FP(test_data: torch.Tensor):
+def test_upsample_nearest2d_vgf_no_quant(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
     pipeline = VgfPipeline[input_t1](
         UpsamplingNearest2d(size, scale_factor),
         (data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     if not compare:
         pipeline.pop_stage(-1)
@@ -229,14 +229,14 @@ def test_upsample_nearest2d_vgf_FP(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_upsample_nearest2d_vgf_FP_nearest(test_data: torch.Tensor):
+def test_upsample_nearest2d_nearest_vgf_no_quant(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
     pipeline = VgfPipeline[input_t1](
         Upsample(size, scale_factor),
         (data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     if not compare:
         pipeline.pop_stage(-1)
@@ -245,14 +245,14 @@ def test_upsample_nearest2d_vgf_FP_nearest(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_upsample_nearest2d_vgf_FP_interpolate(test_data: torch.Tensor):
+def test_upsample_nearest2d_interpolate_vgf_no_quant(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
     pipeline = VgfPipeline[input_t1](
         Interpolate(size, scale_factor),
         (data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     if not compare:
         pipeline.pop_stage(-1)
@@ -261,14 +261,14 @@ def test_upsample_nearest2d_vgf_FP_interpolate(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_upsample_nearest2d_vgf_INT(test_data: torch.Tensor):
+def test_upsample_nearest2d_vgf_quant(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
     pipeline = VgfPipeline[input_t1](
         UpsamplingNearest2d(size, scale_factor),
         (data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     if not compare:
         pipeline.pop_stage(-1)
@@ -277,14 +277,14 @@ def test_upsample_nearest2d_vgf_INT(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_upsample_nearest2d_vgf_INT_nearest(test_data: torch.Tensor):
+def test_upsample_nearest2d_nearest_vgf_quant(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
     pipeline = VgfPipeline[input_t1](
         Upsample(size, scale_factor),
         (data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     if not compare:
         pipeline.pop_stage(-1)
@@ -293,14 +293,14 @@ def test_upsample_nearest2d_vgf_INT_nearest(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_upsample_nearest2d_vgf_INT_interpolate(test_data: torch.Tensor):
+def test_upsample_nearest2d_interpolate_vgf_quant(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
     pipeline = VgfPipeline[input_t1](
         Interpolate(size, scale_factor),
         (data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     if not compare:
         pipeline.pop_stage(-1)
