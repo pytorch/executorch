@@ -374,6 +374,26 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_bitwise_left_shift",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+        ],
+    ),
+    op_target(
+        name = "op_bitwise_right_shift",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+        ],
+    ),
+    op_target(
         name = "op_bmm",
         deps = [
             "//executorch/kernels/portable/cpu/util:matmul_ops_util",
@@ -1373,9 +1393,6 @@ ATEN_OPS = (
 CUSTOM_OPS = (
     op_target(
         name = "op_allclose",
-    ),
-    op_target(
-        name = "op_linear_scratch_example",
     ),
 )
 
