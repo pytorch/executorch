@@ -28,6 +28,11 @@ def define_common_targets():
             "//executorch/extension/tensor:tensor",
             "//executorch/extension/runner_util:inputs",
             "//executorch/backends/qualcomm/runtime:runtime",
+            "//executorch/backends/xnnpack:xnnpack_backend",
+            "//executorch/configurations:executor_cpu_optimized",
+            "//executorch/extension/llm/custom_ops:custom_ops",
+            "//executorch/kernels/quantized:generated_lib",
+            "//executorch/kernels/portable:generated_lib",
         ],
         platforms = [ANDROID],
         external_deps = [
