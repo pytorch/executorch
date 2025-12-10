@@ -82,7 +82,7 @@ VkInstance create_instance(const RuntimeConfig& config) {
   const VkApplicationInfo application_info{
       VK_STRUCTURE_TYPE_APPLICATION_INFO, // sType
       nullptr, // pNext
-      "PyTorch Vulkan Backend", // pApplicationName
+      "ExecuTorch Vulkan Delegate", // pApplicationName
       0, // applicationVersion
       nullptr, // pEngineName
       0, // engineVersion
