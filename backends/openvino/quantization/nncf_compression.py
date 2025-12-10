@@ -15,9 +15,15 @@ except ImportError:
     raise ImportError("Please install nncf via backends/openvino/requirements.txt")
 
 
+# This code is taken from https://github.com/pytorch/executorch/blob/0c54fd0483314da173f8e14d63d2ed9591c7133a/extension/llm/export/builder.py#L278
 def get_calibration_data(
     module: torch.fx.GraphModule, tokenizer, prompts: str, max_len: int
 ):
+    """
+    This method is used to obtain calibration data from a prompt so that the algorithm
+    is calibrated not only with the dataset but also the inputs which are output-ed by
+    the model.
+    """
     # TODO: change criteria & support batch inputs if necessary
     pos = torch.tensor(0, dtype=torch.int64)
     token_list = tokenizer.encode(prompts, bos=True, eos=False)
@@ -41,9 +47,11 @@ def get_calibration_data(
     return token_list
 
 
-def transform_fn(token_pos_map: tuple[int, str]):
-    # tokenized_text = tokenizer.encode(prompts, bos=False, eos=False)
-    inputs = ()
+def transform_fn(token_pos_map: tuple[int, int]):
+    """
+    Transforms and returns input from dataset so that it is acceptable by the model
+    :param token_pos_map: This input contains the posiition and its token ID
+    """
     inputs = (
         torch.tensor(token_pos_map[1]).unsqueeze(0).unsqueeze(0),
         {"input_pos": torch.tensor([token_pos_map[0]])},

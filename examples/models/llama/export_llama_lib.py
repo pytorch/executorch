@@ -935,15 +935,12 @@ def _to_edge_and_lower_llama_openvino(
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
-    if awq or scale_estimation:
-        from executorch.backends.openvino.quantization import apply_nncf_data_aware_compression
+    from executorch.backends.openvino.quantization import apply_nncf_data_aware_compression
 
-        logging.info(f"Applying AWQ = {awq}, Scale Estimation = {scale_estimation}")
-        builder = apply_nncf_data_aware_compression(
-            builder_exported, quantizers, awq, scale_estimation
-        )
-    else:
-        builder = builder_exported.pt2e_quantize(quantizers)
+    logging.info(f"Applying AWQ = {awq}, Scale Estimation = {scale_estimation}")
+    builder = apply_nncf_data_aware_compression(
+        builder_exported, quantizers, awq, scale_estimation
+    )
 
     builder = builder.to_edge_transform_and_lower(partitioners)
 
