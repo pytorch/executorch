@@ -990,7 +990,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
         exir_op: Optional[str | List[str]] = None,
         run_on_vulkan_runtime: bool = True,
         vgf_compiler_flags: Optional[str] = "",
-        tosa_version: str = "TOSA-1.0+FP",
+        tosa_version: str = "TOSA-1.0+INT+FP",
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
