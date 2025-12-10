@@ -27,9 +27,6 @@ from nncf.experimental.common.tensor_statistics.statistics import (  # type: ign
 from nncf.quantization.algorithms.min_max.algorithm import (  # type: ignore[import-untyped]
     MinMaxQuantization,
 )
-from nncf.quantization.algorithms.weight_compression.algorithm import (  # type: ignore[import-untyped]
-    WeightCompression,
-)
 from nncf.quantization.algorithms.weight_compression.config import (  # type: ignore[import-untyped]
     WeightCompressionParameters,
 )
@@ -131,7 +128,7 @@ class OpenVINOQuantizer(Quantizer):
                 **kwargs,
             )
             subset_size = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
-            self._algo = WeightCompression(
+            self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
                 subset_size=subset_size, **self._wc_config
             )
 
@@ -178,7 +175,9 @@ class OpenVINOQuantizer(Quantizer):
         model: torch.fx.GraphModule,
         nncf_graph: NNCFGraph,
     ) -> tuple[
-        list[WeightCompressionParameters], Optional[dict[str, WCTensorStatistic]]
+        list[WeightCompressionParameters],
+        list[WeightCompressionParameters],
+        list[WeightCompressionParameters],
     ]:
         self._algo.set_backend_entity(model)
         return self._algo.get_weight_compression_parameters(model, nncf_graph)
