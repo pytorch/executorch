@@ -27,6 +27,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
+    DecomposeMaxPool3d,
     DecomposeMinMaxDim,
     DecomposeRoll,
     DecomposeSilu,
@@ -98,6 +99,7 @@ def get_capture_program_passes():
         (FoldQDQ, True),
         (I64toI32, True),
         (LayoutTransform, True),
+        (DecomposeMaxPool3d, True),
         (RecomposePixelUnshuffle, True),
         (RecomposeRmsNorm, True),
         (Remove0DTensor, True),
@@ -201,6 +203,7 @@ class QnnPassManager(PassManager):
         self.add_pass(ReplaceArangeArgs())
         self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
+        self.add_pass(DecomposeMaxPool3d(quantization_capture=True))
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
