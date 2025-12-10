@@ -983,7 +983,7 @@ class _Emitter(torch.fx.Interpreter):
 
         assert isinstance(
             subemitter_binding_output_values, (list, tuple)
-        ), f"Expected list for subemitter_binding_output_values. Got {subemitter_binding_output_values}."
+        ), f"Expected list for subemitter_binding_output_values. Got {type(subemitter_binding_output_values).__name__}: {subemitter_binding_output_values}."
 
         assert isinstance(combine_fn, torch.fx.GraphModule)
         assert isinstance(init, (list, tuple))
@@ -997,7 +997,7 @@ class _Emitter(torch.fx.Interpreter):
         y_outputs = list(subemitter_binding_output_values[num_carry:])
 
         if num_xs < 1:
-            raise RuntimeError("Scan requires at least one xs tensor to scan over.")
+            raise RuntimeError(f"Scan requires at least one xs tensor to scan over but got {num_xs}")
 
         iter_idx = self._emit_evalue(EValue(Int(0)))
 
