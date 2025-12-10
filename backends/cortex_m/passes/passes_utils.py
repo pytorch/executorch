@@ -193,3 +193,34 @@ def cleanup_nodes(nodes_to_erase, graph):
         print(f"Warning: {len(failed_nodes)} nodes could not be erased")
 
     return failed_nodes
+
+
+def is_channels_last(tensor: torch.Tensor) -> bool:
+    """Check if a 4D tensor is in channels last format."""
+    if tensor.ndim != 4:
+        return False
+
+    if tensor.shape[1] == 1 or tensor.shape[2] == tensor.shape[3] == 1:
+        return True
+
+    dim_order = list(tensor.dim_order())
+    return dim_order[0:2] == [0, 2]
+
+
+def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
+    """
+    Check if tensor1 is broadcasted to tensor2 along channel dimension.
+    Assumes tensor2 has shape [N, C, ...] and tensor1 has shape [N, 1, ...] or [1, C, ...].
+    """
+    if tensor1.dim() != tensor2.dim():
+        return False
+    if not is_channels_last(tensor1):
+        return False
+    if not is_channels_last(tensor2):
+        return False
+
+    channel_match = tensor1.size(1) == tensor2.size(1)
+    tensor1_channels_only = tensor1.numel() == tensor1.size(1)
+    tensor2_channels_only = tensor2.numel() == tensor2.size(1)
+
+    return channel_match and (tensor1_channels_only or tensor2_channels_only)
