@@ -1,0 +1,13 @@
+@misc{
+                            arsenal-aimbot_dataset,
+                            title = { Arsenal Aimbot Dataset },
+                            type = { Open Source Dataset },
+                            author = { AIAIMBOT },
+                            howpublished = { \url{ https://universe.roboflow.com/aiaimbot-pb8c8/arsenal-aimbot } },
+                            url = { https://universe.roboflow.com/aiaimbot-pb8c8/arsenal-aimbot },
+                            journal = { Roboflow Universe },
+                            publisher = { Roboflow },
+                            year = { 2025 },
+                            month = { may },
+                            note = { visited on 2025-12-10 },
+                            }
