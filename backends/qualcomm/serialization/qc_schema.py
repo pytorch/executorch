@@ -10,7 +10,7 @@ Please refer to executorch/backends/qualcomm/serialization/schema.fbs for the sc
 
 from dataclasses import dataclass, field
 from enum import IntEnum, unique
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -86,6 +86,35 @@ _soc_info_table = {
 
 
 @unique
+class QnnExecuTorchGpuPerformanceMode(IntEnum):
+    kGpuPerfHintHigh = 0
+    kGpuPerfHintNormal = 1
+    kGpuPerfHintLow = 2
+
+
+@unique
+class QnnExecuTorchGpuPrecision(IntEnum):
+    kGpuPrecisionFp32 = 0
+    kGpuPrecisionFp16 = 1
+    kGpuPrecisionHybrid = 2
+    kGpuPrecisionUserProvided = 3
+
+
+@dataclass
+class QnnExecuTorchGpuBackendOptions:
+    performance_mode: QnnExecuTorchGpuPerformanceMode = (
+        QnnExecuTorchGpuPerformanceMode.kGpuPerfHintHigh
+    )
+    precision: QnnExecuTorchGpuPrecision = (
+        QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided
+    )
+    use_memory_optimizations: bool = True
+    use_node_optimizations: bool = True
+    use_queue_recording: bool = True
+    use_weight_sharing: bool = False
+
+
+@unique
 class QnnExecuTorchHtpPerformanceMode(IntEnum):
     kHtpDefault = 0
     kHtpSustainedHighPerformance = 1
@@ -155,7 +184,8 @@ class QnnExecuTorchProfileLevel(IntEnum):
 @dataclass
 class QnnExecuTorchBackendOptions:
     backend_type: QnnExecuTorchBackendType
-    htp_options: QnnExecuTorchHtpBackendOptions
+    htp_options: Optional[QnnExecuTorchHtpBackendOptions] = None
+    gpu_options: Optional[QnnExecuTorchGpuBackendOptions] = None
 
 
 @unique
