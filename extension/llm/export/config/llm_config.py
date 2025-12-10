@@ -461,8 +461,8 @@ class OpenvinoConfig:
     enabled: bool = False
     device: str = "CPU"
     nncf_compression_group_size: int = 32
-    awq: bool = False
-    scale_estimation: bool = False
+    openvino_awq: bool = False
+    openvino_scale_estimation: bool = False
 
 
 @dataclass
@@ -660,11 +660,11 @@ class LlmConfig:
             llm_config.backend.openvino.enabled = args.openvino
         if hasattr(args, "openvino_device"):
             llm_config.backend.openvino.device = args.openvino_device
-        if hasattr(args, "nncf_awq"):
-            llm_config.backend.openvino.nncf_awq = args.nncf_awq
-        if hasattr(args, "nncf_scale_estimation"):
-            llm_config.backend.openvino.nncf_scale_estimation = (
-                args.nncf_scale_estimation
+        if hasattr(args, "openvino_awq"):
+            llm_config.backend.openvino.openvino_awq = args.openvino_awq
+        if hasattr(args, "openvino_scale_estimation"):
+            llm_config.backend.openvino.openvino_scale_estimation = (
+                args.openvino_scale_estimation
             )
         if hasattr(args, "group_size") and args.group_size:
             llm_config.backend.openvino.nncf_compression_group_size = args.group_size

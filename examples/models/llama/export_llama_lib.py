@@ -243,14 +243,14 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--nncf_awq",
+        "--openvino_awq",
         required=False,
         action="store_true",
         help="Whether to use AWQ from NNCF. Applicable only for the Openvino backend.",
     )
 
     parser.add_argument(
-        "--nncf_scale_estimation",
+        "--openvino_scale_estimation",
         action="store_true",
         help="Whether to use Scale Estimation algorithm from NNCF. Applicable only for the Openvino backend",
     )
@@ -937,6 +937,7 @@ def _to_edge_and_lower_llama_openvino(
         logging.info(f"--> {partitioner.__class__.__name__}")
 
     if awq or scale_estimation:
+        logging.info(f"Applying AWQ = {awq}, Scale Estimation = {scale_estimation}")
         builder = apply_nncf_data_aware_compression(
             builder_exported, quantizers, awq, scale_estimation
         )
@@ -1180,8 +1181,8 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             modelname,
             quantizers,
             additional_passes,
-            awq=llm_config.backend.openvino.awq,
-            scale_estimation=llm_config.backend.openvino.scale_estimation,
+            awq=llm_config.backend.openvino.openvino_awq,
+            scale_estimation=llm_config.backend.openvino.openvino_scale_estimation,
             openvino_device=llm_config.backend.openvino.device,
             verbose=llm_config.debug.verbose,
         )
