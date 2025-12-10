@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Callable, List, Optional, Union
 
 import torch
-from executorch.backends.openvino.quantization import apply_nncf_data_aware_compression
 
 from executorch.devtools.backend_debug import print_delegation_info
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
@@ -937,6 +936,8 @@ def _to_edge_and_lower_llama_openvino(
         logging.info(f"--> {partitioner.__class__.__name__}")
 
     if awq or scale_estimation:
+        from executorch.backends.openvino.quantization import apply_nncf_data_aware_compression
+
         logging.info(f"Applying AWQ = {awq}, Scale Estimation = {scale_estimation}")
         builder = apply_nncf_data_aware_compression(
             builder_exported, quantizers, awq, scale_estimation
