@@ -116,7 +116,6 @@ void et_copy_index(KernelRuntimeContext& context, Span<EValue*> stack) {
 
   // Resize `copy_to` to the expected output size. This grows the tensor
   // as we write to each index (0→1, 1→2, 2→3, etc.).
-  const void* data_ptr = copy_to.const_data_ptr();
   Error err =
       resize_tensor(copy_to, {expected_output_size, copy_to.sizes().size()});
   ET_KERNEL_CHECK_MSG(
