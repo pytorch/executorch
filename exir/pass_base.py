@@ -572,7 +572,7 @@ class _ExportPassBase(PassBase):
             xs_element_data.append(ph.meta["val"])
 
         combine_fn_result = self.call_submodule(
-            combine_fn, (*init , *xs_element_data , *additional_inputs)
+            combine_fn, (*init, *xs_element_data, *additional_inputs)
         )
         assert combine_fn_result is not None
 

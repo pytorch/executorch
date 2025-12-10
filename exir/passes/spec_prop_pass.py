@@ -59,11 +59,13 @@ class SpecPropPass(ExportPass):
         res = ExportPass()(graph_module)
         assert res is not None
         gm = res.graph_module
+
         def get_spec(x):
             if hasattr(x, "meta"):
                 return x.meta.get("spec", None)
             else:
                 return None
+
         for module in gm.modules():
             if isinstance(module, torch.fx.GraphModule):
                 for node in module.graph.nodes:

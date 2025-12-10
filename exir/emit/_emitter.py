@@ -1189,6 +1189,19 @@ class _Emitter(torch.fx.Interpreter):
         """
         specs = self.node.meta["spec"]
 
+        # For scan, set the shape_dynamism for the stacked outputs (y_outputs) to DYNAMIC_BOUND
+        # BEFORE emitting the specs. This is because et_copy_index has cat shape semantics but
+        # stack memory behavior, so we need to be able to update the shape +1 for each iteration
+        # which we can't do for tensors marked static.
+        if target is torch.ops.higher_order.scan:
+            combine_fn, init, xs, additional_inputs = args
+            num_carry = len(init)
+            if isinstance(specs, (list, tuple)):
+                y_specs = specs[num_carry:]
+                for y_spec in y_specs:
+                    if isinstance(y_spec, TensorSpec):
+                        y_spec.shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
+
         subemitter_binding_output_values = pytree.tree_map(
             lambda spec: self._emit_spec(spec),
             specs,
