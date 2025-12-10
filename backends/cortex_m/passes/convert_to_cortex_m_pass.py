@@ -187,21 +187,46 @@ class ConvertToCortexMPass(XNNPACKPass):
                 torch.tensor(quantized_shifts, dtype=torch.int32),
             )
 
-        new_args = (
-            x,
-            weight_nhwc,
-            bias,
-            stride,
-            padding,
-            dilation,
-            -input_zero_point,
-            output_zero_point,
-            quantized_multiplier_tensor,
-            quantized_shift_tensor,
-            output_qmin,
-            output_qmax,
-        )
-        return exir_ops.edge.cortex_m.quantized_conv2d.default, new_args
+        # Detect depthwise convolution: groups == input_channels
+        input_tensor = get_first_fake_tensor(x)
+        input_channels = input_tensor.shape[1]
+        is_depthwise = groups == input_channels
+
+        if is_depthwise:
+            # Use depthwise convolution operator
+            new_args = (
+                x,
+                weight_nhwc,
+                bias,
+                stride,
+                padding,
+                dilation,
+                groups,
+                -input_zero_point,
+                output_zero_point,
+                quantized_multiplier_tensor,
+                quantized_shift_tensor,
+                output_qmin,
+                output_qmax,
+            )
+            return exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default, new_args
+        else:
+            # Use regular convolution operator
+            new_args = (
+                x,
+                weight_nhwc,
+                bias,
+                stride,
+                padding,
+                dilation,
+                -input_zero_point,
+                output_zero_point,
+                quantized_multiplier_tensor,
+                quantized_shift_tensor,
+                output_qmin,
+                output_qmax,
+            )
+            return exir_ops.edge.cortex_m.quantized_conv2d.default, new_args
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False

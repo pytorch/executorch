@@ -112,6 +112,50 @@ class CortexMConv2Dx3(torch.nn.Module):
         return x
 
 
+class CortexMDepthwiseConv2D(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(*args, **kwargs, bias=False)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class CortexMDepthwiseConv2DBias(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 2,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(*args, **kwargs, bias=True)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
 # in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias, padding_mode
 test_cases = {
     "conv2d": McuTestCase(
@@ -176,6 +220,37 @@ test_cases = {
         model=CortexMConv2Dx3(),
         example_inputs=(
             ramp_tensor(0, 10, (1, 3, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    # Depthwise convolution tests (groups == in_channels)
+    "depthwise_conv2d": McuTestCase(
+        model=CortexMDepthwiseConv2D(4, 4, 3, groups=4),
+        example_inputs=(
+            ramp_tensor(1, 5, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "depthwise_conv2d_multiplier": McuTestCase(
+        model=CortexMDepthwiseConv2D(3, 6, 3, groups=3),
+        example_inputs=(
+            ramp_tensor(0, 10, (1, 3, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "depthwise_conv2d_stride": McuTestCase(
+        model=CortexMDepthwiseConv2D(4, 4, 3, stride=2, groups=4),
+        example_inputs=(
+            ramp_tensor(-50, 50, (2, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "depthwise_conv2d_padding": McuTestCase(
+        model=CortexMDepthwiseConv2D(2, 2, 5, padding=2, groups=2),
+        example_inputs=(
+            ramp_tensor(0, 1, (1, 2, 5, 5)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "depthwise_conv2d_bias": McuTestCase(
+        model=CortexMDepthwiseConv2DBias(3, 3, 3, padding=1, groups=3),
+        example_inputs=(
+            ramp_tensor(-10, 10, (1, 3, 6, 6)).to(memory_format=torch.channels_last),
         ),
     ),
 }
