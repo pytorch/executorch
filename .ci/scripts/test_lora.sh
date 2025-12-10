@@ -53,11 +53,7 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
 HF_QWEN_PATH=$(python -c "from huggingface_hub import snapshot_download; print(snapshot_download('unsloth/Qwen3-0.6B'))")
 echo "Model downloaded to: $HF_QWEN_PATH"
 
-<<<<<<< HEAD
 ### BUILD LLAMA RUNNER.
-=======
-# Build llama runner.
->>>>>>> 3c0898753d (qwen lora test)
 cmake_install_executorch_libraries
 cmake_build_llama_runner
 
@@ -74,7 +70,7 @@ The answer is: 12<|im_end|>"
 
 # Run llama runner on single lora PTE file.
 NOW=$(date +"%H:%M:%S")
-echo "Starting to run llama runner at ${NOW}"
+echo "Test 1: Single lora file. Starting to run llama runner at ${NOW}"
 # shellcheck source=/dev/null
 cmake-out/examples/models/llama/llama_main --model_path=qwen_lora_math_full.pte --prompt="${PROMPT}" ${RUNTIME_ARGS} > result.txt
 NOW=$(date +"%H:%M:%S")
@@ -85,11 +81,11 @@ if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
   # Do not clean up files if test passes, as they're re-used in the next test.
-  echo "Success"
+  echo "Test 1: Success"
 else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
-  echo "Failure; results not the same"
+  echo "Test 1: Failure; results not the same"
   cleanup_files
   exit 1
 fi
@@ -106,23 +102,123 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
 
 # Run llama runner on PTE, PTD files.
 NOW=$(date +"%H:%M:%S")
-echo "Starting to run llama runner at ${NOW}"
+echo "Test 2: Program data separation lora. Starting to run llama runner at ${NOW}"
 # shellcheck source=/dev/null
 cmake-out/examples/models/llama/llama_main --model_path=qwen_lora_math.pte --data_paths="qwen_foundation.ptd,qwen_lora_math.ptd" --prompt="${PROMPT}" ${RUNTIME_ARGS} > result2.txt
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
-RESULT2=$(cat result2.txt)
-if [[ "${RESULT2}" == "${EXPECTED_PREFIX}"* ]]; then
+RESULT=$(cat result.txt)
+if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
-  echo "Actual result: ${RESULT2}"
-  echo "Success"
+  echo "Actual result: ${RESULT}"
+  echo "Test 2: Success"
 else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
-  echo "Actual result: ${RESULT2}"
-  echo "Failure; results not the same"
+  echo "Actual result: ${RESULT}"
+  echo "Test 2: Failure; results not the same"
+#   cleanup_files
+  exit 1
+fi
+
+# Confirm file sizes.
+FOUNDATION_SIZE=$(stat -c%s qwen_foundation.ptd)
+if [[ $FOUNDATION_SIZE -le "2400000000" ]]; then
+    echo "qwen_foundation_q.ptd size is: $FOUNDATION_SIZE"
+else
+    echo "qwen_foundation_q.ptd size: $FOUNDATION_SIZE is greater than threshold 2.4GB"
+    cleanup_files
+    exit 1
+fi
+
+### QUANTIZATION & PROGRAM DATA SEPARATION ###
+EXPECTED_QUANT_PREFIX="<|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant:
+<think>
+Okay, so I need to calculate 15% of 80."
+EXPECTED_QUANT_LORA_PREFIX="
+<|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant
+To calculate 15% of 80, we can multiply 80 by 15/100.
+So, 15% of 80 is equal to (80 * 15) / 100 = 1200 / 100 = 12.
+#### 12
+The answer is: 12<|im_end|>"
+
+# Export Quantized PTE, PTD file, no LoRA.
+$PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
+    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
+    +export.output_name="qwen_q.pte" \
+    +export.foundation_weights_file="qwen_foundation_q.ptd" \
+    +quantization.qmode="8da4w" \
+    +quantization.group_size=32
+
+# Export Quantized LoRA PTE, LoRA PTD, foundation PTD file.
+$PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
+    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
+    +base.adapter_checkpoint="${HF_ADAPTER_PATH}/adapter_model.safetensors" \
+    +base.adapter_config="${HF_ADAPTER_PATH}/adapter_config.json" \
+    +export.output_name="qwen_lora_math_q.pte" \
+    +export.foundation_weights_file="qwen_foundation_lora_q.ptd" \
+    +export.lora_weights_file="qwen_lora_math_q.ptd" \
+    +quantization.qmode="8da4w" \
+    +quantization.group_size=32
+
+# Confirm that qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are the same.
+if diff -q qwen_foundation_lora_q.ptd qwen_foundation_q.ptd > /dev/null; then
+    echo "qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are identical."
+else
+    echo "qwen_foundation_lora_q.ptd and qwen_foundation_q.ptd are not identical."
+    cleanup_files
+    exit 1
+fi
+
+# Run quantized qwen model (no adapter).
+NOW=$(date +"%H:%M:%S")
+echo "Test 3: Quantized qwen model (no lora). Starting to run llama runner at ${NOW}"
+# shellcheck source=/dev/null
+cmake-out/examples/models/llama/llama_main --model_path=qwen_q.pte --data_paths="qwen_foundation_q.ptd" --prompt="${PROMPT}" ${RUNTIME_ARGS} > result.txt
+NOW=$(date +"%H:%M:%S")
+echo "Finished at ${NOW}"
+RESULT=$(cat result.txt)
+if [[ "${RESULT}" == "${EXPECTED_QUANT_PREFIX}"* ]]; then
+  echo "Expected result prefix: ${EXPECTED_QUANT_PREFIX}"
+  echo "Actual result: ${RESULT}"
+  echo "Test 3: Success"
+else
+  echo "Expected result prefix: ${EXPECTED_QUANT_PREFIX}"
+  echo "Actual result: ${RESULT}"
+  echo "Test 3: Failure; results not the same"
   cleanup_files
   exit 1
+fi
+
+# Run quantized lora adapter.
+NOW=$(date +"%H:%M:%S")
+echo "Test 4: Quantized, program-data separation lora. Starting to run llama runner at ${NOW}"
+# shellcheck source=/dev/null
+cmake-out/examples/models/llama/llama_main --model_path=qwen_lora_math_q.pte --data_paths="qwen_foundation_q.ptd,qwen_lora_math_q.ptd" --prompt="${PROMPT}" ${RUNTIME_ARGS} > result.txt
+NOW=$(date +"%H:%M:%S")
+echo "Finished at ${NOW}"
+
+RESULT=$(cat result.txt)
+if [[ "${RESULT}" == "${EXPECTED_QUANT_LORA_PREFIX}"* ]]; then
+  echo "Expected result prefix: ${EXPECTED_QUANT_LORA_PREFIX}"
+  echo "Actual result: ${RESULT}"
+  echo "Test 4: Success"
+else
+  echo "Expected result prefix: ${EXPECTED_QUANT_LORA_PREFIX}"
+  echo "Actual result: ${RESULT}"
+  echo "Test 4: Failure; results not the same"
+  cleanup_files
+  exit 1
+fi
+
+# Confirm qwen_foundation_q.ptd file size.
+FOUNDATION_Q_SIZE=$(stat -c%s qwen_foundation_q.ptd)
+if [[ $FOUNDATION_Q_SIZE -le "1000000000" ]]; then
+    echo "qwen_foundation_q.ptd size is: $FOUNDATION_Q_SIZE"
+else
+    echo "qwen_foundation_q.ptd size: $FOUNDATION_Q_SIZE is greater than threshold 1GB"
+    cleanup_files
+    exit 1
 fi
 
 cleanup_files
