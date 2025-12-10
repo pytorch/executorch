@@ -14,13 +14,13 @@ import torch
 from executorch.backends.cadence.aot.graph_builder import GraphBuilder
 from executorch.backends.cadence.aot.quantizer import quantizer as quantizer_module
 from executorch.backends.cadence.aot.quantizer.patterns import AddmmPattern
-
 from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceAtenQuantizer,
     CadenceDefaultQuantizer,
     CadenceFusedConvReluQuantizer,
     CadenceNopQuantizer,
     CadenceQuantizer,
+    CadenceRmsNormNopQuantizer,
     CadenceW8A32MixedQuantizer,
     CadenceWakeWordQuantizer,
     CadenceWith16BitConvActivationsQuantizer,
@@ -54,6 +54,7 @@ EXCLUDED_FROM_ANNOTATION_TESTING: set[type[CadenceQuantizer]] = {
     CadenceFusedConvReluQuantizer,  # TODO: T247438151 Add test coverage
     CadenceNopQuantizer,  # No-op quantizer, doesn't annotate anything
     CadenceW8A32MixedQuantizer,  # TODO: T247438158 Add test coverage
+    CadenceRmsNormNopQuantizer,  # No-op quantizer, doesn't annotate anything, preserves rms_norm from decomposition
     CadenceWakeWordQuantizer,  # TODO: T247438162 Add test coverage
     CadenceWith16BitConvActivationsQuantizer,  # TODO: T247438221 Add test coverage
     CadenceWithLayerNormQuantizer,  # TODO: T247438410 Add test coverage
@@ -258,6 +259,14 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.conv1d.default,
             torch.ops.aten.gru.input,
             torch.ops.aten.addmm.default,
+        ]
+        self.assertCountEqual(actual, expected)
+
+    def test_rms_norm_nop_quantizer_ops_to_preserve(self) -> None:
+        q = CadenceRmsNormNopQuantizer()
+        actual = q.get_ops_to_preserve_from_decomposition()
+        expected = [
+            torch.ops.aten.rms_norm.default,
         ]
         self.assertCountEqual(actual, expected)
 
