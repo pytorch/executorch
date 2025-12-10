@@ -94,6 +94,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
+    NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
     QuantizeClampArgumentsPass,
     RemoveGetItemPass,
@@ -227,6 +228,7 @@ class ArmPassManager(PassManager):
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
                 AnnotateDecomposedMatmulPass(),
                 ConvertELUParamsPass(),
+                NormalizeWhileInitialArgsPass(use_exir_clone=True),
             ]
         )
 
@@ -403,6 +405,7 @@ class ArmPassManager(PassManager):
         # Transformation passes (post scalar removal)
         self.add_passes(
             [
+                NormalizeWhileInitialArgsPass(use_exir_clone=False),
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupNormPass(),
                 DecomposeLayerNormPass(),
