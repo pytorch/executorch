@@ -7,7 +7,7 @@
 # pyre-strict
 
 import operator
-from typing import Optional
+from typing import List, Optional
 
 import torch
 from executorch.exir.delegate import executorch_call_delegate
