@@ -712,6 +712,7 @@ def get_quant_properties(  # noqa: C901
     ):
         submodule_args_pos = -1 if node.target == torch.ops.higher_order.cond else -2
         submodule_args = node.args[submodule_args_pos]
+        output_qspec = output_act_qspec
         if len(submodule_args) > 0:  # type: ignore[arg-type]
             # The way the TOSA backend handles quantized inputs, arrays of input tensors (such as the input to a
             # conditional graph) need shared quantization.
@@ -727,7 +728,14 @@ def get_quant_properties(  # noqa: C901
                     ],
                 )
             ]
-        quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
+            if node.target == torch.ops.higher_order.while_loop:
+                # The output of the while loop body can either re-enter the body, or exit the while loop.
+                # Therefore, A and B in the diagram below need to share the same quantization parameters.
+                # A -> while ( RESCALE -> ... RESCALE -> ) -> B
+                output_qspec = shared_qspec
+
+        quant_properties.quant_output = _QuantProperty(0, output_qspec)
+
     else:
         return None
 

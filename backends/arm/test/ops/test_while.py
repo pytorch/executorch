@@ -71,6 +71,27 @@ class WhileOneInputOneBufferTwoOutputs(torch.nn.Module):
         return result  # type: ignore
 
 
+class DecreasingOutput(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, value: torch.Tensor) -> torch.Tensor:
+        def cond_fn(value: torch.Tensor) -> torch.Tensor:
+            total = value.sum()
+            return torch.gt(total, torch.full((1,), 60.0)).squeeze()
+
+        def body_fn(value: torch.Tensor) -> Tuple[torch.Tensor]:
+            return (torch.div(value, torch.full((1,), 2.0)),)
+
+        result = torch.ops.higher_order.while_loop(
+            cond_fn,
+            body_fn,
+            (value,),
+            (),
+        )
+        return result[0]  # type: ignore
+
+
 class WhileAdditionalArg(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -138,6 +159,7 @@ def _dual_input_case(
 test_cases: dict[str, Callable[[], Tuple[torch.nn.Module, Tuple]]] = {
     "two_in_two_out": _dual_input_case(WhileTwoInputsTwoOutputs),
     "one_in_one_buffer_two_out": _single_input_case(WhileOneInputOneBufferTwoOutputs),
+    "decreasing_output": _single_input_case(DecreasingOutput),
     "additional_arg": _single_input_case(WhileAdditionalArg),
     "two_in_one_captured_out": _single_input_case(WhileSingleCapturedOutput),
 }
