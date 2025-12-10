@@ -85,6 +85,7 @@ struct AOTIDelegateHandle {
   AOTInductorModelContainerHandle container_handle;
   void* cuda_stream; // cudaStream_t stored as void* to avoid CUDA header
                      // dependency
+  bool owns_stream{true};
 
   // Function pointers specific to this handle's shared library
   AOTInductorModelContainerCreateWithDeviceFunc create_with_device;

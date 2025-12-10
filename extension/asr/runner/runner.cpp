@@ -9,9 +9,13 @@
 #include <executorch/extension/asr/runner/runner.h>
 
 #include <inttypes.h>
+#include <array>
 #include <algorithm>
 #include <optional>
+#include <cstdio>
 
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/extension/llm/runner/constants.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/sampler/util.h>
@@ -19,6 +23,10 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/backend/options.h>
+#ifdef CUDA_AVAILABLE
+#include <cuda_runtime.h>
+#endif
 
 namespace executorch::extension::asr {
 namespace {
@@ -41,6 +49,14 @@ AsrRunner::AsrRunner(
     module_ = std::make_unique<Module>(
         module_path_, data_path_, Module::LoadMode::Mmap);
   }
+}
+
+AsrRunner::~AsrRunner() {
+#ifdef CUDA_AVAILABLE
+  if (cuda_stream_ != nullptr) {
+    cudaStreamDestroy(static_cast<cudaStream_t>(cuda_stream_));
+  }
+#endif
 }
 
 bool AsrRunner::is_loaded() const {
@@ -119,6 +135,12 @@ Error AsrRunner::load() {
 
   stats_.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
 
+#ifdef CUDA_AVAILABLE
+  if (cuda_stream_ == nullptr) {
+    cudaStreamCreate(reinterpret_cast<cudaStream_t*>(&cuda_stream_));
+  }
+#endif
+
   return Error::Ok;
 }
 
@@ -159,8 +181,35 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
       !eos_tokens->empty(),
       InvalidArgument,
       "EOS token set must not be empty.");
-  ::executorch::extension::llm::Sampler sampler(
-      tokenizer_->vocab_size(), config.temperature);
+      
+#ifdef CUDA_AVAILABLE
+  if (config.use_cuda_sampler) {
+    cudaStream_t shared_stream = static_cast<cudaStream_t>(cuda_stream_);
+    executorch::runtime::BackendOptions<2> backend_options;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        backend_options.set_option("copy_gpu_outputs_to_cpu", false));
+    // Pass stream pointer as string
+    std::array<char, executorch::runtime::kMaxOptionValueLength> stream_buf{};
+    std::snprintf(
+        stream_buf.data(), stream_buf.size(), "%p", shared_stream);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        backend_options.set_option("external_cuda_stream", stream_buf.data()));
+
+    const auto opt_err = executorch::runtime::set_option(
+        "CudaBackend", backend_options.view());
+    if (opt_err != ::executorch::runtime::Error::Ok) {
+      ET_LOG(
+          Warning,
+          "Failed to set CUDA backend options: %d",
+          static_cast<int>(opt_err));
+    }
+  }
+#else
+  ET_CHECK_OR_RETURN_ERROR(
+      !config.use_cuda_sampler,
+      InvalidArgument,
+      "CUDA sampler requested but CUDA is not available");
+#endif
 
   // Check expected dtype for encoder input
   auto encoder_method_meta_result = module_->method_meta(kEncoderMethodName);
@@ -270,8 +319,25 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
         vocab_size > 0, Internal, "Decoder logits tensor is empty.");
 
     const int64_t next_token =
-        static_cast<int64_t>(::executorch::extension::llm::logits_to_token(
-            logits_tensor, config.temperature));
+        [&]() {
+#ifdef CUDA_AVAILABLE
+          if (config.use_cuda_sampler) {
+            if (sampler_workspace_.capacity() <
+                static_cast<size_t>(vocab_size)) {
+              sampler_workspace_.reserve(static_cast<size_t>(vocab_size));
+            }
+            return static_cast<int64_t>(
+                ::executorch::extension::llm::logits_to_token(
+                    logits_tensor,
+                    config.temperature,
+                    cuda_stream_,
+                    &sampler_workspace_));
+          }
+#endif
+          return static_cast<int64_t>(
+              ::executorch::extension::llm::logits_to_token(
+                  logits_tensor, config.temperature));
+        }();
 
     if (!first_token_generated) {
       stats_.first_token_ms = ::executorch::extension::llm::time_in_ms();

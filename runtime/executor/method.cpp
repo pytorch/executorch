@@ -30,6 +30,9 @@
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
+#ifdef CUDA_AVAILABLE
+#include <cuda_runtime.h>
+#endif
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
@@ -226,6 +229,29 @@ struct Chain {
 };
 
 namespace {
+
+#ifdef CUDA_AVAILABLE
+bool is_cuda_pointer(const void* ptr) {
+  if (ptr == nullptr) {
+    return false;
+  }
+  cudaPointerAttributes attrs{};
+  if (cudaPointerGetAttributes(&attrs, ptr) != cudaSuccess) {
+    return false;
+  }
+#if CUDART_VERSION >= 10000
+  return attrs.type == cudaMemoryTypeDevice ||
+      attrs.type == cudaMemoryTypeManaged;
+#else
+  return attrs.memoryType == cudaMemoryTypeDevice ||
+      attrs.memoryType == cudaMemoryTypeManaged;
+#endif
+}
+#else
+inline bool is_cuda_pointer(const void* /*ptr*/) {
+  return false;
+}
+#endif
 
 Result<InstructionArgs> gen_instruction_arguments(
     MemoryAllocator* method_allocator,

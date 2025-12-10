@@ -63,6 +63,20 @@ if(EXECUTORCH_BUILD_CUDA)
   # CUDA runtime library (cudart) if the package isn't available.
   find_package(CUDAToolkit QUIET)
   if(CUDAToolkit_FOUND)
+    # Compile sampler.cpp with a CUDA-capable toolchain so Thrust device paths
+    # are available.
+    enable_language(CUDA)
+    set_target_properties(
+      extension_llm_runner
+      PROPERTIES CUDA_STANDARD 17 CUDA_STANDARD_REQUIRED YES)
+    target_compile_options(
+      extension_llm_runner PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--extended-lambda>)
+    set(sampler_cuda_src "${EXECUTORCH_ROOT}/extension/llm/sampler/sampler_cuda.cpp")
+    if(EXISTS "${sampler_cuda_src}")
+      target_sources(extension_llm_runner PRIVATE ${sampler_cuda_src})
+      set_source_files_properties(
+        ${sampler_cuda_src} PROPERTIES LANGUAGE CUDA LINKER_LANGUAGE CUDA)
+    endif()
     target_compile_definitions(extension_llm_runner PUBLIC CUDA_AVAILABLE)
     target_link_libraries(extension_llm_runner PUBLIC CUDA::cudart)
     message(STATUS "CUDAToolkit found; defining CUDA_AVAILABLE")

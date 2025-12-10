@@ -404,6 +404,17 @@ target_compile_definitions(
   executorch_core PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
 )
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
+
+# Link CUDA runtime when available so core sources (e.g., tensor_utils_portable)
+# can call cuda APIs under CUDA_AVAILABLE.
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit QUIET)
+  if(CUDAToolkit_FOUND)
+    target_link_libraries(executorch_core PUBLIC CUDA::cudart)
+    target_compile_definitions(executorch_core PRIVATE CUDA_AVAILABLE)
+  endif()
+endif()
+
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
     executorch_core PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}

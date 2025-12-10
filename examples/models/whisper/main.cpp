@@ -109,6 +109,7 @@ int main(int argc, char** argv) {
   executorch::extension::asr::AsrTranscribeConfig config;
   config.max_new_tokens = FLAGS_max_new_tokens;
   config.temperature = static_cast<float>(FLAGS_temperature);
+  config.use_cuda_sampler = true;
 
   // All Whisper models from HuggingFace now use the v3 tokenizer format
   // where token 50257 = <|endoftext|> and token 50258 = <|startoftranscript|>

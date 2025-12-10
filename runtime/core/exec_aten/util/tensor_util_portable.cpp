@@ -14,6 +14,9 @@
 
 #include <executorch/runtime/core/portable_type/tensor.h>
 #include <executorch/runtime/platform/assert.h>
+#ifdef CUDA_AVAILABLE
+#include <cuda_runtime.h>
+#endif
 
 namespace executorch {
 namespace runtime {
@@ -178,8 +181,56 @@ Error copy_tensor_data(
         "t_dst.nbytes() %zu != t_src.nbytes(). %zu",
         t_dst.nbytes(),
         t_src.nbytes());
-    std::memcpy(
-        t_dst.mutable_data_ptr(), t_src.const_data_ptr(), t_src.nbytes());
+    void* dst_ptr = t_dst.mutable_data_ptr();
+    const void* src_ptr = t_src.const_data_ptr();
+#ifdef CUDA_AVAILABLE
+    cudaPointerAttributes attrs{};
+    bool src_is_device = false;
+    if (src_ptr != nullptr &&
+        cudaPointerGetAttributes(&attrs, src_ptr) == cudaSuccess) {
+#if CUDART_VERSION >= 10000
+      src_is_device = attrs.type == cudaMemoryTypeDevice ||
+          attrs.type == cudaMemoryTypeManaged;
+#else
+      src_is_device = attrs.memoryType == cudaMemoryTypeDevice ||
+          attrs.memoryType == cudaMemoryTypeManaged;
+#endif
+    }
+    // Determine if destination is on device
+    bool dst_is_device = false;
+    cudaPointerAttributes dst_attrs{};
+    if (dst_ptr != nullptr &&
+        cudaPointerGetAttributes(&dst_attrs, dst_ptr) == cudaSuccess) {
+#if CUDART_VERSION >= 10000
+      dst_is_device = dst_attrs.type == cudaMemoryTypeDevice ||
+          dst_attrs.type == cudaMemoryTypeManaged;
+#else
+      dst_is_device = dst_attrs.memoryType == cudaMemoryTypeDevice ||
+          dst_attrs.memoryType == cudaMemoryTypeManaged;
+#endif
+    }
+
+    if (src_is_device) {
+      cudaMemcpyKind kind = dst_is_device ? cudaMemcpyDeviceToDevice
+                                          : cudaMemcpyDeviceToHost;
+      cudaError_t err =
+          cudaMemcpy(dst_ptr, src_ptr, t_src.nbytes(), kind);
+      ET_CHECK_OR_RETURN_ERROR(
+          err == cudaSuccess,
+          Internal,
+          "cudaMemcpy failed: %s",
+          cudaGetErrorString(err));
+    } else if (dst_is_device) {
+      ET_CHECK_OR_RETURN_ERROR(
+          false,
+          InvalidArgument,
+          "Copying from host to device tensors is not supported in portable util");
+    } else {
+      std::memcpy(dst_ptr, src_ptr, t_src.nbytes());
+    }
+#else
+    std::memcpy(dst_ptr, src_ptr, t_src.nbytes());
+#endif
   }
   return Error::Ok;
 }

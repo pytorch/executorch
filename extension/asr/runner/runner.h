@@ -17,6 +17,9 @@
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/sampler/sampler.h>
+#ifdef CUDA_AVAILABLE
+#include <executorch/extension/llm/sampler/sampler_cuda.h>
+#endif
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/runtime/core/error.h>
@@ -45,6 +48,8 @@ struct ET_EXPERIMENTAL AsrTranscribeConfig {
   std::unordered_set<int64_t> eos_token_ids = {};
   float temperature = 0.0f;
   int64_t decoder_start_token_id = 0;
+  // When true and CUDA is available, keep logits on device and sample there.
+  bool use_cuda_sampler = false;
 };
 
 /**
@@ -73,6 +78,8 @@ class ET_EXPERIMENTAL AsrRunner {
    * Loads the module, validates required methods and initialises tokenizer.
    */
   ::executorch::runtime::Error load();
+
+  ~AsrRunner();
 
   /**
    * Executes an end-to-end transcription cycle.
@@ -110,6 +117,11 @@ class ET_EXPERIMENTAL AsrRunner {
   bool decoder_method_loaded_ = false;
 
   Stats stats_;
+
+#ifdef CUDA_AVAILABLE
+  void* cuda_stream_{nullptr};
+  ::executorch::extension::llm::SamplerWorkspace sampler_workspace_;
+#endif
 };
 
 } // namespace executorch::extension::asr

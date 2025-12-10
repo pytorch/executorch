@@ -35,6 +35,15 @@ set_target_properties(
   extension_asr_runner PROPERTIES POSITION_INDEPENDENT_CODE ON
 )
 
+# Propagate CUDA availability to the ASR runner so it can select CUDA paths.
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit QUIET)
+  if(CUDAToolkit_FOUND)
+    target_compile_definitions(extension_asr_runner PUBLIC CUDA_AVAILABLE)
+    target_link_libraries(extension_asr_runner PUBLIC CUDA::cudart)
+  endif()
+endif()
+
 install(
   TARGETS extension_asr_runner
   EXPORT ExecuTorchTargets

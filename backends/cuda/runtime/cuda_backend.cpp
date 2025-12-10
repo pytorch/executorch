@@ -11,7 +11,10 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <array>
+#include <atomic>
 #include <cstdio>
+#include <cstdlib>
 
 #include <filesystem>
 #include <fstream>
@@ -35,16 +38,24 @@ using executorch::runtime::ArrayRef;
 using executorch::runtime::Backend;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
+using executorch::runtime::BackendOption;
+using executorch::runtime::BackendOptionContext;
 using executorch::runtime::CompileSpec;
 using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
+using executorch::runtime::kMaxOptionValueLength;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
+
+namespace {
+constexpr char kCopyGpuOutputsToCpuOption[] = "copy_gpu_outputs_to_cpu";
+constexpr char kExternalCudaStreamOption[] = "external_cuda_stream";
+}
 
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
@@ -89,6 +100,58 @@ class ET_EXPERIMENTAL CudaBackend final
  public:
   bool is_available() const override {
     return 1;
+  }
+
+  Error set_option(
+      ET_UNUSED BackendOptionContext& context,
+      const executorch::runtime::Span<BackendOption>& backend_options)
+      override {
+    for (const auto& option : backend_options) {
+      if (std::strcmp(option.key, kCopyGpuOutputsToCpuOption) == 0) {
+        if (auto* val = std::get_if<bool>(&option.value)) {
+          copy_gpu_outputs_to_cpu_.store(
+              *val, std::memory_order_relaxed);
+        } else {
+          ET_LOG(
+              Error,
+              "Option %s must be a bool.",
+              kCopyGpuOutputsToCpuOption);
+          return Error::InvalidArgument;
+        }
+      } else if (std::strcmp(option.key, kExternalCudaStreamOption) == 0) {
+        if (auto* val =
+                std::get_if<std::array<char, kMaxOptionValueLength>>(
+                    &option.value)) {
+          char* end = nullptr;
+          const auto ptr_val = std::strtoull(val->data(), &end, 0);
+          external_stream_ = reinterpret_cast<void*>(ptr_val);
+        } else {
+          ET_LOG(
+              Error,
+              "Option %s must be a stringified pointer.",
+              kExternalCudaStreamOption);
+          return Error::InvalidArgument;
+        }
+      }
+    }
+    return Error::Ok;
+  }
+
+  Error get_option(
+      ET_UNUSED BackendOptionContext& context,
+      executorch::runtime::Span<BackendOption>& backend_options) override {
+    for (auto& option : backend_options) {
+      if (std::strcmp(option.key, kCopyGpuOutputsToCpuOption) == 0) {
+        option.value =
+            static_cast<bool>(copy_gpu_outputs_to_cpu_.load(
+                std::memory_order_relaxed));
+      } else if (std::strcmp(option.key, kExternalCudaStreamOption) == 0) {
+        std::array<char, kMaxOptionValueLength> buf{};
+        std::snprintf(buf.data(), buf.size(), "%p", external_stream_);
+        option.value = buf;
+      }
+    }
+    return Error::Ok;
   }
 
   // Once per loaded binary blob
@@ -186,10 +249,18 @@ class ET_EXPERIMENTAL CudaBackend final
           handle->container_handle, static_cast<const uint8_t*>(weights_blob)));
       buffer_res->Free();
     }
-    // Create a CUDA stream for asynchronous execution
-    cudaStream_t cuda_stream;
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamCreate(&cuda_stream));
+    // Create or reuse a CUDA stream for asynchronous execution
+    cudaStream_t cuda_stream = nullptr;
+    bool owns_stream = true;
+    if (external_stream_ != nullptr) {
+      cuda_stream = static_cast<cudaStream_t>(external_stream_);
+      owns_stream = false;
+    } else {
+      ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamCreate(&cuda_stream));
+      owns_stream = true;
+    }
     handle->cuda_stream = static_cast<void*>(cuda_stream);
+    handle->owns_stream = owns_stream;
 
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
@@ -288,13 +359,17 @@ class ET_EXPERIMENTAL CudaBackend final
       gpu_outputs[i] = gpu_output_handle;
     }
     // Run AOTI container with GPU tensors
+    cudaStream_t stream_to_use = external_stream_
+        ? static_cast<cudaStream_t>(external_stream_)
+        : static_cast<cudaStream_t>(handle->cuda_stream);
+
     AOTIRuntimeError error = handle->run(
         handle->container_handle,
         gpu_inputs.data(), // Use GPU input tensors
         n_inputs,
         gpu_outputs.data(), // Use GPU output tensors
         n_outputs,
-        handle->cuda_stream, // Pass the actual CUDA stream
+        stream_to_use, // Pass the actual CUDA stream
         nullptr); // proxy_executor_handle can remain nullptr
 
     ET_CHECK_OR_RETURN_ERROR(
@@ -303,18 +378,27 @@ class ET_EXPERIMENTAL CudaBackend final
         "AOTInductorModelContainerRun failed with error code %d",
         error);
 
-    // Copy GPU output results back to CPU output tensors
-    for (int i = 0; i < n_outputs; i++) {
-      auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
-      // For DYNAMIC_BOUND tensors we try to resize
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          resize_tensor(*cpu_output_tensor, gpu_outputs[i]->sizes()),
-          "Error resizing tensor at output index %d",
-          i);
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0),
-          "Failed to copy GPU output %d back to CPU",
-          i);
+    const bool copy_outputs =
+        copy_gpu_outputs_to_cpu_.load(std::memory_order_relaxed);
+
+    if (copy_outputs) {
+      // Copy GPU output results back to CPU output tensors
+      for (int i = 0; i < n_outputs; i++) {
+        auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
+        // For DYNAMIC_BOUND tensors we try to resize
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            resize_tensor(*cpu_output_tensor, gpu_outputs[i]->sizes()),
+            "Error resizing tensor at output index %d",
+            i);
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0),
+            "Failed to copy GPU output %d back to CPU",
+            i);
+      }
+    } else {
+      for (int i = 0; i < n_outputs; i++) {
+        args[i + n_inputs]->toTensor() = *gpu_outputs[i];
+      }
     }
 
     return Error::Ok;
@@ -326,14 +410,17 @@ class ET_EXPERIMENTAL CudaBackend final
     }
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
-    // Destroy the CUDA stream if it exists
+    // Destroy the CUDA stream if it exists and we own it
     if (handle->cuda_stream != nullptr) {
-      cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
-      cudaError_t stream_err = cudaStreamDestroy(cuda_stream);
-      ET_CHECK_OR_LOG_ERROR(
-          stream_err == cudaSuccess,
-          "Failed to destroy CUDA stream: %s",
-          cudaGetErrorString(stream_err));
+      if (handle->owns_stream) {
+        cudaStream_t cuda_stream =
+            static_cast<cudaStream_t>(handle->cuda_stream);
+        cudaError_t stream_err = cudaStreamDestroy(cuda_stream);
+        ET_CHECK_OR_LOG_ERROR(
+            stream_err == cudaSuccess,
+            "Failed to destroy CUDA stream: %s",
+            cudaGetErrorString(stream_err));
+      }
       handle->cuda_stream = nullptr;
     }
 
@@ -365,6 +452,10 @@ class ET_EXPERIMENTAL CudaBackend final
     delete handle;
     clear_all_tensors();
   }
+
+ private:
+  void* external_stream_{nullptr};
+  std::atomic<bool> copy_gpu_outputs_to_cpu_{true};
 };
 
 } // namespace executorch::backends::cuda
