@@ -909,7 +909,7 @@ class RemoveCatFromSliceCopyPass(RemoveOrReplacePassInterface):
         return False
 
 
-class CommonRemovePasses:
+class CadenceRemoveNops:
     passes: List[Type[ExportPass]] = [
         RemoveAliasCopyOpPass,
         RemoveNopExpandOpPass,
@@ -920,12 +920,6 @@ class CommonRemovePasses:
         RemoveSqueezeViewBeforeElementwiseOps,
         RemoveCatFromSliceCopyPass,
         RemoveCloneOpsTransformImported,
-    ]
-
-
-class CadenceRemoveNops:
-    passes: List[Type[ExportPass]] = CommonRemovePasses.passes + [
-        SimplifySliceOpPass,
         RemoveNopRequantizeOpPass,
         RemoveZeroSizedConstantPadNd,
         RemoveContiguousOpPass,
