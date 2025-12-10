@@ -554,16 +554,25 @@ class _ExportPassBase(PassBase):
         self,
         combine_fn: torch.fx.GraphModule,
         init: List[ProxyValue],
-        xs: List[ProxyValue],
+        xs: List[Argument],
         additional_inputs: List[ProxyValue],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        xs_first_slice = _unstack_pytree([arg.data for arg in xs])[0]
-        init_data = [arg.data for arg in init]
-        additional_data = [arg.data for arg in additional_inputs]
+        # Get the expected x element shapes from the combine_fn's placeholders
+        # The combine_fn expects: (carry..., x_element..., additional_inputs...)
+        combine_fn_placeholders = [
+            n for n in combine_fn.graph.nodes if n.op == "placeholder"
+        ]
+        num_init = len(init)
+        # The x_element placeholders are at indices [num_init : num_init + num_xs]
+        xs_element_data = []
+        for i, x_proxy in enumerate(xs):
+            ph = combine_fn_placeholders[num_init + i]
+            # Use the placeholder's val which has the correct shape
+            xs_element_data.append(ph.meta["val"])
 
         combine_fn_result = self.call_submodule(
-            combine_fn, tuple(init_data + xs_first_slice + additional_data)
+            combine_fn, (*init , *xs_element_data , *additional_inputs)
         )
         assert combine_fn_result is not None
 
