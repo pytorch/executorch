@@ -57,6 +57,7 @@ set(_cortex_m_kernels__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_dequantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_add.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_conv2d.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_depthwise_conv2d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_mul.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_minimum.cpp

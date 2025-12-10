@@ -577,3 +577,144 @@ def quantized_conv2d_impl(
     result = torch.clamp(result, activation_min, activation_max)
 
     return result.to(torch.int8)
+
+
+# ===================================================================
+# QUANTIZED DEPTHWISE CONV2D OPERATION DEFINITION
+# ===================================================================
+
+lib.define(
+    "quantized_depthwise_conv2d("
+    "Tensor input, "
+    "Tensor weight, "
+    "Tensor? bias, "
+    "int[] stride, "
+    "int[] padding, "
+    "int[] dilation, "
+    "int groups, "
+    "int input_offset, "
+    "int output_offset, "
+    "Tensor requantize_multipliers, "
+    "Tensor requantize_shifts, "
+    "int activation_min, "
+    "int activation_max"
+    ") -> Tensor"
+)
+
+
+lib.define(
+    "quantized_depthwise_conv2d.out("
+    "Tensor input, "
+    "Tensor weight, "
+    "Tensor? bias, "
+    "int[] stride, "
+    "int[] padding, "
+    "int[] dilation, "
+    "int groups, "
+    "int input_offset, "
+    "int output_offset, "
+    "Tensor requantize_multipliers, "
+    "Tensor requantize_shifts, "
+    "int activation_min, "
+    "int activation_max, "
+    "*, Tensor(a!) out"
+    ") -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_depthwise_conv2d")
+def quantized_depthwise_conv2d_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    groups: int,
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    stride_vals = list(stride)
+    padding_vals = list(padding)
+    dilation_vals = list(dilation)
+    output_shape = _compute_conv2d_output_shape(
+        input.shape, weight.shape, stride_vals, padding_vals, dilation_vals
+    )
+    return torch.empty(
+        output_shape,
+        dtype=torch.int8,
+        device=input.device,
+        memory_format=torch.channels_last,
+    )
+
+
+@impl(lib, "quantized_depthwise_conv2d", "CompositeExplicitAutograd")
+def quantized_depthwise_conv2d_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    groups: int,
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    if input.dim() != 4 or weight.dim() != 4:
+        raise RuntimeError("quantized_depthwise_conv2d expects 4D input and weight tensors")
+
+    # Validate depthwise convolution constraint: groups == input_channels
+    input_channels = input.shape[1]
+    if groups != input_channels:
+        raise RuntimeError(
+            f"quantized_depthwise_conv2d: groups ({groups}) must equal input channels ({input_channels})"
+        )
+
+    # Convert to int32 for accumulation and apply offsets
+    input_int32 = input.to(torch.int32) + int(input_offset)
+    weight_int32 = weight.to(torch.int32)
+
+    if bias is None:
+        bias_int32 = torch.zeros(
+            weight.shape[0], dtype=torch.int32, device=input.device
+        )
+    else:
+        bias_int32 = bias.to(torch.int32)
+
+    # Convert weights back to OIHW layout expected by torch.nn.functional.conv2d
+    weight_oi_hw = weight_int32.permute(0, 3, 1, 2).contiguous()
+
+    # Depthwise convolution has groups == input_channels
+    conv_acc = F.conv2d(
+        input_int32,
+        weight_oi_hw,
+        bias_int32,
+        stride=tuple(stride),
+        padding=tuple(padding),
+        dilation=tuple(dilation),
+        groups=groups,
+    )
+
+    result_channels = []
+    for output_channel_i in range(conv_acc.shape[1]):
+        result_channel = requantize_cmsis(
+            conv_acc[:, output_channel_i, :, :],
+            int(requantize_multipliers[output_channel_i]),
+            int(requantize_shifts[output_channel_i]),
+        )
+        result_channels.append(result_channel)
+
+    result = torch.stack(result_channels, dim=1)
+
+    result += output_offset
+    result = torch.clamp(result, activation_min, activation_max)
+
+    return result.to(torch.int8)
