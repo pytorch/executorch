@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import torch
@@ -441,8 +442,13 @@ class ExportSession:
 
             logging.info(f"Executing stage: {stage_type}")
 
+            start = time.perf_counter()
             stage.run(current_artifact)
+            elapsed = (time.perf_counter() - start) * 1000
             current_artifact = stage.get_artifacts()
+            current_artifact.add_context("duration_ms", int(elapsed))
+
+            logging.info(f"Stage {stage_type} execution done")
 
             self._stage_to_artifacts[stage_type] = current_artifact
 
