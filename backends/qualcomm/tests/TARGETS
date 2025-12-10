@@ -58,6 +58,10 @@ runtime.python_test(
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/backends/qualcomm/_passes:passes",
+        "//executorch/backends/qualcomm/partition:partition",
+        "//executorch/examples/models/llama:transformer_modules",
+        "//executorch/examples/qualcomm/oss_scripts/llama:masking_utils",
+        "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
         "//executorch/backends/qualcomm/builders:builders",
     ],
 )
