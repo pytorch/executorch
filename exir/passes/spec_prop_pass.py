@@ -11,7 +11,7 @@ from typing import List, Optional
 
 import torch
 from executorch.exir.delegate import executorch_call_delegate
-from executorch.exir.pass_base import ExportPass, ProxyValue
+from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from torch.export.exported_program import ExportGraphSignature
