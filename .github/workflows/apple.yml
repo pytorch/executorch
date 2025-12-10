@@ -40,6 +40,19 @@ jobs:
         run: |
           VERSION="1.1.0.$(TZ='PST8PDT' date +%Y%m%d)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Guardrail
+        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
+        shell: bash
+        run: |
+          VERSION="${{ steps.set_version.outputs.version }}"
+          BRANCH="swiftpm-${VERSION}"
+
+          if git ls-remote --exit-code "https://github.com/${{ github.repository }}" "refs/heads/${BRANCH}" > /dev/null 2>&1; then
+            echo "Branch '${BRANCH}' already exists!"
+            echo "Aborting workflow to prevent overwriting S3 binaries. The branch existence indicates this version was already published with specific checksums."
+            echo "Please delete the remote branch '${BRANCH}' and re-run this workflow."
+            exit 1
+          fi
 
   build-demo-ios:
     name: build-demo-ios

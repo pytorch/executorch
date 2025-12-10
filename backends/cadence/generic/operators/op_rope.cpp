@@ -23,17 +23,20 @@ Tensor& rope_out(
     const optional<Tensor>& pos,
     Tensor& out) {
   // Input shape is [1, seq, h, hd / 2, 2] or [1, seq, h, hd]
-  const auto kSeq = input.size(1);
-  const auto kH = input.size(2);
-  const auto kHd = input.numel() / (kSeq * kH);
-  for (int32_t s = 0; s < kSeq; ++s) {
-    for (int32_t h = 0; h < kH; ++h) {
-      for (int32_t hd_o = 0; hd_o < kHd / 2; ++hd_o) {
-        float x_0 =
-            input.const_data_ptr<float>()[s * kH * kHd + h * kHd + hd_o * 2];
-        float x_1 =
-            input
-                .const_data_ptr<float>()[s * kH * kHd + h * kHd + hd_o * 2 + 1];
+  const ssize_t seq_length = input.size(1);
+  const ssize_t num_heads = input.size(2);
+  const ssize_t head_dimension = input.numel() / (seq_length * num_heads);
+  const ssize_t head_dimension_by_two = head_dimension / 2;
+  for (int32_t s = 0; s < seq_length; ++s) {
+    for (int32_t h = 0; h < num_heads; ++h) {
+      for (int32_t hd_o = 0; hd_o < head_dimension_by_two; ++hd_o) {
+        // Process 2 elements in head dimension at a time.
+        const float x_0 = input.const_data_ptr<float>()
+                              [s * num_heads * head_dimension +
+                               h * head_dimension + hd_o * 2];
+        const float x_1 = input.const_data_ptr<float>()
+                              [s * num_heads * head_dimension +
+                               h * head_dimension + hd_o * 2 + 1];
         int64_t token_id = s;
         if (pos.has_value()) {
           if (pos->scalar_type() == ::executorch::aten::ScalarType::Int) {
@@ -42,17 +45,21 @@ Tensor& rope_out(
             token_id = pos.has_value() ? pos->const_data_ptr<int64_t>()[s] : s;
           }
         }
-        float sin =
-            sin_tensor.const_data_ptr<float>()[token_id * kHd / 2 + hd_o];
-        float cos =
-            cos_tensor.const_data_ptr<float>()[token_id * kHd / 2 + hd_o];
 
-        float out_0 = x_0 * cos - x_1 * sin;
-        float out_1 = x_0 * sin + x_1 * cos;
-        out.mutable_data_ptr<float>()[s * kH * kHd + h * kHd + hd_o * 2] =
+        const float sin = sin_tensor.const_data_ptr<
+            float>()[token_id * head_dimension_by_two + hd_o];
+        const float cos = cos_tensor.const_data_ptr<
+            float>()[token_id * head_dimension_by_two + hd_o];
+
+        const float out_0 = x_0 * cos - x_1 * sin;
+        out.mutable_data_ptr<float>()
+            [s * num_heads * head_dimension + h * head_dimension + hd_o * 2] =
             out_0;
-        out.mutable_data_ptr<float>()[s * kH * kHd + h * kHd + hd_o * 2 + 1] =
-            out_1;
+
+        const float out_1 = x_0 * sin + x_1 * cos;
+        out.mutable_data_ptr<float>()
+            [s * num_heads * head_dimension + h * head_dimension + hd_o * 2 +
+             1] = out_1;
       }
     }
   }

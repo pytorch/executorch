@@ -192,6 +192,7 @@ def define_common_targets(is_fbcode = False):
         else:
             for deps in [default_deps, android_deps]:
                 deps.append("fbsource//third-party/volk:volk-header")
+                deps.append("fbsource//third-party/volk:volk-implementation")
 
         if is_fbcode:
             VK_API_DEPS += [

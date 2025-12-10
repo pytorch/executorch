@@ -673,6 +673,49 @@ class MmPattern(QuantizationPattern):
         )
 
 
+class MulTensorPattern(QuantizationPattern):
+    """
+    Quantization pattern for Mul Tensor quantization. Accepts 1 or 2 input nodes.
+
+    Basic quantization for all inputs and output.
+    """
+
+    def partition_types(self) -> list[torch.nn.Module]:
+        return [torch.ops.aten.mul.Tensor]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+        input_nodes = node.all_input_nodes
+
+        qspec = FixedQParamsQuantizationSpec(
+            dtype=torch.int8,
+            scale=1.0 / 256.0,
+            zero_point=0,
+            quant_min=-128,
+            quant_max=127,
+            qscheme=torch.per_tensor_affine,
+        )
+
+        # The "Mul" operator in Neutron IR requires a specific scale and zero_point
+        # (defined above) for its inputs.
+        # Since these input nodes have already been annotated by their own patterns
+        # which didn't take the requirements of "Mul" into account, we need to overwrite
+        # the existing "quantization_annotation".
+        for input_node in input_nodes:
+            input_node.meta["quantization_annotation"].output_qspec = qspec
+
+        return PartitionAnchors(
+            inputs=[(node, NodeArgsIdx(0), qspec), (node, NodeArgsIdx(1), qspec)],
+            weights=[],
+            biases=[],
+            output=[
+                (node,),
+            ],
+        )
+
+
 class PadPattern(SharedSpecPattern):
     """
     Quantizer for Pad operator.
@@ -734,6 +777,15 @@ class ViewPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.view.default]
+
+
+class SliceTensorPattern(SharedSpecPattern):
+    """
+    Quantizer for Slice operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.slice.Tensor]
 
 
 class SoftMaxPattern(QuantizationPattern):

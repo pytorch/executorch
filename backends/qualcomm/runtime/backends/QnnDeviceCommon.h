@@ -29,7 +29,7 @@ class QnnDevice {
     return handle_;
   }
 
-  executorch::runtime::Error Configure();
+  virtual executorch::runtime::Error Configure();
 
  protected:
   virtual executorch::runtime::Error MakeConfig(

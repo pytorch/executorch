@@ -30,8 +30,3 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::allclose_tensor
-
-- func: linear.scratch_example(Tensor input, Tensor weight, Tensor? bias=None, *, Tensor(a!) out, Tensor(b!) _scratch_tensor) -> Tensor(a!)
-  kernels:
-    - arg_meta: null
-      kernel_name: torch::executor::linear_scratch_example

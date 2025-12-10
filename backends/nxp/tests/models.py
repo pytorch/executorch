@@ -172,6 +172,38 @@ class LinearModule(torch.nn.Module):
         return self.linear(x)
 
 
+class SliceTensorModule(torch.nn.Module):
+    def __init__(self, dims, starts, ends):
+        super().__init__()
+        self.dims = dims
+        self.starts = starts
+        self.ends = ends
+
+    def do_slice(self, x):
+        slices = [slice(None)] * x.dim()
+        for i, dim in enumerate(self.dims):
+            slices[dim] = slice(self.starts[i], self.ends[i])
+        return x[tuple(slices)]
+
+    def forward(self, x):
+        x = self.do_slice(x)
+
+        return x
+
+
+class SliceTensorConvModule(torch.nn.Module):
+    def __init__(self, dims, starts, ends):
+        super().__init__()
+        self.conv = Conv2dModule(in_channels=4, out_channels=8, kernel_size=3, stride=1)
+        self.slice = SliceTensorModule(dims, starts, ends)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.slice(x)
+
+        return x
+
+
 class AddmmModule(torch.nn.Module):
     def __init__(self, in_channels: int):
         super().__init__()
@@ -423,6 +455,34 @@ class Conv2dReLUMaxPoolModule(torch.nn.Module):
         x = self.conv(x)
         x = self.relu(x)
         return self.pool(x)
+
+
+class MulTensorModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return x * y
+
+
+class MulTensorConvModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = Conv2dModule(padding=1, stride=1)
+
+    def forward(self, x, y):
+        x = self.conv(x)
+        return x * y
+
+
+class MulTensorOneInputModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x):
+        return x * x
 
 
 class AddTensorModule(torch.nn.Module):

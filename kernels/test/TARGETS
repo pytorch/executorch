@@ -10,6 +10,23 @@ oncall("executorch")
 define_common_targets()
 
 python_unittest(
+    name = "test_bitwise_shift",
+    srcs = ["test_bitwise_shift.py"],
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/extension/export_util:export_util",
+        "//executorch/runtime:runtime",
+    ],
+    env = {
+        "PYTORCH_DISABLE_JUSTKNOBS": "1",
+    },
+)
+
+python_unittest(
     name = "gen_supported_features_test",
     srcs = ["gen_supported_features_test.py"],
     deps = [
