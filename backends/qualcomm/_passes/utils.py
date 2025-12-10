@@ -177,7 +177,7 @@ def _next(node, from_args=True):
         yield from list(node.users)
 
 
-def _find_pattern(
+def find_pattern(
     node: torch.fx.Node,
     pattern: List[Callable[[torch.fx.Node], bool] | str],
     from_args: bool = True,
@@ -190,6 +190,7 @@ def _find_pattern(
         - pattern: predicate list, can contain followings
             Callable(fx.node): predicate
             '*': wildcard
+            '?': any single node
         - from_args: if True find from node.args, otherwise from node.users
         - max_wildcard_life: max number of skips for wildcard
 
@@ -197,7 +198,7 @@ def _find_pattern(
     Otherwise, return list of matched node list, which is the same length as pattern
     """
 
-    asterisk = "*"
+    asterisk, question = "*", "?"
 
     def _probe(
         cur, hist, pat_idx, asterisk_life_count=max_wildcard_life, verbose=verbose
@@ -212,7 +213,7 @@ def _find_pattern(
             print(
                 f"cur:{cur}, idx:{pat_idx}, life={asterisk_life_count}, pattern:{pattern[pat_idx]} hist={hist}"
             )
-        if _pred(cur, pattern[pat_idx]):
+        if pattern[pat_idx] == question or _pred(cur, pattern[pat_idx]):
             hist.append(cur)
             for child in _next(cur, from_args):
                 _probe(child, hist, pat_idx + 1)
@@ -236,7 +237,8 @@ def _find_pattern(
 
     # Check if pattern is valid
     assert all(
-        isinstance(i, Callable) or (isinstance(i, str) and i == "*") for i in pattern
+        isinstance(i, Callable) or (isinstance(i, str) and (i == "*" or i == "?"))
+        for i in pattern
     ), f"Invalid pattern: {pattern}"
 
     # Start probing
@@ -249,7 +251,7 @@ def find_patterns(node, patterns, **kwargs):
     assert isinstance(patterns, list) and isinstance(patterns[0], list)
     results = []
     for pattern in patterns:
-        result = _find_pattern(node, pattern, **kwargs)
+        result = find_pattern(node, pattern, **kwargs)
         results.append(result)
     return results
 
