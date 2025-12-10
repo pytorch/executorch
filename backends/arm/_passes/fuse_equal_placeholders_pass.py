@@ -60,7 +60,7 @@ class FuseEqualPlaceholdersPass(ArmPass):
                 is_int48,
                 str(t_cpu.dtype),
                 tuple(t_cpu.shape),
-                hashlib.sha1(data_bytes).hexdigest(),
+                hashlib.sha1(data_bytes, usedforsecurity=False).hexdigest(),
             )
             hash_buckets[key].append((node, t_cpu))
 

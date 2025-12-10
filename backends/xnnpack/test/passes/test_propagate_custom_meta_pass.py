@@ -20,8 +20,14 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
 )
 from executorch.backends.xnnpack.test.tester import Quantize as XNNPackQuantize, Tester
 from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLower
+
+from executorch.exir import ExecutorchProgramManager
+from executorch.exir._serialize import _deserialize_pte_binary
 from executorch.exir.passes.external_constants_pass import (
     delegate_external_constants_pass_unlifted,
+)
+from executorch.extension.flat_tensor.serialize.serialize import (
+    _deserialize_to_flat_tensor,
 )
 
 from torchao.quantization.granularity import PerGroup
@@ -87,7 +93,7 @@ class TestPropagateCustomMetaPass(unittest.TestCase):
         self,
         partitioner: XnnpackPartitioner,
         quantization_stage: Union[BaseStages.Quantize, BaseStages.Quantize_],
-    ):
+    ) -> ExecutorchProgramManager:
         eager_model = self.ModuleLinear(
             in_size=1,
             input_channels=32,
@@ -106,7 +112,7 @@ class TestPropagateCustomMetaPass(unittest.TestCase):
         exec = tester.get_artifact()
         program_buffer = exec.buffer
         self.assertEqual(len(exec._tensor_data), 1)
-        data_buffer = bytes(exec._tensor_data.pop("model"))
+        data_buffer = bytes(exec._tensor_data["model"])
         self.assertTrue(len(data_buffer) > 200)
         from executorch.extension.pybindings import portable_lib as runtime
 
@@ -122,6 +128,8 @@ class TestPropagateCustomMetaPass(unittest.TestCase):
         #         test_inputs
         #     )
 
+        return exec
+
     def test_quantize_(self):
         # Quantize with torchao quantize_ API.
         DynamicallyQuantizedPartitioner = XnnpackPartitioner(
@@ -132,9 +140,16 @@ class TestPropagateCustomMetaPass(unittest.TestCase):
             weight_dtype=torch.int4,
             weight_granularity=PerGroup(32),
         )
-        self._test_linear(
+        exec = self._test_linear(
             DynamicallyQuantizedPartitioner, BaseStages.Quantize_(config=linear_config)
         )
+        # PTE file has no named data.
+        pte_file = _deserialize_pte_binary(exec.buffer)
+        self.assertEqual(pte_file.named_data, None)
+
+        # PTD file contains quantized weight and scale.
+        ptd_file = _deserialize_to_flat_tensor(bytes(exec._tensor_data["model"]))
+        self.assertEqual(len(ptd_file.named_data), 2)
 
     def test_pt2e_quantize(self):
         # Quantize with pt2e quantize.
@@ -156,6 +171,15 @@ class TestPropagateCustomMetaPass(unittest.TestCase):
                 partitioner = XnnpackPartitioner(
                     config_precisions=precision, per_op_mode=per_op_mode
                 )
-                self._test_linear(
+                exec = self._test_linear(
                     partitioner, XNNPackQuantize(quantization_config=quant_config)
                 )
+                # PTE file has no named data.
+                pte_file = _deserialize_pte_binary(exec.buffer)
+                self.assertEqual(pte_file.named_data, None)
+
+                # PTD file contains quantized weight, and potentially scale.
+                ptd_file = _deserialize_to_flat_tensor(
+                    bytes(exec._tensor_data["model"])
+                )
+                self.assertTrue(len(ptd_file.named_data) >= 1)

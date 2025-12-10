@@ -40,6 +40,7 @@ enum QcomChipset: int {
   SM8550 = 43,
   SM8650 = 57,
   SM8750 = 69,
+  SM8850 = 87,
   SSG2115P = 46,
   SSG2125P = 58,
   SXR1230P = 45,
@@ -48,6 +49,7 @@ enum QcomChipset: int {
   QCS9100 = 77,
   SAR2230P = 95,
   SA8255 = 52,
+  SW6100 = 96,
 }
 
 /// Indicate the information of the specified SoC.
@@ -57,6 +59,50 @@ table SocInfo {
 
   /// Identifies the htp information of the specified SoC.
   htp_info:HtpInfo;
+}
+
+/// Defines performance modes available for GPU backend.
+enum QnnExecuTorchGpuPerformanceMode: int {
+  kGpuPerfHintHigh = 0,
+  kGpuPerfHintNormal,
+  kGpuPerfHintLow,
+}
+
+/// Defines the optimization levels of the graph tensors that are not input nor
+/// output tensors. This enum controls the trade-off between performance and
+/// accuracy.
+enum QnnExecuTorchGpuPrecision: int {
+  kGpuPrecisionFp32 = 0,
+  kGpuPrecisionFp16,
+  kGpuPrecisionHybrid,
+  kGpuPrecisionUserProvided,
+}
+
+/// Specifies the backend options for the GPU backend.
+table QnnExecuTorchGpuBackendOptions {
+  /// kGpuPerfHintHigh - best inference latency at the expense of power consumption.
+  /// kGpuPerfHintNormal - balanced performance dependent upon power management.
+  /// kGpuPerfHintLow - lowest power consumption at the expense of inference latency.
+  performance_mode:QnnExecuTorchGpuPerformanceMode;
+
+  /// kGpuPrecisionFp32 - best accuracy at the expense of performance.
+  /// kGpuPrecisionFp16 - best performance at the expense of accuracy.
+  /// kGpuPrecisionHybrid - good trade-off between performance and accuracy.
+  /// kGpuPrecisionUserProvided - backend will not optimize NATIVE tensor data types.
+  precision:QnnExecuTorchGpuPrecision;
+
+  /// Backend will share NATIVE tensor memory based upon analysis of the network topology.
+  use_memory_optimizations:bool;
+
+  /// Backend will fuse compatible operations into one operation to improve performance.
+  use_node_optimizations:bool;
+
+  /// Backend will use queue recording to improve performance.
+  use_queue_recording:bool;
+
+  /// When multiple graphs appear inside the same context,
+  /// weights could be reused across all graphs.
+  use_weight_sharing:bool;
 }
 
 /// Defines performance modes available for HTP backend.
@@ -170,7 +216,6 @@ enum QnnExecuTorchOpPackagePlatform: int {
   AARCH64_ANDROID,
 }
 
-
 table QnnExecuTorchOpPackageInfo {
   /// The name of the op package.
   op_package_name:string;
@@ -195,7 +240,6 @@ table QnnExecuTorchOpPackageInfo {
   platform:QnnExecuTorchOpPackagePlatform;
 }
 
-
 table QnnExecuTorchOpPackageOptions {
   /// An array of QnnExecuTorchOpPackageInfo structures.
   op_package_infos:[QnnExecuTorchOpPackageInfo];
@@ -208,6 +252,8 @@ table QnnExecuTorchBackendOptions {
   backend_type:QnnExecuTorchBackendType;
 
   htp_options:QnnExecuTorchHtpBackendOptions;
+
+  gpu_options:QnnExecuTorchGpuBackendOptions;
 }
 
 table QnnExecuTorchOptions {

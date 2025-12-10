@@ -6,15 +6,17 @@
 
 # pyre-strict
 
-from typing import List, Optional
+import operator
+from typing import Optional
 
 import torch
 from executorch.exir.delegate import executorch_call_delegate
-from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
+from executorch.exir.pass_base import ExportPass, ProxyValue
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx.node import Node
+from torch.fx.passes.infra.pass_base import PassResult
 from torch.utils import _pytree as pytree
 
 
@@ -53,12 +55,48 @@ class SpecPropPass(ExportPass):
     def __init__(self) -> None:
         super().__init__()
 
-    def on_attr(self, attr: ProxyValue) -> None:
-        attr.node.meta["spec"] = pytree.tree_map_only(
-            torch.Tensor,
-            make_spec,
-            attr.data,
-        )
+    def __call__(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        # Re-trace metadata to ensure it's up to date.
+        res = ExportPass()(graph_module)
+        assert res is not None
+        gm = res.graph_module
+
+        def get_spec(x):
+            if hasattr(x, "meta"):
+                return x.meta.get("spec", None)
+            else:
+                return None
+
+        for module in gm.modules():
+            if isinstance(module, torch.fx.GraphModule):
+                for node in module.graph.nodes:
+                    meta_val = node.meta.get("val", None)
+
+                    if node.op == "output":
+                        node.meta["spec"] = pytree.tree_map(get_spec, node.args[0])
+                    elif node.op == "call_function" and node.target == operator.getitem:
+                        value_spec = pytree.tree_map(get_spec, node.args[0])
+                        node.meta["spec"] = value_spec[node.args[1]]
+                    elif (
+                        node.op == "call_function"
+                        and node.target == executorch_call_delegate
+                    ):
+                        # Note: We currently rely on delegate node specs not being regenerated,
+                        # as the spec is set somewhat manually when adding the call delegate node.
+                        # If we regenerate, it can change and break lowering (it becomes a tuple?).
+                        # Ideally, we should figure out how to make the spec regeneration not break
+                        # things.
+                        #
+                        # We do need to regenerate non-call-delegate node specs, as this pass is called
+                        # multiple times in some lowering paths (backends can and do call it).
+                        if "spec" not in node.meta:
+                            node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
+                    else:
+                        node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
+        return res
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        return self(graph_module)
 
     def update_placeholder_tensor_specs(
         self,

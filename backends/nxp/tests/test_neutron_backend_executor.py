@@ -156,7 +156,7 @@ def test_delegating_format_related_transpose_operators__unsupported_shapes(mocke
 
     # Get the header of the payload for the delegated partition.
     payload_header = payload_header_spy.spy_return
-    assert payload_header.size == 7
+    assert payload_header.size == 8
     # the 4th and 5th bytes indicate the format. `1` means `channels_last`, which means the runtime will transpose the data.
     assert all(payload_header[3:5] == [1, 1])  # [<input_byte>, <output_byte>]
 
@@ -214,7 +214,7 @@ def test_delegating_format_related_transpose_operators__supported_case(mocker):
 
     # Get the header of the payload for the delegated partition.
     payload_header = payload_header_spy.spy_return
-    assert payload_header.size == 7
+    assert payload_header.size == 8
     # the 4th and 5th bytes indicate the format. `0` means `channels_last`, which means the runtime will NOT transpose the data.
     assert all(payload_header[3:5] == [0, 0])  # [<input_byte>, <output_byte>]
 
@@ -270,7 +270,7 @@ def test_delegating_format_related_transpose_operators__supported_output__unsupp
 
     # Get the header of the payload for the delegated partition.
     payload_header = payload_header_spy.spy_return
-    assert payload_header.size == 7
+    assert payload_header.size == 8
     # the 4th and 5th bytes indicate the format. `1` means `channels_last`, which means the runtime will transpose the data.
     assert all(payload_header[3:5] == [1, 0])  # [<input_byte>, <output_byte>]
 
@@ -322,6 +322,6 @@ def test_delegating_format_related_transpose_operators__supported_input__unsuppo
 
     # Get the header of the payload for the delegated partition.
     payload_header = payload_header_spy.spy_return
-    assert payload_header.size == 7
+    assert payload_header.size == 8
     # the 4th and 5th bytes indicate the format. `1` means `channels_last`, which means the runtime will transpose the data.
     assert all(payload_header[3:5] == [0, 1])  # [<input_byte>, <output_byte>]

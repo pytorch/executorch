@@ -17,11 +17,15 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnMemManager.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpBackend.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpBackendCache.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpContext.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevice.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpGraph.h>
+#include <executorch/backends/qualcomm/runtime/backends/gpu/GpuBackend.h>
+#include <executorch/backends/qualcomm/runtime/backends/gpu/GpuContext.h>
+#include <executorch/backends/qualcomm/runtime/backends/gpu/GpuDevice.h>
+#include <executorch/backends/qualcomm/runtime/backends/gpu/GpuGraph.h>
+#include <executorch/backends/qualcomm/runtime/backends/htp/HtpBackend.h>
+#include <executorch/backends/qualcomm/runtime/backends/htp/HtpBackendCache.h>
+#include <executorch/backends/qualcomm/runtime/backends/htp/HtpContext.h>
+#include <executorch/backends/qualcomm/runtime/backends/htp/HtpDevice.h>
+#include <executorch/backends/qualcomm/runtime/backends/htp/HtpGraph.h>
 
 #include <memory>
 namespace executorch {

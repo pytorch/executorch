@@ -17,7 +17,10 @@ from executorch import exir
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_PASS_ACTIVATE_KEY,
@@ -165,6 +168,7 @@ class TestQNN(unittest.TestCase):
     op_package_dir: str = ""
     target: str = ""
     model_name: str = ""
+    backend: str = ""
     online_prepare: bool = False
     use_8a8w: str = "8a8w"
     use_16a16w: str = "16a16w"
@@ -178,8 +182,6 @@ class TestQNN(unittest.TestCase):
     dump_intermediate_outputs: bool = False
     inference_speed: float = 0.0
     inference_speed_output_path = "outputs/inference_speed.txt"
-    model_name: str = ""
-    oss_repo: str = ""
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -215,6 +217,9 @@ class TestQNN(unittest.TestCase):
             file.write(buffer)
 
         return ref_outputs, pte_fname
+
+    def get_backend_type(self):
+        return getattr(QnnExecuTorchBackendType, f"k{self.backend.title()}Backend")
 
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
@@ -416,6 +421,7 @@ class TestQNN(unittest.TestCase):
                     dump_intermediate_outputs=(
                         True if expected_intermediate_events != -1 else False
                     ),
+                    backend=self.get_backend_type(),
                     expected_input_shape=(
                         (tensor.shape for tensor in processed_inputs)
                         if check_io_shape
@@ -580,6 +586,7 @@ class TestQNN(unittest.TestCase):
         is_linear_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
+        block_size_map: Dict[str, Tuple] = None,
         submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     ) -> torch.fx.GraphModule:
         m = torch.export.export(module, inputs, strict=True).module()
@@ -592,6 +599,8 @@ class TestQNN(unittest.TestCase):
             is_qat=True,
             submodule_qconfig_list=submodule_qconfig_list,
         )
+        if block_size_map is not None:
+            quantizer.set_block_size_map(block_size_map)
 
         submodule_qconfig_list = submodule_qconfig_list or []
         quantizer.set_submodule_qconfig_list(submodule_qconfig_list)
