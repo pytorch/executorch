@@ -108,7 +108,7 @@ class OpenVINOQuantizer(Quantizer):
         :param kwargs: Arguments to pass to the NNCF MinMaxQuantization algorithm.
         """
         self.mode = mode
-        self.wc_config = None
+        self._wc_config = None
         if self.mode not in OpenVINOQuantizer.WEIGHTS_ONLY_COMPRESSION_MODES:
             if mode == QuantizationMode.INT8_SYM:
                 preset = quantization.structs.QuantizationPreset.PERFORMANCE
@@ -126,17 +126,17 @@ class OpenVINOQuantizer(Quantizer):
             compression_mode = mode.value.replace(
                 "wo", ""
             )  # Mode value has to match NNCF CompressWeightsMode
-            self.wc_config = get_weight_compression_configuration(
+            self._wc_config = get_weight_compression_configuration(
                 nncf.CompressWeightsMode(compression_mode),
                 **kwargs,
             )
             subset_size = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
             self._algo = WeightCompression(
-                subset_size=subset_size, **self.wc_config
+                subset_size=subset_size, **self._wc_config
             )
 
     def get_wc_algo_configuration(self):
-        return self.wc_config
+        return self._wc_config
 
     def set_ignored_scope(
         self,
