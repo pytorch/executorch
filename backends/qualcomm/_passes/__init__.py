@@ -22,6 +22,7 @@ from .decompose_expm1 import DecomposeExpM1
 from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
+from .decompose_maxpool3d import DecomposeMaxPool3d
 from .decompose_minmaxdim import DecomposeMinMaxDim
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
@@ -68,6 +69,7 @@ __all__ = [
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
+    DecomposeMaxPool3d,
     DecomposeMinMaxDim,
     DecomposeRoll,
     DecomposeSilu,
