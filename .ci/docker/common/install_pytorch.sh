@@ -12,8 +12,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 install_domains() {
   echo "Install torchvision and torchaudio"
-  pip_install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
-  pip_install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
+  pip_install --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  pip_install --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
 }
 
 install_pytorch_and_domains() {
