@@ -256,7 +256,10 @@ def annotate_kv_8bit(  # noqa: C901
                 torch.ops.aten.transpose.int,
                 torch.ops.aten.view.default,
                 torch.ops.aten.reshape.default,
+                torch.ops.aten.select.int,
                 torch.ops.aten.slice.Tensor,
+                torch.ops.aten.expand.default,
+                torch.ops.aten.unsqueeze.default,
             ]:
                 annotate_single_in_single_out(node, quantization_config_8a8w)
                 node = node.args[0]

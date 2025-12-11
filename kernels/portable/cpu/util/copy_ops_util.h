@@ -139,7 +139,7 @@ bool check_pixel_shuffle_args(
     int64_t upscale_factor,
     Tensor& out);
 
-void get_pixel_shuffle_out_target_size(
+bool get_pixel_shuffle_out_target_size(
     const Tensor& in,
     int64_t upscale_factor,
     executorch::aten::SizesType* out_sizes,

@@ -640,6 +640,7 @@ python_unittest(
     ],
     typing = True,
     deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:graph_builder",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
