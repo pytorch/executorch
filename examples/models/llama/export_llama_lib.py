@@ -939,7 +939,7 @@ def _to_edge_and_lower_llama_openvino(
 
     logging.info(f"Applying AWQ = {awq}, Scale Estimation = {scale_estimation}")
     builder = apply_nncf_data_aware_compression(
-        builder_exported, quantizers, awq, scale_estimation
+        builder_exported, quantizers[0], awq, scale_estimation
     )
 
     builder = builder.to_edge_transform_and_lower(partitioners)

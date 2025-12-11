@@ -7,6 +7,9 @@
 # mypy: disable-error-code=import-not-found
 
 import torch
+from executorch.extension.llm.export.builder import LLMEdgeManager
+from typing import Callable, List, Optional, Union
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 try:
     import nncf  # type: ignore[import-untyped]
@@ -50,6 +53,7 @@ def get_calibration_data(
 def transform_fn(token_pos_map: tuple[int, int]):
     """
     Transforms and returns input from dataset so that it is acceptable by the model
+
     :param token_pos_map: This input contains the posiition and its token ID
     """
     inputs = (
@@ -59,10 +63,22 @@ def transform_fn(token_pos_map: tuple[int, int]):
 
     return inputs
 
-
 def apply_nncf_data_aware_compression(
-    builder_exported, quantizers, awq: bool, scale_estimation: bool
-):
+    builder_exported: LLMEdgeManager, quantizer: Quantizer, awq: bool, scale_estimation: bool
+) -> LLMEdgeManager:
+    """
+    Applies NNCF data-aware weight compression to the exported LLM graph.
+    Uses the builder's tokenizer and calibration prompt to generate token-level
+    calibration data, then runs `nncf.experimental.torch.fx.compress_pt2e` with
+    the given quantizer and optional AWQ / scale estimation enabled.
+
+    :param builder_exported: LLMEdgeManager containing the FX graph, tokenizer path,
+        calibration prompt, and max sequence length.
+    :param quantizer: TorchAO quantizer to use for compression.
+    :param awq: If True, enables Activation-aware Weights Quantization (AWQ).
+    :param scale_estimation: If True, enables NNCF's scale estimation algorithm.
+    :return: The updated LLMEdgeManager with compressed torch FX model
+    """
     tokenizer = get_tokenizer(builder_exported.tokenizer_path)
 
     builder_exported.calibration_data = get_calibration_data(
@@ -75,7 +91,7 @@ def apply_nncf_data_aware_compression(
     builder_exported.pre_autograd_graph_module = (
         nncf.experimental.torch.fx.compress_pt2e(
             builder_exported.pre_autograd_graph_module,
-            quantizer=quantizers[0],
+            quantizer=quantizer,
             dataset=nncf.Dataset(
                 builder_exported.calibration_data,
                 transform_func=transform_fn,
