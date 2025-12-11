@@ -23,6 +23,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     MakeSliceAndCatDimOutermostPass,
     ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
     ReplaceAddMMWithLinearPass,
+    ReplaceAtenAvgPoolWithCadenceAvgPoolPass,
     ReplaceAtenConvolutionWithCadenceConvolutionPass,
     ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass,
     ReplaceConstantPadNdWithSlicePass,
@@ -1412,9 +1413,12 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int), 0
         )
 
+
+class TestReplaceWhereWithFullArgsWithWhereScalar(unittest.TestCase):
     def test_replace_aten_where_with_cadence(self) -> None:
         builder = GraphBuilder()
-        cond = builder.placeholder("cond", torch.randn(4, 8))
+        cond_input = torch.randn(4, 8)
+        cond = builder.placeholder("cond", cond_input)
         aten_gt_scalar = builder.call_operator(
             op=exir_ops.edge.aten.gt.Scalar,
             args=(cond, 0),
@@ -1433,8 +1437,24 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         builder.output([aten_where_self])
         original_gm = builder.get_graph_module()
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(original_gm)
+
         p = ReplaceWhereWithFullArgsWithWhereScalar()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [cond_input]
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceWhereWithFullArgsWithWhereScalar",
+        )
+
         self.assertEqual(
             count_node(
                 graph_after_passes,
@@ -1462,9 +1482,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
         val1: float,
         val2: float,
     ) -> None:
-        # cond_shape, a_shape, b_shape, val1, val2 =
         builder = GraphBuilder()
-        cond = builder.placeholder("cond", torch.randn(cond_shape))
+        cond_input = torch.randn(cond_shape)
+        cond = builder.placeholder("cond", cond_input)
         aten_gt_scalar = builder.call_operator(
             op=exir_ops.edge.aten.gt.Scalar,
             args=(cond, 0),
@@ -1483,8 +1503,25 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         builder.output([aten_where_self])
         original_gm = builder.get_graph_module()
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(original_gm)
+
         p = ReplaceWhereWithFullArgsWithWhereScalar()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        # Broadcast case should not be replaced
+        self.assertFalse(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy (should be same since not modified)
+        inputs = [cond_input]
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceWhereWithFullArgsWithWhereScalar",
+        )
+
         self.assertEqual(
             count_node(
                 graph_after_passes,
@@ -1600,7 +1637,7 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
     def test_no_replacement_for_conv(self) -> None:
         # Create a graph with a single im2row node.
         x = torch.randn(1, 3, 224, 224)
-        pad_value = torch.randn(1)
+        pad_value = torch.tensor(0, dtype=torch.int32)
         channels_last = False
         gm = single_op_builder(
             placeholders=(x, pad_value),
@@ -1612,9 +1649,19 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.cadence.im2row.default), 1)
         self.assertEqual(count_node(gm, exir_ops.edge.aten.view_copy.default), 0)
 
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = ReplaceIm2RowWithViewPass()
-        gm_after_replacement = p.call(gm).graph_module
+        result = p.call(gm)
+        self.assertFalse(result.modified)
+        gm_after_replacement = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x, pad_value]
+        validate(gm_before, gm_after_replacement, inputs, "ReplaceIm2RowWithViewPass")
+
         # Check that no replacement was made.
         self.assertEqual(
             count_node(gm_after_replacement, exir_ops.edge.cadence.im2row.default), 1
@@ -1626,7 +1673,7 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
     def test_no_replace_for_dilation(self) -> None:
         # Create a graph with a single im2row node.
         x = torch.randn(1, 3, 5, 7)
-        pad_value = torch.randn(1)
+        pad_value = torch.tensor(0, dtype=torch.int32)
         channels_last = False
         gm = single_op_builder(
             placeholders=(x, pad_value),
@@ -1638,9 +1685,19 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.cadence.im2row.default), 1)
         self.assertEqual(count_node(gm, exir_ops.edge.aten.view_copy.default), 0)
 
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = ReplaceIm2RowWithViewPass()
-        gm_after_replacement = p.call(gm).graph_module
+        result = p.call(gm)
+        self.assertFalse(result.modified)
+        gm_after_replacement = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x, pad_value]
+        validate(gm_before, gm_after_replacement, inputs, "ReplaceIm2RowWithViewPass")
+
         self.assertEqual(
             count_node(gm_after_replacement, exir_ops.edge.cadence.im2row.default), 1
         )
@@ -1652,7 +1709,7 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
         # Create a graph with a single im2row node.
         in_h, in_w = 13, 15
         x = torch.randn(1, 3, in_h, in_w)
-        pad_value = torch.randn(1)
+        pad_value = torch.tensor(0, dtype=torch.int32)
         channels_last = False
         gm = single_op_builder(
             placeholders=(x, pad_value),
@@ -1664,9 +1721,19 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.cadence.im2row.default), 1)
         self.assertEqual(count_node(gm, exir_ops.edge.aten.view_copy.default), 0)
 
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = ReplaceIm2RowWithViewPass()
-        gm_after_replacement = p.call(gm).graph_module
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        gm_after_replacement = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x, pad_value]
+        validate(gm_before, gm_after_replacement, inputs, "ReplaceIm2RowWithViewPass")
+
         # In this test, the kernel width/height is the same as the input width/height.
         self.assertEqual(
             count_node(gm_after_replacement, exir_ops.edge.cadence.im2row.default), 0
@@ -1985,9 +2052,10 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
 
 class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
-    def _get_slice_empty_gm(self) -> torch.fx.GraphModule:
+    def _get_slice_empty_gm(self) -> tuple[torch.fx.GraphModule, torch.Tensor]:
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(4))
+        x_input = torch.randn(4)
+        x = builder.placeholder("x", x_input)
         # This is empty (numel == 0).
         slice0 = builder.call_operator(
             exir_ops.edge.aten.slice_copy.Tensor, (x, 0, 0, 0)
@@ -1999,10 +2067,10 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
             ((slice0, slice1),),
         )
         builder.output([cat])
-        return builder.get_graph_module()
+        return builder.get_graph_module(), x_input
 
     def test_empty_slice(self) -> None:
-        gm = self._get_slice_empty_gm()
+        gm, x_input = self._get_slice_empty_gm()
         self.assertEqual(
             len(
                 gm.graph.find_nodes(
@@ -2019,8 +2087,18 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
             ),
             0,
         )
-        p = ReplaceEmptyTensorsWithFullPass()
-        updated_gm = cast(PassResult, p(gm)).graph_module
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
+        result = ReplaceEmptyTensorsWithFullPass().call(gm)
+        self.assertTrue(result.modified)
+        updated_gm = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate(gm_before, updated_gm, inputs, "ReplaceEmptyTensorsWithFullPass")
+
         self.assertEqual(
             len(
                 updated_gm.graph.find_nodes(
@@ -2048,15 +2126,35 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
     def test_extract_mul_argument_to_full(
         self, _: str, value: Union[int, float]
     ) -> None:
-        x = torch.randn(2, 1, 64)
+        if isinstance(value, int):
+            x_input = torch.randint(0, 100, (1,), dtype=torch.int32)
+        else:
+            x_input = torch.randn((1,), dtype=torch.float32)
+
         gm = single_op_builder(
-            placeholders=(x,),
+            placeholders=(x_input,),
             op=torch.ops.aten.mul.Tensor,
-            args=(x, value),
+            args=(x_input, value),
             kwargs={},
         )
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
         p = ReplaceMulTensorWithMulAndFullOpsPass()
-        graph_after_passes = p.call(gm).graph_module
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceMulTensorWithMulAndFullOpsPass",
+        )
+
         self.assertTrue(
             op_counts_match(
                 graph_after_passes,
@@ -2071,17 +2169,18 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
 class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
     def _get_adaptive_avg_pool_gm(
         self, input_shape: Tuple[int, int, int, int], output_shape: Tuple[int, int]
-    ) -> torch.fx.GraphModule:
+    ) -> tuple[torch.Tensor, torch.fx.GraphModule]:
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(*input_shape))
+        x_input = torch.randn(*input_shape)
+        x = builder.placeholder("x", x_input)
         adaptive_avg_pool2d = builder.call_operator(
             exir_ops.edge.aten._adaptive_avg_pool2d.default, (x, output_shape)
         )
         builder.output([adaptive_avg_pool2d])
-        return builder.get_graph_module()
+        return x_input, builder.get_graph_module()
 
     def test_replace_adaptive_avg_pool_with_aten_avg_pool(self) -> None:
-        gm = self._get_adaptive_avg_pool_gm((1, 64, 128, 128), (8, 8))
+        x_input, gm = self._get_adaptive_avg_pool_gm((1, 64, 128, 128), (8, 8))
         self.assertEqual(
             len(
                 gm.graph.find_nodes(
@@ -2100,8 +2199,24 @@ class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
             ),
             0,
         )
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
         p = ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass()
-        updated_gm = p.call(gm).graph_module
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        updated_gm = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate(
+            gm_before,
+            updated_gm,
+            inputs,
+            "ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass",
+        )
+
         self.assertEqual(
             len(
                 updated_gm.graph.find_nodes(
@@ -2128,7 +2243,7 @@ class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
         self.assertEqual(avg_pool2d_node.args[6], None)  # divisor_override is None
 
     def test_replace_adaptive_avg_pool_with_aten_avg_pool_irregular(self) -> None:
-        gm = self._get_adaptive_avg_pool_gm((1, 64, 128, 128), (9, 9))
+        x_input, gm = self._get_adaptive_avg_pool_gm((1, 64, 128, 128), (9, 9))
         self.assertEqual(
             len(
                 gm.graph.find_nodes(
@@ -2146,9 +2261,25 @@ class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
             ),
             0,
         )
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
         # Shapes are not multiples of each other, so pass will not trigger
         p = ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass()
-        updated_gm = p.call(gm).graph_module
+        result = p.call(gm)
+        self.assertFalse(result.modified)
+        updated_gm = result.graph_module
+
+        # Validate numerical accuracy (should be same since not modified)
+        inputs = [x_input]
+        validate(
+            gm_before,
+            updated_gm,
+            inputs,
+            "ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass",
+        )
+
         self.assertEqual(
             len(
                 updated_gm.graph.find_nodes(
@@ -2164,6 +2295,113 @@ class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
         self.assertEqual(
             len(avg_pool2d_nodes),
             0,
+        )
+
+
+class TestReplaceAtenAvgPoolWithCadenceAvgPoolPass(unittest.TestCase):
+    def _get_aten_avg_pool1d_gm(
+        self, input_shape: Tuple[int, int, int], kernel_size: int
+    ) -> tuple[torch.Tensor, torch.fx.GraphModule]:
+        builder = GraphBuilder()
+        x_input = torch.randn(*input_shape)
+        x = builder.placeholder("x", x_input)
+        avg_pool1d = builder.call_operator(
+            exir_ops.edge.aten.avg_pool1d.default, (x, [kernel_size])
+        )
+        builder.output([avg_pool1d])
+        return x_input, builder.get_graph_module()
+
+    def _get_aten_avg_pool2d_gm(
+        self, input_shape: Tuple[int, int, int, int], kernel_size: Tuple[int, int]
+    ) -> tuple[torch.Tensor, torch.fx.GraphModule]:
+        builder = GraphBuilder()
+        x_input = torch.randn(*input_shape)
+        x = builder.placeholder("x", x_input)
+        avg_pool2d = builder.call_operator(
+            exir_ops.edge.aten.avg_pool2d.default, (x, list(kernel_size))
+        )
+        builder.output([avg_pool2d])
+        return x_input, builder.get_graph_module()
+
+    def test_replace_aten_avg_pool1d_with_cadence(self) -> None:
+        x_input, gm = self._get_aten_avg_pool1d_gm((1, 32, 64), 3)
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.aten.avg_pool1d.default),
+            1,
+        )
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.avg_pool2d.default),
+            0,
+        )
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
+        p = ReplaceAtenAvgPoolWithCadenceAvgPoolPass()
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        updated_gm = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate(
+            gm_before,
+            updated_gm,
+            inputs,
+            "ReplaceAtenAvgPoolWithCadenceAvgPoolPass",
+        )
+
+        # avg_pool1d should be replaced with view operations and avg_pool2d
+        self.assertEqual(
+            count_node(updated_gm, exir_ops.edge.aten.avg_pool1d.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(updated_gm, exir_ops.edge.cadence.avg_pool2d.default),
+            1,
+        )
+        # Should have view operations for reshaping
+        self.assertGreater(
+            count_node(updated_gm, exir_ops.edge.aten.view_copy.default),
+            0,
+        )
+
+    def test_replace_aten_avg_pool2d_with_cadence(self) -> None:
+        x_input, gm = self._get_aten_avg_pool2d_gm((1, 32, 64, 64), (3, 3))
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.aten.avg_pool2d.default),
+            1,
+        )
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.avg_pool2d.default),
+            0,
+        )
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
+        p = ReplaceAtenAvgPoolWithCadenceAvgPoolPass()
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        updated_gm = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate(
+            gm_before,
+            updated_gm,
+            inputs,
+            "ReplaceAtenAvgPoolWithCadenceAvgPoolPass",
+        )
+
+        # avg_pool2d should be replaced with cadence avg_pool2d
+        self.assertEqual(
+            count_node(updated_gm, exir_ops.edge.aten.avg_pool2d.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(updated_gm, exir_ops.edge.cadence.avg_pool2d.default),
+            1,
         )
 
 

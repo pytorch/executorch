@@ -117,7 +117,7 @@ def _atomic_download(url: str, dest: pathlib.Path):
 
 
 def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
-    """Robust streaming download with retries."""
+    """Streaming download with retry + resume support."""
 
     logger.debug("Archive will be saved to: %s", archive_path)
 
@@ -130,32 +130,80 @@ def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
     )
     session.mount("https://", HTTPAdapter(max_retries=retries))
 
+    # ------------------------------------------------------------
+    # 1. Detect total file size (HEAD is broken on Qualcomm)
+    # ------------------------------------------------------------
     try:
-        with session.get(url, stream=True) as r:
+        # NOTE:
+        # Qualcomm's download endpoint does not return accurate metadata on HEAD requests.
+        # Many Qualcomm URLs first redirect to an HTML "wrapper" page (typically ~134 bytes),
+        # and the HEAD request reflects *that wrapper* rather than the actual ZIP archive.
+        #
+        # Example:
+        #   HEAD -> Content-Length: 134, Content-Type: text/html
+        #   GET  -> Content-Length: 1354151797, Content-Type: application/zip
+        #
+        # Because Content-Length from HEAD is frequently incorrect, we fall back to issuing
+        # a GET request with stream=True to obtain the real Content-Length without downloading
+        # the full file. This ensures correct resume logic and size validation.
+        r_head = session.get(url, stream=True)
+        r_head.raise_for_status()
+
+        if "content-length" not in r_head.headers:
+            logger.error("Server did not return content-length!")
+            return False
+
+        total_size = int(r_head.headers["content-length"])
+    except Exception as e:
+        logger.exception("Failed to determine file size: %s", e)
+        return False
+
+    # ------------------------------------------------------------
+    # 2. If partial file exists, resume
+    # ------------------------------------------------------------
+    downloaded = archive_path.stat().st_size if archive_path.exists() else 0
+    if downloaded > total_size:
+        logger.warning("Existing file is larger than expected. Removing.")
+        archive_path.unlink()
+        downloaded = 0
+
+    logger.info("Resuming download from %d / %d bytes", downloaded, total_size)
+
+    headers = {}
+    if downloaded > 0:
+        headers["Range"] = f"bytes={downloaded}-"
+
+    try:
+        # resume GET
+        with session.get(url, stream=True, headers=headers) as r:
             r.raise_for_status()
 
-            downloaded = 0
             chunk_size = 1024 * 1024  # 1MB
+            mode = "ab" if downloaded > 0 else "wb"
 
-            with open(archive_path, "wb") as f:
+            with open(archive_path, mode) as f:
                 for chunk in r.iter_content(chunk_size):
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
 
-        logger.info("Download completed!")
-
     except Exception as e:
         logger.exception("Error during download: %s", e)
         return False
 
-    if archive_path.exists() and archive_path.stat().st_size == 0:
-        logger.warning("Downloaded file is empty!")
-        return False
-    elif not archive_path.exists():
-        logger.error("File was not downloaded!")
+    # ------------------------------------------------------------
+    # 3. Validate final size
+    # ------------------------------------------------------------
+    final_size = archive_path.stat().st_size
+    if final_size != total_size:
+        logger.error(
+            "Download incomplete: expected %d, got %d",
+            total_size,
+            final_size,
+        )
         return False
 
+    logger.info("Download completed successfully!")
     return True
 
 
