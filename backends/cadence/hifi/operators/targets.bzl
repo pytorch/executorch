@@ -122,12 +122,12 @@ def define_common_targets():
         define_operator(op)
 
     # quantized_linear_out and quantized_linear_per_tensor_out needs additional dependency for int16 support
-    define_operator("quantized_linear_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators/generic:op_quantized_linear"])
-    define_operator("quantized_linear_per_tensor_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators/generic:op_quantized_linear"])
+    define_operator("quantized_linear_out", deps=["//executorch/backends/cadence/generic/operators:op_quantized_linear"], exported_headers=["op_quantized_linear.h"])
+    define_operator("quantized_linear_per_tensor_out", deps=["//executorch/backends/cadence/generic/operators:op_quantized_linear"])
 
     # quantized_conv2d_nchw_out and quantized_conv2d_nhwc_out need additional dependency for int16 support
-    define_operator("quantized_conv2d_nchw_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators/generic:op_quantized_conv2d"])
-    define_operator("quantized_conv2d_nhwc_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators/generic:op_quantized_conv2d"])
+    define_operator("quantized_conv2d_nchw_out", deps=["//executorch/backends/cadence/generic/operators:op_quantized_conv2d"])
+    define_operator("quantized_conv2d_nhwc_out", deps=["//executorch/backends/cadence/generic/operators:op_quantized_conv2d"])
 
     # quantized_matmul_out needs additional dependency for int16 support
-    define_operator("quantized_matmul_out", deps=["fbcode//on_device_ai/Assistant/Jarvis/min_runtime/operators/generic:op_quantized_matmul"], exported_headers=["op_quantized_matmul_out.h"])
+    define_operator("quantized_matmul_out", deps=["//executorch/backends/cadence/generic/operators:op_quantized_matmul"], exported_headers=["op_quantized_matmul_out.h"])
