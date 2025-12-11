@@ -22,6 +22,24 @@ import triton.language as tl
 from torch.library import triton_op, wrap_triton
 
 
+def _is_power_of_2(n: int) -> bool:
+    """Check if n is a power of 2."""
+    return n > 0 and (n & (n - 1)) == 0
+
+
+def _next_power_of_2(x: int) -> int:
+    """Get the next power of 2 >= x, clamped to [16, 256]."""
+    if x <= 16:
+        return 16
+    if x <= 32:
+        return 32
+    if x <= 64:
+        return 64
+    if x <= 128:
+        return 128
+    return 256
+
+
 def _validate_qkv_shapes(
     query: torch.Tensor,
     key: torch.Tensor,
@@ -64,6 +82,131 @@ def _validate_qkv_shapes(
     return B_q, H_q, L_q, L_kv_k, D_q, D_k
 
 
+# ==============================================================================
+# Non-power-of-2 HEAD_DIM kernel
+# ==============================================================================
+@triton.jit
+def _sdpa_fwd_kernel_non_pow2(
+    q_ptr,
+    k_ptr,
+    v_ptr,
+    o_ptr,
+    mask_ptr,
+    B,
+    H,
+    LQ,
+    LK,
+    HEAD_DIM,
+    stride_qb,
+    stride_qh,
+    stride_ql,
+    stride_qd,
+    stride_kb,
+    stride_kh,
+    stride_kl,
+    stride_kd,
+    stride_vb,
+    stride_vh,
+    stride_vl,
+    stride_vd,
+    stride_ob,
+    stride_oh,
+    stride_ol,
+    stride_od,
+    stride_mb,
+    stride_mh,
+    stride_mlq,
+    stride_mlk,
+    scale,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_D: tl.constexpr,
+    HAS_MASK: tl.constexpr,
+    IS_CAUSAL: tl.constexpr,
+):
+    """
+    SDPA forward kernel for non-power-of-2 HEAD_DIM.
+    Uses dynamic masking to handle arbitrary head dimensions.
+    """
+    pid_m = tl.program_id(axis=0)
+    pid_bh = tl.program_id(axis=1)
+
+    b = pid_bh // H
+    h = pid_bh % H
+
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = tl.arange(0, BLOCK_N)
+    offs_d = tl.arange(0, BLOCK_D)
+
+    d_mask = offs_d < HEAD_DIM
+    q_row_mask = offs_m < LQ
+
+    q_base = q_ptr + b * stride_qb + h * stride_qh
+    k_base = k_ptr + b * stride_kb + h * stride_kh
+    v_base = v_ptr + b * stride_vb + h * stride_vh
+    o_base = o_ptr + b * stride_ob + h * stride_oh
+
+    q_ptrs = q_base + (offs_m[:, None] * stride_ql + offs_d[None, :] * stride_qd)
+    q = tl.load(q_ptrs, mask=q_row_mask[:, None] & d_mask[None, :], other=0.0)
+
+    acc = tl.zeros((BLOCK_M, BLOCK_D), dtype=tl.float32)
+    m_i = tl.full((BLOCK_M,), -float("inf"), dtype=tl.float32)
+    l_i = tl.full((BLOCK_M,), 1.0, dtype=tl.float32)
+
+    qk_scale_log2 = scale * 1.4426950408889634
+
+    if HAS_MASK:
+        mask_b_base = mask_ptr + b * stride_mb
+
+    for start_n in tl.range(0, LK, BLOCK_N, num_stages=2):
+        kn = start_n + offs_n
+        kv_col_mask = kn < LK
+
+        k_ptrs = k_base + (kn[:, None] * stride_kl + offs_d[None, :] * stride_kd)
+        k = tl.load(k_ptrs, mask=kv_col_mask[:, None] & d_mask[None, :], other=0.0)
+
+        qk = tl.dot(q, tl.trans(k))
+        qk = qk * qk_scale_log2
+
+        if IS_CAUSAL:
+            row_abs = offs_m[:, None]
+            col_abs = kn[None, :]
+            causal_mask = col_abs > row_abs
+            qk = tl.where(causal_mask, -float("inf"), qk)
+
+        if HAS_MASK:
+            mask_ptrs = (
+                mask_b_base + offs_m[:, None] * stride_mlq + kn[None, :] * stride_mlk
+            )
+            tile_valid = q_row_mask[:, None] & kv_col_mask[None, :]
+            keep = tl.load(mask_ptrs, mask=tile_valid, other=True)
+            qk = tl.where(keep, qk, -float("inf"))
+
+        qk = tl.where(kv_col_mask[None, :], qk, -float("inf"))
+
+        m_ij = tl.maximum(m_i, tl.max(qk, 1))
+        p = tl.math.exp2(qk - m_ij[:, None])
+        l_ij = tl.sum(p, 1)
+        alpha = tl.math.exp2(m_i - m_ij)
+
+        acc = acc * alpha[:, None]
+
+        v_ptrs = v_base + (kn[:, None] * stride_vl + offs_d[None, :] * stride_vd)
+        v = tl.load(v_ptrs, mask=kv_col_mask[:, None] & d_mask[None, :], other=0.0)
+
+        acc = tl.dot(p.to(v.dtype), v, acc)
+
+        l_i = l_i * alpha + l_ij
+        m_i = m_ij
+
+    out = acc / l_i[:, None]
+    o_ptrs = o_base + (offs_m[:, None] * stride_ol + offs_d[None, :] * stride_od)
+    tl.store(o_ptrs, out.to(tl.bfloat16), mask=q_row_mask[:, None] & d_mask[None, :])
+
+
+# ==============================================================================
+# Power-of-2 HEAD_DIM kernels
+# ==============================================================================
 @triton.jit
 def _sdpa_fwd_kernel_body(
     Q_ptr,
@@ -463,57 +606,122 @@ def sdpa(
     def grid(meta):
         return (triton.cdiv(L_q, meta["BLOCK_M"]), B * H)
 
-    # Dynamic kernel selection based on workload
-    total_ctas_m64 = ((L_q + 63) // 64) * (B * H)
-    threshold = 4 * 84  # Heuristic threshold for kernel selection
-    use_small_block = total_ctas_m64 < threshold
+    # Select kernel based on whether HEAD_DIM is power of 2
+    if _is_power_of_2(D):
+        # Use power-of-2 optimized kernels with autotune
+        # Dynamic kernel selection based on workload
+        total_ctas_m64 = ((L_q + 63) // 64) * (B * H)
+        threshold = 4 * 84  # Heuristic threshold for kernel selection
+        use_small_block = total_ctas_m64 < threshold
 
-    if use_small_block:
-        wrap_triton(_sdpa_fwd_kernel_m32)[grid](
-            query,
-            key,
-            value,
-            out,
-            Mask_ptr if HAS_MASK else 0,
-            B,
-            H,
-            L_q,
-            L_kv,
-            stride_qb,
-            stride_qh,
-            stride_qm,
-            stride_qd,
-            stride_kb,
-            stride_kh,
-            stride_kn,
-            stride_kd,
-            stride_vb,
-            stride_vh,
-            stride_vn,
-            stride_vd,
-            stride_ob,
-            stride_oh,
-            stride_om,
-            stride_od,
-            stride_mb,
-            stride_mq,
-            stride_mk,
-            sm_scale,
-            HAS_MASK=HAS_MASK,
-            IS_CAUSAL=is_causal,
-            HEAD_DIM=D,
-        )
+        if use_small_block:
+            wrap_triton(_sdpa_fwd_kernel_m32)[grid](
+                query,
+                key,
+                value,
+                out,
+                Mask_ptr if HAS_MASK else 0,
+                B,
+                H,
+                L_q,
+                L_kv,
+                stride_qb,
+                stride_qh,
+                stride_qm,
+                stride_qd,
+                stride_kb,
+                stride_kh,
+                stride_kn,
+                stride_kd,
+                stride_vb,
+                stride_vh,
+                stride_vn,
+                stride_vd,
+                stride_ob,
+                stride_oh,
+                stride_om,
+                stride_od,
+                stride_mb,
+                stride_mq,
+                stride_mk,
+                sm_scale,
+                HAS_MASK=HAS_MASK,
+                IS_CAUSAL=is_causal,
+                HEAD_DIM=D,
+            )
+        else:
+            wrap_triton(_sdpa_fwd_kernel_m64)[grid](
+                query,
+                key,
+                value,
+                out,
+                Mask_ptr if HAS_MASK else 0,
+                B,
+                H,
+                L_q,
+                L_kv,
+                stride_qb,
+                stride_qh,
+                stride_qm,
+                stride_qd,
+                stride_kb,
+                stride_kh,
+                stride_kn,
+                stride_kd,
+                stride_vb,
+                stride_vh,
+                stride_vn,
+                stride_vd,
+                stride_ob,
+                stride_oh,
+                stride_om,
+                stride_od,
+                stride_mb,
+                stride_mq,
+                stride_mk,
+                sm_scale,
+                HAS_MASK=HAS_MASK,
+                IS_CAUSAL=is_causal,
+                HEAD_DIM=D,
+            )
     else:
-        wrap_triton(_sdpa_fwd_kernel_m64)[grid](
+        # Use non-power-of-2 kernel with dynamic HEAD_DIM masking
+        BLOCK_D = _next_power_of_2(D)
+
+        if BLOCK_D >= 256:
+            BLOCK_N = 64
+        else:
+            BLOCK_N = 128
+
+        BLOCK_M = 32
+        num_warps = 4
+        num_stages = 2
+
+        # Handle mask for non-pow2 kernel (different stride layout)
+        if HAS_MASK:
+            mask_ptr = attn_mask
+            stride_mb_np2 = attn_mask.stride(0)
+            stride_mh_np2 = attn_mask.stride(1)
+            stride_mlq_np2 = attn_mask.stride(2)
+            stride_mlk_np2 = attn_mask.stride(3)
+        else:
+            mask_ptr = torch.empty((1,), device=query.device, dtype=torch.bool)
+            stride_mb_np2 = stride_mh_np2 = stride_mlq_np2 = stride_mlk_np2 = 0
+
+        def grid_non_pow2(meta):
+            return (triton.cdiv(L_q, meta["BLOCK_M"]), B * H)
+
+        wrap_triton(_sdpa_fwd_kernel_non_pow2)[grid_non_pow2](
             query,
             key,
             value,
             out,
-            Mask_ptr if HAS_MASK else 0,
+            mask_ptr,
             B,
             H,
             L_q,
             L_kv,
+            D,
             stride_qb,
             stride_qh,
             stride_qm,
@@ -530,13 +738,18 @@ def sdpa(
             stride_oh,
             stride_om,
             stride_od,
-            stride_mb,
-            stride_mq,
-            stride_mk,
+            stride_mb_np2,
+            stride_mh_np2,
+            stride_mlq_np2,
+            stride_mlk_np2,
             sm_scale,
+            BLOCK_M=BLOCK_M,
+            BLOCK_N=BLOCK_N,
+            BLOCK_D=BLOCK_D,
             HAS_MASK=HAS_MASK,
             IS_CAUSAL=is_causal,
-            HEAD_DIM=D,
+            num_warps=num_warps,
+            num_stages=num_stages,
         )
 
     return out
