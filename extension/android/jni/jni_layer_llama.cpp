@@ -23,6 +23,8 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#include <executorch/extension/android/jni/jni_helper.h>
+
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
@@ -404,12 +406,29 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   jint load() {
+    int result = -1;
+    std::stringstream ss;
+
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return static_cast<jint>(multi_modal_runner_->load());
+      result = static_cast<jint>(multi_modal_runner_->load());
+      if (result != 0) {
+        ss << "Failed to load multimodal runner: [" << result << "]";
+      }
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      return static_cast<jint>(runner_->load());
+      result = static_cast<jint>(runner_->load());
+      if (result != 0) {
+        ss << "Failed to load llm runner: [" << result << "]";
+      }
+    } else {
+      ss << "Invalid model type category: " << model_type_category_
+         << ". Valid values are: " << MODEL_TYPE_CATEGORY_LLM << " or "
+         << MODEL_TYPE_CATEGORY_MULTIMODAL;
     }
-    return static_cast<jint>(Error::InvalidArgument);
+    if (result != 0) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+    }
+    return result; // 0 on success to keep backward compatibility
   }
 
   static void registerNatives() {
