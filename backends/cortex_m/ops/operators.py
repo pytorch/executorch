@@ -669,7 +669,9 @@ def quantized_depthwise_conv2d_impl(
     activation_max: int,
 ) -> torch.Tensor:
     if input.dim() != 4 or weight.dim() != 4:
-        raise RuntimeError("quantized_depthwise_conv2d expects 4D input and weight tensors")
+        raise RuntimeError(
+            "quantized_depthwise_conv2d expects 4D input and weight tensors"
+        )
 
     # Validate depthwise convolution constraint: groups == input_channels
     input_channels = input.shape[1]

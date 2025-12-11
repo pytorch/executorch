@@ -77,7 +77,8 @@ bool validate_depthwise_conv2d_arguments(
 
   if (bias.has_value() && bias.value().scalar_type() != ScalarType::Int) {
     ET_LOG(
-        Error, "quantized_depthwise_conv2d_out: bias must be int32 if provided");
+        Error,
+        "quantized_depthwise_conv2d_out: bias must be int32 if provided");
     context.fail(Error::InvalidArgument);
     return false;
   }
