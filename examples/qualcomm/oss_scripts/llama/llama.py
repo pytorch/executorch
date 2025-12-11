@@ -71,8 +71,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
     apply_prompt_template,
     graph_module_inference,
     QnnRunnerEvalWrapper,
-    shift_pointer_updater,
-    smart_mask_updater,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
@@ -84,6 +82,9 @@ from executorch.examples.qualcomm.oss_scripts.llama.range_setting_pt2e import (
     reverse_quantize_module_swap,
     set_scales,
     WrappedLlamaModel,
+)
+from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
+    StaticLLMQuantRecipe,
 )
 
 from executorch.examples.qualcomm.utils import (
@@ -220,36 +221,20 @@ class SingleLlama:
         quant_dtype,
         args,
         tokenizer,
-        custom_annotations=(),
+        quant_recipe,
         scales_state_dict=None,
         chat_template=None,
         lookahead_config=None,
     ):
         self.quant_dtype = quant_dtype
-        quantizer = make_custom_quantizer(
-            quant_dtype, args.range_setting, custom_annotations
-        )
+        quantizer = make_custom_quantizer(quant_dtype, args.range_setting, ())
         self.has_quant_io = True
         fx_graph_module = None
         with torch.no_grad():
             fx_graph_module = torch.export.export(
                 self.llama_graph_module, self.inputs, strict=True
             ).module()
-
-            if quant_dtype == QuantDtype.use_16a4w_block:
-                if self.decoder_model_config.group_size is None:
-                    raise ValueError(
-                        "Group size is required when use quant_dtype 16a4w_block"
-                    )
-                conv_nodes = [
-                    n for n in fx_graph_module.graph.nodes if "conv" in n.name
-                ]
-                block_size_map = {
-                    n.name: (1, self.decoder_model_config.group_size, 1, 1)
-                    for n in conv_nodes
-                }
-                quantizer.set_block_size_map(block_size_map)
-
+            quantizer.recipe = quant_recipe
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
 
         logging.info("Quantizing the model...")
@@ -263,7 +248,6 @@ class SingleLlama:
                 tokenizer=tokenizer,
                 ar_len=self.llama_meta["get_ar_len"],
                 max_seq_len=self.llama_meta["get_max_seq_len"],
-                kv_updater=args.kv_updater,
                 tasks=args.tasks,
                 tasks_limit=args.limit,
                 num_fewshot=args.num_fewshot,
@@ -287,7 +271,6 @@ class SingleLlama:
             tokenizer=tokenizer,
             ar_len=self.llama_meta["get_ar_len"],
             max_seq_len=self.llama_meta["get_max_seq_len"],
-            kv_updater=args.kv_updater,
             prompt=prompt,
             use_i64_token=args.embedding_quantize is not None,
             event_name="prepare_pt2e_prompt",
@@ -302,8 +285,8 @@ class SingleLlama:
 
         if args.verbose:
             logging.info("Verifying the QDQ model...")
-            # qdq cpu ppl evaluation is time consuming, only enable when eval_perplexity
-            if args.eval_perplexity:
+            # qdq cpu ppl evaluation is time consuming, only enable when run_lm_eval
+            if args.run_lm_eval:
                 # Check qdq cpu results
                 graph_module_inference(
                     use_kv_cache=self.llama_meta["get_use_kv_cache"],
@@ -312,7 +295,6 @@ class SingleLlama:
                     tokenizer=tokenizer,
                     ar_len=self.llama_meta["get_ar_len"],
                     max_seq_len=self.llama_meta["get_max_seq_len"],
-                    kv_updater=args.kv_updater,
                     tasks=args.tasks,
                     tasks_limit=args.limit,
                     num_fewshot=args.num_fewshot,
@@ -341,7 +323,6 @@ class SingleLlama:
                 tokenizer=tokenizer,
                 ar_len=self.llama_meta["get_ar_len"],
                 max_seq_len=self.llama_meta["get_max_seq_len"],
-                kv_updater=args.kv_updater,
                 prompt=prompt,
                 use_i64_token=args.embedding_quantize is not None,
                 event_name="convert_pt2e_prompt",
@@ -393,6 +374,7 @@ class SingleLlama:
                 soc_model=soc_model,
                 backend_options=backend_options,
                 shared_buffer=shared_buffer,
+                use_mha2sha=True,
             )
             skip_node_op_set = {"llama.fallback.default"}
 
@@ -439,12 +421,16 @@ def compile(
     with open(params_path) as f:
         kv_config = ModelArgs(**json.load(f))
 
+    # get quant recipe
+    quant_recipe: StaticLLMQuantRecipe = decoder_model_config.quant_recipe(True)
+
     # TODO: support batch inputs if necessary
     kv_config.max_batch_size = 1
     kv_config.max_seq_len = args.max_seq_len
     kv_config.use_kv_cache = True
     kv_config.enable_r3 = decoder_model_config.r3
-    kv_config.kv_io_bit_width = decoder_model_config.get_kv_io_bit_width()
+    kv_config.kv_io_bit_width = quant_recipe.get_kv_io_bit_width()
+
     if decoder_model_config.masked_softmax:
         if is_qnn_sdk_version_less_than("2.35"):
             logging.warning(
@@ -643,7 +629,7 @@ def compile(
                 QuantDtype.use_8a8w: (8, 8),
                 QuantDtype.use_16a4w: (16, 4),
                 QuantDtype.use_16a4w_block: (16, 4),
-            }[decoder_model_config.ptq]
+            }[quant_recipe.default_quant_dtype]
             scales_state_dict = compute_scales(
                 wrapped_model, tokens, weight_bits, act_bits, 1600
             )
@@ -652,8 +638,8 @@ def compile(
 
     for llama_instance in llama_instance_list:
         for layer in llama_instance.layers:
-            if getattr(layer.attention, "prepare_sha", None):
-                layer.attention.prepare_sha()
+            if getattr(layer.attention, "prepare_attention_conv", None):
+                layer.attention.prepare_attention_conv()
 
             if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
                 layer.feed_forward.prepare_feedfoward_conv()
@@ -661,24 +647,24 @@ def compile(
     use_fp16 = True
     # "io_type" here refers to logits output and "kv_type" refers to kv_cache input/output.
     fixed_point_type = {"kv_type": torch.float32, "io_type": torch.float32}
-    if decoder_model_config.ptq:
-        if decoder_model_config.get_kv_io_bit_width() == 8:
+    if quant_recipe.default_quant_dtype:
+        if quant_recipe.get_kv_io_bit_width() == 8:
             fixed_point_type["kv_type"] = torch.uint8
-        elif decoder_model_config.get_kv_io_bit_width() == 16:
+        elif quant_recipe.get_kv_io_bit_width() == 16:
             fixed_point_type["kv_type"] = torch.uint16
         else:
             raise RuntimeError(
-                f"Unknown kv io bit width {decoder_model_config.get_kv_io_bit_width()}"
+                f"Unknown kv io bit width {quant_recipe.get_kv_io_bit_width()}"
             )
 
-        if decoder_model_config.get_logits_output_bit_width() == 16:
+        if quant_recipe.get_logits_output_bit_width() == 16:
             fixed_point_type["io_type"] = torch.uint16
         else:
             raise RuntimeError(
-                f"Unknown logits io bit width {decoder_model_config.get_logits_output_bit_width()}"
+                f"Unknown logits io bit width {quant_recipe.get_logits_output_bit_width()}"
             )
 
-    quant_dtype = decoder_model_config.ptq
+    quant_dtype = quant_recipe.default_quant_dtype
 
     if args.dtype_override is not None:
         dtype_override = DType[args.dtype_override]
@@ -701,9 +687,8 @@ def compile(
                 QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY
             ]["skip_node"] = {"tokens"}
 
-    if decoder_model_config.ptq:
+    if quant_recipe.default_quant_dtype:
         start_quantize_ts = time.time()
-        custom_annotations = decoder_model_config.custom_annotation
         kv_quant_attrs = {}
         for i, llama_instance in enumerate(llama_instance_list):
             lookahead_config = (
@@ -711,11 +696,12 @@ def compile(
                 if i == 0 and args.model_mode == "lookahead"
                 else None
             )
+
             llama_instance.quantize(
                 quant_dtype=quant_dtype,
                 args=args,
                 tokenizer=tokenizer,
-                custom_annotations=custom_annotations,
+                quant_recipe=quant_recipe,
                 scales_state_dict=scales_state_dict,
                 chat_template=chat_template,
                 lookahead_config=lookahead_config,
@@ -729,11 +715,11 @@ def compile(
                             kv_quant_attrs[output_indices] = output.args[1:]
                             output_indices += 1
                         break
-                custom_annotations = custom_annotations + (
+                quant_recipe.recipe.custom_quant_annotations.append(
                     partial(
                         annotate_prefill_kv_output,
                         kv_quant_attrs=kv_quant_attrs,
-                    ),
+                    )
                 )  # temporarily remove annotate_prefill_kv_output
             llama_instance.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
             llama_instance.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
@@ -800,7 +786,8 @@ def compile(
             args.artifact,
             use_fp16=use_fp16,
             soc_model=get_soc_to_chipset_map()[args.model],
-            shared_buffer=args.shared_buffer,
+            shared_buffer=not args.enable_x86_64,  # x86 emulator does not support shared buffer
+            verbose=args.verbose,
         )
     elif args.model_mode in ["hybrid", "lookahead"]:
         sample_inputs_list = [
@@ -816,8 +803,9 @@ def compile(
             generate_qnn_executorch_compiler_spec(
                 soc_model=get_soc_to_chipset_map()[args.model],
                 backend_options=backend_options,
-                shared_buffer=args.shared_buffer,
+                shared_buffer=not args.enable_x86_64,  # x86 emulator does not support shared buffer
                 graph_name=graph_name,
+                use_mha2sha=True,
             )
             for graph_name in graph_names
         ]
@@ -892,7 +880,7 @@ def inference(
         else f"{args.artifact}/{pte_filename}.pte"
     )
 
-    if args.eval_perplexity:
+    if args.run_lm_eval:
         # Generate the eval wrapper
         eval_wrapper = QnnRunnerEvalWrapper(
             args=args,
@@ -911,21 +899,41 @@ def inference(
             )
 
         if args.ip and args.port != -1:
-            assert (
-                len(args.tasks) == 1 and args.tasks[0] == "wikitext"
-            ), "CI currently supports wikitext only"
-            wiki_ppl = eval_results["results"][args.tasks[0]]["word_perplexity,none"]
-            pte_size = os.path.getsize(pte_path)
-            with Client((args.ip, args.port)) as conn:
-                conn.send(
-                    json.dumps(
-                        {
-                            "wiki_ppl": wiki_ppl,
-                            "pte_size": pte_size,
-                            "inference_speed": eval_wrapper.inference_speed,
-                        }
+            assert len(args.tasks) == 1, "CI currently supports 1 lm_eval task only."
+            match args.tasks[0]:
+                case "wikitext":
+                    wiki_ppl = eval_results["results"][args.tasks[0]][
+                        "word_perplexity,none"
+                    ]
+                    pte_size = os.path.getsize(pte_path)
+                    with Client((args.ip, args.port)) as conn:
+                        conn.send(
+                            json.dumps(
+                                {
+                                    "wiki_ppl": wiki_ppl,
+                                    "pte_size": pte_size,
+                                    "inference_speed": eval_wrapper.inference_speed,
+                                }
+                            )
+                        )
+                case "hellaswag":
+                    acc_norm = eval_results["results"][args.tasks[0]]["acc_norm,none"]
+                    pte_size = os.path.getsize(pte_path)
+                    with Client((args.ip, args.port)) as conn:
+                        conn.send(
+                            json.dumps(
+                                {
+                                    "acc_norm": acc_norm,
+                                    "pte_size": pte_size,
+                                    "inference_speed": eval_wrapper.inference_speed,
+                                }
+                            )
+                        )
+                case _:
+                    raise RuntimeError(
+                        "CI currently supports [wikitext, hellaswag] only."
                     )
-                )
+
         else:
             for task, res in eval_results["results"].items():
                 logging.info(f"{task}: {res}")
@@ -966,11 +974,6 @@ def inference(
         # x86 emulator is intended for CI and not performance. Check only the first few tokens.
         seq_len = min(seq_len, 16)
 
-        if args.kv_updater == smart_mask_updater:
-            logging.warning(
-                "x86 only support ShiftPointer, overwrite kv_updater to ShiftPointer"
-            )
-
         qnn_sdk = os.getenv("QNN_SDK_ROOT")
         target = "x86_64-linux-clang"
         runner_cmd = " ".join(
@@ -983,7 +986,6 @@ def inference(
                 f"--seq_len {seq_len}",
                 f"--output_path {args.artifact}/outputs/outputs.txt",
                 f"--performance_output_path {args.artifact}/{performance_output_path}",
-                f"--kv_updater ShiftPointer",
                 runner_args,
             ]
         )
@@ -1005,7 +1007,7 @@ def inference(
                 f"--seq_len {seq_len}",
                 "--output_path outputs/outputs.txt",
                 f"--performance_output_path {performance_output_path}",
-                f"--kv_updater {'SmartMask' if args.kv_updater == smart_mask_updater else 'ShiftPointer'}",
+                "--shared_buffer",
                 runner_args,
             ]
         )
@@ -1018,12 +1020,13 @@ def inference(
             device_id=args.device,
             host_id=args.host,
             soc_model=args.model,
-            shared_buffer=args.shared_buffer,
+            shared_buffer=True,
             target=args.target,
             runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=[], files=[runtime_tokenizer_path])
+        if not args.skip_push:
+            adb.push(inputs=[], files=[runtime_tokenizer_path])
         adb.execute(custom_runner_cmd=runner_cmd)
         adb.pull(output_path=args.artifact, callback=post_process)
 
@@ -1052,7 +1055,7 @@ def inference(
 
 def _build_tasks_parser(parser):
     parser.add_argument(
-        "--eval_perplexity",
+        "--run_lm_eval",
         help="If enabled, this will use the tasks provided under args.tasks to calibrate the model",
         action="store_true",
         default=False,
@@ -1139,7 +1142,7 @@ def _build_parser():
 
     parser.add_argument(
         "--system_prompt",
-        help="For Llama3. Tells the model what kind of assistant it should be. For example, You are a helpful AI assistant for travel tips and recommendations. Default is None",
+        help="For Llama3/Granite. Tells the model what kind of assistant it should be. For example, You are a helpful AI assistant for travel tips and recommendations. Default is None",
         default="",
         type=str,
     )
@@ -1180,14 +1183,6 @@ def _build_parser():
         help="The auto-regression (AR) length determines the number of tokens to consume and the number of logits to produce. Use this option to process the prompt and generate the key-value (kv) cache, which serves as a prompt processor for hybrid and lookahead mode.",
         default=32,
         type=int,
-    )
-
-    parser.add_argument(
-        "--kv_updater",
-        help="Choose how to update kv cache during runtime",
-        choices=["smart_mask", "shift_pointer"],
-        default="smart_mask",
-        type=str,
     )
 
     parser.add_argument(
@@ -1233,9 +1228,9 @@ def _build_parser():
 def export_llama(args) -> None:
     if args.compile_only and args.pre_gen_pte:
         raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
-    if args.eval_perplexity and args.model_mode != "kv":
+    if args.run_lm_eval and args.model_mode != "kv":
         raise RuntimeError("Eval device perplexity is only supported for KV mode")
-    if args.eval_perplexity and args.tasks is None:
+    if args.run_lm_eval and args.tasks is None:
         raise RuntimeError("Please provide --tasks to eval perplexity")
     assert (
         args.decoder_model in SUPPORTED_LLM_MODELS
@@ -1297,15 +1292,23 @@ def export_llama(args) -> None:
             # For Gemma, use tokenizer.model as it doesn't provide pre_tokenizer in tokenizer.json.
             runtime_tokenizer_path = tokenizer_artifacts[-3]
         else:
+            if args.decoder_model == "glm-1_5b":
+                with open(tokenizer_config, "r+") as file:
+                    data = json.load(file)
+                    # Verified with HF flow and it uses <|user|> as eos condition
+                    data["bos_token"] = "<|user|>"
+                    data["eos_token"] = "<|user|>"
+                    file.seek(0)
+                    json.dump(data, file, indent=4)
+                    file.truncate()
             runtime_tokenizer_path = tokenizer_artifacts[-1]
+
         tokenizer = get_tokenizer(runtime_tokenizer_path, tokenizer_config)
 
     if args.decoder_model == "codegen2_1b":
         # Override the default BOS and EOS token IDs for codegen2_1b
         tokenizer.bos_id = 1
         tokenizer.eos_id = 2
-
-    # TODO: Remove this once error is resolved.
     elif args.decoder_model == "phi_4_mini":
         with open(runtime_tokenizer_path, "r+") as file:
             data = json.load(file)
@@ -1315,14 +1318,6 @@ def export_llama(args) -> None:
             file.seek(0)
             json.dump(data, file, indent=4)
             file.truncate()
-
-    if args.kv_updater == "smart_mask":
-        args.shared_buffer = True
-        args.kv_updater = smart_mask_updater
-    elif args.kv_updater == "shift_pointer":
-        args.kv_updater = shift_pointer_updater
-    else:
-        raise RuntimeError(f"Using an unknown kv update {args.kv_updater}")
 
     if args.pre_gen_pte:
         inference(

@@ -11,12 +11,25 @@ from typing import Callable, Protocol, TypeVar
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
 m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
-torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
+
+try:
+    torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
+except (OSError, RuntimeError):
+    # Fall back to path-based loading for CMake/OSS builds
+    from pathlib import Path
+
+    custom_libs: list[Path] = list(
+        Path(__file__)
+        .parent.parent.parent.resolve()
+        .glob("**/kernels/quantized/**/*custom_ops_generated_lib.*")
+    )
+    if custom_libs:
+        torch.ops.load_library(str(custom_libs[0]))
+    del Path
 
 # Registry to track all ops with reference implementations
 _REGISTERED_REF_IMPLEMENTATIONS: set[str] = set()
@@ -788,9 +801,9 @@ def quantized_conv_per_tensor(
             (input_tensor - in_zero_point).float(),
             (weight - weight_zero_point).float(),
             (bias * bias_scale).float(),
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             groups,
         )
 
@@ -1334,8 +1347,25 @@ def quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl_tracked(m, "convolution")
-def convolution(
+@impl_tracked(m, "conv1d")
+def conv1d(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int],
+    padding: tuple[int],
+    dilation: tuple[int],
+    groups: int,
+) -> torch.Tensor:
+    conv_out = torch.nn.functional.conv1d(
+        input_tensor, weight, bias, stride[0], padding[0], dilation[0], groups
+    )
+
+    return conv_out
+
+
+@impl_tracked(m, "conv2d")
+def conv2d(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -1343,39 +1373,27 @@ def convolution(
     padding: tuple[int, int],
     dilation: tuple[int, int],
     groups: int,
-    channel_last: bool = False,
 ) -> torch.Tensor:
-    conv_is_1d = len(input_tensor.shape) == 3
-    if channel_last:
-        if conv_is_1d:
-            input_tensor = input_tensor.movedim(-1, 1).contiguous()
-            if len(weight.shape) != 3:
-                raise ValueError("Weight tensor must be 3D if input is 3D")
-            weight = weight.movedim(-1, 1).contiguous()
-        else:
-            input_tensor = input_tensor.movedim(-1, -3)
-            if len(weight.shape) != 4:
-                raise ValueError("Weight tensor must be 4D if input is nd > 3")
-            weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+    conv_out = torch.nn.functional.conv2d(
+        input_tensor, weight, bias, stride, padding, dilation, groups
+    )
 
-    _stride: tuple[int, int] | int = stride
-    _padding: tuple[int, int] | int = padding
-    _dilation: tuple[int, int] | int = dilation
+    return conv_out
 
-    if conv_is_1d:
-        conv = torch.nn.functional.conv1d
-        _stride = stride[0]
-        _padding = padding[0]
-        _dilation = dilation[0]
-    else:
-        conv = torch.nn.functional.conv2d
 
-    conv_out = conv(input_tensor, weight, bias, _stride, _padding, _dilation, groups)
-    if channel_last:
-        if conv_is_1d:
-            conv_out = conv_out.movedim(1, -1).contiguous()
-        else:
-            conv_out = conv_out.movedim(-3, -1).contiguous()
+@impl_tracked(m, "conv3d")
+def conv3d(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int, int],
+    padding: tuple[int, int, int],
+    dilation: tuple[int, int, int],
+    groups: int,
+) -> torch.Tensor:
+    conv_out = torch.nn.functional.conv3d(
+        input_tensor, weight, bias, stride, padding, dilation, groups
+    )
 
     return conv_out
 
@@ -1683,31 +1701,38 @@ def rope(
             input_tensor.shape[0], input_tensor.shape[1], input_tensor.shape[2], -1
         )
 
-    _, s, h, hd = input_tensor.shape
+    _, seq, _, hd = input_tensor.shape
 
     if hd % 2:
         raise ValueError("Hidden dimension must be divisible by 2")
 
-    if sin_tensor.shape != (s, hd // 2) or cos_tensor.shape != (s, hd // 2):
+    if (
+        sin_tensor.size(-1) * 2 != hd
+        or cos_tensor.size(-1) * 2 != hd
+        or sin_tensor.size(0) < seq
+        or cos_tensor.size(0) < seq
+    ):
         raise ValueError(
-            f"sin_tensor and cos_tensor must have shape {s, hd // 2}. Got {sin_tensor.shape} and {cos_tensor.shape}"
+            f"sin_tensor and cos_tensor must have shape <kvseq (> {seq}) x {hd // 2}>. Got {sin_tensor.shape} and {cos_tensor.shape}"
         )
 
     if pos is not None:
-        if pos.shape != (input_tensor.shape[1],):
+        if pos.shape != (seq,):
             raise ValueError(
                 f"pos must have shape {input_tensor.shape[1]}. Got {pos.shape}"
             )
         sin_tensor = sin_tensor[pos]
         cos_tensor = cos_tensor[pos]
 
+    # seq x 1 x hd
     sin_tensor = sin_tensor.unsqueeze(1)
     cos_tensor = cos_tensor.unsqueeze(1)
 
+    # batch x seq x num_heads x head_dim_by_two
     x0, x1 = input_tensor[..., ::2], input_tensor[..., 1::2]
-    rotated = torch.cat(
-        [x0 * cos_tensor - x1 * sin_tensor, x0 * sin_tensor + x1 * cos_tensor], dim=-1
-    )
+    o0 = x0 * cos_tensor - x1 * sin_tensor
+    o1 = x0 * sin_tensor + x1 * cos_tensor
+    rotated = torch.cat([o0.view(-1, 1), o1.view(-1, 1)], dim=-1)
     return rotated.view(original_shape)
 
 

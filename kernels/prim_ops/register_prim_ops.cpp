@@ -141,6 +141,12 @@ static Kernel prim_ops[] = {
           EValue& out = *stack[1];
           executorch::aten::Tensor self_tensor =
               self.to<executorch::aten::Tensor>();
+          ET_KERNEL_CHECK_MSG(
+              context,
+              self_tensor.numel() >= 1,
+              InvalidArgument,
+              /* void */,
+              "Expected tensor with at least 1 element");
           ET_SWITCH_REAL_TYPES_AND(
               Bool,
               self_tensor.scalar_type(),

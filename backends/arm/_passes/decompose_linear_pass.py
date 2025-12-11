@@ -55,6 +55,8 @@ class DecomposeLinearPass(ArmPass):
                     op_target=exir_ops.edge.aten.view_copy.default,
                     args=(input, input_reshaped_shape),
                     kwargs={},
+                    from_node=node,
+                    inherit_qparams=False,
                 )
 
                 # Reshape weights to 4D with shape (Co, Ci, 1, 1)
@@ -63,6 +65,8 @@ class DecomposeLinearPass(ArmPass):
                     op_target=exir_ops.edge.aten.view_copy.default,
                     args=(weights, weights_reshaped_shape),
                     kwargs={},
+                    from_node=node,
+                    inherit_qparams=False,
                 )
 
                 conv = create_node(
@@ -81,6 +85,7 @@ class DecomposeLinearPass(ArmPass):
                     ),
                     kwargs={},
                     from_node=node,
+                    inherit_qparams=True,
                 )
 
             with graph_module.graph.inserting_after(conv):
@@ -93,14 +98,8 @@ class DecomposeLinearPass(ArmPass):
                     args=(conv, list(output_shape)),
                     kwargs={},
                     from_node=node,
+                    inherit_qparams=False,
                 )
-                # Quantization parameters are inherited from original linear node, but
-                # output reshape should use the linear node's output qparams for both input
-                # and output.
-                if "input_qparams" in output.meta:
-                    output.meta["input_qparams"] = output.meta.get(
-                        "output_qparams", None
-                    )
 
             node.replace_all_uses_with(output)
             graph_module.graph.erase_node(node)

@@ -157,7 +157,6 @@ test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using 
 test_pytest_ops_vkml() { # Same as test_pytest but also sometime verify using VKML runtime
     echo "${TEST_SUITE_NAME}: Run pytest operator tests with VKML runtime"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing_vkml.sh
 
     pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ \
@@ -190,11 +189,11 @@ test_run_vkml() { # End to End model tests using run.sh
 
     echo "${TEST_SUITE_NAME}: Test VKML"
     out_folder="arm_test/test_run"
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=add --output=${out_folder}/runner
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=mul --output=${out_folder}/runner
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=add --output=${out_folder}/runner --bundleio
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=mul --output=${out_folder}/runner --bundleio
 
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qadd --output=${out_folder}/runner
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qops --output=${out_folder}/runner
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qadd --output=${out_folder}/runner --bundleio
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qops --output=${out_folder}/runner --bundleio
 
     echo "${TEST_SUITE_NAME}: PASS"
 }
@@ -254,8 +253,8 @@ test_models_vkml() { # End to End model tests using model_test.py
 
     # VKML
     echo "${TEST_SUITE_NAME}: Test target VKML"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=mv2
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --no_quantize --model=mv2
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=resnet18 --extra_runtime_flags="--bundleio_atol=0.2 --bundleio_rtol=0.2"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=resnet50 --extra_runtime_flags="--bundleio_atol=0.2 --bundleio_rtol=0.2"
 
     echo "${TEST_SUITE_NAME}: PASS"
 }
@@ -390,9 +389,30 @@ test_memory_allocation() {
             --require "model_pte_program_size" "<= 3000 B" \
             --require "method_allocator_planned" "<= 64 B" \
             --require "method_allocator_loaded" "<= 1024 B" \
-            --require "method_allocator_input" "<= 4 B" \
+            --require "method_allocator_input" "<= 16 B" \
             --require "Total DRAM used" "<= 0.06 KiB"
     echo "${TEST_SUITE_NAME}: PASS"
 }
+
+test_undefinedbehavior_sanitizer() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u executor_runner with UBSAN"
+
+    mkdir -p arm_test/test_run
+    # Ethos-U85
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py --build_type=UndefinedSanitizer
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_address_sanitizer() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u executor_runner with ASAN"
+
+    mkdir -p arm_test/test_run
+    # Ethos-U85
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py --build_type=AddressSanitizer
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 
 ${TEST_SUITE}

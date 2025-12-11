@@ -6,22 +6,39 @@
 
 # pyre-strict
 
-from typing import Dict, Optional, Set, Tuple
-
-from executorch.exir._serialize import _serialize_pte_binary
+from typing import Dict, Optional, Tuple
 
 from executorch.exir._serialize._cord import Cord
-from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
-from executorch.exir._serialize.data_serializer import (
-    DataEntry,
-    DataPayload,
-    DataSerializer,
+from executorch.exir._serialize._named_data_store import (
+    NamedDataStore,
+    NamedDataStoreOutput,
 )
-
+from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+from executorch.exir._serialize.data_serializer import DataPayload, DataSerializer
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.emit import EmitterOutput
-from executorch.exir.schema import Tensor, TensorDataLocation
+from executorch.exir.schema import Program, Tensor, TensorDataLocation
 from executorch.exir.tensor_layout import TensorLayout
+
+
+def _extract_external_tensor_layouts(program: Program) -> Dict[str, TensorLayout]:
+    # Find all external tensors and organize into {fqn: TensorLayout}.
+    fqn_to_tensor_layout: Dict[str, TensorLayout] = {}
+    for plan in program.execution_plan:
+        for evalue in plan.values:
+            if isinstance(evalue.val, Tensor):
+                tensor = evalue.val
+                if (
+                    tensor.extra_tensor_info is not None
+                    and tensor.extra_tensor_info.fully_qualified_name is not None
+                    and tensor.extra_tensor_info.location is TensorDataLocation.EXTERNAL
+                ):
+                    fqn_to_tensor_layout[
+                        # pyre-ignore Undefined attribute [16]: `Optional` has no attribute `fully_qualified_name`
+                        tensor.extra_tensor_info.fully_qualified_name
+                    ] = TensorLayout(tensor.scalar_type, tensor.sizes, tensor.dim_order)
+
+    return fqn_to_tensor_layout
 
 
 def serialize_for_executorch(
@@ -41,100 +58,65 @@ def serialize_for_executorch(
     ):
         # Create a separate NamedDataStoreOutput with only pte_data; exclude
         # external_data, which shouldn't be serialized with the PTE file.
-        pte_named_data = NamedDataStoreOutput(
-            buffers=named_data_store.buffers,
-            pte_data=named_data_store.pte_data,
-            external_data={},
-        )
-    pte: Cord = _serialize_pte_binary(
-        program=emitter_output.program,
-        mutable_data=emitter_output.mutable_data,
+        if len(named_data_store.external_data) == 0:
+            pte_named_data = named_data_store
+        else:
+            pte_named_data = NamedDataStoreOutput(
+                buffers=named_data_store.buffers,
+                pte_data=named_data_store.pte_data,
+                external_data={},
+            )
+    pte: Cord = serialize_pte_binary(
+        pte_file=PTEFile(
+            program=emitter_output.program,
+            mutable_data=emitter_output.mutable_data,
+            named_data=pte_named_data,
+        ),
         extract_delegate_segments=config.extract_delegate_segments,
         segment_alignment=config.segment_alignment,
         constant_tensor_alignment=config.constant_tensor_alignment,
         delegate_alignment=config.delegate_alignment,
-        named_data=pte_named_data,
     )
 
-    # Serialize PTD files.
-    ptd_files: Dict[str, Cord] = {}
-
-    # Find all external tensors and organize into {fqn: TensorLayout}.
-    fqn_to_tensor_layout: Dict[str, TensorLayout] = {}
-    for plan in emitter_output.program.execution_plan:
-        for evalue in plan.values:
-            if isinstance(evalue.val, Tensor):
-                tensor = evalue.val
-                if (
-                    tensor.extra_tensor_info is not None
-                    and tensor.extra_tensor_info.fully_qualified_name is not None
-                    and tensor.extra_tensor_info.location is TensorDataLocation.EXTERNAL
-                ):
-                    fqn_to_tensor_layout[
-                        # pyre-ignore Undefined attribute [16]: `Optional` has no attribute `fully_qualified_name`
-                        tensor.extra_tensor_info.fully_qualified_name
-                    ] = TensorLayout(tensor.scalar_type, tensor.sizes, tensor.dim_order)
-
-    if len(fqn_to_tensor_layout) == 0 and (
+    # Early exit if no external weights.
+    if len(emitter_output.external_constant_map) == 0 and (
         named_data_store is None or len(named_data_store.external_data) == 0
     ):
+        return pte, {}
+
+    ptd_files: Dict[str, Cord] = {}
+
+    # If there are no emitter constants, use named_data_store directly.
+    if len(emitter_output.external_constant_map) == 0:
+        for tag in named_data_store.external_data.keys():
+            ptd_files[tag] = data_serializer.serialize(
+                DataPayload(
+                    buffers=named_data_store.buffers,
+                    named_data=named_data_store.external_data[tag],
+                )
+            )
         return pte, ptd_files
 
-    # Consolidate tensors and opaque data with the same external tag so they
-    # can be saved to the same PTD.
-    all_external_tags: Set[str] = set()
-    if named_data_store is not None and len(named_data_store.external_data) > 0:
-        assert (
-            len(named_data_store.buffers) > 0
-        ), "External data exists, but there are no buffers provided."
-        all_external_tags = set(named_data_store.external_data.keys())
-
-    if len(fqn_to_tensor_layout) > 0:
-        # emitter_output.external_constant_map contains the mapping from
-        # {file: {fqn: index into external_constant_buffer}}
-        # Contains the locations of the tensor buffers, and must be non-empty
-        # if there are external tensors to serialize.
-        assert (
-            emitter_output.external_constant_map is not None
-        ), "External exists, but there are no buffers provided."
-        all_external_tags = all_external_tags | set(
-            emitter_output.external_constant_map.keys()
-        )
-
-    for tag in all_external_tags:
-        buffers = []
-        key_to_data_entry: Dict[str, DataEntry] = {}
-        # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `get`.
-        fqn_to_index = emitter_output.external_constant_map.get(tag, {})
-        # Create a DataEntry for each external tensor.
+    # Collect external weights from emitter output and merge them.
+    fqn_to_tensor_layout = _extract_external_tensor_layouts(emitter_output.program)
+    updated_named_data_store = NamedDataStore()
+    # Add tensor constants from the emitter to the NamedDataStore.
+    for tag, fqn_to_index in emitter_output.external_constant_map.items():
         for fqn, index in fqn_to_index.items():
-            assert fqn in fqn_to_tensor_layout
-            assert fqn not in key_to_data_entry  # fqn must be unique
-            key_to_data_entry[fqn] = DataEntry(
-                buffer_index=len(buffers),
-                alignment=config.constant_tensor_alignment,
+            updated_named_data_store.add_named_data(
+                fqn,
+                emitter_output.external_constant_buffer[index],
                 tensor_layout=fqn_to_tensor_layout[fqn],
+                external_tag=tag,
             )
-            buffers.append(emitter_output.external_constant_buffer[index])
+    updated_named_data_store.merge_named_data_store(named_data_store)
 
-        # Extract external data from named_data_store.
-        # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `get`.
-        blob_to_data_entry = named_data_store.external_data.get(tag, {})
-        for key, data_entry in blob_to_data_entry.items():
-            assert key not in key_to_data_entry  # key must be unique
-            key_to_data_entry[key] = DataEntry(
-                buffer_index=len(buffers),
-                alignment=data_entry.alignment,
-                tensor_layout=data_entry.tensor_layout,
-            )
-            # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `buffers`.
-            buffers.append(named_data_store.buffers[data_entry.buffer_index])
-
-        # Serialize into PTD file.
+    # Serialize each tag into a PTD file.
+    for tag in updated_named_data_store.external_data.keys():
         ptd_files[tag] = data_serializer.serialize(
             DataPayload(
-                buffers=buffers,
-                named_data=key_to_data_entry,
+                buffers=updated_named_data_store.buffers,
+                named_data=updated_named_data_store.external_data[tag],
             )
         )
 

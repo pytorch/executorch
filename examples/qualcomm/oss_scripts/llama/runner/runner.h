@@ -34,12 +34,14 @@ enum DecoderModelVersion {
   kLlama3,
   kGemma,
   kGemma3,
+  kGranite,
   kPhi4,
   kQwen2_5,
   kQwen3,
   kSmollm2_135m,
   kSmollm3,
   kCodegen,
+  kGlm,
 };
 
 enum KvBitWidth {
@@ -59,7 +61,7 @@ class Runner : public executorch::extension::llm::IRunner {
       const std::string& dump_logits_path,
       const float temperature = 0.8f,
       const int eval_mode = EvalMode::kHybrid,
-      const std::string& kv_updater = "SmartMask",
+      const bool shared_buffer = false,
       const int ngram = 0,
       const int window = 0,
       const int gcap = 0,
@@ -110,9 +112,9 @@ class Runner : public executorch::extension::llm::IRunner {
   std::string dump_logits_path_;
   float temperature_;
   EvalMode eval_mode_;
+  bool shared_buffer_;
 
   DecoderModelVersion decoder_model_version_;
-  KVManagerMode kv_updater_;
   std::unique_ptr<IMemAlloc> buffer_manager_;
   std::unique_ptr<KVManager<T>> kv_manager_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;

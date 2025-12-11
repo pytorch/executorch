@@ -78,14 +78,18 @@ def _read_tosa_outputs(tosa_path: Path):
     return shapes
 
 
+# TODO: MLETORCH-1266 Investigate output order issue
 @pytest.mark.parametrize("batch_size", [1, 4])
-def test_network_output_order_and_restore(batch_size):
+@pytest.mark.parametrize("output_order_workaround", [True, False])
+def test_network_output_order_and_restore(batch_size, output_order_workaround):
     model = Network(batch_norm=True).eval()
     # Prepare spec
     spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
-    compile_spec = TosaCompileSpec(tosa_spec=spec)
+    tosa_compile_spec = TosaCompileSpec(spec).set_output_order_workaround(
+        output_order_workaround
+    )
     # Setup quantizer
-    quantizer = TOSAQuantizer(compile_spec)
+    quantizer = TOSAQuantizer(tosa_compile_spec)
     quantizer.set_global(
         get_symmetric_quantization_config(is_qat=True, is_per_channel=False)
     )
@@ -100,7 +104,7 @@ def test_network_output_order_and_restore(batch_size):
     with tempfile.TemporaryDirectory(dir="") as tmpdir:
         art_dir = Path(tmpdir)
         part = TOSAPartitioner(
-            TosaCompileSpec(spec).dump_intermediate_artifacts_to(str(art_dir))
+            tosa_compile_spec.dump_intermediate_artifacts_to(str(art_dir))
         )
         _ = to_edge_transform_and_lower(aten_gm, partitioner=[part])
         # Expect exactly one .tosa file in the artefact dir

@@ -4,23 +4,26 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import cast
+from typing import cast, Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.quant_args import QuantArgs
 
-from executorch.backends.arm.tosa.specification import get_context_spec, Tosa_1_00
+from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeConv2dWithInt16ActivationPass(ExportPass):
+class DecomposeConv2dWithInt16ActivationPass(ArmPass):
     """
     This pass decomposes a convolution with input dtype int16 and bias
     into a convolution without bias followed by an addition of the bias
     since the TOSA op requires the bias to be int48 which is hard to represent
     in torch. Instead rescale the int48 output to int16 and add the bias in int16.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta):
         if op != exir_ops.edge.aten.convolution.default:
@@ -37,9 +40,7 @@ class DecomposeConv2dWithInt16ActivationPass(ExportPass):
         if args[0].data.dtype == torch.int8:
             return super().call_operator(op, args, kwargs, meta)
         elif args[0].data.dtype == torch.int16:
-            if isinstance(tosa_spec, Tosa_1_00) and not tosa_spec.support_extension(
-                "int16"
-            ):
+            if not tosa_spec.support_extension("int16"):
                 raise ValueError(
                     "int16 activation for convolution requires TOSA int16 extension"
                 )

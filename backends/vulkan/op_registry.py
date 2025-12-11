@@ -144,13 +144,9 @@ def register_ephemeral_op():
 
 @update_features(
     [
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.quantize_per_token.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
     ]
 )
@@ -630,35 +626,35 @@ def register_quantized_binary_op():
 
 @update_features(
     [
-        exir_ops.edge.et_vk.quantize_q8ta_for_conv2d.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     ]
 )
-def register_quantize_for_conv2d_op():
+def register_quantize_op():
     return OpFeatures(
         inputs_storage=[
-            utils.CHANNELS_PACKED_TEXTURE,
+            utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
         ],
         outputs_storage=[
             utils.PACKED_INT8_4W4C_BUFFER,
         ],
-        supports_resize=False,
     )
 
 
 @update_features(
     [
-        exir_ops.edge.et_vk.dequantize_q8to_from_conv2d.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     ]
 )
-def register_dequantize_for_conv2d_op():
+def register_dequantize_op():
     return OpFeatures(
         inputs_storage=[
             utils.PACKED_INT8_4W4C_BUFFER,
         ],
         outputs_storage=[
-            utils.CHANNELS_PACKED_TEXTURE,
+            utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
         ],
-        supports_resize=False,
     )
 
 
@@ -711,6 +707,7 @@ def register_view_ops():
         exir_ops.edge.aten.unsqueeze_copy.default,
         exir_ops.edge.aten.clone.default,
         exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.gather.default,
     ]
 )
 def register_view_ops_with_buffer_meta():
@@ -743,6 +740,7 @@ def register_cat_op():
     [
         exir_ops.edge.aten.select_copy.int,
         exir_ops.edge.aten.slice_copy.Tensor,
+        exir_ops.edge.aten.split_with_sizes_copy.default,
     ]
 )
 def register_transfer_ops():
@@ -785,10 +783,7 @@ def register_ported_op():
 # Ops ported from PyTorch Vulkan backend. These ops are in a separate registry because they support all packed dimensions
 @update_features(
     [
-        # Tensor combination
         exir_ops.edge.aten.repeat.default,
-        exir_ops.edge.aten.split_with_sizes_copy.default,
-        exir_ops.edge.aten.split.Tensor,
     ]
 )
 def register_ported_op_all_packed_dims():

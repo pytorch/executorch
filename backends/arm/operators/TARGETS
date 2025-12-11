@@ -24,7 +24,6 @@ runtime.python_library(
         ":node_visitor",
         ":operator_validation_utils",
         "//executorch/backends/arm/tosa:mapping",
-        "//executorch/backends/arm/tosa:quant_utils",
         "//executorch/backends/arm/tosa:utils",
         "//executorch/backends/arm/_passes:passes",
         "//executorch/exir:lib",

@@ -208,12 +208,15 @@ supported_ops = {
     exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2dConverter,  # noqa F405
     exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
+    exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
+    exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
+    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
+    exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
     exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
     exir_ops.edge.aten.tanh.default: TanhConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
-    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
 }
 
 
@@ -316,11 +319,12 @@ class NeutronPartitioner(Partitioner):
         )
         self.neutron_target_spec = neutron_target_spec
 
-    @staticmethod
     def validate_partitioning_result(
+        self,
         graph: Graph,
         partition_list: list[Partition],
         custom_delegation_options: CustomDelegationOptions,
+        parameters_mapping: dict[str, Parameter],
     ) -> bool:
         all_delegated_nodes = {
             node for partition in partition_list for node in partition.nodes
@@ -333,7 +337,11 @@ class NeutronPartitioner(Partitioner):
                 and node.target in supported_ops
             ):
                 if not supported_ops[node.target].supports_partitioning_result(
-                    node, partition_list, custom_delegation_options
+                    node,
+                    partition_list,
+                    custom_delegation_options,
+                    self.neutron_target_spec,
+                    parameters_mapping,
                 ):
                     # This node is not supported within its partition. Exclude it from delegation in the future.
                     partitioning_valid = False
@@ -378,6 +386,10 @@ class NeutronPartitioner(Partitioner):
         # This format will be used by the `CapabilityBasedPartitioner` to determine which nodes will be delegated.
         NodeFormatInference(exported_program).identify_node_formats()
 
+        parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(
+            exported_program
+        )
+
         iteration_limit = len(exported_program.graph.nodes)
         for _ in range(iteration_limit):
             # Run the partitioning.
@@ -385,7 +397,10 @@ class NeutronPartitioner(Partitioner):
 
             # Check if the nodes support the partitioning result. Mark the problematic nodes with `NXP_DO_NOT_DELEGATE`.
             partitioning_valid = self.validate_partitioning_result(
-                exported_program.graph, partition_list, self.custom_delegation_options
+                exported_program.graph,
+                partition_list,
+                self.custom_delegation_options,
+                parameters_mapping,
             )
             if partitioning_valid:
                 # The result of the partitioning is fine

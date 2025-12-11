@@ -49,6 +49,7 @@ class RewriteUpsamplePass(ArmPass):
                     args=(x, output_size, align_corners, scale_factors),
                     kwargs={"resize_mode": resize_mode},
                     from_node=node,
+                    inherit_qparams=True,
                 )
                 node.replace_all_uses_with(tosa_resize_node)
                 graph_module.graph.erase_node(node)

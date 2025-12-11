@@ -12,16 +12,21 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.graph_utils import (
     InputTensorToOpsMap,
     OutputTensorToOpMap,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 
 
 class BaseOptimization(ABC):
     _builder: "model_builder.ModelBuilder"
 
     def __init__(
-        self, builder: "model_builder.ModelBuilder", conversion_config: ConversionConfig
+        self,
+        builder: "model_builder.ModelBuilder",
+        conversion_config: ConversionConfig,
+        neutron_target_spec: NeutronTargetSpec,
     ):
         self._builder = builder
         self._conversion_config = conversion_config
+        self.neutron_target_spec = neutron_target_spec
 
     def _create_tensor_to_operator_dictionaries(
         self,

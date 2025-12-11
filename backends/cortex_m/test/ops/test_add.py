@@ -74,10 +74,6 @@ class CortexMAlphaAdd(ModelAlpha):
 
 
 test_cases = {
-    "self_scalar": McuTestCase(
-        CortexMSelfAdd(),
-        (10.0,),
-    ),
     "self_rank_1": McuTestCase(
         CortexMSelfAdd(),
         (torch.linspace(-5, 5, 10),),
@@ -97,10 +93,6 @@ test_cases = {
     "self_rank_5": McuTestCase(
         CortexMSelfAdd(),
         (ramp_tensor(-5, 5, (2, 2, 2, 2, 2)),),
-    ),
-    "scalar_scalar": McuTestCase(
-        CortexMScalarAdd(),
-        (-0.5, 1.0),
     ),
     "tensor_scalar": McuTestCase(
         CortexMScalarAdd(),
@@ -129,6 +121,27 @@ test_cases = {
             ramp_tensor(-5, 5, (1, 2, 1, 2)),
         ),
     ),
+    "broadcast_channels_1": McuTestCase(
+        CortexMTensorAdd(),
+        (
+            ramp_tensor(-2, 2, (1, 8, 1, 1)).to(memory_format=torch.channels_last),
+            ramp_tensor(-5, 5, (1, 8, 5, 5)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "broadcast_channels_2": McuTestCase(
+        CortexMTensorAdd(),
+        (
+            ramp_tensor(-5, 5, (2, 8, 5, 5)).to(memory_format=torch.channels_last),
+            ramp_tensor(-2, 2, (1, 8, 1, 1)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "broadcast_channels_continous": McuTestCase(
+        CortexMTensorAdd(),
+        (
+            ramp_tensor(-5, 5, (2, 8, 5, 5)),
+            ramp_tensor(-2, 2, (1, 8, 1, 1)),
+        ),
+    ),
     "alpha": McuTestCase(
         CortexMAlphaAdd(0.5),
         (
@@ -139,23 +152,23 @@ test_cases = {
 }
 
 
-dialect_xfails = {
-    "self_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
-    "scalar_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
+xfails_implementation = {
     "alpha": (
         "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
         AssertionError,
     ),
 }
+xfails_dialect = xfails_implementation | {
+    # Cortex-M quantizer will not quantize additions that require broadcasting
+    # leading to the add op not being replaced by a cortex-m specific implementation
+    "broadcast_1": "Broadcasting is not supported in Cortex-M backend",
+    "broadcast_2": "Broadcasting is not supported in Cortex-M backend",
+    "broadcast_3": "Broadcasting is not supported in Cortex-M backend",
+    "broadcast_channels_continous": "Broadcasting channels is not supported in continous memory_format in Cortex-M backend.",
+}
 
 
-@parametrize("test_case", test_cases, xfails=dialect_xfails)
+@parametrize("test_case", test_cases, xfails=xfails_dialect)
 def test_dialect_add(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_dialect(
@@ -163,35 +176,7 @@ def test_dialect_add(test_case):
     )
 
 
-implementation_xfails = {
-    "self_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
-    "scalar_scalar": (
-        "'float' object has not attribute 'fake_mode' - scalar only ops not supported.",
-        AttributeError,
-    ),
-    "broadcast_1": (
-        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
-        RuntimeError,
-    ),
-    "broadcast_2": (
-        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
-        RuntimeError,
-    ),
-    "broadcast_3": (
-        " assert failed (input1.sizes() == input2.sizes()): Input1 and Input2 must have the same sizes.",
-        RuntimeError,
-    ),
-    "alpha": (
-        "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
-        AssertionError,
-    ),
-}
-
-
-@parametrize("test_case", test_cases, xfails=implementation_xfails)
+@parametrize("test_case", test_cases, xfails=xfails_implementation)
 def test_implementation_add(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_implementation()

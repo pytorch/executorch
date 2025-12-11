@@ -101,7 +101,13 @@ class DecomposeCumsumPass(ArmPass):
             with graph.inserting_before(node):
                 # Reshape to 4D with
                 view_args = (input_node, conv_shape)
-                view_node = create_node(graph, view_op, args=view_args, from_node=node)
+                view_node = create_node(
+                    graph,
+                    view_op,
+                    args=view_args,
+                    from_node=node,
+                    inherit_qparams=False,
+                )
 
                 conv_args = (
                     view_node,
@@ -114,7 +120,9 @@ class DecomposeCumsumPass(ArmPass):
                     [0],
                     1,
                 )
-                conv_node = create_node(graph, conv_op, args=conv_args, from_node=node)
+                conv_node = create_node(
+                    graph, conv_op, args=conv_args, from_node=node, inherit_qparams=True
+                )
 
                 # The convolution is inserted after quantization, so we need to set our
                 # own quantization parameters for the weights here. However since the
@@ -129,12 +137,20 @@ class DecomposeCumsumPass(ArmPass):
 
                 slice_args = (conv_node, 2, 0, original_shape[dim])
                 slice_node = create_node(
-                    graph, slice_op, args=slice_args, from_node=node
+                    graph,
+                    slice_op,
+                    args=slice_args,
+                    from_node=node,
+                    inherit_qparams=False,
                 )
 
                 view_original_args = (slice_node, original_shape)
                 view_original_node = create_node(
-                    graph, view_op, args=view_original_args, from_node=node
+                    graph,
+                    view_op,
+                    args=view_original_args,
+                    from_node=node,
+                    inherit_qparams=False,
                 )
 
             # Replace and remove original

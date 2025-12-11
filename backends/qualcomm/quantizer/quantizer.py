@@ -24,10 +24,12 @@ from .qconfig import (
     get_16a4w_qnn_qat_config,
     get_16a8w_qnn_ptq_config,
     get_16a8w_qnn_qat_config,
+    get_8a4w_qnn_ptq_config,
     get_8a8w_qnn_ptq_config,
     get_8a8w_qnn_qat_config,
     get_ptq_per_block_quant_config,
     get_ptq_per_channel_quant_config,
+    get_qat_per_block_quant_config,
     get_qat_per_channel_quant_config,
     QuantizationConfig,
 )
@@ -44,6 +46,7 @@ __all__ = [
     "get_16a16w_qnn_ptq_config",
     "get_8a8w_qnn_ptq_config",
     "get_8a8w_qnn_qat_config",
+    "get_8a4w_qnn_ptq_config",
     "get_16a4w_qnn_qat_config",
     "get_ptq_per_block_quant_config",
 ]
@@ -60,6 +63,7 @@ class QuantDtype(IntEnum):
     use_16a4w = 2
     use_16a4w_block = 3
     use_8a8w = 4
+    use_8a4w = 5
 
 
 QUANT_CONFIG_DICT = {
@@ -109,6 +113,15 @@ QUANT_CONFIG_DICT = {
         partial(get_ptq_per_channel_quant_config),
         None,
     ),
+    (QuantDtype.use_8a4w, False): (
+        get_8a4w_qnn_ptq_config,
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint8,
+            weight_dtype=torch.int4,
+        ),
+        None,
+    ),
     # QAT,
     (QuantDtype.use_16a4w, True): (
         get_16a4w_qnn_qat_config,
@@ -118,6 +131,19 @@ QUANT_CONFIG_DICT = {
             weight_dtype=torch.int4,
         ),
         None,
+    ),
+    (QuantDtype.use_16a4w_block, True): (
+        get_16a4w_qnn_qat_config,
+        partial(
+            get_qat_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int4,
+        ),
+        partial(
+            get_qat_per_block_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int4,
+        ),
     ),
     (QuantDtype.use_8a8w, True): (
         get_8a8w_qnn_qat_config,
@@ -242,10 +268,12 @@ class QnnQuantizer(Quantizer):
         self.submodule_qconfig_list: List[
             Tuple[Callable[[torch.fx.Node], bool], ModuleQConfig]
         ] = []
+
         self.block_size_map = {}
 
         self.custom_quant_annotations: Sequence[Callable] = []
         self.discard_nodes: Set[str] = set()
+        self.recipe = None
 
     def _annotate(self, gm: GraphModule) -> None:
         """
@@ -348,14 +376,20 @@ class QnnQuantizer(Quantizer):
         """
         Annotates GraphModule during prepare_pt2e.
 
+        If a recipe is provided, it will be used to annotate the model.
+        Otherwise, fallback to the default annotation flow.
+
         Args:
             model (GraphModule): The FX GraphModule to annotate.
 
         Returns:
             GraphModule: The annotated model.
         """
-        self._annotate(model)
-        self._annotate_custom_annotation(model)
+        if self.recipe:
+            self.recipe.annotate(model)
+        else:
+            self._annotate(model)
+            self._annotate_custom_annotation(model)
 
         return model
 
@@ -389,10 +423,10 @@ class QnnQuantizer(Quantizer):
         """
         self.default_quant_config = ModuleQConfig(
             quant_dtype,
-            is_qat,
-            is_conv_per_channel,
-            is_linear_per_channel,
-            act_observer,
+            is_qat=is_qat,
+            is_conv_per_channel=is_conv_per_channel,
+            is_linear_per_channel=is_linear_per_channel,
+            act_observer=act_observer,
         )
 
     def set_block_size_map(self, block_size_map: Dict[str, Tuple]) -> None:

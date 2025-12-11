@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import pytest
 import torch
 from executorch.backends.arm.test.common import parametrize
 from executorch.backends.cortex_m.test.tester import (
@@ -61,10 +60,6 @@ class CortexMTensorMul(Model):
 
 
 test_cases = {
-    "self_scalar": McuTestCase(
-        CortexMSelfMul(),
-        (10.0,),
-    ),
     "self_rank_1": McuTestCase(
         CortexMSelfMul(),
         (ramp_tensor(-5, 5, (10,)),),
@@ -85,17 +80,13 @@ test_cases = {
         CortexMSelfMul(),
         (ramp_tensor(-5, 5, (2, 2, 2, 2, 2)),),
     ),
-    "scalar_scalar": McuTestCase(
-        CortexMScalarMul(),
-        (-0.5, 1.0),
-    ),
     "tensor_scalar": McuTestCase(
         CortexMScalarMul(),
-        (torch.ones(2, 2), 1.0),
+        (torch.ones(1), 1.0),
     ),
     "scalar_tensor": McuTestCase(
         CortexMScalarMul(),
-        (1000.0, torch.ones(2, 2)),
+        (1000.0, torch.ones(1)),
     ),
     "broadcast_1": McuTestCase(
         CortexMTensorMul(),
@@ -112,20 +103,54 @@ test_cases = {
             ramp_tensor(-5, 5, (1, 2, 1, 2)),
         ),
     ),
+    "broadcast_channels_1": McuTestCase(
+        CortexMTensorMul(),
+        (
+            ramp_tensor(-2, 2, (1, 8, 1, 1)).to(memory_format=torch.channels_last),
+            ramp_tensor(-5, 5, (1, 8, 5, 5)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "broadcast_channels_2": McuTestCase(
+        CortexMTensorMul(),
+        (
+            ramp_tensor(-5, 5, (2, 8, 5, 5)).to(memory_format=torch.channels_last),
+            ramp_tensor(-2, 2, (1, 8, 1, 1)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "broadcast_channels_continous": McuTestCase(
+        CortexMTensorMul(),
+        (
+            ramp_tensor(-5, 5, (2, 8, 5, 5)),
+            ramp_tensor(-2, 2, (1, 8, 1, 1)),
+        ),
+    ),
 }
 
 
-@pytest.mark.skip(reason="Not implemented yet")
-@parametrize("test_case", test_cases)
+xfail_cases_dialect = {
+    # Cortex-M quantizer will not quantize multiplicaitons that require broadcasting
+    # leading to the mul op not being replaced by a cortex-m specific implementation
+    "broadcast_1": "Broadcasting is not supported in Cortex-M backend",
+    "broadcast_2": "Broadcasting is not supported in Cortex-M backend",
+    "broadcast_3": "Broadcasting is not supported in Cortex-M backend",
+    "broadcast_channels_continous": "Broadcasting channels is not supported in continous memory_format in Cortex-M backend.",
+}
+
+
+@parametrize("test_case", test_cases, xfails=xfail_cases_dialect)
 def test_dialect_mul(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_dialect(
-        test_case.model.ops_before_transforms, test_case.model.ops_after_transforms
+        test_case.model.ops_before_transforms,
+        test_case.model.ops_after_transforms,
+        qtol=1,
     )
 
 
-@pytest.mark.skip(reason="Not implemented yet")
-@parametrize("test_case", test_cases)
+@parametrize(
+    "test_case",
+    test_cases,
+)
 def test_implementation_mul(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
-    tester.test_implementation()
+    tester.test_implementation(qtol=1)

@@ -9,7 +9,7 @@ import logging
 import shutil
 import tempfile
 
-from collections import Counter
+from collections import Counter, defaultdict
 from pprint import pformat
 from typing import (
     Any,
@@ -48,7 +48,9 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     dump_error_output,
     print_error_diffs,
 )
+from executorch.backends.arm.test.tester.quantize import ArmQuantize as Quantize
 from executorch.backends.arm.test.tester.serialize import Serialize
+
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta
@@ -93,6 +95,9 @@ from tabulate import tabulate  # type: ignore[import-untyped]
 
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
+
+from torchao.quantization.pt2e.quantizer import QuantizationSpec, SharedQuantizationSpec
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -313,7 +318,7 @@ class ArmTester(Tester):
         # Same stage type as parent but exposed via module alias
         if quantize_stage is None:
             quantizer = create_quantizer(self.compile_spec)
-            quantize_stage = tester.Quantize(
+            quantize_stage = Quantize(
                 quantizer,
                 get_symmetric_quantization_config(),
             )
@@ -541,6 +546,192 @@ class ArmTester(Tester):
                     error_callbacks=error_callbacks,
                 )
 
+        return self
+
+    def _get_output_qspec_from_node(
+        self, node: torch.fx.Node
+    ) -> QuantizationSpec | None:
+        if Q_ANNOTATION_KEY not in node.meta:
+            return None
+        annotation = node.meta[Q_ANNOTATION_KEY]
+        # If annotation.output_qspec is a SharedQuantizationSpec, we need to find
+        # the actual QuantizationSpec from one of the inputs.
+        if isinstance(annotation.output_qspec, SharedQuantizationSpec):
+            # First try to find a non-shared qspec from the inputs.
+            annotation_qspec = [
+                qspec
+                for qspec in annotation.input_qspec_map.values()
+                if not isinstance(qspec, SharedQuantizationSpec)
+            ]
+            # If none of the inputs have a non-shared qspec, we need to
+            # find the source node of the shared qspec.
+            if len(annotation_qspec) == 0:
+                edge_or_node = annotation.output_qspec.edge_or_node
+                if isinstance(edge_or_node, tuple):
+                    source_node = edge_or_node[0]
+                else:
+                    source_node = edge_or_node
+                annotation_qspec = [source_node.meta[Q_ANNOTATION_KEY].output_qspec]
+            annotation_qspec = annotation_qspec[0]
+        else:
+            annotation_qspec = annotation.output_qspec
+
+        return annotation_qspec
+
+    def _get_input_qspecs_from_node(
+        self, node: torch.fx.Node
+    ) -> List[QuantizationSpec | None]:
+        if Q_ANNOTATION_KEY not in node.meta:
+            return [None]
+        annotation = node.meta[Q_ANNOTATION_KEY]
+        input_qspec_map = annotation.input_qspec_map
+        found_qspecs = []
+        if len(input_qspec_map) == 0:
+            return [None]
+        for spec in input_qspec_map.values():
+            # If spec is a SharedQuantizationSpec, we need to find
+            # the actual QuantizationSpec.
+            if isinstance(spec, SharedQuantizationSpec):
+                # First try to find a non-shared qspec from the inputs.
+                annotation_qspec = [
+                    qspec
+                    for qspec in input_qspec_map.values()
+                    if not isinstance(qspec, SharedQuantizationSpec)
+                ]
+                # If none of the inputs have a non-shared qspec, we need to
+                # find the source node of the shared qspec.
+                if len(annotation_qspec) == 0:
+                    edge_or_node = annotation.output_qspec.edge_or_node
+                    if isinstance(edge_or_node, tuple):
+                        source_node = edge_or_node[0]
+                    else:
+                        source_node = edge_or_node
+                    annotation_qspec = [source_node.meta[Q_ANNOTATION_KEY].output_qspec]
+                found_qspecs.append(annotation_qspec[0])
+            else:
+                found_qspecs.append(spec)
+
+        return found_qspecs
+
+    def _check_input_qspecs(self, graph: Graph, input_qspecs):
+        if input_qspecs is None:
+            return
+        found_qspecs = []
+        for node in graph.nodes:
+            if node.op != "placeholder":
+                continue
+            annotation_qspec = self._get_output_qspec_from_node(node)
+            found_qspecs.append(annotation_qspec)
+        found_qspecs_counter = Counter(found_qspecs)
+        for qspec in input_qspecs:
+            # check that each expected qspec is found
+            if qspec not in found_qspecs_counter:
+                raise AssertionError(
+                    f"Expected to find input quantization annotation {qspec}, but it was not found. "
+                    f"Found annotations: {found_qspecs_counter}"
+                )
+            # check that number of occurrences of each qspec matches expected
+            if found_qspecs_counter[qspec] != input_qspecs[qspec]:
+                raise AssertionError(
+                    f"Expected to find {input_qspecs[qspec]} instances of input quantization annotation {qspec}, but "
+                    f"found {found_qspecs_counter[qspec]} instances."
+                )
+
+    def _check_output_qspecs(self, graph: Graph, output_qspecs):
+        if output_qspecs is None:
+            return
+        found_qspecs = []
+        output_node = graph.output_node()
+        annotation_qspec = self._get_input_qspecs_from_node(output_node)
+        found_qspecs.extend(annotation_qspec)
+        found_qspecs_counter = Counter(found_qspecs)
+        for qspec in output_qspecs:
+            # check that each expected qspec is found
+            if qspec not in found_qspecs_counter:
+                raise AssertionError(
+                    f"Expected to find output quantization annotation {qspec}, but it was not found. "
+                    f"Found annotations: {found_qspecs_counter}"
+                )
+            # check that number of occurrences of each qspec matches expected
+            if found_qspecs_counter[qspec] != output_qspecs[qspec]:
+                raise AssertionError(
+                    f"Expected to find {output_qspecs[qspec]} instances of output quantization annotation {qspec}, but "
+                    f"found {found_qspecs_counter[qspec]} instances."
+                )
+
+    def _check_qspecs(self, graph: Graph, quantization_annotations):
+        if quantization_annotations is None:
+            return self
+
+        quantization_annotations_found: List[Tuple[str, QuantizationSpec | None]] = []
+        for node in graph.nodes:
+            if node.op != "call_function":
+                continue
+            quantization_annotations_found.append(
+                (str(node.target), self._get_output_qspec_from_node(node))
+            )
+
+        # Counter: (target, qspec) -> count
+        quantization_annotations_found_counter = Counter(quantization_annotations_found)
+        # Convert counter to Dict[target, Dict[qspec, count]]
+        quantization_annotations_found_dict: Dict[
+            str, Dict[QuantizationSpec | None, int]
+        ] = defaultdict(dict)
+        for (target, qspec), count in quantization_annotations_found_counter.items():
+            quantization_annotations_found_dict[target][qspec] = count
+
+        for target, qspecs in quantization_annotations.items():
+            # check if target is in found annotations
+            if target not in quantization_annotations_found_dict:
+                raise AssertionError(
+                    f"Expected to find quantization annotation for operator {target}, but it was not found."
+                )
+            for qspec in qspecs:
+                # check if qspec is in found annotations for target
+                if qspec not in quantization_annotations_found_dict[target]:
+                    raise AssertionError(
+                        f"Expected to find quantization annotation {qspec} for operator {target}, but it was not found. "
+                        f"Found annotations: {quantization_annotations_found_dict[target]}"
+                    )
+                # check that number of occurrences of each qspec matches expected
+                if quantization_annotations_found_dict[target][qspec] != qspecs[qspec]:
+                    raise AssertionError(
+                        f"Expected to find {qspecs[qspec]} instances of quantization annotation {qspec} for operator "
+                        f"{target}, but found {quantization_annotations_found_dict[target][qspec]} instances."
+                    )
+
+    def check_quantization_annotation(
+        self,
+        quantization_annotations: Optional[
+            Dict[str, Dict[QuantizationSpec | None, int]]
+        ] = None,
+        input_qspecs: Optional[Dict[QuantizationSpec | None, int]] = None,
+        output_qspecs: Optional[Dict[QuantizationSpec | None, int]] = None,
+    ):
+        """
+        Check the quantization annotations in the graph of a quantized model.
+
+        Args:
+            quantization_annotations: A dictionary mapping operator names to a dictionary of
+                QuantizationSpecs and their expected counts.
+                If None, the check is skipped.
+            input_qspecs: A dictionary of expected input QuantizationSpecs and their counts.
+                If None, the check is skipped.
+            output_qspecs: A dictionary of expected output QuantizationSpecs and their counts.
+                If None, the check is skipped.
+
+        Returns self for daisy-chaining.
+        """
+        if not self.is_quantized():
+            raise RuntimeError(
+                f"{self.check_quantization_annotation.__name__} should be called after quantization stage."
+            )
+
+        graph = self.get_graph(StageType.QUANTIZE)
+
+        self._check_input_qspecs(graph, input_qspecs)
+        self._check_output_qspecs(graph, output_qspecs)
+        self._check_qspecs(graph, quantization_annotations)
         return self
 
     def get_graph(self, stage: StageType | None = None) -> Graph:

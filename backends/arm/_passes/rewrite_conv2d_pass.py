@@ -90,7 +90,7 @@ class RewriteConv2dPass(ArmPass):
             return False
         groups = node.args[-1]
         in_channels = get_first_fake_tensor(node.all_input_nodes[0]).shape[1]
-        out_channels = get_first_fake_tensor(node.all_input_nodes[1]).shape[0]
+        out_channels = get_first_fake_tensor(node).shape[1]
         return (in_channels == groups) and (out_channels % in_channels) == 0
 
     def _reshape_weights(self, weight_node: torch.fx.Node, in_channels: int) -> None:
@@ -103,6 +103,7 @@ class RewriteConv2dPass(ArmPass):
             raise RuntimeError(
                 f"Weight node {weight_node.name} is not a parameter or buffer"
             )
+
         reshaped_weight_tensor = (
             weight_tensor.permute(HWCM_ORDER)
             .reshape(
@@ -118,14 +119,19 @@ class RewriteConv2dPass(ArmPass):
             param_name = self.exported_program.graph_signature.inputs_to_buffers[
                 weight_node.name
             ]
+            reshaped_weight_tensor = torch.nn.Buffer(reshaped_weight_tensor)
         elif is_param(self.exported_program, weight_node):
             param_name = self.exported_program.graph_signature.inputs_to_parameters[
                 weight_node.name
             ]
+            reshaped_weight_tensor = torch.nn.Parameter(
+                reshaped_weight_tensor, requires_grad=False
+            )
         else:
             raise RuntimeError(
                 f"Weight node {weight_node.name} is neither a parameter nor a buffer"
             )
+
         self.exported_program.state_dict[param_name] = reshaped_weight_tensor
         weight_node.meta["val"] = weight_node.meta["val"].reshape(
             weight_tensor.shape[2],
@@ -243,7 +249,9 @@ class RewriteConv2dPass(ArmPass):
 
             if self._is_depthwise_conv2d(node):
                 target_op = exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
-                self._reshape_weights(weight, input_fake_tensor.shape[1])
+                # If there are any TOSA.DEPTHWISE_CONV2D nodes using the weights, we've already reshaped them.
+                if all(user.target != target_op for user in weight.users):
+                    self._reshape_weights(weight, input_fake_tensor.shape[1])
                 weight_fake_tensor = get_first_fake_tensor(weight)
             else:
                 target_op = exir_ops.backend.tosa.CONV2D.default
@@ -266,6 +274,7 @@ class RewriteConv2dPass(ArmPass):
                     op_target=target_op,
                     args=conv2d_args,
                     from_node=node,
+                    inherit_qparams=True,
                 )
             bias_fake_tensor = get_first_fake_tensor(bias) if bias else None
             tosa_node_fake_tensor = target_op(

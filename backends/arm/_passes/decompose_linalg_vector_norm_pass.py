@@ -12,7 +12,7 @@ from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeLinearVectorNormPass(ArmPass):
+class DecomposeLinalgVectorNormPass(ArmPass):
     """
     This pass decomposes aten.linalg_vector_norm.default into more primitive ops.
     We need to add this pass before quantization for graph annotation.

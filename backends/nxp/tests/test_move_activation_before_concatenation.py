@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import itertools
 import math
 import unittest
 
@@ -19,8 +20,8 @@ from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.backends.nxp.tests.executorch_pipeline import (
-    _quantize_model,
     get_random_calibration_inputs,
     neutron_target_spec,
     to_model_input_spec,
@@ -47,6 +48,35 @@ concat_cluster_ops = [
     exir_ops.edge.aten.sigmoid.default,
     exir_ops.edge.aten.tanh.default,
     exir_ops.edge.aten.cat.default,
+]
+
+
+# Permutation of all supported combinations of:
+# <activation>, <is_inplace>, <use_qat>
+all_activation_cases = list(
+    itertools.product(
+        ["relu", "relu6", "tanh"],
+        [True, False],
+        [True, False],
+    )
+) + [
+    ("sigmoid", False, True),
+    ("sigmoid", False, False),
+]
+
+
+# <activation1>, <activation2>, <act1_inplace>, <act2_inplace>, <use_qat>
+all_concat_cluster_cases = [
+    ("relu", "relu", True, False, True),
+    ("relu", "relu", True, False, False),
+    ("relu6", "relu6", False, True, True),
+    ("relu6", "relu6", False, True, False),
+    ("tanh", "tanh", True, False, True),
+    ("tanh", "tanh", True, False, False),
+    ("sigmoid", "sigmoid", False, True, True),
+    ("sigmoid", "sigmoid", False, True, False),
+    ("relu", "relu_hardtanh", True, True, True),
+    ("relu", "relu_hardtanh", True, True, False),
 ]
 
 
@@ -174,18 +204,8 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         torch.manual_seed(23)
         np.random.seed(42)
 
-    @parameterized.expand(
-        [
-            ["relu", True],
-            ["relu", False],
-            ["relu6", True],
-            ["relu6", False],
-            ["tanh", True],
-            ["tanh", False],
-            ["sigmoid", False],
-        ]
-    )
-    def test_move_activation_before_concat__conv(self, activation, inplace):
+    @parameterized.expand(all_activation_cases)
+    def test_move_activation_before_concat__conv(self, activation, inplace, is_qat):
         input_shape = (1, 3, 8, 8)
         model = ConvConcatActivationModule(
             activation=activation, inplace=inplace, in_channels=3
@@ -220,7 +240,8 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
 
         # Apply the optimization.
         NeutronAtenPassManager(
-            neutron_target_spec, [MoveActivationBeforeConcat(neutron_target_spec)]
+            neutron_target_spec,
+            [MoveActivationBeforeConcat(neutron_target_spec)],
         )(exir_program_aten)
 
         nodes = list(exir_program_aten.graph.nodes)
@@ -247,10 +268,11 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         neutron_aten_pass_manager = NeutronAtenPassManager(neutron_target_spec)
         neutron_aten_pass_manager(exir_program_aten)  # All passes by default.
 
-        exir_program_aten_quant = _quantize_model(
+        exir_program_aten_quant = calibrate_and_quantize(
             exir_program_aten,
-            NeutronQuantizer(neutron_target_spec),
             calibration_inputs,
+            NeutronQuantizer(neutron_target_spec),
+            is_qat=is_qat,
         )
 
         # Check convolution and activation are in same QDQ cluster.
@@ -281,18 +303,8 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             == torch.ops.quantized_decomposed.quantize_per_tensor.default
         )
 
-    @parameterized.expand(
-        [
-            ["relu", True],
-            ["relu", False],
-            ["relu6", True],
-            ["relu6", False],
-            ["tanh", True],
-            ["tanh", False],
-            ["sigmoid", False],
-        ]
-    )
-    def test_move_activation_before_concat__linear(self, activation, inplace):
+    @parameterized.expand(all_activation_cases)
+    def test_move_activation_before_concat__linear(self, activation, inplace, is_qat):
         input_shape = (1, 8)
         model = LinearConcatActivationModule(
             activation=activation, inplace=inplace, in_channels=8, mode="linear"
@@ -327,7 +339,8 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
 
         # Apply the optimization.
         NeutronAtenPassManager(
-            neutron_target_spec, [MoveActivationBeforeConcat(neutron_target_spec)]
+            neutron_target_spec,
+            [MoveActivationBeforeConcat(neutron_target_spec)],
         )(exir_program_aten)
 
         nodes = list(exir_program_aten.graph.nodes)
@@ -354,10 +367,11 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         neutron_aten_pass_manager = NeutronAtenPassManager(neutron_target_spec)
         neutron_aten_pass_manager(exir_program_aten)  # All passes by default.
 
-        exir_program_aten_quant = _quantize_model(
+        exir_program_aten_quant = calibrate_and_quantize(
             exir_program_aten,
-            NeutronQuantizer(neutron_target_spec),
             calibration_inputs,
+            NeutronQuantizer(neutron_target_spec),
+            is_qat=is_qat,
         )
 
         # Check linear and activation are in same QDQ cluster.
@@ -388,18 +402,8 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             == torch.ops.quantized_decomposed.quantize_per_tensor.default
         )
 
-    @parameterized.expand(
-        [
-            ["relu", True],
-            ["relu", False],
-            ["relu6", True],
-            ["relu6", False],
-            ["tanh", True],
-            ["tanh", False],
-            ["sigmoid", False],
-        ]
-    )
-    def test_move_activation_before_concat__addmm(self, activation, inplace):
+    @parameterized.expand(all_activation_cases)
+    def test_move_activation_before_concat__addmm(self, activation, inplace, is_qat):
         input_shape = (1, 8)
         model = LinearConcatActivationModule(
             activation=activation, inplace=inplace, in_channels=8, mode="addmm"
@@ -434,7 +438,8 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
 
         # Apply the optimization.
         NeutronAtenPassManager(
-            neutron_target_spec, [MoveActivationBeforeConcat(neutron_target_spec)]
+            neutron_target_spec,
+            [MoveActivationBeforeConcat(neutron_target_spec)],
         )(exir_program_aten)
 
         nodes = list(exir_program_aten.graph.nodes)
@@ -461,10 +466,11 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         neutron_aten_pass_manager = NeutronAtenPassManager(neutron_target_spec)
         neutron_aten_pass_manager(exir_program_aten)  # All passes by default.
 
-        exir_program_aten_quant = _quantize_model(
+        exir_program_aten_quant = calibrate_and_quantize(
             exir_program_aten,
-            NeutronQuantizer(neutron_target_spec),
             calibration_inputs,
+            NeutronQuantizer(neutron_target_spec),
+            is_qat=is_qat,
         )
 
         # Check addmm and activation are in same QDQ cluster.
@@ -495,18 +501,8 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             == torch.ops.quantized_decomposed.quantize_per_tensor.default
         )
 
-    @parameterized.expand(
-        [
-            ["relu", True],
-            ["relu", False],
-            ["relu6", True],
-            ["relu6", False],
-            ["tanh", True],
-            ["tanh", False],
-            ["sigmoid", False],
-        ]
-    )
-    def test_move_activation_before_concat__mm(self, activation, inplace):
+    @parameterized.expand(all_activation_cases)
+    def test_move_activation_before_concat__mm(self, activation, inplace, is_qat):
         input_shape = (1, 8)
         model = LinearConcatActivationModule(
             activation=activation, inplace=inplace, in_channels=8, mode="mm"
@@ -541,7 +537,8 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
 
         # Apply the optimization.
         NeutronAtenPassManager(
-            neutron_target_spec, [MoveActivationBeforeConcat(neutron_target_spec)]
+            neutron_target_spec,
+            [MoveActivationBeforeConcat(neutron_target_spec)],
         )(exir_program_aten)
 
         nodes = list(exir_program_aten.graph.nodes)
@@ -568,10 +565,11 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
         neutron_aten_pass_manager = NeutronAtenPassManager(neutron_target_spec)
         neutron_aten_pass_manager(exir_program_aten)  # All passes by default.
 
-        exir_program_aten_quant = _quantize_model(
+        exir_program_aten_quant = calibrate_and_quantize(
             exir_program_aten,
-            NeutronQuantizer(neutron_target_spec),
             calibration_inputs,
+            NeutronQuantizer(neutron_target_spec),
+            is_qat=is_qat,
         )
 
         # Check mm and activation are in same QDQ cluster.
@@ -602,19 +600,9 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             == torch.ops.quantized_decomposed.quantize_per_tensor.default
         )
 
-    @parameterized.expand(
-        [
-            ["relu", True],
-            ["relu", False],
-            ["relu6", True],
-            ["relu6", False],
-            ["tanh", True],
-            ["tanh", False],
-            ["sigmoid", False],
-        ]
-    )
+    @parameterized.expand(all_activation_cases)
     def test_move_activation_before_concat_quantization__conv(
-        self, activation, inplace
+        self, activation, inplace, use_qat
     ):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program,
@@ -627,7 +615,10 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             )
 
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model,
+                input_shape,
+                use_qat=use_qat,
+                use_neutron_for_format_conversion=False,
             ).exported_program()
 
             # Make sure that all nodes were delegated.
@@ -651,19 +642,9 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                 tflite_output_preprocess=ToChannelFirstPreprocess(),
             )
 
-    @parameterized.expand(
-        [
-            ["relu", True],
-            ["relu", False],
-            ["relu6", True],
-            ["relu6", False],
-            ["tanh", True],
-            ["tanh", False],
-            ["sigmoid", False],
-        ]
-    )
+    @parameterized.expand(all_activation_cases)
     def test_move_activation_before_concat_quantization__linear(
-        self, activation, inplace
+        self, activation, inplace, use_qat
     ):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program,
@@ -676,7 +657,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             )
 
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_qat=use_qat
             ).exported_program()
 
             # Make sure that all nodes were delegated.
@@ -698,19 +679,9 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                 tfl_model=tflite_flatbuffers_model,
             )
 
-    @parameterized.expand(
-        [
-            ["relu", True],
-            ["relu", False],
-            ["relu6", True],
-            ["relu6", False],
-            ["tanh", True],
-            ["tanh", False],
-            ["sigmoid", False],
-        ]
-    )
+    @parameterized.expand(all_activation_cases)
     def test_move_activation_before_concat_quantization__addmm(
-        self, activation, inplace
+        self, activation, inplace, use_qat
     ):
         torch.manual_seed(23)
         with kgb.spy_on(
@@ -724,7 +695,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             )
 
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_qat=use_qat
             ).exported_program()
 
             # Make sure that all nodes were delegated.
@@ -747,18 +718,10 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                 atol=1.0,
             )
 
-    @parameterized.expand(
-        [
-            ["relu", True],
-            ["relu", False],
-            ["relu6", True],
-            ["relu6", False],
-            ["tanh", True],
-            ["tanh", False],
-            ["sigmoid", False],
-        ]
-    )
-    def test_move_activation_before_concat_quantization__mm(self, activation, inplace):
+    @parameterized.expand(all_activation_cases)
+    def test_move_activation_before_concat_quantization__mm(
+        self, activation, inplace, use_qat
+    ):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program,
             call_original=True,
@@ -770,7 +733,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
             )
 
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_qat=use_qat
             ).exported_program()
 
             # Make sure that all nodes were delegated.
@@ -792,31 +755,28 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                 tfl_model=tflite_flatbuffers_model,
             )
 
-    @parameterized.expand(
-        [
-            ["relu", "relu", True, False],
-            ["relu6", "relu6", False, True],
-            ["tanh", "tanh", True, False],
-            ["sigmoid", "sigmoid", False, True],
-            ["relu", "relu_hardtanh", True, True],
-        ]
-    )
+    @parameterized.expand(all_concat_cluster_cases)
     def test_concat_cluster_quantization__conv(
-        self, activation1, activation2, act1_inplace, act2_inplace
+        self, activation1, activation2, act1_inplace, act2_inplace, use_qat
     ):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program,
             call_original=True,
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
-            with kgb.spy_on(_quantize_model, call_original=True) as quantizer_spy:
+            with kgb.spy_on(
+                calibrate_and_quantize, call_original=True
+            ) as quantizer_spy:
                 input_shape = (1, 8, 8, 8)
                 model = ConvActivationConcatModule(
                     activation1, activation2, act1_inplace, act2_inplace, in_channels=8
                 )
 
                 edge_program = to_quantized_edge_program(
-                    model, input_shape
+                    model,
+                    input_shape,
+                    use_qat=use_qat,
+                    use_neutron_for_format_conversion=False,
                 ).exported_program()
 
                 # Make sure that all nodes were delegated.
@@ -832,7 +792,9 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                     -1
                 ].return_value
                 exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
-                exir_program_aten_quant: GraphModule = quantizer_spy.calls[-1].args[0]
+                exir_program_aten_quant: GraphModule = quantizer_spy.calls[
+                    -1
+                ].return_value
 
                 # Check convolution and activation are in same QDQ cluster.
                 nodes = list(exir_program_aten_quant.graph.nodes)
@@ -869,31 +831,25 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                     tflite_output_preprocess=ToChannelFirstPreprocess(),
                 )
 
-    @parameterized.expand(
-        [
-            ["relu", "relu", True, False],
-            ["relu6", "relu6", False, True],
-            ["tanh", "tanh", True, False],
-            ["sigmoid", "sigmoid", False, True],
-            ["relu", "relu_hardtanh", True, True],
-        ]
-    )
+    @parameterized.expand(all_concat_cluster_cases)
     def test_concat_cluster_quantization__linear(
-        self, activation1, activation2, act1_inplace, act2_inplace
+        self, activation1, activation2, act1_inplace, act2_inplace, use_qat
     ):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program,
             call_original=True,
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
-            with kgb.spy_on(_quantize_model, call_original=True) as quantizer_spy:
+            with kgb.spy_on(
+                calibrate_and_quantize, call_original=True
+            ) as quantizer_spy:
                 input_shape = (1, 8)
                 model = LinearActivationConcatModule(
                     activation1, activation2, act1_inplace, act2_inplace, in_channels=8
                 )
 
                 edge_program = to_quantized_edge_program(
-                    model, input_shape
+                    model, input_shape, use_qat=use_qat
                 ).exported_program()
 
                 # Make sure that all nodes were delegated.
@@ -909,7 +865,9 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                     -1
                 ].return_value
                 exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
-                exir_program_aten_quant: GraphModule = quantizer_spy.calls[-1].args[0]
+                exir_program_aten_quant: GraphModule = quantizer_spy.calls[
+                    -1
+                ].return_value
 
                 # Check linear and activation are in same QDQ cluster.
                 nodes = list(exir_program_aten_quant.graph.nodes)

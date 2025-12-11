@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
 
 from typing import List, Type
 
@@ -22,6 +23,7 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     CatConfig,
     CeilConfig,
     ClampConfig,
+    CloneDimOrderConfig,
     ConstantPadConfig,
     DeQuantizedPerTensorConfig,
     DivConfig,
@@ -53,6 +55,7 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     TanhConfig,
     ToDimOrderCopyConfig,
     UpsampleBilinear2dConfig,
+    ViewCopyConfig,
 )
 from executorch.backends.xnnpack.partition.config.node_configs import (
     BatchNormConfig,
@@ -77,6 +80,7 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     BMMConfig,
     CatConfig,
     CeilConfig,
+    CloneDimOrderConfig,
     ConstantPadConfig,
     ConvolutionConfig,
     ClampConfig,
@@ -112,6 +116,7 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     SquareRootConfig,
     SubConfig,
     UpsampleBilinear2dConfig,
+    ViewCopyConfig,
     # Quant/Dequant Op Configs
     QuantizedPerTensorConfig,
     DeQuantizedPerTensorConfig,

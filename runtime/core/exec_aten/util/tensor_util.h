@@ -1212,6 +1212,12 @@ ET_NODISCARD inline Error resize_tensor(
   std::array<executorch::aten::SizesType, kTensorDimensionLimit>
       new_sizes_casted{};
   size_t new_sizes_ndim = new_sizes.size();
+  ET_CHECK_OR_RETURN_ERROR(
+      new_sizes_ndim <= kTensorDimensionLimit,
+      InvalidArgument,
+      "new_sizes_ndim %zu is greater than kTensorDimensionLimit %zu",
+      new_sizes_ndim,
+      kTensorDimensionLimit);
   for (const auto i : c10::irange(new_sizes_ndim)) {
     new_sizes_casted[i] =
         static_cast<executorch::aten::SizesType>(new_sizes[i]);

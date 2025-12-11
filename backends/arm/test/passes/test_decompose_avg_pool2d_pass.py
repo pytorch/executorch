@@ -6,7 +6,9 @@
 from typing import cast, Dict, Protocol, Tuple
 
 import torch
-from executorch.backends.arm._passes.decompose_avg_pool2d import DecomposeAvgPool2d
+from executorch.backends.arm._passes.decompose_avg_pool2d_pass import (
+    DecomposeAvgPool2dPass,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
@@ -75,6 +77,6 @@ def test_decompose_avg_pool2d_tosa_MI(module: ModuleWithInputs) -> None:
             # After decomposition, we should still see avg_pool2d (transformed)
             "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1,
         },
-        pass_list=[DecomposeAvgPool2d],
+        pass_list=[DecomposeAvgPool2dPass],
     )
     pipeline.run()

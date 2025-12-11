@@ -9,7 +9,6 @@ import argparse
 import io
 import logging
 from collections import defaultdict
-from typing import Iterator
 
 import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
@@ -19,12 +18,16 @@ from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpe
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
+from executorch.backends.nxp.edge_passes.remove_additional_quantize_dequantize_nodes_pass import (
+    RemoveAdditionalQDQClustersPass,
+)
 from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.devtools.visualization.visualization_utils import (
     visualize_with_clusters,
 )
@@ -37,7 +40,6 @@ from executorch.exir import (
 )
 from executorch.extension.export_util import save_pte_program
 from torch.export import export
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
 from .models.mobilenet_v2 import MobilenetV2
@@ -107,44 +109,6 @@ models = {
     "cifar10": CifarNet,
     "mobilenetv2": MobilenetV2,
 }
-
-
-def post_training_quantize(
-    model,
-    calibration_inputs: tuple[torch.Tensor] | Iterator[tuple[torch.Tensor]],
-    neutron_target_spec: NeutronTargetSpec,
-):
-    """Quantize the provided model.
-
-    :param model: Aten model to quantize.
-    :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a model
-                                input. Or an iterator over such tuples.
-    :param _neutron_target_spec: The functionality for probing the properties of Neutron Target.
-    """
-    # Based on executorch.examples.arm.aot_amr_compiler.quantize
-    logging.info("Quantizing model")
-    logging.debug(f"---> Original model: {model}")
-    quantizer = NeutronQuantizer(neutron_target_spec)
-
-    m = prepare_pt2e(model, quantizer)
-    # Calibration:
-    logging.debug("Calibrating model")
-
-    def _get_batch_size(data):
-        return data[0].shape[0]
-
-    if not isinstance(
-        calibration_inputs, tuple
-    ):  # Assumption that calibration_inputs is finite.
-        for i, data in enumerate(calibration_inputs):
-            if i % (1000 // _get_batch_size(data)) == 0:
-                logging.debug(f"{i * _get_batch_size(data)} calibration inputs done")
-            m(*data)
-    else:
-        m(*calibration_inputs)
-    m = convert_pt2e(m)
-    logging.debug(f"---> Quantized model: {m}")
-    return m
 
 
 if __name__ == "__main__":  # noqa C901
@@ -254,7 +218,8 @@ if __name__ == "__main__":  # noqa C901
                 "No calibration inputs available, using the example inputs instead"
             )
             calibration_inputs = example_inputs
-        module = post_training_quantize(module, calibration_inputs, neutron_target_spec)
+        quantizer = NeutronQuantizer(neutron_target_spec)
+        module = calibrate_and_quantize(module, calibration_inputs, quantizer)
 
     if args.so_library is not None:
         logging.debug(f"Loading libraries: {args.so_library}")
@@ -295,6 +260,10 @@ if __name__ == "__main__":  # noqa C901
         edge_program_manager = edge_program_manager.transform(
             [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
         )
+
+    edge_program_manager = edge_program_manager.transform(
+        NeutronEdgePassManager([RemoveAdditionalQDQClustersPass()])
+    )
 
     logging.debug(f"Lowered graph:\n{edge_program_manager.exported_program().graph}")
 

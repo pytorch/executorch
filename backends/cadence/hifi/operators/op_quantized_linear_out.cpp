@@ -9,6 +9,7 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <on_device_ai/Assistant/Jarvis/min_runtime/operators/generic/op_quantized_linear.h>
 #include <xa_nnlib_kernels_api.h>
 #include <xtensa/tie/xt_datacache.h>
 #include <algorithm>
@@ -218,7 +219,22 @@ void quantized_linear_out(
     int64_t out_zero_point,
     __ET_UNUSED const optional<Tensor>& offset,
     Tensor& out) {
-  if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
+  if (out.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      in.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      weight.scalar_type() == ::executorch::aten::ScalarType::Char) {
+    ::impl::generic::native::quantized_linear_out(
+        ctx,
+        in,
+        weight,
+        bias,
+        in_zero_point,
+        weight_zero_point,
+        out_multiplier,
+        out_shift,
+        out_zero_point,
+        offset,
+        out);
+  } else if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
     _quantized_linear_asym8u(
         in,
         weight,
@@ -260,7 +276,22 @@ void quantized_linear_per_tensor_out(
     int64_t out_zero_point,
     __ET_UNUSED const optional<Tensor>& offset,
     Tensor& out) {
-  if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
+  if (out.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      in.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      weight.scalar_type() == ::executorch::aten::ScalarType::Char) {
+    ::impl::generic::native::quantized_linear_per_tensor_out(
+        ctx,
+        in,
+        weight,
+        bias,
+        in_zero_point,
+        weight_zero_point,
+        out_multiplier,
+        out_shift,
+        out_zero_point,
+        offset,
+        out);
+  } else if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
     _quantized_linear_per_tensor_asym8u(
         in,
         weight,

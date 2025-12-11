@@ -10,11 +10,10 @@ import pytest
 import torch
 
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.backends.nxp.tests.executorch_pipeline import (
-    _quantize_model,
-    neutron_target_spec,
-)
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
+from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
+from parameterized import parameterized
 
 
 @pytest.fixture(autouse=True)
@@ -41,7 +40,8 @@ class TestRemovingDeadCode(unittest.TestCase):
         torch.manual_seed(23)
         np.random.seed(23)
 
-    def test_removing_dead_code(self):
+    @parameterized.expand([("QAT", True), ("PTQ", False)])
+    def test_removing_dead_code(self, _, is_qat: bool):
         input_shape = (42,)
         example_inputs = (torch.ones(input_shape),)
         model = DeadCodeModule()
@@ -55,8 +55,8 @@ class TestRemovingDeadCode(unittest.TestCase):
 
         # The `NeutronQuantizer` should remove the dead code in the `transform_for_annotation()` method.
         quantizer = NeutronQuantizer(neutron_target_spec)
-        exir_program_aten_quant = _quantize_model(
-            exir_program_aten.module(), quantizer, [example_inputs]
+        exir_program_aten_quant = calibrate_and_quantize(
+            exir_program_aten, [example_inputs], quantizer, is_qat=is_qat
         )
 
         # Make sure the is no `add` operation in the graph anymore.

@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # Optional parameter:
-# --build_type= "Release" | "Debug" | "RelWithDebInfo"
+# --build_type= "Release" | "Debug" | "RelWithDebInfo" | "UndefinedSanitizer" | "AddressSanitizer"
 # --etdump      build with devtools-etdump support
 
 set -eu
@@ -28,7 +28,7 @@ help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
     echo "  --et_build_root=<FOLDER>  Build output root folder to use, defaults to ${et_build_root}"
-    echo "  --build_type=<TYPE>       Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
+    echo "  --build_type=<TYPE>       Build with Release, Debug, RelWithDebInfo, UndefinedSanitizer or AddressSanitizer, default is ${build_type}"
     echo "  --devtools                Build Devtools libs"
     echo "  --etdump                  Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
     echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
@@ -78,7 +78,7 @@ cd "${et_root_dir}"
 
 # Build
 cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
--DCMAKE_BUILD_TYPE=Release \
+-DCMAKE_BUILD_TYPE=${build_type} \
 -DEXECUTORCH_BUILD_DEVTOOLS=$build_devtools \
 -DEXECUTORCH_BUILD_ARM_ETDUMP=$build_with_etdump \
 --preset arm-baremetal -B${et_build_dir}

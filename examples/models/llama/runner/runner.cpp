@@ -36,22 +36,32 @@ std::unique_ptr<llm::TextLLMRunner> create_llama_runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
     std::optional<const std::string> data_path,
-    float temperature) {
+    float temperature,
+    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer) {
   if (data_path.has_value()) {
     std::vector<std::string> data_files;
     data_files.push_back(data_path.value());
     return create_llama_runner(
-        model_path, tokenizer_path, std::move(data_files), temperature);
+        model_path,
+        tokenizer_path,
+        std::move(data_files),
+        temperature,
+        std::move(event_tracer));
   }
   return create_llama_runner(
-      model_path, tokenizer_path, std::vector<std::string>(), temperature);
+      model_path,
+      tokenizer_path,
+      std::vector<std::string>(),
+      temperature,
+      std::move(event_tracer));
 }
 
 std::unique_ptr<llm::TextLLMRunner> create_llama_runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
     std::vector<std::string> data_files,
-    float temperature) {
+    float temperature,
+    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer) {
   ET_LOG(
       Info,
       "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
@@ -70,7 +80,11 @@ std::unique_ptr<llm::TextLLMRunner> create_llama_runner(
     return nullptr;
   }
   return llm::create_text_llm_runner(
-      model_path, std::move(tokenizer), data_files);
+      model_path,
+      std::move(tokenizer),
+      data_files,
+      temperature,
+      std::move(event_tracer));
 }
 
 } // namespace example

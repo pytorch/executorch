@@ -65,7 +65,9 @@ def _build_calibration_loader(
             seed = default_seed
     else:
         seed = default_seed
-    rng = random.Random(seed)
+    rng = random.Random(
+        seed
+    )  # nosec B311 - deterministic shuffling for evaluation only
     indices = list(range(len(dataset)))
     rng.shuffle(indices)
     selected = sorted(indices[:k])
@@ -167,14 +169,14 @@ class GenericModelEvaluator:
         self,
         model_name: str,
         fp32_model: torch.nn.Module,
-        int8_model: torch.nn.Module,
+        quant_model: torch.nn.Module,
         example_input: Tuple[torch.Tensor],
         tosa_output_path: Optional[str],
     ) -> None:
         self.model_name = model_name
 
         self.fp32_model = fp32_model
-        self.int8_model = int8_model
+        self.quant_model = quant_model
         self.example_input = example_input
 
         if tosa_output_path:
@@ -192,12 +194,12 @@ class GenericModelEvaluator:
             mean_absolute_error
         """
         fp32_outputs, _ = tree_flatten(self.fp32_model(*self.example_input))
-        int8_outputs, _ = tree_flatten(self.int8_model(*self.example_input))
+        quant_outputs, _ = tree_flatten(self.quant_model(*self.example_input))
 
         model_error_dict = defaultdict(list)
 
-        for fp32_output, int8_output in zip(fp32_outputs, int8_outputs):
-            difference = fp32_output - int8_output
+        for fp32_output, quant_output in zip(fp32_outputs, quant_outputs):
+            difference = fp32_output - quant_output
             # Avoid divide by zero: elements where fp32 == 0 produce 0% contribution
             percentage_error = torch.where(
                 fp32_output != 0,
@@ -238,7 +240,6 @@ class GenericModelEvaluator:
 
         if self.tosa_output_path:
             # We know output_metrics["metrics"] is list since we just defined it, safe to ignore.
-            # pyre-ignore[16]
             output_metrics["metrics"][  # type: ignore[index]
                 "compression_ratio"
             ] = self.get_compression_ratio()
@@ -253,14 +254,14 @@ class MobileNetV2Evaluator(GenericModelEvaluator):
         self,
         model_name: str,
         fp32_model: Module,
-        int8_model: Module,
+        quant_model: Module,
         example_input: Tuple[torch.Tensor],
         tosa_output_path: str | None,
         batch_size: int,
         validation_dataset_path: str,
     ) -> None:
         super().__init__(
-            model_name, fp32_model, int8_model, example_input, tosa_output_path
+            model_name, fp32_model, quant_model, example_input, tosa_output_path
         )
 
         self.__batch_size = batch_size
@@ -280,7 +281,7 @@ class MobileNetV2Evaluator(GenericModelEvaluator):
         cls,
         model_name: str,
         fp32_model: Module,
-        int8_model: Module,
+        quant_model: Module,
         example_input: Tuple[torch.Tensor],
         tosa_output_path: str | None,
         config: dict[str, Any],
@@ -292,7 +293,7 @@ class MobileNetV2Evaluator(GenericModelEvaluator):
         return cls(
             model_name,
             fp32_model,
-            int8_model,
+            quant_model,
             example_input,
             tosa_output_path,
             batch_size=config["batch_size"],
@@ -303,10 +304,9 @@ class MobileNetV2Evaluator(GenericModelEvaluator):
         # Load dataset and compute top-1 / top-5
         dataset = MobileNetV2Evaluator.__load_dataset(self.__validation_set_path)
         top1_correct, top5_correct = GenericModelEvaluator.evaluate_topk(
-            self.int8_model, dataset, self.__batch_size, topk=5
+            self.quant_model, dataset, self.__batch_size, topk=5
         )
         output = super().evaluate()
-
         output["metrics"]["accuracy"] = {"top-1": top1_correct, "top-5": top5_correct}
         return output
 
@@ -318,14 +318,14 @@ class DeiTTinyEvaluator(GenericModelEvaluator):
         self,
         model_name: str,
         fp32_model: Module,
-        int8_model: Module,
+        quant_model: Module,
         example_input: Tuple[torch.Tensor],
         tosa_output_path: str | None,
         batch_size: int,
         validation_dataset_path: str,
     ) -> None:
         super().__init__(
-            model_name, fp32_model, int8_model, example_input, tosa_output_path
+            model_name, fp32_model, quant_model, example_input, tosa_output_path
         )
         self.__batch_size = batch_size
         self.__validation_set_path = validation_dataset_path
@@ -344,7 +344,7 @@ class DeiTTinyEvaluator(GenericModelEvaluator):
         cls,
         model_name: str,
         fp32_model: Module,
-        int8_model: Module,
+        quant_model: Module,
         example_input: Tuple[torch.Tensor],
         tosa_output_path: str | None,
         config: dict[str, Any],
@@ -356,7 +356,7 @@ class DeiTTinyEvaluator(GenericModelEvaluator):
         return cls(
             model_name,
             fp32_model,
-            int8_model,
+            quant_model,
             example_input,
             tosa_output_path,
             batch_size=config["batch_size"],
@@ -367,7 +367,7 @@ class DeiTTinyEvaluator(GenericModelEvaluator):
         # Load dataset and compute top-1 / top-5
         dataset = DeiTTinyEvaluator.__load_dataset(self.__validation_set_path)
         top1, top5 = GenericModelEvaluator.evaluate_topk(
-            self.int8_model, dataset, self.__batch_size, topk=5
+            self.quant_model, dataset, self.__batch_size, topk=5
         )
         output = super().evaluate()
         output["metrics"]["accuracy"] = {"top-1": top1, "top-5": top5}
@@ -381,14 +381,14 @@ class ResNet18Evaluator(GenericModelEvaluator):
         self,
         model_name: str,
         fp32_model: Module,
-        int8_model: Module,
+        quant_model: Module,
         example_input: Tuple[torch.Tensor],
         tosa_output_path: str | None,
         batch_size: int,
         validation_dataset_path: str,
     ) -> None:
         super().__init__(
-            model_name, fp32_model, int8_model, example_input, tosa_output_path
+            model_name, fp32_model, quant_model, example_input, tosa_output_path
         )
         self.__batch_size = batch_size
         self.__validation_set_path = validation_dataset_path
@@ -407,7 +407,7 @@ class ResNet18Evaluator(GenericModelEvaluator):
         cls,
         model_name: str,
         fp32_model: Module,
-        int8_model: Module,
+        quant_model: Module,
         example_input: Tuple[torch.Tensor],
         tosa_output_path: str | None,
         config: dict[str, Any],
@@ -415,7 +415,7 @@ class ResNet18Evaluator(GenericModelEvaluator):
         return cls(
             model_name,
             fp32_model,
-            int8_model,
+            quant_model,
             example_input,
             tosa_output_path,
             batch_size=config["batch_size"],
@@ -425,7 +425,7 @@ class ResNet18Evaluator(GenericModelEvaluator):
     def evaluate(self) -> dict[str, Any]:
         dataset = ResNet18Evaluator.__load_dataset(self.__validation_set_path)
         top1, top5 = GenericModelEvaluator.evaluate_topk(
-            self.int8_model, dataset, self.__batch_size, topk=5
+            self.quant_model, dataset, self.__batch_size, topk=5
         )
         output = super().evaluate()
         output["metrics"]["accuracy"] = {"top-1": top1, "top-5": top5}
@@ -464,8 +464,9 @@ def evaluator_calibration_data(
 def evaluate_model(
     model_name: str,
     intermediates: str,
+    target: str,
     model_fp32: torch.nn.Module,
-    model_int8: torch.nn.Module,
+    model_quant: torch.nn.Module,
     example_inputs: Tuple[torch.Tensor],
     evaluator_name: str,
     evaluator_config: str | None,
@@ -487,7 +488,7 @@ def evaluate_model(
             init_evaluator = factory(
                 model_name,
                 model_fp32,
-                model_int8,
+                model_quant,
                 example_inputs,
                 str(tosa_paths[0]),
                 config,
@@ -498,11 +499,11 @@ def evaluate_model(
             )
     else:
         init_evaluator = evaluator(
-            model_name, model_fp32, model_int8, example_inputs, str(tosa_paths[0])
+            model_name, model_fp32, model_quant, example_inputs, str(tosa_paths[0])
         )
 
     quant_metrics = init_evaluator.evaluate()
-    output_json_path = intermediates_path / "quant_metrics.json"
+    output_json_path = intermediates_path / f"{target}-quant_metrics.json"
 
     with output_json_path.open("w") as json_file:
         json.dump(quant_metrics, json_file)

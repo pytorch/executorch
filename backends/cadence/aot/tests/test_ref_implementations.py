@@ -1458,7 +1458,7 @@ class TestRefImplementations(unittest.TestCase):
                 torch.tensor([[[[1.0, 2.0, 3.0, 4.0]]]], dtype=torch.float32),
                 torch.tensor([[0.0, 0.0]], dtype=torch.float32),
                 torch.tensor([[1.0, 1.0]], dtype=torch.float32),
-                torch.tensor([[[[1.0, 3.0, 2.0, 4.0]]]], dtype=torch.float32),
+                torch.tensor([[[[1.0, 2.0, 3.0, 4.0]]]], dtype=torch.float32),
             ),
             (
                 "h2xhd4",
@@ -1469,7 +1469,7 @@ class TestRefImplementations(unittest.TestCase):
                 torch.tensor([[0.0, 1.0]], dtype=torch.float32),
                 torch.tensor([[1.0, 0.0]], dtype=torch.float32),
                 torch.tensor(
-                    [[[[1.0, -4.0, 2.0, 3.0], [5, -8.0, 6.0, 7.0]]]],
+                    [[[[1.0, 2.0, -4.0, 3.0], [5, 6.0, -8.0, 7.0]]]],
                     dtype=torch.float32,
                 ),
             ),
@@ -1489,8 +1489,8 @@ class TestRefImplementations(unittest.TestCase):
                 torch.tensor(
                     [
                         [
-                            [[1.0, -4.0, 2.0, 3.0], [5.0, -8.0, 6.0, 7.0]],
-                            [[9.0, -12.0, 10.0, 11.0], [13.0, -16.0, 14.0, 15.0]],
+                            [[1.0, 2.0, -4.0, 3.0], [5.0, 6.0, -8.0, 7.0]],
+                            [[9.0, 10.0, -12.0, 11.0], [13.0, 14.0, -16.0, 15.0]],
                         ]
                     ],
                     dtype=torch.float32,
@@ -1512,8 +1512,8 @@ class TestRefImplementations(unittest.TestCase):
                 torch.tensor(
                     [
                         [
-                            [[1.0, -4.0, 2.0, 3.0], [5.0, -8.0, 6.0, 7.0]],
-                            [[-10.0, 11.0, 9.0, 12.0], [-14.0, 15.0, 13.0, 16.0]],
+                            [[1.0, 2.0, -4.0, 3.0], [5.0, 6.0, -8.0, 7.0]],
+                            [[-10.0, 9.0, 11.0, 12.0], [-14.0, 13.0, 15.0, 16.0]],
                         ]
                     ],
                     dtype=torch.float32,
@@ -1568,25 +1568,6 @@ class TestRefImplementations(unittest.TestCase):
                 (1, 1),  # dilation
                 1,  # groups
                 False,  # channel_last
-                torch.tensor(
-                    [[[[5.0]]]], dtype=torch.float32
-                ),  # expected: 1*1 + 4*1 = 5
-            ),
-            # Test case 2: Basic 2D convolution (NHWC format)
-            (
-                "basic_2d_nhwc",
-                torch.tensor(
-                    [[[[1.0], [2.0]], [[3.0], [4.0]]]], dtype=torch.float32
-                ),  # input: 1x2x2x1 (NHWC)
-                torch.tensor(
-                    [[[[1.0], [0.0]], [[0.0], [1.0]]]], dtype=torch.float32
-                ),  # weight: 1x2x2x1 (NHWC format)
-                torch.tensor([0.0], dtype=torch.float32),  # bias
-                (1, 1),  # stride
-                (0, 0),  # padding
-                (1, 1),  # dilation
-                1,  # groups
-                True,  # channel_last
                 torch.tensor(
                     [[[[5.0]]]], dtype=torch.float32
                 ),  # expected: 1*1 + 4*1 = 5
@@ -1709,23 +1690,6 @@ class TestRefImplementations(unittest.TestCase):
                     [[[3.0, 5.0, 7.0]]], dtype=torch.float32
                 ),  # expected: [1+2, 2+3, 3+4]
             ),
-            # Test case 8: 1D convolution (NLC format)
-            (
-                "conv1d_nlc",
-                torch.tensor(
-                    [[[1.0], [2.0], [3.0], [4.0]]], dtype=torch.float32
-                ),  # input: 1x4x1 (NLC)
-                torch.tensor(
-                    [[[1.0], [1.0]]], dtype=torch.float32
-                ),  # weight: 1x2x1 (NLC)
-                torch.tensor([0.0], dtype=torch.float32),  # bias
-                (1, 1),  # stride
-                (0, 0),  # padding
-                (1, 1),  # dilation
-                1,  # groups
-                True,  # channel_last
-                torch.tensor([[[3.0], [5.0], [7.0]]], dtype=torch.float32),
-            ),
             # Test case 9: Multi-channel input and output
             (
                 "multi_channel",
@@ -1796,19 +1760,31 @@ class TestRefImplementations(unittest.TestCase):
         padding: tuple[int, int],
         dilation: tuple[int, int],
         groups: int,
-        channel_last: bool,
+        channel_last: bool,  # Keep for backward compatibility with test data, but won't use
         expected_output: torch.Tensor,
     ) -> None:
-        output = torch.ops.cadence.convolution(
-            input_tensor,
-            weight,
-            bias,
-            stride,
-            padding,
-            dilation,
-            groups,
-            channel_last,
-        )
+        # Determine if 1D or 2D based on input shape
+        is_conv1d = len(input_tensor.shape) == 3
+        if is_conv1d:
+            output = torch.ops.cadence.conv1d(
+                input_tensor,
+                weight,
+                bias,
+                (stride[0],),
+                (padding[0],),
+                (dilation[0],),
+                groups,
+            )
+        else:
+            output = torch.ops.cadence.conv2d(
+                input_tensor,
+                weight,
+                bias,
+                stride,
+                padding,
+                dilation,
+                groups,
+            )
 
         # Verify output properties
         self.assertEqual(
@@ -1830,7 +1806,6 @@ class TestRefImplementations(unittest.TestCase):
 
     @expand(
         [
-            # Basic 2D transposed convolution with stride=1 (current test case - corrected name)
             (
                 "basic_2d_stride1",
                 torch.tensor(
@@ -1848,33 +1823,6 @@ class TestRefImplementations(unittest.TestCase):
                 False,  # channel_last
                 torch.tensor(
                     [[[[1.0, 3.0, 2.0], [4.0, 10.0, 6.0], [3.0, 7.0, 4.0]]]],
-                    dtype=torch.float32,
-                ),
-            ),
-            # 2D transposed convolution with channel_last=True (NHWC format)
-            (
-                "channel_last_nhwc",
-                torch.tensor(
-                    [[[[1.0], [2.0]], [[3.0], [4.0]]]], dtype=torch.float32
-                ),  # input: 1x2x2x1 (NHWC)
-                torch.tensor(
-                    [[[[1.0], [1.0]], [[1.0], [1.0]]]], dtype=torch.float32
-                ),  # weight: 1x2x2x1 (NHWC)
-                torch.tensor([0.0], dtype=torch.float32),  # bias
-                (1, 1),  # stride
-                (0, 0),  # padding
-                (1, 1),  # dilation
-                1,  # groups
-                (0, 0),  # output_padding
-                True,  # channel_last=True
-                torch.tensor(
-                    [
-                        [
-                            [[1.0], [3.0], [2.0]],
-                            [[4.0], [10.0], [6.0]],
-                            [[3.0], [7.0], [4.0]],
-                        ]
-                    ],
                     dtype=torch.float32,
                 ),
             ),
@@ -1897,26 +1845,6 @@ class TestRefImplementations(unittest.TestCase):
                 torch.tensor(
                     [[[[6.0, 7.0, 5.0], [8.0, 10.0, 7.0], [5.0, 8.0, 9.0]]]],
                     dtype=torch.float32,
-                ),
-            ),
-            # 1D transposed convolution (3D tensor, NLC format)
-            (
-                "conv1d_nlc",
-                torch.tensor(
-                    [[[1.0], [2.0], [3.0]]], dtype=torch.float32
-                ),  # input: 1x3x1 (NLC)
-                torch.tensor(
-                    [[[1.0], [0.5]]], dtype=torch.float32
-                ),  # weight: 1x2x1 (NLC)
-                torch.tensor([0.0], dtype=torch.float32),  # bias
-                (2, 0),  # stride
-                (0, 0),  # padding
-                (1, 1),  # dilation
-                1,  # groups
-                (0, 0),  # output_padding
-                True,  # channel_last=True
-                torch.tensor(
-                    [[[1.0], [0.5], [2.0], [1.0], [3.0], [1.5]]], dtype=torch.float32
                 ),
             ),
         ]

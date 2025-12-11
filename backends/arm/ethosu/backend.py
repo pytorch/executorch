@@ -9,6 +9,7 @@
 # backends. Converts via TOSA as an intermediate form supported by AoT and
 # JIT compiler flows.
 #
+"""Ahead-of-time Arm Ethos-U backend built on the shared TOSA pipeline."""
 
 import logging
 from typing import final, List
@@ -27,19 +28,28 @@ logger = logging.getLogger(__name__)
 
 @final
 class EthosUBackend(BackendDetails):
-    """
-    BackendDetails subclass for delegation to Ethos-U. Deduce the TOSA lowering from
-    the compile spec list by filtering out the compile spec values that are of interest
-    for the TOSABackend.
+    """BackendDetails subclass for delegation to Ethos-U.
+
+    Deduce the TOSA lowering from the compile spec list by filtering out the
+    compile spec values that are of interest for the TOSABackend.
+
     """
 
     @staticmethod
     def _compile_tosa_flatbuffer(
         tosa_flatbuffer: bytes, compile_spec: EthosUCompileSpec
     ) -> bytes:
-        """
-        Static helper method to do the compilation of the TOSA flatbuffer
-        representation to a target specific binary stream.
+        """Compile a TOSA flatbuffer into a target-specific binary stream.
+
+        Args:
+            tosa_flatbuffer (bytes): Serialized TOSA graph produced by
+                ``TOSABackend``.
+            compile_spec (EthosUCompileSpec): Compile specification providing
+                Vela flags and intermediate paths.
+
+        Returns:
+            bytes: Target-specific binary stream produced by Vela.
+
         """
         compile_flags = compile_spec.compiler_flags
 
@@ -73,6 +83,17 @@ class EthosUBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
+        """Lower the exported program and compile it for an Ethos-U target.
+
+        Args:
+            edge_program (ExportedProgram): Program to lower to Ethos-U.
+            compile_specs (List[CompileSpec]): Serialized Ethos-U compile specs
+                supplied by the frontend.
+
+        Returns:
+            PreprocessResult: Result containing the compiled Ethos-U binary.
+
+        """
         logger.info(f"{EthosUBackend.__name__} preprocess")
 
         compile_spec = EthosUCompileSpec.from_list(compile_specs)
