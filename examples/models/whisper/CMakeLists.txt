@@ -42,8 +42,6 @@ if(NOT EXECUTORCH_BUILD_CUDA AND MSVC)
   list(APPEND _link_libraries quantized_ops_lib custom_ops)
   executorch_target_link_options_shared_lib(quantized_ops_lib)
   executorch_target_link_options_shared_lib(custom_ops)
-else()
-  list(APPEND _link_libraries quantized_ops_lib custom_ops)
 endif()
 
 # XNNPACK

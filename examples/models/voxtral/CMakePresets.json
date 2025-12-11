@@ -7,7 +7,8 @@
             "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/voxtral",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out"
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
             }
         },
         {
