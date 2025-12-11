@@ -130,7 +130,7 @@ class OpenVINOQuantizer(Quantizer):
                 weight_compression_configuration
             )
 
-    def get_quantizer_specific_internal_algo_config(self):
+    def get_quantizer_specific_internal_algo_config(self) -> Dict[str, Any]:
         """
         Returns the config attributes like all_layers, group_size, backup_mode and Quantization mode
         from the quantizer's internal algorithm. These attributes are defined when initializing the quantizer
@@ -193,6 +193,16 @@ class OpenVINOQuantizer(Quantizer):
         list[WeightCompressionParameters],
         list[WeightCompressionParameters],
     ]:
+        """
+        Collect weight compression parameters for the given FX model and NNCF graph.
+
+        :param model: FX GraphModule to analyze for weight compression.
+        :param nncf_graph: NNCFGraph representation of the model.
+        :return: A tuple of:
+            - all parameters eligible for weight compression,
+            - ratio-defining parameters used to set primary/backup precisions,
+            - parameters that are not compressible and remain in original precision.
+        """
         self._algo.set_backend_entity(model)
         return self._algo.get_weight_compression_parameters(model, nncf_graph)
 
