@@ -42,7 +42,7 @@ target_compile_options(portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED)
 
 ### Make sure ET_EVENT_TRACER_ENABLED flag is enabled or ETDump will be empty.
 
-If ExecuTorch and all operator libraries are not compiled with the `ET_EVENT_TRACER_ENABLED` preprocessor flag, no trace events will be recorded and the ETDump will be empty.
+If the binary is not compiled with the `ET_EVENT_TRACER_ENABLED` preprocessor flag, no trace events will be recorded and the ETDump will be empty.
 
 When this flag is missing, the following code:
 
