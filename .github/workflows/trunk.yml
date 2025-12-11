@@ -662,7 +662,7 @@ jobs:
 
         pip install -U "huggingface_hub[cli]<1.0"
 
-        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} --test_with_runner  ${{ matrix.backend == 'torchao' && '--use_torchao_kernels' || '' }}
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} --test_with_runner ${{ matrix.backend == 'torchao' && '--use_torchao_kernels' || '' }}
 
   test-multimodal-macos:
     if: ${{ !github.event.pull_request.head.repo.fork }}
