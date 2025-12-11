@@ -123,13 +123,13 @@ class OpenVINOQuantizer(Quantizer):
             compression_mode = mode.value.replace(
                 "wo", ""
             )  # Mode value has to match NNCF CompressWeightsMode
-            self._wc_config = get_weight_compression_configuration(
+            weight_compression_configuration = get_weight_compression_configuration(
                 nncf.CompressWeightsMode(compression_mode),
                 **kwargs,
             )
-            self._wc_config["subset_size"] = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
+            weight_compression_configuration["subset_size"] = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
             self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression.from_config(
-                self._wc_config
+                weight_compression_configuration
             )
 
     def get_quantizer_specific_internal_algo_config(self):
