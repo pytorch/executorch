@@ -566,7 +566,7 @@ class _ExportPassBase(PassBase):
         num_init = len(init)
         # The x_element placeholders are at indices [num_init : num_init + num_xs]
         xs_element_data = []
-        for i, x_proxy in enumerate(xs):
+        for i in range(0, len(xs)):
             ph = combine_fn_placeholders[num_init + i]
             # Use the placeholder's val which has the correct shape
             xs_element_data.append(ph.meta["val"])
