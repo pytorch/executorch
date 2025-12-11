@@ -15,7 +15,7 @@ import logging
 import math
 import operator
 from operator import neg
-from typing import cast, Dict, Iterable, Optional, Sequence, Tuple
+from typing import cast, Dict, Iterable, Optional, Sequence
 
 import torch
 import torch.fx
@@ -1690,58 +1690,75 @@ class ReplaceInfArgInFullWithValuePass(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceAtenAvgPoolWithCadenceAvgPoolPass(ExportPass):
+class ReplaceAtenAvgPoolWithCadenceAvgPoolPass(RemoveOrReplacePassInterface):
     """
     Replace the aten avg_pool op with the cadence custom avg_pool2d op.
     """
 
-    def call_operator(self, op, args, kwargs, meta):
-        # Only continue for avg_pool op
-        if op not in {
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
             exir_ops.edge.aten.avg_pool1d.default,
             exir_ops.edge.aten.avg_pool2d.default,
-        }:
-            return super().call_operator(op, args, kwargs, meta)
+        ]
 
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Determine if the op is avg_pool1d or avg_pool2d
-        avg_pool1d: bool = op == exir_ops.edge.aten.avg_pool1d.default
-        # Get the input tensor
-        in_tensor = args[0].to_tensor()
+        avg_pool1d: bool = node.target == exir_ops.edge.aten.avg_pool1d.default
+
+        # Get the input tensor node
+        in_tensor_node = node.args[0]
+        assert isinstance(in_tensor_node, torch.fx.Node)
 
         # Replace avg_pool2d with custom avg_pool2d, and if the input tensor is
         # quantized, pass its zero_point tensor as arg to the custom avg_pool2d.
         # stride, padding, ceil_mode, count_include_pad, divisor_override, are
         # the native avg_pool2d args. 'channel_last' denotes NCHW vs NHWC layout,
         # and is False by default.
-        kernel_size = args[1]
-        stride = args[2] if len(args) >= 3 else [1, 1]
-        padding = args[3] if len(args) >= 4 else [0, 0]
-        ceil_mode = args[4] if len(args) >= 5 else False
-        count_include_pad = args[5] if len(args) >= 6 else True
-        divisor_override = args[6] if len(args) >= 7 else None
-        zero_point = args[7] if len(args) >= 8 else None
+        kernel_size = node.args[1]
+        # When stride is not provided or is empty, PyTorch defaults to kernel_size
+        stride = node.args[2] if len(node.args) >= 3 and node.args[2] else kernel_size
+        padding = node.args[3] if len(node.args) >= 4 else [0, 0]
+        ceil_mode = node.args[4] if len(node.args) >= 5 else False
+        count_include_pad = node.args[5] if len(node.args) >= 6 else True
+        divisor_override = node.args[6] if len(node.args) >= 7 else None
+        zero_point = node.args[7] if len(node.args) >= 8 else None
+
+        graph = node.graph
+        out_shape = node.meta["val"].shape
+
+        kernel_size = cast(Sequence[int], kernel_size)
+        stride = cast(Sequence[int], stride)
+        padding = cast(Sequence[int], padding)
 
         # If the op is avg_pool1d, then we need to reshape the 3d input to a 4d
         # tensor.
         if avg_pool1d:
-            in_shape = list(in_tensor.shape)
+            in_shape = list(in_tensor_node.meta["val"].shape)
             assert len(in_shape) == 3, "Expected 3d input for avg_pool1d"
-            in_shape.insert(2, 1)
-            out_shape = meta["val"].shape
-            in_view_op = super().call_operator(
-                exir_ops.edge.aten.view_copy.default,
-                (in_tensor, in_shape),
-                kwargs,
-                meta,
-            )
+            in_shape_4d = in_shape[:2] + [1] + in_shape[2:]
+
+            with graph.inserting_before(node):
+                in_view_node = graph.call_function(
+                    exir_ops.edge.aten.view_copy.default,
+                    args=(in_tensor_node, in_shape_4d),
+                )
+                in_view_node.meta = node.meta
+
             # Extend the kernel_size, stride and padding to 2d
-            kernel_size = [1] + kernel_size if len(kernel_size) == 1 else kernel_size
-            stride = [1] + stride if len(stride) == 1 else stride
-            padding = [0] + padding if len(padding) == 1 else padding
+            kernel_size = (
+                [1] + list(kernel_size) if len(kernel_size) == 1 else kernel_size
+            )
+            stride = [1] + list(stride) if len(stride) == 1 else stride
+            padding = [0] + list(padding) if len(padding) == 1 else padding
+
+            input_for_pool = in_view_node
+        else:
+            input_for_pool = in_tensor_node
 
         # Create a new avg_pool node with the updated args
         new_args = (
-            in_view_op if avg_pool1d else args[0],
+            input_for_pool,
             kernel_size,
             stride,
             padding,
@@ -1751,70 +1768,66 @@ class ReplaceAtenAvgPoolWithCadenceAvgPoolPass(ExportPass):
             zero_point,
             False,
         )
-        avg_pool2d_op = super().call_operator(
-            exir_ops.edge.cadence.avg_pool2d.default,
-            new_args,
-            kwargs,
-            meta,
-        )
+
+        with graph.inserting_before(node):
+            avg_pool2d_node = graph.call_function(
+                exir_ops.edge.cadence.avg_pool2d.default,
+                args=new_args,
+            )
+            avg_pool2d_node.meta = node.meta
 
         # If the node was avg_pool1d, we again reshape the 4d output to 3d output
-        return (
-            super().call_operator(
-                exir_ops.edge.aten.view_copy.default,
-                (avg_pool2d_op, list(out_shape)),
-                kwargs,
-                meta,
-            )
-            if avg_pool1d
-            else avg_pool2d_op
-        )
+        if avg_pool1d:
+            with graph.inserting_before(node):
+                result_node = graph.call_function(
+                    exir_ops.edge.aten.view_copy.default,
+                    args=(avg_pool2d_node, list(out_shape)),
+                )
+                result_node.meta = node.meta
+            node.replace_all_uses_with(result_node)
+        else:
+            node.replace_all_uses_with(avg_pool2d_node)
+
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class ReplaceIm2RowWithViewPass(ExportPass):
-    def can_replace(self, op, args, kwargs, meta) -> bool:
-        if op != exir_ops.edge.cadence.im2row.default:
-            return False
+class ReplaceIm2RowWithViewPass(RemoveOrReplacePassInterface):
+    """
+    Replace im2row with view when possible (no padding, no dilation, and output spatial dimensions are 1).
+    """
 
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.cadence.im2row.default]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Check if im2row applies padding. If yes, we cannot replace it with view.
-        pad = cast(tuple[int, ...], args[3])
+        pad = cast(Sequence[int], node.args[3])
         if any(p != 0 for p in pad):
             return False
 
         # Check if im2row has dilation. If yes, we cannot replace it with view.
-        dilation = cast(tuple[int, ...], args[2])
+        dilation = cast(Sequence[int], node.args[2])
         if any(d != 1 for d in dilation):
             return False
 
         # im2row works on 3D or 4D tensors.
         # Output shape[1:-1] will be unit if input spatial dimensions are the same as kernel spatial dimensions.
-        output_shape = meta["val"].shape
-        if math.prod(output_shape[1:-1]) == 1:
-            return True
+        output_shape = node.meta["val"].shape
+        if math.prod(output_shape[1:-1]) != 1:
+            return False
 
-        return False
+        # Replace im2row with view_copy
+        with node.graph.inserting_before(node):
+            new_node = node.graph.call_function(
+                exir_ops.edge.aten.view_copy.default,
+                args=(node.args[0], list(output_shape)),
+            )
+            new_node.meta = node.meta
 
-    def call_operator(
-        self,
-        op,
-        args: tuple[Argument, ...],
-        kwargs: dict[str, Argument],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
-        if op != exir_ops.edge.cadence.im2row.default:
-            return super().call_operator(op, args, kwargs, meta)
-
-        if not self.can_replace(op, args, kwargs, meta):
-            return super().call_operator(op, args, kwargs, meta)
-
-        output_shape = meta["val"].shape
-        return super().call_operator(
-            exir_ops.edge.aten.view_copy.default,
-            (args[0], tuple(output_shape)),
-            kwargs,
-            meta,
-        )
+        node.replace_all_uses_with(new_node)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -1833,57 +1846,84 @@ class ReplaceEmptyTensorsWithFullPass(ExportPass):
         return super().call_operator(op, args, kwargs, meta)
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        ret = super().call(graph_module)
-        modified = ret.graph_module.graph.eliminate_dead_code() or ret.modified
-        return PassResult(ret.graph_module, modified)
+        changed = False
+        for module in filter(
+            lambda m: isinstance(m, torch.fx.GraphModule), graph_module.modules()
+        ):
+            module = cast(torch.fx.GraphModule, module)
+            for node in module.graph.nodes:
+                if node.op != "call_function":
+                    continue
+                val = node.meta.get("val", None)
+                if isinstance(val, torch.Tensor) and val.numel() == 0:
+                    with module.graph.inserting_before(node):
+                        new_node = module.graph.call_function(
+                            exir_ops.edge.aten.full.default,
+                            args=(val.shape, 0),
+                            kwargs={"dtype": val.dtype},
+                        )
+                        new_node.meta = node.meta
+                    node.replace_all_uses_with(new_node)
+                    changed = True
+
+        if changed:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+            return super().call(graph_module)
+
+        return PassResult(graph_module, False)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class ReplaceWhereWithFullArgsWithWhereScalar(ExportPass):
+class ReplaceWhereWithFullArgsWithWhereScalar(RemoveOrReplacePassInterface):
     """Replaces where ops using two full ops as tensors with a scalar
     version.
     """
 
-    def call_operator(
-        self,
-        op,
-        args: Tuple[Argument, ...],
-        kwargs: Dict[str, Argument],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
-        if op not in {
-            exir_ops.edge.aten.where.self,
-        }:
-            return super().call_operator(op, args, kwargs, meta)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.where.self]
 
-        # If the args are not full ops, bail
-        # pyre-ignore[16]: `ProxyValue` has no attribute `node`.
-        if (args[1].node.target != exir_ops.edge.aten.full.default) or (
-            args[2].node.target != exir_ops.edge.aten.full.default
-        ):
-            return super().call_operator(op, args, kwargs, meta)
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # Check if args[1] and args[2] are full ops
+        arg1 = node.args[1]
+        arg2 = node.args[2]
 
-        # If one of the full ops is a different size than than the cond tensor, we need to broadcast. Bail.
+        if not isinstance(arg1, torch.fx.Node) or not isinstance(arg2, torch.fx.Node):
+            return False
+
         if (
-            # pyre-ignore[16]: `ProxyValue` has no attribute `node`.
-            list(args[0].to_tensor().shape) != args[1].node.args[0]
-            or list(args[0].to_tensor().shape) != args[2].node.args[0]
+            arg1.target != exir_ops.edge.aten.full.default
+            or arg2.target != exir_ops.edge.aten.full.default
         ):
-            return super().call_operator(op, args, kwargs, meta)
+            return False
+
+        # Get the condition tensor shape
+        cond_arg = node.args[0]
+        assert isinstance(cond_arg, torch.fx.Node)
+        cond_shape = list(cond_arg.meta["val"].shape)
+
+        # Check if the full ops have the same size as the cond tensor
+        full1_shape = arg1.args[0]
+        full2_shape = arg2.args[0]
+
+        if cond_shape != full1_shape or cond_shape != full2_shape:
+            return False
 
         # Get the scalar values from the full ops
-        scalar_value_1 = args[1].node.args[1]
-        scalar_value_2 = args[2].node.args[1]
+        scalar_value_1 = arg1.args[1]
+        scalar_value_2 = arg2.args[1]
 
         # Replace the where op with a scalar where op
-        return super().call_operator(
-            exir_ops.edge.cadence.where_Scalar.default,
-            (args[0], scalar_value_1, scalar_value_2),
-            kwargs,
-            meta,
-        )
+        with node.graph.inserting_before(node):
+            new_node = node.graph.call_function(
+                exir_ops.edge.cadence.where_Scalar.default,
+                args=(cond_arg, scalar_value_1, scalar_value_2),
+            )
+            new_node.meta = node.meta
 
-        return super().call_operator(op, args, kwargs, meta)
+        node.replace_all_uses_with(new_node)
+        return True
 
 
 # Adapted from fbcode/pyspeech/opt_passes/replace_ops.py
@@ -2119,53 +2159,54 @@ class ReplaceMatmulWithTransposedMatmulPass(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class ReplaceMulTensorWithMulAndFullOpsPass(ExportPass):
+class ReplaceMulTensorWithMulAndFullOpsPass(RemoveOrReplacePassInterface):
     """
     Extracts a single value argument of mul op to a separate full op.
     """
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        for mul_node in graph_module.graph.find_nodes(
-            op="call_function", target=torch.ops.aten.mul.Tensor
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [torch.ops.aten.mul.Tensor]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        x_arg, const_arg = node.args
+
+        # Swap arguments if the order is wrong
+        if isinstance(const_arg, torch.fx.Node):
+            x_arg, const_arg = const_arg, x_arg
+
+        # Skip if the const_arg is not a scalar
+        if not isinstance(const_arg, (float, int)) or not isinstance(
+            x_arg, torch.fx.Node
         ):
-            x_arg, const_arg = mul_node.args
+            return False
 
-            # Swap arguments if the order is wrong
-            if isinstance(const_arg, torch.fx.Node):
-                x_arg, const_arg = const_arg, x_arg
+        # Cast the const_arg to the dtype of the x_arg
+        full_arg = self.resolve_full_arg(x_arg, const_arg)
 
-            # Skip if the const_arg is not a scalar
-            if not isinstance(const_arg, (float, int)) or not isinstance(
-                x_arg, torch.fx.Node
-            ):
-                continue
+        full_output_dtype = torch.int32 if isinstance(full_arg, int) else torch.float32
 
-            # Cast the const_arg to the dtype of the x_arg
-            full_arg = self.resolve_full_arg(x_arg, const_arg)
-
-            full_output_dtype = (
-                torch.int32 if isinstance(full_arg, int) else torch.float32
+        # Extract an argument to a separate full op.
+        with node.graph.inserting_before(node):
+            full_node = node.graph.call_function(
+                torch.ops.aten.full.default,
+                args=([1], full_arg),
+                kwargs={"dtype": full_output_dtype},
             )
+            full_node.meta = node.meta
+            full_node.meta["val"] = [1]
+            new_mul_node = node.graph.call_function(
+                torch.ops.aten.mul.Tensor, args=(x_arg, full_node)
+            )
+            new_mul_node.meta = node.meta
+        # Replace the old mul with a newly created mul.
+        node.replace_all_uses_with(new_mul_node)
+        node.graph.erase_node(node)
+        return True
 
-            # Extract an argument to a separate full op.
-            with graph_module.graph.inserting_before(mul_node):
-                full_node = graph_module.graph.call_function(
-                    torch.ops.aten.full.default,
-                    args=([1], full_arg),
-                    kwargs={"dtype": full_output_dtype},
-                )
-                full_node.meta = mul_node.meta
-                full_node.meta["val"] = [1]
-                new_mul_node = graph_module.graph.call_function(
-                    torch.ops.aten.mul.Tensor, args=(x_arg, full_node)
-                )
-                new_mul_node.meta = mul_node.meta
-            # Replace the old mul with a newly created mul.
-            mul_node.replace_all_uses_with(new_mul_node)
-            graph_module.graph.erase_node(mul_node)
-        return super().call(graph_module)
-
-    def resolve_full_arg(self, x_arg, const_arg):
+    def resolve_full_arg(
+        self, x_arg: torch.fx.Node, const_arg: float | int
+    ) -> float | int:
         if x_arg.meta["val"].dtype == torch.float32 and isinstance(const_arg, int):
             const_arg = float(const_arg)
         if x_arg.meta["val"].dtype == torch.int32 and isinstance(const_arg, float):
@@ -2174,50 +2215,50 @@ class ReplaceMulTensorWithMulAndFullOpsPass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(ExportPass):
+class ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(RemoveOrReplacePassInterface):
     """
     Replace the aten adaptive avg_pool op with the aten avg_pool2d op.
     """
 
-    def call_operator(self, op, args, kwargs, meta):
-        # Only continue for avg_pool op
-        if op not in {exir_ops.edge.aten._adaptive_avg_pool2d.default}:
-            return super().call_operator(op, args, kwargs, meta)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten._adaptive_avg_pool2d.default]
 
-        # Get the input tensor
-        in_tensor = args[0].to_tensor()
-        # Permute NCHW to NHWC for computation
-        in_tensor_permuted = in_tensor.permute(0, 2, 3, 1)
-        in_tensor_shape = in_tensor_permuted.shape
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # Get the input tensor node
+        in_tensor_node = node.args[0]
+        assert isinstance(in_tensor_node, torch.fx.Node)
 
-        output_size = args[1]
+        # Get input shape (in NCHW format)
+        in_shape = in_tensor_node.meta["val"].shape
+        output_size = cast(Sequence[int], node.args[1])
         num_dims = len(output_size)
 
+        # Spatial dimensions are at indices [2:] for NCHW format
         # TODO: If in_tensor_shape is not a multiple of output size,
         # this pass will not work. T224984800
         dim_multiples = [
-            (in_tensor_shape[i + 1] % output_size[i]) == 0 for i in range(num_dims)
+            (in_shape[i + 2] % output_size[i]) == 0 for i in range(num_dims)
         ]
         if not all(dim_multiples):
             logging.info(
-                f"Unable to replace adaptive average pool with average pool. Input tensor shape of {in_tensor_shape} is not a multiple of output size: {output_size}"
+                f"Unable to replace adaptive average pool with average pool. Input tensor shape of {in_shape} is not a multiple of output size: {output_size}"
             )
-            return super().call_operator(op, args, kwargs, meta)
+            return False
 
-        # Compute stride and kernel_size, then set default values for other arguments
-        stride = [(in_tensor_shape[i + 1] // output_size[i]) for i in range(num_dims)]
+        # Compute stride and kernel_size based on spatial dimensions
+        stride = [(in_shape[i + 2] // output_size[i]) for i in range(num_dims)]
         kernel_size = [
-            in_tensor_shape[i + 1] - (output_size[i] - 1) * stride[i]
-            for i in range(num_dims)
+            in_shape[i + 2] - (output_size[i] - 1) * stride[i] for i in range(num_dims)
         ]
         padding = [0] * num_dims
         ceil_mode = False
         count_include_pad = True
         divisor_override = None
 
-        # Create a new avg_pool node with the updated args
+        # Create a new avg_pool2d node with the computed args
         new_args = (
-            args[0],
+            in_tensor_node,
             kernel_size,
             stride,
             padding,
@@ -2225,12 +2266,16 @@ class ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(ExportPass):
             count_include_pad,
             divisor_override,
         )
-        return super().call_operator(
-            exir_ops.edge.aten.avg_pool2d.default,
-            new_args,
-            kwargs,
-            meta,
-        )
+
+        with node.graph.inserting_before(node):
+            new_node = node.graph.call_function(
+                exir_ops.edge.aten.avg_pool2d.default,
+                args=new_args,
+            )
+            new_node.meta = node.meta
+
+        node.replace_all_uses_with(new_node)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))

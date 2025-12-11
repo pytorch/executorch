@@ -146,6 +146,10 @@ def register_tosa_support_check(checker: Type[SupportedTOSAOperatorCheck]):
     return checker
 
 
+def _is_integer_dtype(dtype: torch.dtype) -> bool:
+    return not dtype.is_floating_point and not dtype.is_complex
+
+
 def _is_quantized_constant(node: torch.fx.Node) -> bool:
     if node.target not in (
         exir_ops.edge.aten.full_like.default,
@@ -161,7 +165,7 @@ def _is_quantized_constant(node: torch.fx.Node) -> bool:
     for user in users:
         if user.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
             dim_order_dtype = get_first_fake_tensor(user).dtype
-            if dim_order_dtype.is_complex or dim_order_dtype.is_floating_point:
+            if not _is_integer_dtype(dim_order_dtype):
                 return False
         else:
             return False
@@ -184,10 +188,24 @@ def is_quantized(node: torch.fx.Node) -> bool:
         bool: True if the node is quantized, False otherwise.
     """
 
-    node_dtype = get_first_fake_tensor(node).dtype
-    # Integer-like dtype implies the node is already quantized.
-    if not node_dtype.is_complex and not node_dtype.is_floating_point:
-        return True
+    try:
+        node_dtype = get_first_fake_tensor(node).dtype
+        # Integer-like dtype implies the node is already quantized as long
+        # as inputs are not floating-point.
+        if _is_integer_dtype(node_dtype):
+            input_nodes = node.all_input_nodes
+            input_nodes_dtypes = [
+                get_first_fake_tensor(input_node).dtype for input_node in input_nodes
+            ]
+            if all(
+                _is_integer_dtype(input_node_dtype)
+                for input_node_dtype in input_nodes_dtypes
+            ):
+                return True
+
+    except TypeError:
+        # Could not determine dtype, fall back to other checks.
+        pass
 
     # Nodes introduced during lowering that exclusively feed quantized users.
     if _is_quantized_constant(node):
@@ -510,7 +528,7 @@ class CheckProperQuantization(OperatorSupportBase):
 
         input_quantized = input_quantized or all(
             (input_node.target in DQ_OPS)
-            or (not get_first_fake_tensor(input_node).dtype.is_floating_point)
+            or _is_integer_dtype(get_first_fake_tensor(input_node).dtype)
             for input_node in node.all_input_nodes
         )
 
@@ -519,8 +537,10 @@ class CheckProperQuantization(OperatorSupportBase):
             return False
 
         all_q_users = all((output_node.target in Q_OPS) for output_node in node.users)
-        is_floating_point = get_first_fake_tensor(node).dtype.is_floating_point
-        output_quantized = output_quantized or all_q_users or not is_floating_point
+        output_dtype = get_first_fake_tensor(node).dtype
+        output_quantized = (
+            output_quantized or all_q_users or _is_integer_dtype(output_dtype)
+        )
 
         if not output_quantized:
             self.reporter.report_reject(node, "One or more outputs were not quantized.")

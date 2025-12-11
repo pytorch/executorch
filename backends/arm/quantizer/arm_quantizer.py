@@ -403,8 +403,6 @@ class TOSAQuantizer(Quantizer):
 
         """
         # Validate that quantization_config is provided
-        if quantization_config is None:
-            raise ValueError("quantization_config == None is not supported yet")
         self.module_name_config[module_name] = quantization_config
         return self
 

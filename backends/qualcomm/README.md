@@ -56,7 +56,7 @@ backends/qualcomm
 |   |       # Meanwhile, this is also the runtime responsbile for executing compiled
 |   |       # models on a device.
 |   └── backends # Backends supported by QNN.
-|       └── htpbackend
+|       └── gpu / htp
 |           ├── aarch64 # Configuration required to run on device. (Device Part).
 |           └── x86_64 # Configuration required to compile graph on host. (AoT Part).
 ├── scripts # Misc supporting scripts, not related to core functionality.
