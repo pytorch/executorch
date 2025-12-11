@@ -8,7 +8,7 @@
 #pragma once
 
 #include <atomic>
-#import <functional>
+#include <functional>
 #include <optional>
 #include <memory>
 #include <string>
