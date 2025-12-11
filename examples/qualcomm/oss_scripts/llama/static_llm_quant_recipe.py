@@ -78,13 +78,6 @@ class LlamaStories260KQuantRecipe(StaticLLMQuantRecipe):
                 act_observer=MinMaxObserver,
                 granularity=QuantGranularity.PER_CHANNEL,
             )
-            .add_regex(
-                {r"layers\..*\.attention\.wv.*"},
-                QuantDtype.use_8a4w,
-                False,
-                act_observer=MinMaxObserver,
-                granularity=QuantGranularity.PER_CHANNEL,
-            )
         )
         self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
 

@@ -129,6 +129,43 @@ inline void validate_quantization_params(
       "Single quant Output");
 }
 
+inline bool is_channels_last_tensor(const Tensor& tensor) {
+  if (tensor.dim() != 4) {
+    return false;
+  }
+
+  // When channels or spatial dims are 1 the layout information is ambiguous.
+  if (tensor.size(1) == 1 || (tensor.size(2) == 1 && tensor.size(3) == 1)) {
+    return true;
+  }
+
+  constexpr executorch::aten::DimOrderType kChannelsLastDimOrder[] = {
+      0, 2, 3, 1};
+  executorch::aten::ArrayRef<executorch::aten::DimOrderType>
+      channels_last_order(kChannelsLastDimOrder, 4);
+
+  return tensor.dim_order() == channels_last_order;
+}
+
+inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
+  if (tensor1.dim() != tensor2.dim()) {
+    return false;
+  }
+
+  if (tensor1.dim() != 4) {
+    return false;
+  }
+
+  if (tensor1.size(1) != tensor2.size(1)) {
+    return false;
+  }
+
+  const bool tensor1_channels_only = tensor1.numel() == tensor1.size(1);
+  const bool tensor2_channels_only = tensor2.numel() == tensor2.size(1);
+
+  return tensor1_channels_only || tensor2_channels_only;
+}
+
 // Refer to CMSIS-NN 'arm_nn_requantize' implementation for details:
 // https://github.com/ARM-software/CMSIS-NN/blob/main/Include/arm_nnsupportfunctions.h#L1625
 // multiplier: Range {ARM_NN_Q31_MIN + 1, Q32_MAX}

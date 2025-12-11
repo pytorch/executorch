@@ -289,14 +289,17 @@ table QnnExecuTorchOptions {
   /// Is model from qnn context binary
   is_from_context_binary:bool;
 
-  // Enable this option to record all QNN API calls for debugging purpose
+  /// Enable this option to record all QNN API calls for debugging purpose
   saver:bool;
 
-  // Path to saver output folder
+  /// Path to saver output folder
   saver_output_dir:string;
 
   /// Optional structure to specify op packages loaded and used by the backend.
   op_package_options:QnnExecuTorchOpPackageOptions;
+
+  /// This experimental parameter is used to decide whether to enable multi-head attention to single-head attention pass, aiming to reduce time consumption in AOT and improve performance on HTP.
+  use_mha2sha:bool;
 }
 
 root_type QnnExecuTorchOptions;

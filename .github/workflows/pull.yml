@@ -728,8 +728,8 @@ jobs:
         # run llama runner in eager mode
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_runner_eager.sh
 
-  test-llama-lora-linux:
-    name: test-llama-lora-linux
+  test-lora-linux:
+    name: test-lora-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -752,11 +752,8 @@ jobs:
         # Install llama requirements
         bash examples/models/llama/install_requirements.sh
 
-        # install a recent version of torchtune (>= 20250730)
-        PYTHON_EXECUTABLE=python python -m pip install torchtune==0.7.0.dev20250929  --extra-index-url https://download.pytorch.org/whl/nightly/cpu
-
         # run llama runner in eager mode
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_lora.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_lora.sh
 
   test-mediatek-models-linux:
     name: test-mediatek-models-linux
@@ -863,7 +860,7 @@ jobs:
         source .ci/scripts/setup-emscripten.sh
 
         export PNPM_VERSION=10.24.0
-        
+
         curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=$PNPM_VERSION SHELL="$(which bash)" sh -
 
         export PNPM_HOME="$HOME/.local/share/pnpm"

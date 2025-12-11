@@ -87,8 +87,8 @@ void apply_padding_to_dim(
       ET_KERNEL_CHECK_MSG(
           ctx,
           out_data != self_data &&
-              ((out_data + copy_len < self_data) ||
-               (self_data + copy_len < out_data)),
+              ((out_data + copy_len <= self_data) ||
+               (self_data + copy_len <= out_data)),
           InvalidArgument,
           /* void */,
           "Out tensor overlaps with the input tensor. This is not supported.");

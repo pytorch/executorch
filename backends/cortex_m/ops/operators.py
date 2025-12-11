@@ -11,6 +11,7 @@ from typing import Sequence
 import torch
 import torch.nn.functional as F
 from executorch.backends.cortex_m.passes.passes_utils import (
+    is_channel_broadcast,
     requantize_cmsis,
     SHIFT_INT8,
 )
@@ -140,12 +141,15 @@ def quantized_add_meta(
     output_multiplier: int,
     output_shift: int,
 ) -> torch.Tensor:
-    assert self.shape == other.shape, (
-        "Cortex-M quantized_mul: broadcasting is not yet supported — "
+    assert self.shape == other.shape or is_channel_broadcast(self, other), (
+        "Cortex-M quantized_add: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
-    broadcasted_shape = torch.broadcast_shapes(self.shape, other.shape)
-    return torch.empty(broadcasted_shape, dtype=torch.int8, device=self.device)
+    if self.numel() > other.numel():
+        output_tensor = self
+    else:
+        output_tensor = other
+    return torch.empty_like(output_tensor)
 
 
 @impl(lib, "quantized_add", "CompositeExplicitAutograd")
@@ -162,8 +166,8 @@ def quantized_add_impl(
     output_multiplier: int,
     output_shift: int,
 ) -> torch.Tensor:
-    assert self.shape == other.shape, (
-        "Cortex-M quantized_mul: broadcasting is not yet supported — "
+    assert self.shape == other.shape or is_channel_broadcast(self, other), (
+        "Cortex-M quantized_add: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
     self_shifted = (self.to(torch.int32) - self_zero_point) << SHIFT_INT8
@@ -207,12 +211,15 @@ def quantized_mul_meta(
     output_shift: int,
 ) -> torch.Tensor:
     # Broadcast to output shape
-    assert self.shape == other.shape, (
-        "Cortex-M quantized_mul: broadcasting is not yet supported — "
+    assert self.shape == other.shape or is_channel_broadcast(self, other), (
+        "Cortex-M quantized_mul: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
-    broadcasted_shape = torch.broadcast_shapes(self.shape, other.shape)
-    return torch.empty(broadcasted_shape, dtype=torch.int8, device=self.device)
+    if self.numel() > other.numel():
+        output_tensor = self
+    else:
+        output_tensor = other
+    return torch.empty_like(output_tensor)
 
 
 @impl(lib, "quantized_mul", "CompositeExplicitAutograd")
@@ -228,8 +235,8 @@ def quantized_mul_impl(
     # CMSIS-NN kernel multiplies raw int8 tensors (after zero-point offset) and
     # only uses the output multiplier/shift for rescaling. Mirror that here to
     # keep the composite implementation numerically aligned with the backend.
-    assert self.shape == other.shape, (
-        "Cortex-M quantized_mul: broadcasting is not yet supported — "
+    assert self.shape == other.shape or is_channel_broadcast(self, other), (
+        "Cortex-M quantized_mul: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
     self_int = self.to(torch.int32) - self_zero_point

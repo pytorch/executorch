@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>

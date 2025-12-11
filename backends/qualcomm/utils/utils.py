@@ -160,7 +160,7 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 
         def forward(self, x):
             rank = x.dim()
-            x = x.unsqueeze(-1) if rank == 3 else x.reshape(1, *x.shape, 1)
+            x = x.reshape(*x.shape, 1) if rank == 3 else x.reshape(1, *x.shape, 1)
             x = torch.transpose(x, 1, 2)
             res = self.conv(x)
             res = torch.transpose(res, 1, 2)
@@ -1033,6 +1033,7 @@ def generate_qnn_executorch_compiler_spec(
     is_from_context_binary: bool = False,
     graph_name: str = "forward",
     op_package_options: QnnExecuTorchOpPackageOptions = None,
+    use_mha2sha: bool = False,
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -1064,6 +1065,7 @@ def generate_qnn_executorch_compiler_spec(
         graph_name: Assign unique graph name if lowering multiple methods.
         op_package_options: Optional structure to specify op packages
             loaded and used by the backend.
+        use_mha2sha: This experimental parameter is used to decide whether to enable multi-head attention to single-head attention pass, aiming to reduce time consumption in AOT and improve performance on HTP.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -1125,6 +1127,8 @@ def generate_qnn_executorch_compiler_spec(
 
     if op_package_options and len(op_package_options.op_package_infos) > 0:
         qnn_executorch_options.op_package_options = op_package_options
+
+    qnn_executorch_options.use_mha2sha = use_mha2sha
 
     return [
         CompileSpec(QCOM_QNN_COMPILE_SPEC, option_to_flatbuffer(qnn_executorch_options))

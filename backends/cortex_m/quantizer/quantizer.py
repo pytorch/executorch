@@ -11,6 +11,10 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
+from executorch.backends.cortex_m.passes.passes_utils import (
+    is_channel_broadcast,
+    is_channels_last,
+)
 from executorch.backends.cortex_m.quantizer.operator_configs import (
     BINARY_OP_PATTERNS,
     CONV_OP_PATTERNS,
@@ -61,7 +65,9 @@ class CortexMQuantizer(ComposableQuantizer):
         if len(node.all_input_nodes) == 2:
             t1 = get_first_fake_tensor(node.all_input_nodes[0])
             t2 = get_first_fake_tensor(node.all_input_nodes[1])
-            return t1.shape != t2.shape
+            return t1.shape != t2.shape and not (
+                is_channel_broadcast(t1, t2) and is_channels_last(t1)
+            )
 
         return False
 
@@ -78,7 +84,7 @@ class CortexMQuantizer(ComposableQuantizer):
         if tensor is None:
             return False
 
-        return not tensor.is_contiguous(memory_format=torch.channels_last)
+        return not is_channels_last(tensor)
 
     def __init__(self) -> None:
         quantizers: List[Quantizer] = [

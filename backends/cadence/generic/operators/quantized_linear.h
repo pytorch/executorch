@@ -8,10 +8,17 @@
 
 #pragma once
 
-#include <executorch/backends/cadence/generic/kernels/kernels.h>
-#include <executorch/backends/cadence/generic/operators/operators.h>
+#include <cstdint>
 
-template <typename T>
+#include <executorch/backends/cadence/generic/kernels/kernels.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
+namespace impl::generic::quantized {
+
+constexpr size_t kTensorDimensionLimit = 16;
+
+template <typename IT, typename WT = IT>
 inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
     const ::executorch::aten::Tensor& src,
     const ::executorch::aten::Tensor& weight,
@@ -27,19 +34,17 @@ inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
   // output comes in empty with shape [leading_dims, out_dim]
   // Perform matrix multiply (M x N) x (N x P)' => M x P
   const int64_t leading_dims =
-      executorch::runtime::getLeadingDims(src, src.dim() - 1);
+      ::executorch::runtime::getLeadingDims(src, src.dim() - 1);
   const int64_t out_dim = weight.size(0); // = out_dim
   const int64_t in_dim = weight.size(1); // = in_dim
 
-  const T* __restrict__ in_data = src.const_data_ptr<T>();
-  const T* __restrict__ weight_data = weight.const_data_ptr<T>();
+  const IT* __restrict__ in_data = src.const_data_ptr<IT>();
+  const WT* __restrict__ weight_data = weight.const_data_ptr<WT>();
   const int32_t* __restrict__ bias_data = bias.const_data_ptr<int32_t>();
-  T* __restrict__ out_data = out.mutable_data_ptr<T>();
-
+  IT* __restrict__ out_data = out.mutable_data_ptr<IT>();
   // Compute the requant_scale from out_multiplier and out_shift
   const float requant_scale =
       -out_multiplier * 1.0 / (1 << 31) * pow(2, out_shift);
-
   for (size_t i = 0; i < leading_dims; ++i) {
     for (size_t j = 0; j < out_dim; ++j) {
       int32_t sum = bias_data[j];
@@ -49,13 +54,13 @@ inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
             (int32_t)weight_data[j * in_dim + k] - (int32_t)weight_zero_point;
         sum += x * w;
       }
-      out_data[i * out_dim + j] = ::impl::generic::kernels::quantize<T>(
+      out_data[i * out_dim + j] = ::impl::generic::kernels::quantize<IT>(
           sum, requant_scale, out_zero_point);
     }
   }
 }
 
-template <typename T>
+template <typename T, typename WT = T>
 inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
     const ::executorch::aten::Tensor& src,
     const ::executorch::aten::Tensor& weight,
@@ -68,7 +73,7 @@ inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
     ::executorch::aten::Tensor& out) {
   // Get the zero_point of weight.
   int32_t weight_zero_point = weight_zero_point_t.const_data_ptr<int32_t>()[0];
-  quantized_linear_per_tensor_<T>(
+  quantized_linear_per_tensor_<T, WT>(
       src,
       weight,
       bias,
@@ -80,7 +85,7 @@ inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
       out);
 }
 
-template <typename T>
+template <typename T, typename WT = T>
 inline __attribute__((always_inline)) void quantized_linear_per_channel_(
     const ::executorch::aten::Tensor& src,
     const ::executorch::aten::Tensor& weight,
@@ -95,13 +100,13 @@ inline __attribute__((always_inline)) void quantized_linear_per_channel_(
   // weight comes in shape [out_dim, in_dim]
   // output comes in empty with shape [leading_dims, out_dim]
   // Perform matrix multiply (M x N) x (N x P)' => M x P
-  int64_t leading_dims =
-      executorch::runtime::getLeadingDims(src, src.dim() - 1);
+  const int64_t leading_dims =
+      ::executorch::runtime::getLeadingDims(src, src.dim() - 1);
   const int64_t out_dim = weight.size(0); // = out_dim
   const int64_t in_dim = weight.size(1); // = in_dim
 
   const T* __restrict__ in_data = src.const_data_ptr<T>();
-  const T* __restrict__ weight_data = weight.const_data_ptr<T>();
+  const WT* __restrict__ weight_data = weight.const_data_ptr<WT>();
   const int32_t* __restrict__ bias_data = bias.const_data_ptr<int32_t>();
   T* __restrict__ out_data = out.mutable_data_ptr<T>();
   const int32_t* __restrict__ out_multiplier_data =
@@ -127,7 +132,7 @@ inline __attribute__((always_inline)) void quantized_linear_per_channel_(
   }
 }
 
-template <typename T>
+template <typename T, typename WT = T>
 inline __attribute__((always_inline)) void quantized_linear_(
     const ::executorch::aten::Tensor& src,
     const ::executorch::aten::Tensor& weight,
@@ -144,7 +149,7 @@ inline __attribute__((always_inline)) void quantized_linear_(
         out_multiplier.const_data_ptr<int32_t>();
     const int32_t* __restrict__ out_shift_data =
         out_shift.const_data_ptr<int32_t>();
-    quantized_linear_per_tensor_<T>(
+    quantized_linear_per_tensor_<T, WT>(
         src,
         weight,
         bias,
@@ -158,7 +163,7 @@ inline __attribute__((always_inline)) void quantized_linear_(
   }
 
   // Use per-channel quantization kernel.
-  quantized_linear_per_channel_<T>(
+  quantized_linear_per_channel_<T, WT>(
       src,
       weight,
       bias,
@@ -170,7 +175,7 @@ inline __attribute__((always_inline)) void quantized_linear_(
       out);
 }
 
-template <typename T>
+template <typename T, typename WT = T>
 inline __attribute__((always_inline)) void quantized_linear_(
     const ::executorch::aten::Tensor& src,
     const ::executorch::aten::Tensor& weight,
@@ -183,7 +188,7 @@ inline __attribute__((always_inline)) void quantized_linear_(
     ::executorch::aten::Tensor& out) {
   // Get the zero_point of weight.
   int32_t weight_zero_point = weight_zero_point_t.const_data_ptr<int32_t>()[0];
-  quantized_linear_<T>(
+  quantized_linear_<T, WT>(
       src,
       weight,
       bias,
@@ -194,3 +199,5 @@ inline __attribute__((always_inline)) void quantized_linear_(
       out_zero_point,
       out);
 }
+
+} // namespace impl::generic::quantized
