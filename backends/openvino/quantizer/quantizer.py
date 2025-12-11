@@ -127,13 +127,29 @@ class OpenVINOQuantizer(Quantizer):
                 nncf.CompressWeightsMode(compression_mode),
                 **kwargs,
             )
-            subset_size = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
-            self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
-                subset_size=subset_size, **self._wc_config
+            self._wc_config["subset_size"] = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
+            self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression.from_config(
+                self._wc_config
             )
 
-    def get_wc_algo_configuration(self):
-        return self._wc_config
+    def get_quantizer_specific_internal_algo_config(self):
+        """
+        Returns the config attributes like all_layers, group_size, backup_mode and Quantization mode
+        from the quantizer's internal algorithm. These attributes are defined when initializing the quantizer
+        and is used by the compress pt2e's experimental algorithm.
+        
+        :return: A dictionary containing elements which are defined in the quantizer and their value from the
+        internal algorithm.
+        """
+        algo_config = self._algo.get_config()
+        quantizer_initialized_algo_attributes = {
+            "mode": algo_config.get("mode"),
+            "group_size": algo_config.get("group_size"),
+            "all_layers": algo_config.get("all_layers"),
+            "backup_mode": algo_config.get("backup_mode"),
+        }
+
+        return quantizer_initialized_algo_attributes
 
     def set_ignored_scope(
         self,
