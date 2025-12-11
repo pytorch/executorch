@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <atomic>
 #import <functional>
 #include <optional>
 #include <memory>
