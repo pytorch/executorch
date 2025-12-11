@@ -81,12 +81,12 @@ class OpenVINOQuantizer(Quantizer):
     optimally for the inference via OpenVINO.
     """
 
-    WEIGHTS_ONLY_COMPRESSION_MODES = (
-        QuantizationMode.INT4WO_SYM,
-        QuantizationMode.INT4WO_ASYM,
-        QuantizationMode.INT8WO_SYM,
-        QuantizationMode.INT8WO_ASYM,
-    )
+    WEIGHTS_ONLY_COMPRESSION_MODES = {
+        QuantizationMode.INT4WO_SYM: "int4_sym",
+        QuantizationMode.INT4WO_ASYM: "int4_asym",
+        QuantizationMode.INT8WO_SYM: "int8_sym",
+        QuantizationMode.INT8WO_ASYM: "int8_asym",
+    }
 
     def __init__(
         self,
@@ -120,9 +120,7 @@ class OpenVINOQuantizer(Quantizer):
                 preset=preset, model_type=model_type, **kwargs
             )
         else:
-            compression_mode = mode.value.replace(
-                "wo", ""
-            )  # Mode value has to match NNCF CompressWeightsMode
+            compression_mode = OpenVINOQuantizer.WEIGHTS_ONLY_COMPRESSION_MODES[mode]  # Mode value has to match NNCF CompressWeightsMode
             weight_compression_configuration = get_weight_compression_configuration(
                 nncf.CompressWeightsMode(compression_mode),
                 **kwargs,
