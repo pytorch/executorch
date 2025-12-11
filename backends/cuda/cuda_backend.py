@@ -68,7 +68,8 @@ class CudaBackend(AotiBackend, BackendDetails):
                     )
                 triton_kernel_mode = mode
 
-        return [ReplaceEdgeOpWithTritonOpPass()] if triton_kernel_mode == "ON" else []
+        # return [ReplaceEdgeOpWithTritonOpPass()] if triton_kernel_mode == "ON" else []
+        return []
 
     @classmethod
     def get_aoti_compile_options(
