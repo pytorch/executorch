@@ -24,8 +24,8 @@ def register_rotary_emb(name: str):
 @register_rotary_emb("partial")
 def apply_partial_rotary_emb_single(x, freqs_cos, freqs_sin):
     if x.dim() == 4:
-        freqs_cos = freqs_cos[None, :, None, :]
-        freqs_sin = freqs_sin[None, :, None, :]
+        freqs_cos = freqs_cos[None, None, :, :]
+        freqs_sin = freqs_sin[None, None, :, :]
     rotary_dim = freqs_cos.shape[-1] * 2
     x_rot, x_pass = x[..., :rotary_dim], x[..., rotary_dim:]
     x_r, x_i = x_rot[..., : x_rot.shape[-1] // 2], x_rot[..., x_rot.shape[-1] // 2 :]
@@ -43,8 +43,8 @@ def apply_rotary_emb_single(x, freqs_cos, freqs_sin):
     x_r, x_i = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
     # broadcast for batch_prefill mode input x
     if x.dim() == 4:
-        freqs_cos = freqs_cos[None, :, None, :]
-        freqs_sin = freqs_sin[None, :, None, :]
+        freqs_cos = freqs_cos[None, None, :, :]
+        freqs_sin = freqs_sin[None, None, :, :]
     x_out_r = x_r * freqs_cos - x_i * freqs_sin
     x_out_i = x_r * freqs_sin + x_i * freqs_cos
 

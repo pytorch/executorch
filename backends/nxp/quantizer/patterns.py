@@ -14,7 +14,11 @@ from executorch.backends.nxp.quantizer.utils import get_bias_qparams
 from torch import fx
 from torch._ops import OpOverload
 from torch.fx import Node
-from torchao.quantization.pt2e import PerChannelMinMaxObserver
+from torchao.quantization.pt2e import (
+    FakeQuantize,
+    MovingAveragePerChannelMinMaxObserver,
+    PerChannelMinMaxObserver,
+)
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
@@ -59,7 +63,8 @@ class PartitionAnchors:
         | tuple[fx.Node, NodeArgsIdx, SharedQuantizationSpec],
     ] = field(default_factory=list)
     weights: list[
-        tuple[fx.Node, NodeArgsIdx] | tuple[fx.Node, NodeArgsIdx, QuantizationSpec],
+        tuple[fx.Node, NodeArgsIdx]
+        | tuple[fx.Node, NodeArgsIdx, QuantizationSpec | FakeQuantize],
     ] = field(default_factory=list)
     biases: list[
         tuple[fx.Node, NodeArgsIdx]
@@ -69,12 +74,18 @@ class PartitionAnchors:
     literals: list[tuple[fx.Node, NodeArgsIdx]] = field(default_factory=list)
     output: list[
         tuple[fx.Node]
-        | tuple[fx.Node, FixedQParamsQuantizationSpec | SharedQuantizationSpec],
+        | tuple[
+            fx.Node,
+            FixedQParamsQuantizationSpec | SharedQuantizationSpec,
+        ],
     ] = field(default_factory=list)
     empty: bool = False
 
 
 class QuantizationPattern(ABC):
+    def __init__(self, is_qat: bool = False):
+        self.is_qat = is_qat
+
     @abstractmethod
     def partition_types(self) -> list[OpOverload]:
         """
@@ -148,11 +159,12 @@ def get_anchors_for_fixed_quant_specs(
     zero_point: int,
     quant_min: int = -128,
     quant_max: int = 127,
+    is_qat: bool = False,
 ) -> PartitionAnchors:
     node = fused_partition[0].nodes[-1]
     assert len(fused_partition[0].input_nodes) == 1
 
-    qspec = FixedQParamsQuantizationSpec(
+    qspec_or_fake_quantize = FixedQParamsQuantizationSpec(
         dtype=torch.int8,
         scale=scale,
         zero_point=zero_point,
@@ -166,7 +178,7 @@ def get_anchors_for_fixed_quant_specs(
         weights=[],
         biases=[],
         output=[
-            (node, qspec),
+            (node, qspec_or_fake_quantize),
         ],
     )
 
@@ -190,7 +202,9 @@ class AdaptiveAvgPoolPattern(SharedSpecPattern):
 
 
 class AddmmPattern(QuantizationPattern):
-    def __init__(self, neutron_quantizer):
+    def __init__(self, neutron_quantizer, is_qat: bool):
+        super().__init__(is_qat=is_qat)
+
         self.neutron_quantizer = neutron_quantizer
         self.neutron_target_info = (
             self.neutron_quantizer.neutron_target_spec.neutron_target_info
@@ -365,7 +379,11 @@ class ConvPattern(QuantizationPattern):
             ch_axis=0,
         )
 
-        weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+        weight_observer_or_fake_quant_ctr = (
+            FakeQuantize.with_args(observer=MovingAveragePerChannelMinMaxObserver)
+            if self.is_qat
+            else PerChannelMinMaxObserver
+        )
         weight_quantization_spec = QuantizationSpec(
             dtype=torch.int8,
             observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
@@ -399,7 +417,9 @@ class ConvTranspose1dPattern(ConvPattern):
 
 
 class Conv2dPattern(ConvPattern):
-    def __init__(self, neutron_quantizer):
+    def __init__(self, neutron_quantizer, is_qat: bool = False):
+        super().__init__(is_qat=is_qat)
+
         self.neutron_quantizer = neutron_quantizer
         self.neutron_target_info = (
             self.neutron_quantizer.neutron_target_spec.neutron_target_info
@@ -426,7 +446,11 @@ class Conv2dPattern(ConvPattern):
             ch_axis=0,
         )
 
-        weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+        weight_observer_or_fake_quant_ctr = (
+            FakeQuantize.with_args(observer=MovingAveragePerChannelMinMaxObserver)
+            if self.is_qat
+            else PerChannelMinMaxObserver
+        )
         weight_quantization_spec = QuantizationSpec(
             dtype=torch.int8,
             observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
@@ -563,7 +587,9 @@ class HardTanhInPlacePattern(SingleInputBasicPattern):
 
 
 class LinearPattern(QuantizationPattern):
-    def __init__(self, neutron_quantizer):
+    def __init__(self, neutron_quantizer, is_qat: bool = False):
+        super().__init__(is_qat=is_qat)
+
         self.neutron_quantizer = neutron_quantizer
         self.neutron_target_info = (
             self.neutron_quantizer.neutron_target_spec.neutron_target_info
@@ -637,7 +663,9 @@ class MeanDimPattern(SharedSpecPattern):
 
 
 class MmPattern(QuantizationPattern):
-    def __init__(self, neutron_quantizer):
+    def __init__(self, neutron_quantizer, is_qat: bool = False):
+        super().__init__(is_qat=is_qat)
+
         self.neutron_quantizer = neutron_quantizer
         self.neutron_target_info = (
             self.neutron_quantizer.neutron_target_spec.neutron_target_info
@@ -779,6 +807,15 @@ class ViewPattern(SharedSpecPattern):
         return [torch.ops.aten.view.default]
 
 
+class SliceTensorPattern(SharedSpecPattern):
+    """
+    Quantizer for Slice operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.slice.Tensor]
+
+
 class SoftMaxPattern(QuantizationPattern):
     """
     Quantizer for Softmax operator.
@@ -793,7 +830,7 @@ class SoftMaxPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors:
         return get_anchors_for_fixed_quant_specs(
-            fused_partition, scale=1.0 / 256.0, zero_point=-128
+            fused_partition, scale=1.0 / 256.0, zero_point=-128, is_qat=self.is_qat
         )
 
 
@@ -811,7 +848,7 @@ class SigmoidPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors:
         return get_anchors_for_fixed_quant_specs(
-            fused_partition, scale=1.0 / 256.0, zero_point=-128
+            fused_partition, scale=1.0 / 256.0, zero_point=-128, is_qat=self.is_qat
         )
 
 
@@ -829,7 +866,7 @@ class TanhPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors:
         return get_anchors_for_fixed_quant_specs(
-            fused_partition, scale=1.0 / 128.0, zero_point=0
+            fused_partition, scale=1.0 / 128.0, zero_point=0, is_qat=self.is_qat
         )
 
 
@@ -847,7 +884,7 @@ class TanhInPlacePattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors:
         return get_anchors_for_fixed_quant_specs(
-            fused_partition, scale=1.0 / 128.0, zero_point=0
+            fused_partition, scale=1.0 / 128.0, zero_point=0, is_qat=self.is_qat
         )
 
 
@@ -875,7 +912,9 @@ class ActivationsConcatClusterPattern(QuantizationPattern):
                       │
     """
 
-    def __init__(self, neutron_quantizer):
+    def __init__(self, neutron_quantizer, is_qat: bool = False):
+        super().__init__(is_qat=is_qat)
+
         self.neutron_quantizer = neutron_quantizer
         self.neutron_target_info = (
             self.neutron_quantizer.neutron_target_spec.neutron_target_info

@@ -172,6 +172,38 @@ class LinearModule(torch.nn.Module):
         return self.linear(x)
 
 
+class SliceTensorModule(torch.nn.Module):
+    def __init__(self, dims, starts, ends):
+        super().__init__()
+        self.dims = dims
+        self.starts = starts
+        self.ends = ends
+
+    def do_slice(self, x):
+        slices = [slice(None)] * x.dim()
+        for i, dim in enumerate(self.dims):
+            slices[dim] = slice(self.starts[i], self.ends[i])
+        return x[tuple(slices)]
+
+    def forward(self, x):
+        x = self.do_slice(x)
+
+        return x
+
+
+class SliceTensorConvModule(torch.nn.Module):
+    def __init__(self, dims, starts, ends):
+        super().__init__()
+        self.conv = Conv2dModule(in_channels=4, out_channels=8, kernel_size=3, stride=1)
+        self.slice = SliceTensorModule(dims, starts, ends)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.slice(x)
+
+        return x
+
+
 class AddmmModule(torch.nn.Module):
     def __init__(self, in_channels: int):
         super().__init__()
@@ -599,3 +631,42 @@ class ConvActivationModule(torch.nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return self.activation(x)
+
+
+class MiniConvNetWithRegressionHead(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv1 = Conv2dModule(in_channels=3, out_channels=16, stride=1, padding=1)
+        self.relu = torch.nn.ReLU()
+        self.pool = torch.nn.MaxPool2d(2, 2)
+        self.conv2 = Conv2dModule(in_channels=16, out_channels=32, stride=1, padding=1)
+        self.relu2 = torch.nn.ReLU()
+        self.pool = torch.nn.MaxPool2d(2, 2)
+        self.linear = torch.nn.Linear(32 * 8 * 8, 1)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.pool(x)
+        x = self.conv2(x)
+        x = self.relu2(x)
+        x = self.pool(x)
+        x = x.flatten()
+        x = self.linear(x)
+        return x
+
+
+class MLP(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.sequential = torch.nn.Sequential(
+            torch.nn.Linear(1, 10),
+            torch.nn.ReLU(),
+            torch.nn.Linear(10, 10),
+            torch.nn.ReLU(),
+            torch.nn.Linear(10, 1),
+        )
+
+    def forward(self, x):
+        return self.sequential(x)
