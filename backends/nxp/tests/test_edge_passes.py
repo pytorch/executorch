@@ -29,7 +29,7 @@ from executorch.backends.nxp.edge_passes.remove_additional_quantize_dequantize_n
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.backends.nxp.quantizer.utils import post_training_quantize
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_random_calibration_inputs,
     neutron_target_spec,
@@ -87,6 +87,8 @@ def _assert_nodes_form_a_view_copy_qdq_cluster(graph: Graph, node_indices: list[
 
 
 class TestEdgePasses(unittest.TestCase):
+    __test__ = False  # Prevent interfering with PyTest tests
+
     @classmethod
     def setUpClass(cls):
         torch.manual_seed(23)
@@ -305,7 +307,7 @@ class TestEdgePasses(unittest.TestCase):
         example_input = calibration_inputs[0]
         exir_program_aten = torch.export.export(model, example_input, strict=True)
 
-        exir_program_aten_quant = post_training_quantize(
+        exir_program_aten_quant = calibrate_and_quantize(
             exir_program_aten,
             calibration_inputs,
             NeutronQuantizer(neutron_target_spec),
