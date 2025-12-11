@@ -34,6 +34,8 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchBackendOptions,
     QnnExecuTorchBackendType,
+    QnnExecuTorchGpuBackendOptions,
+    QnnExecuTorchGpuPrecision,
     QnnExecuTorchHtpBackendOptions,
     QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchHtpPrecision,
@@ -158,7 +160,7 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 
         def forward(self, x):
             rank = x.dim()
-            x = x.unsqueeze(-1) if rank == 3 else x.reshape(1, *x.shape, 1)
+            x = x.reshape(*x.shape, 1) if rank == 3 else x.reshape(1, *x.shape, 1)
             x = torch.transpose(x, 1, 2)
             res = self.conv(x)
             res = torch.transpose(res, 1, 2)
@@ -934,6 +936,47 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule):
         f.write(graph.get_dot_graph().create_svg())
 
 
+def generate_gpu_compiler_spec(
+    precision: QnnExecuTorchGpuPrecision = QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided,
+    use_memory_optimizations: bool = True,
+    use_node_optimizations: bool = True,
+    use_queue_recording: bool = True,
+    use_weight_sharing: bool = False,
+) -> QnnExecuTorchBackendOptions:
+    """
+    Helper function generating backend options for QNN HTP
+
+    Args:
+        precision:
+            kGpuPrecisionFp32 - Sets the precision mode to floating point 32-bit (FP32).
+            kGpuPrecisionFp16 - Sets the precision mode to floating point 16-bit (FP16).
+            kGpuPrecisionHybrid - Sets the precision mode to FP16 for storage and FP32 for calculations.
+            kGpuPrecisionUserProvided - Uses the tensor data type provided by the user.
+        use_memory_optimizations: If true, backend will share NATIVE tensor memory
+            based upon analysis of the network topology.
+        use_node_optimizations: If true, backend will fuse compatible operations into
+            one operation to improve performance.
+        use_queue_recording: If true, backend will use queue recording to improve performance.
+        use_weight_sharing: Used with multiple_graphs, where model size will be
+            reduced when operations have the same weights across multiple graphs.
+
+    Returns:
+        QnnExecuTorchGpuBackendOptions: backend options for QNN GPU.
+    """
+    # TODO: enable performance hint mechanism in runtime and make this as an option
+    gpu_options = QnnExecuTorchGpuBackendOptions()
+    gpu_options.precision = precision
+    gpu_options.use_memory_optimizations = use_memory_optimizations
+    gpu_options.use_node_optimizations = use_node_optimizations
+    gpu_options.use_queue_recording = use_queue_recording
+    gpu_options.use_weight_sharing = use_weight_sharing
+
+    return QnnExecuTorchBackendOptions(
+        backend_type=QnnExecuTorchBackendType.kGpuBackend,
+        gpu_options=gpu_options,
+    )
+
+
 def generate_htp_compiler_spec(
     use_fp16: bool,
     use_dlbc: bool = False,
@@ -990,6 +1033,7 @@ def generate_qnn_executorch_compiler_spec(
     is_from_context_binary: bool = False,
     graph_name: str = "forward",
     op_package_options: QnnExecuTorchOpPackageOptions = None,
+    use_mha2sha: bool = False,
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -1021,6 +1065,7 @@ def generate_qnn_executorch_compiler_spec(
         graph_name: Assign unique graph name if lowering multiple methods.
         op_package_options: Optional structure to specify op packages
             loaded and used by the backend.
+        use_mha2sha: This experimental parameter is used to decide whether to enable multi-head attention to single-head attention pass, aiming to reduce time consumption in AOT and improve performance on HTP.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -1083,6 +1128,8 @@ def generate_qnn_executorch_compiler_spec(
     if op_package_options and len(op_package_options.op_package_infos) > 0:
         qnn_executorch_options.op_package_options = op_package_options
 
+    qnn_executorch_options.use_mha2sha = use_mha2sha
+
     return [
         CompileSpec(QCOM_QNN_COMPILE_SPEC, option_to_flatbuffer(qnn_executorch_options))
     ]
@@ -1106,6 +1153,7 @@ def get_soc_to_arch_map():
         "SXR2330P": HtpArch.V79,
         "QCS9100": HtpArch.V73,
         "SAR2230P": HtpArch.V81,
+        "SW6100": HtpArch.V81,
     }
 
 
@@ -1127,6 +1175,7 @@ def get_soc_to_chipset_map():
         "SXR2330P": QcomChipset.SXR2330P,
         "QCS9100": QcomChipset.QCS9100,
         "SAR2230P": QcomChipset.SAR2230P,
+        "SW6100": QcomChipset.SW6100,
     }
 
 

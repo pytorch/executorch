@@ -1466,6 +1466,24 @@ class MaxPool2d(torch.nn.Module):
         return self.max_pool2d(x)
 
 
+class MaxPool3d(torch.nn.Module):
+    def __init__(
+        self, kernel_size, stride, padding, dilation, ceil_mode, return_indices
+    ):
+        super().__init__()
+        self.max_pool3d = torch.nn.MaxPool3d(
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            return_indices=return_indices,
+            ceil_mode=ceil_mode,
+        )
+
+    def forward(self, x):
+        return self.max_pool3d(x)
+
+
 class Mean(torch.nn.Module):
     def __init__(
         self,

@@ -42,6 +42,7 @@ from executorch.backends.arm.tosa.specification import (
 from executorch.backends.arm.util._factory import create_quantizer
 from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=Tuple[Any, ...])
@@ -892,6 +893,63 @@ class TransformAnnotationPassPipeline(TOSAPipelineMaker, Generic[T]):
         )
 
 
+class QuantizationPipeline(TOSAPipelineMaker, Generic[T]):
+    """
+    Runs quantization and checks that appropriate nodes are annotated with an expected
+    quantization-spec.
+
+    Attributes:
+        module: The module which the pipeline is applied to.
+        test_data: Data used for testing the module.
+        quantizer: The quantizer to use for quantization.
+        qspecs: Annotations to check for after quantization. A dict mapping
+            operator names to a dict mapping QuantizationSpec (or None) to the number of times
+            that spec should appear in the graph. A None QuantizationSpec indicates that the
+            operator should not be quantized.
+        input_qspecs: Annotations to check for after quantization on inputs.
+        output_qspecs: Annotations to check for after quantization on outputs.
+        custom_path : Path to dump intermediate artifacts to.
+
+    """
+
+    def __init__(
+        self,
+        module: torch.nn.Module,
+        test_data: T,
+        quantizer: TOSAQuantizer,
+        qspecs: Optional[Dict[str, Dict[QuantizationSpec | None, int]]] = None,
+        input_qspecs: Optional[Dict[QuantizationSpec | None, int]] = None,
+        output_qspecs: Optional[Dict[QuantizationSpec | None, int]] = None,
+        custom_path: Optional[str] = None,
+    ):
+        tosa_spec = quantizer.tosa_spec
+        compile_spec = common.get_tosa_compile_spec(tosa_spec, custom_path=custom_path)
+        super().__init__(
+            module,
+            test_data,
+            None,
+            compile_spec,
+            None,
+            use_to_edge_transform_and_lower=True,
+        )
+        # TODO sort out typing
+        quant_stage = Quantize(quantizer, quantization_config=quantizer.global_config)  # type: ignore[arg-type]
+        self.add_stage(self.tester.quantize, quant_stage, pos=0)
+
+        # Delete most of the pipeline
+        self.pop_stage("check_count.exir")
+        self.pop_stage("to_executorch")
+        self.pop_stage("to_edge_transform_and_lower")
+        self.pop_stage("check.aten")
+        self.add_stage_after(
+            "export",
+            self.tester.check_quantization_annotation,
+            qspecs,
+            input_qspecs,
+            output_qspecs,
+        )
+
+
 class OpNotSupportedPipeline(TOSAPipelineMaker, Generic[T]):
     """
     Runs the partitioner on a module and checks that ops are not delegated to test
@@ -991,7 +1049,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
         exir_op: Optional[str | List[str]] = None,
         run_on_vulkan_runtime: bool = True,
         vgf_compiler_flags: Optional[str] = "",
-        tosa_version: str = "TOSA-1.0+FP",
+        tosa_version: str = "TOSA-1.0+INT+FP",
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,

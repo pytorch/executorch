@@ -4,14 +4,18 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <iostream>
 #include <vector>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+
 #include "conv2d_utils.h"
 #include "utils.h"
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+// #define DEBUG_MODE
 
 using namespace executorch::vulkan::prototyping;
 
@@ -23,22 +27,14 @@ static constexpr int64_t kRefDimSizeLimit = 100;
 // convolution
 TestCase create_test_case_from_config(
     const Conv2dConfig& config,
-    utils::StorageType storage_type,
     vkapi::ScalarType input_dtype,
-    utils::StorageType interm_storage_type) {
+    utils::StorageType fp_storage_type,
+    utils::StorageType int8_storage_type) {
   TestCase test_case;
-
-  // Create a descriptive name for the test case
-  std::string storage_str =
-      (storage_type == utils::kTexture3D) ? "Texture3D" : "Buffer";
-  std::string dtype_str = (input_dtype == vkapi::kFloat) ? "Float" : "Half";
-
-  std::string test_name =
-      config.test_case_name + "_" + storage_str + "_" + dtype_str;
-  test_case.set_name(test_name);
+  test_case.set_name(config.test_case_name);
 
   std::string operator_suffix = ".test";
-  if (interm_storage_type == utils::kTexture3D) {
+  if (int8_storage_type == utils::kTexture3D) {
     operator_suffix += "_texture";
   } else {
     operator_suffix += "_buffer";
@@ -56,11 +52,15 @@ TestCase create_test_case_from_config(
   std::vector<int64_t> input_size = {
       1, config.channels.in, config.input_size.h, config.input_size.w};
 
+  utils::GPUMemoryLayout fp_memory_layout = fp_storage_type == utils::kBuffer
+      ? utils::kWidthPacked
+      : utils::kChannelsPacked;
+
   ValueSpec input_tensor(
       input_size,
       input_dtype,
-      storage_type,
-      utils::kChannelsPacked,
+      fp_storage_type,
+      fp_memory_layout,
       DataGenType::RANDOM);
 
   if (debugging()) {
@@ -81,7 +81,7 @@ TestCase create_test_case_from_config(
   ValueSpec quantized_weight(
       weight_size,
       vkapi::kChar, // int8 for quantized weights
-      storage_type,
+      fp_storage_type,
       utils::kWidthPacked,
       DataGenType::RANDINT8);
   quantized_weight.set_constant(true);
@@ -94,7 +94,7 @@ TestCase create_test_case_from_config(
   ValueSpec weight_scales(
       {config.channels.out}, // Per output channel
       input_dtype,
-      storage_type,
+      fp_storage_type,
       utils::kWidthPacked,
       DataGenType::RANDOM_SCALES);
   weight_scales.set_constant(true);
@@ -102,7 +102,7 @@ TestCase create_test_case_from_config(
   ValueSpec weight_sums(
       {config.channels.out}, // Per output channel
       vkapi::kInt,
-      storage_type,
+      fp_storage_type,
       utils::kWidthPacked,
       DataGenType::ZEROS);
   weight_sums.set_constant(true);
@@ -132,7 +132,7 @@ TestCase create_test_case_from_config(
   ValueSpec bias(
       {config.channels.out}, // Per output channel
       input_dtype,
-      storage_type,
+      fp_storage_type,
       utils::kWidthPacked,
       DataGenType::RANDOM);
   bias.set_constant(true);
@@ -159,8 +159,8 @@ TestCase create_test_case_from_config(
   ValueSpec output(
       {1, config.channels.out, H_out, W_out},
       input_dtype,
-      storage_type,
-      utils::kChannelsPacked,
+      fp_storage_type,
+      fp_memory_layout,
       DataGenType::ZEROS);
 
   // Add all specs to test case for q8ta_q8csw_q8to operation
@@ -196,24 +196,23 @@ std::vector<TestCase> generate_quantized_conv2d_dw_easy_cases() {
       OutInChannels(8, 8), // channels (out, in) - equal for depthwise
       InputSize2D(8, 8), // input_size (h, w)
       KernelSize(3, 3), // kernel
-      Stride(2, 2), // stride
+      Stride(1, 1), // stride
       Padding(1, 1), // padding
       Dilation(1, 1), // dilation
       8, // groups = channels.out for depthwise
   };
   config.op_name = "conv2d_q8ta_q8csw_q8to";
 
-  // Test with both storage types and data types for completeness
-  std::vector<utils::StorageType> storage_types = {utils::kTexture3D};
-  std::vector<vkapi::ScalarType> float_types = {vkapi::kFloat};
+  std::vector<utils::StorageType> storage_types = {
+      utils::kTexture3D, utils::kBuffer};
 
   // Generate test cases for each combination
-  for (const auto& storage_type : storage_types) {
-    for (const auto& input_dtype : float_types) {
+  for (const utils::StorageType fp_storage_type : storage_types) {
+    for (const utils::StorageType int8_storage_type : storage_types) {
+      config.test_case_name = make_test_case_name(
+          config, false, fp_storage_type, int8_storage_type);
       test_cases.push_back(create_test_case_from_config(
-          config, storage_type, input_dtype, utils::kBuffer));
-      test_cases.push_back(create_test_case_from_config(
-          config, storage_type, input_dtype, utils::kTexture3D));
+          config, vkapi::kFloat, fp_storage_type, int8_storage_type));
     }
   }
 
@@ -223,6 +222,9 @@ std::vector<TestCase> generate_quantized_conv2d_dw_easy_cases() {
 // Generate test cases for quantized depthwise conv2d operation
 std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
   std::vector<TestCase> test_cases;
+  if (!vkcompute::api::context()->adapter_ptr()->supports_int8_dot_product()) {
+    return test_cases;
+  }
 
   std::vector<Conv2dConfig> configs = {
       // Depthwise convolutions: groups = channels.out, channels.in =
@@ -308,37 +310,24 @@ std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
        32}};
 
   // Test with different storage types and data types
-  std::vector<utils::StorageType> storage_types = {utils::kTexture3D};
+  std::vector<utils::StorageType> storage_types = {
+      utils::kTexture3D, utils::kBuffer};
 
   // Generate test cases for each combination
   for (auto& config : configs) {
-    for (const auto& storage_type : storage_types) {
-      // Generate test case name programmatically
-      bool is_performance = config.channels.out > kRefDimSizeLimit ||
-          config.channels.in > kRefDimSizeLimit ||
-          config.input_size.h > kRefDimSizeLimit ||
-          config.input_size.w > kRefDimSizeLimit;
-      std::string prefix =
-          is_performance ? "performance_dw_" : "correctness_dw_";
-      std::string suffix = std::to_string(config.channels.out) + "/" +
-          std::to_string(config.channels.in) + "_" +
-          std::to_string(config.input_size.h) + "/" +
-          std::to_string(config.input_size.w) + "_" +
-          std::to_string(config.kernel.h) + "/" +
-          std::to_string(config.kernel.w);
+    bool is_performance = config.channels.out > kRefDimSizeLimit ||
+        config.channels.in > kRefDimSizeLimit ||
+        config.input_size.h > kRefDimSizeLimit ||
+        config.input_size.w > kRefDimSizeLimit;
 
-      config.op_name = "conv2d_q8ta_q8csw_q8to";
-      config.test_case_name = prefix + suffix;
+    config.op_name = "conv2d_q8ta_q8csw_q8to";
 
-      // Only test q8ta_q8csw_q8to if the int8 dot product extension is
-      // supported
-      if (vkcompute::api::context()
-              ->adapter_ptr()
-              ->supports_int8_dot_product()) {
+    for (const utils::StorageType fp_storage_type : storage_types) {
+      for (const utils::StorageType int8_storage_type : storage_types) {
+        config.test_case_name = make_test_case_name(
+            config, is_performance, fp_storage_type, utils::kBuffer);
         test_cases.push_back(create_test_case_from_config(
-            config, storage_type, vkapi::kFloat, utils::kBuffer));
-        test_cases.push_back(create_test_case_from_config(
-            config, storage_type, vkapi::kFloat, utils::kTexture3D));
+            config, vkapi::kFloat, fp_storage_type, int8_storage_type));
       }
     }
   }
@@ -593,11 +582,20 @@ int main(int argc, char* argv[]) {
 
   // Execute test cases using the new framework with custom FLOP calculator
   auto results = execute_test_cases(
+#ifdef DEBUG_MODE
+      generate_quantized_conv2d_dw_easy_cases,
+#else
       generate_quantized_conv2d_dw_test_cases,
+#endif
       quantized_conv2d_dw_flop_calculator,
       "QuantizedDepthwiseInt8Conv2d",
+#ifdef DEBUG_MODE
+      0,
+      1,
+#else
       3,
       10,
+#endif
       ref_fn);
 
   return 0;

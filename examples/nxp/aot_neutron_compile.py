@@ -27,7 +27,7 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.backends.nxp.quantizer.utils import post_training_quantize
+from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.devtools.visualization.visualization_utils import (
     visualize_with_clusters,
 )
@@ -219,7 +219,7 @@ if __name__ == "__main__":  # noqa C901
             )
             calibration_inputs = example_inputs
         quantizer = NeutronQuantizer(neutron_target_spec)
-        module = post_training_quantize(module, calibration_inputs, quantizer)
+        module = calibrate_and_quantize(module, calibration_inputs, quantizer)
 
     if args.so_library is not None:
         logging.debug(f"Loading libraries: {args.so_library}")

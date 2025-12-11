@@ -38,6 +38,7 @@ from executorch.backends.nxp.tests.executors import (
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch import nn
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 @pytest.fixture(autouse=True)
@@ -243,11 +244,13 @@ def test__view_copy__formatless_to_formatless(mocker):
         pytest.param((8, 64), (1, 16, 4, 4), id="2D"),
     ],
 )
-def test_view_copy_w_linear_quant_conversion(mocker, input_shape, new_shape):
+def test_view_copy_w_linear_quant_conversion(mocker, input_shape, new_shape, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(LinearReshapeModule(new_shape=new_shape), input_shape)
+    _ = to_quantized_edge_program(
+        LinearReshapeModule(new_shape=new_shape), input_shape, use_qat=use_qat
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -268,7 +271,9 @@ def test_view_copy_w_linear_quant_conversion(mocker, input_shape, new_shape):
         pytest.param((1, 4, 16, 16), 196, id="4D"),
     ],
 )
-def test_view_w_conv_linear_quant_conversion(mocker, input_shape, channels_view_out):
+def test_view_w_conv_linear_quant_conversion(
+    mocker, input_shape, channels_view_out, use_qat
+):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
@@ -277,6 +282,7 @@ def test_view_w_conv_linear_quant_conversion(mocker, input_shape, channels_view_
             channels=input_shape[1], channels_view_out=channels_view_out
         ),
         input_shape,
+        use_qat=use_qat,
         use_neutron_for_format_conversion=False,
     )
 

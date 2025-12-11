@@ -31,13 +31,12 @@ class VgfCompileSpec(ArmCompileSpec):
             tosa_spec (TosaSpecification | str | None): TOSA specification to
                 target. Strings are parsed via
                 :meth:`TosaSpecification.create_from_string`. Defaults to
-                ``"TOSA-1.0+FP"``.
+                ``"TOSA-1.0+FP+INT"``.
             compiler_flags (list[str] | None): Optional converter-backend flags.
-
         """
         if tosa_spec is None:
-            tosa_spec = "TOSA-1.0+FP"
-        if isinstance(tosa_spec, str):
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP+INT")
+        elif isinstance(tosa_spec, str):
             tosa_spec = TosaSpecification.create_from_string(tosa_spec)
 
         if compiler_flags is None:
@@ -58,13 +57,7 @@ class VgfCompileSpec(ArmCompileSpec):
 
         if "FP" not in tosa_profiles and "INT" not in tosa_profiles:
             raise ValueError(
-                "Arm backend only supports converter-backend for FP or INT. "
-                f"Invalid TOSA profile: {tosa_profiles}"
-            )
-
-        if len(tosa_profiles) != 1:
-            raise ValueError(
-                "For now Arm backend only supports converter-backend for either FP or INT. "
+                "Arm backend only supports converter-backend for FP and/or INT. "
                 f"Invalid TOSA profile: {tosa_profiles}"
             )
 

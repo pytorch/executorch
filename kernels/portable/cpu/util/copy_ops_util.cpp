@@ -346,11 +346,15 @@ bool check_pixel_unshuffle_args(
   return true;
 }
 
-void get_pixel_shuffle_out_target_size(
+bool get_pixel_shuffle_out_target_size(
     const Tensor& in,
     int64_t upscale_factor,
     executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
+  // Prevent signed integer overflow when computing upscale_factor ^ 2.
+  ET_CHECK_OR_RETURN_FALSE(
+      upscale_factor < 32768, "Upscale factor must be less than 32768.");
+
   *out_ndim = in.dim();
   const executorch::aten::SizesType casted_upscale_factor = upscale_factor;
 
@@ -366,6 +370,8 @@ void get_pixel_shuffle_out_target_size(
   out_sizes[i] = in.size(i) * casted_upscale_factor;
   i++;
   out_sizes[i] = in.size(i) * casted_upscale_factor;
+
+  return true;
 }
 
 void get_pixel_unshuffle_out_target_size(
