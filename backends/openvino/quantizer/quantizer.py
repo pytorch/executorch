@@ -126,8 +126,8 @@ class OpenVINOQuantizer(Quantizer):
                 **kwargs,
             )
             weight_compression_configuration["subset_size"] = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
-            self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression.from_config(
-                weight_compression_configuration
+            self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
+                **weight_compression_configuration
             )
 
     def get_quantizer_specific_internal_algo_config(self) -> Dict[str, Any]:
