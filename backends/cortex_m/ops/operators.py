@@ -488,6 +488,35 @@ def _compute_conv2d_output_shape(
     return torch.Size([batch, out_channels, out_height, out_width])
 
 
+def _compute_depthwise_conv2d_output_shape(
+    input_shape: torch.Size,
+    weight_shape: torch.Size,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+) -> torch.Size:
+    batch = input_shape[0]
+    in_height = input_shape[2]
+    in_width = input_shape[3]
+    # For depthwise conv, we store the weights in IHWO layout (1, kernel_h, kernel_w, out)
+    # where dimension 3 contains the output channels
+    kernel_height = weight_shape[1]
+    kernel_width = weight_shape[2]
+
+    stride_h, stride_w = stride
+    pad_h, pad_w = padding
+    dilation_h, dilation_w = dilation
+
+    out_channels = weight_shape[3]  # IHWO format: output channels at dimension 3
+    out_height = (
+        in_height + 2 * pad_h - dilation_h * (kernel_height - 1) - 1
+    ) // stride_h + 1
+    out_width = (
+        in_width + 2 * pad_w - dilation_w * (kernel_width - 1) - 1
+    ) // stride_w + 1
+    return torch.Size([batch, out_channels, out_height, out_width])
+
+
 @register_fake("cortex_m::quantized_conv2d")
 def quantized_conv2d_meta(
     input: torch.Tensor,
@@ -591,7 +620,7 @@ lib.define(
     "int[] stride, "
     "int[] padding, "
     "int[] dilation, "
-    "int groups, "
+    "int depth_multiplier, "
     "int input_offset, "
     "int output_offset, "
     "Tensor requantize_multipliers, "
@@ -610,7 +639,7 @@ lib.define(
     "int[] stride, "
     "int[] padding, "
     "int[] dilation, "
-    "int groups, "
+    "int depth_multiplier, "
     "int input_offset, "
     "int output_offset, "
     "Tensor requantize_multipliers, "
@@ -630,7 +659,7 @@ def quantized_depthwise_conv2d_meta(
     stride: Sequence[int],
     padding: Sequence[int],
     dilation: Sequence[int],
-    groups: int,
+    depth_multiplier: int,
     input_offset: int,
     output_offset: int,
     requantize_multipliers: torch.Tensor,
@@ -641,7 +670,7 @@ def quantized_depthwise_conv2d_meta(
     stride_vals = list(stride)
     padding_vals = list(padding)
     dilation_vals = list(dilation)
-    output_shape = _compute_conv2d_output_shape(
+    output_shape = _compute_depthwise_conv2d_output_shape(
         input.shape, weight.shape, stride_vals, padding_vals, dilation_vals
     )
     return torch.empty(
@@ -660,7 +689,7 @@ def quantized_depthwise_conv2d_impl(
     stride: Sequence[int],
     padding: Sequence[int],
     dilation: Sequence[int],
-    groups: int,
+    depth_multiplier: int,
     input_offset: int,
     output_offset: int,
     requantize_multipliers: torch.Tensor,
@@ -673,12 +702,8 @@ def quantized_depthwise_conv2d_impl(
             "quantized_depthwise_conv2d expects 4D input and weight tensors"
         )
 
-    # Validate depthwise convolution constraint: groups == input_channels
     input_channels = input.shape[1]
-    if groups != input_channels:
-        raise RuntimeError(
-            f"quantized_depthwise_conv2d: groups ({groups}) must equal input channels ({input_channels})"
-        )
+    groups = input_channels
 
     # Convert to int32 for accumulation and apply offsets
     input_int32 = input.to(torch.int32) + int(input_offset)
@@ -686,13 +711,17 @@ def quantized_depthwise_conv2d_impl(
 
     if bias is None:
         bias_int32 = torch.zeros(
-            weight.shape[0], dtype=torch.int32, device=input.device
+            weight.shape[3],
+            dtype=torch.int32,
+            device=input.device,  # C_OUT is at dim 3 in IHWO
         )
     else:
         bias_int32 = bias.to(torch.int32)
 
-    # Convert weights back to OIHW layout expected by torch.nn.functional.conv2d
-    weight_oi_hw = weight_int32.permute(0, 3, 1, 2).contiguous()
+    # Weight is in IHWO layout: [1, H, W, C_OUT]
+    # Convert to OIHW layout expected by torch.nn.functional.conv2d
+    # IHWO [1, H, W, C_OUT] -> OIHW [C_OUT, 1, H, W]
+    weight_oi_hw = weight_int32.permute(3, 0, 1, 2).contiguous()
 
     # Depthwise convolution has groups == input_channels
     conv_acc = F.conv2d(

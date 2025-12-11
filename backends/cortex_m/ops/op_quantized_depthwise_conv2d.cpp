@@ -1,5 +1,6 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -28,12 +29,34 @@ bool validate_depthwise_conv2d_arguments(
     const IntArrayRef& stride,
     const IntArrayRef& padding,
     const IntArrayRef& dilation,
-    const int64_t groups,
+    const int64_t depth_multiplier,
     const Tensor& requantize_multipliers,
     const Tensor& requantize_shifts) {
   if (input.dim() != kConvDim || weight.dim() != kConvDim ||
       output.dim() != kConvDim) {
     ET_LOG(Error, "quantized_depthwise_conv2d_out: tensors must be 4-D");
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+
+  // Validate weight is in IHWO layout: [1, H, W, C_OUT]
+  if (weight.size(0) != 1) {
+    ET_LOG(
+        Error,
+        "quantized_depthwise_conv2d_out: weight dim 0 must be 1 for IHWO layout, got %zd",
+        weight.size(0));
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+
+  const int64_t weight_output_channels = weight.size(3);
+  const int64_t output_channels = output.size(1);
+  if (weight_output_channels != output_channels) {
+    ET_LOG(
+        Error,
+        "quantized_depthwise_conv2d_out: weight output channels (%zd) must match output channels (%zd)",
+        weight_output_channels,
+        output_channels);
     context.fail(Error::InvalidArgument);
     return false;
   }
@@ -91,25 +114,36 @@ bool validate_depthwise_conv2d_arguments(
     return false;
   }
 
-  // Depthwise convolution constraint: groups must equal input channels
-  const int64_t input_channels = input.size(1);
-  if (groups != input_channels) {
+  // CMSIS-NN depthwise convolution does not support dilation != 1
+  if (dilation[0] != 1 || dilation[1] != 1) {
     ET_LOG(
         Error,
-        "quantized_depthwise_conv2d_out: groups (%zd) must equal input channels (%zd) for depthwise convolution",
-        groups,
-        input_channels);
+        "quantized_depthwise_conv2d_out: dilation != 1 not supported, got (%zd, %zd)",
+        dilation[0],
+        dilation[1]);
     context.fail(Error::InvalidArgument);
     return false;
   }
 
-  const int64_t out_channels = output.size(1);
-  if (requantize_multipliers.size(0) != out_channels ||
-      requantize_shifts.size(0) != out_channels) {
+  const int64_t input_channels = input.size(1);
+  // output_channels already extracted above for weight validation
+  if (output_channels != input_channels * depth_multiplier) {
+    ET_LOG(
+        Error,
+        "quantized_depthwise_conv2d_out: output channels (%zd) must equal input channels (%zd) * depth_multiplier (%zd)",
+        output_channels,
+        input_channels,
+        depth_multiplier);
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+
+  if (requantize_multipliers.size(0) != output_channels ||
+      requantize_shifts.size(0) != output_channels) {
     ET_LOG(
         Error,
         "quantized_depthwise_conv2d_out: per-channel params must match output channels (%zd)",
-        out_channels);
+        output_channels);
     context.fail(Error::InvalidArgument);
     return false;
   }
@@ -126,7 +160,7 @@ Tensor& quantized_depthwise_conv2d_out(
     const IntArrayRef stride,
     const IntArrayRef padding,
     const IntArrayRef dilation,
-    const int64_t groups,
+    const int64_t depth_multiplier,
     const int64_t input_offset,
     const int64_t output_offset,
     const Tensor& requantize_multipliers,
@@ -143,7 +177,7 @@ Tensor& quantized_depthwise_conv2d_out(
           stride,
           padding,
           dilation,
-          groups,
+          depth_multiplier,
           requantize_multipliers,
           requantize_shifts)) {
     return out;
@@ -154,14 +188,16 @@ Tensor& quantized_depthwise_conv2d_out(
   const int32_t input_height = static_cast<int32_t>(input.size(2));
   const int32_t input_width = static_cast<int32_t>(input.size(3));
 
-  const int32_t kernel_output_channels = static_cast<int32_t>(weight.size(0));
+  // Weight is in IHWO layout after permutation in the pass: [1, H, W, C_OUT]
+  // For depthwise conv, this matches CMSIS-NN's expected format
   const int32_t kernel_height = static_cast<int32_t>(weight.size(1));
   const int32_t kernel_width = static_cast<int32_t>(weight.size(2));
-  const int32_t depth_multiplier = static_cast<int32_t>(weight.size(3));
 
   const int32_t output_channels = static_cast<int32_t>(out.size(1));
   const int32_t output_height = static_cast<int32_t>(out.size(2));
   const int32_t output_width = static_cast<int32_t>(out.size(3));
+
+  const int32_t depth_multiplier_val = static_cast<int32_t>(depth_multiplier);
 
   const int32_t input_offset_val = static_cast<int32_t>(input_offset);
   const int32_t output_offset_val = static_cast<int32_t>(output_offset);
@@ -179,7 +215,7 @@ Tensor& quantized_depthwise_conv2d_out(
   cmsis_nn_dw_conv_params dw_conv_params;
   dw_conv_params.input_offset = input_offset_val;
   dw_conv_params.output_offset = output_offset_val;
-  dw_conv_params.ch_mult = depth_multiplier;
+  dw_conv_params.ch_mult = depth_multiplier_val;
   dw_conv_params.stride.h = static_cast<const int32_t>(stride[0]);
   dw_conv_params.stride.w = static_cast<const int32_t>(stride[1]);
   dw_conv_params.padding.h = static_cast<const int32_t>(padding[0]);
@@ -203,24 +239,23 @@ Tensor& quantized_depthwise_conv2d_out(
   cmsis_context.buf = nullptr;
   cmsis_context.size = 0;
 
-  const size_t buffer_bytes = static_cast<size_t>(
-      arm_depthwise_conv_s8_get_buffer_size(&input_dims, &filter_dims));
+  const size_t buffer_bytes =
+      static_cast<size_t>(arm_depthwise_conv_wrapper_s8_get_buffer_size(
+          &dw_conv_params, &input_dims, &filter_dims, &output_dims));
   if (buffer_bytes > 0) {
     auto buffer_or_error =
         context.allocate_temp(buffer_bytes, alignof(int16_t));
     if (!buffer_or_error.ok()) {
-      if (buffer_or_error.error() != Error::NotFound) {
-        ET_LOG(
-            Error,
-            "quantized_depthwise_conv2d_out: failed to allocate scratch buffer (%d)",
-            static_cast<int>(buffer_or_error.error()));
-        context.fail(buffer_or_error.error());
-        return out;
-      }
-    } else {
-      cmsis_context.buf = buffer_or_error.get();
-      cmsis_context.size = buffer_bytes;
+      ET_LOG(
+          Error,
+          "quantized_depthwise_conv2d_out: failed to allocate scratch buffer (%d bytes, error %d)",
+          static_cast<int>(buffer_bytes),
+          static_cast<int>(buffer_or_error.error()));
+      context.fail(buffer_or_error.error());
+      return out;
     }
+    cmsis_context.buf = buffer_or_error.get();
+    cmsis_context.size = buffer_bytes;
   }
 
   const arm_cmsis_nn_status status = arm_depthwise_conv_wrapper_s8(

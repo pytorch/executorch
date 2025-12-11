@@ -156,11 +156,24 @@ class ConvertToCortexMPass(XNNPACKPass):
             quantized_multipliers.append(quantized_multiplier)
             quantized_shifts.append(quantized_shift)
 
-        # Permute the weight tensor to the OHWI layout expected by CMSIS-NN.
         weight_tensor = get_param_tensor(self.exported_program, weight)
-        weight_permuted = weight_tensor.permute(0, 2, 3, 1).contiguous(
-            memory_format=torch.channels_last
-        )
+
+        # Detect depthwise convolution:
+        # PyTorch depthwise weight is [out_ch, 1, H, W] where dimension 1 is 1
+        # and groups == input_channels (groups > 1)
+        is_depthwise = weight_tensor.shape[1] == 1 and groups > 1
+
+        if is_depthwise:
+            # For depthwise: OIHW -> IHWO which gives [1, H, W, C_OUT] for CMSIS-NN
+            # PyTorch depthwise weight is [out_ch, 1, H, W], permute to [1, H, W, out_ch]
+            weight_permuted = weight_tensor.permute(1, 2, 3, 0).contiguous(
+                memory_format=torch.channels_last
+            )
+        else:
+            # For regular conv: OIHW -> OHWI
+            weight_permuted = weight_tensor.permute(0, 2, 3, 1).contiguous(
+                memory_format=torch.channels_last
+            )
 
         with node.graph.inserting_after(weight):
             weight_nhwc = create_constant_placeholder(
@@ -187,13 +200,20 @@ class ConvertToCortexMPass(XNNPACKPass):
                 torch.tensor(quantized_shifts, dtype=torch.int32),
             )
 
-        # Detect depthwise convolution: groups == input_channels
-        input_tensor = get_first_fake_tensor(x)
-        input_channels = input_tensor.shape[1]
-        is_depthwise = groups == input_channels
-
         if is_depthwise:
-            # Use depthwise convolution operator
+            # Compute depth_multiplier for depthwise convolution
+            # For depthwise: output_channels = input_channels * depth_multiplier
+            # PyTorch depthwise weight is [C_OUT, 1, H, W]
+            output_channels = weight_tensor.shape[0]
+            input_channels = groups  # For depthwise, groups == input_channels
+
+            if output_channels % input_channels != 0:
+                raise ValueError(
+                    f"Depthwise conv: output_channels ({output_channels}) must be "
+                    f"divisible by input_channels ({input_channels})"
+                )
+            depth_multiplier = output_channels // input_channels
+
             new_args = (
                 x,
                 weight_nhwc,
@@ -201,7 +221,7 @@ class ConvertToCortexMPass(XNNPACKPass):
                 stride,
                 padding,
                 dilation,
-                groups,
+                depth_multiplier,
                 -input_zero_point,
                 output_zero_point,
                 quantized_multiplier_tensor,
