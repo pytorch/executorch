@@ -16,10 +16,7 @@ from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
-from executorch.backends.qualcomm.utils.constants import (
-    QCOM_AXIS_ORDER,
-    QCOM_BYPASS_NODE,
-)
+from executorch.backends.qualcomm.utils.constants import QCOM_BYPASS_NODE
 
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -213,11 +210,6 @@ class QnnPartitioner(Partitioner):
                 )
                 tag_mutated_buffer(edge_program)
 
-        # pop certain keys in meta for not affecting the passes in compilation
-        for node in edge_program.graph_module.graph.nodes:
-            if hasattr(node, "meta"):
-                # TODO: need to put property name in common definitions
-                node.meta.pop(QCOM_AXIS_ORDER, "")
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
         )

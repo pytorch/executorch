@@ -81,7 +81,7 @@ DEFINE_string(
 
 DEFINE_int32(
     debug_buffer_size,
-    20000000, // 20MB
+    100000000, // 100MB
     "Size of the debug buffer in bytes to allocate for intermediate outputs and program outputs logging.");
 
 DEFINE_string(

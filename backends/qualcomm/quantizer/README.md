@@ -40,7 +40,7 @@ In order to conduct PTQ for floating point precision graph, observers are requir
         kernel --> id6(Q_k) --> id7(DQ_k) --> id1(convolution)
         bias --> id8(Q_b) --> id9(DQ_b) --> id1(convolution)
     ```
-Qualcomm backend will consume the generated encodings and lower operators with fixed precision. This tutorial will guide you through the details of inserting observer and some useful utilies.
+Qualcomm backend will consume the generated encodings and lower operators with fixed precision. This tutorial will guide you through the details of inserting observer and some useful utilities.
 
 ### Register Annotation via Operator Type
 Let's start with hooking callback for designated operator target:
@@ -105,7 +105,7 @@ def ptq_per_channel_quant_config(
 
     return quantization_config
 ```
-Here we choose `torch.uint8` + `MinMaxObserver` for better converage of IO activation and apply rules to `weight` w/`PerChannelMinMaxObserver`, `bias` w/`_derived_bias_quant_spec` (a callable method to calculate encoding in desired way) to meet aforementioned constraints. The well-defined `quantizaton_config` will then be shipped to callback for annotation.<br/>
+Here we choose `torch.uint8` + `MinMaxObserver` for better coverage of IO activation and apply rules to `weight` w/`PerChannelMinMaxObserver`, `bias` w/`_derived_bias_quant_spec` (a callable method to calculate encoding in desired way) to meet aforementioned constraints. The well-defined `quantizaton_config` will then be shipped to callback for annotation.<br/>
 
 Now, we can start to fill in the function body:
 - Register annotator

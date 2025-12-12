@@ -15,6 +15,9 @@ import torch
 import torchao
 from executorch import exir
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops
+from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
+    QNNIntermediateDebugger,
+)
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -42,6 +45,7 @@ from executorch.examples.qualcomm.utils import (
 )
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.backend.utils import get_delegates
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
@@ -247,6 +251,8 @@ class TestQNN(unittest.TestCase):
         extra_cmds: str = "",
         output_callback: Optional[Callable[[str], None]] = None,
         save_inference_speed: bool = False,
+        expected_compared_events: int = -1,
+        qnn_intermediate_debugger: QNNIntermediateDebugger = None,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             (
@@ -304,10 +310,25 @@ class TestQNN(unittest.TestCase):
                 inspector = Inspector(
                     etdump_path=etdump_path, debug_buffer_path=debug_output_path
                 )
+                node_tensor_map = qnn_intermediate_debugger._match_tensors(
+                    inspector=inspector, keep_qnn_layout=False
+                )
+                self.assertEqual(
+                    len(node_tensor_map),
+                    expected_compared_events,
+                    msg=f"Unexpected number of compared events, expecting {expected_compared_events}, but has {len(node_tensor_map)} events.",
+                )
+                # Compare accuracy for each layer
+                for _, value in node_tensor_map.items():
+                    self._assert_outputs_equal(
+                        value[0].to(torch.float32), value[1].to(torch.float32)
+                    )
                 for event_block in inspector.event_blocks:
                     if event_block.name == "Execute":
-                        self.assertTrue(
-                            len(event_block.events) == expected_intermediate_events
+                        self.assertEqual(
+                            len(event_block.events),
+                            expected_intermediate_events,
+                            msg=f"Unexpected number of intermediate events, expecting {expected_intermediate_events}, but has {len(event_block.events)} events.",
                         )
 
             processed_inputs = list(sample_inputs)
@@ -469,6 +490,7 @@ class TestQNN(unittest.TestCase):
         expected_partitions: int = 1,
         expected_profile_events: int = -1,
         expected_intermediate_events: int = -1,
+        expected_compared_events: int = -1,
         assert_output_equal: bool = True,
         passes_job: Optional[OrderedDict] = None,
         skip_node_id_set: set = None,
@@ -490,6 +512,24 @@ class TestQNN(unittest.TestCase):
             skip_mutable_buffer=skip_mutable_buffer,
             generate_etrecord=self.enable_profile,
         )
+
+        qnn_intermediate_debugger = None
+        if expected_intermediate_events != -1:
+            lowered_module_nodes = get_delegates(
+                delegated_program.exported_program().graph
+            )
+            assert len(lowered_module_nodes) == 1, "Length not correct"
+
+            lowered_module_node = lowered_module_nodes[0]
+            lower_module = getattr(
+                delegated_program.exported_program().graph_module,
+                lowered_module_node.name,
+            )
+            edge_module = lower_module.original_module.module()
+
+            qnn_intermediate_debugger = QNNIntermediateDebugger()
+            qnn_intermediate_debugger.set_edge_module(edge_module=edge_module)
+            qnn_intermediate_debugger.intermediate_output_module(*sample_inputs)
 
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
@@ -525,15 +565,17 @@ class TestQNN(unittest.TestCase):
             or expected_intermediate_events != -1
         ):
             self.verify_output(
-                module,
-                sample_inputs,
-                exec_prog,
-                etrecord_path,
-                expected_profile_events,
-                expected_intermediate_events,
+                module=module,
+                sample_inputs=sample_inputs,
+                executorch_prog=exec_prog,
+                etrecord_path=etrecord_path,
+                expected_profile_events=expected_profile_events,
+                expected_intermediate_events=expected_intermediate_events,
                 extra_cmds=extra_cmds,
                 output_callback=output_callback,
                 save_inference_speed=save_inference_speed,
+                expected_compared_events=expected_compared_events,
+                qnn_intermediate_debugger=qnn_intermediate_debugger,
             )
 
     def get_qdq_module(
@@ -563,6 +605,7 @@ class TestQNN(unittest.TestCase):
         if block_size_map is not None:
             quantizer.set_block_size_map(block_size_map)
         prepared = prepare_pt2e(m, quantizer)
+
         prepared(*inputs)
         quantized_module = convert_pt2e(prepared)
         nodes = {node.target for node in quantized_module.graph.nodes}
