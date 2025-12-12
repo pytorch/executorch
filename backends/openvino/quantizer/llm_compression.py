@@ -26,6 +26,7 @@ def get_calibration_data(
     This method is used to obtain calibration data from a prompt so that the algorithm
     is calibrated not only with the dataset but also the inputs which are output-ed by
     the model.
+    Currently, this method is only tested with Llama models.
     """
     # TODO: change criteria & support batch inputs if necessary
     pos = torch.tensor(0, dtype=torch.int64)
@@ -53,6 +54,7 @@ def get_calibration_data(
 def transform_fn(token_pos_map: tuple[int, int]):
     """
     Transforms and returns input from dataset so that it is acceptable by the model
+    Currently, this method is only tested with Llama models
 
     :param token_pos_map: This input contains the posiition and its token ID
     """

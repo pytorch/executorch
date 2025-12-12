@@ -134,12 +134,15 @@ class OpenVINOQuantizer(Quantizer):
 
     def get_weights_compression_config(self) -> Dict[str, Any]:
         """
-        Returns the config attributes like all_layers, group_size, backup_mode and Quantization mode
-        from the quantizer's internal algorithm. These attributes are defined when initializing the quantizer
-        and is used by the compress pt2e's experimental algorithm.
-
-        :return: A dictionary containing elements which are defined in the quantizer and their value from the
-        internal algorithm.
+        Returns a dictionary with all_layers, group_size, backup_mode and Quantization mode parameters
+        used by the compress_pt2e weight compression algorithm.
+        
+        :return: A dictionary containing:
+            1. mode: Quantization mode. One of INT4 Sym, INT4 Asym, INT8 Sym, INT8 Asym. 
+            2. group_size: group size to be used for group-wise compression.
+            3. all_layers: Indicates whether embeddings and last MatMul layers should be compressed to a primary
+                precision. By default, the backup precision is assigned for the embeddings and last MatMul layers. 
+            4. backup_mode: Defines a backup mode for mixed-precision weight compression.
         """
         quantizer_initialized_algo_attributes = {
             "mode": self._algo.mode,
