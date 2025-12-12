@@ -636,3 +636,10 @@ class BMMConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class SinConfig(GenericNodePartitionerConfig):
+    target_name = "sin.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
