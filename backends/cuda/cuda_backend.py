@@ -6,7 +6,6 @@
 
 import os
 import shutil
-import subprocess
 import typing
 from importlib import resources
 from typing import Any, Dict, final, List, Optional
@@ -39,7 +38,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         return "cuda"
 
     @staticmethod
-    def _find_ptxas_for_version(cuda_version: str) -> Optional[str]:
+    def _find_ptxas_for_version(cuda_version: str) -> Optional[str]:  # noqa: C901
         """
         Find ptxas binary that matches the expected CUDA version.
         Returns the path to ptxas if found and version matches, None otherwise.
