@@ -7,6 +7,7 @@
  */
 
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
@@ -577,7 +578,33 @@ Error resize_constant_pad_output(
   for (const auto i : c10::irange(in.dim())) {
     expected_output_size[i] = in.size(i);
     if (pad_i >= 0 && static_cast<size_t>(pad_i) < pad.size() / 2) {
-      expected_output_size[i] += pad[2 * pad_i] + pad[2 * pad_i + 1];
+      // Check for overflow when computing array indices
+      size_t pad_idx1 = 2 * static_cast<size_t>(pad_i);
+      size_t pad_idx2 = pad_idx1 + 1;
+
+      // Bounds check
+      if (pad_idx2 >= pad.size()) {
+        return Error::InvalidArgument;
+      }
+
+      // Check for overflow in pad addition (int64_t + int64_t)
+      int64_t pad_sum = 0;
+      if (c10::add_overflows(
+          pad[pad_idx1],
+          pad[pad_idx2],
+          &pad_sum)) {
+        return Error::InvalidArgument;
+      }
+
+      int32_t result = 0;
+      if (c10::add_overflows(
+          expected_output_size[i],
+          static_cast<int32_t>(pad_sum),
+          &result)) {
+        return Error::InvalidArgument;
+      }
+
+      expected_output_size[i] = result;
     }
     --pad_i;
   }
