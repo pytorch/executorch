@@ -1,0 +1,42 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
+
+oncall("executorch")
+
+python_library(
+    name = "xnnpack_test_utils",
+    srcs = [
+        "xnnpack_test_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/devtools:lib",
+        "//executorch/exir:lib",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)
+
+
+python_unittest(
+    name = "torchvision_vit_test",
+    srcs = [
+        "torchvision_vit_test.py",
+    ],
+    # You still need to pass `-c executorch.event_tracer_enabled:true`
+    # if you want to manually invoke buck.
+    labels = ci.labels(
+        ci.buckconfig("executorch.event_tracer_enabled", "true"),
+    ),
+    deps = [
+        "//executorch/devtools/tests/xnnpack:xnnpack_test_utils",
+        "//executorch/exir/fb:bento_deps",
+        "//executorch/extension/fb/ptez:lib",
+        "//fair_infra/data/iopath/iopath:iopath",
+    ],
+)
