@@ -30,12 +30,10 @@ from executorch.backends.cadence.aot.fuse_ops import (
 )
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
-    none_throws,
     register_cadence_pass,
     RemoveOrReplacePassInterface,
 )
 from executorch.backends.cadence.aot.remove_ops import RemoveNopSelectOpPass
-from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
@@ -744,7 +742,7 @@ class ReplaceConstantPadNdWithSlicePass(RemoveOrReplacePassInterface):
 
 # Make that pass runnable standalone at opt level 0.
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
+class ReplaceAtenConvolutionWithCadenceConvolutionPass(RemoveOrReplacePassInterface):
     """
     Replace aten convolution op with jarvis-specific convolution op, since the
     aten version is not supported by jarvis.
@@ -753,11 +751,14 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
     for unit-stride convolutions.
     """
 
-    def call_operator(self, op, args, kwargs, meta):
-        if get_edge_overload_packet(op) != exir_ops.edge.aten.convolution:
-            return super().call_operator(op, args, kwargs, meta)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.convolution.default]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # There must be 9 total args.
-        assert len(args) == 9
+        if len(node.args) != 9:
+            return False
 
         # Unpack the args
         (
@@ -770,11 +771,18 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
             transposed,
             output_padding,
             groups,
-        ) = args
+        ) = node.args
+
+        # Cast to appropriate types
+        stride = cast(Sequence[int], stride)
+        padding = cast(Sequence[int], padding)
+        dilation = cast(Sequence[int], dilation)
+        output_padding = cast(Sequence[int], output_padding)
+
         # Currently we only handle conversion to conv1d, conv2d, and conv3d, therefore
         # verify that the stride, padding, dilation, and output_padding have
         # len <=3.
-        assert (
+        if not (
             (len(stride) == len(padding) == len(dilation) == len(output_padding) == 1)
             or (
                 len(stride) == len(padding) == len(dilation) == len(output_padding) == 2
@@ -782,7 +790,8 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
             or (
                 len(stride) == len(padding) == len(dilation) == len(output_padding) == 3
             )
-        ), "Can only map convolution to conv1d, conv2d, and conv3d at present"
+        ):
+            return False
 
         # Determine if this is 1D, 2D, or 3D convolution based on parameter lengths
         if transposed:
@@ -794,66 +803,62 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
         else:  # len(stride) == 3
             target = exir_ops.edge.cadence.conv3d.default
 
-        if transposed:
-            # Flip the height and width dimensions of weight, since we apply a
-            # gather stencil. Also, the first two dimensions of weight must be
-            # transposed/interchanged.
-            # If weight is a ProxyValue, new_weight needs to be the output of a
-            # graph operation (in this case a transpose_copy op) to be an explicit
-            # ProxyValue as well. If not, the view op can be done directly on the
-            # tensor.
-            transposed_weight = super().call_operator(
-                exir_ops.edge.aten.transpose_copy.int,
-                (
+        with node.graph.inserting_before(node):
+            if transposed:
+                # Flip the height and width dimensions of weight, since we apply a
+                # gather stencil. Also, the first two dimensions of weight must be
+                # transposed/interchanged.
+                assert isinstance(weight, torch.fx.Node)
+                transposed_weight = node.graph.call_function(
+                    exir_ops.edge.aten.transpose_copy.int,
+                    args=(weight, 0, 1),
+                )
+                transposed_weight.meta = weight.meta
+
+                # Get the dimension for flip based on weight shape
+                weight_dim = len(weight.meta["val"].shape)
+                flip_dims = [-1] if weight_dim == 3 else [-1, -2]
+
+                flipped_weight = node.graph.call_function(
+                    exir_ops.edge.aten.flip.default,
+                    args=(transposed_weight, flip_dims),
+                )
+                flipped_weight.meta = transposed_weight.meta
+
+                new_args = (
+                    in_tensor,
+                    flipped_weight,
+                    bias,
+                    stride,
+                    padding,
+                    dilation,
+                    output_padding,
+                    groups,
+                    False,
+                )
+            else:
+                # Verify that output_padding is 0.
+                if not all(x == 0 for x in output_padding):
+                    return False
+
+                # Keep the original stride to maintain correct output dimensions
+                new_stride = stride
+
+                new_args = (
+                    in_tensor,
                     weight,
-                    0,
-                    1,
-                ),
-                kwargs,
-                meta,
-            )
+                    bias,
+                    new_stride,
+                    padding,
+                    dilation,
+                    groups,
+                )
 
-            flipped_weight = super().call_operator(
-                exir_ops.edge.aten.flip.default,
-                (
-                    transposed_weight,
-                    [-1] if transposed_weight.to_tensor().dim() == 3 else [-1, -2],
-                ),
-                kwargs,
-                meta,
-            )
+            new_node = node.graph.call_function(target, args=new_args)
+            new_node.meta = node.meta
 
-            new_args = (
-                in_tensor,
-                flipped_weight,
-                bias,
-                stride,
-                padding,
-                dilation,
-                output_padding,
-                groups,
-                False,
-            )
-        else:
-            # Verify that output_padding is 0.
-            assert all(
-                x == 0 for x in output_padding
-            ), f"Cannot handle padded output in convolution. Got {output_padding=}"
-
-            # Keep the original stride to maintain correct output dimensions
-            new_stride = stride
-
-            new_args = (
-                in_tensor,
-                weight,
-                bias,
-                new_stride,
-                padding,
-                dilation,
-                groups,
-            )
-
-        return super().call_operator(target, new_args, kwargs, meta)
+        node.replace_all_uses_with(new_node)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
@@ -1337,7 +1342,7 @@ class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
-class ReplaceTransposedConvWithLinearPass(ExportPass):
+class ReplaceTransposedConvWithLinearPass(RemoveOrReplacePassInterface):
     """
     Replace transposed convolution where groups=1 with transposed_im2row
     followed by a linear op.
@@ -1350,15 +1355,20 @@ class ReplaceTransposedConvWithLinearPass(ExportPass):
         exir_ops.edge.cadence.quantized_transposed_conv.default: exir_ops.edge.cadence.quantized_linear.default,
     }
 
-    def call_operator(self, op, args, kwargs, meta):
-        if op not in self.transposed_conv_op_to_linear_op:
-            return super().call_operator(op, args, kwargs, meta)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return list(self.transposed_conv_op_to_linear_op.keys())
 
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Get the relevant args from transposed_convolution node.
-        quantized_op = op == exir_ops.edge.cadence.quantized_transposed_conv.default
-        assert len(args) == (
-            16 if quantized_op else 9
-        ), "Inconsistent args for transposed_convolution"
+        assert isinstance(node.target, EdgeOpOverload)
+        quantized_op = (
+            node.target == exir_ops.edge.cadence.quantized_transposed_conv.default
+        )
+        expected_args = 16 if quantized_op else 9
+        if len(node.args) != expected_args:
+            return False
+
         (
             in_tensor,
             weight,
@@ -1368,21 +1378,23 @@ class ReplaceTransposedConvWithLinearPass(ExportPass):
             dilation,
             output_padding,
             groups,
-        ) = args[0:8]
+        ) = node.args[0:8]
 
         # We do not replace depthwise transposed_convolution with gemm yet.
         if groups != 1:
-            return super().call_operator(op, args, kwargs, meta)
+            return False
 
         # Get the shapes
-        out_shape = meta["val"].shape
-        weight_shape = weight.to_tensor().shape
-        assert None not in {weight_shape, out_shape}
+        assert isinstance(weight, torch.fx.Node)
+        out_shape = node.meta["val"].shape
+        weight_shape = weight.meta["val"].shape
+        if None in {weight_shape, out_shape}:
+            return False
 
         # Determine if the transposed_convolution is NCHW or NHWC. The NHWC,
         # i.e., the channel_last layout is specified by the channel_last arg
         # of transposed_conv op, which is the last argument.
-        channel_last = args[-1]
+        channel_last = node.args[-1]
         # The weight tensor is [out_channels, in_channels, X] for NCHW layout,
         # and [out_channels, X, in_channels] for NHWC layout. Here, X is the
         # kernel_width for conv1d, and X = kernel_height * kernel_width for
@@ -1391,22 +1403,35 @@ class ReplaceTransposedConvWithLinearPass(ExportPass):
         # If the transposed_convolution op was quantized, we need the input tensor's
         # zero_point for im2row. Otherwise in_zero_point defaults to a zero
         # tensor.
+        assert isinstance(in_tensor, torch.fx.Node)
         in_zero_point = (
-            get_zero_point(in_tensor.to_tensor())
+            get_zero_point(in_tensor.meta["val"])
             if quantized_op
             else torch.tensor(0, dtype=torch.int32)
         )
+
+        # Cast to appropriate types
+        stride = cast(Sequence[int], stride)
+        padding = cast(Sequence[int], padding)
+        dilation = cast(Sequence[int], dilation)
+        output_padding = cast(Sequence[int], output_padding)
+
         # transposed_im2row expects every kernel parameter to be 2d. So we extend the
         # parameters for conv1d by prepending their default values.
-        stride = ([1] + stride) if len(stride) == 1 else stride
-        padding = ([0] + padding) if len(padding) == 1 else padding
-        dilation = ([1] + dilation) if len(dilation) == 1 else dilation
-        output_padding = (
-            ([0] + output_padding) if len(output_padding) == 1 else output_padding
+        stride_list = ([1] + list(stride)) if len(stride) == 1 else list(stride)
+        padding_list = ([0] + list(padding)) if len(padding) == 1 else list(padding)
+        dilation_list = ([1] + list(dilation)) if len(dilation) == 1 else list(dilation)
+        output_padding_list = (
+            ([0] + list(output_padding))
+            if len(output_padding) == 1
+            else list(output_padding)
         )
         kernel_size = ([1] + kernel_size) if len(kernel_size) == 1 else kernel_size
-        # Assert that kernel size does not have a 0
-        assert 0 not in kernel_size
+        # Check that kernel size does not have a 0
+        if 0 in kernel_size:
+            return False
+
+        graph = node.graph
 
         # Create a transposed_im2row node with the input. This will create a 2d
         # matrix of shape [out_height*out_weight, X*in_channels]. X is as
@@ -1414,32 +1439,33 @@ class ReplaceTransposedConvWithLinearPass(ExportPass):
         transposed_im2row_args = (
             in_tensor,
             kernel_size,
-            dilation,
-            padding,
-            stride,
-            output_padding,
+            dilation_list,
+            padding_list,
+            stride_list,
+            output_padding_list,
             in_zero_point,
             channel_last,
         )
-        transposed_im2row = super().call_operator(
-            exir_ops.edge.cadence.transposed_im2row.default,
-            transposed_im2row_args,
-            kwargs,
-            meta,
-        )
+        with graph.inserting_before(node):
+            transposed_im2row = graph.call_function(
+                exir_ops.edge.cadence.transposed_im2row.default,
+                args=transposed_im2row_args,
+            )
+            transposed_im2row.meta = node.meta
+
         # Reshape the weight to [out_channels, in_channels * X]
         K = math.prod(weight_shape[1:])
 
-        # Weight is always a ProxyValue, so we need a view_copy operation
-        linear_weight = super().call_operator(
-            exir_ops.edge.aten.view_copy.default,
-            (
-                weight,
-                [weight_shape[0], K],
-            ),
-            kwargs,
-            meta,
-        )
+        # Weight is always a Node, so we need a view_copy operation
+        with graph.inserting_before(node):
+            linear_weight = graph.call_function(
+                exir_ops.edge.aten.view_copy.default,
+                args=(
+                    weight,
+                    [weight_shape[0], K],
+                ),
+            )
+            linear_weight.meta = node.meta
 
         # Create the linear node, which multiplies the 3d input with 2d weight
         # tensors with bias addition. The outermost dimension of the input is
@@ -1451,7 +1477,8 @@ class ReplaceTransposedConvWithLinearPass(ExportPass):
                 bias_scale,
                 out_scale,
                 out_zero_point,
-            ) = args[8:13]
+            ) = node.args[8:13]
+            # pyre-ignore[58]: Division operands
             requantize_scale = bias_scale / out_scale
             (out_multiplier, out_shift) = quantize_tensor_multiplier(requantize_scale)
             linear_args = (
@@ -1467,58 +1494,67 @@ class ReplaceTransposedConvWithLinearPass(ExportPass):
             )
         else:
             linear_args = (transposed_im2row, linear_weight, bias)
-        linear_res = super().call_operator(
-            self.transposed_conv_op_to_linear_op[op],
-            linear_args,
-            kwargs,
-            meta,
-        )
+
+        with graph.inserting_before(node):
+            linear_res = graph.call_function(
+                self.transposed_conv_op_to_linear_op[cast(EdgeOpOverload, node.target)],
+                args=linear_args,
+            )
+            linear_res.meta = node.meta
+
         # The output of linear is a 3D tensor. However, the output is in NHWC
         # layout by default, because an input vector of size X is multiplied
         # with the weight matrix, i.e., column values are contiguous. If the
         # channel_last is False, we want to transpose this output.
         if not channel_last:
-            linear_res = super().call_operator(
-                exir_ops.edge.aten.transpose_copy.int,
-                (linear_res, 1, 2),
-                kwargs,
-                meta,
-            )
+            with graph.inserting_before(node):
+                linear_res = graph.call_function(
+                    exir_ops.edge.aten.transpose_copy.int,
+                    args=(linear_res, 1, 2),
+                )
+                linear_res.meta = node.meta
+
         # And finally, we want to view the 3D output of linear op as 4D tensor
-        return super().call_operator(
-            exir_ops.edge.aten.view_copy.default,
-            (linear_res, list(out_shape)),
-            kwargs,
-            meta,
-        )
+        with graph.inserting_before(node):
+            out_res = graph.call_function(
+                exir_ops.edge.aten.view_copy.default,
+                args=(linear_res, list(out_shape)),
+            )
+            out_res.meta = node.meta
+
+        node.replace_all_uses_with(out_res)
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class ReplaceNopTransposeOrPermuteWithViewPass(ExportPass):
+class ReplaceNopTransposeOrPermuteWithViewPass(RemoveOrReplacePassInterface):
     """
     If the transpose/permute op does not change the byte order (e.g.,
     transpose/permute from Nx1xHxW to NxHx1xW), then it can be replaced
     by view op.
     """
 
-    def call_operator(self, op, args, kwargs, meta):
-        # Only proceed for transpose or permute op.
-        if op not in {
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
             exir_ops.edge.aten.transpose_copy.int,
             exir_ops.edge.aten.permute_copy.default,
-        }:
-            return super().call_operator(op, args, kwargs, meta)
+        ]
 
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Get the input tensor and shape
-        in_tensor = args[0].to_tensor()
-        in_shape = in_tensor.shape
+        in_tensor_node = node.args[0]
+        assert isinstance(in_tensor_node, torch.fx.Node)
+        in_shape = in_tensor_node.meta["val"].shape
         # Get the output tensor shape
-        out_shape = meta["val"].shape
+        out_shape = node.meta["val"].shape
 
-        if op == exir_ops.edge.aten.transpose_copy.int:
+        if node.target == exir_ops.edge.aten.transpose_copy.int:
             # Get the two dims to be transposed
-            dim0 = args[1] if args[1] >= 0 else in_tensor.dim() + args[1]
-            dim1 = args[2] if args[2] >= 0 else in_tensor.dim() + args[2]
+            dim0 = cast(int, node.args[1])
+            dim1 = cast(int, node.args[2])
+            dim0 = dim0 if dim0 >= 0 else len(in_shape) + dim0
+            dim1 = dim1 if dim1 >= 0 else len(in_shape) + dim1
             # We can eliminate transpose if (a) the size at dim0 and dim1 is 1;
             # (b) the size at dim0 or dim1 is 1, and dim0 and dim1 are consecutive.
             both_one = in_shape[dim0] == 1 and in_shape[dim1] == 1
@@ -1526,17 +1562,22 @@ class ReplaceNopTransposeOrPermuteWithViewPass(ExportPass):
                 in_shape[dim0] == 1 or in_shape[dim1] == 1
             )
             if both_one or either_one_and_consecutive:
-                new_args = (args[0], list(out_shape))
-                return super().call_operator(
-                    exir_ops.edge.aten.view_copy.default, new_args, kwargs, meta
-                )
+                with node.graph.inserting_before(node):
+                    new_node = node.graph.call_function(
+                        exir_ops.edge.aten.view_copy.default,
+                        args=(in_tensor_node, list(out_shape)),
+                    )
+                    new_node.meta = node.meta
+                node.replace_all_uses_with(new_node)
+                return True
 
-        elif op == exir_ops.edge.aten.permute_copy.default:
-            old_dims = list(range(in_tensor.dim()))
-            new_dims = args[1]
+        elif node.target == exir_ops.edge.aten.permute_copy.default:
+            old_dims = list(range(len(in_shape)))
+            new_dims = cast(Sequence[int], node.args[1])
             # If the permute does not change anything, return the input as output.
-            if old_dims == new_dims:
-                return args[0]
+            if old_dims == list(new_dims):
+                node.replace_all_uses_with(in_tensor_node)
+                return True
             # Get the old dim order, and the permuted dim order for all dims that
             # are not 1.
             old_order = [
@@ -1547,22 +1588,30 @@ class ReplaceNopTransposeOrPermuteWithViewPass(ExportPass):
             ]
             # If the byte ordering for non-unit dims is unchanged, this is a nop.
             if old_order == new_order:
-                new_args = (args[0], list(out_shape))
-                return super().call_operator(
-                    exir_ops.edge.aten.view_copy.default, new_args, kwargs, meta
-                )
+                with node.graph.inserting_before(node):
+                    new_node = node.graph.call_function(
+                        exir_ops.edge.aten.view_copy.default,
+                        args=(in_tensor_node, list(out_shape)),
+                    )
+                    new_node.meta = node.meta
+                node.replace_all_uses_with(new_node)
+                return True
 
-        return super().call_operator(op, args, kwargs, meta)
+        return False
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         result = super().call(graph_module)
-        fuse_cascaded_result = none_throws(FuseCascadedViewOps()(result.graph_module))
-        result = none_throws(ExportPass()(fuse_cascaded_result.graph_module))
+        # If this pass made modifications, fuse any cascaded view ops that may have been created
+        if result.modified:
+            fuse_cascaded_result = FuseCascadedViewOps().call(result.graph_module)
+
+            # True because we are in the 'if modified' block
+            return PassResult(fuse_cascaded_result.graph_module, True)
         return result
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
-class ReplaceLinearWithFullyConnectedOpPass(ExportPass):
+class ReplaceLinearWithFullyConnectedOpPass(RemoveOrReplacePassInterface):
     """
     If the input of linear/quantized_linear op is a vector, replace it with
     fully_connected op.
@@ -1573,25 +1622,32 @@ class ReplaceLinearWithFullyConnectedOpPass(ExportPass):
         exir_ops.edge.cadence.quantized_linear.default: exir_ops.edge.cadence.quantized_fully_connected.default,
     }
 
-    def call_operator(self, op, args, kwargs, meta):
-        # Only proceed for linear or quantized_linear ops.
-        if op not in self.linear_to_fc_op:
-            return super().call_operator(op, args, kwargs, meta)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return list(self.linear_to_fc_op.keys())
 
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Extract the input tensor
-        in_tensor = args[0].to_tensor()
-        leading_dims = math.prod(in_tensor.shape[:-1])
+        in_tensor_arg = node.args[0]
+        assert isinstance(in_tensor_arg, torch.fx.Node)
+        in_tensor_shape = in_tensor_arg.meta["val"].shape
+        leading_dims = math.prod(in_tensor_shape[:-1])
         # If the tensor is not a vector, do nothing.
         if leading_dims != 1:
-            return super().call_operator(op, args, kwargs, meta)
+            return False
 
         # Replace the linear with fully connected op
-        return super().call_operator(
-            self.linear_to_fc_op[op],
-            args,
-            kwargs,
-            meta,
-        )
+        assert isinstance(node.target, EdgeOpOverload)
+        with node.graph.inserting_before(node):
+            new_node = node.graph.call_function(
+                self.linear_to_fc_op[cast(EdgeOpOverload, node.target)],
+                args=node.args,
+                kwargs=node.kwargs,
+            )
+            new_node.meta = node.meta
+
+        node.replace_all_uses_with(new_node)
+        return True
 
 
 register_cadence_pass(CadencePassAttribute(opt_level=0))(ReplaceScalarWithTensorArgPass)
