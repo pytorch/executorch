@@ -10,7 +10,7 @@
 
 #include <QnnTypes.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.h>
-#include <executorch/backends/qualcomm/runtime/backends/irbackend/IrContext.h>
+#include <executorch/backends/qualcomm/runtime/backends/ir/IrContext.h>
 
 #include "QnnWrapperUtils.hpp"
 namespace executorch {

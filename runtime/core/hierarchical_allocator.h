@@ -57,6 +57,14 @@ class HierarchicalAllocator final {
       uint32_t memory_id,
       size_t offset_bytes,
       size_t size_bytes) {
+    // Check for integer overflow in offset_bytes + size_bytes.
+    ET_CHECK_OR_RETURN_ERROR(
+        size_bytes <= SIZE_MAX - offset_bytes,
+        InvalidArgument,
+        "Integer overflow in offset_bytes (%" ET_PRIsize_t
+        ") + size_bytes (%" ET_PRIsize_t ")",
+        offset_bytes,
+        size_bytes);
     ET_CHECK_OR_RETURN_ERROR(
         memory_id < buffers_.size(),
         InvalidArgument,

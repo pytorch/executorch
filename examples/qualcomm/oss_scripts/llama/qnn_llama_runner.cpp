@@ -65,10 +65,10 @@ DEFINE_int32(
     eval_mode,
     1,
     "0: TokenGenerator(kv) / 1: HybridMode (prefill+kv) / 2: Lookahead Decoding");
-DEFINE_string(
-    kv_updater,
-    "SmartMask",
-    "How to update kv cache. Choose between SmartMask and ShiftPointer");
+DEFINE_bool(
+    shared_buffer,
+    false,
+    "Specifies to use shared buffers for zero-copy use case between the application and device/co-processor associated with the backend.");
 DEFINE_int32(num_iters, 1, "total num of iterations to run.");
 DEFINE_int32(
     ngram,
@@ -170,7 +170,8 @@ std::string get_formatted_prompt(
       }
       formatted_prompt.append("<|im_start|>user\n");
       formatted_prompt.append(prompt);
-      formatted_prompt.append("<|im_end|>\n\n");
+      formatted_prompt.append("<|im_end|>\n");
+      formatted_prompt.append("<|im_start|>assistant\n\n");
       break;
     case example::DecoderModelVersion::kSmollm3:
       if (!system_prompt.empty()) {
@@ -216,7 +217,7 @@ void start_runner(
       FLAGS_performance_output_path.c_str(),
       FLAGS_temperature,
       FLAGS_eval_mode,
-      FLAGS_kv_updater,
+      FLAGS_shared_buffer,
       FLAGS_ngram,
       FLAGS_window,
       FLAGS_gcap);

@@ -19,7 +19,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
 
-from executorch.backends.arm.tosa.utils import build_reshape_tosa_1_0
+from executorch.backends.arm.tosa.utils import build_reshape_tosa
 from torch.fx import Node
 
 
@@ -67,7 +67,7 @@ class IndexSelectVisitor(NodeVisitor):
                 weights_new_shape,
                 weights.dtype,
             )
-            build_reshape_tosa_1_0(
+            build_reshape_tosa(
                 tosa_graph, weights.name, weights_new_shape, weights_reshaped.name
             )
 
@@ -89,7 +89,7 @@ class IndexSelectVisitor(NodeVisitor):
             indices_new_shape,
             indices.dtype,
         )
-        build_reshape_tosa_1_0(
+        build_reshape_tosa(
             tosa_graph, indices.name, indices_new_shape, indices_reshaped.name
         )
 
@@ -106,6 +106,4 @@ class IndexSelectVisitor(NodeVisitor):
 
         if len(weights.shape) == 2:
             output_real_shape = [output.shape[0], output.shape[1]]
-            build_reshape_tosa_1_0(
-                tosa_graph, output_name, output_real_shape, output.name
-            )
+            build_reshape_tosa(tosa_graph, output_name, output_real_shape, output.name)

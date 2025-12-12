@@ -141,7 +141,7 @@ def test_llama_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_llama_vgf_FP():
+def test_llama_vgf_no_quant():
     llama_model, llama_inputs, llama_meta = TestLlama().prepare_model()
 
     if llama_model is None or llama_inputs is None:
@@ -153,16 +153,16 @@ def test_llama_vgf_FP():
             llama_inputs,
             aten_op=[],
             exir_op=[],
-            tosa_version="TOSA-1.0+FP",
             use_to_edge_transform_and_lower=True,
             transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
             run_on_vulkan_runtime=True,
+            quantize=False,
         )
         pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_llama_vgf_INT():
+def test_llama_vgf_quant():
     llama_model, llama_inputs, llama_meta = TestLlama().prepare_model()
 
     if llama_model is None or llama_inputs is None:
@@ -174,8 +174,8 @@ def test_llama_vgf_INT():
             llama_inputs,
             aten_op=[],
             exir_op=[],
-            tosa_version="TOSA-1.0+INT",
             use_to_edge_transform_and_lower=True,
             run_on_vulkan_runtime=True,
+            quantize=True,
         )
         pipeline.run()
