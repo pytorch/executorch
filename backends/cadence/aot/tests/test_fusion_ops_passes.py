@@ -273,7 +273,8 @@ class TestFusionPasses(TestFusionPassesBase):
 
     def test_view_fusion(self) -> None:
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(8, 5, 3, dtype=torch.float32))
+        x_input = torch.randn(8, 5, 3, dtype=torch.float32)
+        x = builder.placeholder("x", x_input)
         view1 = builder.call_operator(
             op=exir_ops.edge.aten.view_copy.default, args=(x, [1, 8, 15])
         )
@@ -285,9 +286,17 @@ class TestFusionPasses(TestFusionPassesBase):
         )
         builder.output([output])
         original_graph = builder.get_graph_module()
+
+        gm_before = copy.deepcopy(original_graph)
         p = FuseCascadedViewOps()
-        converted_graph = cast(PassResult, p(original_graph)).graph_module
-        converted_graph.graph.eliminate_dead_code()
+        result = cast(PassResult, p(original_graph))
+        self.assertTrue(result.modified)
+        converted_graph = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate_numerics(gm_before, converted_graph, inputs, "FuseCascadedViewOps")
+
         # Assert that only one view op remains
         self.assertEqual(
             count_node(converted_graph, exir_ops.edge.aten.view_copy.default), 1
@@ -295,7 +304,8 @@ class TestFusionPasses(TestFusionPassesBase):
 
     def test_view_fusion_branched(self) -> None:
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(8, 5, 3, dtype=torch.float32))
+        x_input = torch.randn(8, 5, 3, dtype=torch.float32)
+        x = builder.placeholder("x", x_input)
         y = builder.call_operator(
             op=exir_ops.edge.aten.view_copy.default, args=(x, [1, 8, 15])
         )
@@ -307,9 +317,17 @@ class TestFusionPasses(TestFusionPassesBase):
         )
         builder.output([z, t])
         original_graph = builder.get_graph_module()
+
+        gm_before = copy.deepcopy(original_graph)
         p = FuseCascadedViewOps()
-        converted_graph = cast(PassResult, p(original_graph)).graph_module
-        converted_graph.graph.eliminate_dead_code()
+        result = cast(PassResult, p(original_graph))
+        self.assertTrue(result.modified)
+        converted_graph = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate_numerics(gm_before, converted_graph, inputs, "FuseCascadedViewOps")
+
         # z and t should be fused and y should be eliminated.
         self.assertEqual(
             count_node(converted_graph, exir_ops.edge.aten.view_copy.default), 2

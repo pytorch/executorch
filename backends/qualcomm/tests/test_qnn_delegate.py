@@ -1406,6 +1406,24 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(4, 3, 24, 24),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_max_pool3d(self):
+        # NOTE: The pad should be at most half of effective kernel size.
+        modules = [
+            MaxPool3d((3), (1), (1), (1), False, False),  # noqa: F405
+            MaxPool3d((7), (1), (3), (1), False, False),  # noqa: F405
+            MaxPool3d((7), (1), (3), (1), True, False),  # noqa: F405
+            MaxPool3d(  # noqa: F405
+                (7, 7, 7), (1, 1, 1), (3, 3, 3), (1, 1, 1), True, False
+            ),  # noqa: F405
+            MaxPool3d(  # noqa: F405
+                (7, 9, 13), (1, 1, 1), (3, 4, 6), (1, 1, 1), False, False
+            ),  # noqa: F405
+        ]
+        sample_input = (torch.randn(1, 7, 21, 35, 28),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_mean(self):
         test_comb = [
             # Reduce over last two dims, keepdim=True
@@ -3635,6 +3653,25 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn(4, 3, 24, 24),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_max_pool3d(self):
+        # NOTE: The pad should be at most half of effective kernel size.
+        modules = [
+            MaxPool3d((3), (1), (1), (1), False, False),  # noqa: F405
+            MaxPool3d((7), (1), (3), (1), False, False),  # noqa: F405
+            MaxPool3d((7), (1), (3), (1), True, False),  # noqa: F405
+            MaxPool3d(  # noqa: F405
+                (7, 7, 7), (1, 1, 1), (3, 3, 3), (1, 1, 1), True, False
+            ),  # noqa: F405
+            MaxPool3d(  # noqa: F405
+                (7, 9, 13), (1, 1, 1), (3, 4, 6), (1, 1, 1), False, False
+            ),  # noqa: F405
+        ]
+        sample_input = (torch.randn(1, 7, 21, 35, 28),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_mean(self):
         test_comb = [
