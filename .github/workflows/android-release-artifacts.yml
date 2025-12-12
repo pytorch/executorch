@@ -17,6 +17,7 @@ on:
           - "xnnpack"
           - "vulkan"
           - "qnn"
+          - "all"
   schedule:
     - cron: 0 10 * * *
 
@@ -94,14 +95,14 @@ jobs:
           GRADLE_ARGS+=" -Dflavor=${FLAVOR}"
         fi
 
-        if [[ "$FLAVOR" == "vulkan" || -z "$FLAVOR" ]]; then
+        f [[ "$FLAVOR" == "vulkan" || "$FLAVOR" == "all" || -z "$FLAVOR" ]]; then
           curl -O https://sdk.lunarg.com/sdk/download/1.4.321.1/linux/vulkansdk-linux-x86_64-1.4.321.1.tar.xz
           tar xf vulkansdk-linux-x86_64-1.4.321.1.tar.xz -C /tmp
           export PATH="/tmp/1.4.321.1/x86_64/bin:$PATH"
           export EXECUTORCH_BUILD_VULKAN=ON
         fi
 
-        if [[ "$FLAVOR" == "qnn" ]]; then
+        if [[ "$FLAVOR" == "qnn" || "$FLAVOR" == "all" ]]; then
           PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
           PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
           export EXECUTORCH_BUILD_QNN=ON
