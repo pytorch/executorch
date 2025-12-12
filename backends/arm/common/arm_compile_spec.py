@@ -10,10 +10,12 @@
 # JIT compiler flows.
 #
 
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 
+from executorch.backends.arm.common.pipeline_config import ArmPassPipelineConfig
 from executorch.backends.arm.tosa import TosaSpecification
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -36,6 +38,7 @@ class ArmCompileSpec(ABC):
     _DEBUG_ARTIFACT_KEY = "debug_artifact_path"
     _DEBUG_MODE_KEY = "dump_debug_info"
     _OUTPUT_REORDER_KEY = "ouput_reorder_workaround"
+    _TRANSFORM_PIPELINE_CONFIG_KEY = "transform_pipeline_config"
 
     def _set_compile_specs(
         self,
@@ -44,6 +47,7 @@ class ArmCompileSpec(ABC):
         path_for_intermediates: str | None = None,
         tosa_debug_mode: DebugMode | None = None,
         output_order_workaround: bool = True,
+        pipeline_config: ArmPassPipelineConfig | None = None,
     ):
         """Set all values of dataclass directly."""
         self.tosa_spec = tosa_spec
@@ -51,6 +55,7 @@ class ArmCompileSpec(ABC):
         self.path_for_intermediates = path_for_intermediates
         self.tosa_debug_mode = tosa_debug_mode
         self.output_order_workaround = output_order_workaround
+        self._pipeline_config = pipeline_config
 
     @classmethod
     def from_list(cls, compile_specs: list[CompileSpec]):  # noqa: C901
@@ -60,6 +65,7 @@ class ArmCompileSpec(ABC):
         path_for_intermediates: str | None = None
         tosa_debug_mode: ArmCompileSpec.DebugMode | None = None
         output_order_workaround: bool = True
+        pipeline_config: ArmPassPipelineConfig | None = None
         unknown_specs: dict[str, str] = {}
         for spec in compile_specs:
             key = spec.key
@@ -98,6 +104,12 @@ class ArmCompileSpec(ABC):
                 tosa_debug_mode = ArmCompileSpec.DebugMode[val]
             elif key == ArmCompileSpec._OUTPUT_REORDER_KEY:
                 output_order_workaround = val  # type: ignore[assignment]
+            elif key == ArmCompileSpec._TRANSFORM_PIPELINE_CONFIG_KEY:
+                if pipeline_config is not None:
+                    raise ValueError(
+                        "More than one transform pipeline entry in compile spec."
+                    )
+                pipeline_config = ArmPassPipelineConfig.from_dict(json.loads(val))
             else:
                 unknown_specs[key] = val
 
@@ -120,6 +132,7 @@ class ArmCompileSpec(ABC):
             path_for_intermediates=path_for_intermediates,
             tosa_debug_mode=tosa_debug_mode,
             output_order_workaround=output_order_workaround,
+            pipeline_config=pipeline_config,
         )
         cls.from_list_hook(compile_spec, unknown_specs)
         compile_spec.validate()
@@ -189,7 +202,32 @@ class ArmCompileSpec(ABC):
                 )
             )
 
+        if self._pipeline_config is not None and not self._pipeline_config.is_default():
+            compile_spec.append(
+                CompileSpec(
+                    ArmCompileSpec._TRANSFORM_PIPELINE_CONFIG_KEY,
+                    self._pipeline_config.serialize(),
+                )
+            )
         return compile_spec
+
+    def get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
+        """
+        Returns configuration that controls how the Arm pass pipeline should behave.
+        Subclasses may override to tweak defaults for specific targets.
+        """
+        if self._pipeline_config is None:
+            self._pipeline_config = self._create_default_pipeline_config()
+        return self._pipeline_config
+
+    def set_pass_pipeline_config(self, config: ArmPassPipelineConfig) -> None:
+        self._pipeline_config = config
+
+    def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
+        config = ArmPassPipelineConfig()
+        if self.tosa_spec.is_U55_subset:
+            config.disable_masked_softmax()
+        return config
 
     def get_intermediate_path(self) -> str | None:
         """
