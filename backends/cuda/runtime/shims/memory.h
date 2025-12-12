@@ -161,9 +161,30 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
  * @return Error::Ok on success, appropriate error code on failure:
  *         - Error::InvalidArgument: null pointers or invalid parameters
  */
-AOTITorchError aoti_torch_new_tensor_handle(
-    Tensor* orig_handle,
-    Tensor** new_handle);
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_new_tensor_handle(Tensor* orig_handle, Tensor** new_handle);
+
+// Function to retrieve boolean value from a 0D boolean tensor
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_bool(Tensor* tensor, bool* ret_value);
+
+/**
+ * Reinterprets the destination tensor to be a view of the source tensor's
+ * data.
+ *
+ * This function makes the destination tensor a view of the source tensor's
+ * underlying data, but with the destination tensor's original shape and
+ * strides. The number of elements in both tensors must match. The destination
+ * tensor handle will be updated to point to a new tensor view.
+ *
+ * @param src The source tensor providing the data.
+ * @param ret_dst On input, a pointer to the destination tensor. On output,
+ * this will be updated to point to the new tensor view.
+ *
+ * @return Error::Ok on success, appropriate error code on failure.
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst);
 
 // Function to clear all tensors from internal storage
 AOTI_SHIM_EXPORT void clear_all_tensors();

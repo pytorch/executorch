@@ -59,11 +59,18 @@ aoti_torch_get_device_index(Tensor* tensor, int32_t* ret_device_index);
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim);
 
+// Device type query (optional; backends may implement this to return device
+// type constants such as CUDA). Declared here so common shims can dispatch
+// appropriately.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_device_type(Tensor* tensor, int32_t* ret_device_type);
+
 // Utility functions for device and layout information
 AOTI_SHIM_EXPORT int32_t aoti_torch_device_type_cpu();
 AOTI_SHIM_EXPORT int32_t aoti_torch_layout_strided();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_float32();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bfloat16();
+AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bool();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int8();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int32();

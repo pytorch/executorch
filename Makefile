@@ -87,21 +87,22 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-cpu whisper-metal llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal whisper-cuda whisper-debug-cuda whisper-cpu whisper-metal llama-cpu llava-cpu gemma3-cuda gemma3-cpu clean help
 
 help:
-	@echo "This Makefile adds targets to build runners for various models on various backends. Run using `make <target>`. Available targets:"
-	@echo "  voxtral-cuda   - Build Voxtral runner with CUDA backend"
-	@echo "  voxtral-cpu    - Build Voxtral runner with CPU backend"
-	@echo "  voxtral-metal  - Build Voxtral runner with Metal backend (macOS only)"
-	@echo "  whisper-cuda   - Build Whisper runner with CUDA backend"
-	@echo "  whisper-cpu    - Build Whisper runner with CPU backend"
-	@echo "  whisper-metal  - Build Whisper runner with Metal backend (macOS only)"
-	@echo "  llama-cpu      - Build Llama runner with CPU backend"
-	@echo "  llava-cpu      - Build Llava runner with CPU backend"
-	@echo "  gemma3-cuda    - Build Gemma3 runner with CUDA backend"
-	@echo "  gemma3-cpu     - Build Gemma3 runner with CPU backend"
-	@echo "  clean          - Clean build artifacts"
+	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
+	@echo "  voxtral-cuda            - Build Voxtral runner with CUDA backend"
+	@echo "  voxtral-cpu             - Build Voxtral runner with CPU backend"
+	@echo "  voxtral-metal           - Build Voxtral runner with Metal backend (macOS only)"
+	@echo "  whisper-cuda            - Build Whisper runner with CUDA backend"
+	@echo "  whisper-debug-cuda      - Build Whisper runner with CUDA backend (debug mode)"
+	@echo "  whisper-cpu             - Build Whisper runner with CPU backend"
+	@echo "  whisper-metal           - Build Whisper runner with Metal backend (macOS only)"
+	@echo "  llama-cpu               - Build Llama runner with CPU backend"
+	@echo "  llava-cpu               - Build Llava runner with CPU backend"
+	@echo "  gemma3-cuda             - Build Gemma3 runner with CUDA backend"
+	@echo "  gemma3-cpu              - Build Gemma3 runner with CPU backend"
+	@echo "  clean                   - Clean build artifacts"
 
 voxtral-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
@@ -135,6 +136,15 @@ whisper-cuda:
 	cmake --workflow --preset llm-release-cuda
 	@echo "==> Building Whisper runner with CUDA..."
 	cd examples/models/whisper && cmake --workflow --preset whisper-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/whisper/whisper_runner"
+
+whisper-debug-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA (debug mode)..."
+	cmake --workflow --preset llm-debug-cuda
+	@echo "==> Building Whisper runner with CUDA (debug mode)..."
+	cd examples/models/whisper && cmake --workflow --preset whisper-debug-cuda
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/whisper/whisper_runner"
