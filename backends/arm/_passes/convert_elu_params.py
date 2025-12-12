@@ -35,7 +35,7 @@ class ConvertELUParamsPass(ArmPass):
             is_quantized = (
                 input_node.op == "call_function" and input_node.target in DQ_OPS
             )
-            if not is_quantized:
+            if not is_quantized or not self.allowed_to_transform(node.meta):
                 continue
             with graph.inserting_after(node):
                 replace_node = create_node(

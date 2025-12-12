@@ -61,8 +61,15 @@ class DecomposeRoundPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    _TARGET_OPS = {
+        exir_ops.edge.aten.round.default,
+        torch.ops.aten.round.default,
+    }
+
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op not in (exir_ops.edge.aten.round.default, torch.ops.aten.round.default):
+        if op not in DecomposeRoundPass._TARGET_OPS or not self.allowed_to_transform(
+            meta
+        ):
             return super().call_operator(op, args, kwargs, meta, updated)
         x = args[0]
         full, ge, add, sub, floor, ceil, where = _get_round_decomposition_ops(op)
