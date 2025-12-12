@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Callable, List, Optional
+from typing import Callable, cast, List, Optional
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
@@ -315,6 +315,7 @@ class SharedQspecQuantizer(Quantizer):
         # Min/Max/Mean
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
+        torch.ops.aten.avg_pool2d.default,
         # Data shuffling
         torch.ops.aten.permute.default,
         torch.ops.aten.permute_copy.default,
@@ -402,7 +403,20 @@ class SharedQspecQuantizer(Quantizer):
             mark_node_as_annotated(node, input_qspec_map, shared_qspec)
 
     def annotate(self, model: GraphModule) -> None:
+        """
+        Annotate shared quantization spec for supported ops, but skip avg_pool2d
+        when both ceil_mode and count_include_pad are True.
+        """
         for node in model.graph.nodes:
+            # TODO Skip avg_pool2d when ceil_mode=True or count_include_pad=True
+            # CMSIS-NN doesn't directly support this. But, it should be done.
+            if node.target is torch.ops.aten.avg_pool2d.default:
+                ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
+                count_include_pad = (
+                    cast(bool, node.args[5]) if len(node.args) > 5 else True
+                )
+                if ceil_mode or count_include_pad:
+                    continue
             if node.target in self.targets and not self._is_annotated(node):
                 self._annotate_shared_cluster(node)
 
