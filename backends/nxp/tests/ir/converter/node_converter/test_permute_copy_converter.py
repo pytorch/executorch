@@ -21,6 +21,7 @@ from executorch.backends.nxp.tests.models import Conv2dModule
 from executorch.exir.dialects._ops import ops as exir_ops
 from parameterized import parameterized
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 class Conv2dTransposeModule(torch.nn.Module):
@@ -112,12 +113,14 @@ class TestPermuteCopyConversion(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ["To channel first permutation", (1, 16, 8, 8), (0, 3, 1, 2)],
-            ["To channel last permutation", (1, 16, 8, 8), (0, 2, 3, 1)],
+            ["QAT; To channel first permutation", (1, 16, 8, 8), (0, 3, 1, 2), True],
+            ["PTQ; To channel first permutation", (1, 16, 8, 8), (0, 3, 1, 2), False],
+            ["QAT; To channel last permutation", (1, 16, 8, 8), (0, 2, 3, 1), True],
+            ["PTQ; To channel last permutation", (1, 16, 8, 8), (0, 2, 3, 1), False],
         ]
     )
     def test_permute_copy_conversion__from_permute_4D__quantized__channels_first_input(
-        self, _: str, input_shape, perm
+        self, _: str, input_shape, perm, use_qat
     ):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program, call_original=True
@@ -126,7 +129,7 @@ class TestPermuteCopyConversion(unittest.TestCase):
 
             # Run conversion
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_qat=use_qat
             ).exported_program()
 
             # Make sure the `Permute_copy` was delegated.
@@ -156,12 +159,14 @@ class TestPermuteCopyConversion(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ["To channel first permutation", (1, 8, 8, 8), (0, 3, 1, 2)],
-            ["To channel last permutation", (1, 8, 8, 8), (0, 2, 3, 1)],
+            ["QAT; To channel first permutation", (1, 8, 8, 8), (0, 3, 1, 2), True],
+            ["PTQ; To channel first permutation", (1, 8, 8, 8), (0, 3, 1, 2), False],
+            ["QAT; To channel last permutation", (1, 8, 8, 8), (0, 2, 3, 1), True],
+            ["PTQ; To channel last permutation", (1, 8, 8, 8), (0, 2, 3, 1), False],
         ]
     )
     def test_permute_copy_conversion__from_permute_4D__quantized__channels_first_output(
-        self, _: str, input_shape, perm
+        self, _: str, input_shape, perm, use_qat
     ):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program, call_original=True
@@ -170,7 +175,7 @@ class TestPermuteCopyConversion(unittest.TestCase):
 
             # Run conversion
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_qat=use_qat
             ).exported_program()
 
             # Make sure the `Permute_copy` was delegated.
@@ -200,14 +205,66 @@ class TestPermuteCopyConversion(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ["nchw->nhwc ... nchw->nhwc", (1, 8, 8, 8), (0, 2, 3, 1), (0, 2, 3, 1)],
-            ["nchw->nhwc ... nhwc->nchw", (1, 8, 8, 8), (0, 2, 3, 1), (0, 3, 1, 2)],
-            ["nhwc->nchw ... nhwc->nchw", (1, 8, 8, 8), (0, 3, 1, 2), (0, 3, 1, 2)],
-            ["nhwc->nchw ... nchw->nhwc", (1, 8, 8, 8), (0, 3, 1, 2), (0, 2, 3, 1)],
+            [
+                "QAT; nchw->nhwc ... nchw->nhwc",
+                (1, 8, 8, 8),
+                (0, 2, 3, 1),
+                (0, 2, 3, 1),
+                True,
+            ],
+            [
+                "PTQ; nchw->nhwc ... nchw->nhwc",
+                (1, 8, 8, 8),
+                (0, 2, 3, 1),
+                (0, 2, 3, 1),
+                False,
+            ],
+            [
+                "QAT; nchw->nhwc ... nhwc->nchw",
+                (1, 8, 8, 8),
+                (0, 2, 3, 1),
+                (0, 3, 1, 2),
+                True,
+            ],
+            [
+                "PTQ; nchw->nhwc ... nhwc->nchw",
+                (1, 8, 8, 8),
+                (0, 2, 3, 1),
+                (0, 3, 1, 2),
+                False,
+            ],
+            [
+                "QAT; nhwc->nchw ... nhwc->nchw",
+                (1, 8, 8, 8),
+                (0, 3, 1, 2),
+                (0, 3, 1, 2),
+                True,
+            ],
+            [
+                "PTQ; nhwc->nchw ... nhwc->nchw",
+                (1, 8, 8, 8),
+                (0, 3, 1, 2),
+                (0, 3, 1, 2),
+                False,
+            ],
+            [
+                "QAT; nhwc->nchw ... nchw->nhwc",
+                (1, 8, 8, 8),
+                (0, 3, 1, 2),
+                (0, 2, 3, 1),
+                True,
+            ],
+            [
+                "PTQ; nhwc->nchw ... nchw->nhwc",
+                (1, 8, 8, 8),
+                (0, 3, 1, 2),
+                (0, 2, 3, 1),
+                False,
+            ],
         ]
     )
     def test_permute_copy_conversion__from_permute_4D__quantized__channels_first_io(
-        self, _: str, input_shape, perm1, perm2
+        self, _: str, input_shape, perm1, perm2, use_qat
     ):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program, call_original=True
@@ -216,7 +273,7 @@ class TestPermuteCopyConversion(unittest.TestCase):
 
             # Run conversion
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_qat=use_qat
             ).exported_program()
 
             # Make sure the `Permute_copy` was delegated.
@@ -246,20 +303,53 @@ class TestPermuteCopyConversion(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ["Permutation can be replaced by reshapes", (10, 1, 8), (0, 2, 1)],
-            ["Permutation can be replaced by reshapes", (10, 1, 1), (2, 1, 0)],
-            ["Permutation is identical and can be removed", (10, 1, 8), (0, 1, 2)],
+            [
+                "QAT; Permutation can be replaced by reshapes",
+                (10, 1, 8),
+                (0, 2, 1),
+                True,
+            ],
+            [
+                "PTQ; Permutation can be replaced by reshapes",
+                (10, 1, 8),
+                (0, 2, 1),
+                False,
+            ],
+            [
+                "QAT; Permutation can be replaced by reshapes",
+                (10, 1, 1),
+                (2, 1, 0),
+                True,
+            ],
+            [
+                "PTQ; Permutation can be replaced by reshapes",
+                (10, 1, 1),
+                (2, 1, 0),
+                False,
+            ],
+            [
+                "QAT; Permutation is identical and can be removed",
+                (10, 1, 8),
+                (0, 1, 2),
+                True,
+            ],
+            [
+                "PTQ; Permutation is identical and can be removed",
+                (10, 1, 8),
+                (0, 1, 2),
+                False,
+            ],
         ]
     )
     def test_permute_copy_conversion__from_permute_3D__quantized(
-        self, _: str, input_shape, perm
+        self, _: str, input_shape, perm, use_qat
     ):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program, call_original=True
         ) as converter_spy:
             # Run conversion
             edge_program = to_quantized_edge_program(
-                LinearPermuteModule(input_shape[2], perm), input_shape
+                LinearPermuteModule(input_shape[2], perm), input_shape, use_qat=use_qat
             ).exported_program()
 
             # Make sure the `Permute_copy` was delegated.
@@ -289,17 +379,23 @@ class TestPermuteCopyConversion(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ["Transpose dims 1 and 2", (1, 16, 8, 8), (0, 2, 1, 3)],
-            ["To (2, 0, 1, 3) permutation", (1, 16, 8, 8), (2, 0, 1, 3)],
-            ["To  (3, 1, 2, 0) permutation", (1, 16, 8, 8), (3, 1, 2, 0)],
-            ["To  (3, 1, 0, 2) permutation", (1, 16, 8, 8), (3, 1, 0, 2)],
+            ["QAT; Transpose dims 1 and 2", (1, 16, 8, 8), (0, 2, 1, 3), True],
+            ["PTQ; Transpose dims 1 and 2", (1, 16, 8, 8), (0, 2, 1, 3), False],
+            ["QAT; To (2, 0, 1, 3) permutation", (1, 16, 8, 8), (2, 0, 1, 3), True],
+            ["PTQ; To (2, 0, 1, 3) permutation", (1, 16, 8, 8), (2, 0, 1, 3), False],
+            ["QAT; To  (3, 1, 2, 0) permutation", (1, 16, 8, 8), (3, 1, 2, 0), True],
+            ["PTQ; To  (3, 1, 2, 0) permutation", (1, 16, 8, 8), (3, 1, 2, 0), False],
+            ["QAT; To  (3, 1, 0, 2) permutation", (1, 16, 8, 8), (3, 1, 0, 2), True],
+            ["PTQ; To  (3, 1, 0, 2) permutation", (1, 16, 8, 8), (3, 1, 0, 2), False],
         ]
     )
     def test_permute_copy_non_delegated_conversion__from_permute_4D__quantized(
-        self, _: str, input_shape, perm
+        self, _: str, input_shape, perm, use_qat
     ):
         model = Conv2dPermuteModule(input_shape[1], perm)
-        edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+        edge_program = to_quantized_edge_program(
+            model, input_shape, use_qat=use_qat
+        ).exported_program()
 
         nodes = list(edge_program.graph.nodes)
         assert len(nodes) == 8
@@ -309,15 +405,19 @@ class TestPermuteCopyConversion(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ["Transpose dims 1 and 2", (1, 16, 8, 8), 1, 2],
-            ["Transpose dims 2 and 3", (1, 16, 8, 8), 2, 3],
+            ["QAT; Transpose dims 1 and 2", (1, 16, 8, 8), 1, 2, True],
+            ["PTQ; Transpose dims 1 and 2", (1, 16, 8, 8), 1, 2, False],
+            ["QAT; Transpose dims 2 and 3", (1, 16, 8, 8), 2, 3, True],
+            ["PTQ; Transpose dims 2 and 3", (1, 16, 8, 8), 2, 3, False],
         ]
     )
     def test_permute_copy_non_delegated_conversion__from_transpose_4D__quantized(
-        self, _: str, input_shape, dim0, dim1
+        self, _: str, input_shape, dim0, dim1, use_qat
     ):
         model = Conv2dTransposeModule(input_shape[1], dim0, dim1)
-        edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+        edge_program = to_quantized_edge_program(
+            model, input_shape, use_qat=use_qat
+        ).exported_program()
 
         nodes = list(edge_program.graph.nodes)
         assert len(nodes) == 8
