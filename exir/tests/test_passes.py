@@ -2330,3 +2330,35 @@ class TestPasses(unittest.TestCase):
             prop_tensor.is_contiguous(),
             f"Propagated tensor is not contiguous: {prop_tensor.stride()}",
         )
+
+    def test_remove_noop_pass_clone(self) -> None:
+        """
+        Verify the no-op clones are removed from the graph.
+        """
+
+        class CloneModel(torch.nn.Module):
+            def forward(self, x):
+                return x.clone() + x.clone()
+
+        model = CloneModel()
+        inputs = (torch.randn(1, 16),)
+
+        ep = torch.export.export(model, inputs)
+        lowered = to_edge_transform_and_lower(ep)
+
+        # Sanity check the test - we should see clones in the exported program
+        self.assertTrue(
+            any(
+                n.op == "call_function" and n.target == torch.ops.aten.clone.default
+                for n in ep.graph.nodes
+            )
+        )
+
+        # Since the clone ops are no-ops, they should be gone.
+        self.assertFalse(
+            any(
+                n.op == "call_function"
+                and n.target == exir_ops.edge.dim_order_ops._clone_dim_order.default
+                for n in lowered.exported_program().graph.nodes
+            )
+        )

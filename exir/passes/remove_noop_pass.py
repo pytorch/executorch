@@ -56,35 +56,10 @@ class RemoveNoopPass(ExportPass):
         dequant_nodes = []
 
         for node in graph_module.graph.nodes:
-            if node.op != "call_function":
-                continue
-
-            if node.target not in (
-                torch.ops.aten.to.dtype,
-                torch.ops.aten.dropout.default,
-                torch.ops.aten.slice_copy.Tensor,
-            ):
-                continue
-
-            orig_tensor = node.args[0].meta["val"]
-
-            if orig_tensor is node.meta["val"]:
-                # If the graph is quantized, we must remove the entire pattern consisting of dq->op->q.
-                # Otherwise, removing only the op will suffice.
+            if RemoveNoopPass._should_remove_node(node):
                 if node.args[0].target in _DEQUANT_OPS:
                     dequant_nodes += [node.args[0]]
                 node.replace_all_uses_with(node.args[0])
-                continue
-
-            if node.target == torch.ops.aten.slice_copy.Tensor:
-                # Only do this check if all the dims are static.
-                if all(isinstance(dim, int) for dim in orig_tensor.size()):
-                    if orig_tensor.shape == node.meta["val"].shape:
-                        # If the graph is quantized, we must remove the entire pattern consisting of dq->op->q.
-                        # Otherwise, removing only the op will suffice.
-                        if node.args[0].target in _DEQUANT_OPS:
-                            dequant_nodes += [node.args[0]]
-                        node.replace_all_uses_with(node.args[0])
 
         graph_module.graph.eliminate_dead_code()
         eliminate_dq_q(graph_module, dequant_nodes)
@@ -92,6 +67,41 @@ class RemoveNoopPass(ExportPass):
         graph_module.graph.eliminate_dead_code()
 
         return PassResult(graph_module, True)
+
+    @staticmethod
+    def _should_remove_node(node: torch.fx.Node) -> bool:
+        if node.op != "call_function":
+            return False
+
+        input_meta_val = (
+            node.args[0].meta.get("val", None)
+            if len(node.args) > 0 and hasattr(node.args[0], "meta")
+            else None
+        )
+
+        if input_meta_val is not None:
+            if node.target in (
+                torch.ops.aten.to.dtype,
+                torch.ops.aten.dropout.default,
+            ):
+                return input_meta_val is node.meta["val"]
+            elif node.target == torch.ops.aten.slice_copy.Tensor:
+                # Only do this check if all the dims are static.
+                return (
+                    all(isinstance(dim, int) for dim in input_meta_val.size())
+                    and input_meta_val.shape == node.meta["val"].shape
+                )
+            elif node.target == torch.ops.aten.clone.default:
+                # Remove if memory_format=None, preserve_format, or input already has the target memory format.
+                dest_memory_format = (
+                    node.kwargs.get("memory_format", None) or torch.preserve_format
+                )
+                return (
+                    dest_memory_format == torch.preserve_format
+                    or input_meta_val.is_contiguous(memory_format=dest_memory_format)
+                )
+
+        return False
 
 
 class RemoveToCopyPass(ExportPass):
