@@ -424,12 +424,13 @@ utils::uvec3 conv1d_global_wg_size(
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
 
-  return {// out length
-          graph->size_at<uint32_t>(-1, out),
-          // out channels
-          static_cast<uint32_t>(graph->size_at<int64_t>(-2, out)),
-          // out batches
-          utils::div_up_4(graph->size_at<uint32_t>(-3, out))};
+  return {
+      // out length
+      graph->size_at<uint32_t>(-1, out),
+      // out channels
+      static_cast<uint32_t>(graph->size_at<int64_t>(-2, out)),
+      // out batches
+      utils::div_up_4(graph->size_at<uint32_t>(-3, out))};
 }
 
 void add_conv2d_node(

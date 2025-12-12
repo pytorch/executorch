@@ -69,13 +69,14 @@ ShaderLayout::ShaderLayout(
 
   uint32_t binding_num = 0u;
   for (const VkDescriptorType type : signature) {
-    bindings.emplace_back(VkDescriptorSetLayoutBinding{
-        binding_num++, // binding
-        type, // descriptorType
-        1u, // descriptorCount
-        VK_SHADER_STAGE_COMPUTE_BIT, // stageFlags
-        nullptr, // pImmutableSamplers
-    });
+    bindings.emplace_back(
+        VkDescriptorSetLayoutBinding{
+            binding_num++, // binding
+            type, // descriptorType
+            1u, // descriptorCount
+            VK_SHADER_STAGE_COMPUTE_BIT, // stageFlags
+            nullptr, // pImmutableSamplers
+        });
   }
 
   const VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info{
