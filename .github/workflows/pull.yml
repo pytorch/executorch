@@ -381,42 +381,6 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
         PYTHON_EXECUTABLE=python bash examples/xnnpack/quantization/test_quantize.sh "${BUILD_TOOL}" mv2
 
-  test-binary-size-linux-gcc:
-    name: test-binary-size-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        ./install_requirements.sh --use-pt-pinned-commit
-        # build module for executorch.extension.pybindings.portable_lib
-        bash test/build_size_test.sh
-        strip cmake-out/test/size_test
-        output=$(ls -la cmake-out/test/size_test)
-        arr=($output)
-        size=${arr[4]}
-        # threshold=48120 on devserver with gcc11.4
-        # todo(lfq): update once binary size is below 50kb.
-        threshold="63776"
-        if [[ "$size" -le "$threshold" ]]; then
-          echo "Success $size <= $threshold"
-        else
-          echo "Fail $size > $threshold"
-          exit 1
-        fi
-
   test-binary-size-linux:
     name: test-binary-size-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -424,10 +388,21 @@ jobs:
       id-token: write
       contents: read
     strategy:
+      matrix:
+        include:
+          - runner: linux.2xlarge
+            docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+            threshold: 63850 # threshold=48120 on devserver with gcc11.4 todo(lfq): update once binary size is below 50kb.
+          - runner: linux.2xlarge
+            docker-image: ci-image:executorch-ubuntu-22.04-clang12
+            threshold: 51784
+          - runner: linux.arm64.2xlarge
+            docker-image: ci-image:executorch-ubuntu-22.04-gcc11-aarch64
+            threshold: 59500
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: ${{ matrix.runner }}
+      docker-image: ${{ matrix.docker-image }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -437,14 +412,13 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         ./install_requirements.sh --use-pt-pinned-commit
-
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
         strip cmake-out/test/size_test
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
-        threshold="51752"
+        threshold="${{ matrix.threshold }}"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
