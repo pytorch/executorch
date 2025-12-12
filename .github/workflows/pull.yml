@@ -407,7 +407,7 @@ jobs:
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
-        # threshold=48120 on devserver with gcc11.4
+        # threshold=48120 on devserver with gcc9
         # todo(lfq): update once binary size is below 50kb.
         # Note: using gcc9-nopytorch container with pinned nightly PyTorch
         threshold="63776"
