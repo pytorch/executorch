@@ -15,6 +15,7 @@ class StageType(str, Enum):
     SOURCE_TRANSFORM = "source_transform"
     QUANTIZE = "quantize"
     TORCH_EXPORT = "torch_export"
+    ATEN_TRANSFORM = "aten_transform"
     TO_EDGE_TRANSFORM_AND_LOWER = "to_edge_transform_and_lower"
     TO_EDGE = "to_edge"
     EDGE_PROGRAM_MANAGER_TRANSFORM = "edge_program_manager_transform"

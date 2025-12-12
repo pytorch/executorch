@@ -22,6 +22,7 @@ from torch.fx import GraphModule
 
 from .recipe import ExportRecipe, LoweringRecipe, QuantizationRecipe
 from .stages import (
+    AtenTransformStage,
     EdgeProgramManagerTransformStage,
     EdgeTransformAndLowerStage,
     ExecutorchStage,
@@ -283,6 +284,9 @@ class ExportSession:
         if self._input_model_type != "ExportedProgram":
             stages.append(StageType.TORCH_EXPORT)
 
+        # Add aten transform stage
+        stages.append(StageType.ATEN_TRANSFORM)
+
         # Always include edge and executorch stages
         stages.extend(
             [
@@ -304,14 +308,9 @@ class ExportSession:
             elif stage_type == StageType.QUANTIZE:
                 stage = QuantizeStage(self._quant_recipe)
             elif stage_type == StageType.TORCH_EXPORT:
-                aten_transform_passes = None
-                if self._export_recipe.aten_transform_passes is not None:
-                    aten_transform_passes = list(
-                        self._export_recipe.aten_transform_passes
-                    )
-                stage = TorchExportStage(
-                    aten_transform_passes, strict=self._export_recipe.strict
-                )
+                stage = TorchExportStage(strict=self._export_recipe.strict)
+            elif stage_type == StageType.ATEN_TRANSFORM:
+                stage = AtenTransformStage.from_recipe(self._export_recipe)
             elif stage_type == StageType.TO_EDGE_TRANSFORM_AND_LOWER:
                 stage = EdgeTransformAndLowerStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_EDGE:

@@ -109,13 +109,9 @@ class TorchExportStage(Stage):
 
     def __init__(
         self,
-        aten_transform_passes: Optional[
-            List[Callable[[str, ExportedProgram], ExportedProgram]]
-        ] = None,
         strict=True,
     ) -> None:
         super().__init__()
-        self._aten_transform_passes = aten_transform_passes
         self.strict = strict
 
     @property
@@ -154,17 +150,70 @@ class TorchExportStage(Stage):
                     strict=self.strict,
                 )
 
-                # Apply pre-edge transform passes if available
-                for pass_ in self._aten_transform_passes or []:
-                    if not callable(pass_):
-                        raise ValueError(
-                            "Aten transform passes must be a callable that can transform and return an exported program"
-                        )
-                    exported_programs[method_name] = pass_(
-                        method_name, exported_programs[method_name]
-                    )
-
         self._artifact = artifact.copy_with_new_data(exported_programs)
+
+
+class AtenTransformStage(Stage):
+    """
+    Stage: Apply aten transformation passes to ExportedProgram before edge lowering.
+    """
+
+    def __init__(
+        self,
+        aten_transform_passes: Optional[
+            List[Callable[[str, ExportedProgram], ExportedProgram]]
+        ] = None,
+    ) -> None:
+        super().__init__()
+        self._aten_transform_passes = aten_transform_passes or []
+
+    @classmethod
+    def from_recipe(
+        cls, export_recipe: Optional[Any]
+    ) -> "AtenTransformStage":
+        """Create AtenTransformStage from ExportRecipe."""
+        if export_recipe is None:
+            return cls()
+
+        return cls(
+            aten_transform_passes=getattr(export_recipe, "aten_transform_passes", None),
+        )
+
+    @property
+    def stage_type(self) -> str:
+        return StageType.ATEN_TRANSFORM
+
+    @property
+    def valid_predecessor_stages(self) -> List["StageType"]:
+        return [StageType.TORCH_EXPORT]
+
+    @property
+    def can_start_pipeline(self) -> bool:
+        return True
+
+    def run(self, artifact: PipelineArtifact) -> None:
+        """
+        Apply aten transformation passes to ExportedProgram.
+
+        Args:
+            artifact: Contains exported programs and context
+        """
+        exported_programs = artifact.data
+
+        if not self._aten_transform_passes:
+            # No passes to apply, pass through
+            self._artifact = artifact
+            return
+
+        # Apply aten transform passes to each exported program
+        transformed_programs = {}
+        for method_name, ep in exported_programs.items():
+            transformed_ep = ep
+            for pass_fn in self._aten_transform_passes:
+                transformed_ep = pass_fn(method_name, transformed_ep)
+            transformed_programs[method_name] = transformed_ep
+
+        self._artifact = artifact.copy_with_new_data(transformed_programs)
 
 
 class EdgeTransformAndLowerStage(Stage):
@@ -204,7 +253,7 @@ class EdgeTransformAndLowerStage(Stage):
 
     @property
     def valid_predecessor_stages(self) -> List["StageType"]:
-        return [StageType.TORCH_EXPORT]
+        return [StageType.TORCH_EXPORT, StageType.ATEN_TRANSFORM]
 
     @property
     def can_start_pipeline(self) -> bool:
@@ -475,7 +524,7 @@ class ToEdgeStage(Stage):
 
     @property
     def valid_predecessor_stages(self) -> List["StageType"]:
-        return [StageType.TORCH_EXPORT]
+        return [StageType.TORCH_EXPORT, StageType.ATEN_TRANSFORM]
 
     @property
     def can_start_pipeline(self) -> bool:

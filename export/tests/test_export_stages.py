@@ -13,6 +13,7 @@ import torch
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
 from executorch.export import AOQuantizationConfig, QuantizationRecipe, StageType
 from executorch.export.stages import (
+    AtenTransformStage,
     EdgeTransformAndLowerStage,
     ExecutorchStage,
     PipelineArtifact,
@@ -98,66 +99,6 @@ class TestTorchExportStage(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             stage.get_artifacts()
         self.assertIn("Stage: TorchExportStage not executed", str(cm.exception))
-
-    @patch("torch.export.export")
-    def test_export_stage_with_aten_transform_passes(
-        self, mock_torch_export: Mock
-    ) -> None:
-        """Test TorchExportStage with aten_transform_passes."""
-        mock_exported_program = Mock(spec=ExportedProgram)
-        mock_transformed_program = Mock(spec=ExportedProgram)
-        mock_torch_export.return_value = mock_exported_program
-
-        # Create a mock aten transform pass that we can verify
-        mock_aten_transform_pass = Mock()
-        mock_aten_transform_pass.return_value = mock_transformed_program
-        aten_transform_passes = [mock_aten_transform_pass]
-
-        stage = TorchExportStage(aten_transform_passes=aten_transform_passes)
-        artifact = PipelineArtifact(data=self.models_dict, context=self.context)
-
-        stage.run(artifact)
-
-        # Verify torch.export.export was called
-        mock_torch_export.assert_called_once_with(
-            self.model,
-            self.example_inputs[0],
-            dynamic_shapes=None,
-            strict=True,
-        )
-
-        # Verify the aten transform pass was called with correct parameters
-        mock_aten_transform_pass.assert_called_once_with(
-            "forward", mock_exported_program
-        )
-
-        # Verify artifacts contain the transformed program
-        result_artifact = stage.get_artifacts()
-        self.assertIn("forward", result_artifact.data)
-        self.assertEqual(result_artifact.data["forward"], mock_transformed_program)
-
-    @patch("torch.export.export")
-    def test_export_stage_invalid_aten_transform_pass(
-        self, mock_torch_export: Mock
-    ) -> None:
-        """Test TorchExportStage with invalid aten_transform_pass (not callable)."""
-        mock_exported_program = Mock(spec=ExportedProgram)
-        mock_torch_export.return_value = mock_exported_program
-
-        # Use a non-callable object as transform pass
-        invalid_transform_pass = "not_callable"
-        aten_transform_passes = [invalid_transform_pass]
-
-        # pyre-ignore
-        stage = TorchExportStage(aten_transform_passes=aten_transform_passes)
-        artifact = PipelineArtifact(data=self.models_dict, context=self.context)
-
-        with self.assertRaises(ValueError) as cm:
-            stage.run(artifact)
-        self.assertIn(
-            "Aten transform passes must be a callable that can transform and return an exported program",
-            str(cm.exception),
-        )
 
 
 class TestEdgeTransformAndLowerStage(unittest.TestCase):
@@ -532,3 +473,146 @@ class TestToBackendStage(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             stage.run(artifact)
         self.assertIn("Edge program manager is not set", str(cm.exception))
+
+
+class TestAtenTransformStage(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mock_exported_program = Mock(spec=ExportedProgram)
+        self.exported_programs = {"forward": self.mock_exported_program}
+        self.context = {}
+
+    def test_stage_properties(self) -> None:
+        """Test that AtenTransformStage has correct properties."""
+        stage = AtenTransformStage()
+
+        self.assertEqual(stage.stage_type, StageType.ATEN_TRANSFORM)
+        self.assertEqual(stage.valid_predecessor_stages, [StageType.TORCH_EXPORT])
+        self.assertTrue(stage.can_start_pipeline)
+
+    def test_run_no_passes_passthrough(self) -> None:
+        """Test that stage passes through when no aten_transform_passes are configured."""
+        stage = AtenTransformStage()
+        artifact = PipelineArtifact(data=self.exported_programs, context=self.context)
+
+        stage.run(artifact)
+
+        result_artifact = stage.get_artifacts()
+        # Should pass through the same artifact unchanged
+        self.assertEqual(result_artifact, artifact)
+
+    def test_run_with_empty_passes_list(self) -> None:
+        """Test that stage passes through when aten_transform_passes is empty list."""
+        stage = AtenTransformStage(aten_transform_passes=[])
+        artifact = PipelineArtifact(data=self.exported_programs, context=self.context)
+
+        stage.run(artifact)
+
+        result_artifact = stage.get_artifacts()
+        # Should pass through the same artifact unchanged
+        self.assertEqual(result_artifact, artifact)
+
+    def test_run_with_single_pass(self) -> None:
+        """Test that stage applies a single aten_transform_pass correctly."""
+        mock_transformed_program = Mock(spec=ExportedProgram)
+
+        # Create a mock pass function
+        mock_pass = Mock()
+        mock_pass.return_value = mock_transformed_program
+
+        stage = AtenTransformStage(aten_transform_passes=[mock_pass])
+        artifact = PipelineArtifact(data=self.exported_programs, context=self.context)
+
+        stage.run(artifact)
+
+        # Verify the pass was called with correct arguments
+        mock_pass.assert_called_once_with("forward", self.mock_exported_program)
+
+        # Verify artifacts contain the transformed program
+        result_artifact = stage.get_artifacts()
+        self.assertIn("forward", result_artifact.data)
+        self.assertEqual(result_artifact.data["forward"], mock_transformed_program)
+
+    def test_run_with_multiple_passes(self) -> None:
+        """Test that stage applies multiple aten_transform_passes in order."""
+        mock_intermediate_program = Mock(spec=ExportedProgram)
+        mock_final_program = Mock(spec=ExportedProgram)
+
+        # Create mock pass functions
+        mock_pass1 = Mock()
+        mock_pass1.return_value = mock_intermediate_program
+        mock_pass2 = Mock()
+        mock_pass2.return_value = mock_final_program
+
+        stage = AtenTransformStage(aten_transform_passes=[mock_pass1, mock_pass2])
+        artifact = PipelineArtifact(data=self.exported_programs, context=self.context)
+
+        stage.run(artifact)
+
+        # Verify first pass was called with original program
+        mock_pass1.assert_called_once_with("forward", self.mock_exported_program)
+        # Verify second pass was called with result of first pass
+        mock_pass2.assert_called_once_with("forward", mock_intermediate_program)
+
+        # Verify artifacts contain the final transformed program
+        result_artifact = stage.get_artifacts()
+        self.assertIn("forward", result_artifact.data)
+        self.assertEqual(result_artifact.data["forward"], mock_final_program)
+
+    def test_run_with_multiple_methods(self) -> None:
+        """Test that stage applies passes to all methods."""
+        mock_program1 = Mock(spec=ExportedProgram)
+        mock_program2 = Mock(spec=ExportedProgram)
+        mock_transformed1 = Mock(spec=ExportedProgram)
+        mock_transformed2 = Mock(spec=ExportedProgram)
+
+        exported_programs = {"forward": mock_program1, "encode": mock_program2}
+
+        # Create mock pass function that returns different results
+        mock_pass = Mock(side_effect=[mock_transformed1, mock_transformed2])
+
+        stage = AtenTransformStage(aten_transform_passes=[mock_pass])
+        artifact = PipelineArtifact(data=exported_programs, context=self.context)
+
+        stage.run(artifact)
+
+        # Verify the pass was called for each method
+        self.assertEqual(mock_pass.call_count, 2)
+
+        # Verify artifacts contain all transformed programs
+        result_artifact = stage.get_artifacts()
+        self.assertEqual(len(result_artifact.data), 2)
+
+    def test_from_recipe_with_none(self) -> None:
+        """Test from_recipe with None recipe."""
+        stage = AtenTransformStage.from_recipe(None)
+
+        self.assertIsInstance(stage, AtenTransformStage)
+        self.assertEqual(stage._aten_transform_passes, [])
+
+    def test_from_recipe_with_recipe(self) -> None:
+        """Test from_recipe with recipe containing aten_transform_passes."""
+        mock_pass = Mock()
+        mock_recipe = Mock()
+        mock_recipe.aten_transform_passes = [mock_pass]
+
+        stage = AtenTransformStage.from_recipe(mock_recipe)
+
+        self.assertIsInstance(stage, AtenTransformStage)
+        self.assertEqual(stage._aten_transform_passes, [mock_pass])
+
+    def test_from_recipe_without_aten_transform_passes_attr(self) -> None:
+        """Test from_recipe with recipe that doesn't have aten_transform_passes attribute."""
+        mock_recipe = Mock(spec=[])  # Empty spec means no attributes
+
+        stage = AtenTransformStage.from_recipe(mock_recipe)
+
+        self.assertIsInstance(stage, AtenTransformStage)
+        self.assertEqual(stage._aten_transform_passes, [])
+
+    def test_get_artifacts_before_run(self) -> None:
+        """Test error when getting artifacts before running stage."""
+        stage = AtenTransformStage()
+
+        with self.assertRaises(RuntimeError) as cm:
+            stage.get_artifacts()
+        self.assertIn("Stage: AtenTransformStage not executed", str(cm.exception))

@@ -59,8 +59,11 @@ class TestExportSessionCoreFlow(unittest.TestCase):
                 StageType.QUANTIZE,
             ]
             mock_stage.can_start_pipeline = True
-        elif stage_type == StageType.TO_EDGE_TRANSFORM_AND_LOWER:
+        elif stage_type == StageType.ATEN_TRANSFORM:
             mock_stage.valid_predecessor_stages = [StageType.TORCH_EXPORT]
+            mock_stage.can_start_pipeline = True
+        elif stage_type == StageType.TO_EDGE_TRANSFORM_AND_LOWER:
+            mock_stage.valid_predecessor_stages = [StageType.TORCH_EXPORT, StageType.ATEN_TRANSFORM]
             mock_stage.can_start_pipeline = True
         elif stage_type == StageType.TO_EXECUTORCH:
             mock_stage.valid_predecessor_stages = [
@@ -80,6 +83,7 @@ class TestExportSessionCoreFlow(unittest.TestCase):
             StageType.SOURCE_TRANSFORM,
             StageType.QUANTIZE,
             StageType.TORCH_EXPORT,
+            StageType.ATEN_TRANSFORM,
             StageType.TO_EDGE_TRANSFORM_AND_LOWER,
             StageType.TO_EXECUTORCH,
         ]
@@ -104,7 +108,7 @@ class TestExportSessionCoreFlow(unittest.TestCase):
             stage.run.assert_called_once()
 
         # Verify artifacts were stored for each stage
-        self.assertEqual(len(session._stage_to_artifacts), 5)
+        self.assertEqual(len(session._stage_to_artifacts), 6)
         self.assertEqual(set(session._stage_to_artifacts.keys()), set(stage_types))
 
     def test_overriden_pipeline_execution_order(self) -> None:
@@ -490,11 +494,12 @@ class TestExportSessionPipelineBuilding(unittest.TestCase):
 
         registered_stages = session.get_all_registered_stages()
 
-        self.assertEqual(len(registered_stages), 5)
+        self.assertEqual(len(registered_stages), 6)
         expected_types = [
             StageType.SOURCE_TRANSFORM,
             StageType.QUANTIZE,
             StageType.TORCH_EXPORT,
+            StageType.ATEN_TRANSFORM,
             StageType.TO_EDGE_TRANSFORM_AND_LOWER,
             StageType.TO_EXECUTORCH,
         ]
