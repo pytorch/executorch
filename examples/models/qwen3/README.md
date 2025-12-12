@@ -51,7 +51,7 @@ python -m examples.models.llama.runner.native \
   --tokenizer ~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/a9c98e602b9d36d2a2f7ba1eb0f5f31e4e8e5143/tokenizer.json \
   --tokenizer_config ~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/a9c98e602b9d36d2a2f7ba1eb0f5f31e4e8e5143/tokenizer_config.json \
   --prompt "Who is the president of the US?" \
-  --params examples/models/qwen3/0_6b_config.json \
+  --params examples/models/qwen3/config/0_6b_config.json \
   --max_len 128 \
   -kv \
   --temperature 0.6
