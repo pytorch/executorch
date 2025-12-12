@@ -86,6 +86,63 @@ bool is_channels_last_dim_order(
   return true;
 }
 
+/**
+ * Determines whether a tensor can be interpreted as both channels_last and
+ * contiguous memory formats without any issues in memory access.
+ *
+ * When certain dimensions are of size 1, the stride along those dimensions
+ * doesn't impact the memory layout, making the tensor's data layout effectively
+ * the same in both memory formats.
+ *
+ * Specifically, if the tensor's shape satisfies certain conditions (e.g., the
+ * channel dimension C is 1, or both spatial dimensions H and W are 1), the
+ * tensor can be safely interpreted under both memory formats without causing
+ * inconsistencies in memory access.
+ *
+ * Note:
+ * This is a temporary function because the current dim_order cannot explicitly
+ * specify the correct memory format's dimension order. Once we resolve the
+ * ambiguous dimension order issue, this check will be removed.
+ *
+ * @param[in] shape A pointer to an array representing the tensor's shape.
+ * @param[in] dim The number of dimensions (length of the shape array).
+ * @return True if the tensor can be interpreted as both formats without memory
+ * access issues; False otherwise.
+ */
+template <typename SizesType>
+bool can_be_interpreted_as_channels_last_and_contiguous(
+    const SizesType* shape,
+    const size_t dim) {
+  // Check if the tensor is 4-dimensional
+  if (dim != 4) {
+    return false;
+  }
+
+  // Extract dimensions: N (batch size), C (channels), H (height), W (width)
+  size_t C = shape[1];
+  size_t H = shape[2];
+  size_t W = shape[3];
+
+  // Condition 1: If the number of channels C is 1
+  if (C == 1) {
+    return true;
+  }
+
+  // Condition 2: If both spatial dimensions H and W are 1
+  if (H == 1 && W == 1) {
+    return true;
+  }
+
+  // Condition 3: If either H or W is 1, and C is also 1
+  if ((H == 1 || W == 1) && C == 1) {
+    return true;
+  }
+
+  // If none of the above conditions are met, it cannot be interpreted as both
+  // formats
+  return false;
+}
+
 /*
  * This utility translated sizes to strides by using dimension order
  * information. Dimension order specifies how the dimensions are laid out in the
