@@ -40,7 +40,7 @@ from executorch.backends.arm._passes import (
     DecomposeAtanPass,
     DecomposeAvgPool2dPass,
     DecomposeBatchNormNoStatsPass,
-    DecomposeConv2dWithInt16ActivationPass,
+    DecomposeConvWithInt16ActivationPass,
     DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
     DecomposeCumsumPass,
@@ -101,7 +101,7 @@ from executorch.backends.arm._passes import (
     RemoveNoopPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
-    RewriteConv2dPass,
+    RewriteConvPass,
     RewriteMatmulPass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
@@ -277,7 +277,7 @@ class ArmPassManager(PassManager):
                 BroadcastArgsPass(),
                 ConvertPermuteSingletonToViewPass(),
                 FuseViewCopyTransformPass(),
-                DecomposeConv2dWithInt16ActivationPass(),
+                DecomposeConvWithInt16ActivationPass(),
                 DecomposeSumPass(),
                 InsertTableOpsPass(exported_program),
             ]
@@ -287,7 +287,7 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 RewriteUpsamplePass(),
-                RewriteConv2dPass(exported_program),
+                RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
             ]
         )
