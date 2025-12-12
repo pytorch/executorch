@@ -207,6 +207,14 @@ class ConvertToCortexMPass(XNNPACKPass):
             output_channels = weight_tensor.shape[0]
             input_channels = groups  # For depthwise, groups == input_channels
 
+            # CMSIS-NN depthwise convolution only supports batch size of 1
+            input_tensor = get_first_fake_tensor(x)
+            batch_size = input_tensor.shape[0]
+            if batch_size != 1:
+                raise ValueError(
+                    f"Depthwise conv: CMSIS-NN only supports batch size 1, got {batch_size}"
+                )
+
             if output_channels % input_channels != 0:
                 raise ValueError(
                     f"Depthwise conv: output_channels ({output_channels}) must be "

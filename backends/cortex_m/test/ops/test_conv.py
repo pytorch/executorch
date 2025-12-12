@@ -238,7 +238,7 @@ test_cases = {
     "depthwise_conv2d_stride": McuTestCase(
         model=CortexMDepthwiseConv2D(4, 4, 3, stride=2, groups=4),
         example_inputs=(
-            ramp_tensor(-50, 50, (2, 4, 8, 8)).to(memory_format=torch.channels_last),
+            ramp_tensor(-50, 50, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
     "depthwise_conv2d_padding": McuTestCase(
@@ -251,6 +251,42 @@ test_cases = {
         model=CortexMDepthwiseConv2DBias(3, 3, 3, padding=1, groups=3),
         example_inputs=(
             ramp_tensor(-10, 10, (1, 3, 6, 6)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "depthwise_conv2d_stride_padding_bias": McuTestCase(
+        model=CortexMDepthwiseConv2DBias(4, 4, 3, stride=2, padding=1, groups=4),
+        example_inputs=(
+            ramp_tensor(0, 5, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "depthwise_conv2d_1x1": McuTestCase(
+        model=CortexMDepthwiseConv2D(4, 8, 1, groups=4),
+        example_inputs=(
+            ramp_tensor(0, 10, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "depthwise_conv2d_multiplier_4": McuTestCase(
+        model=CortexMDepthwiseConv2D(2, 8, 3, groups=2),
+        example_inputs=(
+            ramp_tensor(0, 10, (1, 2, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "depthwise_conv2d_asymmetric_kernel": McuTestCase(
+        model=CortexMDepthwiseConv2D(4, 4, (1, 3), groups=4),
+        example_inputs=(
+            ramp_tensor(0, 10, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "depthwise_conv2d_asymmetric_stride": McuTestCase(
+        model=CortexMDepthwiseConv2D(3, 3, 3, stride=(2, 1), padding=(1, 0), groups=3),
+        example_inputs=(
+            ramp_tensor(0, 10, (1, 3, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "depthwise_conv2d_5x5": McuTestCase(
+        model=CortexMDepthwiseConv2D(4, 4, 5, padding=2, groups=4),
+        example_inputs=(
+            ramp_tensor(0, 10, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
 }
