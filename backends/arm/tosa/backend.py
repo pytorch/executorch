@@ -288,7 +288,7 @@ class TOSABackend(BackendDetails):
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
 
-        graph_module = ArmPassManager(tosa_spec).transform_to_backend_pipeline(  # type: ignore
+        graph_module = ArmPassManager(compile_spec).transform_to_backend_pipeline(  # type: ignore
             exported_program=edge_program, graph_module=graph_module
         )
 
@@ -377,9 +377,14 @@ class TOSABackend(BackendDetails):
             ``TOSABackend.preprocess``.
 
         """
+
+        pipeline_config = compile_spec.get_pass_pipeline_config()
+        tosa_compile_spec = TosaCompileSpec(compile_spec.tosa_spec)
+        tosa_compile_spec.set_pass_pipeline_config(pipeline_config)
         return (
-            TosaCompileSpec(compile_spec.tosa_spec)
-            .dump_intermediate_artifacts_to(compile_spec.get_intermediate_path())
+            tosa_compile_spec.dump_intermediate_artifacts_to(
+                compile_spec.get_intermediate_path()
+            )
             .dump_debug_info(compile_spec.tosa_debug_mode)
             .set_output_order_workaround(compile_spec.output_order_workaround)
         )

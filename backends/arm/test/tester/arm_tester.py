@@ -204,7 +204,6 @@ class ToExecutorch(tester.ToExecutorch):
 
 
 class RunPasses(tester.RunPasses):
-
     @no_type_check
     def __init__(
         self,
@@ -868,7 +867,7 @@ class ArmTester(Tester):
         artifact = self.get_artifact(stage)
         if self.cur == StageType.EXPORT:
             new_gm = ArmPassManager(
-                self.compile_spec.tosa_spec
+                self.compile_spec
             ).transform_for_annotation_pipeline(graph_module=artifact.graph_module)
         else:
             raise RuntimeError("Can only run passes on Export stage.")
