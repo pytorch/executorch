@@ -722,6 +722,32 @@ def create_exported_program_from_submodule(
     in_spec = pytree.tree_flatten((tuple(subgraph_signature.user_inputs), {}))[1]
     out_spec = pytree.tree_flatten(subgraph_signature.user_outputs)[1]
 
+    # Check if the partitioned graph's input signature matches the original graph's input signature
+    def _inputs_match_original(
+        subgraph_signature: ExportGraphSignature, owning_program: ExportedProgram
+    ) -> bool:
+        """
+        Check if the subgraph's user inputs match the original program's user inputs.
+        This is more robust than just checking if it's the first partition.
+        """
+        # Get user input specs from both signatures
+        subgraph_user_inputs = subgraph_signature.user_inputs
+        original_user_inputs = owning_program.graph_signature.user_inputs
+
+        # If the number of user inputs doesn't match, they're different
+        if len(subgraph_user_inputs) != len(original_user_inputs):
+            return False
+
+        # Check if each user input name matches
+        return subgraph_user_inputs == original_user_inputs
+
+    # Use example inputs from the original program only if the input signatures match
+    submodule_exmaple_inputs = (
+        owning_program.example_inputs
+        if _inputs_match_original(subgraph_signature, owning_program)
+        else None
+    )
+
     return (
         ExportedProgram(
             root=submodule,
@@ -737,6 +763,7 @@ def create_exported_program_from_submodule(
                     ),
                 )
             ],
+            example_inputs=submodule_exmaple_inputs,
             constants=subgraph_constants,
             verifiers=[owning_program.verifier],
         ),
