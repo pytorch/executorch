@@ -143,7 +143,7 @@ def test_full_tosa_INT(test_data: Tuple):
 
 
 @common.SkipIfNoModelConverter
-def test_full_only_vgf_no_quant():
+def test_full_vgf_no_quant_only():
     pipeline = VgfPipeline[input_t1](
         Full(),
         (),
@@ -155,7 +155,7 @@ def test_full_only_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_full_const_vgf_no_quant():
+def test_full_vgf_no_quant_const():
     test_data = (torch.rand((2, 2, 3, 3)) * 10,)
     pipeline = VgfPipeline[input_t1](
         AddConstFull(),

@@ -211,7 +211,7 @@ test_data_suite_exact = {
     test_data_suite_exact,
 )
 @common.XfailIfNoCorstone300
-def test_permute_16a8w_u55_INT16(test_data: torch.Tensor):
+def test_permute_16a8w_u55_INT(test_data: torch.Tensor):
     """Test permute operation with int16 quantization on U55"""
     test_data, dims = test_data()
     pipeline = EthosU55PipelineINT[input_t1](
@@ -235,7 +235,7 @@ def test_permute_16a8w_u55_INT16(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_permute_16a8w_u85_INT16(test_data: torch.Tensor):
+def test_permute_16a8w_u85_INT(test_data: torch.Tensor):
     """Test permute operation with int16 quantization on U85"""
     test_data, dims = test_data()
     pipeline = EthosU85PipelineINT[input_t1](

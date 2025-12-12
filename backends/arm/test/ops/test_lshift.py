@@ -74,7 +74,7 @@ class LshiftTensor(torch.nn.Module):
 
 
 @common.parametrize("test_data", LshiftScalar.test_data)
-def test_bitwise_left_shift_scalar_tosa_FP_scalar(test_data):
+def test_bitwise_left_shift_scalar_tosa_FP(test_data):
     TosaPipelineFP[scalar_input_t](
         LshiftScalar(),
         test_data,
@@ -84,7 +84,7 @@ def test_bitwise_left_shift_scalar_tosa_FP_scalar(test_data):
 
 
 @common.parametrize("test_data", LshiftScalar.test_data)
-def test_bitwise_left_shift_tensor_tosa_INT_scalar(test_data):
+def test_bitwise_left_shift_scalar_tosa_INT(test_data):
     pipeline = TosaPipelineINT[scalar_input_t](
         LshiftScalar(),
         test_data,
@@ -96,7 +96,7 @@ def test_bitwise_left_shift_tensor_tosa_INT_scalar(test_data):
 
 @common.parametrize("test_data", LshiftScalar.test_data)
 @XfailIfNoCorstone300
-def test_bitwise_left_shift_tensor_u55_INT_scalar(test_data):
+def test_bitwise_left_shift_scalar_u55_INT(test_data):
     pipeline = EthosU55PipelineINT[scalar_input_t](
         LshiftScalar(),
         test_data,
@@ -108,7 +108,7 @@ def test_bitwise_left_shift_tensor_u55_INT_scalar(test_data):
 
 @common.parametrize("test_data", LshiftScalar.test_data)
 @XfailIfNoCorstone320
-def test_bitwise_left_shift_tensor_u85_INT_scalar(test_data):
+def test_bitwise_left_shift_scalar_u85_INT(test_data):
     pipeline = EthosU85PipelineINT[scalar_input_t](
         LshiftScalar(),
         test_data,
@@ -120,7 +120,7 @@ def test_bitwise_left_shift_tensor_u85_INT_scalar(test_data):
 
 @common.parametrize("test_data", LshiftScalar.test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_left_shift_scalar_scalar_vgf_no_quant(test_data: scalar_input_t):
+def test_bitwise_left_shift_scalar_vgf_no_quant(test_data: scalar_input_t):
     pipeline = VgfPipeline[scalar_input_t](
         LshiftScalar(),
         test_data,
@@ -133,7 +133,7 @@ def test_bitwise_left_shift_scalar_scalar_vgf_no_quant(test_data: scalar_input_t
 
 @common.parametrize("test_data", LshiftScalar.test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_left_shift_tensor_scalar_vgf_quant(test_data: scalar_input_t):
+def test_bitwise_left_shift_scalar_vgf_quant(test_data: scalar_input_t):
     pipeline = VgfPipeline[scalar_input_t](
         LshiftScalar(),
         test_data,
