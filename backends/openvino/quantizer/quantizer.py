@@ -87,7 +87,7 @@ class OpenVINOQuantizer(Quantizer):
         QuantizationMode.INT8WO_SYM: "int8_sym",
         QuantizationMode.INT8WO_ASYM: "int8_asym",
     }
-
+    
     def __init__(
         self,
         *,
@@ -126,25 +126,26 @@ class OpenVINOQuantizer(Quantizer):
                 **kwargs,
             )
             weight_compression_configuration["subset_size"] = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
+
+            self._backup_mode =  self._algo._backup_mode
             self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
                 **weight_compression_configuration
             )
 
-    def get_quantizer_specific_internal_algo_config(self) -> Dict[str, Any]:
+    def get_weights_compression_config(self) -> Dict[str, Any]:
         """
         Returns the config attributes like all_layers, group_size, backup_mode and Quantization mode
         from the quantizer's internal algorithm. These attributes are defined when initializing the quantizer
         and is used by the compress pt2e's experimental algorithm.
-        
+
         :return: A dictionary containing elements which are defined in the quantizer and their value from the
         internal algorithm.
         """
-        algo_config = self._algo.get_config()
         quantizer_initialized_algo_attributes = {
-            "mode": algo_config.get("mode"),
-            "group_size": algo_config.get("group_size"),
-            "all_layers": algo_config.get("all_layers"),
-            "backup_mode": algo_config.get("backup_mode"),
+            "mode": self._algo.mode,
+            "group_size": self._algo.group_size,
+            "all_layers": self._algo.all_layers,
+            "backup_mode": self._algo.backup_mode,
         }
 
         return quantizer_initialized_algo_attributes
