@@ -129,7 +129,6 @@ class BasePipelineMaker(Generic[T]):
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
     ):
-
         self.tester = ArmTester(
             module,
             example_inputs=test_data,
@@ -314,7 +313,6 @@ class BasePipelineMaker(Generic[T]):
 
 
 class TOSAPipelineMaker(BasePipelineMaker, Generic[T]):
-
     @staticmethod
     def is_tosa_ref_model_available():
         """Checks if the TOSA reference model is available."""
@@ -992,7 +990,10 @@ class OpNotSupportedPipeline(TOSAPipelineMaker, Generic[T]):
 
         tosa_spec = tosa_profiles[tosa_version]
 
-        compile_spec = common.get_tosa_compile_spec(tosa_spec, custom_path=custom_path)
+        compile_spec: ArmCompileSpec = common.get_tosa_compile_spec(
+            tosa_spec,
+            custom_path=custom_path,
+        )
         super().__init__(
             module,
             test_data,
@@ -1063,7 +1064,6 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
         ] = None,
         tosa_extensions: Optional[List[str]] = None,
     ):
-
         if tosa_extensions is None:
             tosa_extensions = []
         tosa_spec = TosaSpecification.create_from_string(
