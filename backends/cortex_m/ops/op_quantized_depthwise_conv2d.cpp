@@ -39,6 +39,16 @@ bool validate_depthwise_conv2d_arguments(
     return false;
   }
 
+  // CMSIS-NN depthwise convolution only supports batch size of 1
+  if (input.size(0) != 1) {
+    ET_LOG(
+        Error,
+        "quantized_depthwise_conv2d_out: CMSIS-NN only supports batch size 1, got %zd",
+        input.size(0));
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+
   // Validate weight is in IHWO layout: [1, H, W, C_OUT]
   if (weight.size(0) != 1) {
     ET_LOG(
