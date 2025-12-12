@@ -1863,8 +1863,11 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Apply replacement pass.
         p = ReplaceConvWithChannelLastConvPass()
         original = copy.deepcopy(gm)
-        gm_after_replacement = p.call(gm).graph_module
-        # Check that no replacement was made.
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        gm_after_replacement = result.graph_module
+
+        # Check that replacement was made.
         self.assertEqual(
             count_node(
                 gm_after_replacement,
@@ -1877,9 +1880,11 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
             3,
         )
+
+        # Validate numerical accuracy
         validate(
-            gm_after_replacement,
             original,
+            gm_after_replacement,
             placeholders,
             "ReplaceConvWithChannelLastConvPass",
         )
@@ -1933,14 +1938,23 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
     def test_slice_no_transpose_if_already_outermost(self) -> None:
         # Create a graph with a single slice node.
+        x = torch.randn(3, 224, 224)
         gm = self.create_slice_graph((3, 224, 224), 0, 1, 2)
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.slice_copy.Tensor), 1)
 
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = MakeSliceAndCatDimOutermostPass()
-        gm_after_pass = cast(PassResult, p(gm)).graph_module
+        result = cast(PassResult, p(gm))
+        self.assertFalse(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(original, gm_after_pass, [x], "MakeSliceAndCatDimOutermostPass")
 
         # Assert that no transpose ops were added.
         self.assertEqual(
@@ -1950,14 +1964,23 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
     def test_slice_no_transpose_if_outermost_dimensions_are_one(self) -> None:
         # Create a graph with a single slice node on second outermost dimension.
+        x = torch.randn(1, 3, 4, 6)
         gm = self.create_slice_graph((1, 3, 4, 6), 1, 1, 2)
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.slice_copy.Tensor), 1)
 
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = MakeSliceAndCatDimOutermostPass()
-        gm_after_pass = cast(PassResult, p(gm)).graph_module
+        result = cast(PassResult, p(gm))
+        self.assertFalse(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(original, gm_after_pass, [x], "MakeSliceAndCatDimOutermostPass")
 
         # Assert that no transpose ops were added. The slice is on the second
         # outermost dimension, but the outermost dimension is already 1.
@@ -1968,14 +1991,23 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
     def test_slice_insert_transpose(self) -> None:
         # Create a graph with a single slice node.
+        x = torch.randn(1, 3, 4, 6)
         gm = self.create_slice_graph((1, 3, 4, 6), 2, 1, 2)
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.slice_copy.Tensor), 1)
 
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = MakeSliceAndCatDimOutermostPass()
-        gm_after_pass = cast(PassResult, p(gm)).graph_module
+        result = cast(PassResult, p(gm))
+        self.assertTrue(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(original, gm_after_pass, [x], "MakeSliceAndCatDimOutermostPass")
 
         # Assert that there are two transpose ops added.
         self.assertEqual(
@@ -1997,14 +2029,26 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
     def test_cat_no_transpose_if_already_outermost(self) -> None:
         # Create a graph with a single slice node on second outermost dimension.
+        input1 = torch.randn(1, 3, 5)
+        input2 = torch.randn(2, 3, 5)
         gm = self.create_cat_graph(input_shapes=((1, 3, 5), (2, 3, 5)), cat_dim=0)
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
 
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = MakeSliceAndCatDimOutermostPass()
-        gm_after_pass = cast(PassResult, p(gm)).graph_module
+        result = cast(PassResult, p(gm))
+        self.assertFalse(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(
+            original, gm_after_pass, [input1, input2], "MakeSliceAndCatDimOutermostPass"
+        )
 
         # Assert that no transpose ops were added. The slice is on the second
         # outermost dimension, but the outermost dimension is already 1.
@@ -2015,14 +2059,26 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
     def test_cat_no_transpose_if_outermost_dimensions_are_one(self) -> None:
         # Create a graph with a single slice node on second outermost dimension.
+        input1 = torch.randn(1, 1, 3, 5)
+        input2 = torch.randn(1, 2, 3, 5)
         gm = self.create_cat_graph(input_shapes=((1, 1, 3, 5), (1, 2, 3, 5)), cat_dim=1)
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
 
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = MakeSliceAndCatDimOutermostPass()
-        gm_after_pass = cast(PassResult, p(gm)).graph_module
+        result = cast(PassResult, p(gm))
+        self.assertFalse(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(
+            original, gm_after_pass, [input1, input2], "MakeSliceAndCatDimOutermostPass"
+        )
 
         # Assert that no transpose ops were added. The slice is on the second
         # outermost dimension, but the outermost dimension is already 1.
@@ -2033,6 +2089,8 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
     def test_cat_insert_transpose(self) -> None:
         # Create a graph with a single slice node on second outermost dimension.
+        input1 = torch.randn(1, 1, 3, 5)
+        input2 = torch.randn(1, 1, 3, 3)
         gm = self.create_cat_graph(
             input_shapes=((1, 1, 3, 5), (1, 1, 3, 3)), cat_dim=-1
         )
@@ -2040,9 +2098,19 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
 
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = MakeSliceAndCatDimOutermostPass()
-        gm_after_pass = cast(PassResult, p(gm)).graph_module
+        result = cast(PassResult, p(gm))
+        self.assertTrue(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(
+            original, gm_after_pass, [input1, input2], "MakeSliceAndCatDimOutermostPass"
+        )
 
         # Assert that transpose ops were added to make cat on outermost dimension.
         self.assertEqual(
