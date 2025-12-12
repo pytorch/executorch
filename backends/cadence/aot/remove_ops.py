@@ -38,7 +38,7 @@ from torch.fx.node import Argument, Node
 class RemoveCloneOpsTransformImported(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         finalize_passes: List[PassType] = [
-            RemoveCloneOpsTransform(),
+            RemoveCloneOpsTransform(eliminate_quant_dequant_pairs=False),
         ]
         result = PassManager(passes=finalize_passes)(graph_module)
         dead_code_elimination_pass(result.graph_module)
@@ -354,20 +354,6 @@ class RemoveNopSelectOpPass(ExportPass):
         result = super().call(result.graph_module)
         self.eliminate_nop_select_op(result.graph_module)
         return result
-
-
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
-class RemoveCloneOpPass(RemoveOrReplacePassInterface):
-    # If the op is a clone op, return the input and eliminate the op
-    @property
-    def targets(self) -> list[EdgeOpOverload]:
-        return [exir_ops.edge.aten.clone.default]
-
-    def maybe_remove_or_replace(self, node: Node) -> bool:
-        input_node = node.args[0]
-        assert isinstance(input_node, Node)
-        node.replace_all_uses_with(input_node)
-        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -925,7 +911,6 @@ class RemoveCatFromSliceCopyPass(RemoveOrReplacePassInterface):
 
 class CommonRemovePasses:
     passes: List[Type[ExportPass]] = [
-        RemoveCloneOpPass,
         RemoveAliasCopyOpPass,
         RemoveNopExpandOpPass,
         RemoveNopSliceOrViewOpPass,
@@ -934,13 +919,13 @@ class CommonRemovePasses:
         RemovePermutesAroundElementwiseOps,
         RemoveSqueezeViewBeforeElementwiseOps,
         RemoveCatFromSliceCopyPass,
+        RemoveCloneOpsTransformImported,
     ]
 
 
 class CadenceRemoveNops:
     passes: List[Type[ExportPass]] = CommonRemovePasses.passes + [
         SimplifySliceOpPass,
-        RemoveCloneOpsTransformImported,
         RemoveNopRequantizeOpPass,
         RemoveZeroSizedConstantPadNd,
         RemoveContiguousOpPass,
