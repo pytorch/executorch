@@ -7,6 +7,7 @@ wraps a bundled `.pte` program and optional `.ptd` weight file, loads the
 streams decoded text pieces through a callback.
 
 The runner assumes:
+
 - `model.pte` contains both Whisper encoder and decoder entry points named
   `encoder` and `text_decoder`.
 - (Optional) Depending on export configurations, model weights can be optionally stored in a companion
@@ -23,16 +24,19 @@ module to generate the spectrogram tensor.
 Currently we have CUDA and Metal build support.
 
 For CPU:
+
 ```
 make whisper-cpu
 ```
 
 For CUDA:
+
 ```
 make whisper-cuda
 ```
 
 For Metal:
+
 ```
 make whisper-metal
 ```
@@ -56,6 +60,7 @@ optimum-cli export executorch \
 ```
 
 This command generates:
+
 - `model.pte` — Compiled Whisper model
 - `aoti_cuda_blob.ptd` — Weight data file for CUDA backend
 
@@ -71,6 +76,7 @@ optimum-cli export executorch \
 ```
 
 This command generates:
+
 - `model.pte` — Compiled Whisper model
 - `aoti_metal_blob.ptd` — Weight data file for Metal backend
 
@@ -106,12 +112,12 @@ optimum-cli export executorch \
     --output_dir ./
 ```
 
-
 ### Download Tokenizer
 
 Download the tokenizer files required for inference according to your model version:
 
 **For Whisper Small:**
+
 ```bash
 curl -L https://huggingface.co/openai/whisper-small/resolve/main/tokenizer.json -o tokenizer.json
 curl -L https://huggingface.co/openai/whisper-small/resolve/main/tokenizer_config.json -o tokenizer_config.json
@@ -119,6 +125,7 @@ curl -L https://huggingface.co/openai/whisper-small/resolve/main/special_tokens_
 ```
 
 **For Whisper Large v2:**
+
 ```bash
 curl -L https://huggingface.co/openai/whisper-large-v2/resolve/main/tokenizer.json -o tokenizer.json
 curl -L https://huggingface.co/openai/whisper-large-v2/resolve/main/tokenizer_config.json -o tokenizer_config.json
@@ -165,4 +172,33 @@ cmake-out/examples/models/whisper/whisper_runner \
     --audio_path output.wav \
     --processor_path whisper_preprocessor.pte \
     --temperature 0
+```
+
+### Performance Benchmarking
+
+Use the `--benchmark` flag to display performance metrics including model load time, inference time, and tokens per second.
+
+```bash
+cmake-out/examples/models/whisper/whisper_runner \
+    --model_path model.pte \
+    --data_path aoti_metal_blob.ptd \
+    --tokenizer_path ./ \
+    --audio_path output.wav \
+    --processor_path whisper_preprocessor.pte \
+    --temperature 0 \
+    --benchmark
+```
+
+Note: To see the benchmark logs, you must enable logging in the build configuration.
+Edit [CMakePresets.json](./CMakePresets.json) in the root directory and set `EXECUTORCH_ENABLE_LOGGING` to `ON` for the `llm-release` preset:
+
+```json
+    {
+      "name": "llm-release",
+      ...
+      "cacheVariables": {
+        ...
+        "EXECUTORCH_ENABLE_LOGGING": "ON"
+      }
+    },
 ```
