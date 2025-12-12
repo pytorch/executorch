@@ -540,9 +540,33 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
 };
 
 namespace {
-auto backend = EthosUBackend();
-Backend backend_id{"EthosUBackend", &backend};
-static auto registered = register_backend(backend_id);
+auto EthosUBackend_backend = EthosUBackend();
+Backend EthosUBackend_id{"EthosUBackend", &EthosUBackend_backend};
+static executorch::runtime::Error EthosUBackend_registered =
+    register_backend(EthosUBackend_id);
+
+#ifdef __ZEPHYR__
+/**
+ * This function serves as a linker force-include mechanism to ensure the
+ * EthosU backend module gets properly linked into the final executable,
+ * even when it might otherwise be optimized out by the linker due to
+ * linker options that remove unused code or data for example
+ * if you link with --gc-sections
+ * This function can be called from your runner to force the inclusion of
+ * the EthosU backend module. As a bonus it will return the status of the
+ * backend registration, so you can also check if the registration was
+ * successful.
+ */
+
+// Warning: This should not be considered to be an API and might get removed
+// without notice in a future release if a better way to solve this is
+// implemented.
+extern "C" executorch::runtime::Error
+executorch_delegate_EthosUBackend_registered() {
+  return EthosUBackend_registered;
+}
+#endif
+
 } // namespace
 
 } // namespace arm

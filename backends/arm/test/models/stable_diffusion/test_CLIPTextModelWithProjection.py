@@ -51,6 +51,9 @@ class TestCLIPTextModelWithProjection:
         "torch.ops.higher_order.executorch_call_delegate": 2,
     }
 
+    ops_after_partitioner_vgf_quantize = ops_after_partitioner_FP
+    ops_after_partitioner_vgf_no_quantize = ops_after_partitioner_FP
+
     def _prepare_inputs(
         self,
         batch_size=12,
@@ -119,7 +122,7 @@ def test_CLIPTextModelWithProjection_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_CLIPTextModelWithProjection_vgf_FP():
+def test_CLIPTextModelWithProjection_vgf_no_quant():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )
@@ -129,23 +132,24 @@ def test_CLIPTextModelWithProjection_vgf_FP():
             text_encoder_model_inputs,
             aten_op=[],
             exir_op=[],
-            tosa_version="TOSA-1.0+FP",
             use_to_edge_transform_and_lower=True,
-            atol=4,  # TODO: Investiage numerical issue: MAX Diff ~50%
+            atol=4,
             transform_passes=[
                 ConvertInt64ConstOpsToInt32Pass(),
                 ConvertInt64OutputOpsToInt32Pass(),
                 InsertInt32CastsAfterInt64PlaceholdersPass(),
             ],
+            quantize=False,
         )
         pipeline.change_args(
-            "check_count.exir", TestCLIPTextModelWithProjection.ops_after_partitioner_FP
+            "check_count.exir",
+            TestCLIPTextModelWithProjection.ops_after_partitioner_vgf_no_quantize,
         )
         pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_CLIPTextModelWithProjection_vgf_INT():
+def test_CLIPTextModelWithProjection_vgf_quant():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )
@@ -155,12 +159,12 @@ def test_CLIPTextModelWithProjection_vgf_INT():
             text_encoder_model_inputs,
             aten_op=[],
             exir_op=[],
-            tosa_version="TOSA-1.0+INT",
             use_to_edge_transform_and_lower=True,
             atol=0.8,
+            quantize=True,
         )
         pipeline.change_args(
             "check_count.exir",
-            TestCLIPTextModelWithProjection.ops_after_partitioner_INT,
+            TestCLIPTextModelWithProjection.ops_after_partitioner_vgf_quantize,
         )
         pipeline.run()

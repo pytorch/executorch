@@ -30,6 +30,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     QuantizationPattern,
     ReluPattern0,
     ReluPattern1,
+    RmsNormPattern,
     SoftmaxPattern,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
@@ -37,9 +38,7 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     is_annotated,
     no_outside_users,
 )
-
 from torch import fx
-
 from torchao.quantization.pt2e import HistogramObserver, MinMaxObserver
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
@@ -283,6 +282,15 @@ class CadenceNopQuantizer(CadenceQuantizer):
         self,
     ) -> None:
         super().__init__([])
+
+
+class CadenceRmsNormNopQuantizer(CadenceQuantizer):
+    """
+    Nop quantizer that preserves rms_norm from decomposition.
+    """
+
+    def __init__(self) -> None:
+        super().__init__([CadenceAtenQuantizer(RmsNormPattern(), qconfig_A8W8)])
 
 
 class CadenceWithLayerNormQuantizer(CadenceQuantizer):

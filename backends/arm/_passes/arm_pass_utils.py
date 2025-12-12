@@ -106,6 +106,20 @@ def get_param_tensor(
     raise RuntimeError(f"unsupported param type, {node.op}.")
 
 
+def expand_around_channel(param: Sequence[int] | int, spatial_rank: int) -> list[int]:
+    """
+    Expand a scalar or 1-D parameter around the channel dimension into a broadcastable
+    shape while preserving the channel location.
+    """
+    if isinstance(param, int):
+        return [param] * spatial_rank
+
+    param_list = list(param)
+    if len(param_list) == 1 and spatial_rank > 1:
+        param_list = param_list * spatial_rank
+    return param_list
+
+
 def create_node(
     graph: torch.fx.Graph,
     op_target: OpOverload | EdgeOpOverload,

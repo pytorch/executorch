@@ -70,6 +70,7 @@ jobs:
 
       - name: Build docker image
         id: build-docker-image
+        timeout-minutes: 45
         uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
         with:
           docker-image-name: ci-image:${{ matrix.docker-image-name }}

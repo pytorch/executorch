@@ -566,13 +566,17 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     for node in subgraph.nodes:
                         processed_nodes.add(node)
 
+        modified = False
         for subgraph in subgraphs_found:
             self.permute_subgraph(subgraph)
+            modified = True
 
-        graph_module.graph.eliminate_dead_code()
-        graph_module.recompile()
+        if modified:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+            return super().call(graph_module)
 
-        return super().call(graph_module)
+        return PassResult(graph_module, False)
 
     def visit(
         self,

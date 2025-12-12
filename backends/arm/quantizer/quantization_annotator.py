@@ -335,6 +335,14 @@ def _match_pattern(
     return left_condition and right_condition
 
 
+_conv_ops = [
+    torch.ops.aten.conv1d.default,
+    torch.ops.aten.conv2d.default,
+    torch.ops.aten.conv2d.padding,
+    torch.ops.aten.conv3d.default,
+    torch.ops.aten.conv3d.padding,
+]
+
 _one_to_one = [
     torch.ops.aten.abs.default,
     torch.ops.aten.ceil.default,
@@ -356,6 +364,7 @@ _one_to_one = [
     torch.ops.aten.hardswish.default,
     torch.ops.aten.hardswish_.default,
     torch.ops.aten.full_like.default,
+    torch.ops.aten.zeros_like.default,
     torch.ops.aten.pow.Tensor_Scalar,
     torch.ops.aten.gelu.default,
     torch.ops.aten.sinh.default,
@@ -485,14 +494,8 @@ def get_quant_properties(  # noqa: C901
     if _match_pattern(
         node,
         [
-            [
-                torch.ops.aten.conv1d.default,
-                torch.ops.aten.conv2d.default,
-                torch.ops.aten.conv2d.padding,
-            ],
-            [
-                torch.ops.aten.batch_norm.default,
-            ],
+            _conv_ops,
+            [torch.ops.aten.batch_norm.default],
             [
                 torch.ops.aten.relu.default,
                 torch.ops.aten.relu_.default,
@@ -502,11 +505,7 @@ def get_quant_properties(  # noqa: C901
         ],
         filter_fn=any_or_hardtanh_min_zero,
     ):
-        if node.target in (
-            torch.ops.aten.conv1d.default,
-            torch.ops.aten.conv2d.default,
-            torch.ops.aten.conv2d.padding,
-        ):
+        if node.target in _conv_ops:
             quant_properties.quant_inputs = [
                 _QuantProperty(0, input_act_qspec),
                 _QuantProperty(1, weight_qspec, mark_annotated=True),
@@ -523,21 +522,11 @@ def get_quant_properties(  # noqa: C901
     elif _match_pattern(
         node,
         [
-            [
-                torch.ops.aten.conv1d.default,
-                torch.ops.aten.conv2d.default,
-                torch.ops.aten.conv2d.padding,
-            ],
-            [
-                torch.ops.aten.batch_norm.default,
-            ],
+            _conv_ops,
+            [torch.ops.aten.batch_norm.default],
         ],
     ):
-        if node.target in (
-            torch.ops.aten.conv1d.default,
-            torch.ops.aten.conv2d.default,
-            torch.ops.aten.conv2d.padding,
-        ):
+        if node.target in _conv_ops:
             quant_properties.quant_inputs = [
                 _QuantProperty(0, input_act_qspec),
                 _QuantProperty(1, weight_qspec, mark_annotated=True),
@@ -551,10 +540,8 @@ def get_quant_properties(  # noqa: C901
         node,
         [
             [
-                torch.ops.aten.conv1d.default,
-                torch.ops.aten.conv2d.default,
+                *_conv_ops,
                 torch.ops.aten.linear.default,
-                torch.ops.aten.conv2d.padding,
             ],
             [
                 torch.ops.aten.relu.default,
@@ -566,10 +553,8 @@ def get_quant_properties(  # noqa: C901
         any_or_hardtanh_min_zero,
     ):
         if node.target in (
-            torch.ops.aten.conv1d.default,
-            torch.ops.aten.conv2d.default,
+            *_conv_ops,
             torch.ops.aten.linear.default,
-            torch.ops.aten.conv2d.padding,
         ):
             quant_properties.quant_inputs = [
                 _QuantProperty(0, input_act_qspec),
@@ -579,10 +564,8 @@ def get_quant_properties(  # noqa: C901
         else:
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
-        torch.ops.aten.conv1d.default,
-        torch.ops.aten.conv2d.default,
+        *_conv_ops,
         torch.ops.aten.linear.default,
-        torch.ops.aten.conv2d.padding,
     ):
         quant_properties.quant_inputs = [
             _QuantProperty(0, input_act_qspec),
