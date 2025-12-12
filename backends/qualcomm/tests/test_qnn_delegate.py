@@ -774,6 +774,19 @@ class TestQNNFloatingPointOperator(TestQNN):
                     test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
                 )
 
+    def test_qnn_backend_equal_debug(self):
+        test_comb = [
+            {
+                QCOM_MODULE: EqualFromInplaceCopyDecomp(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.tensor([1.0, 2.0, 3.0, 4.0]), ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+
     def test_qnn_backend_expand(self):
         modules = [ExpandAs(), ExpandCopy()]  # noqa: F405
         sample_inputs = [
@@ -2942,6 +2955,26 @@ class TestQNNQuantizedOperator(TestQNN):
                     test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
                 )
                 self.lower_module_and_test_output(module, test[QCOM_SAMPLE_INPUTS])
+
+    def test_qnn_backend_equal_debug(self):
+        test_comb = [
+            {
+                QCOM_MODULE: EqualFromInplaceCopyDecomp(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.tensor([1.0, 2.0, 3.0, 4.0]), ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+
+                print("quantized module")
+                module.print_readable()
+
+                self.lower_module_and_test_output(
+                    module, test[QCOM_SAMPLE_INPUTS]
+                )
 
     def test_qnn_backend_expand(self):
         modules = [ExpandAs(), ExpandCopy()]  # noqa: F405

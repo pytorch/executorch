@@ -944,6 +944,17 @@ class EqualConstant(torch.nn.Module):
         return x == self.constant
 
 
+class EqualFromInplaceCopyDecomp(torch.nn.Module):
+    def __init__(self, hidden_size=4):
+        super().__init__()
+        # a small state tensor
+        self.register_buffer("h", torch.zeros((1, hidden_size)))
+
+    def forward(self, x):
+        self.h[0] = x
+        return self.h[0]
+
+
 class ExpandCopy(torch.nn.Module):
     def __init__(self):
         super().__init__()
