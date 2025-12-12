@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
 import typing
 from importlib import resources
 from typing import Any, Dict, final, List
@@ -34,6 +35,43 @@ class CudaBackend(AotiBackend, BackendDetails):
     @classmethod
     def get_device_name(cls) -> str:
         return "cuda"
+
+    @staticmethod
+    def _setup_cuda_environment_for_fatbin() -> bool:
+        """
+        Configure CUDA environment variables based on detected CUDA version and GPU architecture.
+        These are needed to compile fatbin kernels for more portable binaries on older CUDA versions.
+        Returns True if setup succeeded or if setup was skipped (CUDA >= 12.9), false otherwise.
+        """
+        try:
+            # Detect CUDA version from torch
+            cuda_version = torch.version.cuda
+            if cuda_version is None:
+                return False
+
+            major, minor = map(int, cuda_version.split(".")[:2])
+
+            # Only set up environment variables for CUDA < 12.9
+            if major > 12 or (major == 12 and minor >= 9):
+                return True
+
+            # Set TRITON_PTXAS_PATH for CUDA 12.6+
+            if major == 12 and minor >= 6:
+                # Try versioned path first, fallback to symlinked path
+                ptxas_path = f"/usr/local/cuda-{cuda_version}/bin/ptxas"
+                if not os.path.exists(ptxas_path):
+                    ptxas_path = "/usr/local/cuda/bin/ptxas"
+                    if not os.path.exists(ptxas_path):
+                        return False
+                os.environ["TRITON_PTXAS_PATH"] = ptxas_path
+
+            # Get compute capability of current CUDA device
+            device = torch.cuda.current_device()
+            capability = torch.cuda.get_device_capability(device)
+            os.environ["TORCH_CUDA_ARCH_LIST"] = f"{capability[0]}.{capability[1]}"
+            return True
+        except Exception:
+            return False
 
     @classmethod
     def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
@@ -78,6 +116,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         Get AOTI compile options for CUDA backend.
         Options may vary based on platform (Linux vs Windows).
         """
+
+        # Configure CUDA environment variables based on detected version
+        emit_multi_arch_kernel = CudaBackend._setup_cuda_environment_for_fatbin()
         # Base options for all platforms
         options: Dict[str, typing.Any] = {
             # Disable this to support sdpa decomposition
@@ -100,6 +141,7 @@ class CudaBackend(AotiBackend, BackendDetails):
             "max_autotune_gemm_backends": "TRITON",
             # Use TRITON backend for convolution operations tuning only to avoid using operators in libtorch
             "max_autotune_conv_backends": "TRITON",
+            "aot_inductor.emit_multi_arch_kernel": emit_multi_arch_kernel,
         }
 
         # Parse compile_specs to check for platform

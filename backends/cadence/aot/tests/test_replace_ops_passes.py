@@ -23,6 +23,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     MakeSliceAndCatDimOutermostPass,
     ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
     ReplaceAddMMWithLinearPass,
+    ReplaceAtenAvgPoolWithCadenceAvgPoolPass,
     ReplaceAtenConvolutionWithCadenceConvolutionPass,
     ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass,
     ReplaceConstantPadNdWithSlicePass,
@@ -459,9 +460,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder = GraphBuilder()
         x_tensor = torch.randn(*shape, dtype=torch.float32)
         x = builder.placeholder("x", x_tensor)
-        weights_tensor = torch.randn(
-            [out_channels, in_channels // groups, kernel], dtype=torch.float32
-        )
+        # For regular conv: weight shape is [out_channels, in_channels // groups, kernel]
+        weights_shape = [out_channels, in_channels // groups, kernel]
+        weights_tensor = torch.randn(weights_shape, dtype=torch.float32)
         weights = builder.placeholder("weights", weights_tensor)
         bias: Optional[ProxyValue] = None
         bias_tensor: Optional[torch.Tensor] = None
@@ -485,11 +486,23 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder.output([convolution])
         original_gm = builder.get_graph_module()
 
-        replacement_pass_result = (
-            ReplaceAtenConvolutionWithCadenceConvolutionPass().call(original_gm)
-        )
+        gm_before = copy.deepcopy(original_gm)
+        p = ReplaceAtenConvolutionWithCadenceConvolutionPass()
+        replacement_pass_result = cast(PassResult, p(original_gm))
         self.assertIsNotNone(replacement_pass_result)
+        self.assertTrue(replacement_pass_result.modified)
         graph_after_passes = replacement_pass_result.graph_module
+
+        # Validate numerical accuracy
+        inputs = (x_tensor, weights_tensor)
+        if bias is not None:
+            inputs += (cast(torch.Tensor, bias_tensor),)
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceAtenConvolutionWithCadenceConvolutionPass",
+        )
 
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
@@ -507,26 +520,18 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-        inputs = (x.to_tensor(), weights.to_tensor())
-        if bias is not None:
-            inputs += (bias.to_tensor(),)
-        self.assertTensorMetadataIsSame(
-            pytree.tree_flatten(original_gm.forward(*inputs))[0],
-            pytree.tree_flatten(graph_after_passes.forward(*inputs))[0],
-        )
-
     @expand(
         [
-            [(1, 8, 18), 8, 16, 3],
-            [(1, 8, 18), 8, 16, 5, 2],
+            [(1, 8, 16), 8, 16, 3],
+            [(1, 8, 16), 8, 16, 5, 2],
             # depthwise + bias
-            [(1, 8, 18), 8, 16, 5, 2, 0, 1, True, True],
+            [(1, 8, 16), 8, 16, 5, 2, 0, 1, True, True],
             # no bias
-            [(1, 8, 18), 8, 16, 3, 2, 4, 3, False, False],
+            [(1, 8, 16), 8, 16, 3, 2, 4, 3, False, False],
             # depthwise + no bias
-            [(1, 8, 18), 8, 16, 3, 1, 0, 1, True, False],
+            [(1, 8, 16), 8, 16, 3, 1, 0, 1, True, False],
             # bias
-            [(1, 8, 18), 8, 16, 5, 2, 0, 1, False, True],
+            [(1, 8, 16), 8, 16, 5, 2, 0, 1, False, True],
         ]
     )
     @torch.no_grad()
@@ -545,16 +550,20 @@ class TestReplaceOpsPasses(unittest.TestCase):
     ) -> None:
         groups = in_channels if depthwise else 1
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
+        x_tensor = torch.randn(*shape, dtype=torch.float32)
+        x = builder.placeholder("x", x_tensor)
+        # For transposed conv: weight shape is [in_channels, out_channels // groups, kernel]
         weights_shape = [in_channels, out_channels // groups, kernel]
+        weights_tensor = torch.randn(weights_shape, dtype=torch.float32)
         weights = builder.placeholder(
             "weights",
-            torch.randn(weights_shape, dtype=torch.float32),
+            weights_tensor,
+        )
+        bias_tensor = (
+            torch.randn([out_channels], dtype=torch.float32) if bias_enabled else None
         )
         bias = (
-            builder.placeholder(
-                "bias", torch.randn([out_channels], dtype=torch.float32)
-            )
+            builder.placeholder("bias", cast(torch.Tensor, bias_tensor))
             if bias_enabled
             else None
         )
@@ -574,12 +583,24 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         builder.output([convolution])
         original_gm = builder.get_graph_module()
+        gm_before = copy.deepcopy(original_gm)
 
-        replacement_pass_result = (
-            ReplaceAtenConvolutionWithCadenceConvolutionPass().call(original_gm)
-        )
+        p = ReplaceAtenConvolutionWithCadenceConvolutionPass()
+        replacement_pass_result = cast(PassResult, p(original_gm))
         self.assertIsNotNone(replacement_pass_result)
+        self.assertTrue(replacement_pass_result.modified)
         graph_after_passes = replacement_pass_result.graph_module
+
+        inputs = (x_tensor, weights_tensor)
+        if bias_tensor is not None:
+            inputs += (bias_tensor,)
+
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceAtenConvolutionWithCadenceConvolutionPass",
+        )
 
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
@@ -590,14 +611,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 graph_after_passes, exir_ops.edge.cadence.transposed_convolution.default
             ),
             1,
-        )
-
-        inputs = (x.to_tensor(), weights.to_tensor())
-        if bias is not None:
-            inputs += (bias.to_tensor(),)
-        self.assertTensorMetadataIsSame(
-            pytree.tree_flatten(original_gm.forward(*inputs))[0],
-            pytree.tree_flatten(graph_after_passes.forward(*inputs))[0],
         )
 
     @expand(
@@ -613,7 +626,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
     @torch.no_grad()
     def test_replace_transposed_conv_with_linear(
         self,
-        shape: Tuple[int],
+        shape: Tuple[int, ...],
         in_channels: int,
         out_channels: int,
         kernel: int,
@@ -624,19 +637,29 @@ class TestReplaceOpsPasses(unittest.TestCase):
         bias_enabled: bool = True,
         channel_last: bool = False,
     ) -> None:
-        transposed = True
         output_padding = [0]
         groups = in_channels if depthwise else 1
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
-        weights = builder.placeholder(
-            "weights",
-            torch.randn([in_channels, out_channels, kernel], dtype=torch.float32),
+        x_tensor = torch.randn(*shape, dtype=torch.float32)
+        x = builder.placeholder("x", x_tensor)
+        # For transposed conv: weight shape is [in_channels, out_channels // groups, kernel]
+        weights_tensor = torch.randn(
+            [in_channels, out_channels // groups, kernel], dtype=torch.float32
+        )
+        weights = builder.placeholder("weights", weights_tensor)
+
+        transposed_weights = builder.call_operator(
+            op=exir_ops.edge.aten.transpose_copy.int, args=(weights, 0, 1)
+        )
+        flipped_weights = builder.call_operator(
+            exir_ops.edge.aten.flip.default,
+            args=(transposed_weights, [-1]),
+        )
+        bias_tensor = (
+            torch.randn([out_channels], dtype=torch.float32) if bias_enabled else None
         )
         bias = (
-            builder.placeholder(
-                "bias", torch.randn([out_channels], dtype=torch.float32)
-            )
+            builder.placeholder("bias", cast(torch.Tensor, bias_tensor))
             if bias_enabled
             else None
         )
@@ -646,17 +669,17 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 args=(x, [0, 2, 1]),
             )
         convolution = builder.call_operator(
-            op=exir_ops.edge.aten.convolution.default,
+            op=exir_ops.edge.cadence.transposed_convolution.default,
             args=(
                 x,
-                weights,
+                flipped_weights,
                 bias,
                 [stride],
                 [padding],
                 [dilation],
-                transposed,
                 output_padding,
                 groups,
+                False,
             ),
         )
         if channel_last:
@@ -667,11 +690,24 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder.output([convolution])
         original_gm = builder.get_graph_module()
 
-        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
-        p2 = ReplaceTransposedConvWithLinearPass()
-        graph_after_passes = cast(
-            PassResult, p2(cast(PassResult, p1(original_gm)).graph_module)
-        ).graph_module
+        gm_before = copy.deepcopy(original_gm)
+
+        # Run ReplaceTransposedConvWithLinearPass
+        result = ReplaceTransposedConvWithLinearPass().call(original_gm)
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = (x_tensor, weights_tensor)
+        if bias_tensor is not None:
+            inputs += (bias_tensor,)
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceTransposedConvWithLinearPass",
+        )
+
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.linear.default),
             1,
@@ -683,6 +719,12 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.cadence.conv1d.default)
             + count_node(graph_after_passes, exir_ops.edge.cadence.conv2d.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.cadence.transposed_convolution.default
+            ),
             0,
         )
 
@@ -1316,8 +1358,21 @@ class TestReplaceOpsPasses(unittest.TestCase):
             op=exir_ops.edge.aten.transpose_copy.int,
             args=(x, dim0, dim1),
         )
+
+        gm_before = copy.deepcopy(original_gm)
         p = ReplaceNopTransposeOrPermuteWithViewPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x]
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceNopTransposeOrPermuteWithViewPass",
+        )
 
         # Assert that transpose op was removed, and a view op was placed instead
         self.assertEqual(
@@ -1344,8 +1399,21 @@ class TestReplaceOpsPasses(unittest.TestCase):
             op=exir_ops.edge.aten.permute_copy.default,
             args=(x, dims),
         )
+
+        gm_before = copy.deepcopy(original_gm)
         p = ReplaceNopTransposeOrPermuteWithViewPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x]
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceNopTransposeOrPermuteWithViewPass",
+        )
 
         # Assert that permute op was removed, and a view op was placed instead
         self.assertEqual(
@@ -1412,9 +1480,12 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int), 0
         )
 
+
+class TestReplaceWhereWithFullArgsWithWhereScalar(unittest.TestCase):
     def test_replace_aten_where_with_cadence(self) -> None:
         builder = GraphBuilder()
-        cond = builder.placeholder("cond", torch.randn(4, 8))
+        cond_input = torch.randn(4, 8)
+        cond = builder.placeholder("cond", cond_input)
         aten_gt_scalar = builder.call_operator(
             op=exir_ops.edge.aten.gt.Scalar,
             args=(cond, 0),
@@ -1433,8 +1504,24 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         builder.output([aten_where_self])
         original_gm = builder.get_graph_module()
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(original_gm)
+
         p = ReplaceWhereWithFullArgsWithWhereScalar()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [cond_input]
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceWhereWithFullArgsWithWhereScalar",
+        )
+
         self.assertEqual(
             count_node(
                 graph_after_passes,
@@ -1462,9 +1549,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
         val1: float,
         val2: float,
     ) -> None:
-        # cond_shape, a_shape, b_shape, val1, val2 =
         builder = GraphBuilder()
-        cond = builder.placeholder("cond", torch.randn(cond_shape))
+        cond_input = torch.randn(cond_shape)
+        cond = builder.placeholder("cond", cond_input)
         aten_gt_scalar = builder.call_operator(
             op=exir_ops.edge.aten.gt.Scalar,
             args=(cond, 0),
@@ -1483,8 +1570,25 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         builder.output([aten_where_self])
         original_gm = builder.get_graph_module()
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(original_gm)
+
         p = ReplaceWhereWithFullArgsWithWhereScalar()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        # Broadcast case should not be replaced
+        self.assertFalse(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy (should be same since not modified)
+        inputs = [cond_input]
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceWhereWithFullArgsWithWhereScalar",
+        )
+
         self.assertEqual(
             count_node(
                 graph_after_passes,
@@ -1600,7 +1704,7 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
     def test_no_replacement_for_conv(self) -> None:
         # Create a graph with a single im2row node.
         x = torch.randn(1, 3, 224, 224)
-        pad_value = torch.randn(1)
+        pad_value = torch.tensor(0, dtype=torch.int32)
         channels_last = False
         gm = single_op_builder(
             placeholders=(x, pad_value),
@@ -1612,9 +1716,19 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.cadence.im2row.default), 1)
         self.assertEqual(count_node(gm, exir_ops.edge.aten.view_copy.default), 0)
 
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = ReplaceIm2RowWithViewPass()
-        gm_after_replacement = p.call(gm).graph_module
+        result = p.call(gm)
+        self.assertFalse(result.modified)
+        gm_after_replacement = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x, pad_value]
+        validate(gm_before, gm_after_replacement, inputs, "ReplaceIm2RowWithViewPass")
+
         # Check that no replacement was made.
         self.assertEqual(
             count_node(gm_after_replacement, exir_ops.edge.cadence.im2row.default), 1
@@ -1626,7 +1740,7 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
     def test_no_replace_for_dilation(self) -> None:
         # Create a graph with a single im2row node.
         x = torch.randn(1, 3, 5, 7)
-        pad_value = torch.randn(1)
+        pad_value = torch.tensor(0, dtype=torch.int32)
         channels_last = False
         gm = single_op_builder(
             placeholders=(x, pad_value),
@@ -1638,9 +1752,19 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.cadence.im2row.default), 1)
         self.assertEqual(count_node(gm, exir_ops.edge.aten.view_copy.default), 0)
 
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = ReplaceIm2RowWithViewPass()
-        gm_after_replacement = p.call(gm).graph_module
+        result = p.call(gm)
+        self.assertFalse(result.modified)
+        gm_after_replacement = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x, pad_value]
+        validate(gm_before, gm_after_replacement, inputs, "ReplaceIm2RowWithViewPass")
+
         self.assertEqual(
             count_node(gm_after_replacement, exir_ops.edge.cadence.im2row.default), 1
         )
@@ -1652,7 +1776,7 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
         # Create a graph with a single im2row node.
         in_h, in_w = 13, 15
         x = torch.randn(1, 3, in_h, in_w)
-        pad_value = torch.randn(1)
+        pad_value = torch.tensor(0, dtype=torch.int32)
         channels_last = False
         gm = single_op_builder(
             placeholders=(x, pad_value),
@@ -1664,9 +1788,19 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.cadence.im2row.default), 1)
         self.assertEqual(count_node(gm, exir_ops.edge.aten.view_copy.default), 0)
 
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = ReplaceIm2RowWithViewPass()
-        gm_after_replacement = p.call(gm).graph_module
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        gm_after_replacement = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x, pad_value]
+        validate(gm_before, gm_after_replacement, inputs, "ReplaceIm2RowWithViewPass")
+
         # In this test, the kernel width/height is the same as the input width/height.
         self.assertEqual(
             count_node(gm_after_replacement, exir_ops.edge.cadence.im2row.default), 0
@@ -1985,9 +2119,10 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
 
 class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
-    def _get_slice_empty_gm(self) -> torch.fx.GraphModule:
+    def _get_slice_empty_gm(self) -> tuple[torch.fx.GraphModule, torch.Tensor]:
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(4))
+        x_input = torch.randn(4)
+        x = builder.placeholder("x", x_input)
         # This is empty (numel == 0).
         slice0 = builder.call_operator(
             exir_ops.edge.aten.slice_copy.Tensor, (x, 0, 0, 0)
@@ -1999,10 +2134,10 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
             ((slice0, slice1),),
         )
         builder.output([cat])
-        return builder.get_graph_module()
+        return builder.get_graph_module(), x_input
 
     def test_empty_slice(self) -> None:
-        gm = self._get_slice_empty_gm()
+        gm, x_input = self._get_slice_empty_gm()
         self.assertEqual(
             len(
                 gm.graph.find_nodes(
@@ -2019,8 +2154,18 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
             ),
             0,
         )
-        p = ReplaceEmptyTensorsWithFullPass()
-        updated_gm = cast(PassResult, p(gm)).graph_module
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
+        result = ReplaceEmptyTensorsWithFullPass().call(gm)
+        self.assertTrue(result.modified)
+        updated_gm = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate(gm_before, updated_gm, inputs, "ReplaceEmptyTensorsWithFullPass")
+
         self.assertEqual(
             len(
                 updated_gm.graph.find_nodes(
@@ -2048,15 +2193,35 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
     def test_extract_mul_argument_to_full(
         self, _: str, value: Union[int, float]
     ) -> None:
-        x = torch.randn(2, 1, 64)
+        if isinstance(value, int):
+            x_input = torch.randint(0, 100, (1,), dtype=torch.int32)
+        else:
+            x_input = torch.randn((1,), dtype=torch.float32)
+
         gm = single_op_builder(
-            placeholders=(x,),
+            placeholders=(x_input,),
             op=torch.ops.aten.mul.Tensor,
-            args=(x, value),
+            args=(x_input, value),
             kwargs={},
         )
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
         p = ReplaceMulTensorWithMulAndFullOpsPass()
-        graph_after_passes = p.call(gm).graph_module
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceMulTensorWithMulAndFullOpsPass",
+        )
+
         self.assertTrue(
             op_counts_match(
                 graph_after_passes,
@@ -2071,17 +2236,18 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
 class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
     def _get_adaptive_avg_pool_gm(
         self, input_shape: Tuple[int, int, int, int], output_shape: Tuple[int, int]
-    ) -> torch.fx.GraphModule:
+    ) -> tuple[torch.Tensor, torch.fx.GraphModule]:
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(*input_shape))
+        x_input = torch.randn(*input_shape)
+        x = builder.placeholder("x", x_input)
         adaptive_avg_pool2d = builder.call_operator(
             exir_ops.edge.aten._adaptive_avg_pool2d.default, (x, output_shape)
         )
         builder.output([adaptive_avg_pool2d])
-        return builder.get_graph_module()
+        return x_input, builder.get_graph_module()
 
     def test_replace_adaptive_avg_pool_with_aten_avg_pool(self) -> None:
-        gm = self._get_adaptive_avg_pool_gm((1, 64, 128, 128), (8, 8))
+        x_input, gm = self._get_adaptive_avg_pool_gm((1, 64, 128, 128), (8, 8))
         self.assertEqual(
             len(
                 gm.graph.find_nodes(
@@ -2100,8 +2266,24 @@ class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
             ),
             0,
         )
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
         p = ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass()
-        updated_gm = p.call(gm).graph_module
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        updated_gm = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate(
+            gm_before,
+            updated_gm,
+            inputs,
+            "ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass",
+        )
+
         self.assertEqual(
             len(
                 updated_gm.graph.find_nodes(
@@ -2128,7 +2310,7 @@ class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
         self.assertEqual(avg_pool2d_node.args[6], None)  # divisor_override is None
 
     def test_replace_adaptive_avg_pool_with_aten_avg_pool_irregular(self) -> None:
-        gm = self._get_adaptive_avg_pool_gm((1, 64, 128, 128), (9, 9))
+        x_input, gm = self._get_adaptive_avg_pool_gm((1, 64, 128, 128), (9, 9))
         self.assertEqual(
             len(
                 gm.graph.find_nodes(
@@ -2146,9 +2328,25 @@ class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
             ),
             0,
         )
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
         # Shapes are not multiples of each other, so pass will not trigger
         p = ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass()
-        updated_gm = p.call(gm).graph_module
+        result = p.call(gm)
+        self.assertFalse(result.modified)
+        updated_gm = result.graph_module
+
+        # Validate numerical accuracy (should be same since not modified)
+        inputs = [x_input]
+        validate(
+            gm_before,
+            updated_gm,
+            inputs,
+            "ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass",
+        )
+
         self.assertEqual(
             len(
                 updated_gm.graph.find_nodes(
@@ -2164,6 +2362,113 @@ class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
         self.assertEqual(
             len(avg_pool2d_nodes),
             0,
+        )
+
+
+class TestReplaceAtenAvgPoolWithCadenceAvgPoolPass(unittest.TestCase):
+    def _get_aten_avg_pool1d_gm(
+        self, input_shape: Tuple[int, int, int], kernel_size: int
+    ) -> tuple[torch.Tensor, torch.fx.GraphModule]:
+        builder = GraphBuilder()
+        x_input = torch.randn(*input_shape)
+        x = builder.placeholder("x", x_input)
+        avg_pool1d = builder.call_operator(
+            exir_ops.edge.aten.avg_pool1d.default, (x, [kernel_size])
+        )
+        builder.output([avg_pool1d])
+        return x_input, builder.get_graph_module()
+
+    def _get_aten_avg_pool2d_gm(
+        self, input_shape: Tuple[int, int, int, int], kernel_size: Tuple[int, int]
+    ) -> tuple[torch.Tensor, torch.fx.GraphModule]:
+        builder = GraphBuilder()
+        x_input = torch.randn(*input_shape)
+        x = builder.placeholder("x", x_input)
+        avg_pool2d = builder.call_operator(
+            exir_ops.edge.aten.avg_pool2d.default, (x, list(kernel_size))
+        )
+        builder.output([avg_pool2d])
+        return x_input, builder.get_graph_module()
+
+    def test_replace_aten_avg_pool1d_with_cadence(self) -> None:
+        x_input, gm = self._get_aten_avg_pool1d_gm((1, 32, 64), 3)
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.aten.avg_pool1d.default),
+            1,
+        )
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.avg_pool2d.default),
+            0,
+        )
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
+        p = ReplaceAtenAvgPoolWithCadenceAvgPoolPass()
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        updated_gm = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate(
+            gm_before,
+            updated_gm,
+            inputs,
+            "ReplaceAtenAvgPoolWithCadenceAvgPoolPass",
+        )
+
+        # avg_pool1d should be replaced with view operations and avg_pool2d
+        self.assertEqual(
+            count_node(updated_gm, exir_ops.edge.aten.avg_pool1d.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(updated_gm, exir_ops.edge.cadence.avg_pool2d.default),
+            1,
+        )
+        # Should have view operations for reshaping
+        self.assertGreater(
+            count_node(updated_gm, exir_ops.edge.aten.view_copy.default),
+            0,
+        )
+
+    def test_replace_aten_avg_pool2d_with_cadence(self) -> None:
+        x_input, gm = self._get_aten_avg_pool2d_gm((1, 32, 64, 64), (3, 3))
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.aten.avg_pool2d.default),
+            1,
+        )
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.avg_pool2d.default),
+            0,
+        )
+
+        # Deepcopy before the pass
+        gm_before = copy.deepcopy(gm)
+
+        p = ReplaceAtenAvgPoolWithCadenceAvgPoolPass()
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        updated_gm = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x_input]
+        validate(
+            gm_before,
+            updated_gm,
+            inputs,
+            "ReplaceAtenAvgPoolWithCadenceAvgPoolPass",
+        )
+
+        # avg_pool2d should be replaced with cadence avg_pool2d
+        self.assertEqual(
+            count_node(updated_gm, exir_ops.edge.aten.avg_pool2d.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(updated_gm, exir_ops.edge.cadence.avg_pool2d.default),
+            1,
         )
 
 

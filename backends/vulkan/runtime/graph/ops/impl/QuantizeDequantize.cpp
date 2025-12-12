@@ -369,7 +369,8 @@ void add_unpack_4w4c_and_dequantize_node(
 void quantize_per_tensor_impl(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
-  int32_t arg_idx = 0;
+  size_t arg_idx = 0;
+  size_t last_arg_idx = args.size() - 1;
   const ValueRef fp_input = args[arg_idx++];
   const ValueRef scale = args[arg_idx++];
   const ValueRef zero_point = args[arg_idx++];
@@ -380,7 +381,7 @@ void quantize_per_tensor_impl(
   const ValueRef dtype = args[arg_idx++];
   (void)dtype;
 
-  const ValueRef int8_output = args[arg_idx++];
+  const ValueRef int8_output = args[last_arg_idx];
 
   VK_CHECK_COND(
       graph.estimate_memory_layout_of(int8_output) == utils::kPackedInt8_4W4C);
@@ -392,7 +393,8 @@ void quantize_per_tensor_impl(
 void dequantize_per_tensor_impl(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
-  int32_t arg_idx = 0;
+  size_t arg_idx = 0;
+  size_t last_arg_idx = args.size() - 1;
   const ValueRef int8_input = args[arg_idx++];
   const ValueRef scale = args[arg_idx++];
   const ValueRef zero_point = args[arg_idx++];
@@ -405,7 +407,7 @@ void dequantize_per_tensor_impl(
   const ValueRef output_dtype = args[arg_idx++];
   (void)output_dtype;
 
-  const ValueRef fp_output = args[arg_idx++];
+  const ValueRef fp_output = args[last_arg_idx];
 
   VK_CHECK_COND(
       graph.estimate_memory_layout_of(int8_input) == utils::kPackedInt8_4W4C);

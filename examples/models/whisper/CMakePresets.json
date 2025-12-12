@@ -7,7 +7,8 @@
             "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/whisper",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out"
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
             }
         },
         {
@@ -23,9 +24,9 @@
                 "EXECUTORCH_BUILD_CUDA": "ON"
             },
             "condition": {
-                "lhs": "${hostSystemName}",
-                "type": "equals",
-                "rhs": "Linux"
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
             }
         },
         {
