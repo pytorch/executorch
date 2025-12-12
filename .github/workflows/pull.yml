@@ -51,7 +51,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc11
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -391,7 +391,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc9-nopytorch
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -400,7 +400,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        ./install_requirements.sh --use-pt-pinned-commit
+        ./install_requirements.sh
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
         strip cmake-out/test/size_test
@@ -409,6 +409,7 @@ jobs:
         size=${arr[4]}
         # threshold=48120 on devserver with gcc11.4
         # todo(lfq): update once binary size is below 50kb.
+        # Note: using gcc9-nopytorch container with pinned nightly PyTorch
         threshold="63776"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
@@ -793,7 +794,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc11
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
