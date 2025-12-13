@@ -237,8 +237,6 @@ def test_cond_tosa_FP(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     "case",
     test_cases,
     xfails={
-        "zero_args_one_output": "Since the submodules have no input, the tracer fails finding a fake tensor mode,"
-        " and traces the graph with real tensors, which tosa.RESCALE can't handle.",
         "one_arg_and_scalar_one_output": "Incorrect quantization on the scalar.",
         "nested_one_arg_one_output": "Node submodule_0 target submodule_0 references nonexistent attribute submodule_0",
     },
