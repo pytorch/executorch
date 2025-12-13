@@ -325,3 +325,314 @@ class TestCudaExport(unittest.TestCase):
             edge_program_manager,
             "SDPA kernel export with triton_kernel_mode=OFF failed",
         )
+
+    def test_whisper_decoder_int4_full_pass_chain(self):
+        """
+        Test CUDA export for Whisper-like decoder with INT4 quantization.
+
+        This test exercises the full CUDA backend pass chain:
+        1. CSEPass - Common subexpression elimination to merge preprocessing chains
+        2. FuseInt4WeightOnlyQuantMatmulPass - Fuses Q/K/V INT4 matmul operations
+        3. ReplaceEdgeOpWithTritonOpPass - Replaces SDPA with Triton kernels
+
+        The test creates a Whisper-like decoder layer with:
+        - Self-attention with Q/K/V projections (INT4 quantized, fuseable)
+        - Cross-attention with Q/K/V projections (INT4 quantized, fuseable)
+        - MLP with fc1/fc2 projections (INT4 quantized)
+        - SDPA for attention computation
+
+        This is a regression test to ensure the full pass chain works correctly,
+        particularly the _PermissiveVerifier fix that allows EdgeOpOverload,
+        OpOverloadPacket (triton.sdpa), and CustomOpDef types.
+        """
+        # Check for SM80+ (A100 or newer) required for INT4 tile_packed_to_4d format
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA not available")
+
+        major, _ = torch.cuda.get_device_capability()
+        if major < 8:
+            self.skipTest("INT4 tile_packed_to_4d format requires SM80+ (A100 or newer)")
+
+        try:
+            from torchao.quantization import Int4WeightOnlyConfig, quantize_
+        except ImportError:
+            self.skipTest("torchao not available")
+
+        # Whisper decoder dimensions (from whisper-large-v3-turbo)
+        hidden_size = 1280
+        num_heads = 20
+        head_dim = hidden_size // num_heads  # 64
+        intermediate_size = hidden_size * 4  # 5120
+        group_size = 128
+
+        class WhisperDecoderLayer(torch.nn.Module):
+            """Simplified Whisper decoder layer for testing INT4 fusion."""
+
+            def __init__(self):
+                super().__init__()
+                # Self-attention projections (Q/K/V should be fused)
+                self.self_attn_q_proj = torch.nn.Linear(hidden_size, hidden_size, bias=True)
+                self.self_attn_k_proj = torch.nn.Linear(hidden_size, hidden_size, bias=False)
+                self.self_attn_v_proj = torch.nn.Linear(hidden_size, hidden_size, bias=True)
+                self.self_attn_out_proj = torch.nn.Linear(hidden_size, hidden_size, bias=True)
+
+                # Cross-attention projections (Q/K/V should be fused)
+                self.cross_attn_q_proj = torch.nn.Linear(hidden_size, hidden_size, bias=True)
+                self.cross_attn_k_proj = torch.nn.Linear(hidden_size, hidden_size, bias=False)
+                self.cross_attn_v_proj = torch.nn.Linear(hidden_size, hidden_size, bias=True)
+                self.cross_attn_out_proj = torch.nn.Linear(hidden_size, hidden_size, bias=True)
+
+                # MLP (fc1/fc2)
+                self.fc1 = torch.nn.Linear(hidden_size, intermediate_size, bias=True)
+                self.fc2 = torch.nn.Linear(intermediate_size, hidden_size, bias=True)
+
+                # Layer norms
+                self.self_attn_layer_norm = torch.nn.LayerNorm(hidden_size)
+                self.cross_attn_layer_norm = torch.nn.LayerNorm(hidden_size)
+                self.final_layer_norm = torch.nn.LayerNorm(hidden_size)
+
+            def forward(
+                self,
+                hidden_states: torch.Tensor,
+                encoder_hidden_states: torch.Tensor,
+            ) -> torch.Tensor:
+                batch_size, seq_len, _ = hidden_states.shape
+                encoder_seq_len = encoder_hidden_states.shape[1]
+
+                # Self-attention
+                residual = hidden_states
+                hidden_states = self.self_attn_layer_norm(hidden_states)
+
+                # Q/K/V projections (should be fused by FuseInt4WeightOnlyQuantMatmulPass)
+                q = self.self_attn_q_proj(hidden_states)
+                k = self.self_attn_k_proj(hidden_states)
+                v = self.self_attn_v_proj(hidden_states)
+
+                # Reshape for multi-head attention
+                q = q.view(batch_size, seq_len, num_heads, head_dim).transpose(1, 2)
+                k = k.view(batch_size, seq_len, num_heads, head_dim).transpose(1, 2)
+                v = v.view(batch_size, seq_len, num_heads, head_dim).transpose(1, 2)
+
+                # SDPA (should be replaced with triton.sdpa by ReplaceEdgeOpWithTritonOpPass)
+                attn_output = torch.nn.functional.scaled_dot_product_attention(
+                    q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True
+                )
+
+                attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, hidden_size)
+                hidden_states = self.self_attn_out_proj(attn_output)
+                hidden_states = residual + hidden_states
+
+                # Cross-attention
+                residual = hidden_states
+                hidden_states = self.cross_attn_layer_norm(hidden_states)
+
+                # Cross Q/K/V projections (should be fused)
+                q = self.cross_attn_q_proj(hidden_states)
+                k = self.cross_attn_k_proj(encoder_hidden_states)
+                v = self.cross_attn_v_proj(encoder_hidden_states)
+
+                q = q.view(batch_size, seq_len, num_heads, head_dim).transpose(1, 2)
+                k = k.view(batch_size, encoder_seq_len, num_heads, head_dim).transpose(1, 2)
+                v = v.view(batch_size, encoder_seq_len, num_heads, head_dim).transpose(1, 2)
+
+                # Cross-attention SDPA
+                attn_output = torch.nn.functional.scaled_dot_product_attention(
+                    q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False
+                )
+
+                attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, hidden_size)
+                hidden_states = self.cross_attn_out_proj(attn_output)
+                hidden_states = residual + hidden_states
+
+                # MLP
+                residual = hidden_states
+                hidden_states = self.final_layer_norm(hidden_states)
+                hidden_states = self.fc1(hidden_states)
+                hidden_states = torch.nn.functional.gelu(hidden_states)
+                hidden_states = self.fc2(hidden_states)
+                hidden_states = residual + hidden_states
+
+                return hidden_states
+
+        # Create model with bfloat16 (required for SDPA with Triton)
+        module = WhisperDecoderLayer().to(dtype=torch.bfloat16, device="cuda")
+        module.eval()
+
+        # Apply INT4 quantization with tile_packed_to_4d format
+        int4_config = Int4WeightOnlyConfig(
+            group_size=group_size,
+            int4_packing_format="tile_packed_to_4d",
+        )
+        quantize_(module, int4_config)
+
+        # Prepare inputs
+        batch_size = 1
+        seq_len = 16
+        encoder_seq_len = 1500  # Whisper encoder output length
+
+        hidden_states = torch.randn(
+            batch_size, seq_len, hidden_size,
+            dtype=torch.bfloat16, device="cuda"
+        )
+        encoder_hidden_states = torch.randn(
+            batch_size, encoder_seq_len, hidden_size,
+            dtype=torch.bfloat16, device="cuda"
+        )
+
+        inputs = (hidden_states, encoder_hidden_states)
+
+        # Export and lower - this exercises the full pass chain
+        edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
+
+        self.assertIsNotNone(
+            edge_program_manager,
+            "Whisper decoder INT4 export with full pass chain failed"
+        )
+
+    def test_whisper_encoder_int4_contiguous_outputs(self):
+        """
+        Regression test for non-contiguous tensor outputs in encoder pattern.
+
+        BUG: When the INT4 fusion pass fuses Q/K/V projections, it uses tensor_split
+        to divide the fused output back into separate Q/K/V tensors. tensor_split
+        creates non-contiguous views with incorrect strides:
+        - Expected strides for [batch, seq, hidden]: [seq*hidden, hidden, 1]
+        - Actual strides after split: [seq*3*hidden, 3*hidden, 1]
+
+        For encoder patterns with seq_len > 1, this causes:
+        - PyTorch's is_contiguous() to return False
+        - Kernels assuming contiguous layout to read wrong memory locations
+
+        For decoder patterns with seq_len=1, the bug doesn't manifest because
+        dim 1 has size 1, making stride[1] irrelevant for contiguity checks.
+
+        This test simulates a Whisper encoder layer processing a full audio sequence
+        (seq_len=1500) and verifies that Q/K/V outputs are contiguous after fusion
+        by checking the FakeTensor metadata (which is used during AOTI compilation).
+
+        THIS TEST SHOULD FAIL until the fix is applied (adding .contiguous() after split).
+        """
+        # Check for SM80+ (A100 or newer) required for INT4 tile_packed_to_4d format
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA not available")
+
+        major, _ = torch.cuda.get_device_capability()
+        if major < 8:
+            self.skipTest("INT4 tile_packed_to_4d format requires SM80+ (A100 or newer)")
+
+        try:
+            from torchao.quantization import Int4WeightOnlyConfig, quantize_
+        except ImportError:
+            self.skipTest("torchao not available")
+
+        from executorch.exir import EdgeCompileConfig, to_edge
+        from executorch.exir.program._program import _update_exported_program_graph_module
+        from torch.export import export
+        from torch.fx.passes.dialect.common.cse_pass import CSEPass
+        from torch.fx.passes.infra.pass_base import PassResult
+
+        from executorch.backends.cuda.passes import FuseInt4WeightOnlyQuantMatmulPass
+
+        # Whisper encoder dimensions
+        hidden_size = 1280
+        group_size = 64  # Whisper encoder uses 64 for dimension 320
+        seq_len = 1500  # Encoder processes full audio sequence
+
+        class WhisperEncoderQKV(torch.nn.Module):
+            """
+            Simplified Whisper encoder attention projections.
+            Returns Q/K/V separately to check their contiguity.
+            """
+
+            def __init__(self):
+                super().__init__()
+                self.q_proj = torch.nn.Linear(hidden_size, hidden_size, bias=True)
+                self.k_proj = torch.nn.Linear(hidden_size, hidden_size, bias=False)
+                self.v_proj = torch.nn.Linear(hidden_size, hidden_size, bias=True)
+                self.layer_norm = torch.nn.LayerNorm(hidden_size)
+
+            def forward(self, hidden_states: torch.Tensor):
+                # Layer norm before attention (encoder pattern)
+                hidden_states = self.layer_norm(hidden_states)
+
+                # Q/K/V projections (should be fused)
+                q = self.q_proj(hidden_states)
+                k = self.k_proj(hidden_states)
+                v = self.v_proj(hidden_states)
+
+                return q, k, v
+
+        # Create model
+        module = WhisperEncoderQKV().to(dtype=torch.bfloat16, device="cuda")
+        module.eval()
+
+        # Apply INT4 quantization
+        int4_config = Int4WeightOnlyConfig(
+            group_size=group_size,
+            int4_packing_format="tile_packed_to_4d",
+        )
+        quantize_(module, int4_config)
+
+        # Create encoder-like input (full audio sequence)
+        x = torch.randn(1, seq_len, hidden_size, dtype=torch.bfloat16, device="cuda")
+
+        # Export to edge dialect
+        exported_program = export(module, (x,), strict=True)
+        edge_program = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        )
+
+        ep = edge_program.exported_program()
+
+        # Apply CSE pass
+        cse_result = CSEPass()(ep.graph_module)
+        if isinstance(cse_result, PassResult) and cse_result.modified:
+            ep = _update_exported_program_graph_module(
+                ep, cse_result.graph_module, override_verifiers=[]
+            )
+
+        # Apply fusion pass
+        fusion_result = FuseInt4WeightOnlyQuantMatmulPass()(ep.graph_module)
+        if isinstance(fusion_result, PassResult) and fusion_result.modified:
+            ep = _update_exported_program_graph_module(
+                ep, fusion_result.graph_module, override_verifiers=[]
+            )
+
+        # Verify fusion occurred by counting int4mm ops
+        int4mm_count = sum(
+            1 for node in ep.graph_module.graph.nodes
+            if node.op == "call_function" and "_weight_int4pack_mm" in str(node.target)
+        )
+        self.assertEqual(int4mm_count, 1, "Expected Q/K/V fusion (3->1)")
+
+        # Check FakeTensor metadata for contiguous nodes (after the fix is applied)
+        # The fusion pass now adds .contiguous() after each getitem to ensure
+        # proper memory layout for AOTI compilation.
+        contiguous_metadata = []
+        for node in ep.graph_module.graph.nodes:
+            if node.op == "call_function" and "contiguous" in str(node.target):
+                if "val" in node.meta:
+                    val = node.meta["val"]
+                    if isinstance(val, torch.Tensor):
+                        contiguous_metadata.append({
+                            "name": node.name,
+                            "shape": tuple(val.shape),
+                            "stride": tuple(val.stride()),
+                            "is_contiguous": val.is_contiguous(),
+                        })
+
+        # After the fix, there should be contiguous nodes with proper metadata
+        self.assertGreater(len(contiguous_metadata), 0, "Expected contiguous nodes after fusion (fix applied)")
+
+        for meta in contiguous_metadata:
+            # Check that FakeTensor metadata shows contiguous tensors
+            self.assertTrue(
+                meta["is_contiguous"],
+                f"Encoder FakeTensor for {meta['name']} (seq_len={seq_len}) should be contiguous.\n"
+                f"Shape: {meta['shape']}, Strides: {meta['stride']}"
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
