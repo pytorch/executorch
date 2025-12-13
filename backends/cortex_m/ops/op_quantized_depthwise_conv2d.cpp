@@ -71,14 +71,7 @@ bool validate_depthwise_conv2d_arguments(
     return false;
   }
 
-  // Check for channels_last dim_order (NHWC: 0, 2, 3, 1)
-  // Skip check if channels == 1, as dim_order is ambiguous in that case
-  constexpr executorch::aten::DimOrderType kChannelsLastDimOrder[] = {
-      0, 2, 3, 1};
-  executorch::aten::ArrayRef<executorch::aten::DimOrderType>
-      channels_last_order(kChannelsLastDimOrder, 4);
-
-  if (input.size(1) > 1 && input.dim_order() != channels_last_order) {
+  if (!is_channels_last_tensor(input)) {
     ET_LOG(
         Error,
         "quantized_depthwise_conv2d_out: input must have channels_last dim_order (NHWC)");
@@ -86,7 +79,7 @@ bool validate_depthwise_conv2d_arguments(
     return false;
   }
 
-  if (output.size(1) > 1 && output.dim_order() != channels_last_order) {
+  if (!is_channels_last_tensor(output)) {
     ET_LOG(
         Error,
         "quantized_depthwise_conv2d_out: output must have channels_last dim_order (NHWC)");
