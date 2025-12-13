@@ -58,7 +58,7 @@ This will install:
 
 The `setup.sh` script has generated a `setup_path.sh` script that you need to source whenever you restart your shell. Do this by running
 
-`source examples/arm/ethos-u-scratch/setup_path.sh`
+`source examples/arm/arm-scratch/setup_path.sh`
 
 As a simple check that your environment is set up correctly, run
 
@@ -207,7 +207,7 @@ In this tutorial you have learned how to use ExecuTorch to export a PyTorch mode
 
 Issue: glslc is not found when configuring the executor runner.
 Solution: The Vulkan sdk is likely not in your path, check whether setup_path.sh contains something like
-`export PATH=$(pwd)/examples/arm/ethos-u-scratch/vulkan_sdk/1.4.321.1/x86_64/bin:$PATH`.
+`export PATH=$(pwd)/examples/arm/arm-scratch/vulkan_sdk/1.4.321.1/x86_64/bin:$PATH`.
 If not, add it and source the file.
 
 If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).
