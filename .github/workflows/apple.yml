@@ -97,7 +97,7 @@ jobs:
     runs-on: linux.2xlarge
     steps:
       - name: Download the artifacts from GitHub
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           # The name here needs to match the name of the upload-artifact parameter
           name: ios-demo-app
@@ -203,11 +203,11 @@ jobs:
       id-token: write
       contents: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PYTORCHBOT_CHERRY_PICK_TOKEN || secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: pip
@@ -217,7 +217,7 @@ jobs:
           role-to-assume: arn:aws:iam::308535385114:role/gha_executorch_upload-frameworks-ios
           aws-region: us-east-1
       - name: Download the artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           # NB: The name here needs to match the upload-artifact name from build-frameworks-ios job
           name: executorch-frameworks-ios
