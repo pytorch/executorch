@@ -98,5 +98,17 @@ ARG QNN_SDK
 
 ARG MEDIATEK_SDK
 
+ARG CUDA_WINDOWS_CROSS_COMPILE
+ARG CUDA_VERSION
+COPY ./common/install_pytorch_cuda.sh install_pytorch_cuda.sh
+COPY ./common/install_cuda_windows_cross_compile.sh install_cuda_windows_cross_compile.sh
+COPY ./common/utils.sh utils.sh
+RUN if [ -n "${CUDA_WINDOWS_CROSS_COMPILE}" ]; then \
+    CUDA_VERSION=${CUDA_VERSION} bash ./install_pytorch_cuda.sh && \
+    bash ./install_cuda_windows_cross_compile.sh; \
+    fi
+RUN rm -f install_pytorch_cuda.sh install_cuda_windows_cross_compile.sh utils.sh
+ENV WINDOWS_CUDA_HOME=/opt/cuda-windows/extracted/cuda_cudart/cudart
+
 USER ci-user
 CMD ["bash"]

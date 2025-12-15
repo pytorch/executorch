@@ -1,7 +1,7 @@
 # Test ExecuTorch CUDA Windows Cross-Compilation Export
 # This workflow tests model export targeting CUDA Windows using optimum-executorch.
-# It runs on a Linux machine with CUDA and uses the install_windows_cuda_deps.py
-# script to install the Windows CUDA cross-compilation dependencies.
+# It runs on a Linux machine with CUDA and uses the executorch-ubuntu-22.04-cuda-windows
+# Docker image which has mingw pre-installed for Windows cross-compilation.
 
 name: Test CUDA Windows Export
 
@@ -53,20 +53,24 @@ jobs:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: 12.6
-      use-custom-docker-registry: false
+      gpu-arch-version: 12.8
+      docker-image: ci-image:executorch-ubuntu-22.04-cuda-windows
       submodules: recursive
       upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-windows-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
 
-        echo "::group::Setup ExecuTorch"
-        ./install_executorch.sh
+        echo "::group::Verify pre-installed dependencies"
+        x86_64-w64-mingw32-g++ --version
+        python3 -c "import torch; print(f'PyTorch {torch.__version__} with CUDA {torch.version.cuda}')"
+        echo "WINDOWS_CUDA_HOME=${WINDOWS_CUDA_HOME}"
+        ls -la "${WINDOWS_CUDA_HOME}"
         echo "::endgroup::"
 
-        echo "::group::Install Windows CUDA Dependencies"
-        python scripts/install_windows_cuda_deps.py
+        echo "::group::Setup ExecuTorch"
+        # Use --use-pt-pinned-commit to skip reinstalling PyTorch (already in Docker with CUDA support)
+        ./install_executorch.sh --use-pt-pinned-commit
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
