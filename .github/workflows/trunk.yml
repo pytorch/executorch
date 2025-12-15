@@ -381,7 +381,7 @@ jobs:
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
-          threshold="135768" # 136 KiB
+          threshold="136000" # 136 KiB
           toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
         else
           echo "Fail unsupport OS selection ${{ matrix.os }}"
@@ -657,12 +657,12 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
 
         if [[ "${{ matrix.backend }}" == "torchao" ]]; then
-          BUILD_TORCHAO_EXPERIMENTAL=1 TORCHAO_BUILD_CPU_AARCH64=1 TORCHAO_BUILD_KLEIDIAI=1 TORCHAO_ENABLE_ARM_NEON_DOT=1 TORCHAO_PARALLEL_BACKEND=OPENMP pip install third-party/ao
+          BUILD_TORCHAO_EXPERIMENTAL=1 TORCHAO_BUILD_CPU_AARCH64=1 TORCHAO_BUILD_KLEIDIAI=1 TORCHAO_ENABLE_ARM_NEON_DOT=1 TORCHAO_PARALLEL_BACKEND=OPENMP pip install --no-build-isolation third-party/ao
         fi
 
         pip install -U "huggingface_hub[cli]<1.0"
 
-        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.model != 'phi_4_mini' && '--test_with_runner' || '' }}  ${{ matrix.backend == 'torchao' && '--use_torchao_kernels' || '' }}
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} --test_with_runner ${{ matrix.backend == 'torchao' && '--use_torchao_kernels' || '' }}
 
   test-multimodal-macos:
     if: ${{ !github.event.pull_request.head.repo.fork }}

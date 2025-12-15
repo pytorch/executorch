@@ -8,8 +8,13 @@ from typing import Callable, List, Optional
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
+from executorch.backends.cortex_m.passes.passes_utils import (
+    is_channel_broadcast,
+    is_channels_last,
+)
 from executorch.backends.cortex_m.quantizer.operator_configs import (
     BINARY_OP_PATTERNS,
     CONV_OP_PATTERNS,
@@ -19,6 +24,7 @@ from executorch.backends.cortex_m.quantizer.operator_configs import (
 )
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     INT8_PER_TENSOR_CONFIG,
+    QuantizationSpec,
 )
 from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
@@ -29,6 +35,20 @@ from torchao.quantization.pt2e.quantizer import (
     SharedQuantizationSpec,
 )
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+
+
+def mark_node_as_annotated(
+    node: Node,
+    input_qspec_map: dict[Node, Optional[QuantizationSpec]],
+    output_qspec: Optional[QuantizationSpec],
+) -> None:
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(input_qspec_map, output_qspec)
+    annotation_info = ArmAnnotationInfo(
+        quantized=True,
+    )
+    meta_custom = node.meta.get("custom", {})
+    meta_custom[ArmAnnotationInfo.CUSTOM_META_KEY] = dict(annotation_info)
+    node.meta["custom"] = meta_custom
 
 
 class CortexMQuantizer(ComposableQuantizer):
@@ -45,7 +65,9 @@ class CortexMQuantizer(ComposableQuantizer):
         if len(node.all_input_nodes) == 2:
             t1 = get_first_fake_tensor(node.all_input_nodes[0])
             t2 = get_first_fake_tensor(node.all_input_nodes[1])
-            return t1.shape != t2.shape
+            return t1.shape != t2.shape and not (
+                is_channel_broadcast(t1, t2) and is_channels_last(t1)
+            )
 
         return False
 
@@ -62,7 +84,7 @@ class CortexMQuantizer(ComposableQuantizer):
         if tensor is None:
             return False
 
-        return not tensor.is_contiguous(memory_format=torch.channels_last)
+        return not is_channels_last(tensor)
 
     def __init__(self) -> None:
         quantizers: List[Quantizer] = [
@@ -211,9 +233,7 @@ class OperatorConfigQuantizer(Quantizer):
             if all(node not in match for node in node.users) and output_qspec is None:
                 output_qspec = config.output_activation if config else None
 
-            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-                input_qspec_map, output_qspec
-            )
+            mark_node_as_annotated(node, input_qspec_map, output_qspec)
 
     def annotate(self, model: GraphModule) -> None:
         matches = self.match_patterns(model, self.operator_config.operators)
@@ -242,8 +262,8 @@ class InputQuantizer(Quantizer):
             is_placeholder = node.op == "placeholder"
             is_filtered = self.filter_fn(node)
             if is_placeholder and not is_filtered:
-                node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-                    {}, self.quantization_config.output_activation
+                mark_node_as_annotated(
+                    node, {}, self.quantization_config.output_activation
                 )
 
     def validate(self, model: GraphModule) -> bool:
@@ -271,9 +291,7 @@ class OutputQuantizer(Quantizer):
             if not self.filter_fn(n)
         }
         output_qspec = self.quantization_config.output_activation
-        output_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-            input_qspec_map, output_qspec
-        )
+        mark_node_as_annotated(output_node, input_qspec_map, output_qspec)
 
     def validate(self, model: GraphModule) -> bool:
         return True
@@ -378,10 +396,10 @@ class SharedQspecQuantizer(Quantizer):
         shared_qspec = SharedQuantizationSpec(shared_root_node)
 
         for node in shared_nodes:
-            input_qspec_map = {n: shared_qspec for n in node.all_input_nodes}
-            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-                input_qspec_map, shared_qspec
-            )
+            input_qspec_map: dict[Node, Optional[QuantizationSpec]] = {
+                n: shared_qspec for n in node.all_input_nodes
+            }
+            mark_node_as_annotated(node, input_qspec_map, shared_qspec)
 
     def annotate(self, model: GraphModule) -> None:
         for node in model.graph.nodes:

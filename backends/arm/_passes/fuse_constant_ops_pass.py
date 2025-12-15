@@ -178,7 +178,10 @@ class ComputeConstantOpsAOTPass(ArmPass):
             return node_name_pre_computed
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {FuseEqualPlaceholdersPass}
+    _passes_required_after: Set[Type[ExportPass]] = {
+        FuseEqualPlaceholdersPass,
+        FuseConstantArgsPass,
+    }
 
     targeted_ops = [
         exir_ops.edge.aten.full.default,

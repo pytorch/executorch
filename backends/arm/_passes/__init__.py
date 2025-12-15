@@ -48,8 +48,8 @@ from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv_pass import DecomposeGroupedConvPass  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
-from .decompose_int16_activation_conv2d_pass import (  # noqa
-    DecomposeConv2dWithInt16ActivationPass,
+from .decompose_int16_activation_conv_pass import (  # noqa
+    DecomposeConvWithInt16ActivationPass,
 )
 from .decompose_int32_clamp_pass import DecomposeInt32ClampPass  # noqa
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
@@ -62,10 +62,12 @@ from .decompose_masked_fill_pass import DecomposeMaskedFillPass  # noqa
 from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
+from .decompose_quant_nodes import DecomposeQuantNodesPass  # noqa
 from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
 from .decompose_sdpa_pass import DecomposeScaledDotProductAttentionPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
+from .decompose_select_scatter_pass import DecomposeSelectScatterPass  # noqa
 from .decompose_sign_pass import DecomposeSignPass  # noqa
 from .decompose_silu_pass import DecomposeSiluPass  # noqa
 from .decompose_sinh_pass import DecomposeSinhPass  # noqa
@@ -107,7 +109,7 @@ from .remove_noop_pass import RemoveNoopPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,
 )
-from .rewrite_conv2d_pass import RewriteConv2dPass  # noqa
+from .rewrite_conv_pass import RewriteConvPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
@@ -115,5 +117,7 @@ from .size_adjust_input_pass import SizeAdjustInputPass  # noqa
 from .to_tosa_memory_format_pass import ToTosaMemoryFormatPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa
 from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass  # noqa
-from .replace_inf_values_pass import ReplaceInfValuesPass  # noqa  # usort: skip
+from .replace_inf_and_limit_values_pass import (  # noqa  # usort: skip
+    ReplaceInfAndLimitValuesPass,
+)
 from .arm_pass_manager import ArmPassManager  # noqa  # usort: skip
