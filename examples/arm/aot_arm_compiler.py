@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,6 +14,13 @@ import os
 import sys
 
 from pathlib import Path
+
+# Add Executorch root to path so this script can be run from anywhere
+_EXECUTORCH_DIR = Path(__file__).resolve().parents[2]
+_EXECUTORCH_DIR_STR = str(_EXECUTORCH_DIR)
+if _EXECUTORCH_DIR_STR not in sys.path:
+    sys.path.insert(0, _EXECUTORCH_DIR_STR)
+
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
