@@ -129,7 +129,7 @@ def test_torch_fns_FP(test_data):
         "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
         "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
     },
-    strict=False,
+    strict=True,
 )
 def test_torch_fns_INT(test_data):
     module, inputs = test_data

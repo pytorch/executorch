@@ -226,7 +226,6 @@ def test_to_tosa_INT_REDUNDANT_CAST(test_data: Tuple):
         exir_op=[],
     )
     pipeline.pop_stage("run_method_and_compare_outputs")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 

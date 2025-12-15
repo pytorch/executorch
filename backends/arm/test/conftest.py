@@ -3,8 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import os
 import random
+import sys
 from typing import Any
 
 import pytest
@@ -27,6 +29,8 @@ def pytest_configure(config):
     if config.option.arm_run_tosa_version:
         pytest._test_options["tosa_version"] = config.option.arm_run_tosa_version
 
+    logging.basicConfig(stream=sys.stdout)
+
 
 def pytest_collection_modifyitems(config, items):
     pass
@@ -36,7 +40,7 @@ def pytest_addoption(parser):
     def try_addoption(*args, **kwargs):
         try:
             parser.addoption(*args, **kwargs)
-        except Exception:
+        except Exception:  # nosec B110 - pytest redefines options, safe to ignore
             pass
 
     try_addoption("--arm_quantize_io", action="store_true", help="Deprecated.")
@@ -81,7 +85,7 @@ def set_random_seed():
 
     if os.environ.get("ARM_TEST_SEED", "RANDOM") == "RANDOM":
         random.seed()  # reset seed, in case any other test has fiddled with it
-        seed = random.randint(0, 2**32 - 1)
+        seed = random.randint(0, 2**32 - 1)  # nosec B311 - non-crypto seed for tests
         torch.manual_seed(seed)
     else:
         seed_str = os.environ.get("ARM_TEST_SEED", "0")

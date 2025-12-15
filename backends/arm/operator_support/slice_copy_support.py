@@ -41,9 +41,6 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
         non-unit step sizes.
 
         """
-        if tosa_spec not in self.tosa_specs:
-            return False
-
         args = node.args
         if len(args) == 5 and (step := args[4]) != 1:
             logger.warning(f"{node.target} with step size of {step} not supported.")

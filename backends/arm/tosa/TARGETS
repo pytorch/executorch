@@ -12,20 +12,6 @@ runtime.python_library(
     ],
 )
 runtime.python_library(
-    name = "quant_utils",
-    srcs = [
-        "quant_utils.py",
-    ],
-    deps = [
-        "fbsource//third-party/pypi/numpy:numpy",
-        "fbsource//third-party/tosa_tools:serializer",
-        "fbsource//third-party/tosa_tools:tosa",
-        "//executorch/backends/arm:constants",
-        ":mapping",
-        "//executorch/exir/dialects:lib",
-    ],
-)
-runtime.python_library(
     name = "specification",
     srcs = [
         "specification.py",
@@ -41,7 +27,6 @@ runtime.python_library(
         "utils.py",
     ],
     deps = [
-        ":quant_utils",
         "//executorch/backends/arm/operators:node_visitor",
     ],
 )

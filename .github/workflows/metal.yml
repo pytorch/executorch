@@ -28,12 +28,24 @@ jobs:
         PYTHON_EXECUTABLE=python CMAKE_ARGS="-DEXECUTORCH_BUILD_METAL=ON" ${CONDA_RUN} --no-capture-output ./install_executorch.sh
         echo "::endgroup::"
 
-  export-voxtral-metal-artifact:
-    name: export-voxtral-metal-artifact
+  export-model-metal-artifact:
+    name: export-model-metal-artifact
       # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "openai"
+            name: "whisper-small"
+          - repo: "openai"
+            name: "whisper-large-v3-turbo"
+        quant:
+          - "non-quantized"
     with:
       runner: macos-m2-stable
       python-version: '3.11'
@@ -41,7 +53,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      upload-artifact: voxtral-metal-export
+      upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}
       script: |
         set -eux
 
@@ -54,7 +66,6 @@ jobs:
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         echo "Using optimum-executorch version: ${OPTIMUM_ET_VERSION}"
         ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
-        ${CONDA_RUN} pip install mistral-common librosa
         echo "::endgroup::"
 
         echo "::group::Setup ExecuTorch"
@@ -65,44 +76,31 @@ jobs:
         ${CONDA_RUN} pip list
         echo "::endgroup::"
 
-        echo "::group::Export Voxtral"
-        ${CONDA_RUN} optimum-cli export executorch \
-            --model "mistralai/Voxtral-Mini-3B-2507" \
-            --task "multimodal-text-to-text" \
-            --recipe "metal" \
-            --dtype bfloat16 \
-            --max_seq_len 1024 \
-            --output_dir ./
-        ${CONDA_RUN} python -m executorch.extension.audio.mel_spectrogram \
-            --feature_size 128 \
-            --stack_output \
-            --max_audio_len 300 \
-            --output_file voxtral_preprocessor.pte
+        ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
-        test -f model.pte
-        test -f aoti_metal_blob.ptd
-        test -f voxtral_preprocessor.pte
-        echo "::endgroup::"
-
-        echo "::group::Store Voxtral Artifacts"
-        mkdir -p "${RUNNER_ARTIFACT_DIR}"
-        cp model.pte "${RUNNER_ARTIFACT_DIR}/"
-        cp aoti_metal_blob.ptd "${RUNNER_ARTIFACT_DIR}/"
-        cp voxtral_preprocessor.pte "${RUNNER_ARTIFACT_DIR}/"
-        ls -al "${RUNNER_ARTIFACT_DIR}"
-        echo "::endgroup::"
-
-  test-voxtral-metal-e2e:
-    name: test-voxtral-metal-e2e
-    needs: export-voxtral-metal-artifact
+  test-model-metal-e2e:
+    name: test-model-metal-e2e
+    needs: export-model-metal-artifact
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "openai"
+            name: "whisper-small"
+          - repo: "openai"
+            name: "whisper-large-v3-turbo"
+        quant:
+          - "non-quantized"
     with:
       runner: macos-m2-stable
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
-      download-artifact: voxtral-metal-export
+      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}
       script: |
         set -eux
 
@@ -130,64 +128,4 @@ jobs:
         fi
         echo "::endgroup::"
 
-        echo "::group::Setup ExecuTorch Requirements"
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_METAL=ON" ${CONDA_RUN} --no-capture-output ./install_requirements.sh
-        echo "::endgroup::"
-
-        echo "::group::Pip List"
-        ${CONDA_RUN} pip list
-        echo "::endgroup::"
-
-        echo "::group::Prepare Voxtral Artifacts"
-        cp "${RUNNER_ARTIFACT_DIR}/model.pte" .
-        cp "${RUNNER_ARTIFACT_DIR}/aoti_metal_blob.ptd" .
-        cp "${RUNNER_ARTIFACT_DIR}/voxtral_preprocessor.pte" .
-        TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main/tekken.json"
-        curl -L $TOKENIZER_URL -o tekken.json
-        ls -al model.pte aoti_metal_blob.ptd voxtral_preprocessor.pte tekken.json
-        echo "::endgroup::"
-
-        echo "::group::Create Test Audio File"
-        say -o call_samantha_hall.aiff "Call Samantha Hall"
-        afconvert -f WAVE -d LEI16 call_samantha_hall.aiff call_samantha_hall.wav
-        echo "::endgroup::"
-
-        echo "::group::Build Voxtral Runner"
-        ${CONDA_RUN} cmake --preset llm \
-              -DEXECUTORCH_BUILD_METAL=ON \
-              -DCMAKE_INSTALL_PREFIX=cmake-out \
-              -DCMAKE_BUILD_TYPE=Release \
-              -Bcmake-out -S.
-        ${CONDA_RUN} cmake --build cmake-out -j$(( $(sysctl -n hw.ncpu) - 1 )) --target install --config Release
-
-        ${CONDA_RUN} cmake -DEXECUTORCH_BUILD_METAL=ON \
-              -DCMAKE_BUILD_TYPE=Release \
-              -Sexamples/models/voxtral \
-              -Bcmake-out/examples/models/voxtral/
-        ${CONDA_RUN} cmake --build cmake-out/examples/models/voxtral --target voxtral_runner --config Release
-        echo "::endgroup::"
-
-        echo "::group::Run Voxtral Runner"
-        set +e
-        OUTPUT=$(cmake-out/examples/models/voxtral/voxtral_runner \
-              --model_path model.pte \
-              --data_path aoti_metal_blob.ptd \
-              --tokenizer_path tekken.json \
-              --audio_path call_samantha_hall.wav \
-              --processor_path voxtral_preprocessor.pte \
-              --temperature 0 2>&1)
-        EXIT_CODE=$?
-        set -e
-
-        echo "$OUTPUT"
-
-        if ! echo "$OUTPUT" | grep -iq "Samantha"; then
-          echo "Expected output 'Samantha' not found in output"
-          exit 1
-        fi
-
-        if [ $EXIT_CODE -ne 0 ]; then
-          echo "Unexpected exit code: $EXIT_CODE"
-          exit $EXIT_CODE
-        fi
-        echo "::endgroup::"
+        ${CONDA_RUN} bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"

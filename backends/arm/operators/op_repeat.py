@@ -43,7 +43,13 @@ class RepeatVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.INT16, ts.DType.FP32],
+            [
+                ts.DType.BOOL,
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+                ts.DType.FP32,
+            ],
             output.tosa_spec,
         )
 
@@ -56,7 +62,7 @@ class RepeatVisitor(NodeVisitor):
             (len(multiples),),
             ts.DType.SHAPE,
             list(tosa_shape(multiples, output.dim_order)),
-            name=node.name + "_multiples",
+            name=output.name + "_multiples",
         )
 
         attr = ts.TosaSerializerAttribute()

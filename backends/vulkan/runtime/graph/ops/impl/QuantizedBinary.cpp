@@ -9,7 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedConvolution.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -178,10 +178,10 @@ void add_q8ta_q8ta_q8to_test(
       utils::kBuffer,
       utils::kPackedInt8_4W4C);
 
-  add_quantize_and_pack_q8ta_conv2d_input_node(
+  add_quantize_and_pack_4w4c_node(
       graph, fp_input_a, input_a_scale, input_a_zp, packed_int8_input_a);
 
-  add_quantize_and_pack_q8ta_conv2d_input_node(
+  add_quantize_and_pack_4w4c_node(
       graph, fp_input_b, input_b_scale, input_b_zp, packed_int8_input_b);
 
   std::vector<ValueRef> add_args = {
@@ -198,7 +198,7 @@ void add_q8ta_q8ta_q8to_test(
 
   add_q8ta_q8ta_q8to(graph, add_args);
 
-  add_unpack_and_dequantize_q8ta_conv2d_output_node(
+  add_unpack_4w4c_and_dequantize_node(
       graph, packed_int8_output, output_scale, output_zp, fp_output);
 }
 

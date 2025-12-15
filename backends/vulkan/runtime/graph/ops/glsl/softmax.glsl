@@ -23,8 +23,10 @@ layout(std430) buffer;
 ${layout_declare_tensor(B, "w", "tout", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "tin", DTYPE, STORAGE)}
 
-${layout_declare_ubo(B, "ivec3", "tout_limits")}
-${layout_declare_ubo(B, "ivec4", "tin_sizes")}
+layout(push_constant) uniform restrict Block {
+  ivec4 tin_sizes;
+  ivec3 tout_limits;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 

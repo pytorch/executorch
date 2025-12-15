@@ -7,7 +7,7 @@ import argparse
 import gzip
 import io
 import json
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405
 from pathlib import Path
 
 from typing import Any, Callable, Dict, Iterable, NamedTuple, Union
@@ -35,7 +35,7 @@ def parse_tables(tables_path: Path) -> Tables:
     """
     required_tables = {"queue", "group", "perf", "source"}
     try:
-        tree = ET.parse(tables_path)
+        tree = ET.parse(tables_path)  # nosec B314
     except ET.ParseError as e:
         raise ValueError(f"Failed to parse XML tables file {tables_path}: {e}")
 
@@ -95,6 +95,11 @@ def transform_events(
 
         qread_offset = 4 * int(event["args"]["qread"])
 
+        while (cmd_index + chain_len <= queue_df_len - 1) and queue_df.iloc[
+            cmd_index + chain_len
+        ]["scheduled_id"] in sub_ops:
+            chain_len += 1
+
         end_idx = cmd_index + chain_len
         if is_end_of_command(qread_offset, end_idx):
             end_ts = int(event["ts"]) - 1
@@ -102,12 +107,8 @@ def transform_events(
                 end_ts - start_ts,
             ]
             start_ts = end_ts
-            cmd_index += chain_len
+            cmd_index = end_idx
             chain_len = 1
-            while (cmd_index + chain_len <= queue_df_len - 1) and queue_df.iloc[
-                cmd_index + chain_len
-            ]["scheduled_id"] in sub_ops:
-                chain_len += 1
 
 
 Agg = Union[str, Callable[[pd.Series], Any]]

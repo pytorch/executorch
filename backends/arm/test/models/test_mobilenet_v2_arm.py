@@ -114,29 +114,29 @@ def test_mv2_u85_INT(per_channel_quantization):
 
 @common.SkipIfNoModelConverter
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_mv2_vgf_INT(per_channel_quantization):
+def test_mv2_vgf_quant(per_channel_quantization):
     pipeline = VgfPipeline[input_t](
         mv2,
         model_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
         per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_mv2_vgf_FP():
+def test_mv2_vgf_no_quant():
     pipeline = VgfPipeline[input_t](
         mv2,
         model_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()

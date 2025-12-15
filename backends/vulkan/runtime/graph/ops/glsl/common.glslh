@@ -9,6 +9,10 @@
 #ifndef COMMON_GLSLH
 #define COMMON_GLSLH
 
+#ifdef DEBUG_MODE
+#extension GL_EXT_debug_printf : enable
+#endif
+
 #define mul_2(x) ((x) << 1)
 #define mul_4(x) ((x) << 2)
 #define mul_8(x) ((x) << 3)
@@ -81,5 +85,16 @@ int quantize_and_pack(const vec4 vals, const float inv_scale, const int zp) {
   quantized = clamp(quantized, -128, 127);
   return pack_into_int32(quantized);
 }
+
+#ifdef DEBUG_MODE
+
+#define printf debugPrintfEXT
+
+void printVec4(vec4 texel) {
+  debugPrintfEXT(
+      "texel: %f, %f, %f, %f\\n", texel.x, texel.y, texel.z, texel.w);
+}
+
+#endif // DEBUG_MODE
 
 #endif // COMMON_GLSLH

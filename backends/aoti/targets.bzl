@@ -16,6 +16,23 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "aoti_backend",
+        srcs = [
+            "aoti_backend.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/aoti/passes:passes",
+            "//executorch/exir/_serialize:lib",
+            "//executorch/exir/backend:backend_details",
+            "//executorch/exir/backend:compile_spec_schema",
+        ],
+    )
+
     # AOTI common shims functionality
     runtime.cxx_library(
         name = "common_shims",
@@ -24,6 +41,7 @@ def define_common_targets():
         ],
         headers = [
             "common_shims.h",
+            "export.h",
             "utils.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)

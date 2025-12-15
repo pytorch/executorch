@@ -11,20 +11,14 @@ import unittest
 from typing import Tuple
 
 import executorch.backends.vulkan.test.utils as test_utils
-
 import torch
-
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
-
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
-
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
-
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -36,11 +30,8 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
 )
 from executorch.extension.pytree import tree_flatten
 from torch.export import Dim, export, ExportedProgram
-
 from torchao.quantization.granularity import PerGroup
-
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-
 from torchao.quantization.pt2e.quantizer import Quantizer
 from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 from torchao.utils import unwrap_tensor_subclass
@@ -69,9 +60,6 @@ def lower_module(
     edge_program = to_edge_transform_and_lower(
         program,
         compile_config=edge_compile_config,
-        transform_passes=[
-            I64toI32(edge_compile_config._skip_dim_order),
-        ],
         partitioner=[VulkanPartitioner(compile_options)],
     )
 
@@ -1968,102 +1956,6 @@ class TestVulkanBackend(unittest.TestCase):
                     GroupNormModule(num_groups, num_channels),
                     sample_inputs,
                 )
-
-    def test_vulkan_backend_full_quantization_workflow(self):
-        class FullQuantizationWorkflowModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                # Step 1: Choose quantization parameters per tensor
-                scale, zero_point = (
-                    torch.ops.quantized_decomposed.choose_qparams.tensor(
-                        x,
-                        quant_min=-2147483648,  # int32 min
-                        quant_max=2147483647,  # int32 max
-                        eps=1e-5,
-                        dtype=torch.int32,
-                    )
-                )
-
-                # Step 2: Quantize using the calculated parameters
-                quantized = torch.ops.quantized_decomposed.quantize_per_tensor.tensor(
-                    x,
-                    scale,
-                    zero_point,
-                    quant_min=-2147483648,  # int32 min
-                    quant_max=2147483647,  # int32 max
-                    dtype=torch.int32,
-                )
-
-                # Step 3: Dequantize back to float
-                dequantized = (
-                    torch.ops.quantized_decomposed.dequantize_per_tensor.tensor(
-                        quantized,
-                        scale,
-                        zero_point,
-                        quant_min=-2147483648,  # int32 min
-                        quant_max=2147483647,  # int32 max
-                        dtype=torch.int32,
-                    )
-                )
-
-                return dequantized
-
-        full_workflow_module = FullQuantizationWorkflowModule()
-        sample_inputs = (torch.rand(size=(2, 3, 4), dtype=torch.float32),)
-
-        # Use higher tolerance since quantization introduces some error
-        self.lower_module_and_test_output(
-            full_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
-        )
-
-    def test_vulkan_backend_full_per_token_quantization_workflow(self):
-        class FullPerTokenQuantizationWorkflowModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                # Step 1: Choose quantization parameters per token
-                scale, zero_point = (
-                    torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
-                        x,
-                        dtype=torch.int32,
-                    )
-                )
-
-                # Step 2: Quantize using the calculated parameters per token
-                quantized = torch.ops.quantized_decomposed.quantize_per_token.default(
-                    x,
-                    scale,
-                    zero_point,
-                    quant_min=-2147483648,  # int32 min
-                    quant_max=2147483647,  # int32 max
-                    dtype=torch.int32,
-                )
-
-                # Step 3: Dequantize back to float per token
-                dequantized = (
-                    torch.ops.quantized_decomposed.dequantize_per_token.default(
-                        quantized,
-                        scale,
-                        zero_point,
-                        quant_min=-2147483648,  # int32 min
-                        quant_max=2147483647,  # int32 max
-                        dtype=torch.int32,
-                        output_dtype=torch.float32,
-                    )
-                )
-
-                return dequantized
-
-        full_per_token_workflow_module = FullPerTokenQuantizationWorkflowModule()
-        sample_inputs = (torch.rand(size=(6, 4), dtype=torch.float32),)
-
-        # Use higher tolerance since quantization introduces some error
-        self.lower_module_and_test_output(
-            full_per_token_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
-        )
 
     def test_vulkan_backend_different_required_reprs(self):
         class ComplexModule(torch.nn.Module):

@@ -52,10 +52,18 @@ class DecomposeSelectPass(ArmPass):
 
             with graph_module.graph.inserting_before(node):
                 slice_node = create_node(
-                    graph_module.graph, slice_op, (input_node, dim, index, index + 1)
+                    graph_module.graph,
+                    slice_op,
+                    (input_node, dim, index, index + 1),
+                    from_node=node,
+                    inherit_qparams=False,
                 )
                 squeeze_node = create_node(
-                    graph_module.graph, squeeze_op, (slice_node, [dim]), from_node=node
+                    graph_module.graph,
+                    squeeze_op,
+                    (slice_node, [dim]),
+                    from_node=node,
+                    inherit_qparams=True,
                 )
 
             node.replace_all_uses_with(squeeze_node)

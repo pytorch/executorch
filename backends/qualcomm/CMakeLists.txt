@@ -23,6 +23,47 @@ get_filename_component(
   _common_include_directories "${EXECUTORCH_SOURCE_DIR}/.." ABSOLUTE
 )
 
+# We only download QNN SDK when we build pip wheel for ExecuTorch. Please don't
+# change this code unless you know what you are doing.
+if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+  set(_qnn_default_sdk_dir "${CMAKE_CURRENT_BINARY_DIR}/sdk/qnn")
+
+  if(EXISTS "${_qnn_default_sdk_dir}" AND EXISTS "${_qnn_default_sdk_dir}/lib")
+    message(STATUS "Found cached Qualcomm SDK at ${_qnn_default_sdk_dir}")
+    set(QNN_SDK_ROOT
+        ${_qnn_default_sdk_dir}
+        CACHE PATH "Qualcomm SDK root directory" FORCE
+    )
+  else()
+    message(STATUS "Downloading Qualcomm SDK")
+    execute_process(
+      COMMAND
+        ${PYTHON_EXECUTABLE}
+        ${EXECUTORCH_SOURCE_DIR}/backends/qualcomm/scripts/download_qnn_sdk.py
+        --dst-folder ${_qnn_default_sdk_dir} --print-sdk-path
+      WORKING_DIRECTORY ${EXECUTORCH_SOURCE_DIR}
+      RESULT_VARIABLE _qnn_sdk_download_result
+      OUTPUT_VARIABLE _qnn_sdk_download_output
+      ERROR_VARIABLE _qnn_sdk_download_error
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(NOT _qnn_sdk_download_result EQUAL 0 OR _qnn_sdk_download_output
+                                               STREQUAL ""
+    )
+      message(
+        FATAL_ERROR
+          "Failed to download Qualcomm SDK. stdout: ${_qnn_sdk_download_output}\n"
+          "stderr: ${_qnn_sdk_download_error}"
+      )
+    endif()
+    set(QNN_SDK_ROOT
+        ${_qnn_sdk_download_output}
+        CACHE PATH "Qualcomm SDK root directory" FORCE
+    )
+  endif()
+  set(ENV{QNN_SDK_ROOT} ${QNN_SDK_ROOT})
+endif()
+
 if(NOT DEFINED QNN_SDK_ROOT)
   message(
     FATAL_ERROR
@@ -214,7 +255,9 @@ add_subdirectory(
 install(
   TARGETS qnn_executorch_backend
   EXPORT ExecuTorchTargets
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
+  RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
 )
 
 # QNN pybind
@@ -274,5 +317,13 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   add_subdirectory(
     ${QNN_EXECUTORCH_ROOT_DIR}/aot/python
     ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/python
+  )
+
+  install(
+    TARGETS PyQnnManagerAdaptor PyQnnWrapperAdaptor
+    LIBRARY
+      DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm/python
+    RUNTIME
+      DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm/python
   )
 endif()

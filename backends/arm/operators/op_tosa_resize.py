@@ -39,20 +39,32 @@ class ResizeVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, [3, 4])
+        supported_input_dtypes = [ts.DType.INT8, ts.DType.FP32]
+        if self.tosa_spec.support_extension("int16"):
+            supported_input_dtypes.append(ts.DType.INT16)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0]],
+            supported_input_dtypes,
+            output.tosa_spec,
+        )
+        supported_output_dtypes = [ts.DType.FP32]
         if node.kwargs.get("resize_mode") == "bilinear":
             resize_mode = ts.ResizeMode.BILINEAR
             align_corners = bool(node.args[2])
+            supported_output_dtypes.append(ts.DType.INT32)
+            if self.tosa_spec.support_extension("int16"):
+                supported_output_dtypes.append(ts.DType.INT48)
         else:
             resize_mode = ts.ResizeMode.NEAREST
             align_corners = False
             validate_same_dtype(self.target, [inputs[0], output], ts)
+            supported_output_dtypes.append(ts.DType.INT8)
+            if self.tosa_spec.support_extension("int16"):
+                supported_output_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
-            self.target,
-            [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP16, ts.DType.FP32],
-            output.tosa_spec,
+            self.target, [output], supported_output_dtypes, output.tosa_spec
         )
-
         # tosa_shape output is NHWC, take HW
         input_size_yx = tuple([inputs[0].shape[dim] for dim in inputs[0].dim_order])[
             1:3
@@ -84,15 +96,15 @@ class ResizeVisitor(NodeVisitor):
             scale_d_vals[1],
         ]
         scales_tensor = tosa_graph.addConst(
-            [len(scales)], ts.DType.SHAPE, scales, node.name + "_scales"
+            [len(scales)], ts.DType.SHAPE, scales, output.name + "_scales"
         )
         offset = [int(v) for v in offset_yx.tolist()]
         offset_tensor = tosa_graph.addConst(
-            [len(offset)], ts.DType.SHAPE, offset, node.name + "_offset"
+            [len(offset)], ts.DType.SHAPE, offset, output.name + "_offset"
         )
         border = [int(v) for v in border_yx.tolist()]
         border_tensor = tosa_graph.addConst(
-            [len(border)], ts.DType.SHAPE, border, node.name + "_border"
+            [len(border)], ts.DType.SHAPE, border, output.name + "_border"
         )
         attr = ts.TosaSerializerAttribute()
         attr.ResizeAttribute(resize_mode)

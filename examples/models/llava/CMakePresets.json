@@ -1,0 +1,38 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "llava",
+            "displayName": "Llava runner",
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/llava",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "llava",
+            "displayName": "Build Llava runner",
+            "configurePreset": "llava",
+            "targets": ["llava_main"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "llava",
+            "displayName": "Configure and build Llava runner",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "llava"
+                },
+                {
+                    "type": "build",
+                    "name": "llava"
+                }
+            ]
+        }
+    ]
+}

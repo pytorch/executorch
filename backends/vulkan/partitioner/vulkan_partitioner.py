@@ -184,36 +184,6 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         return False, False
 
-    def is_in_local_scalar_dense_chain(self, node: torch.fx.Node) -> Tuple[bool, bool]:
-        """
-        Scalar tensors are usually converted to scalar values in the graph via`
-        scalar_tensor[0].item()` in Python, which translates to a chain of
-        `local_scalar_dense(torch.select.int(scalar_tensor, 0, 0))` in the graph.
-        This function marks the entire chain as supported by the Vulkan delegate.
-
-        Later, within vulkan_preprocess there will be a graph transform which replaces
-        the chain with passing in the scalar tensor directly.
-
-        Similar to the `is_linear_permute` function, this function has 2 return values.
-        """
-        if node.target == exir_ops.edge.aten.select_copy.int:
-            if len(node.users) != 1:
-                return False, False
-            # pyre-ignore
-            if node.args[0].meta["val"].numel() != 1:
-                return False, False
-
-            local_scalar_dense = list(node.users.keys())[0]
-            if local_scalar_dense.target != torch.ops.aten._local_scalar_dense.default:
-                return False, False
-
-            return self.is_in_local_scalar_dense_chain(local_scalar_dense)
-
-        if node.target == torch.ops.aten._local_scalar_dense.default:
-            return True, all(self.node_is_compatible(user)[0] for user in node.users)
-
-        return False, False
-
     def log_skip(self, node: torch.fx.Node, reason: str) -> None:
         if node.op == "call_function":
             logger.info(
@@ -259,16 +229,6 @@ class VulkanSupportedOperators(OperatorSupportBase):
         elif is_linear_permute:
             # Skip so that the permute can be fused into a linear by another backend
             self.log_skip(node, "permute node of non compatible linear node")
-            return False
-
-        (
-            is_in_local_scalar_dense_chain,
-            dst_node_is_compatible,
-        ) = self.is_in_local_scalar_dense_chain(node)
-        if is_in_local_scalar_dense_chain and dst_node_is_compatible:
-            return True
-        elif is_in_local_scalar_dense_chain:
-            self.log_skip(node, "local scalar dense of incompatible op node")
             return False
 
         features = None

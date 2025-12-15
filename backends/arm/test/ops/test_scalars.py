@@ -435,5 +435,4 @@ def test_bitwise_right_shift_tensor_tosa_INT_inplace():
         (torch.IntTensor(5),),
         aten_op="torch.ops.aten.bitwise_right_shift.Tensor",
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

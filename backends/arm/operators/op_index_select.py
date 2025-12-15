@@ -6,16 +6,20 @@
 
 from typing import Any, List
 
-import executorch.backends.arm.tosa.quant_utils as tqutils  # noqa: F401
 import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
+)
 from executorch.backends.arm.tosa.mapping import TosaArg
 
-from executorch.backends.arm.tosa.utils import build_reshape_tosa_1_0
+from executorch.backends.arm.tosa.utils import build_reshape_tosa
 from torch.fx import Node
 
 
@@ -46,10 +50,16 @@ class IndexSelectVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        if len(inputs) != 3:
-            raise ValueError(f"Number of inputs are not 3: {len(inputs)}")
+        validate_num_inputs(self.target, inputs, 3)
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
-        weights, index, indices = inputs
+        weights, _, indices = inputs
 
         if len(weights.shape) == 2:
             weights_new_shape = [1, weights.shape[0], weights.shape[1]]
@@ -57,7 +67,7 @@ class IndexSelectVisitor(NodeVisitor):
                 weights_new_shape,
                 weights.dtype,
             )
-            build_reshape_tosa_1_0(
+            build_reshape_tosa(
                 tosa_graph, weights.name, weights_new_shape, weights_reshaped.name
             )
 
@@ -79,7 +89,7 @@ class IndexSelectVisitor(NodeVisitor):
             indices_new_shape,
             indices.dtype,
         )
-        build_reshape_tosa_1_0(
+        build_reshape_tosa(
             tosa_graph, indices.name, indices_new_shape, indices_reshaped.name
         )
 
@@ -96,6 +106,4 @@ class IndexSelectVisitor(NodeVisitor):
 
         if len(weights.shape) == 2:
             output_real_shape = [output.shape[0], output.shape[1]]
-            build_reshape_tosa_1_0(
-                tosa_graph, output_name, output_real_shape, output.name
-            )
+            build_reshape_tosa(tosa_graph, output_name, output_real_shape, output.name)

@@ -44,10 +44,13 @@ class MaxPool2dVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, [3, 4, 5, 6])
         validate_same_dtype(self.target, [inputs[0], output], ts)
+        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
+        if self.tosa_spec.support_extension("int16"):
+            supported_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.FP32],
+            supported_dtypes,
             output.tosa_spec,
         )
 

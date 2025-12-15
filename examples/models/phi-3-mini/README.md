@@ -30,9 +30,7 @@ The model artifact `model.pte` size is about 2.0GB.
 3. Build and run the model.
 - Build executorch with LLM preset:
 ```
-cmake --preset llm -DCMAKE_INSTALL_PREFIX=cmake-out
-
-cmake --build cmake-out -j16 --target install --config Release
+cmake --workflow llm-release
 ```
 - Build Phi-3-mini runner.
 ```

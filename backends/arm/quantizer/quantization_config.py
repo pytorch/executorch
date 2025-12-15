@@ -177,6 +177,8 @@ class QuantizationConfig:
             torch.ops.aten.conv2d.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.conv2d.padding,
+            torch.ops.aten.conv3d.default,
+            torch.ops.aten.conv3d.padding,
         ]:
             if self.input_activation is None or self.weight is None:
                 raise ValueError(
@@ -187,7 +189,6 @@ class QuantizationConfig:
                 self.input_activation.dtype == torch.int16
                 and self.weight.dtype == torch.int8
             ):
-
                 input_act = node.args[0]
                 weight = node.args[1]
 
@@ -206,8 +207,8 @@ class QuantizationConfig:
                     derived_from=[(input_act, node), (weight, node)],  # type: ignore[list-item]
                     derive_qparams_fn=_derive_qparams_fn,
                     dtype=torch.int32,
-                    quant_min=torch.iinfo(torch.int32).min,
-                    quant_max=torch.iinfo(torch.int32).max - 1,
+                    quant_min=torch.iinfo(torch.int32).min + 1,
+                    quant_max=torch.iinfo(torch.int32).max,
                     qscheme=qscheme,
                     ch_axis=ch_axis,
                 )

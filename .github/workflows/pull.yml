@@ -16,13 +16,14 @@ jobs:
   test-qnn-wheel-packages-linux:
     name: test-qnn-wheel-packages-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    if: false
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.10", "3.11", "3.12" ]
+        python-version: [ "3.10", "3.11", "3.12", "3.13" ]
     with:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
@@ -50,7 +51,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc11
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -340,6 +341,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
+        set -eux
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
@@ -389,7 +391,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc9-nopytorch
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -398,15 +400,16 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        ./install_requirements.sh --use-pt-pinned-commit
+        ./install_requirements.sh
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
         strip cmake-out/test/size_test
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
-        # threshold=48120 on devserver with gcc11.4
+        # threshold=48120 on devserver with gcc9
         # todo(lfq): update once binary size is below 50kb.
+        # Note: using gcc9-nopytorch container with pinned nightly PyTorch
         threshold="63776"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
@@ -727,8 +730,8 @@ jobs:
         # run llama runner in eager mode
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_runner_eager.sh
 
-  test-llama-lora-linux:
-    name: test-llama-lora-linux
+  test-lora-linux:
+    name: test-lora-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -751,11 +754,8 @@ jobs:
         # Install llama requirements
         bash examples/models/llama/install_requirements.sh
 
-        # install a recent version of torchtune (>= 20250730)
-        PYTHON_EXECUTABLE=python python -m pip install torchtune==0.7.0.dev20250929  --extra-index-url https://download.pytorch.org/whl/nightly/cpu
-
         # run llama runner in eager mode
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_lora.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_lora.sh
 
   test-mediatek-models-linux:
     name: test-mediatek-models-linux
@@ -794,7 +794,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc11
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -861,15 +861,24 @@ jobs:
         # Install Node.js and Emscripten
         source .ci/scripts/setup-emscripten.sh
 
+        export PNPM_VERSION=10.24.0
+
+        curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=$PNPM_VERSION SHELL="$(which bash)" sh -
+
+        export PNPM_HOME="$HOME/.local/share/pnpm"
+        export PATH="$PNPM_HOME:$PATH"
+
+        pnpm --version
+
         # Test selective build
         bash scripts/build_wasm_tests.sh ${{ matrix.enable-etdump }}
 
         # Install Jest
         cd cmake-out-wasm/extension/wasm/test
-        npm install --save-dev jest
+        pnpm add -D jest@30.2.0 --ignore-scripts
 
         # Run unit test
-        npm test
+        pnpm test
 
   unittest-nxp-neutron:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main

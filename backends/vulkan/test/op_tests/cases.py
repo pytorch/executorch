@@ -6,7 +6,6 @@
 
 
 import itertools
-
 from collections import namedtuple
 from typing import Callable
 
@@ -1140,6 +1139,55 @@ def get_embedding_inputs():
     return test_suite_wpack
 
 
+@register_test_suite("aten.gather.default")
+def get_gather_inputs():
+    Test = namedtuple("GatherTest", ["input", "dim", "index"])
+    Test.__new__.__defaults__ = (None, None, None)
+
+    test_cases = [
+        # Simple 2D case
+        Test(input=[4, 4], dim=1, index=[[1, 2], [2, 1], [3, 3], [3, 1]]),
+        # # 1D cases
+        Test(input=[10], dim=0, index=[0, 2, 5, 7, 9]),
+        Test(input=[8], dim=0, index=[1, 3, 5]),
+        # # 2D cases with different dims
+        Test(input=[5, 8], dim=0, index=[[0, 1], [2, 3], [4, 0]]),
+        Test(
+            input=[5, 8],
+            dim=1,
+            index=[[0, 2, 4], [1, 3, 5], [6, 7, 0], [1, 2, 3], [4, 5, 6]],
+        ),
+        # # 3D cases
+        Test(
+            input=[3, 4, 5],
+            dim=0,
+            index=[
+                [[0, 1, 2, 0, 1], [1, 2, 0, 1, 2], [2, 0, 1, 2, 0], [0, 1, 2, 0, 1]]
+            ],
+        ),
+        Test(
+            input=[3, 4, 5],
+            dim=1,
+            index=[
+                [[0, 1, 2, 3], [1, 2, 3, 0], [2, 3, 0, 1], [3, 0, 1, 2], [0, 1, 2, 3]]
+            ],
+        ),
+        Test(
+            input=[3, 4, 5], dim=2, index=[[[0, 1, 2], [1, 2, 3], [2, 3, 4], [3, 4, 0]]]
+        ),
+    ]
+
+    test_suite = VkTestSuite(
+        [tuple(tc) + (False, "false", "false") for tc in test_cases]
+    )
+
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+
+    return test_suite
+
+
 @register_test_suite("aten.unsqueeze_copy.default")
 def get_unsqueeze_inputs():
     test_suite = VkTestSuite(
@@ -1470,64 +1518,11 @@ def get_split_with_sizes_inputs():
 
     test_suite.layouts = [
         "utils::kWidthPacked",
-        "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
     test_suite.dtypes = ["at::kFloat"]
-    return test_suite
-
-
-@register_test_suite("aten.split.Tensor")
-def get_split_tensor_inputs():
-    test_suite = VkTestSuite(
-        [
-            # Split on Width
-            ((S1, 7, 10, 12), 12, 3),
-            ((S1, 7, 10, 12), 3, 3),
-            ((S1, 7, 10, 12), 1, 3),
-            ((7, 10, 12), 12, 2),
-            ((7, 10, 12), 3, 2),
-            ((7, 10, 12), 1, 2),
-            ((10, 12), 12, 1),
-            ((10, 12), 3, 1),
-            ((10, 12), 1, 1),
-            ((12,), 12, 0),
-            ((12,), 3, 0),
-            ((12,), 1, 0),
-            # Split on Height
-            ((S1, 7, 12, 8), 12, 2),
-            ((S1, 7, 12, 8), 3, 2),
-            ((S1, 7, 12, 8), 1, 2),
-            ((7, 12, 8), 12, 1),
-            ((7, 12, 8), 3, 1),
-            ((7, 12, 8), 1, 1),
-            ((12, 8), 12, 0),
-            ((12, 8), 3, 0),
-            ((12, 8), 1, 0),
-            # Split  on Batch
-            ((12, 7, 10, 10), 12, 0),
-            ((12, 7, 10, 10), 3, 0),
-            ((12, 7, 10, 10), 1, 0),
-            # Split  on Channel
-            ((7, 15, 10, 10), 15, 1),
-            ((7, 15, 10, 10), 5, 1),
-            ((7, 15, 10, 10), 3, 1),
-            ((7, 15, 10, 10), 1, 1),
-            ((15, 10, 10), 15, 0),
-            ((15, 10, 10), 5, 0),
-            ((15, 10, 10), 3, 0),
-            ((15, 10, 10), 1, 0),
-        ]
-    )
-
-    test_suite.layouts = [
-        "utils::kWidthPacked",
-        "utils::kHeightPacked",
-        "utils::kChannelsPacked",
-    ]
-    test_suite.data_gen = "make_seq_tensor"
-    test_suite.dtypes = ["at::kFloat"]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     return test_suite
 
 

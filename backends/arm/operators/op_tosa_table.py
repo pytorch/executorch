@@ -36,35 +36,37 @@ class TableVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 2)
-        validate_valid_dtype(
-            self.target, inputs, [ts.DType.INT8, ts.DType.INT16], output.tosa_spec
-        )
-        if inputs[0].dtype == ts.DType.INT8:
-            validate_valid_dtype(self.target, output, ts.DType.INT8, output.tosa_spec)
-        if inputs[0].dtype == ts.DType.INT16:
-            validate_valid_dtype(self.target, output, ts.DType.INT32, output.tosa_spec)
+        supported_input_dtypes = [ts.DType.INT8]
+        supported_output_dtypes = [ts.DType.INT8]
+        if self.tosa_spec.support_extension("int16"):
+            supported_input_dtypes.append(ts.DType.INT16)
+            supported_output_dtypes.append(ts.DType.INT32)
 
-        if inputs[1].name not in self._exported_program.state_dict.keys():  # type: ignore[union-attr]
+        validate_valid_dtype(
+            self.target, inputs, supported_input_dtypes, output.tosa_spec
+        )
+        validate_valid_dtype(
+            self.target, output, supported_output_dtypes, output.tosa_spec
+        )
+
+        # The name of the table constant is a bit complex.
+        # The name of the pytorch buffer will be the target of last node argument.
+        # However, when it is serialized to TOSA, a submodule suffix might be added. The TOSA buffer name thus
+        # needs to be taken from the last TosaArg.
+        pytorch_table_buffer_name = node.args[-1].target  # type: ignore[union-attr]
+        tosa_table_buffer_name = inputs[-1].name
+        if pytorch_table_buffer_name not in self._exported_program.state_dict.keys():
             raise RuntimeError(
                 f"Did not find key {node.name} in state_dict {self._exported_program.state_dict.keys()}."
             )
 
-        table = self._exported_program.state_dict[inputs[1].name]  # type: ignore[union-attr]
-
-        table_tensor_name = node.name + "_table"
-        tosa_graph.addConst(
-            table.shape,
-            ts.DType.INT8 if inputs[0].dtype == ts.DType.INT8 else ts.DType.INT16,
-            table.detach().numpy(),
-            name=table_tensor_name,
-        )
         attr = ts.TosaSerializerAttribute()
         attr.TableAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
             ts.Op.TABLE,
-            [inputs[0].name, table_tensor_name],
+            [inputs[0].name, tosa_table_buffer_name],
             [output.name],
             attr,
         )

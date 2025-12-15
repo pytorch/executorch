@@ -2,15 +2,19 @@
 Thank you for contributing to Qualcomm AI Engine Direct delegate for ExecuTorch. Reading and following these guidelines will help you quickly get the essentials of implementing operator builder to unblock yourself and land pull requests more efficiently.
 
 ## Sections
-* [References](#references)
-* [Getting Started](#getting-started)
-    * [Identify Unsupported Operator](#identify-unsupported-operator)
-    * [Check Operator Spec](#check-operator-spec)
-    * [Implementation](#implementation)
-    * [Quantizer Annotation](#quantizer-annotation)
-* [Operator Support Status](#operator-support-status)
-* [Issues](#issues)
-* [Pull Requests](#pull-requests)
+- [Contribution for More Operators](#contribution-for-more-operators)
+  - [Sections](#sections)
+  - [References](#references)
+    - [Qualcomm AI Engine Direct](#qualcomm-ai-engine-direct)
+    - [PyTorch](#pytorch)
+  - [Getting Started](#getting-started)
+    - [Identify Unsupported Operator](#identify-unsupported-operator)
+    - [Check Operator Spec](#check-operator-spec)
+    - [Implementation](#implementation)
+    - [Quantizer Annotation](#quantizer-annotation)
+  - [Operator Support Status](#operator-support-status)
+  - [Issues](#issues)
+  - [Pull Requests](#pull-requests)
 
 ## References
 ### Qualcomm AI Engine Direct
@@ -37,7 +41,7 @@ class MyModel(torch.nn.Module):
 ```
 At the time we try to lower it with Qualcomm backend:
 ```python
-from excutorch.examples.qualcomm.utils import build_executorch_binary
+from executorch.examples.qualcomm.utils import build_executorch_binary
 
 build_executorch_binary(
     model=MyModel(),
@@ -365,7 +369,7 @@ Please help update following table if you are contributing new operators:
 + &#128683; = Deprecated, supported with other QNN Ops
 
 
-| Operators | HTP - 92/116 Enabled |
+| Operators | HTP - 94/116 Enabled |
 |-----------|---------|
 | Argmax | &check; |
 | Argmin | &check; |
@@ -431,7 +435,7 @@ Please help update following table if you are contributing new operators:
 | Gelu | &check; |
 | GetSparseIndices | &cross; |
 | GetSparseValues | &cross; |
-| GridSample | &cross; |
+| GridSample | &check; |
 | GroupNorm | &check; |
 | HardSwish | &check; |
 | InstanceNorm | &check; |

@@ -7,6 +7,8 @@
 
 from typing import Dict
 
+import torch
+
 from executorch.backends.cortex_m.passes.passes_utils import (
     quantize_multiplier_aot,
     SHIFT_INT8,
@@ -30,6 +32,11 @@ class QuantizedOpFusionPass(ExportPass):
     """
 
     def _get_add_replacement(self, args, meta):
+        if (
+            meta.data.get("input_qparams", {}) == {}
+            or meta.data.get("output_qparams", {}) == {}
+        ):
+            return exir_ops.edge.aten.add.Tensor, args
 
         # Extract values
         scale1 = meta["input_qparams"][0].scale
@@ -64,6 +71,57 @@ class QuantizedOpFusionPass(ExportPass):
 
         return exir_ops.edge.cortex_m.quantized_add.default, args
 
+    def _get_mul_replacement(self, args, meta):
+        if (
+            meta.data.get("input_qparams", {}) == {}
+            or meta.data.get("output_qparams", {}) == {}
+        ):
+            return exir_ops.edge.aten.mul.Tensor, args
+
+        # Extract values
+        scale1 = meta["input_qparams"][0].scale
+        zero_point1 = meta["input_qparams"][0].zp
+        scale2 = meta["input_qparams"][1].scale
+        zero_point2 = meta["input_qparams"][1].zp
+        output_scale = meta["output_qparams"][0].scale
+        output_zero_point = meta["output_qparams"][0].zp
+
+        scale_factor = (scale1 * scale2) / output_scale
+        output_mult, output_shift = quantize_multiplier_aot(scale_factor)
+
+        args = (
+            args[0],
+            zero_point1,
+            args[1],
+            zero_point2,
+            output_zero_point,
+            output_mult,
+            output_shift,
+        )
+
+        return exir_ops.edge.cortex_m.quantized_mul.default, args
+
+    def _get_minimum_replacement(self, args, meta):
+        if args[0].data.dtype != torch.int8:
+            return exir_ops.edge.aten.minimum.default, args
+
+        return exir_ops.edge.cortex_m.minimum.default, args
+
+    def _get_maximum_replacement(self, args, meta):
+        if args[0].data.dtype != torch.int8:
+            return exir_ops.edge.aten.maximum.default, args
+
+        return exir_ops.edge.cortex_m.maximum.default, args
+
+    def _get_permute_replacement(self, args, meta):
+        if args[0].data.dtype != torch.int8:
+            return exir_ops.edge.aten.permute_copy.default, args
+
+        rank = len(args[0].data.shape)
+        perms = [p % rank for p in args[1]]
+        args = (args[0], perms)
+        return exir_ops.edge.cortex_m.transpose.default, args
+
     def call_operator(
         self,
         op: EdgeOpOverload,
@@ -71,15 +129,18 @@ class QuantizedOpFusionPass(ExportPass):
         kwargs: Dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if (
-            meta.data.get("input_qparams", {}) == {}
-            or meta.data.get("output_qparams", {}) == {}
-        ):
-            return super().call_operator(op, args, {}, meta)
 
         match op:
             case exir_ops.edge.aten.add.Tensor:
                 op, args = self._get_add_replacement(args, meta)
+            case exir_ops.edge.aten.mul.Tensor:
+                op, args = self._get_mul_replacement(args, meta)
+            case exir_ops.edge.aten.minimum.default:
+                op, args = self._get_minimum_replacement(args, meta)
+            case exir_ops.edge.aten.maximum.default:
+                op, args = self._get_maximum_replacement(args, meta)
+            case exir_ops.edge.aten.permute_copy.default:
+                op, args = self._get_permute_replacement(args, meta)
             case _:
                 pass
 

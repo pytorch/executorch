@@ -2,6 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 import importlib
 import logging
 import multiprocessing
@@ -25,7 +26,10 @@ class NeutronConverterManager:
     contains NeutronGraph nodes.
     """
 
-    def __init__(self, neutron_converter_flavor: str = "SDK_25_09"):
+    def __init__(
+        self,
+        neutron_converter_flavor: str = "SDK_25_09",
+    ):
 
         neutron_converter_modules = [
             module.name
@@ -75,24 +79,39 @@ class NeutronConverterManager:
         cctx = self.neutron_converter.CompilationContext()
         cctx.targetOpts = self.neutron_converter.getNeutronTarget(target)
         cctx.compilationOpts.minNumOpsPerGraph = 1
-
-        logger = multiprocessing.log_to_stderr()
-        logger.setLevel(logging.WARNING)
-        queue = multiprocessing.Manager().Queue()
-
-        process = multiprocessing.Process(
-            target=convert_unsafe,
-            args=(self.neutron_converter, tflite_model, cctx, queue),
+        cctx.compilationOpts.excludeGraphPasses = (
+            "HoistSliceAboveTranspose,MergeTranspose"
         )
-        process.start()
-        process.join()  # waits until the subprocess is complete
 
-        if queue.empty():  # signals the unsafe task did not run till the end
-            raise RuntimeError(
-                f"Neutron converter module terminated unexpectedly with exit code {process.exitcode}"
+        # Try to use multiprocessing for isolation, but fall back to direct execution
+        # if the environment doesn't support it (e.g., in sandcastle/build environments)
+        try:
+            logger = multiprocessing.log_to_stderr()
+            logger.setLevel(logging.WARNING)
+            queue = multiprocessing.Manager().Queue()
+
+            process = multiprocessing.Process(
+                target=convert_unsafe,
+                args=(self.neutron_converter, tflite_model, cctx, queue),
+            )
+            process.start()
+            process.join()  # waits until the subprocess is complete
+
+            if queue.empty():  # signals the unsafe task did not run till the end
+                raise RuntimeError(
+                    f"Neutron converter module terminated unexpectedly with exit code {process.exitcode}"
+                )
+
+            model_converted = queue.get()
+            process.close()
+        except (EOFError, OSError) as e:
+            # Multiprocessing failed (likely due to environment restrictions)
+            # Fall back to direct execution
+            logging.warning(
+                f"Multiprocessing not available ({e}), running neutron converter directly"
+            )
+            model_converted = self.neutron_converter.convertModel(
+                list(tflite_model), cctx
             )
 
-        model_converted = queue.get()
-
-        process.close()
         return bytes(model_converted)

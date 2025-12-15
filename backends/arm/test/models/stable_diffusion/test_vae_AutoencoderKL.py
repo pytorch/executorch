@@ -7,8 +7,12 @@
 from typing import Tuple
 
 import torch
-from diffusers.models.autoencoders import AutoencoderKL
-from diffusers.utils.testing_utils import floats_tensor
+from diffusers.models.autoencoders import (  # type: ignore[import-not-found]
+    AutoencoderKL,
+)
+from diffusers.utils.testing_utils import (  # type: ignore[import-not-found]
+    floats_tensor,
+)
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.stable_diffusion.stable_diffusion_module_test_configs import (
@@ -80,7 +84,7 @@ def test_AutoencoderKL_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_AutoencoderKL_vgf_FP():
+def test_AutoencoderKL_vgf_no_quant():
     auto_encoder_model, auto_encoder_model_inputs = (
         TestAutoencoderKL().prepare_model_and_inputs()
     )
@@ -90,14 +94,14 @@ def test_AutoencoderKL_vgf_FP():
             auto_encoder_model_inputs,
             aten_op=[],
             exir_op=[],
-            tosa_version="TOSA-1.0+FP",
             use_to_edge_transform_and_lower=True,
+            quantize=False,
         )
         pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_AutoencoderKL_vgf_INT():
+def test_AutoencoderKL_vgf_quant():
     auto_encoder_model, auto_encoder_model_inputs = (
         TestAutoencoderKL().prepare_model_and_inputs()
     )
@@ -107,8 +111,8 @@ def test_AutoencoderKL_vgf_INT():
             auto_encoder_model_inputs,
             aten_op=[],
             exir_op=[],
-            tosa_version="TOSA-1.0+INT",
             use_to_edge_transform_and_lower=True,
             atol=1.0,  # TODO: MLETORCH-990 Reduce tolerance of vae(AutoencoderKL) with INT
+            quantize=True,
         )
         pipeline.run()

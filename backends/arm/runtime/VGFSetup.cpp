@@ -707,7 +707,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
   );
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create DataGraphPipeline");
-    return result;
+    return false;
   }
 
   // prepare the graph pipeline session
@@ -721,7 +721,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
       vk_device, &pipeline_session_info, nullptr, &vk_session);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create DataGraphPipelineSession");
-    return result;
+    return false;
   }
 
   // Allocate command buffer
@@ -735,7 +735,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
       vk_device, &buffer_allocate_info, &vk_execute_cmd);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to allocate command buffers");
-    return result;
+    return false;
   }
 
   // Allocate intermediates memory based on the pipeline requirements provided
@@ -753,7 +753,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
       vk_device, &bind_point_requirements_info, &bind_point_count, nullptr);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to get session bind point count");
-    return result;
+    return false;
   }
 
   vector<VkDataGraphPipelineSessionBindPointRequirementARM>
@@ -766,7 +766,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
       bind_point_requirements.data());
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to get session bind point requirements");
-    return result;
+    return false;
   }
 
   // Given the bind points, just make individual allocations and bind them
@@ -777,18 +777,18 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
       ET_LOG(
           Error,
           "Expected VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM");
-      return VK_ERROR_UNKNOWN;
+      return false;
     }
     if (bind_point_requirement.bindPoint !=
         VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM) {
       ET_LOG(
           Error,
           "Expected VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM");
-      return VK_ERROR_UNKNOWN;
+      return false;
     }
     if (bind_point_requirement.numObjects != 1) {
       ET_LOG(Error, "Expected only one object for the bindpoint");
-      return VK_ERROR_UNKNOWN;
+      return false;
     }
 
     VkDataGraphPipelineSessionMemoryRequirementsInfoARM memory_requirements_info = {
@@ -821,7 +821,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
         vkAllocateMemory(vk_device, &memory_allocate_info, nullptr, &memory);
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "Failed to allocate memory for intermediates");
-      return result;
+      return false;
     }
     // so we can free this object in destructor
     intermediates.push_back(memory);
@@ -839,7 +839,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
     result = vkBindDataGraphPipelineSessionMemoryARM(vk_device, 1, &bind_info);
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "Failed to bind intermediates memory");
-      return result;
+      return false;
     }
   }
 

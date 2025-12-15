@@ -60,8 +60,6 @@ def test_bitwise_not_tosa_INT(test_data: Tuple):
         aten_op=aten_op,
         exir_op=exir_op,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -87,8 +85,6 @@ def test_bitwise_not_u85_INT(test_data: Tuple):
         aten_ops=aten_op,
         exir_ops=exir_op,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -115,6 +111,4 @@ def test_bitwise_not_vgf_INT(test_data: Tuple):
         exir_op,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

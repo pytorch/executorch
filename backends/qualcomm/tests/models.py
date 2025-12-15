@@ -41,6 +41,19 @@ class Abs(torch.nn.Module):
         return torch.abs(x)
 
 
+class AdaptiveMaxPool2D(torch.nn.Module):
+    def __init__(self, output_size, return_indices=False):
+        super().__init__()
+        self.output_size = output_size
+        self.return_indices = return_indices
+
+    def forward(self, x):
+        adaptive_max_pool = torch.nn.AdaptiveMaxPool2d(
+            self.output_size, self.return_indices
+        )
+        return adaptive_max_pool(x)
+
+
 class AdaptiveAvgPool1D(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1098,6 +1111,20 @@ class GreaterThanConstant(torch.nn.Module):
         return x > self.constant
 
 
+class GridSample(torch.nn.Module):
+    def __init__(self, mode, padding_mode, align_corners):
+        super().__init__()
+        self.mode = mode
+        self.align_corners = align_corners
+        self.padding_mode = padding_mode
+
+    def forward(self, x, grid):
+        grid_sample = torch.nn.functional.grid_sample(
+            x, grid, self.mode, self.padding_mode, self.align_corners
+        )
+        return grid_sample
+
+
 class GroupNorm(torch.nn.Module):
     def __init__(self, bias=True):
         super().__init__()
@@ -1256,12 +1283,18 @@ class LargeTensorLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
         hidden_dim = 4096
-        self.linear1 = torch.nn.Linear(512, hidden_dim)
+        self.linear1_1 = torch.nn.Linear(512, hidden_dim)
+        self.linear1_2 = torch.nn.Linear(512, hidden_dim)
+        self.linear1_3 = torch.nn.Linear(512, hidden_dim)
         self.linear2 = torch.nn.Linear(hidden_dim, 512)
+        self.linear3 = torch.nn.Linear(hidden_dim, 512)
+        self.linear4 = torch.nn.Linear(hidden_dim, 512)
 
     def forward(self, x):
-        x1 = self.linear1(x) + self.linear1(x)
-        return self.linear2(x1)
+        x1 = self.linear1_1(x) + self.linear1_1(x)
+        x2 = self.linear1_2(x) + self.linear1_2(x)
+        x3 = self.linear1_3(x) + self.linear1_3(x)
+        return self.linear2(x1) * self.linear3(x2) * self.linear4(x3)
 
 
 class LayerNorm(torch.nn.Module):
@@ -1344,15 +1377,6 @@ class LiftAddTensor(torch.nn.Module):
         return x + N
 
 
-class Linear(torch.nn.Module):
-    def __init__(self, use_bias: bool = True):
-        super().__init__()
-        self.linear = torch.nn.Linear(512, 32, use_bias).eval()
-
-    def forward(self, x):
-        return self.linear(x)
-
-
 class LinalgVectorNorm(torch.nn.Module):
     def __init__(self, ord=2.0, dim=None, keepdim=False):
         super().__init__()
@@ -1364,6 +1388,35 @@ class LinalgVectorNorm(torch.nn.Module):
         return torch.linalg.vector_norm(
             x, ord=self.ord, dim=self.dim, keepdim=self.keepdim
         )
+
+
+class Linear(torch.nn.Module):
+    def __init__(self, use_bias: bool = True):
+        super().__init__()
+        self.linear = torch.nn.Linear(512, 32, use_bias).eval()
+
+    def forward(self, x):
+        return self.linear(x)
+
+
+class LinearNonConstantWeight(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.input_dim = 512
+        self.output_dim = 128
+        self.linear = torch.nn.Linear(self.input_dim, 3 * self.output_dim, True).eval()
+
+    def forward(self, x):
+        w_q, w_k, w_v = self.linear.weight.split(
+            [self.output_dim, self.output_dim, self.output_dim]
+        )
+        b_q, b_k, b_v = self.linear.bias.split(
+            [self.output_dim, self.output_dim, self.output_dim]
+        )
+        q = torch.nn.functional.linear(x, w_q, b_q)
+        k = torch.nn.functional.linear(x, w_k, b_k)
+        v = torch.nn.functional.linear(x, w_v, b_v)
+        return q * k * v
 
 
 class Log(torch.nn.Module):
@@ -1411,6 +1464,24 @@ class MaxPool2d(torch.nn.Module):
 
     def forward(self, x):
         return self.max_pool2d(x)
+
+
+class MaxPool3d(torch.nn.Module):
+    def __init__(
+        self, kernel_size, stride, padding, dilation, ceil_mode, return_indices
+    ):
+        super().__init__()
+        self.max_pool3d = torch.nn.MaxPool3d(
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            return_indices=return_indices,
+            ceil_mode=ceil_mode,
+        )
+
+    def forward(self, x):
+        return self.max_pool3d(x)
 
 
 class Mean(torch.nn.Module):
@@ -1787,10 +1858,11 @@ class UpsampleNearest2D(torch.nn.Module):
 
 
 class RmsNorm(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, eps=None):
         super().__init__()
-        self.eps = 1e-5
-        self.rms = torch.nn.RMSNorm([4], 1e-5)
+        self.rms = torch.nn.RMSNorm([4])
+        if eps:
+            self.rms = torch.nn.RMSNorm([4], eps)
 
     def forward(self, x):
         return self.rms(x)
@@ -2015,6 +2087,14 @@ class Sub(torch.nn.Module):
         return torch.sub(x, y)
 
 
+class Sub_y_x_from_x_y(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.sub(y, x)
+
+
 class SubAlpha(torch.nn.Module):
     def __init__(self, alpha):
         super().__init__()
@@ -2112,6 +2192,32 @@ class TopKandIndex(torch.nn.Module):
     def forward(self, x):
         a, b = torch.topk(x, 3)
         return a + self.idx_source[b]
+
+
+class Triu(torch.nn.Module):
+    def __init__(self, diagonal: Optional[int] = None):
+        super().__init__()
+        self.diagonal = diagonal
+
+    def forward(self, x):
+        if self.diagonal:
+            return torch.triu(x, diagonal=self.diagonal)
+        return torch.triu(x)
+
+
+class TriuConstant(torch.nn.Module):
+    def __init__(self, diagonal, constant_dtype=torch.float32):
+        super().__init__()
+        self.diagonal = diagonal
+        self.constant_dtype = constant_dtype
+        self.register_buffer("mask", torch.ones((5, 5), dtype=constant_dtype))
+
+    def forward(self, x):
+        mask = torch.triu(self.mask, diagonal=self.diagonal)
+        if self.constant_dtype == torch.bool:
+            mask = torch.zeros(x.shape, dtype=x.dtype).masked_fill_(mask, -10000.0)
+        # Add x to avoid no input in graph
+        return mask + x
 
 
 class Unbind(torch.nn.Module):

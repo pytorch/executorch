@@ -352,10 +352,6 @@ lib.define(
 )
 
 lib.define(
-    "convolution(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
-    "int[] dilation, int groups, bool channel_last=False) -> (Tensor Y)"
-)
-lib.define(
     "transposed_convolution(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
     "int[] dilation, SymInt[] output_padding, int groups, bool channel_last=False) -> (Tensor Y)"
 )
@@ -489,8 +485,28 @@ lib.define("idma_wait.out(Tensor src, int task_num=0, *, Tensor(a!) out) -> Tens
 # ------------------------------------ #
 # Migrated from the custom_ops.yaml files containing different operator variants (e.g., .out, .tensor_out)
 lib.define(
-    "convolution.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, "
-    "int groups, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "conv1d(Tensor input, Tensor weight, Tensor bias, int[1] stride, SymInt[1] padding, int[1] dilation, "
+    "int groups) -> Tensor"
+)
+lib.define(
+    "conv1d.out(Tensor input, Tensor weight, Tensor bias, int[1] stride, SymInt[1] padding, int[1] dilation, "
+    "int groups, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "conv2d(Tensor input, Tensor weight, Tensor bias, int[2] stride, SymInt[2] padding, int[2] dilation, "
+    "int groups) -> Tensor"
+)
+lib.define(
+    "conv2d.out(Tensor input, Tensor weight, Tensor bias, int[2] stride, SymInt[2] padding, int[2] dilation, "
+    "int groups, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "conv3d(Tensor input, Tensor weight, Tensor bias, int[3] stride, SymInt[3] padding, int[3] dilation, "
+    "int groups) -> Tensor"
+)
+lib.define(
+    "conv3d.out(Tensor input, Tensor weight, Tensor bias, int[3] stride, SymInt[3] padding, int[3] dilation, "
+    "int groups, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "transposed_convolution.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
@@ -1014,9 +1030,9 @@ def quantized_conv2d_nhwc_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1058,9 +1074,9 @@ def quantized_conv2d_nchw_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1102,9 +1118,9 @@ def quantized_conv2d_nchw_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1146,9 +1162,9 @@ def quantized_conv2d_nhwc_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1195,9 +1211,9 @@ def quantized_conv2d_nchw_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1244,9 +1260,9 @@ def quantized_conv2d_nchw_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1293,9 +1309,9 @@ def quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1342,9 +1358,9 @@ def quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1391,9 +1407,9 @@ def quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1440,9 +1456,9 @@ def quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1489,9 +1505,9 @@ def quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1538,9 +1554,9 @@ def quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1589,9 +1605,9 @@ def quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1640,9 +1656,9 @@ def quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             False,
         )
@@ -1691,9 +1707,9 @@ def quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -1742,9 +1758,9 @@ def quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[-1],
+            padding[-1],
+            dilation[-1],
             kernel_size[0],
             True,
         )
@@ -2152,8 +2168,8 @@ def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
-@register_fake("cadence::convolution")
-def convolution_meta(
+@register_fake("cadence::conv1d")
+def conv1d_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -2161,32 +2177,109 @@ def convolution_meta(
     padding: Tuple[int],
     dilation: Tuple[int],
     groups: int,
-    channel_last: bool = False,
 ) -> torch.Tensor:
-    if channel_last:
-        out_channels, *kernel_size, _ = weight.shape
-    else:
-        out_channels, _, *kernel_size = weight.shape
-    in_size = input.shape
-    # Assert that the input tensor has at least 3 dimensions, and at most 6
-    assert len(in_size) > 2
-    assert len(in_size) < 6
+    # Validate tensor dimensions
+    assert len(input.shape) == 3, f"Conv1d expects 3D input, got {len(input.shape)}D"
+    assert len(weight.shape) == 3, f"Conv1d expects 3D weight, got {len(weight.shape)}D"
 
-    # Compute the output tensor size
-    output_size = (
-        get_conv1d_output_size(
-            in_size,
-            out_channels,
-            stride[0],
-            padding[0],
-            dilation[0],
-            kernel_size[0],
-            channel_last,
-        )
-        if len(in_size) == 3
-        else get_conv2d_output_size(
-            in_size, out_channels, stride, padding, dilation, kernel_size, channel_last
-        )
+    # Extract dimensions
+    batch_size, in_channels, length = input.shape
+    out_channels, weight_in_channels, kernel_size = weight.shape
+
+    # Validate groups parameter and channel consistency
+    assert groups > 0, f"groups must be positive, got {groups}"
+    assert (
+        in_channels % groups == 0
+    ), f"in_channels ({in_channels}) must be divisible by groups ({groups})"
+    assert (
+        out_channels % groups == 0
+    ), f"out_channels ({out_channels}) must be divisible by groups ({groups})"
+
+    # Validate weight channels match input channels divided by groups
+    expected_weight_in_channels = in_channels // groups
+    assert (
+        weight_in_channels == expected_weight_in_channels
+    ), f"Expected weight to have {expected_weight_in_channels} input channels (in_channels/groups), but got {weight_in_channels}"
+
+    output_size = get_conv1d_output_size(
+        input.shape,
+        out_channels,
+        stride[0],
+        padding[0],
+        dilation[0],
+        kernel_size,
+        False,
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::conv2d")
+def conv2d_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+) -> torch.Tensor:
+    assert (
+        len(weight.shape) == 4
+    ), f"Conv2d expects a 4D weight, got {len(weight.shape)}D"
+    out_channels, _, *kernel_size = weight.shape
+    in_size = input.shape
+    assert len(in_size) == 4, f"conv2d expects 4D input, got {len(in_size)}D"
+
+    output_size = get_conv2d_output_size(
+        in_size, out_channels, stride, padding, dilation, kernel_size, False
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::conv3d")
+def conv3d_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int, int, int],
+    padding: Tuple[int, int, int],
+    dilation: Tuple[int, int, int],
+    groups: int,
+) -> torch.Tensor:
+    assert (
+        len(weight.shape) == 5
+    ), f"Conv3d expects a 5D weight, got {len(weight.shape)}D"
+    out_channels, _, *kernel_size = weight.shape
+    in_size = input.shape
+    assert len(in_size) == 5, f"conv3d expects 5D input, got {len(in_size)}D"
+
+    # Helper to compute 3D convolution output size
+    def get_conv3d_output_size(
+        in_size: torch.Size,
+        out_channels: int,
+        stride: Tuple[int, int, int],
+        padding: Tuple[int, int, int],
+        dilation: Tuple[int, int, int],
+        kernel_size: list[int],
+    ) -> torch.Size:
+        N, C, D, H, W = in_size
+
+        dout = (D + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) // stride[
+            0
+        ] + 1
+        hout = (H + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) // stride[
+            1
+        ] + 1
+        wout = (W + 2 * padding[2] - dilation[2] * (kernel_size[2] - 1) - 1) // stride[
+            2
+        ] + 1
+
+        return torch.Size((N, out_channels, dout, hout, wout))
+
+    output_size = get_conv3d_output_size(
+        in_size, out_channels, stride, padding, dilation, kernel_size
     )
 
     return input.new_empty(output_size, dtype=input.dtype)
@@ -2346,14 +2439,21 @@ def transposed_im2row_meta(
     in_zero_point: torch.Tensor,
     channel_last: bool = False,
 ) -> torch.Tensor:
+    """
+    Shape inference for transposed_im2row operation.
+
+    Returns shape: (N, H_out * W_out, K_h * K_w * C_in)
+    """
     if len(input.shape) == 3:
         height_dim = 1 if channel_last else 2
         input = input.unsqueeze(height_dim)
 
     batch_size = input.shape[0]
-    n_input_plane = input.shape[3] if channel_last else input.shape[1]
+    n_input_channels = input.shape[3] if channel_last else input.shape[1]
     input_height = input.shape[1] if channel_last else input.shape[2]
     input_width = input.shape[2] if channel_last else input.shape[3]
+
+    # Calculate output spatial dimensions
     output_height = (
         (input_height - 1) * stride[0]
         - 2 * padding[0]
@@ -2368,9 +2468,11 @@ def transposed_im2row_meta(
         + output_padding[1]
         + 1
     )
-    n_output_plane = n_input_plane * kernel_size[0] * kernel_size[1]
-    output_length = output_height * output_width
-    output_size = torch.Size((batch_size, output_length, n_output_plane))
+
+    # Patch size is kernel_h * kernel_w * in_channels
+    patch_size = kernel_size[0] * kernel_size[1] * n_input_channels
+    num_patches = output_height * output_width
+    output_size = torch.Size((batch_size, num_patches, patch_size))
 
     return input.new_empty(output_size, dtype=input.dtype)
 

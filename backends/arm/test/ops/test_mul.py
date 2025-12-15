@@ -187,7 +187,6 @@ def test_mul_tensor_tosa_INT_int32(test_data: torch.Tensor):
         aten_op,
         exir_op=[],
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -224,7 +223,6 @@ def test_mul_tensor_u55_INT_int32(test_data: torch.Tensor):
         aten_op,
         exir_ops=[],
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -237,7 +235,6 @@ def test_mul_tensor_u85_INT_int32(test_data: torch.Tensor):
         aten_op,
         exir_ops=[],
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -285,7 +282,6 @@ def test_mul_tensor_vgf_INT_int32(test_data: torch.Tensor):
         exir_op=[],
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 

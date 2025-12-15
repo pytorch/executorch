@@ -10,7 +10,7 @@ from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmPass
 
-from executorch.backends.arm._passes.rewrite_conv2d_pass import RewriteConv2dPass
+from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -29,7 +29,7 @@ class Conv1dUnsqueezePass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
-        RewriteConv2dPass,
+        RewriteConvPass,
         SizeAdjustInputPass,
     }
 
@@ -40,13 +40,17 @@ class Conv1dUnsqueezePass(ArmPass):
         if len(stride) != 1:
             return super().call_operator(op, args, kwargs, meta)
 
+        x_meta = meta.copy()
+        x_meta.data["input_qparams"] = {}
+        x_meta.data["output_qparams"] = {}
+
         x = args[0]
         x_unsqueezed_shape = list(x.data.shape) + [1]
         x = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (x, x_unsqueezed_shape),
             {},
-            meta,
+            x_meta,
             updated=True,
         )
 
@@ -79,12 +83,15 @@ class Conv1dUnsqueezePass(ArmPass):
             exir_ops.edge.aten.convolution.default, new_args, kwargs, meta, updated=True
         )
 
+        x_squeezed_meta = meta.copy()
+        x_squeezed_meta.data["input_qparams"] = {}
+        x_squeezed_meta.data["output_qparams"] = {}
         x_squeezed_shape = list(x.data.shape)[:-1]
         x = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (x, x_squeezed_shape),
             {},
-            meta,
+            x_squeezed_meta,
             updated=True,
         )
 

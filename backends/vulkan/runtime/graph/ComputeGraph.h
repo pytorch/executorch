@@ -639,6 +639,10 @@ class ComputeGraph final {
 
   bool device_name_contains(const char* substr);
 
+  int64_t max_buffer_numel() {
+    return static_cast<int64_t>(context_->adapter_ptr()->max_buffer_numel());
+  }
+
   //
   // Graph Building
   //
@@ -823,6 +827,8 @@ class ComputeGraph final {
   inline void set_val_as_input(const ValueRef idx) {
     inputs_.push_back({idx, kDummyValueRef});
   }
+
+  ValueRef staging_of(const ValueRef idx);
 
   inline void set_val_as_output(const ValueRef idx) {
     outputs_.push_back({idx, kDummyValueRef});
@@ -1028,6 +1034,12 @@ class ComputeGraph final {
   void prepack();
 
   //
+  // Optional Graph Execution
+  //
+
+  void optional_warmup_execute();
+
+  //
   // Graph Execution
   //
 
@@ -1079,6 +1091,14 @@ class ComputeGraph final {
 
   inline bool can_use_int8_dot_product() const {
     return can_use_int8_dot_product_;
+  }
+
+  inline void set_has_data_dependent_shapes() {
+    config_.has_data_dependent_shapes = true;
+  }
+
+  inline bool has_data_dependent_shapes() const {
+    return config_.has_data_dependent_shapes;
   }
 
   /*

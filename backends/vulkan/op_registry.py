@@ -7,17 +7,12 @@
 # pyre-unsafe
 
 import operator
-
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import executorch.backends.vulkan.custom_ops_lib  # noqa
-
 import executorch.backends.vulkan.utils as utils
-
 import torch
-
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch._subclasses.fake_tensor import FakeTensor
 
@@ -129,6 +124,7 @@ def update_features(aten_op):
         # Symbolic integer ops
         torch.ops.aten.sym_size.int,
         operator.add,
+        operator.sub,
         operator.lt,
         operator.gt,
         operator.ge,
@@ -148,13 +144,9 @@ def register_ephemeral_op():
 
 @update_features(
     [
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.quantize_per_token.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
     ]
 )
@@ -297,27 +289,9 @@ def register_to_copy_op():
 
 @update_features(exir_ops.edge.dim_order_ops._to_dim_order_copy.default)
 def register_to_copy_dim_order_op():
-    # Currently there is no "real" implementation for to_dim_order_copy, but it can be
-    # removed as long as the operator is not changing the dtype, i.e. the operator call
-    # is modifying the dim order only. Therefore, check that the input and output dtypes
-    # are the same, if so the operator is safe to remove.
-    def check_dim_order_copy_node(node: torch.fx.Node) -> bool:
-        in_arg = node.args[0]
-        if not isinstance(in_arg, torch.fx.Node):
-            return False
-
-        in_tensor = in_arg.meta.get("val", None)
-        out_tensor = node.meta.get("val", None)
-
-        if in_tensor.dtype != out_tensor.dtype:
-            return False
-
-        return True
-
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_BUFFER,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_dim_order_copy_node,
     )
 
 
@@ -652,35 +626,35 @@ def register_quantized_binary_op():
 
 @update_features(
     [
-        exir_ops.edge.et_vk.quantize_q8ta_for_conv2d.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     ]
 )
-def register_quantize_for_conv2d_op():
+def register_quantize_op():
     return OpFeatures(
         inputs_storage=[
-            utils.CHANNELS_PACKED_TEXTURE,
+            utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
         ],
         outputs_storage=[
             utils.PACKED_INT8_4W4C_BUFFER,
         ],
-        supports_resize=False,
     )
 
 
 @update_features(
     [
-        exir_ops.edge.et_vk.dequantize_q8to_from_conv2d.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     ]
 )
-def register_dequantize_for_conv2d_op():
+def register_dequantize_op():
     return OpFeatures(
         inputs_storage=[
             utils.PACKED_INT8_4W4C_BUFFER,
         ],
         outputs_storage=[
-            utils.CHANNELS_PACKED_TEXTURE,
+            utils.CHANNELS_PACKED_TEXTURE_OR_CONTIGUOUS_BUFFER,
         ],
-        supports_resize=False,
     )
 
 
@@ -709,7 +683,7 @@ def register_sdpa_ops():
 @update_features(exir_ops.edge.et_vk.apply_rotary_emb.default)
 def register_rotary_emb_op():
     return OpFeatures(
-        inputs_storage=utils.WIDTH_PACKED_TEXTURE,
+        inputs_storage=utils.CONTIGUOUS_ANY,
         supports_resize=True,
     )
 
@@ -733,6 +707,7 @@ def register_view_ops():
         exir_ops.edge.aten.unsqueeze_copy.default,
         exir_ops.edge.aten.clone.default,
         exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.gather.default,
     ]
 )
 def register_view_ops_with_buffer_meta():
@@ -765,6 +740,7 @@ def register_cat_op():
     [
         exir_ops.edge.aten.select_copy.int,
         exir_ops.edge.aten.slice_copy.Tensor,
+        exir_ops.edge.aten.split_with_sizes_copy.default,
     ]
 )
 def register_transfer_ops():
@@ -807,10 +783,7 @@ def register_ported_op():
 # Ops ported from PyTorch Vulkan backend. These ops are in a separate registry because they support all packed dimensions
 @update_features(
     [
-        # Tensor combination
         exir_ops.edge.aten.repeat.default,
-        exir_ops.edge.aten.split_with_sizes_copy.default,
-        exir_ops.edge.aten.split.Tensor,
     ]
 )
 def register_ported_op_all_packed_dims():

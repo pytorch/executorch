@@ -10,6 +10,7 @@
 
 #include <cuda_runtime.h>
 #include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/aoti/export.h>
 #include <cstdint>
 
 namespace executorch::backends::cuda {
@@ -43,7 +44,7 @@ extern "C" {
  * @return AOTITorchError error code (Error::Ok on success, or an error code on
  * failure)
  */
-AOTITorchError aoti_torch_create_tensor_from_blob_v2(
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     void* data,
     int64_t ndim,
     const int64_t* sizes_ptr,
@@ -71,7 +72,7 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
  * @return AOTITorchError error code (Error::Ok on success, or an error code on
  * failure)
  */
-AOTITorchError aoti_torch_empty_strided(
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
     int64_t ndim,
     const int64_t* sizes_ptr,
     const int64_t* strides_ptr,
@@ -87,7 +88,7 @@ AOTITorchError aoti_torch_empty_strided(
  * @return AOTITorchError error code (Error::Ok on success, or an error code on
  * failure)
  */
-AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor);
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor);
 
 /**
  * Creates a tensor view that reinterprets the same underlying memory with
@@ -106,7 +107,7 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor);
  *
  * @return Error::Ok on success, appropriate error code on failure
  */
-AOTITorchError aoti_torch__reinterpret_tensor(
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
     Tensor* self,
     int64_t ndim,
     const int64_t* sizes_ptr,
@@ -136,11 +137,36 @@ AOTITorchError aoti_torch__reinterpret_tensor(
  *         - Error::MemoryAllocationFailed: failed to allocate temporary memory
  *         - Error::Internal: CUDA operation failures
  */
-AOTITorchError
+AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
 
+/**
+ * Creates a new tensor handle from an existing one.
+ *
+ * This function creates a new tensor object that shares the same underlying
+ * memory as the original tensor. Similar to PyTorch's Tensor copy constructor,
+ * it creates a new handle/reference to the same data without performing a deep
+ * copy.
+ *
+ * The new tensor will:
+ * - Share the same memory/storage as the original tensor
+ * - Have the same shape, strides, and dtype as the original
+ * - Increment the reference count for the underlying memory (if owned)
+ *
+ * @param orig_handle Original tensor to create a new handle from (must not be
+ * null)
+ * @param new_handle Output pointer to store the new tensor handle (must not be
+ * null)
+ *
+ * @return Error::Ok on success, appropriate error code on failure:
+ *         - Error::InvalidArgument: null pointers or invalid parameters
+ */
+AOTITorchError aoti_torch_new_tensor_handle(
+    Tensor* orig_handle,
+    Tensor** new_handle);
+
 // Function to clear all tensors from internal storage
-void clear_all_tensors();
+AOTI_SHIM_EXPORT void clear_all_tensors();
 } // extern "C"
 
 } // namespace executorch::backends::cuda

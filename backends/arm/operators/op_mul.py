@@ -44,18 +44,18 @@ class MulVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.INT32, ts.DType.FP32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32, ts.DType.FP32],
             output.tosa_spec,
         )
 
-        tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{node.name}_shift")
+        tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{output.name}_shift")
         attr = ts.TosaSerializerAttribute()
         attr.MulAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
             ts.Op.MUL,
-            [inputs[0].name, inputs[1].name, f"{node.name}_shift"],
+            [inputs[0].name, inputs[1].name, f"{output.name}_shift"],
             [output.name],
             attr,
         )

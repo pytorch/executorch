@@ -4,27 +4,17 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-
+from executorch.backends.arm.common.pipeline_config import (  # noqa: unused
+    ArmPassPipelineConfig,
+)
 from executorch.backends.arm.tosa import (  # type: ignore[import-not-found]
     TosaSpecification,
 )
-
-from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
-    CompileSpec,
-)
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 class EthosUCompileSpec(ArmCompileSpec):
-    """
-    Compile spec for Ethos-U NPU.
-
-    Args:
-        target: Ethos-U accelerator configuration, e.g. ethos-u55-128.
-        system_config: System configuration to select from the Vela configuration file.
-        memory_mode: Memory mode to select from the Vela configuration file.
-        extra_flags: Extra flags for the Vela compiler.
-        config_ini: Vela configuration file(s) in Python ConfigParser .ini file format.
-    """
+    """Compile specification for Ethos-U NPU targets."""
 
     _TARGET_KEY = "target"
 
@@ -36,8 +26,22 @@ class EthosUCompileSpec(ArmCompileSpec):
         extra_flags: list[str] | None = None,
         config_ini: str | None = "Arm/vela.ini",
     ):
-        self.target = target
+        """Normalise Ethos-U compile configuration and compiler flags.
 
+        Args:
+            target (str): Ethos-U accelerator configuration (for example,
+                ``"ethos-u55-128"``).
+            system_config (str | None): System configuration name from the Vela
+                config file. Defaults based on ``target`` when omitted.
+            memory_mode (str | None): Memory mode selection from the Vela config
+                file. Defaults based on ``target`` when omitted.
+            extra_flags (list[str] | None): Additional command-line flags for
+                Vela.
+            config_ini (str | None): Path to a Vela .ini configuration file.
+                Defaults to ``"Arm/vela.ini"``.
+
+        """
+        self.target = target
         # Set vela compiler flags
         if config_ini is None:
             config_ini = "Arm/vela.ini"
@@ -51,25 +55,26 @@ class EthosUCompileSpec(ArmCompileSpec):
             ]
         )
         # default system config and memory mode
-        if "ethos-u55" in self.target:
+        target_lower = self.target.lower()
+        if "ethos-u55" in target_lower:
             if system_config is None:
                 system_config = "Ethos_U55_High_End_Embedded"
             if memory_mode is None:
                 memory_mode = "Shared_Sram"
-        elif "ethos-u85" in self.target:
+        elif "ethos-u85" in target_lower:
             if system_config is None:
                 system_config = "Ethos_U85_SYS_DRAM_Mid"
             if memory_mode is None:
                 memory_mode = "Sram_Only"
         else:
-            raise RuntimeError(f"Unknown ethos target: {self.target}")
+            raise RuntimeError(f"Unknown ethos target: {target}")
 
         compiler_flags.append(f"--system-config={system_config}")
         compiler_flags.append(f"--memory-mode={memory_mode}")
 
         # Set TOSA version.
         base_tosa_version = "TOSA-1.0+INT+int16"
-        if "u55" in self.target:
+        if "u55" in target_lower:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"
         tosa_spec = TosaSpecification.create_from_string(base_tosa_version)
@@ -78,16 +83,18 @@ class EthosUCompileSpec(ArmCompileSpec):
         self.validate()
 
     def to_list(self):
+        """Return compile specs including the encoded Ethos-U target."""
         compile_specs = super().to_list()
         compile_specs.append(CompileSpec(self._TARGET_KEY, self.target.encode()))
         return compile_specs
 
     @classmethod
     def from_list_hook(cls, compile_spec, specs: dict[str, str]):
+        """Restore target-specific metadata from serialized compile specs."""
         compile_spec.target = specs.get(cls._TARGET_KEY, None)
 
     def validate(self):
-        """Throws an error if the compile spec is not valid."""
+        """Validate the configuration against supported Ethos-U settings."""
         if len(self.compiler_flags) == 0:
             raise ValueError(
                 "compile_flags are required in the CompileSpec list for EthosUBackend"
@@ -99,4 +106,10 @@ class EthosUCompileSpec(ArmCompileSpec):
 
     @classmethod
     def get_output_format(cls) -> str:
+        """Return the artifact format emitted by this compile spec."""
         return "vela"
+
+    def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
+        # Any u55 subset passes are treated as tosa specification configs
+        # As such, they should be added to the base class default.
+        return super()._create_default_pipeline_config()

@@ -12,6 +12,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
+from executorch.backends.arm._passes.insert_rescales_pass import InsertRescaleInt32Pass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -26,7 +27,7 @@ class DecomposeLinearPass(ArmPass):
         output           = view(conv2d)
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {InsertRescaleInt32Pass}
 
     def call(self, graph_module):
         for node in graph_module.graph.nodes:
@@ -54,6 +55,8 @@ class DecomposeLinearPass(ArmPass):
                     op_target=exir_ops.edge.aten.view_copy.default,
                     args=(input, input_reshaped_shape),
                     kwargs={},
+                    from_node=node,
+                    inherit_qparams=False,
                 )
 
                 # Reshape weights to 4D with shape (Co, Ci, 1, 1)
@@ -62,6 +65,8 @@ class DecomposeLinearPass(ArmPass):
                     op_target=exir_ops.edge.aten.view_copy.default,
                     args=(weights, weights_reshaped_shape),
                     kwargs={},
+                    from_node=node,
+                    inherit_qparams=False,
                 )
 
                 conv = create_node(
@@ -80,6 +85,7 @@ class DecomposeLinearPass(ArmPass):
                     ),
                     kwargs={},
                     from_node=node,
+                    inherit_qparams=True,
                 )
 
             with graph_module.graph.inserting_after(conv):
@@ -92,14 +98,8 @@ class DecomposeLinearPass(ArmPass):
                     args=(conv, list(output_shape)),
                     kwargs={},
                     from_node=node,
+                    inherit_qparams=False,
                 )
-                # Quantization parameters are inherited from original linear node, but
-                # output reshape should use the linear node's output qparams for both input
-                # and output.
-                if "input_qparams" in output.meta:
-                    output.meta["input_qparams"] = output.meta.get(
-                        "output_qparams", None
-                    )
 
             node.replace_all_uses_with(output)
             graph_module.graph.erase_node(node)

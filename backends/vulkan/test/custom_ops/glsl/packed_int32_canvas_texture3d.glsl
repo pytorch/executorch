@@ -12,8 +12,6 @@
 
 ${define_active_storage_type("texture2d")}
 
-#extension GL_EXT_debug_printf : enable
-
 layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", "int", "texture3d")}
@@ -32,12 +30,6 @@ void main() {
 
   // Pack four 8-bit values equal to 1 into a single uint
   int packed = (1 << 0) | (1 << 8) | (1 << 16) | (1 << 24);
-
-  debugPrintfEXT(
-      "t_out[%i, %i] = %i\\n",
-      lpos.x, lpos.y,
-      packed);
-
 
   // Placeholder: just copy input to output
   ivec4 in_texel = ivec4(packed);

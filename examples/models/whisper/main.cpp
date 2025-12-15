@@ -109,7 +109,11 @@ int main(int argc, char** argv) {
   executorch::extension::asr::AsrTranscribeConfig config;
   config.max_new_tokens = FLAGS_max_new_tokens;
   config.temperature = static_cast<float>(FLAGS_temperature);
-  config.decoder_start_token_id = 50257;
+
+  // All Whisper models from HuggingFace now use the v3 tokenizer format
+  // where token 50257 = <|endoftext|> and token 50258 = <|startoftranscript|>
+  config.decoder_start_token_id = 50258;
+  ET_LOG(Info, "Using decoder_start_token_id=50258");
 
   auto result =
       runner.transcribe(features, config, [&](const std::string& piece) {

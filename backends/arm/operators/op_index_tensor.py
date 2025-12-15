@@ -24,7 +24,6 @@ from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.fx import Node
 
 
-@register_node_visitor
 class CommonIndexTensorVisitor(NodeVisitor):
     target = "aten.index.Tensor"
 
@@ -165,14 +164,14 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
             # channels and thus the stride-shift.
             data = np.full(index_shape, int(values_strides[i] / C))
             mul_const = tosa_graph.addConst(index_shape, index_dtype, data)
-            tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{node.name}_{i}_shift")
+            tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{output.name}_{i}_shift")
             attr = ts.TosaSerializerAttribute()
             attr.MulAttribute()
             self._serialize_operator(
                 node,
                 tosa_graph,
                 ts.Op.MUL,
-                [index_name, mul_const.name, f"{node.name}_{i}_shift"],
+                [index_name, mul_const.name, f"{output.name}_{i}_shift"],
                 [stride_shifted_indices.name],
                 attr,
             )
@@ -181,12 +180,12 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
                 gather_idx_shape,
                 index_dtype,
             )
-            tutils.build_reshape_tosa_1_0(
+            tutils.build_reshape_tosa(
                 tosa_graph,
                 stride_shifted_indices.name,
                 gather_idx_shape,
                 reshaped_idxs.name,
-                shape_name_override=f"{node.name}_{i}_shape",
+                shape_name_override=f"{output.name}_{i}_shape",
             )
 
             # Guarantees that the accumulation tensor is properly
@@ -213,12 +212,12 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
         gather_vals_shape = [N, K, C]
         reshaped_input = tosa_graph.addIntermediate(gather_vals_shape, values.dtype)
 
-        tutils.build_reshape_tosa_1_0(
+        tutils.build_reshape_tosa(
             tosa_graph,
             values.name,
             gather_vals_shape,
             reshaped_input.name,
-            shape_name_override=f"{node.name}_index_shape",
+            shape_name_override=f"{output.name}_index_shape",
         )
 
         gather_out_shape = (N, W, C)
@@ -239,10 +238,10 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
 
         output_shape = tutils.tosa_shape(output.shape, output.dim_order)
 
-        tutils.build_reshape_tosa_1_0(
+        tutils.build_reshape_tosa(
             tosa_graph,
             gather_out.name,
             list(output_shape),
             output.name,
-            shape_name_override=f"{node.name}_output_shape",
+            shape_name_override=f"{output.name}_output_shape",
         )

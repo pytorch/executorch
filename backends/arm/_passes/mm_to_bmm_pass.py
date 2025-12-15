@@ -54,7 +54,10 @@ class ConvertMmToBmmPass(ArmPass):
 
                 with graph.inserting_before(node):
                     unsqueeze_before = create_node(
-                        graph, exir_ops.edge.aten.unsqueeze_copy.default, from_node=node
+                        graph,
+                        exir_ops.edge.aten.unsqueeze_copy.default,
+                        from_node=node,
+                        inherit_qparams=False,
                     )
                     unsqueeze_before.args = (
                         input_node,  # Input is node's original input
@@ -68,6 +71,7 @@ class ConvertMmToBmmPass(ArmPass):
                     graph,
                     exir_ops.edge.aten.bmm.default,
                     from_node=node,
+                    inherit_qparams=True,
                 )
                 bmm_node.args = node.args
                 node.replace_all_uses_with(bmm_node)
@@ -79,6 +83,7 @@ class ConvertMmToBmmPass(ArmPass):
                     graph,
                     exir_ops.edge.aten.squeeze_copy.dims,
                     from_node=node,
+                    inherit_qparams=False,
                 )
                 squeeze_after.args = (
                     bmm_node,

@@ -122,6 +122,30 @@ def test_eq_scalar_tosa_INT(test_module):
 
 
 @common.parametrize("test_module", test_data_tensor)
+def test_eq_tensor_tosa_INT_16a8w(test_module):
+    pipeline = TosaPipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+def test_eq_scalar_tosa_INT_16a8w(test_module):
+    pipeline = TosaPipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
 @common.XfailIfNoCorstone300
 def test_eq_scalar_u55_INT_tensor(test_module):
     # EQUAL is not supported on U55.
@@ -150,14 +174,7 @@ def test_eq_scalar_u55_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_module",
-    test_data_tensor,
-    xfails={
-        "eq_tensor_rank4_randn": "MLETORCH-847: Boolean eq result unstable on U85",
-    },
-    strict=False,
-)
+@common.parametrize("test_module", test_data_tensor)
 @common.XfailIfNoCorstone320
 def test_eq_scalar_u85_INT_tensor(test_module):
     pipeline = EthosU85PipelineINT[input_t](
@@ -169,14 +186,7 @@ def test_eq_scalar_u85_INT_tensor(test_module):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_module",
-    test_data_scalar,
-    xfails={
-        "eq_scalar_rank4_randn": "MLETORCH-847: Boolean eq result unstable on U85",
-    },
-    strict=False,
-)
+@common.parametrize("test_module", test_data_scalar)
 @common.XfailIfNoCorstone320
 def test_eq_scalar_u85_INT(test_module):
     pipeline = EthosU85PipelineINT[input_t](
@@ -189,10 +199,50 @@ def test_eq_scalar_u85_INT(test_module):
 
 
 @common.parametrize("test_module", test_data_tensor)
+@common.XfailIfNoCorstone320
+def test_eq_tensor_16a8w_u85_INT16(test_module):
+    """Test eq operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = EthosU85PipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+        per_channel_quantization=per_channel_quantization,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.XfailIfNoCorstone320
+def test_eq_scalar_16a8w_u85_INT16(test_module):
+    """Test eq operation (scalar) with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = EthosU85PipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+        per_channel_quantization=per_channel_quantization,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
 @common.SkipIfNoModelConverter
 def test_eq_scalar_vgf_FP_tensor(test_module):
     pipeline = VgfPipeline[input_t](
-        test_module(), test_module().get_inputs(), Equal.aten_op_Tensor, Equal.exir_op
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+        tosa_version="TOSA-1.0+FP",
     )
     pipeline.run()
 
@@ -201,7 +251,11 @@ def test_eq_scalar_vgf_FP_tensor(test_module):
 @common.SkipIfNoModelConverter
 def test_eq_scalar_vgf_FP(test_module):
     pipeline = VgfPipeline[input_t](
-        test_module(), test_module().get_inputs(), Equal.aten_op_Scalar, Equal.exir_op
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Scalar,
+        Equal.exir_op,
+        tosa_version="TOSA-1.0+FP",
     )
     pipeline.run()
 

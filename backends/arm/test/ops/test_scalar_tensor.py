@@ -73,7 +73,10 @@ def test_scalar_tensor_tosa_INT(test_data):
         tuple(data),
         ScalarTensor.aten_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
+    # Pop the quantization check stage if it exists as no
+    # quantization nodes will be present for int + fp inputs.
+    if pipeline.has_stage("check.quant_nodes"):
+        pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -112,7 +115,10 @@ def test_scalar_tensor_vgf_FP(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", int_test_data_suite)
+@common.parametrize(
+    "test_data",
+    int_test_data_suite,
+)
 @common.SkipIfNoModelConverter
 def test_scalar_tensor_vgf_INT(test_data):
     scalar, dtype, data = test_data()
@@ -122,5 +128,8 @@ def test_scalar_tensor_vgf_INT(test_data):
         ScalarTensor.aten_op,
         tosa_version="TOSA-1.0+INT",
     )
-    pipeline.pop_stage("check.quant_nodes")
+    # Pop the quantization check stage if it exists as no
+    # quantization nodes will be present for int + fp inputs.
+    if pipeline.has_stage("check.quant_nodes"):
+        pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

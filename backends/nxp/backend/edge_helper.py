@@ -22,14 +22,6 @@ DEQUANTIZE_OPERATORS = [
 ]
 
 
-def _is_dequantize(node_: Node) -> bool:
-    return node_.op == "call_function" and node_.target in DEQUANTIZE_OPERATORS
-
-
-def _is_quantize(node_: Node) -> bool:
-    return node_.op == "call_function" and node_.target in QUANTIZE_OPERATORS
-
-
 def input_tensor(node: Node, input_index: int) -> torch.Tensor:
     if len(node.all_input_nodes) <= input_index:
         raise IndexError
@@ -103,3 +95,92 @@ def try_get_tensor_constant_from_node(
             return None
         attr_itr = getattr(attr_itr, atom)
     return attr_itr
+
+
+def _is_dequantize(node_: Node) -> bool:
+    return node_.op == "call_function" and node_.target in [
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+        torch.ops.quantized_decomposed.dequantize_per_channel.default,
+    ]
+
+
+def _is_quantize(node_: Node) -> bool:
+    return node_.op == "call_function" and node_.target in [
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+        torch.ops.quantized_decomposed.quantize_per_tensor.default,
+        torch.ops.quantized_decomposed.quantize_per_channel.default,
+    ]
+
+
+def previous_non_qdq_node(node: Node, input_index: int = 0) -> Node | None:
+    """Return the first node which is not a `quantize` or `dequantize`, found by traversing the graph backwards
+    starting with the `node.args[input_index]`,
+    """
+    current_node = node.args[input_index]
+    while True:
+        if _is_quantize(current_node) or _is_dequantize(current_node):
+            current_node = current_node.args[0]
+        else:
+            return current_node
+
+
+Scale = list[float] | float
+ZeroPoint = list[int] | int
+
+
+def get_quantization_parameters_for(node: Node) -> tuple[Scale, ZeroPoint] | None:
+    if "quantize" not in node.target.__name__ or len(node.args) < 3:
+        return None
+
+    return node.args[1], node.args[2]  # Scale and zero_point
+
+
+def get_non_qdq_users(node: Node) -> list[Node]:
+    """Return a list of nodes which consume the output of `node`, but Quantize/Dequantize nodes from QDQ clusters are
+     ignored. Meaning, the list of nodes [<user_1>, ..., <user_N>] from the illustration below is returned.
+
+    If the graph does not follow the QDQ pattern, an empty list is returned.
+
+                │
+            ┌───▼────┐
+            │ `node` │
+            └───┬────┘
+           ┌────▼─────┐
+           │ Quantize │
+           └────┬─────┘
+                ├─────── ... ──────┐
+          ┌─────▼──────┐     ┌─────▼──────┐
+          │ Dequantize │ ... │ Dequantize │
+          └─────┬──────┘     └─────┬──────┘
+           ┌────▼─────┐       ┌────▼─────┐
+           │ <user_1> │  ...  │ <user_N> │
+           └────┬─────┘       └────┬─────┘
+
+    """
+
+    quant_nodes = list(node.users)
+    if len(quant_nodes) != 1 or quant_nodes[0].target not in [
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    ]:
+        return []
+
+    dequant_nodes = list(quant_nodes[0].users)
+    if any(
+        dequant_node.target
+        not in [
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        ]
+        for dequant_node in dequant_nodes
+    ):
+        return []
+
+    res = []
+    for dequant_node in dequant_nodes:
+        res.extend(list(dequant_node.users))
+
+    return res

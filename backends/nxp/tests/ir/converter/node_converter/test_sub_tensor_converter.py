@@ -22,6 +22,7 @@ from executorch.backends.nxp.tests.models import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 @pytest.fixture(autouse=True)
@@ -39,13 +40,13 @@ def reseed_model_per_test_run():
         pytest.param((1, 4, 8, 8), id="4D."),
     ],
 )
-def test_sub_tensor_quant_conversion(mocker, input_shape):
+def test_sub_tensor_quant_conversion(mocker, input_shape, use_qat):
     model = SubTensorModule()
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, [input_shape, input_shape])
+    _ = to_quantized_edge_program(model, [input_shape, input_shape], use_qat=use_qat)
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -78,13 +79,13 @@ def test_sub_tensor_quant_conversion(mocker, input_shape):
         pytest.param((1, 4, 8, 8), id="4D."),
     ],
 )
-def test_sub_tensor_one_input_quant_conversion(mocker, input_shape):
+def test_sub_tensor_one_input_quant_conversion(mocker, input_shape, use_qat):
     model = SubTensorOneInputModule()
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    _ = to_quantized_edge_program(model, input_shape, use_qat=use_qat)
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -109,7 +110,7 @@ def test_sub_tensor_one_input_quant_conversion(mocker, input_shape):
         pytest.param((1, 4, 5, 5), id="4D, product of dims is not a multiple of 8."),
     ],
 )
-def test_sub_tensor_w_conv_quant_conversion(mocker, x_input_shape):
+def test_sub_tensor_w_conv_quant_conversion(mocker, x_input_shape, use_qat):
     model = SubTensorConvModule()
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
@@ -118,7 +119,12 @@ def test_sub_tensor_w_conv_quant_conversion(mocker, x_input_shape):
     y_input_shape = (n, 8, h, w)
 
     # Run conversion
-    _ = to_quantized_edge_program(model, [x_input_shape, y_input_shape])
+    _ = to_quantized_edge_program(
+        model,
+        [x_input_shape, y_input_shape],
+        use_qat=use_qat,
+        use_neutron_for_format_conversion=False,
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -159,13 +165,13 @@ def test_sub_tensor_w_conv_quant_conversion(mocker, x_input_shape):
     ],
 )
 def test_sub_tensor_broadcasting_unsupported_quant_conversion(
-    x_input_shape, y_input_shape
+    x_input_shape, y_input_shape, use_qat
 ):
     model = SubTensorModule()
 
     # Run conversion
     edge_program = to_quantized_edge_program(
-        model, [x_input_shape, y_input_shape]
+        model, [x_input_shape, y_input_shape], use_qat=use_qat
     ).exported_program()
     nodes = list(edge_program.graph.nodes)
 

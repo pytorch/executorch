@@ -51,16 +51,22 @@ class MatmulVisitor(NodeVisitor):
         """Define the TOSA ``MATMUL`` operator."""
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs], ts)
+        supported_input_dtypes = [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32]
+        if self.tosa_spec.support_extension("int16"):
+            supported_input_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
             self.target,
             [*inputs],
-            [ts.DType.INT8, ts.DType.INT16, ts.DType.FP32],
+            supported_input_dtypes,
             output.tosa_spec,
         )
+        supported_output_dtypes = [ts.DType.INT32, ts.DType.FP32]
+        if self.tosa_spec.support_extension("int16"):
+            supported_output_dtypes.append(ts.DType.INT48)
         validate_valid_dtype(
             self.target,
             [output],
-            [ts.DType.INT32, ts.DType.INT48, ts.DType.FP32],
+            supported_output_dtypes,
             output.tosa_spec,
         )
 
@@ -72,8 +78,8 @@ class MatmulVisitor(NodeVisitor):
         else:
             input0_zp, input1_zp = 0, 0
 
-        input_A_ZP_name = f"{node.name}_A_ZP"
-        input_B_ZP_name = f"{node.name}_B_ZP"
+        input_A_ZP_name = f"{output.name}_A_ZP"
+        input_B_ZP_name = f"{output.name}_B_ZP"
         tosa_graph.addConst([1], inputs[0].dtype, [input0_zp], name=input_A_ZP_name)
         tosa_graph.addConst([1], inputs[1].dtype, [input1_zp], name=input_B_ZP_name)
 
