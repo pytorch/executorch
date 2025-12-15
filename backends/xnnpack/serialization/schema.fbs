@@ -154,6 +154,7 @@ union XNodeUnion {
   XNNExp: _XNNNode1x1,
   XNNSin: _XNNNode1x1,
   XNNCopy: _XNNNode1x1,
+  XNNExpandDims,
 }
 
 union XValueUnion {
@@ -287,6 +288,14 @@ table _XNNPooling2D {
 table XNNStaticReshape {
   num_dims:uint;
   new_shape:[uint];
+  input_id: uint;
+  output_id: uint;
+  flags: uint;
+}
+
+table XNNExpandDims {
+  num_new_dims:uint;
+  new_dim_indices:[uint];
   input_id: uint;
   output_id: uint;
   flags: uint;
