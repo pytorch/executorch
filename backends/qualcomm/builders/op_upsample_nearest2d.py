@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
@@ -25,15 +25,15 @@ class ResizeBilinear(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -42,11 +42,11 @@ class ResizeBilinear(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
-        resize_nearest_op = PyQnnWrapper.PyQnnOpWrapper(
+        resize_nearest_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpResizeNearestNeighbor.op_name,
@@ -56,12 +56,12 @@ class ResizeBilinear(NodeVisitor):
         # align_corners is guaranteed to be false
         resize_nearest_op.AddScalarParam(
             OpResizeNearestNeighbor.param_align_corners,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {QCOM_DATA: False},
         )
         resize_nearest_op.AddScalarParam(
             OpResizeNearestNeighbor.param_half_pixel_centers,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {QCOM_DATA: True},
         )
 
