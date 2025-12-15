@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -150,6 +150,13 @@ if __name__ == "__main__":  # noqa C901
         help="Produce a quantized model",
     )
     parser.add_argument(
+        "--use_qat",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Use QAT mode for quantization (does not include QAT training)",
+    )
+    parser.add_argument(
         "-s",
         "--so_library",
         required=False,
@@ -235,8 +242,10 @@ if __name__ == "__main__":  # noqa C901
                 "No calibration inputs available, using the example inputs instead"
             )
             calibration_inputs = example_inputs
-        quantizer = NeutronQuantizer(neutron_target_spec)
-        module = calibrate_and_quantize(module, calibration_inputs, quantizer)
+        quantizer = NeutronQuantizer(neutron_target_spec, args.use_qat)
+        module = calibrate_and_quantize(
+            module, calibration_inputs, quantizer, is_qat=args.use_qat
+        )
 
     if args.so_library is not None:
         logging.debug(f"Loading libraries: {args.so_library}")
