@@ -117,17 +117,6 @@ bool validate_depthwise_conv2d_arguments(
     return false;
   }
 
-  // CMSIS-NN depthwise convolution does not support dilation != 1
-  if (dilation[0] != 1 || dilation[1] != 1) {
-    ET_LOG(
-        Error,
-        "quantized_depthwise_conv2d_out: dilation != 1 not supported, got (%zd, %zd)",
-        dilation[0],
-        dilation[1]);
-    context.fail(Error::InvalidArgument);
-    return false;
-  }
-
   const int64_t input_channels = input.size(1);
   // output_channels already extracted above for weight validation
   if (output_channels != input_channels * depth_multiplier) {
