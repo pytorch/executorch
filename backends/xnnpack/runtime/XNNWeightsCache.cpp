@@ -210,7 +210,8 @@ size_t XNNWeightsCache::look_up_or_insert(
     void* saved_ptr = context->offset_to_addr(context, offset);
     // Check for null pointers before calling memcmp
     if (ptr == nullptr || saved_ptr == nullptr) {
-      // If either pointer is null, cache is invalid
+      // If either pointer is null (due to deleted data or allocation failure), treat as cache miss
+      // and return SIZE_MAX to trigger reinsertion.
       return SIZE_MAX;
     }
     if (0 == memcmp(ptr, saved_ptr, size)) {
