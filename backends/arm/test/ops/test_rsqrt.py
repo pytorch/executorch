@@ -85,24 +85,24 @@ def test_rsqrt_u85_INT(test_tensor: torch.Tensor):
 
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
 @common.SkipIfNoModelConverter
-def test_rsqrt_vgf_FP(test_tensor: torch.Tensor):
+def test_rsqrt_vgf_no_quant(test_tensor: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
         Rsqrt(),
         test_tensor(),
         aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
 @common.SkipIfNoModelConverter
-def test_rsqrt_vgf_INT(test_tensor: torch.Tensor):
+def test_rsqrt_vgf_quant(test_tensor: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
         Rsqrt(),
         test_tensor(),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 

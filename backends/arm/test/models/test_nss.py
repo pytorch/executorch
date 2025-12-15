@@ -110,7 +110,7 @@ def test_nss_u85_INT():
     reason="[MLETORCH-1430]: Double types are not supported in buffers in MSL"
 )
 @common.SkipIfNoModelConverter
-def test_nss_vgf_no_quant():
+def test_nss_vgf_FP():
     pipeline = VgfPipeline[input_t](
         nss().eval(),
         example_inputs(),
@@ -119,12 +119,14 @@ def test_nss_vgf_no_quant():
         use_to_edge_transform_and_lower=True,
         run_on_vulkan_runtime=True,
         quantize=False,
+        # Override tosa version to test FP-only path
+        tosa_version="TOSA-1.0+FP",
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_nss_vgf_quant():
+def test_nss_vgf_INT():
     pipeline = VgfPipeline[input_t](
         nss().eval(),
         example_inputs(),
@@ -134,6 +136,8 @@ def test_nss_vgf_quant():
         use_to_edge_transform_and_lower=True,
         run_on_vulkan_runtime=True,
         quantize=True,
+        # Override tosa version to test INT-only path
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
 
