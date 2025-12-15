@@ -334,7 +334,7 @@ class QuantizeClampArgumentsPass(ArmPass):
         - Makes sure the min and max values to clamp.default are quantized, if it's a quantized operator.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {FoldAndAnnotateQParamsPass}
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
@@ -346,12 +346,15 @@ class QuantizeClampArgumentsPass(ArmPass):
             }:
                 continue
 
-            # Make sure we have a quantized operator
-            user = list(n.users)[0]
-            if user.target not in Q_OPS:
+            try:
+                output_qparams = get_output_qparams(n)
+            except ValueError:
+                continue
+            if len(output_qparams) == 0:
                 continue
 
-            qargs = QuantArgs.from_operator(user.target, user.args)
+            # Qparams are stored per user index; use the first entry.
+            qargs = next(iter(output_qparams.values()))
 
             if n.target == exir_ops.edge.aten.clamp.default:
                 # Quantize the min and max arguments of clamp, if they are not None
@@ -367,5 +370,10 @@ class QuantizeClampArgumentsPass(ArmPass):
                     n.update_arg(2, quantized_max_val)
 
                 modified = True
+
+        if modified:
+            # Retrace to refresh fake tensor metadata after updating clamp min/max.
+            graph_module = super().call(graph_module).graph_module
+            graph_module.recompile()
 
         return PassResult(graph_module, modified)

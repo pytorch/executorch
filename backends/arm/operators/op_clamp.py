@@ -87,20 +87,18 @@ class ClampVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, [2, 3])
         validate_same_dtype(self.target, [inputs[0], output], ts)
+        supported_dtypes = [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32]
+        if self.tosa_spec.support_extension("int16"):
+            supported_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.FP16,
-                ts.DType.FP32,
-            ],
+            supported_dtypes,
             output.tosa_spec,
         )
 
         node_input_dtype = node.meta["val"].dtype
-        # NOTE: Quantization of the min/max arguments is handled by QuantizeClampArgumentsPass
+        # NOTE: Quantization of the min/max arguments is handled by QuantizeOperatorArguments
         min_val, max_val = self._get_min_max_arguments(node, node_input_dtype)
 
         attr = ts.TosaSerializerAttribute()

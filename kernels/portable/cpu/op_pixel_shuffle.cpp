@@ -84,8 +84,12 @@ Tensor& pixel_shuffle_out(
   ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;
-  get_pixel_shuffle_out_target_size(
-      in, upscale_factor, expected_out_size, &expected_out_dim);
+  ET_KERNEL_CHECK(
+      ctx,
+      get_pixel_shuffle_out_target_size(
+          in, upscale_factor, expected_out_size, &expected_out_dim),
+      InvalidArgument,
+      out);
 
   // Make sure the output tensor is the right size.
   ET_KERNEL_CHECK(

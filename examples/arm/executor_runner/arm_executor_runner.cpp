@@ -87,6 +87,7 @@
 #include <errno.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
@@ -95,6 +96,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 #include "arm_memory_allocator.h"
@@ -183,6 +185,7 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
+using executorch::runtime::toString;
 #if defined(ET_BUNDLE_IO)
 using executorch::bundled_program::compute_method_output_error_stats;
 using executorch::bundled_program::ErrorStats;
@@ -395,6 +398,19 @@ class Box {
   }
 };
 
+template <typename ValueType>
+void fill_tensor_with_default_value(Tensor& tensor) {
+  ValueType fill_value{};
+  if constexpr (std::is_same_v<ValueType, bool>) {
+    fill_value = true;
+  } else {
+    fill_value = ValueType(1);
+  }
+
+  ValueType* data_ptr = tensor.mutable_data_ptr<ValueType>();
+  std::fill(data_ptr, data_ptr + tensor.numel(), fill_value);
+}
+
 Error prepare_input_tensors(
     Method& method,
     MemoryAllocator& allocator,
@@ -452,32 +468,17 @@ Error prepare_input_tensors(
       if (input_evalues[i].isTensor()) {
         Tensor& tensor = input_evalues[i].toTensor();
         switch (tensor.scalar_type()) {
-          case ScalarType::Int:
-            std::fill(
-                tensor.mutable_data_ptr<int>(),
-                tensor.mutable_data_ptr<int>() + tensor.numel(),
-                1);
-            break;
-          case ScalarType::Float:
-            std::fill(
-                tensor.mutable_data_ptr<float>(),
-                tensor.mutable_data_ptr<float>() + tensor.numel(),
-                1.0);
-            break;
-          case ScalarType::Char:
-            std::fill(
-                tensor.mutable_data_ptr<int8_t>(),
-                tensor.mutable_data_ptr<int8_t>() + tensor.numel(),
-                1);
-            break;
-          case ScalarType::Bool:
-            std::fill(
-                tensor.mutable_data_ptr<int8_t>(),
-                tensor.mutable_data_ptr<int8_t>() + tensor.numel(),
-                1);
-            break;
+#define HANDLE_SCALAR_TYPE(cpp_type, scalar_name)     \
+  case ScalarType::scalar_name:                       \
+    fill_tensor_with_default_value<cpp_type>(tensor); \
+    break;
+          ET_FORALL_SCALAR_TYPES(HANDLE_SCALAR_TYPE)
+#undef HANDLE_SCALAR_TYPE
           default:
-            ET_LOG(Error, "Unhandled ScalarType");
+            ET_LOG(
+                Error,
+                "Unhandled ScalarType %s",
+                toString(tensor.scalar_type()));
             err = Error::InvalidArgument;
             break;
         }

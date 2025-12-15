@@ -6,10 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/generic/operators/op_quantized_conv2d.h>
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <on_device_ai/Assistant/Jarvis/min_runtime/operators/generic/op_quantized_conv2d.h>
 
 #define ALIGN_PTR(x, bytes) ((((unsigned)(x)) + (bytes - 1)) & (~(bytes - 1)))
 
