@@ -15,9 +15,8 @@ INSTALL_DIR="${WINDOWS_CUDA_INSTALL_DIR:-/opt/cuda-windows}"
 # Source: https://developer.nvidia.com/cuda-toolkit-archive
 declare -A CUDA_DRIVER_MAP=(
     ["12.6"]="12.6.3:561.17"
-    ["12.8"]="12.8.1:572.17"
-    ["12.9"]="12.9.1:576.40"
-    ["13.0"]="13.0.1:578.22"
+    ["12.8"]="12.8.1:572.61"
+    ["12.9"]="12.9.1:576.57"
 )
 
 install_mingw() {
