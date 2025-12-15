@@ -43,7 +43,10 @@ class TestSD3Transformer2DModel:
         "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
     }
 
-    ops_after_partitioner_vgf_quantize = ops_after_partitioner_FP
+    ops_after_partitioner_vgf_quantize = {
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
+        "torch.ops.higher_order.executorch_call_delegate": 1,
+    }
     ops_after_partitioner_vgf_no_quantize = ops_after_partitioner_FP
 
     def _prepare_inputs(
