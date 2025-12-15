@@ -377,6 +377,14 @@ class CatPattern(QuantizationPattern):
         )
 
 
+def _is_batch_norm(node_: Node) -> bool:
+    return node_.op == "call_function" and node_.target in [
+        torch.ops.aten.batch_norm.default,
+        torch.ops.aten.native_batch_norm.default,
+        torch.ops.aten._native_batch_norm_legit_no_training.default,
+    ]
+
+
 class ConvPattern(QuantizationPattern):
     @abstractmethod
     def partition_types(self) -> list[OpOverload]:
@@ -419,11 +427,20 @@ class ConvPattern(QuantizationPattern):
         if len(conv_node.args) > 2 and conv_node.args[2] is not None:
             bias = [(conv_node, NodeArgsIdx(2), bias_quantization_qspec)]
 
+        output_specs = [(conv_node,)]
+        # In order for QAT to be numerically correct, there should be no quantization between
+        # convolution node and batch norm node.
+        if self.is_qat:
+            conv_users = conv_node.users
+            possibly_bn = list(conv_users.keys())[0] if len(conv_users) == 1 else None
+            if possibly_bn and _is_batch_norm(possibly_bn):
+                output_specs = []
+
         return PartitionAnchors(
             inputs=[(conv_node, NodeArgsIdx(0))],
             weights=[(conv_node, NodeArgsIdx(1), weight_quantization_spec)],
             biases=bias,
-            output=[(conv_node,)],
+            output=output_specs,
         )
 
 
@@ -500,6 +517,14 @@ class Conv2dPattern(ConvPattern):
             output = []
             activation.meta["quantization_annotation"].input_qspec_map = {}
 
+        # In order for QAT to be numerically correct, there should be no quantization between
+        # convolution node and batch norm node.
+        if self.is_qat:
+            conv_users = conv_node.users
+            possibly_bn = list(conv_users.keys())[0] if len(conv_users) == 1 else None
+            if possibly_bn and _is_batch_norm(possibly_bn):
+                output = []
+
         return PartitionAnchors(
             inputs=[(conv_node, NodeArgsIdx(0))],
             weights=[(conv_node, NodeArgsIdx(1), weight_quantization_spec)],
@@ -545,11 +570,20 @@ class ConvTranspose2dPattern(QuantizationPattern):
         if len(conv_node.args) > 2 and conv_node.args[2] is not None:
             bias = [(conv_node, NodeArgsIdx(2), bias_quantization_qspec)]
 
+        output_specs = [(conv_node,)]
+        # In order for QAT to be numerically correct, there should be no quantization between
+        # convolution node and batch norm node.
+        if self.is_qat:
+            conv_users = conv_node.users
+            possibly_bn = list(conv_users.keys())[0] if len(conv_users) == 1 else None
+            if possibly_bn and _is_batch_norm(possibly_bn):
+                output_specs = []
+
         return PartitionAnchors(
             inputs=[(conv_node, NodeArgsIdx(0))],
             weights=[(conv_node, NodeArgsIdx(1), weight_quantization_spec)],
             biases=bias,
-            output=[(conv_node,)],
+            output=output_specs,
         )
 
 
