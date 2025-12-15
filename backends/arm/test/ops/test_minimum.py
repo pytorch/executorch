@@ -76,18 +76,23 @@ def test_minimum_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", Minimum.test_parameters)
 @common.SkipIfNoModelConverter
-def test_minimum_vgf_FP(test_data: test_t):
-    pipeline = VgfPipeline[test_t](Minimum(), test_data(), aten_op)
+def test_minimum_vgf_no_quant(test_data: test_t):
+    pipeline = VgfPipeline[test_t](
+        Minimum(),
+        test_data(),
+        aten_op,
+        quantize=False,
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", Minimum.test_parameters)
 @common.SkipIfNoModelConverter
-def test_minimum_vgf_INT(test_data: test_t):
+def test_minimum_vgf_quant(test_data: test_t):
     pipeline = VgfPipeline[test_t](
         Minimum(),
         test_data(),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
