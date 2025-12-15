@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,6 +17,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     AddmmPattern,
     AddTensorPattern,
     AvgPoolPattern,
+    BatchNormPattern,
     CatPattern,
     Conv1dPattern,
     Conv2dPattern,
@@ -245,6 +246,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 OpQuantizer(AddTensorPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(AddmmPattern(self, is_qat=is_qat), static_fc_qconfig),
                 OpQuantizer(AvgPoolPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(BatchNormPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(CatPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(Conv1dPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(Conv2dPattern(self, is_qat=is_qat), static_qconfig),

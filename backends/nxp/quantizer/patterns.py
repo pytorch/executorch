@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -147,6 +147,27 @@ class SingleInputBasicPattern(QuantizationPattern):
 
         return PartitionAnchors(
             inputs=[(node, NodeArgsIdx(0))],
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+
+class BatchNormPattern(QuantizationPattern):
+    def __init__(self, is_qat: bool):
+        super().__init__(is_qat=is_qat)
+
+    def partition_types(self) -> list[OpOverload]:
+        # BatchNorm quantization is needed only when in QAT mode
+        return [torch.ops.aten.batch_norm.default] if self.is_qat else []
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[],
             weights=[],
             biases=[],
             output=[(node,)],
