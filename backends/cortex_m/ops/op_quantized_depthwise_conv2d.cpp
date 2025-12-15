@@ -43,7 +43,7 @@ bool validate_depthwise_conv2d_arguments(
   if (input.size(0) != 1) {
     ET_LOG(
         Error,
-        "quantized_depthwise_conv2d_out: CMSIS-NN only supports batch size 1, got %zd",
+        "quantized_depthwise_conv2d_out: batch size must be 1, got %zd",
         input.size(0));
     context.fail(Error::InvalidArgument);
     return false;
@@ -53,7 +53,7 @@ bool validate_depthwise_conv2d_arguments(
   if (weight.size(0) != 1) {
     ET_LOG(
         Error,
-        "quantized_depthwise_conv2d_out: weight dim 0 must be 1 for IHWO layout, got %zd",
+        "quantized_depthwise_conv2d_out: weight dim 0 must be 1, got %zd",
         weight.size(0));
     context.fail(Error::InvalidArgument);
     return false;
@@ -64,7 +64,7 @@ bool validate_depthwise_conv2d_arguments(
   if (weight_output_channels != output_channels) {
     ET_LOG(
         Error,
-        "quantized_depthwise_conv2d_out: weight output channels (%zd) must match output channels (%zd)",
+        "quantized_depthwise_conv2d_out: weight out_ch (%zd) != out_ch (%zd)",
         weight_output_channels,
         output_channels);
     context.fail(Error::InvalidArgument);
@@ -73,16 +73,14 @@ bool validate_depthwise_conv2d_arguments(
 
   if (!is_channels_last_tensor(input)) {
     ET_LOG(
-        Error,
-        "quantized_depthwise_conv2d_out: input must have channels_last dim_order (NHWC)");
+        Error, "quantized_depthwise_conv2d_out: input must be channels_last");
     context.fail(Error::InvalidArgument);
     return false;
   }
 
   if (!is_channels_last_tensor(output)) {
     ET_LOG(
-        Error,
-        "quantized_depthwise_conv2d_out: output must have channels_last dim_order (NHWC)");
+        Error, "quantized_depthwise_conv2d_out: output must be channels_last");
     context.fail(Error::InvalidArgument);
     return false;
   }
@@ -102,9 +100,7 @@ bool validate_depthwise_conv2d_arguments(
   }
 
   if (bias.has_value() && bias.value().scalar_type() != ScalarType::Int) {
-    ET_LOG(
-        Error,
-        "quantized_depthwise_conv2d_out: bias must be int32 if provided");
+    ET_LOG(Error, "quantized_depthwise_conv2d_out: bias must be int32");
     context.fail(Error::InvalidArgument);
     return false;
   }
@@ -112,7 +108,7 @@ bool validate_depthwise_conv2d_arguments(
   if (stride.size() != 2 || padding.size() != 2 || dilation.size() != 2) {
     ET_LOG(
         Error,
-        "quantized_depthwise_conv2d_out: stride, padding, and dilation must have length 2");
+        "quantized_depthwise_conv2d_out: stride/padding/dilation must have length 2");
     context.fail(Error::InvalidArgument);
     return false;
   }
@@ -122,7 +118,7 @@ bool validate_depthwise_conv2d_arguments(
   if (output_channels != input_channels * depth_multiplier) {
     ET_LOG(
         Error,
-        "quantized_depthwise_conv2d_out: output channels (%zd) must equal input channels (%zd) * depth_multiplier (%zd)",
+        "quantized_depthwise_conv2d_out: out_ch (%zd) != in_ch (%zd) * depth_mult (%zd)",
         output_channels,
         input_channels,
         depth_multiplier);
@@ -134,7 +130,7 @@ bool validate_depthwise_conv2d_arguments(
       requantize_shifts.size(0) != output_channels) {
     ET_LOG(
         Error,
-        "quantized_depthwise_conv2d_out: per-channel params must match output channels (%zd)",
+        "quantized_depthwise_conv2d_out: per-ch params size != out_ch (%zd)",
         output_channels);
     context.fail(Error::InvalidArgument);
     return false;
