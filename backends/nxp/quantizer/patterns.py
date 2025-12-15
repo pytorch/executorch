@@ -153,6 +153,27 @@ class SingleInputBasicPattern(QuantizationPattern):
         )
 
 
+class BatchNormPattern(QuantizationPattern):
+    def __init__(self, is_qat: bool):
+        super().__init__(is_qat=is_qat)
+
+    def partition_types(self) -> list[OpOverload]:
+        # BatchNorm quantization is needed only when in QAT mode
+        return [torch.ops.aten.batch_norm.default] if self.is_qat else []
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[],
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+
 def get_anchors_for_fixed_quant_specs(
     fused_partition: list[fx.GraphModule],
     scale: float,
