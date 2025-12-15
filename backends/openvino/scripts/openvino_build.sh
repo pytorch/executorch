@@ -64,7 +64,7 @@ build_python_enabled() {
     export CMAKE_BUILD_ARGS="--target openvino_backend"
 
     # Build the package
-    ./install_executorch.sh
+    ./install_executorch.sh --use-pt-pinned-commit
 }
 
 main() {
