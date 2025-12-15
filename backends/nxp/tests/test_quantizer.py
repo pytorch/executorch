@@ -636,3 +636,51 @@ def test_qat_produces_same_graph_as_ptq():
             qat_quantized_model.graph.nodes, ptq_quantized_model.graph.nodes
         )
     )
+
+
+# TODO: conv1d_t is currently unsupported, add when resolved
+@pytest.mark.parametrize("conv_module", ["conv1d", "conv2d", "conv2d_t"])
+@pytest.mark.parametrize("conv_bias", [True, False])
+@pytest.mark.parametrize("bn_affine", [True, False])
+def test_torchao_native_conv_bn_qat_fusing(conv_module, conv_bias, bn_affine):
+    if not conv_bias:
+        pytest.skip("Conv without bias is not supported.")
+
+    if conv_module.startswith("conv1d"):
+        input_shape = (1, 3, 32)
+    elif conv_module.startswith("conv2d"):
+        input_shape = (1, 3, 32, 32)
+
+    model = models.ConvBNModule(
+        conv_module=conv_module,
+        conv_bias=conv_bias,
+        bn_affine=bn_affine,
+    )
+    model.eval()
+
+    exported_model = export(model, (torch.randn(*input_shape),), strict=True)
+    prepared_model = _prepare_for_quantization(exported_model, is_qat=True)
+    quantized_model = convert_pt2e(prepared_model)
+
+    def is_conv(node):
+        return node.op == "call_function" and node.target in [
+            torch.ops.aten.conv1d.default,
+            torch.ops.aten.conv2d.default,
+            torch.ops.aten.conv_transpose2d.input,
+        ]
+
+    graph_nodes = list(quantized_model.graph.nodes)
+    conv_node = next(n for n in graph_nodes if is_conv(n))
+    conv_node_args = conv_node.args
+
+    if len(conv_node_args) > 3:
+        conv_node_args = conv_node_args[:3]
+
+    assert len([n for n in graph_nodes if "batch_norm" in n.name]) == 0
+    assert (
+        len(conv_node.users) == 1
+        and list(conv_node.users.keys())[0].target
+        == torch.ops.quantized_decomposed.quantize_per_tensor.default
+    )
+    assert all(arg.name.startswith("dequantize") for arg in conv_node_args)
+    assert len(graph_nodes) == 15
