@@ -24,10 +24,10 @@ from pathlib import Path
 # Source: https://developer.nvidia.com/cuda-toolkit-archive
 CUDA_DRIVER_VERSION_MAP = {
     # CUDA 12.9.x
-    "12.9.1": "576.40",
-    "12.9.0": "576.02",
+    "12.9.1": "576.57",
+    "12.9.0": "576.33",
     # CUDA 12.8.x
-    "12.8.1": "572.17",
+    "12.8.1": "572.61",
     "12.8.0": "571.96",
     # CUDA 12.6.x
     "12.6.3": "561.17",
