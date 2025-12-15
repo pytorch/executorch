@@ -58,4 +58,8 @@ if exist setup.py (
     cd executorch
 )
 
+REM Override pip's default tempdir to reduce path length.
+set TEMP=C:\temp
+set TMPDIR=C:\temp
+
 %args% || exit /b 1
