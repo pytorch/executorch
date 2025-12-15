@@ -184,3 +184,10 @@ def get_non_qdq_users(node: Node) -> list[Node]:
         res.extend(list(dequant_node.users))
 
     return res
+
+
+def is_channels_last_dim_order(dim_order: list[int]) -> bool:
+    if len(dim_order) < 3:
+        return False
+
+    return list(dim_order) == [0] + list(range(2, len(dim_order))) + [1]

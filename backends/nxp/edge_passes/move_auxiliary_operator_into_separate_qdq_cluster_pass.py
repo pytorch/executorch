@@ -20,6 +20,7 @@ HardTanh = exir_ops.edge.aten.hardtanh.default
 Relu = exir_ops.edge.aten.relu.default
 Sigmoid = exir_ops.edge.aten.sigmoid.default
 Tanh = exir_ops.edge.aten.tanh.default
+CloneDimOrder = exir_ops.edge.dim_order_ops._clone_dim_order.default
 
 
 def insert_qdq_pair_after_node(
@@ -101,6 +102,9 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
         ],
         MM: [
             ViewCopy,
+        ],
+        ViewCopy: [
+            CloneDimOrder,
         ],
     }
 
