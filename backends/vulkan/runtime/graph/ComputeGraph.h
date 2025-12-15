@@ -25,6 +25,11 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 
+#ifdef ET_EVENT_TRACER_ENABLED
+std::string& set_and_get_current_operator_json(const std::string& json);
+size_t get_current_operator_count(const bool increment = false);
+#endif
+
 namespace vkcompute {
 
 // Define valid scalar types that the Value class can
