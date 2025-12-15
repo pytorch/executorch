@@ -64,9 +64,10 @@ ENV SCCACHE_S3_KEY_PREFIX executorch
 ENV SCCACHE_REGION us-east-1
 
 ARG TORCH_VERSION
+ARG SKIP_PYTORCH
 COPY ./common/install_pytorch.sh install_pytorch.sh
 COPY ./common/utils.sh utils.sh
-RUN bash ./install_pytorch.sh && rm install_pytorch.sh utils.sh
+RUN if [ -z "${SKIP_PYTORCH}" ]; then bash ./install_pytorch.sh; fi && rm install_pytorch.sh utils.sh
 
 ARG LINTRUNNER
 # Install lintrunner if needed
