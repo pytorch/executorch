@@ -17,7 +17,7 @@ The target system must include ML SDK for Vulkan and a Vulkan driver with Vulkan
 
 ```{tip}
 All requirements can be downloaded using `examples/arm/setup.sh --enable-mlsdk-deps --disable-ethos-u-deps` and added to the path using
-`source examples/arm/ethos-u-scratch/setup_path.sh`
+`source examples/arm/arm-scratch/setup_path.sh`
 ```
 
 For the AOT flow, compilation of a model to `.pte` format using the VGF backend, the requirements are:
