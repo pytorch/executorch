@@ -194,4 +194,6 @@ gemma3-cpu:
 	@echo "  Binary: cmake-out/examples/models/gemma3/gemma3_e2e_runner"
 
 clean:
-	rm -rf cmake-out
+	rm -rf cmake-out \
+	       extension/llm/tokenizers/build \
+	       extension/llm/tokenizers/pytorch_tokenizers.egg-info
