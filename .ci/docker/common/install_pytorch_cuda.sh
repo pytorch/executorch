@@ -25,6 +25,6 @@ echo "Installing PyTorch with CUDA ${CUDA_VERSION} (${CUDA_SUFFIX})..."
 pip_install torch torchvision torchaudio --index-url "https://download.pytorch.org/whl/nightly/${CUDA_SUFFIX}"
 
 # Verify installation
-python3 -c "import torch; print(f'PyTorch {torch.__version__} installed with CUDA {torch.version.cuda}')"
+conda_run python3 -c "import torch; print(f'PyTorch {torch.__version__} installed with CUDA {torch.version.cuda}')"
 
 echo "PyTorch CUDA installation complete"
