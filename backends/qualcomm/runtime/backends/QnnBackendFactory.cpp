@@ -76,7 +76,6 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           get_option(options->profile_level()),
           options->soc_info(),
           htp_options);
-      backend_params->backend_init_state_ = BackendInitializeState::INITIALIZED;
     } break;
     case QnnExecuTorchBackendType::kGpuBackend: {
       auto gpu_options = options->backend_options()->gpu_options();
@@ -132,12 +131,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
       options->log_level());
 
   backend_params->backend_init_state_ = BackendInitializeState::INITIALIZED;
-
-  if (backend_params->qnn_backend_ptr_->VerifyQNNSDKVersion() == Error::Ok) {
-    return backend_params;
-  }
-
-  return nullptr;
+  return backend_params;
 }
 } // namespace qnn
 } // namespace backends

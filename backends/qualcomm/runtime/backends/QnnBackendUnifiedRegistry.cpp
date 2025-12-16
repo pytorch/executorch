@@ -9,8 +9,10 @@
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendUnifiedRegistry.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpBackend.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevice.h>
+#include <executorch/backends/qualcomm/runtime/backends/gpu/GpuBackend.h>
+#include <executorch/backends/qualcomm/runtime/backends/gpu/GpuDevice.h>
+#include <executorch/backends/qualcomm/runtime/backends/htp/HtpBackend.h>
+#include <executorch/backends/qualcomm/runtime/backends/htp/HtpDevice.h>
 
 #include <string>
 
@@ -111,10 +113,9 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
     }
     case QnnExecuTorchBackendType::kGpuBackend: {
       auto gpu_options = options->backend_options()->gpu_options();
-      backend =
-          std::make_unique<GpuBackend>(implementation.get(), logger.get(), gpu_options);
-      device =
-          std::make_unique<GpuDevice>(implementation.get(), logger.get());
+      backend = std::make_unique<GpuBackend>(
+          implementation.get(), logger.get(), gpu_options);
+      device = std::make_unique<GpuDevice>(implementation.get(), logger.get());
       break;
     }
     case QnnExecuTorchBackendType::kDspBackend:
@@ -123,13 +124,13 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
       return Error::NotFound;
   }
   ET_CHECK_OR_RETURN_ERROR(
-          backend->Configure(options->op_package_options()) == Error::Ok,
-          Internal,
-          "Fail to configure Qnn backend");
+      backend->Configure(options->op_package_options()) == Error::Ok,
+      Internal,
+      "Fail to configure Qnn backend");
   ET_CHECK_OR_RETURN_ERROR(
-          device->Configure() == Error::Ok,
-          Internal,
-          "Fail to configure Qnn device");
+      device->Configure() == Error::Ok,
+      Internal,
+      "Fail to configure Qnn device");
 
   if (backend->VerifyQNNSDKVersion() != Error::Ok) {
     return Error::Internal;
