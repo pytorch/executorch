@@ -92,6 +92,9 @@ install_windows_cuda() {
     echo "Extracting CUDA toolkit..."
     7z x "${CUDA_INSTALLER}" -o"extracted" -y
 
+    # Fix permissions so ci-user can access the files
+    chmod -R a+rX "${INSTALL_DIR}"
+
     # Clean up installer to save space
     rm -f "${CUDA_INSTALLER}"
 
