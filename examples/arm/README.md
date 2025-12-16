@@ -10,7 +10,7 @@ The main scripts are `setup.sh`, `run.sh` and `aot_arm_compiler.py`.
 `setup.sh` will install the needed tools and with --root-dir <FOLDER> 
 you can change the path to a scratch folder where it will download and generate build
 artifacts. If supplied, you must also supply the same folder to run.sh with
---scratch-dir=<FOLDER> If not supplied both script will use examples/arm/ethos-u-scratch
+--scratch-dir=<FOLDER> If not supplied both script will use examples/arm/arm-scratch
 
 `run.sh` can be used to build, run and test a model in an easy way and it will call cmake for you
 and in cases you want to run a simulator it will start it also. The script will call `aot_arm_compiler.py`
@@ -89,7 +89,7 @@ $ cd <EXECUTORCH-ROOT-FOLDER>
 $ ./examples/arm/setup.sh --i-agree-to-the-contained-eula
 
 # Step [2] - Setup path to tools, The `setup.sh` script has generated a script that you need to source every time you restart you shell.
-$ source  examples/arm/ethos-u-scratch/setup_path.sh
+$ source  examples/arm/arm-scratch/setup_path.sh
 
 # Step [3] - build and run ExecuTorch and executor_runner baremetal example application
 # on a Corstone(TM)-320 FVP to run a simple PyTorch model from a file.
