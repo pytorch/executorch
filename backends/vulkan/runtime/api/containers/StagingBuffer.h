@@ -36,7 +36,8 @@ class StagingBuffer final {
       : context_p_(context_p),
         dtype_(dtype),
         vulkan_buffer_(context_p_->adapter_ptr()->vma().create_staging_buffer(
-            element_size(dtype_) * numel, direction)),
+            element_size(dtype_) * numel,
+            direction)),
         mapped_data_(nullptr) {}
 
   StagingBuffer(const StagingBuffer&) = delete;
