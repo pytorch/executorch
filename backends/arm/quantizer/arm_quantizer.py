@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -597,8 +597,50 @@ class TOSAQuantizer(Quantizer):
                 mark_node_as_annotated(node)
 
     def validate(self, model: GraphModule) -> None:
-        """TODO: Implement validation of annotated graph for TOSA backend."""
-        pass
+        """Validate the quantization results. Currently, this includes:
+            - Ensure tensor inputs to each operator live on the same device.
+
+        Args:
+            model (GraphModule): GraphModule being validated.
+        Raises:
+            ValueError: If tensor inputs for any operator span more than one
+                device.
+        """
+        for node in model.graph.nodes:
+            if node.op != "call_function":
+                continue
+
+            devices = set()
+            for arg_node in node.all_input_nodes:
+                meta_val = arg_node.meta.get("val", None)
+                if meta_val is None:
+                    continue
+                if isinstance(meta_val, (tuple, list)):
+                    for tensor in meta_val:
+                        devices.add(
+                            str(
+                                getattr(
+                                    tensor,
+                                    "device",
+                                    f"Could not get device from {tensor}",
+                                )
+                            )
+                        )
+                else:
+                    devices.add(
+                        str(
+                            getattr(
+                                meta_val,
+                                "device",
+                                f"Could not get device from {meta_val}",
+                            )
+                        )
+                    )
+
+                if len(devices) > 1:
+                    raise ValueError(
+                        f"Quantizer detected operator {node.name} with different device inputs: {devices}."
+                    )
 
     def quantize_with_submodules(
         self,

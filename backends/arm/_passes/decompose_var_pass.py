@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -98,7 +98,7 @@ class DecomposeVarPass(ArmPass):
         full = super().call_operator(
             full_op,
             ([], 1 / max(0, N - correction)),
-            {"dtype": dtype},
+            {"dtype": dtype, "device": x.data.device},
             meta,
             True,
         )
