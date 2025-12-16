@@ -762,7 +762,10 @@ class ComputeGraph final {
    * use memory that is visible to both the CPU and GPU, and therefore is used
    * as a intermediary when transferring data between the CPU and GPU.
    */
-  ValueRef add_staging(const vkapi::ScalarType dtype, const size_t numel);
+  ValueRef add_staging(
+      const vkapi::ScalarType dtype,
+      const size_t numel,
+      const vkapi::CopyDirection direction);
 
   ValueRef add_none();
 
