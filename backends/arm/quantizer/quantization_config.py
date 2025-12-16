@@ -177,6 +177,8 @@ class QuantizationConfig:
             torch.ops.aten.conv2d.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.conv2d.padding,
+            torch.ops.aten.conv3d.default,
+            torch.ops.aten.conv3d.padding,
         ]:
             if self.input_activation is None or self.weight is None:
                 raise ValueError(
@@ -187,7 +189,6 @@ class QuantizationConfig:
                 self.input_activation.dtype == torch.int16
                 and self.weight.dtype == torch.int8
             ):
-
                 input_act = node.args[0]
                 weight = node.args[1]
 

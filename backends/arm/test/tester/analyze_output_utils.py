@@ -39,7 +39,6 @@ def _print_channels(
     rtol: float,
     atol: float,
 ) -> str:
-
     output_str = ""
     exp = "000"
     booldata = False
@@ -121,7 +120,7 @@ def _print_elements(
     return output_str
 
 
-def print_error_diffs(
+def print_error_diffs(  # noqa: C901
     tester_or_result: Any,
     result_or_reference: TensorLike,
     reference: TensorLike | None = None,
@@ -174,33 +173,53 @@ def print_error_diffs(
             f"Output needs to be of same shape: {result.shape} != {reference_tensor.shape}"
         )
     shape = result.shape
+    rank = len(shape)
 
-    match len(shape):
-        case 4:
-            N, C, H, W = (shape[0], shape[1], shape[2], shape[3])
-        case 3:
-            N, C, H, W = (1, shape[0], shape[1], shape[2])
-        case 2:
-            N, C, H, W = (1, 1, shape[0], shape[1])
-        case 1:
-            N, C, H, W = (1, 1, 1, shape[0])
-        case 0:
-            N, C, H, W = (1, 1, 1, 1)
-        case _:
-            raise ValueError("Invalid tensor rank")
+    if rank == 5:
+        N, C, D, H, W = shape
+    elif rank == 4:
+        N, C, H, W = shape
+        D = 1
+    elif rank == 3:
+        C, H, W = shape
+        N, D = 1, 1
+    elif rank == 2:
+        H, W = shape
+        N, C, D = 1, 1, 1
+    elif rank == 1:
+        W = shape[0]
+        N, C, D, H = 1, 1, 1, 1
+    elif rank == 0:
+        N = C = D = H = W = 1
+    else:
+        raise ValueError("Invalid tensor rank")
+
+    if rank < 3:
+        C = 1
+    if rank < 2:
+        H = 1
+    if rank < 1:
+        W = 1
 
     if quantization_scale is not None:
         atol += quantization_scale * qtol
 
-    # Reshape tensors to 4D NCHW format
-    result = torch.reshape(result, (N, C, H, W))
-    reference_tensor = torch.reshape(reference_tensor, (N, C, H, W))
+    # Reshape tensors to 4D NCHW format, optionally folding depth into batch.
+    total_batches = N * D
+    result = torch.reshape(result, (total_batches, C, H, W))
+    reference_tensor = torch.reshape(reference_tensor, (total_batches, C, H, W))
 
     output_str = ""
-    for n in range(N):
-        output_str += f"BATCH {n}\n"
-        result_batch = result[n, :, :, :]
-        reference_batch = reference_tensor[n, :, :, :]
+    for idx in range(total_batches):
+        batch_idx = idx // D if D > 0 else idx
+        depth_idx = idx % D if D > 0 else 0
+        if D > 1:
+            output_str += f"BATCH {batch_idx} DEPTH {depth_idx}\n"
+        else:
+            output_str += f"BATCH {batch_idx}\n"
+
+        result_batch = result[idx, :, :, :]
+        reference_batch = reference_tensor[idx, :, :, :]
 
         is_close = torch.allclose(result_batch, reference_batch, rtol, atol)
         if is_close:
@@ -208,15 +227,15 @@ def print_error_diffs(
         else:
             channels_close: list[bool] = [False] * C
             for c in range(C):
-                result_hw = result[n, c, :, :]
-                reference_hw = reference_tensor[n, c, :, :]
+                result_hw = result[idx, c, :, :]
+                reference_hw = reference_tensor[idx, c, :, :]
 
                 channels_close[c] = torch.allclose(result_hw, reference_hw, rtol, atol)
 
             if any(channels_close) or len(channels_close) == 1:
                 output_str += _print_channels(
-                    result[n, :, :, :],
-                    reference_tensor[n, :, :, :],
+                    result[idx, :, :, :],
+                    reference_tensor[idx, :, :, :],
                     channels_close,
                     C,
                     H,
@@ -226,8 +245,8 @@ def print_error_diffs(
                 )
             else:
                 output_str += _print_elements(
-                    result[n, :, :, :],
-                    reference_tensor[n, :, :, :],
+                    result[idx, :, :, :],
+                    reference_tensor[idx, :, :, :],
                     C,
                     H,
                     W,
@@ -312,7 +331,6 @@ def dump_error_output(
 
 
 if __name__ == "__main__":
-
     """This is expected to produce the example output of print_diff"""
     torch.manual_seed(0)
     a = torch.rand(3, 3, 2, 2) * 0.01

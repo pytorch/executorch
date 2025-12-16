@@ -6,22 +6,32 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/generic/kernels/kernels.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/backends/cadence/generic/operators/op_quantized_layer_norm.h>
 
 #include <cmath>
+#include <cstdint>
+#include <cstdlib>
+
+#include <executorch/backends/cadence/generic/kernels/kernels.h>
+#include <executorch/backends/cadence/generic/operators/cadence_type_util.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/kernel/kernel_runtime_context.h>
+
+namespace impl {
+namespace generic {
+namespace native {
 
 using ::executorch::aten::IntArrayRef;
+using ::executorch::aten::optional;
+using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
 using ::executorch::runtime::KernelRuntimeContext;
 using ::impl::generic::kernels::dequantize;
 using ::impl::generic::kernels::quantize;
-
-namespace impl {
-namespace generic {
-namespace native {
 
 // Compute quantized layer_norm. The current implementation assumes that the
 // input is per-tensor quantized.
@@ -45,7 +55,8 @@ void quantized_layer_norm_per_tensor_(
   float output_inv_scale = 1.0f / output_scale;
 
   size_t last_dim = input.size(input.dim() - 1);
-  size_t leading_dims = getLeadingDims(input, input.dim() - 1);
+  size_t leading_dims =
+      ::executorch::runtime::getLeadingDims(input, input.dim() - 1);
 
   // Visualize the input tensor as a set of 1d vectors, and compute the
   // layer_norm for each vector.
@@ -72,7 +83,7 @@ void quantized_layer_norm_per_tensor_(
     float inv_std = 1.0f / std::sqrt(variance + eps);
 
     // y = (x - mean) / std * kGamma + kBeta
-    for (int j = 0; j < last_dim; ++j) {
+    for (size_t j = 0; j < last_dim; ++j) {
       // y[j] = (x[j] - mean) / std * kGamma + kBeta;
       // Since X is quantized, we dequantize it, compute fp32 result, and
       // quantize the result to an int8/uint8 value.
@@ -100,8 +111,6 @@ void quantized_layer_norm_(
   // Extract the zero point and scale for input tensor.
   float input_scale = in_scale.const_data_ptr<float>()[0];
   int64_t input_zero_point = in_zero_point.const_data_ptr<int64_t>()[0];
-
-  // Call other overload
   quantized_layer_norm_per_tensor_<T>(
       input,
       input_scale,
@@ -114,88 +123,82 @@ void quantized_layer_norm_(
       out);
 }
 
-void quantized_layer_norm_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
+Tensor& quantized_layer_norm_out(
+    ET_UNUSED ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& in_scale,
     const Tensor& in_zero_point,
-    __ET_UNUSED const executorch::aten::IntArrayRef normalized_shape,
+    ET_UNUSED const IntArrayRef normalized_shape,
     const Tensor& weight,
     const Tensor& bias,
     double eps,
     double output_scale,
     int64_t output_zero_point,
     Tensor& out) {
-  if (input.scalar_type() == executorch::aten::ScalarType::Byte) {
-    quantized_layer_norm_<uint8_t>(
-        input,
-        in_scale,
-        in_zero_point,
-        weight,
-        bias,
-        eps,
-        output_scale,
-        output_zero_point,
-        out);
-  } else if (input.scalar_type() == executorch::aten::ScalarType::Char) {
-    quantized_layer_norm_<int8_t>(
-        input,
-        in_scale,
-        in_zero_point,
-        weight,
-        bias,
-        eps,
-        output_scale,
-        output_zero_point,
-        out);
-  } else {
-    ET_CHECK_MSG(
-        false,
-        "Unhandled input dtype %hhd",
-        static_cast<int8_t>(input.scalar_type()));
+#define typed_quantized_layer_norm(ctype, dtype) \
+  case ScalarType::dtype: {                      \
+    quantized_layer_norm_<ctype>(                \
+        input,                                   \
+        in_scale,                                \
+        in_zero_point,                           \
+        weight,                                  \
+        bias,                                    \
+        eps,                                     \
+        output_scale,                            \
+        output_zero_point,                       \
+        out);                                    \
+    break;                                       \
   }
+
+  ScalarType dtype = input.scalar_type();
+  switch (dtype) {
+    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_layer_norm)
+    default:
+      ET_DCHECK_MSG(
+          false, "Unhandled dtype %s", torch::executor::toString(dtype));
+  }
+
+#undef typed_quantized_layer_norm
+  return out;
 }
 
-void quantized_layer_norm_per_tensor_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
+Tensor& quantized_layer_norm_per_tensor_out(
+    ET_UNUSED ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     double in_scale,
     int64_t in_zero_point,
-    __ET_UNUSED const executorch::aten::IntArrayRef normalized_shape,
+    ET_UNUSED const IntArrayRef normalized_shape,
     const Tensor& weight,
     const Tensor& bias,
     double eps,
     double output_scale,
     int64_t output_zero_point,
     Tensor& out) {
-  if (input.scalar_type() == executorch::aten::ScalarType::Byte) {
-    quantized_layer_norm_per_tensor_<uint8_t>(
-        input,
-        in_scale,
-        in_zero_point,
-        weight,
-        bias,
-        eps,
-        output_scale,
-        output_zero_point,
-        out);
-  } else if (input.scalar_type() == executorch::aten::ScalarType::Char) {
-    quantized_layer_norm_per_tensor_<int8_t>(
-        input,
-        in_scale,
-        in_zero_point,
-        weight,
-        bias,
-        eps,
-        output_scale,
-        output_zero_point,
-        out);
-  } else {
-    ET_CHECK_MSG(
-        false,
-        "Unhandled input dtype %hhd",
-        static_cast<int8_t>(input.scalar_type()));
+#define typed_quantized_layer_norm(ctype, dtype) \
+  case ScalarType::dtype: {                      \
+    quantized_layer_norm_per_tensor_<ctype>(     \
+        input,                                   \
+        in_scale,                                \
+        in_zero_point,                           \
+        weight,                                  \
+        bias,                                    \
+        eps,                                     \
+        output_scale,                            \
+        output_zero_point,                       \
+        out);                                    \
+    break;                                       \
   }
+
+  ScalarType dtype = input.scalar_type();
+  switch (dtype) {
+    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_layer_norm)
+    default:
+      ET_DCHECK_MSG(
+          false, "Unhandled dtype %s", torch::executor::toString(dtype));
+  }
+
+#undef typed_quantized_layer_norm
+  return out;
 }
 
 } // namespace native

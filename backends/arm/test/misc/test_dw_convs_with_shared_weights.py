@@ -6,7 +6,7 @@
 from typing import Any, Tuple
 
 import torch
-from executorch.backends.arm._passes.rewrite_conv2d_pass import RewriteConv2dPass
+from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 from executorch.backends.arm.test.tester.test_pipeline import (
     PassPipeline,
     TosaPipelineFP,
@@ -51,7 +51,7 @@ def test_convs_tosa_int():
 def test_rewrite_conv_pass():
     module = DWConvsModule()
     pipeline = PassPipeline(
-        module, module.get_inputs(), passes_with_exported_program=[RewriteConv2dPass]
+        module, module.get_inputs(), passes_with_exported_program=[RewriteConvPass]
     )
     # We can't run TOSA backend dialect operators in eager mode
     pipeline.pop_stage("run_method_and_compare_outputs")

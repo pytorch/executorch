@@ -120,26 +120,26 @@ def test_bitwise_left_shift_tensor_u85_INT_scalar(test_data):
 
 @common.parametrize("test_data", LshiftScalar.test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_left_shift_scalar_vgf_FP_scalar(test_data: scalar_input_t):
+def test_bitwise_left_shift_scalar_scalar_vgf_no_quant(test_data: scalar_input_t):
     pipeline = VgfPipeline[scalar_input_t](
         LshiftScalar(),
         test_data,
         LshiftScalar.torch_op_FP,
         LshiftScalar.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", LshiftScalar.test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_left_shift_tensor_vgf_INT_scalar(test_data: scalar_input_t):
+def test_bitwise_left_shift_tensor_scalar_vgf_quant(test_data: scalar_input_t):
     pipeline = VgfPipeline[scalar_input_t](
         LshiftScalar(),
         test_data,
         LshiftScalar.torch_op_INT,
         LshiftScalar.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -196,25 +196,25 @@ def test_bitwise_left_shift_tensor_u85_INT(test_data):
 
 @common.parametrize("test_data", LshiftTensor.test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_left_shift_tensor_vgf_FP(test_data: tensor_input_t):
+def test_bitwise_left_shift_tensor_vgf_no_quant(test_data: tensor_input_t):
     pipeline = VgfPipeline[tensor_input_t](
         LshiftTensor(),
         test_data,
         LshiftTensor.torch_op,
         LshiftTensor.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", LshiftTensor.test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_left_shift_tensor_vgf_INT(test_data: tensor_input_t):
+def test_bitwise_left_shift_tensor_vgf_quant(test_data: tensor_input_t):
     pipeline = VgfPipeline[tensor_input_t](
         LshiftTensor(),
         test_data,
         LshiftTensor.torch_op,
         LshiftTensor.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

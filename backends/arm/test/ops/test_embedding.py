@@ -114,31 +114,31 @@ def test_expand_embedding_tosa_INT():
 @pytest.mark.skip("reason=MLETORCH-1274 Improve data type checks during partitioning")
 @common.parametrize("test_input", test_input)
 @common.SkipIfNoModelConverter
-def test_embedding_vgf_FP(test_input: input_params):
+def test_embedding_vgf_no_quant(test_input: input_params):
     op = Embedding()
     pipeline = VgfPipeline[input_params](
         op,
         test_input,
         op.aten_op,
         op.exir_op,
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
         transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_input", test_input)
 @common.SkipIfNoModelConverter
-def test_embedding_vgf_INT(test_input: input_params):
+def test_embedding_vgf_quant(test_input: input_params):
     op = Embedding()
     pipeline = VgfPipeline[input_params](
         op,
         test_input,
         op.aten_op,
         op.exir_op,
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
+        quantize=True,
     )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
