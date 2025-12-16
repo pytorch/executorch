@@ -47,7 +47,7 @@ class CondOneArgOneOutput(torch.nn.Module):
 class CondOneArgBufferOneOutput(torch.nn.Module):
     def __init__(self, *args: common.Any, **kwargs: common.Any) -> None:
         super().__init__(*args, **kwargs)
-        self.buffer = torch.rand(2, 3)
+        self.buffer = torch.rand(1, 1, 2, 2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         def true_branch(arg: torch.Tensor, buffer: torch.Tensor) -> torch.Tensor:
@@ -159,7 +159,7 @@ def _single_input_case(
     module_factory: Callable[[], torch.nn.Module]
 ) -> Callable[[], tuple[torch.nn.Module, input_t1]]:
     def _create() -> tuple[torch.nn.Module, input_t1]:
-        return module_factory(), (torch.randn(2, 3),)
+        return module_factory(), (torch.randn(1, 1, 2, 2),)
 
     return _create
 
@@ -168,7 +168,7 @@ def _dual_input_case(
     module_factory: Callable[[], torch.nn.Module]
 ) -> Callable[[], tuple[torch.nn.Module, input_t2]]:
     def _create() -> tuple[torch.nn.Module, input_t2]:
-        return module_factory(), (torch.randn(2, 3), torch.randn(2, 3))
+        return module_factory(), (torch.randn(2, 3, 4, 6), torch.randn(2, 3, 4, 6))
 
     return _create
 
@@ -223,6 +223,7 @@ def test_cond_tosa_FP(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     pipeline = TosaPipelineFP[tuple](
         module, example_inputs, aten_op, tosa_extensions=["cf"]
     )
+
     # Make sure no cond ops are left after partitioning.
     pipeline.add_stage_after(
         "to_edge_transform_and_lower",

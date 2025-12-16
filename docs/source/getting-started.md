@@ -8,7 +8,7 @@ This section is intended to describe the necessary steps to take a PyTorch model
 ## System Requirements
 The following are required to install the ExecuTorch host libraries, needed to export models and run from Python. Requirements for target end-user devices are backend dependent. See the appropriate backend documentation for more information.
 
-- Python 3.10 - 3.12
+- Python 3.10 - 3.13
 - g++ version 7 or higher, clang++ version 5 or higher, or another C++17-compatible toolchain.
 - Linux (x86_64 or ARM64), macOS (ARM64), or Windows (x86_64).
     - Intel-based macOS systems require building PyTorch from source (see [Building From Source](using-executorch-building-from-source.md) for instructions).

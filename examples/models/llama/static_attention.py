@@ -456,7 +456,10 @@ class StaticAttentionIOManager:
         new_tokens = [init_token]
         for _ in range(n):
             y = self._run_once(model, new_tokens[-1:])[0]
-            new_tokens.append(y[:, :1, ...].argmax().item())
+            if self.generate_full_logits:
+                new_tokens.append(y[:, :1, ...].argmax().item())
+            else:
+                new_tokens.append(y.argmax().item())
             if new_tokens[-1] in stop_tokens:
                 break
 
@@ -607,6 +610,12 @@ class StaticAttentionIOManager:
             freqs_cos_override = self.freqs_cos[self.pos : self.pos + self.input_len]
         if freqs_sin_override is None:
             freqs_sin_override = self.freqs_sin[self.pos : self.pos + self.input_len]
+        if not self.generate_full_logits:
+            extra_attn_options = {
+                "last_valid_token_pos": torch.tensor([n_tokens - 1], dtype=torch.long)
+            }
+        else:
+            extra_attn_options = {}
         y, attn_updates = model(
             tokens,
             {
@@ -614,6 +623,7 @@ class StaticAttentionIOManager:
                 "freqs_cos_override": freqs_cos_override,
                 "freqs_sin_override": freqs_sin_override,
                 "in_cache_state": (self.k_caches, self.v_caches),
+                **extra_attn_options,
             },
         )
         non_padded_len = non_padded_len or n_tokens

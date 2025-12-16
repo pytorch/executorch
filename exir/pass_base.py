@@ -349,6 +349,11 @@ class _ExportPassBase(PassBase):
             elif target == torch.ops.higher_order.map_impl:
                 f, mapped_args, operands = args  # type: ignore[assignment]
                 return self.callback.call_map(f, mapped_args, operands, meta)
+            elif target == torch.ops.higher_order.scan:
+                combine_fn, init, xs, additional_inputs = args  # type: ignore[assignment]
+                return self.callback.call_scan(
+                    combine_fn, init, xs, additional_inputs, meta
+                )
             # For other unregistered HigherOrderOps, just interpret them blindly
             elif isinstance(target, torch._ops.HigherOrderOperator):
                 return self.callback._fx(
@@ -542,6 +547,40 @@ class _ExportPassBase(PassBase):
             "call_function",
             torch.ops.higher_order.map_impl,
             (f_branch.graph_module, mapped_args, operands),
+            {},
+            meta,
+        )
+
+    def call_scan(
+        self,
+        combine_fn: torch.fx.GraphModule,
+        init: List[ProxyValue],
+        xs: List[Argument],
+        additional_inputs: List[ProxyValue],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        # Get the expected x element shapes from the combine_fn's placeholders
+        # The combine_fn expects: (carry..., x_element..., additional_inputs...)
+        combine_fn_placeholders = [
+            n for n in combine_fn.graph.nodes if n.op == "placeholder"
+        ]
+        num_init = len(init)
+        # The x_element placeholders are at indices [num_init : num_init + num_xs]
+        xs_element_data = []
+        for i in range(0, len(xs)):
+            ph = combine_fn_placeholders[num_init + i]
+            # Use the placeholder's val which has the correct shape
+            xs_element_data.append(ph.meta["val"])
+
+        combine_fn_result = self.call_submodule(
+            combine_fn, (*init, *xs_element_data, *additional_inputs)
+        )
+        assert combine_fn_result is not None
+
+        return self._fx(
+            "call_function",
+            torch.ops.higher_order.scan,
+            (combine_fn_result.graph_module, init, xs, additional_inputs),
             {},
             meta,
         )

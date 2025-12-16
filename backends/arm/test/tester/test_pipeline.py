@@ -129,7 +129,6 @@ class BasePipelineMaker(Generic[T]):
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
     ):
-
         self.tester = ArmTester(
             module,
             example_inputs=test_data,
@@ -314,7 +313,6 @@ class BasePipelineMaker(Generic[T]):
 
 
 class TOSAPipelineMaker(BasePipelineMaker, Generic[T]):
-
     @staticmethod
     def is_tosa_ref_model_available():
         """Checks if the TOSA reference model is available."""
@@ -992,7 +990,10 @@ class OpNotSupportedPipeline(TOSAPipelineMaker, Generic[T]):
 
         tosa_spec = tosa_profiles[tosa_version]
 
-        compile_spec = common.get_tosa_compile_spec(tosa_spec, custom_path=custom_path)
+        compile_spec: ArmCompileSpec = common.get_tosa_compile_spec(
+            tosa_spec,
+            custom_path=custom_path,
+        )
         super().__init__(
             module,
             test_data,
@@ -1049,6 +1050,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
         run_on_vulkan_runtime: bool = True,
         vgf_compiler_flags: Optional[str] = "",
         tosa_version: str = "TOSA-1.0+INT+FP",
+        quantize: bool = True,
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
@@ -1063,7 +1065,6 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
         ] = None,
         tosa_extensions: Optional[List[str]] = None,
     ):
-
         if tosa_extensions is None:
             tosa_extensions = []
         tosa_spec = TosaSpecification.create_from_string(
@@ -1087,7 +1088,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
             transform_passes=transform_passes,
         )
 
-        if tosa_spec.support_integer():
+        if quantize:
             quantizer = VgfQuantizer(compile_spec)
             quantization_config = get_symmetric_quantization_config(
                 is_per_channel=per_channel_quantization
