@@ -353,6 +353,11 @@ class XNNSin(XNNNode1x1):
 
 
 @dataclass
+class XNNCos(XNNNode1x1):
+    pass
+
+
+@dataclass
 class XNNCopy(XNNNode1x1):
     pass
 
@@ -415,6 +420,7 @@ XNodeUnion = Union[
     XNNExp,
     XNNSin,
     XNNCopy,
+    XNNCos,
 ]
 
 
