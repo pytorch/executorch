@@ -207,7 +207,7 @@ def test_clamp_16a8w_u85_INT16(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_clamp_vgf_FP(test_data):
+def test_clamp_vgf_no_quant(test_data):
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = VgfPipeline[input_t](
@@ -215,14 +215,14 @@ def test_clamp_vgf_FP(test_data):
         (input_tensor,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_clamp_vgf_INT(test_data):
+def test_clamp_vgf_quant(test_data):
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = VgfPipeline[input_t](
@@ -230,6 +230,6 @@ def test_clamp_vgf_INT(test_data):
         (input_tensor,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

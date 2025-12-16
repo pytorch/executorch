@@ -95,24 +95,15 @@ def test_to_tosa_FP(test_data: Tuple):
 
 @common.parametrize("test_data", _TO_COPY_TEST_DATA_FP)
 @common.SkipIfNoModelConverter
-def test_to_vgf_FP(test_data: Tuple):
+def test_to_vgf_no_quant(test_data: Tuple):
     test_tensor, new_dtype = test_data()
     pipeline = VgfPipeline[input_t1](
         Cast(new_dtype),
         (test_tensor,),
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
-    # int to int cast is not supported in TOSA+FP profile
-    if not new_dtype.is_floating_point and not torch.is_floating_point(test_tensor):
-        pipeline.change_args(
-            "check_count.exir",
-            {
-                "torch.ops.higher_order.executorch_call_delegate": 0,
-                "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
-            },
-        )
     pipeline.run()
 
 
@@ -164,7 +155,7 @@ def test_to_tosa_INT_not_delegated(test_data: Tuple):
 
 @common.parametrize("test_data", _TO_COPY_TEST_DATA_INT)
 @common.SkipIfNoModelConverter
-def test_to_vgf_INT(test_data: Tuple):
+def test_to_vgf_quant(test_data: Tuple):
     # Op not supported
     pass
 

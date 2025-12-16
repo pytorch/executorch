@@ -111,13 +111,13 @@ def test_eye_u85_INT(test_data: test_data_t):
     EyeAdd.test_data,
 )
 @common.SkipIfNoModelConverter
-def test_eye_vgf_FP(test_data: test_data_t):
+def test_eye_vgf_no_quant(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = VgfPipeline[input_t](
         EyeAdd(*init_data),
         input_data(),
         EyeAdd.aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
@@ -127,13 +127,13 @@ def test_eye_vgf_FP(test_data: test_data_t):
     EyeAdd.test_data,
 )
 @common.SkipIfNoModelConverter
-def test_eye_vgf_INT(test_data: test_data_t):
+def test_eye_vgf_quant(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = VgfPipeline[input_t](
         EyeAdd(*init_data),
         input_data(),
         EyeAdd.aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     if pipeline.has_stage("check.quant_nodes"):
         pipeline.pop_stage("check.quant_nodes")

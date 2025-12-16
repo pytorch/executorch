@@ -127,10 +127,13 @@ def test_zeros_tosa_INT_not_delegated(test_data: test_data_t):
     ZerosAdd.test_data,
 )
 @common.SkipIfNoModelConverter
-def test_zeros_vgf_FP(test_data: test_data_t):
+def test_zeros_vgf_no_quant(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = VgfPipeline[input_t](
-        ZerosAdd(*init_data), input_data(), ZerosAdd.aten_op, tosa_version="TOSA-1.0+FP"
+        ZerosAdd(*init_data),
+        input_data(),
+        ZerosAdd.aten_op,
+        quantize=False,
     )
     pipeline.run()
 
@@ -140,13 +143,13 @@ def test_zeros_vgf_FP(test_data: test_data_t):
     ZerosAdd.test_data,
 )
 @common.SkipIfNoModelConverter
-def test_zeros_vgf_INT(test_data: test_data_t):
+def test_zeros_vgf_quant(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = VgfPipeline[input_t](
         ZerosAdd(*init_data),
         input_data(),
         ZerosAdd.aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     # Pop the quantization check stage if it exists as no
     # quantization nodes will be present for int + fp inputs.

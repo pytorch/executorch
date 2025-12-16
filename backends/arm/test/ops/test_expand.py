@@ -108,26 +108,26 @@ def test_expand_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", Expand.test_parameters)
 @common.SkipIfNoModelConverter
-def test_expand_vgf_FP(test_data: Tuple):
+def test_expand_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Expand(),
         test_data(),
         aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Expand.test_parameters)
 @common.SkipIfNoModelConverter
-def test_expand_vgf_INT(test_data: Tuple):
+def test_expand_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Expand(),
         test_data(),
         aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 

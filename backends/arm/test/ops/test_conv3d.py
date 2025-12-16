@@ -559,33 +559,33 @@ def test_convolution_3d_u85_INT(test_data):
 
 @common.parametrize("test_data", test_data_FP)
 @common.SkipIfNoModelConverter
-def test_convolution_3d_vgf_FP(test_data):
+def test_convolution_3d_vgf_no_quant(test_data):
     pipeline = VgfPipeline[input_t](
         test_data(),
         test_data().get_inputs(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_INT)
 @common.SkipIfNoModelConverter
-def test_convolution_3d_vgf_INT(test_data):
+def test_convolution_3d_vgf_quant(test_data):
     model, per_channel_quantization = test_data()
     pipeline = VgfPipeline[input_t](
         model,
         model.get_inputs(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_convolution_3d_vgf_FP_multi_op():
+def test_convolution_3d_vgf_no_quant_multi_op():
     """Ensure mixed Conv3d/Conv2d graphs keep correct spatial annotations."""
     model = Conv3dMultiOp()
     pipeline = VgfPipeline[input_t](
@@ -593,13 +593,13 @@ def test_convolution_3d_vgf_FP_multi_op():
         model.get_inputs(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_convolution_3d_vgf_INT_multi_op():
+def test_convolution_3d_vgf_quant_multi_op():
     """Ensure mixed Conv3d/Conv2d graphs keep correct spatial annotations."""
     model = Conv3dMultiOp()
     pipeline = VgfPipeline[input_t](
@@ -607,7 +607,7 @@ def test_convolution_3d_vgf_INT_multi_op():
         model.get_inputs(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
