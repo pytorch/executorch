@@ -63,7 +63,7 @@ jobs:
 
         echo "::group::Verify pre-installed dependencies"
         x86_64-w64-mingw32-g++ --version
-        python3 -c "import torch; print(f'PyTorch {torch.__version__} with CUDA {torch.version.cuda}')"
+        conda run -n "py_${PYTHON_VERSION}" python3 -c "import torch; print(f'PyTorch {torch.__version__} with CUDA {torch.version.cuda}')"
         echo "WINDOWS_CUDA_HOME=${WINDOWS_CUDA_HOME}"
         ls -la "${WINDOWS_CUDA_HOME}"
         echo "::endgroup::"

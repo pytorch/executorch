@@ -40,8 +40,8 @@ install_mingw() {
 }
 
 get_torch_cuda_version() {
-    # Query PyTorch for its CUDA version
-    python3 -c "import torch; print(torch.version.cuda)" 2>/dev/null || echo ""
+    # Query PyTorch for its CUDA version using conda environment
+    conda run -n "py_${PYTHON_VERSION}" python3 -c "import torch; print(torch.version.cuda)" 2>/dev/null || echo ""
 }
 
 install_windows_cuda() {
