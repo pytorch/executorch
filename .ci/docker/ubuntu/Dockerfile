@@ -100,14 +100,21 @@ ARG MEDIATEK_SDK
 
 ARG CUDA_WINDOWS_CROSS_COMPILE
 ARG CUDA_VERSION
+COPY ./common/install_cuda.sh install_cuda.sh
 COPY ./common/install_pytorch_cuda.sh install_pytorch_cuda.sh
 COPY ./common/install_cuda_windows_cross_compile.sh install_cuda_windows_cross_compile.sh
 COPY ./common/utils.sh utils.sh
 RUN if [ -n "${CUDA_WINDOWS_CROSS_COMPILE}" ]; then \
+    CUDA_VERSION=${CUDA_VERSION} bash ./install_cuda.sh && \
     CUDA_VERSION=${CUDA_VERSION} bash ./install_pytorch_cuda.sh && \
     bash ./install_cuda_windows_cross_compile.sh; \
     fi
-RUN rm -f install_pytorch_cuda.sh install_cuda_windows_cross_compile.sh utils.sh
+RUN rm -f install_cuda.sh install_pytorch_cuda.sh install_cuda_windows_cross_compile.sh utils.sh
+# Set up CUDA environment for Linux compilation (nvcc, etc.)
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+# Windows CUDA for cross-compilation
 ENV WINDOWS_CUDA_HOME=/opt/cuda-windows/extracted/cuda_cudart/cudart
 
 USER ci-user
