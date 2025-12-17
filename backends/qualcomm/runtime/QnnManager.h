@@ -31,7 +31,11 @@ class QnnManager {
       const QnnExecuTorchContextBinary& qnn_executorch_context_binary);
 
   ~QnnManager();
+  // Initialize the shared backend bundle such as QnnBackend and QnnDevice
   executorch::runtime::Error InitBackend();
+  // Initialize the non-shared QNN components, create the QnnGraph using the
+  // provided graph_names. Note: For online_prepare or deserialization, the
+  // graph name will be obtained from the binary.
   executorch::runtime::Error InitContext(
       std::optional<std::vector<std::string>> graph_names = std::nullopt);
   executorch::runtime::Error AllocateTensor(const std::string& graph_name);
@@ -53,7 +57,7 @@ class QnnManager {
   // Destroy all QNN components and decrease reference count of shared QNN
   // resource
   void Destroy();
-  // Only destroy non-shared QNN components
+  // Only destroy all non-shared QNN components
   void DestroyContext();
 
   bool IsAvailable() {
