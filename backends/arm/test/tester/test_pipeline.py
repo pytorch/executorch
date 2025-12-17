@@ -32,8 +32,10 @@ from executorch.backends.arm.quantizer import (
     VgfQuantizer,
 )
 from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test.tester.analyze_output_utils import (
+    compare_rel_frobenius_and_cosine_similarity,
+)
 from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
-
 from executorch.backends.arm.test.tester.quantize import ArmQuantize as Quantize
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
@@ -41,6 +43,7 @@ from executorch.backends.arm.tosa.specification import (
 )
 
 from executorch.backends.arm.util._factory import create_quantizer
+from executorch.backends.test.harness.stages import StageType
 from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
@@ -304,6 +307,32 @@ class BasePipeline(Generic[T]):
         pipeline_stage = self._stages[pos]
         pipeline_stage.update(*args, **kwargs)
         return self
+
+    def run_and_compare_to_initial_model(
+        self,
+        frobenius_threshold: float = 0.01,
+        cosine_threshold: float = 0.99,
+        clean_reference: bool = True,
+        compared_stage="export",
+    ):
+        self.add_stage_after(
+            compared_stage,
+            self.tester.run_method_and_compare_outputs,
+            inputs=self.test_data,
+            atol=0,  # Not used
+            rtol=0,
+            qtol=0,
+            reference_stage_type=StageType.INITIAL_MODEL,
+            run_eager_mode=True,
+            compare_callback=lambda ref, test, qparam: compare_rel_frobenius_and_cosine_similarity(
+                ref,
+                test,
+                qparam,
+                frobenius_threshold,
+                cosine_threshold,
+                clean_reference,
+            ),
+        )
 
     def run(self):
         """Calls each stage in order."""
