@@ -159,8 +159,31 @@ std::string GetQnnSdkBuildId(std::string library_path) {
   if (err != QNN_SUCCESS || id == nullptr) {
     throw std::runtime_error("Failed to get QNN backend build ID");
   }
-  qnn_loaded_backend.TerminateAllBackends();
+  qnn_loaded_backend.Unload();
   return std::string(id);
+}
+
+py::array_t<char> StripProtocol(const py::bytes& preprocessed_binary) {
+  py::buffer_info info(py::buffer(preprocessed_binary).request());
+
+  void* buf_ptr = nullptr;
+  size_t buf_size = 0;
+  // check if it's a qnn context binary
+  auto [status, signature, ctx_size, ctx_bin] =
+      QnnContextCustomProtocol().DeserializeContextCustomBuffer(info.ptr);
+
+  if (status == Error::Ok) {
+    buf_size = ctx_size;
+    buf_ptr = ctx_bin;
+  } else {
+    // the format should be DLC, return nothing here
+    return py::array_t<char>(0);
+  }
+
+  auto result = py::array_t<char>(buf_size);
+  auto result_buffer = result.request();
+  std::memcpy(result_buffer.ptr, buf_ptr, buf_size);
+  return result;
 }
 
 PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
@@ -169,6 +192,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
   PYBIND11_NUMPY_DTYPE(PyQnnTensorWrapper::EncodingData, scale, offset);
 
   m.def("GetQnnSdkBuildId", &GetQnnSdkBuildId);
+  m.def("StripProtocol", &StripProtocol);
   py::class_<QnnExecuTorchContextBinary>(m, "QnnExecuTorchContextBinary")
       .def(py::init<>());
 
@@ -181,6 +205,8 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def(py::init<const py::bytes&>())
       .def(py::init<const py::bytes&, const py::bytes&>())
       .def("Init", &PyQnnManager::Init)
+      .def("InitBackend", &PyQnnManager::InitBackend)
+      .def("InitContext", &PyQnnManager::InitContext)
       .def("IsNodeSupportedByBackend", &PyQnnManager::IsNodeSupportedByBackend)
       .def(
           "Compile",
@@ -189,6 +215,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
               std::vector<std::vector<std::shared_ptr<OpWrapper>>>&>(
               &PyQnnManager::Compile))
       .def("Destroy", &PyQnnManager::Destroy)
+      .def("DestroyContext", &PyQnnManager::DestroyContext)
       .def("IsAvailable", &PyQnnManager::IsAvailable)
       .def("IsTensorDump", &PyQnnManager::IsTensorDump)
       .def("AllocateTensor", &PyQnnManager::AllocateTensor)
@@ -198,8 +225,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def("GetSpillFillBufferSize", &PyQnnManager::GetSpillFillBufferSize)
       .def(
           "MakeBinaryInfo",
-          py::overload_cast<const py::bytes&>(&PyQnnManager::MakeBinaryInfo))
-      .def("StripProtocol", &PyQnnManager::StripProtocol);
+          py::overload_cast<const py::bytes&>(&PyQnnManager::MakeBinaryInfo));
 
   py::enum_<Qnn_TensorType_t>(m, "Qnn_TensorType_t")
       .value(
