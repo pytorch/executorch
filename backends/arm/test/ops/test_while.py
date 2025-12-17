@@ -95,15 +95,15 @@ class DecreasingOutput(torch.nn.Module):
 class WhileAdditionalArg(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.register_buffer("threshold", torch.tensor((30.0,)))
+        self.register_buffer("threshold", torch.tensor((300.0,)))
 
     def forward(self, value: torch.Tensor) -> torch.Tensor:
         def cond_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
             total = value.sum()
             return torch.lt(total, limit).squeeze()
 
-        def body_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
-            return torch.add(value, value)
+        def body_fn(value: torch.Tensor, limit: torch.Tensor) -> tuple[torch.Tensor]:
+            return (torch.add(value, value),)
 
         result = torch.ops.higher_order.while_loop(
             cond_fn,
@@ -117,7 +117,7 @@ class WhileAdditionalArg(torch.nn.Module):
 class WhileSingleCapturedOutput(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.register_buffer("threshold", torch.tensor((30.0,)))
+        self.register_buffer("threshold", torch.tensor((200.0,)))
 
     def forward(self, value: torch.Tensor) -> torch.Tensor:
         def cond_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
@@ -168,10 +168,6 @@ test_cases: dict[str, Callable[[], Tuple[torch.nn.Module, Tuple]]] = {
 @common.parametrize(
     "case",
     test_cases,
-    xfails={
-        "additional_arg": "Support not implemented.",
-        "two_in_one_captured_out": "When only one output is used, the second one is removed, which is not allowed in TOSA.",
-    },
 )
 def test_while_loop_tosa_FP(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
     module, example_inputs = case()
@@ -187,10 +183,6 @@ def test_while_loop_tosa_FP(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
 @common.parametrize(
     "case",
     test_cases,
-    xfails={
-        "additional_arg": "Support not implemented.",
-        "two_in_one_captured_out": "When only one output is used, the second one is removed, which is not allowed in TOSA.",
-    },
 )
 def test_while_loop_tosa_INT(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
     module, example_inputs = case()
