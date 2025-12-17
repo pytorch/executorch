@@ -462,7 +462,6 @@ class TextDecoder(Component):
             **self._get_model_specific_kwargs(),
         )
         # get example input
-        self.meta = decoder.get_metadata()
         self.example_input = decoder.get_example_inputs()
         self.get_example_inputs = decoder.get_example_inputs
         self.export_input = (
@@ -912,8 +911,7 @@ class HybridTextDecoder(Component):
         data = request.method_data[TEXT_DECODER]
         models = [d for d in [self.decode, self.prefill] if d.decoder is not None]
         example_inputs = [m.export_input for m in models if m is not None]
-        # For backward compatibility, we keep the graph name as forward if we use kv mode for evaluation LLM models
-        graph_names = ["forward"] if len(models) == 1 else DECODER_GRAPH_NAMES
+        graph_names = DECODER_GRAPH_NAMES[: len(models)]
 
         # start lowering
         if self.apply_embedding:
@@ -977,7 +975,7 @@ class HybridTextDecoder(Component):
 
         if self.config.num_sharding > 1 and self.control_args.model_mode == "kv":
             # weight-sharing based context binaries cannot be opened in x86 host
-            update_spill_fill_size(edge_prog_mgr.exported_program())
+            update_spill_fill_size(edge_prog_mgr.exported_program("kv_forward"))
 
         if self.control_args.verbose:
             for ep in edge_prog_mgr._edge_programs.values():

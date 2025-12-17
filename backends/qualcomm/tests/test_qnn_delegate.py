@@ -7,6 +7,7 @@ import csv
 import io
 import itertools
 import json
+import logging
 import subprocess
 import sys
 import tempfile
@@ -6122,54 +6123,130 @@ class TestExampleLLMScript(TestQNN):
     class LlmSpecs:
         SM8650: float
         SM8750: float
-        ppl: float
         pte_size: float
+        wikitext_ppl: float
+        hellaswag_acc_norm: float
+        sqnr: float
 
     # TODO: refactor to support different backends
     def setUp(self):
+        # TODO: add SQNR for all models
         self.llm_specs = {
             "gemma-2b": TestExampleLLMScript.LlmSpecs(
-                SM8650=32, SM8750=36, ppl=35, pte_size=2_700_000_000
-            ),  # 2.7 GB
+                SM8650=32,
+                SM8750=36,
+                pte_size=2_700_000_000,  # 2.7 GB
+                wikitext_ppl=17,
+                hellaswag_acc_norm=None,
+                sqnr=27,
+            ),
             "gemma2-2b": TestExampleLLMScript.LlmSpecs(
-                SM8650=32, SM8750=36, ppl=14, pte_size=2_860_000_000
-            ),  # 2.86 GB
+                SM8650=32,
+                SM8750=36,
+                pte_size=2_860_000_000,  # 2.86 GB
+                wikitext_ppl=14,
+                hellaswag_acc_norm=None,
+                sqnr=27,
+            ),
             "gemma3-1b": TestExampleLLMScript.LlmSpecs(
-                SM8650=70, SM8750=100, ppl=23, pte_size=1_200_000_000
-            ),  # 1.2 GB
+                SM8650=70,
+                SM8750=100,
+                pte_size=1_200_000_000,  # 1.2 GB
+                wikitext_ppl=23,
+                hellaswag_acc_norm=None,
+                sqnr=10,
+            ),
             "glm-1_5b": TestExampleLLMScript.LlmSpecs(
-                SM8650=42, SM8750=52, ppl=21, pte_size=1_100_000_000
-            ),  # 1.1 GB
+                SM8650=42,
+                SM8750=52,
+                pte_size=1_100_000_000,  # 1.1 GB
+                wikitext_ppl=21,
+                hellaswag_acc_norm=None,
+                sqnr=14,
+            ),
+            "granite_3_3-2b_instruct": TestExampleLLMScript.LlmSpecs(
+                SM8650=20,
+                SM8750=22,
+                pte_size=1_600_000_000,  # 1.6 GB
+                wikitext_ppl=None,
+                hellaswag_acc_norm=0.2,
+                sqnr=None,
+            ),
             "phi_4_mini": TestExampleLLMScript.LlmSpecs(
-                SM8650=14, SM8750=19, ppl=12, pte_size=4_000_000_000
-            ),  # 4GB
+                SM8650=14,
+                SM8750=19,
+                pte_size=4_000_000_000,  # 4GB
+                wikitext_ppl=14,
+                hellaswag_acc_norm=None,
+                sqnr=20,
+            ),
             "llama3_2-1b_instruct": TestExampleLLMScript.LlmSpecs(
-                SM8650=37, SM8750=45, ppl=16, pte_size=1_500_000_000
-            ),  # 1.5 GB
+                SM8650=37,
+                SM8750=45,
+                pte_size=1_500_000_000,  # 1.5 GB
+                wikitext_ppl=16,
+                hellaswag_acc_norm=None,
+                sqnr=15,
+            ),
             "llama3_2-3b_instruct": TestExampleLLMScript.LlmSpecs(
-                SM8650=21, SM8750=26, ppl=11, pte_size=2_800_000_000
-            ),  # 2.8 GB
+                SM8650=21,
+                SM8750=26,
+                pte_size=2_800_000_000,  # 2.8 GB
+                wikitext_ppl=11,
+                hellaswag_acc_norm=None,
+                sqnr=14,
+            ),
             "qwen2_5-0_5b": TestExampleLLMScript.LlmSpecs(
-                SM8650=115, SM8750=155, ppl=15, pte_size=600_000_000
-            ),  # 600 MB
+                SM8650=115,
+                SM8750=155,
+                pte_size=600_000_000,  # 600 MB
+                wikitext_ppl=15,
+                hellaswag_acc_norm=None,
+                sqnr=8,
+            ),
             "qwen2_5-1_5b": TestExampleLLMScript.LlmSpecs(
-                SM8650=38, SM8750=47, ppl=10, pte_size=1_500_000_000
-            ),  # 1.5 GB
+                SM8650=38,
+                SM8750=47,
+                pte_size=1_500_000_000,  # 1.5 GB
+                wikitext_ppl=10,
+                hellaswag_acc_norm=None,
+                sqnr=10,
+            ),
             "qwen3-0_6b": TestExampleLLMScript.LlmSpecs(
-                SM8650=47, SM8750=68, ppl=21, pte_size=700_000_000
-            ),  # 700 MB
+                SM8650=47,
+                SM8750=68,
+                pte_size=700_000_000,  # 700 MB
+                wikitext_ppl=21,
+                hellaswag_acc_norm=None,
+                sqnr=8,
+            ),
             "qwen3-1_7b": TestExampleLLMScript.LlmSpecs(
-                SM8650=28, SM8750=34, ppl=15, pte_size=1_800_000_000
-            ),  # 1.8 GB
+                SM8650=28,
+                SM8750=34,
+                pte_size=1_800_000_000,  # 1.8 GB
+                wikitext_ppl=15,
+                hellaswag_acc_norm=None,
+                sqnr=12,
+            ),
             "smollm2_135m": TestExampleLLMScript.LlmSpecs(
-                SM8650=214, SM8750=260, ppl=23, pte_size=210_000_000
-            ),  # 210 MB
+                SM8650=214,
+                SM8750=260,
+                pte_size=210_000_000,  # 210 MB
+                wikitext_ppl=23,
+                hellaswag_acc_norm=None,
+                sqnr=20,
+            ),
             "smollm3-3b": TestExampleLLMScript.LlmSpecs(
-                SM8650=23, SM8750=28, ppl=10, pte_size=2_600_000_000
-            ),  # 2.6 GB
+                SM8650=23,
+                SM8750=28,
+                pte_size=2_600_000_000,  # 2.6 GB
+                wikitext_ppl=10,
+                hellaswag_acc_norm=None,
+                sqnr=6,
+            ),
         }
 
-    def test_static_llm_model(self):
+    def test_static_llm_model(self):  # noqa: C901
         if not self.required_envs([self.model_name]):
             self.skipTest("missing required envs")
         assert (
@@ -6205,12 +6282,42 @@ class TestExampleLLMScript(TestQNN):
             "kv",
             "--max_seq_len",
             "1024",
-            "--run_lm_eval",
-            "--tasks",
-            "wikitext",
-            "--limit",
-            "1",
         ]
+
+        match self.static_llm_eval_method:
+            case "wikitext_ppl":
+                cmds.extend(
+                    [
+                        "--eval_methods",
+                        "tasks_eval",
+                        "--tasks",
+                        "wikitext",
+                        "--limit",
+                        "1",
+                    ]
+                )
+            case "hellaswag_acc_norm":
+                cmds.extend(
+                    [
+                        "--eval_methods",
+                        "tasks_eval",
+                        "--tasks",
+                        "hellaswag",
+                        "--limit",
+                        "10",
+                    ]
+                )
+            case "sqnr":
+                cmds.extend(
+                    [
+                        "--eval_methods",
+                        "sqnr_eval",
+                    ]
+                )
+            case _:
+                logging.warning(
+                    "No llm eval method chosen. Only generate model output."
+                )
 
         if is_llama_model:
             cmds.extend(
@@ -6231,24 +6338,36 @@ class TestExampleLLMScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
+            logging.info(f"Model Name: {self.model_name}\nTarget Device: {self.model}")
+            logging.info(f"Eval Result: {msg}")
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
                 llm_spec = self.llm_specs[self.model_name]
                 pte_size = msg["pte_size"]
                 self.assertLessEqual(pte_size, llm_spec.pte_size)
-                print(f"Model Name: {self.model_name}\nTarget Device: {self.model}")
-                print(f"PTE Size: {pte_size} bytes")
                 if not self.compile_only:
-                    ppl = msg["wiki_ppl"]
-                    print(f"PPL: {ppl}")
-                    self.assertLessEqual(ppl, llm_spec.ppl)
+                    if self.static_llm_eval_method:
+                        # Use "is not None" in case any eval_score is 0.
+                        assert (
+                            getattr(llm_spec, self.static_llm_eval_method) is not None
+                        ), f"{self.model_name} currently does not support {self.static_llm_eval_method}. Please choose other methods."
+                        match self.static_llm_eval_method:
+                            case "wikitext_ppl":
+                                ppl = msg["wiki_ppl"]
+                                self.assertLessEqual(ppl, llm_spec.wikitext_ppl)
+                            case "hellaswag_acc_norm":
+                                acc_norm = msg["acc_norm"]
+                                self.assertGreaterEqual(
+                                    acc_norm, llm_spec.hellaswag_acc_norm
+                                )
+                            case "sqnr":
+                                sqnr = msg["sqnr"]
+                                self.assertGreaterEqual(sqnr, llm_spec.sqnr)
+
                     if not self.enable_x86_64 and hasattr(llm_spec, self.model):
                         device_inference_speed = msg["inference_speed"]
                         expected_inference_speed = getattr(llm_spec, self.model)
-                        print(
-                            f"Prompt Evaluation: {device_inference_speed} tokens/second"
-                        )
                         self.assertGreaterEqual(
                             device_inference_speed, expected_inference_speed
                         )
@@ -6298,73 +6417,6 @@ class TestExampleLLMScript(TestQNN):
                     self.assertLessEqual(pte_size, 1_200_000_000)  # 1200MB
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 60)
-
-    def test_granite_3_3_2b_instruct(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        prompt = "What is the meaning of life?"
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--prompt",
-            f"{prompt}",
-            "--temperature",
-            "0",
-            "--decoder_model",
-            "granite_3_3-2b_instruct",
-            "--model_mode",
-            "kv",
-            "--max_seq_len",
-            "1024",
-            "--run_lm_eval",
-            "--tasks",
-            "hellaswag",
-            "--limit",
-            "10",
-            "--kv_updater",
-            "shift_pointer",
-        ]
-        if self.compile_only:
-            cmds.extend(["--compile_only"])
-        elif self.device:
-            cmds.extend(["--device", self.device])
-        if self.host:
-            cmds.extend(["--host", self.host])
-        elif self.enable_x86_64:
-            cmds.extend(["--enable_x86_64"])
-        if self.pre_gen_pte:
-            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                inference_speed_ref = {"SM8650": 20, "SM8750": 22}
-                if (
-                    not self.compile_only
-                    and not self.enable_x86_64
-                    and self.model in inference_speed_ref
-                ):
-                    self.assertLessEqual(msg["pte_size"], 1_600_000_000)
-                    self.assertGreaterEqual(msg["acc_norm"], 0.2)
-                    self.assertGreaterEqual(
-                        msg["inference_speed"], inference_speed_ref[self.model]
-                    )
 
     def test_llama_stories_260k(self):
         if not self.required_envs():
@@ -8442,6 +8494,12 @@ def setup_environment():
         help="A folder that contains: weight, tokenizer, and params.",
         type=str,
     )
+    parser.add_argument(
+        "--static_llm_eval_method",
+        help="Methods for Static LLM evaluation.",
+        choices=["wikitext_ppl", "hellaswag_acc_norm", "sqnr"],
+        type=str,
+    )
 
     args, ns_args = parser.parse_known_args(namespace=unittest)
     TestQNN.host = args.host
@@ -8468,6 +8526,7 @@ def setup_environment():
     TestQNN.op_package_dir = args.op_package_dir
     TestQNN.target = args.target
     TestQNN.backend = args.backend
+    TestQNN.static_llm_eval_method = args.static_llm_eval_method
     return sys.argv[:1] + ns_args
 
 
