@@ -5,7 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import traceback
 from inspect import isclass
@@ -14,8 +13,10 @@ from typing import Optional, Sequence
 import torch
 import torch.fx
 from executorch.backends.arm.common.debug import get_node_debug_info
+from executorch.backends.arm.common.type import ensure_type
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from torch._export.utils import (
     get_buffer,
@@ -30,11 +31,25 @@ from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
 
 
+def is_submodule_node(node: torch.fx.Node):
+    if node.op not in ("get_attr", "placeholder"):
+        return False
+    try:
+        node.graph.owning_module.get_submodule(node.target)
+    except AttributeError:
+        return False
+    return True
+
+
 def is_get_attr_node(node: torch.fx.Node) -> bool:
     """
-    Returns true if the given node is a get attr node for a tensor of the model
+    Returns true if the given node is a get attr node for a tensor of the model.
     """
-    return isinstance(node, torch.fx.Node) and node.op == "get_attr"
+    return (
+        isinstance(node, torch.fx.Node)
+        and node.op == "get_attr"
+        and not is_submodule_node(node)
+    )
 
 
 def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
@@ -82,22 +97,38 @@ def get_param_tensor(
     elif is_lifted_tensor_constant(exp_prog, node):
         return get_lifted_tensor_constant(exp_prog, node)
     elif is_get_attr_node(node):
+        target_node = ensure_type(str, node.target)
         # This is a hack to support both lifted and unlifted graph
         try:
-            return getattr(node.graph.owning_module, node.target)  # type: ignore[arg-type]
+            return getattr(node.graph.owning_module, target_node)
         except AttributeError:
-            return getattr(exp_prog.graph_module, node.target)  # type: ignore[arg-type]
+            return getattr(exp_prog.graph_module, target_node)
     raise RuntimeError(f"unsupported param type, {node.op}.")
+
+
+def expand_around_channel(param: Sequence[int] | int, spatial_rank: int) -> list[int]:
+    """
+    Expand a scalar or 1-D parameter around the channel dimension into a broadcastable
+    shape while preserving the channel location.
+    """
+    if isinstance(param, int):
+        return [param] * spatial_rank
+
+    param_list = list(param)
+    if len(param_list) == 1 and spatial_rank > 1:
+        param_list = param_list * spatial_rank
+    return param_list
 
 
 def create_node(
     graph: torch.fx.Graph,
-    op_target: OpOverload,
+    op_target: OpOverload | EdgeOpOverload,
     args: tuple = (),
     kwargs: Optional[dict] = None,
     quantize: bool = False,
     q_params: Optional[tuple] = None,
     from_node: Optional[torch.fx.Node] = None,
+    inherit_qparams: bool = False,
 ):
     """
     Adds a node to 'graph'. graph.inserting_before/after() should be used before the call to decide where to insert the node.
@@ -116,6 +147,14 @@ def create_node(
         keys = from_node.meta.keys()
         for key in keys:
             new_meta[key] = from_node.meta[key]
+        if not inherit_qparams:
+            if "input_qparams" in new_meta:
+                new_meta["input_qparams"] = {}
+            if "output_qparams" in new_meta:
+                new_meta["output_qparams"] = {}
+    elif inherit_qparams:
+        raise ValueError("inherit_qparams is only valid when from_node is given")
+
     old_stack_trace = new_meta.get("stack_trace", "")
     new_meta["stack_trace"] = f"{old_stack_trace}\n{traceback.format_stack()[-2]}"
     node.meta = new_meta
@@ -200,7 +239,7 @@ def get_node_arg(args: list | dict, key: int | str | type, default_value=None):
                 f"Out of bounds index {key} for getting value in args (of size {len(args)})"
             )
     elif isinstance(key, str):
-        return args.get(key, default_value)  # type: ignore[union-attr]  # pyre-ignore[16]
+        return args.get(key, default_value)  # type: ignore[union-attr]
     elif isclass(key):
         for arg in args:
             if isinstance(arg, key):

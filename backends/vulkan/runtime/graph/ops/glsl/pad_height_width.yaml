@@ -8,5 +8,7 @@ pad_height_width:
     DTYPE:
       - VALUE: float
       - VALUE: half
+      - VALUE: int32
+      - VALUE: uint8
   shader_variants:
     - NAME: pad_height_width

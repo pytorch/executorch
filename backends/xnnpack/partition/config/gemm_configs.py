@@ -458,9 +458,7 @@ class AddmmConfig(GEMMConfig):
         a bool indicating if the deps are valid and a list of all the
         dep nodes. This handles the src partition for
         """
-        if self.src_partitions is None:
-            # Cache src partitions so we don't have to recompute them every time
-            self.src_partitions = get_source_partitions(ep.graph, self.linear_modules)
+        self.src_partitions = get_source_partitions(ep.graph, self.linear_modules)
 
         # src_partition is None if node is not in source partition,
         # otherwise gives us the linear source partition it belongs to

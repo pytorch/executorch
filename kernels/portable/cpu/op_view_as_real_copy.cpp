@@ -41,6 +41,14 @@ Tensor& view_as_real_copy_out(
 
   // Get the output shape
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      static_cast<size_t>(self.dim()) < kTensorDimensionLimit,
+      InvalidArgument,
+      out,
+      "Output size buffer is too small. Expected at least %zu, got %zu",
+      self.dim() + 1,
+      kTensorDimensionLimit);
   get_view_as_real_copy_out_target_size(self, expected_output_size);
 
   // Resize for dynamic shape
@@ -64,7 +72,7 @@ Tensor& view_as_real_copy_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
 
-  constexpr auto op_name = "view_as_real_copy.out";
+  static constexpr auto op_name = "view_as_real_copy.out";
 
   ET_SWITCH_COMPLEXH_TYPES(self.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
     ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {

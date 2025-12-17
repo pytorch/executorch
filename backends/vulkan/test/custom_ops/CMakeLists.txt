@@ -48,7 +48,9 @@ if(TARGET vulkan_backend)
 
   # Prototyping utility files
   set(PROTOTYPING_UTILS_HEADERS ${CMAKE_CURRENT_SOURCE_DIR})
-  set(PROTOTYPING_UTILS_CPP ${CMAKE_CURRENT_SOURCE_DIR}/utils.cpp)
+  set(PROTOTYPING_UTILS_CPP ${CMAKE_CURRENT_SOURCE_DIR}/utils.cpp
+                            ${CMAKE_CURRENT_SOURCE_DIR}/conv2d_utils.cpp
+  )
 
   # Prototyping shaders
   message(STATUS "shader stuff")

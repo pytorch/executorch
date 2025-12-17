@@ -26,7 +26,8 @@ from executorch.extension.gguf_util.converters.llama_converter import (
 from executorch.extension.gguf_util.load_gguf import GGUFWeights, load_file
 from gguf import ReaderTensor
 from gguf.constants import GGMLQuantizationType
-from torchao.quantization.subclass import QuantizedLinearWeightBase
+
+from .subclass import QuantizedLinearWeightBase
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)

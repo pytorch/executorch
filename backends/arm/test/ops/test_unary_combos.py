@@ -132,9 +132,13 @@ def test_unary_combos_u85_INT(model_cls):
 
 @common.SkipIfNoModelConverter
 @pytest.mark.parametrize("model_cls", MODELS, ids=lambda c: c.__name__)
-def test_unary_combos_vgf_INT(model_cls):
+def test_unary_combos_vgf_quant(model_cls):
     m, inputs, exir = _build(model_cls)
     p = VgfPipeline[Tensor1](
-        m, inputs, aten_op=[], exir_op=exir, tosa_version="TOSA-1.0+INT"
+        m,
+        inputs,
+        aten_op=[],
+        exir_op=exir,
+        quantize=True,
     )
     p.run()

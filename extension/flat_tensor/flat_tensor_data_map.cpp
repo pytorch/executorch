@@ -55,7 +55,7 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
   if (named_data == nullptr) {
     return Error::NotFound;
   }
-  for (int i = 0; i < named_data->size(); i++) {
+  for (flatbuffers::uoffset_t i = 0; i < named_data->size(); ++i) {
     if (key.size() == named_data->Get(i)->key()->size() &&
         std::strncmp(
             named_data->Get(i)->key()->c_str(),
@@ -135,7 +135,7 @@ ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
   return loader_->load(
       /*offset=*/header_.segment_base_offset + segment_offset,
       segment_size,
-      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Constant));
 }
 
 ET_NODISCARD Error FlatTensorDataMap::load_data_into(
@@ -201,7 +201,7 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   Result<FreeableBuffer> header = loader->load(
       /*offset=*/0,
       FlatTensorHeader::kNumHeadBytes,
-      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   if (!header.ok()) {
     ET_LOG(Error, "Failed to load header.");
     return header.error();
@@ -218,7 +218,7 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   size_t expected_size = fh->segment_base_offset + fh->segment_data_size;
   size_t actual_size = loader->size().get();
   ET_CHECK_OR_RETURN_ERROR(
-      expected_size == actual_size,
+      expected_size <= actual_size,
       InvalidExternalData,
       "File size is too small; file may be corrupted or truncated. Expected %zu from flat_tensor header, received %zu from data loader",
       expected_size,
@@ -228,7 +228,7 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   Result<FreeableBuffer> flat_tensor_data = loader->load(
       /*offset=*/0,
       fh->flatbuffer_offset + fh->flatbuffer_size,
-      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   if (!flat_tensor_data.ok()) {
     ET_LOG(Error, "Failed to load flat_tensor data.");
     return flat_tensor_data.error();

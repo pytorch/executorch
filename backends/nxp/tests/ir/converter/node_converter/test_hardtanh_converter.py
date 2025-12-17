@@ -23,6 +23,7 @@ from executorch.backends.nxp.tests.executors import (
 from executorch.backends.nxp.tests.models import Conv2dWithActivation
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +34,7 @@ def reseed_model_per_test_run():
 
 @pytest.mark.parametrize("input_shape", [(1, 3, 128, 128)])
 @pytest.mark.parametrize("inplace", [True, False])
-def test_relu6_quant(mocker, input_shape: tuple[int], inplace: bool):
+def test_relu6_quant(mocker, input_shape: tuple[int], inplace: bool, use_qat: bool):
     # The torch.nn.Relu6 inherits from torch.nn.Hardtanh, and hence represented as HardTanh in ATen.
     # Testing the hardtanh originated from torch.nn.Relu6 op.
     model = Conv2dWithActivation(
@@ -42,7 +43,9 @@ def test_relu6_quant(mocker, input_shape: tuple[int], inplace: bool):
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
-    quantized_program = to_quantized_edge_program(model, input_shape).exported_program()
+    quantized_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
+    ).exported_program()
 
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -67,7 +70,11 @@ def test_relu6_quant(mocker, input_shape: tuple[int], inplace: bool):
 )
 @pytest.mark.parametrize("inplace", [True, False])
 def test_custom_hardtanh_quant(
-    mocker, input_shape: tuple[int], activation_range: tuple[int, int], inplace: bool
+    mocker,
+    input_shape: tuple[int],
+    activation_range: tuple[int, int],
+    inplace: bool,
+    use_qat: bool,
 ):
     # TODO(13063): This test suffers from non-ideal testing random quantization, because we always use range <0,1>.
     #  We should update (decrease atol) when the Conv/Linear + Activation fuse at quantization is in place.
@@ -79,7 +86,9 @@ def test_custom_hardtanh_quant(
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
-    quantized_program = to_quantized_edge_program(model, input_shape).exported_program()
+    quantized_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
+    ).exported_program()
 
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]

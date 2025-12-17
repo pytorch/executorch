@@ -288,9 +288,8 @@ Context* context() {
   return context.get();
 }
 
-#ifdef VULKAN_DEBUG
-
-#ifdef VK_KHR_pipeline_executable_properties
+#if defined(VK_KHR_pipeline_executable_properties) && \
+    defined(ETVK_INSPECT_PIPELINES)
 
 VkPipeline Context::get_shader_pipeline(
     const vkapi::ShaderInfo& shader,
@@ -502,9 +501,7 @@ void Context::print_shader_executable_properties(
   }
 }
 
-#endif // VK_KHR_pipeline_executable_properties
-
-#endif // VULKAN_DEBUG
+#endif // VK_KHR_pipeline_executable_properties && ETVK_INSPECT_PIPELINES
 
 } // namespace api
 } // namespace vkcompute

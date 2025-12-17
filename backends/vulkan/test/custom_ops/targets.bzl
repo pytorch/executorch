@@ -57,6 +57,7 @@ def define_common_targets(is_fbcode = False):
         name = "prototyping_utils",
         srcs = [
             "utils.cpp",
+            "conv2d_utils.cpp",
         ],
         headers = [
             "utils.h",

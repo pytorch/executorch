@@ -9,17 +9,25 @@
 
 import itertools
 from collections import OrderedDict
+from collections.abc import Iterable
 from typing import Any, Dict, List, Tuple, Type
 
 import torch
 from torch import fx
 from torch._ops import OpOverload
+from torch.ao.quantization import move_exported_model_to_eval
+from torch.export import ExportedProgram
 from torch.fx.passes.utils.source_matcher_utils import (
     check_subgraphs_connected,
     SourcePartition,
 )
 from torchao.quantization.pt2e import ObserverOrFakeQuantize
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY, Quantizer
 
 
 def is_annotated(nodes: List[fx.Node]) -> bool:
@@ -149,3 +157,37 @@ def find_sequential_partitions_aten(
         if _partitions_sequential(candidate):
             fused_partitions.append(candidate)
     return fused_partitions
+
+
+def calibrate_and_quantize(
+    model: ExportedProgram | fx.GraphModule,
+    calibration_inputs: Iterable[tuple[torch.Tensor, ...]],
+    quantizer: Quantizer,
+    is_qat: bool = False,
+) -> fx.GraphModule:
+    """Quantize the provided model.
+
+    :param model: Aten model (or it's GraphModule representation) to quantize.
+    :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a model
+                                input. Or an iterator over such tuples.
+    :param quantizer: Quantizer to use.
+    :param is_qat: Whether quantization is done using Quantization Aware Training (QAT) or not.
+                    Note: In QAT mode, training is not performed. Only calibration (in eval mode) is done.
+
+    :return: Quantized GraphModule.
+    """
+
+    if isinstance(model, ExportedProgram):
+        model = model.module()
+
+    if is_qat:
+        m = prepare_qat_pt2e(model, quantizer)
+        m = move_exported_model_to_eval(m)
+    else:
+        m = prepare_pt2e(model, quantizer)
+
+    for data in calibration_inputs:
+        m(*data)
+    m = convert_pt2e(m)
+
+    return m

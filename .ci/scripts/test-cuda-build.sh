@@ -27,9 +27,6 @@ test_executorch_cuda_build() {
     nvcc --version || echo "nvcc not found"
     nvidia-smi || echo "nvidia-smi not found"
 
-    # Set CMAKE_ARGS to enable CUDA build - ExecuTorch will handle PyTorch installation automatically
-    export CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON"
-
     echo "=== Starting ExecuTorch Installation ==="
     # Install ExecuTorch with CUDA support with timeout and error handling
     timeout 5400 ./install_executorch.sh || {

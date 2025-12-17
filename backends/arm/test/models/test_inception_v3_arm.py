@@ -5,10 +5,11 @@
 
 from typing import Tuple
 
-import common
 import pytest
 
 import torch
+
+from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -18,7 +19,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-from torchvision import models, transforms
+from torchvision import models, transforms  # type: ignore[import-untyped]
 
 ic3 = models.inception_v3(weights=models.Inception_V3_Weights)
 ic3 = ic3.eval()
@@ -92,14 +93,14 @@ def test_ic3_u85_BI():
 @pytest.mark.slow
 @pytest.mark.skip(reason="Takes too long to run on CI")
 @common.SkipIfNoModelConverter
-def test_ic3_vgf_FP():
+def test_ic3_vgf_no_quant():
     pipeline = VgfPipeline[input_t](
         ic3,
         model_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()
 
@@ -107,13 +108,13 @@ def test_ic3_vgf_FP():
 @pytest.mark.slow
 @pytest.mark.skip(reason="Takes too long to run on CI")
 @common.SkipIfNoModelConverter
-def test_ic3_vgf_INT():
+def test_ic3_vgf_quant():
     pipeline = VgfPipeline[input_t](
         ic3,
         model_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
+        quantize=True,
     )
     pipeline.run()

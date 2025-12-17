@@ -7,11 +7,11 @@
 import getpass
 import logging
 import os
+import subprocess
 from collections import defaultdict, OrderedDict
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
-
 import torch
 from executorch.backends.qualcomm._passes import SeqMSE
 from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrapper
@@ -50,7 +50,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
     A wrapper class for calibration
     """
 
-    def __init__(
+    def __init__(  # noqa: C901
         self,
         model: torch.fx.GraphModule,
         tokenizer: Union[
@@ -60,7 +60,6 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         ar_len: int,
         use_kv_cache: bool,
         get_example_inputs: Callable,
-        kv_updater: Callable,
         use_i64_token: bool,
         seq_mse_candidates: int,
     ):
@@ -74,7 +73,6 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         self._use_kv_cache = use_kv_cache
         self.get_example_inputs = get_example_inputs
         self.max_seq_length = max_seq_length
-        self.kv_updater = kv_updater
         self.use_i64_token = use_i64_token
         self.seq_mse_candidates = seq_mse_candidates
 
@@ -83,7 +81,6 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         kwargs = {}
         if self._use_kv_cache:
             kwargs["ar_len"] = self.ar_len
-            kwargs["kv_updater"] = self.kv_updater
             kwargs["seq_mse_candidates"] = self.seq_mse_candidates
 
         all_logits = INFERENCE_REGISTRY[self._use_kv_cache](
@@ -255,7 +252,7 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
     A wrapper class to run PPL scores with QNN on device.
     """
 
-    def __init__(
+    def __init__(  # noqa: C901
         self,
         args,
         pte_path: str,
@@ -263,14 +260,20 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             SentencePieceTokenizer, TiktokenTokenizer, HuggingFaceTokenizer
         ],
         runtime_tokenizer_path,
-        max_seq_length: int,
     ):
         self.args = args
         self.pte_path = pte_path
+        self.enable_x86_64 = args.enable_x86_64
+        self.max_seq_length = args.max_seq_len
+
+        if self.enable_x86_64:
+            logging.warning(
+                "Using x86_64 emulator is NOT recommended as it is for CI purpose."
+            )
 
         with open(pte_path, "rb") as f:
             program_data = f.read()
-        program = deserialize_pte_binary(program_data)
+        program = deserialize_pte_binary(program_data).program
 
         # Retrieve vocab_size from get_metadata under static_llama that is passed to edge manager
         self.output_vocab_size = None
@@ -304,16 +307,15 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
 
         assert self.output_vocab_size is not None, "Couldn't find the vocab size"
         assert pte_max_seq_len is not None, "Couldn't find the max_seq_len from pte"
-        if pte_max_seq_len != max_seq_length:
+        if pte_max_seq_len != self.max_seq_length:
             logging.warning(
-                f"The pte provided has a max_seq_len {pte_max_seq_len}, which is different from --max_seq_len {max_seq_length} provided to the script, please ensure this is desired."
+                f"The pte provided has a max_seq_len {pte_max_seq_len}, which is different from --max_seq_len {self.max_seq_length} provided to the script, please ensure this is desired."
             )
-            if pte_max_seq_len < max_seq_length:
+            if pte_max_seq_len < self.max_seq_length:
                 logging.warning(
-                    f"The pte max_seq_len {pte_max_seq_len} is used since it is shorter than --max_seq_len {max_seq_length}"
+                    f"The pte max_seq_len {pte_max_seq_len} is used since it is shorter than --max_seq_len {self.max_seq_length}"
                 )
-                max_seq_length = pte_max_seq_len
-        self.max_seq_length = max_seq_length
+                self.max_seq_length = pte_max_seq_len
         self.runtime_tokenizer_path = runtime_tokenizer_path
 
         self.output_dir = args.artifact
@@ -328,11 +330,18 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             host_id=args.host,
             soc_model=args.model,
             runner="examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+            target=args.target,
         )
-        self.adb.push(inputs=[], files=[self.runtime_tokenizer_path])
+
+        # collect output data
+        output_data_folder = f"{self.args.artifact}/outputs"
+        make_output_dir(output_data_folder)
+
+        if not self.enable_x86_64:
+            self.adb.push(inputs=[], files=[self.runtime_tokenizer_path])
         # n seq len = n-1 cache len, so we len(inps) = n-1 during _model_call
         # pyre-ignore
-        super().__init__(None, tokenizer, max_seq_length - 1)
+        super().__init__(None, tokenizer, self.max_seq_length - 1)
 
     def _model_call(self, inps):
 
@@ -343,37 +352,13 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
         outputs_path = "outputs/outputs.txt"
         dump_logits_path = "outputs/all_logit.raw"
         performance_output_path = "outputs/inference_speed.txt"
-        runner_cmd = " ".join(
-            [
-                f"cd {self.workspace} &&",
-                "./qnn_llama_runner",
-                f"--decoder_model_version {DECODER_MODEL_VERSION[self.args.decoder_model]}",
-                f"--tokenizer_path {os.path.basename(self.runtime_tokenizer_path)}",
-                f"--model_path {os.path.basename(self.pte_path)}",
-                f"--seq_len {self.max_seq_length}",
-                f"--output_path {outputs_path}",
-                f"--performance_output_path {performance_output_path}",
-                f"--kv_updater {'SmartMask' if self.args.kv_updater == smart_mask_updater else 'ShiftPointer'}",
-                f"--window {self.args.window}",
-                f"--gcap {self.args.gcap}",
-                f"--ngram {self.args.ngram}",
-                f"--eval_mode {EVAL_MODE[self.args.model_mode]}",
-                "--temperature 0",
-                f"--dump_logits_path {dump_logits_path}",
-                f"--tokenized_prompt {os.path.basename(input_file_name)}",
-            ]
-        )
-
-        self.adb.push(inputs=[], files=[input_file_name], init_env=False)
-        self.adb.execute(custom_runner_cmd=runner_cmd)
-        output_data_folder = f"{self.output_dir}/outputs"
-        make_output_dir(output_data_folder)
         output_tensor_list = []
 
         def post_process():
             with open(f"{self.args.artifact}/{dump_logits_path}", "r") as f:
+                logits_dtype = np.float32 if self.kv_io_bit_width == 32 else np.uint16
                 output_tensor = torch.from_numpy(
-                    np.fromfile(f.name, dtype=np.uint16).reshape(
+                    np.fromfile(f.name, dtype=logits_dtype).reshape(
                         1, -1, self.output_vocab_size
                     )
                 )
@@ -386,7 +371,59 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             with open(f"{self.args.artifact}/{performance_output_path}", "r") as f:
                 self.inference_speed = float(f.read())
 
-        self.adb.pull(output_path=self.output_dir, callback=post_process)
+        if self.enable_x86_64:
+            qnn_sdk = os.getenv("QNN_SDK_ROOT")
+            target = "x86_64-linux-clang"
+            runner_cmd = " ".join(
+                [
+                    f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{self.args.build_folder}/lib &&",
+                    f"./{self.args.build_folder}/examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+                    f"--decoder_model_version {DECODER_MODEL_VERSION[self.args.decoder_model]}",
+                    f"--tokenizer_path {self.runtime_tokenizer_path}",
+                    f"--model_path {self.pte_path}",
+                    f"--seq_len {self.max_seq_length}",
+                    f"--output_path {self.args.artifact}/outputs/outputs.txt",
+                    f"--performance_output_path {self.args.artifact}/{performance_output_path}",
+                    f"--eval_mode {EVAL_MODE[self.args.model_mode]}",
+                    "--temperature 0",
+                    f"--dump_logits_path {self.args.artifact}/{dump_logits_path}",
+                    f"--tokenized_prompt {input_file_name}",
+                ]
+            )
+            subprocess.run(
+                runner_cmd,
+                shell=True,
+                executable="/bin/bash",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            post_process()
+
+        else:
+            runner_cmd = " ".join(
+                [
+                    f"cd {self.workspace} &&",
+                    "./qnn_llama_runner",
+                    f"--decoder_model_version {DECODER_MODEL_VERSION[self.args.decoder_model]}",
+                    f"--tokenizer_path {os.path.basename(self.runtime_tokenizer_path)}",
+                    f"--model_path {os.path.basename(self.pte_path)}",
+                    f"--seq_len {self.max_seq_length}",
+                    f"--output_path {outputs_path}",
+                    f"--performance_output_path {performance_output_path}",
+                    f"--window {self.args.window}",
+                    f"--gcap {self.args.gcap}",
+                    f"--ngram {self.args.ngram}",
+                    f"--eval_mode {EVAL_MODE[self.args.model_mode]}",
+                    "--temperature 0",
+                    f"--dump_logits_path {dump_logits_path}",
+                    f"--tokenized_prompt {os.path.basename(input_file_name)}",
+                    "--shared_buffer",
+                ]
+            )
+
+            self.adb.push(inputs=[], files=[input_file_name], init_env=False)
+            self.adb.execute(custom_runner_cmd=runner_cmd)
+            self.adb.pull(output_path=self.output_dir, callback=post_process)
         return output_tensor_list[0]
 
 
@@ -411,66 +448,19 @@ def smart_mask_updater(
             for i, offset in enumerate(lade_token_offset):
                 current_pos = pos + i
                 for j, (k_cache, v_cache) in enumerate(zip(k_caches, v_caches)):
-                    k_cache[:, :, current_pos] = new_k_caches[j][:, :, offset]
-                    v_cache[:, current_pos, :] = new_v_caches[j][:, offset, :]
+                    k_cache[:, :, :, current_pos] = new_k_caches[j][:, :, :, offset]
+                    v_cache[:, :, current_pos, :] = new_v_caches[j][:, :, offset, :]
         else:
             for i, k_cache in enumerate(k_caches):
-                k_cache[:, :, pos : pos + n_updates] = new_k_caches[i][:, :, :n_updates]
+                k_cache[:, :, :, pos : pos + n_updates] = new_k_caches[i][
+                    :, :, :, :n_updates
+                ]
             for i, v_cache in enumerate(v_caches):
-                v_cache[:, pos : pos + n_updates, :] = new_v_caches[i][:, :n_updates, :]
+                v_cache[:, :, pos : pos + n_updates, :] = new_v_caches[i][
+                    :, :, :n_updates, :
+                ]
 
         atten_mask.smart_mask_update(pos, n_updates, lade_pos_offset)
-
-    pos += n_updates
-    return pos, k_caches, v_caches
-
-
-def shift_pointer_updater(
-    n_updates: int,
-    atten_mask: AttentionMask,
-    pos,
-    k_caches,
-    v_caches,
-    new_k_caches,
-    new_v_caches,
-    # lookahead decoding related
-    lade_token_offset=None,
-    lade_pos_offset=None,
-):
-    max_cache_len = k_caches[0].size(-1)
-    if pos + n_updates <= max_cache_len:
-        if lade_token_offset is not None:
-            # lookahead decode update
-            for offset in lade_token_offset:
-                for i, (k_cache, v_cache) in enumerate(zip(k_caches, v_caches)):
-                    k_caches[i] = torch.cat(
-                        [
-                            k_cache[:, :, 1:],
-                            new_k_caches[i][:, :, offset].unsqueeze(-1),
-                        ],
-                        dim=-1,
-                    )
-                    v_caches[i] = torch.cat(
-                        [v_cache[:, 1:, :], new_v_caches[i][:, offset, :].unsqueeze(1)],
-                        dim=1,
-                    )
-        else:
-            k_caches = [
-                torch.cat(
-                    [k_cache[:, :, n_updates:], new_k_caches[i][:, :, :n_updates]],
-                    dim=-1,
-                )
-                for i, k_cache in enumerate(k_caches)
-            ]
-            v_caches = [
-                torch.cat(
-                    [v_cache[:, n_updates:, :], new_v_caches[i][:, :n_updates, :]],
-                    dim=1,
-                )
-                for i, v_cache in enumerate(v_caches)
-            ]
-
-        atten_mask.shift_pointer_update(pos, n_updates, lade_pos_offset)
 
     pos += n_updates
     return pos, k_caches, v_caches
@@ -484,7 +474,6 @@ def kv_inference(  # noqa: C901
     tokenizer,
     ar_len=1,
     max_seq_len=512,
-    kv_updater=smart_mask_updater,
     use_i64_token=False,
     collect_logits=False,
     seq_mse_candidates=0,
@@ -560,7 +549,7 @@ def kv_inference(  # noqa: C901
                     )
 
             # Update the pos, KV cache and attention mask.
-            pos, k_caches, v_caches = kv_updater(
+            pos, k_caches, v_caches = smart_mask_updater(
                 num_tokens_in_chunk,
                 atten_mask,
                 pos,
@@ -606,7 +595,7 @@ def kv_inference(  # noqa: C901
                     *v_caches,
                 )
 
-                pos, k_caches, v_caches = kv_updater(
+                pos, k_caches, v_caches = smart_mask_updater(
                     1,
                     atten_mask,
                     pos,
@@ -672,7 +661,7 @@ def kv_inference(  # noqa: C901
                         for e in range(num_match)
                     ]
                 # update kv cache
-                pos, k_caches, v_caches = kv_updater(
+                pos, k_caches, v_caches = smart_mask_updater(
                     len(lade_token_offset),
                     atten_mask,
                     pos,
@@ -770,7 +759,6 @@ def graph_module_inference(
     tokenizer,
     ar_len=1,
     max_seq_len=512,
-    kv_updater=smart_mask_updater,
     prompt=None,
     tasks=None,
     tasks_limit=1,
@@ -793,7 +781,6 @@ def graph_module_inference(
         kwargs = {}
         if use_kv_cache:
             kwargs["ar_len"] = ar_len
-            kwargs["kv_updater"] = kv_updater
             kwargs["lookahead_config"] = lookahead_config
 
         INFERENCE_REGISTRY[use_kv_cache](
@@ -814,7 +801,6 @@ def graph_module_inference(
             ar_len=ar_len,
             use_kv_cache=use_kv_cache,
             get_example_inputs=get_example_inputs,
-            kv_updater=kv_updater,
             use_i64_token=use_i64_token,
             seq_mse_candidates=seq_mse_candidates,
         )
@@ -826,7 +812,7 @@ def graph_module_inference(
                 num_fewshot=num_fewshot,
                 limit=tasks_limit,
             )
-        logging.info(f"Perplexity evaluation summary for {event_name}")
+        logging.info(f"Evaluation summary for {event_name}")
         for task, res in eval_results["results"].items():
             logging.info(f"{task}: {res}")
 

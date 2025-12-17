@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <executorch/backends/vulkan/runtime/api/api.h>
+
 #include <cstdint>
 #include <string>
 
@@ -82,6 +84,12 @@ struct Conv2dConfig {
         1;
   }
 };
+
+std::string make_test_case_name(
+    const Conv2dConfig& config,
+    const bool is_performance,
+    const vkcompute::utils::StorageType fp_storage_type,
+    const vkcompute::utils::StorageType int8_storage_type);
 
 } // namespace prototyping
 } // namespace vulkan

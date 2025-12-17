@@ -8,20 +8,19 @@
 
 #include <executorch/backends/aoti/common_shims.h>
 #include <executorch/backends/aoti/utils.h>
+#include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
-#include <executorch/backends/cuda/runtime/shims/utils.h>
+#include <executorch/backends/cuda/runtime/tensor/tensor_maker.h>
+#include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/platform/log.h>
 #include <cstdint>
-#include <cstdlib> // For posix_memalign
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
-namespace executorch {
-namespace backends {
-namespace cuda {
+namespace executorch::backends::cuda {
 
 using executorch::aten::SizesType;
 using executorch::aten::StridesType;
@@ -29,6 +28,8 @@ using executorch::backends::aoti::aoti_torch_get_device_index;
 using executorch::backends::aoti::aoti_torch_get_dtype;
 using executorch::backends::aoti::aoti_torch_get_sizes;
 using executorch::backends::aoti::aoti_torch_get_strides;
+using executorch::backends::aoti::convert_sizes_to_vector;
+using executorch::backends::aoti::convert_strides_to_vector;
 using executorch::backends::aoti::dtype_to_element_size;
 using executorch::backends::aoti::dtype_to_scalar_type;
 using executorch::backends::aoti::validate_storage_offset;
@@ -163,9 +164,11 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
 
   // Create ExecutorTorch tensor that wraps the existing memory
   // Note: We're NOT copying the data, just wrapping it
-  auto tensor = executorch::extension::from_blob(
-      data, // existing memory (don't copy!)
+  // Using CUDA-specific tensor maker that supports incontiguous tensors
+  auto tensor = make_tensor(
       sizes, // tensor dimensions
+      data, // existing memory (don't copy!)
+      {}, // dim_order (empty, will be auto-generated)
       strides, // tensor strides (allows different strides)
       dtype_to_scalar_type(dtype) // map int32_t dtype to ScalarType
   );
@@ -210,10 +213,6 @@ AOTITorchError aoti_torch_empty_strided(
 
   // This requires us to reserve CUDA memory and put it into a ETensor
   void* ptr;
-  int64_t numel = 1;
-  for (int64_t i = 0; i < ndim; i++) {
-    numel *= sizes_ptr[i];
-  }
 
   ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
 
@@ -223,22 +222,39 @@ AOTITorchError aoti_torch_empty_strided(
       InvalidArgument,
       "Invalid element size for dtype: %d",
       dtype);
-  int64_t nbytes = numel * element_size;
+
+  // Calculate storage size based on strides, matching PyTorch's behavior
+  // This is critical when sizes and strides don't match the expected contiguous
+  // layout Reference: PyTorch's computeStorageNbytes in EmptyTensor.cpp
+  int64_t storage_size = 1; // storage offset (0) + 1
+  for (int64_t i = 0; i < ndim; i++) {
+    if (sizes_ptr[i] == 0) {
+      storage_size = 0;
+      break;
+    }
+    // For each dimension, add stride[i] * (size[i] - 1)
+    // This gives us the maximum offset in that dimension
+    int64_t stride_i = (strides_ptr != nullptr) ? strides_ptr[i] : 1;
+    if (strides_ptr == nullptr) {
+      // Calculate contiguous stride if not provided
+      for (int64_t j = i + 1; j < ndim; j++) {
+        stride_i *= sizes_ptr[j];
+      }
+    }
+    storage_size += stride_i * (sizes_ptr[i] - 1);
+  }
+  int64_t nbytes = storage_size * element_size;
 
   if (device_type == static_cast<int32_t>(SupportedDevices::CUDA)) {
     ET_CUDA_CHECK_OR_RETURN_ERROR(
-        cudaMallocManaged(&ptr, static_cast<size_t>(nbytes)));
+        cudaMallocAsync(&ptr, static_cast<size_t>(nbytes), cudaStreamDefault));
   } else if (device_type == static_cast<int32_t>(SupportedDevices::CPU)) {
     // Ensure 16-byte alignment for CPU memory to match CUDA requirements
-    int result = posix_memalign(&ptr, 16, nbytes);
-    ET_CHECK_OR_RETURN_ERROR(
-        result == 0,
-        MemoryAllocationFailed,
-        "Failed to allocate aligned CPU memory");
+    ptr = aligned_alloc(16, nbytes);
     ET_CHECK_OR_RETURN_ERROR(
         ptr != nullptr,
         MemoryAllocationFailed,
-        "Failed to call posix_memalign");
+        "Failed to allocate aligned CPU memory");
   } else {
     ET_CHECK_OR_RETURN_ERROR(
         false,
@@ -254,8 +270,13 @@ AOTITorchError aoti_torch_empty_strided(
   auto strides = convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
 
   // ETensor creation with dynamic shape support for edge cases
-  auto tensor = executorch::extension::from_blob(
-      ptr, sizes, strides, dtype_to_scalar_type(dtype));
+  // Using CUDA-specific tensor maker that supports incontiguous tensors
+  auto tensor = make_tensor(
+      sizes,
+      ptr,
+      {}, // dim_order (empty, will be auto-generated)
+      strides,
+      dtype_to_scalar_type(dtype));
 
   // Store the tensor so it doesn't get destroyed
   tensors.insert(tensor);
@@ -263,7 +284,6 @@ AOTITorchError aoti_torch_empty_strided(
 
   // This tensor owns the memory it allocated, set reference count to 1
   memory_to_n_tensor[ptr] = 1;
-
   return Error::Ok;
 }
 
@@ -271,14 +291,21 @@ void clear_all_tensors() {
   // Use aoti_torch_delete_tensor_object to properly delete each tensor
   // Note: We need to collect tensor pointers first since deletion modifies the
   // set
-  auto old_tensors =
-      std::move(tensors); // tensors is now empty and no need to copy
-  for (const auto& tensor_shared : old_tensors) {
-    aoti_torch_delete_tensor_object(tensor_shared.get());
+  std::vector<Tensor*> tensor_ptrs;
+  tensor_ptrs.reserve(tensors.size());
+  for (const auto& tensor_shared : tensors) {
+    tensor_ptrs.push_back(tensor_shared.get());
+  }
+
+  // Now delete each tensor - this will modify the global tensors set
+  for (Tensor* tensor_ptr : tensor_ptrs) {
+    aoti_torch_delete_tensor_object(tensor_ptr);
   }
 
   // tensors set should now be empty, but ensure it's cleared
   tensors.clear();
+
+  ET_LOG(Info, "Cleared all tensors");
 }
 
 AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
@@ -323,13 +350,16 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
           ET_CUDA_CHECK_OR_RETURN_ERROR(
               cudaPointerGetAttributes(&attributes, data_ptr));
 
-          if (attributes.type == cudaMemoryTypeManaged) {
-            // This is CUDA managed memory - free with proper synchronization
-            ET_CUDA_CHECK_OR_RETURN_ERROR(cudaDeviceSynchronize());
-            ET_CUDA_CHECK_OR_RETURN_ERROR(cudaFree(data_ptr));
+          if (attributes.type == cudaMemoryTypeDevice) {
+            ET_CUDA_CHECK_OR_RETURN_ERROR(
+                cudaFreeAsync(data_ptr, cudaStreamDefault));
           } else {
+            ET_CHECK_OR_RETURN_ERROR(
+                attributes.type != cudaMemoryTypeManaged,
+                Internal,
+                "Expected host memory but got managed!")
             // This is CPU memory - free immediately
-            free(data_ptr);
+            aligned_free(data_ptr);
             data_ptr = nullptr;
           }
 
@@ -624,9 +654,11 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
   // Create new tensor view that reinterprets the same memory with different
   // shape/strides This creates a view, not a copy - the data pointer is shared
-  std::shared_ptr<Tensor> tensor = executorch::extension::from_blob(
-      data_ptr, // Reuse the same memory from source tensor
+  // Using CUDA-specific tensor maker that supports incontiguous tensors
+  std::shared_ptr<Tensor> tensor = make_tensor(
       sizes, // New sizes with explicit SizesType
+      data_ptr, // Reuse the same memory from source tensor
+      {}, // dim_order (empty, will be auto-generated)
       strides, // New strides with explicit StridesType
       dtype_to_scalar_type(dtype) // Convert dtype with explicit type casting
   );
@@ -650,8 +682,95 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_new_tensor_handle(
+    Tensor* orig_handle,
+    Tensor** new_handle) {
+  // Validate input parameters
+  ET_CHECK_OR_RETURN_ERROR(
+      orig_handle != nullptr,
+      InvalidArgument,
+      "aoti_torch_new_tensor_handle failed: orig_handle is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      new_handle != nullptr,
+      InvalidArgument,
+      "aoti_torch_new_tensor_handle failed: new_handle is null");
+
+  // Get metadata from the original tensor
+  int64_t* sizes_ptr;
+  int64_t* strides_ptr;
+  int32_t dtype;
+  int32_t device_type;
+  int32_t device_index;
+
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_sizes(orig_handle, &sizes_ptr));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      aoti_torch_get_strides(orig_handle, &strides_ptr));
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_dtype(orig_handle, &dtype));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      aoti_torch_get_device_type(orig_handle, &device_type));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      aoti_torch_get_device_index(orig_handle, &device_index));
+
+  int64_t ndim = orig_handle->dim();
+
+  // Validate dtype
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
+
+  // Ensure device_index is always 0
+  ET_CHECK_OR_RETURN_ERROR(
+      device_index == 0,
+      InvalidArgument,
+      "device_index must be 0, got: %d",
+      device_index);
+
+  // Get the original data pointer from the source tensor
+  void* data_ptr = orig_handle->mutable_data_ptr();
+  ET_CHECK_OR_RETURN_ERROR(
+      data_ptr != nullptr,
+      InvalidArgument,
+      "Source tensor has null data pointer");
+
+  // Check if the given memory is in the map
+  auto memory_it = memory_to_n_tensor.find(data_ptr);
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it != memory_to_n_tensor.end(),
+      InvalidArgument,
+      "Memory address %p is not being tracked by reference counting system",
+      data_ptr);
+
+  // Convert sizes and strides to vectors
+  std::vector<SizesType> sizes = convert_sizes_to_vector(ndim, sizes_ptr);
+  std::vector<StridesType> strides =
+      convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
+
+  // Create new tensor that shares the same memory as the original
+  // This is similar to PyTorch's Tensor copy constructor - creates a new
+  // tensor object that shares the same underlying storage
+  std::shared_ptr<Tensor> tensor = make_tensor(
+      sizes, // Same sizes as original
+      data_ptr, // Share the same memory from source tensor
+      {}, // dim_order (empty, will be auto-generated)
+      strides, // Same strides as original
+      dtype_to_scalar_type(dtype) // Same dtype as original
+  );
+
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr, InvalidArgument, "Failed to create new tensor handle");
+
+  // Store the tensor so it doesn't get destroyed
+  tensors.insert(tensor);
+
+  *new_handle = tensor.get();
+
+  // Increment the reference count for this memory address only if it is owned
+  // by tensor
+  memory_to_n_tensor[data_ptr] = memory_to_n_tensor[data_ptr] == NOT_OWN
+      ? NOT_OWN
+      : memory_to_n_tensor[data_ptr] + 1;
+
+  return Error::Ok;
+}
 } // extern "C"
 
-} // namespace cuda
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::cuda

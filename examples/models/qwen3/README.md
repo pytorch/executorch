@@ -51,7 +51,7 @@ python -m examples.models.llama.runner.native \
   --tokenizer ~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/a9c98e602b9d36d2a2f7ba1eb0f5f31e4e8e5143/tokenizer.json \
   --tokenizer_config ~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/a9c98e602b9d36d2a2f7ba1eb0f5f31e4e8e5143/tokenizer_config.json \
   --prompt "Who is the president of the US?" \
-  --params examples/models/qwen3/0_6b_config.json \
+  --params examples/models/qwen3/config/0_6b_config.json \
   --max_len 128 \
   -kv \
   --temperature 0.6
@@ -62,8 +62,9 @@ With ExecuTorch's sample c++ runner (see the Llama README's [Step 3: Run on your
 cmake-out/examples/models/llama/llama_main \
   --model_path qwen3_0_6b.pte \
   --tokenizer_path ~/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/a9c98e602b9d36d2a2f7ba1eb0f5f31e4e8e5143/tokenizer.json \
-  --prompt="Who is the president of the US?"
+  --prompt="<|im_start|>user Who is the president of the US?<|im_end|><|im_start|>assistant"
 ```
+Note that you have to apply the chat template manually for the C++ runner.
 
 To run the model on an example iOS or Android app, see the Llama README's [Step 5: Build Mobile apps](../llama/README.md#step-5-build-mobile-apps) section.
 

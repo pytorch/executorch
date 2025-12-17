@@ -126,14 +126,14 @@ NS_SWIFT_NAME(Module)
  * Initializes a module with a file path, data path and a specified load mode.
  *
  * @param filePath A string representing the path to the ExecuTorch program file.
- * @param dataFilePath A string representing the path to a .ptd file with
+ * @param dataFilePaths A list of strings representing paths to .ptd files with
  * external tensors and external data.
  * @param loadMode A value from ExecuTorchModuleLoadMode that determines the
  * file loading behavior.
  * @return An initialized ExecuTorchModule instance.
  */
 - (instancetype)initWithFilePath:(NSString *)filePath
-                    dataFilePath:(NSString *)dataFilePath
+                   dataFilePaths:(NSArray<NSString *> *)dataFilePaths
                         loadMode:(ExecuTorchModuleLoadMode)loadMode
     NS_DESIGNATED_INITIALIZER;
 
@@ -141,12 +141,12 @@ NS_SWIFT_NAME(Module)
  * Initializes a module with a file path, data path and a specified load mode.
  *
  * @param filePath A string representing the path to the ExecuTorch program file.
- * @param dataFilePath A string representing the path to a .ptd file with
+ * @param dataFilePaths A list of strings representing paths to .ptd files with
  * external tensors and external data.
  * @return An initialized ExecuTorchModule instance.
  */
 - (instancetype)initWithFilePath:(NSString *)filePath
-                    dataFilePath:(NSString *)dataFilePath;
+                   dataFilePaths:(NSArray<NSString *> *)dataFilePaths;
 
 /**
  * Initializes a module with a file path and a specified load mode.

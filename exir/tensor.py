@@ -67,11 +67,14 @@ def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
     Another example is: sizes = (1, 3, 1, 1) with strides = (3, 1, 3, 3), returned
     value is (0, 2, 3, 1)
     """
-    for _, s in enumerate(stride):
-        if s == 0:
-            raise ValueError("0 in strides is not supported for ExecuTorch.")
+    from torch.fx.experimental.symbolic_shapes import (
+        guard_or_false,
+        guard_size_oblivious,
+    )
 
-    from torch.fx.experimental.symbolic_shapes import guard_size_oblivious
+    for _, s in enumerate(stride):
+        if guard_or_false(s == 0):
+            raise ValueError("0 in strides is not supported for ExecuTorch.")
 
     class K(NamedTuple):
         stride: int

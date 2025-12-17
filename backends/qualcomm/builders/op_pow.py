@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
 
@@ -25,14 +25,14 @@ class PowTensorTensor(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         out_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             node,
             out_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         pow_output_tensors = [output_tensor_wrapper]
@@ -41,7 +41,7 @@ class PowTensorTensor(NodeVisitor):
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
 
-        tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+        tensor_type = PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
 
         input_tensor_wrapper = self.define_tensor(
             input_node,
@@ -58,13 +58,13 @@ class PowTensorTensor(NodeVisitor):
             exp_node,
             node,
             exp_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
         )
 
         pow_input_tensors = [input_tensor_wrapper, exp_tensor_wrapper]
 
-        pow_op = PyQnnWrapper.PyQnnOpWrapper(
+        pow_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpElementWisePower.op_name,

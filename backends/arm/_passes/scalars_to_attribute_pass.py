@@ -4,11 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import cast, Set, Type, Union
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 
@@ -17,7 +17,7 @@ from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 
-class ScalarsToAttributePass(ExportPass):
+class ScalarsToAttributePass(ArmPass):
     """
     For ops in 'targeted_ops', convert inputs that are scalar values
     to attribute Nodes that output the same value.
@@ -49,7 +49,7 @@ class ScalarsToAttributePass(ExportPass):
                     shape = get_first_fake_tensor(arg).shape
                     biggest_rank = max(biggest_rank, len(shape))
 
-            new_args = []
+            new_args: list[Node | int] = []
             for arg in n.args:
                 if isinstance(arg, Node):
                     new_args.append(arg)
@@ -57,7 +57,7 @@ class ScalarsToAttributePass(ExportPass):
                 if isinstance(arg, int) and not torch.is_floating_point(
                     get_first_fake_tensor(n)
                 ):
-                    new_args.append(arg)  # type: ignore[arg-type]
+                    new_args.append(arg)
                     continue
 
                 prefix = "_tensor_constant_"

@@ -1558,6 +1558,13 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       },
       py::arg("num_threads"),
       call_guard);
+  m.def(
+      "_threadpool_get_thread_count",
+      []() {
+        return ::executorch::extension::threadpool::get_threadpool()
+            ->get_thread_count();
+      },
+      call_guard);
 
   py::class_<PyModule>(m, "ExecuTorchModule")
       .def(

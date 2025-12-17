@@ -6,18 +6,18 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/hifi/kernels/kernels.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
 #include <stdlib.h>
 
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
-using executorch::runtime::getLeadingDims;
-using torch::executor::RuntimeContext;
+#include <executorch/backends/cadence/generic/operators/op_quantized_matmul.h>
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
-namespace impl {
-namespace HiFi {
-namespace native {
+namespace impl::HiFi::native {
+
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::getLeadingDims;
+using ::torch::executor::RuntimeContext;
 
 // The quantized matmul. The quantized matmul accumulates in a wider register,
 // whose type is TA.
@@ -192,8 +192,20 @@ void quantized_matmul_out(
   size_t leading_dim = X.size(X.dim() - 2);
   size_t out_dim = Y.size(Y.dim() - 1 - transposed);
   size_t in_dim = X.size(X.dim() - 1);
-
-  if (out.scalar_type() == exec_aten::ScalarType::Byte) {
+  if (out.scalar_type() == exec_aten::ScalarType::Short) {
+    ::impl::generic::native::quantized_matmul_out(
+        ctx,
+        X,
+        X_zero_point,
+        Y,
+        Y_zero_point,
+        bias,
+        out_multiplier,
+        out_shift,
+        out_zero_point,
+        transposed,
+        out);
+  } else if (out.scalar_type() == exec_aten::ScalarType::Byte) {
     _typed_quantized_matmul<uint8_t>(
         ctx,
         X,
@@ -228,6 +240,4 @@ void quantized_matmul_out(
   }
 }
 
-} // namespace native
-} // namespace HiFi
-} // namespace impl
+} // namespace impl::HiFi::native

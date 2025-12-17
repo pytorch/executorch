@@ -10,6 +10,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <xa_nnlib_kernels_api.h>
 
+#include <executorch/backends/cadence/common/xt_macros.h>
+
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -24,8 +26,8 @@ void dequantize_per_tensor_out(
     const Tensor& input,
     double scale,
     int64_t zero_point,
-    __ET_UNUSED int64_t quant_min,
-    __ET_UNUSED int64_t quant_max,
+    ET_UNUSED int64_t quant_min,
+    ET_UNUSED int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
   float* out_data = out.mutable_data_ptr<float>();
@@ -35,8 +37,15 @@ void dequantize_per_tensor_out(
     dequantize<uint8_t>(out_data, input_data, scale, zero_point, numel);
   } else if (input.scalar_type() == ScalarType::Char) {
     const int8_t* input_data = input.const_data_ptr<int8_t>();
-    xa_nn_elm_dequantize_asym8s_f32(
-        out_data, input_data, zero_point, scale, numel);
+    XT_KERNEL_CHECK(
+        ctx,
+        ,
+        xa_nn_elm_dequantize_asym8s_f32,
+        out_data,
+        input_data,
+        zero_point,
+        scale,
+        numel);
   } else if (input.scalar_type() == ScalarType::Short) {
     const int16_t* input_data = input.const_data_ptr<int16_t>();
     dequantize<int16_t>(out_data, input_data, scale, zero_point, numel);

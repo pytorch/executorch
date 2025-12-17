@@ -73,6 +73,7 @@ from executorch.devtools.inspector._intermediate_output_capturer import (
 from executorch.devtools.inspector.numerical_comparator import (
     L1Comparator,
     MSEComparator,
+    NumericalComparatorBase,
     SNRComparator,
 )
 from executorch.exir import ExportedProgram
@@ -1036,10 +1037,8 @@ class Inspector:
             source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.
             target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.
             debug_buffer_path: Debug buffer file path that contains the debug data referenced by ETDump for intermediate and program outputs.
-            delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is:
-                    (delegate_metadata_list: List[bytes]) -> Union[List[str], Dict[str, Any]]
-            delegate_time_scale_converter: Optional function to convert the time scale of delegate profiling data. If not given, use the conversion ratio of
-                    target_time_scale/source_time_scale.
+            delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is (delegate_metadata_list: List[bytes]) -> Union[List[str], Dict[str, Any]].
+            delegate_time_scale_converter: Optional function to convert the time scale of delegate profiling data. If not given, use the conversion ratio of target_time_scale/source_time_scale.
             enable_module_hierarchy: Enable submodules in the operator graph. Defaults to False.
 
         Returns:
@@ -1306,10 +1305,9 @@ class Inspector:
         Displays the underlying EventBlocks in a structured tabular format, with each row representing an Event.
 
         Args:
-            file: Which IO stream to print to. Defaults to stdout.
-                Not used if this is in an IPython environment such as a Jupyter notebook.
-            include_units: Whether headers should include units (default true)
-            include_delegate_debug_data: Whether to include delegate debug metadata (default false)
+            file: Which IO stream to print to. Defaults to stdout. Not used if this is in an IPython environment such as a Jupyter notebook.
+            include_units: Whether headers should include units (default true).
+            include_delegate_debug_data: Whether to include delegate debug metadata (default false).
 
         Returns:
             None
@@ -1407,7 +1405,9 @@ class Inspector:
         )
 
     def calculate_numeric_gap(
-        self, distance: str = "MSE", disable_debug_handle_valdiation: bool = False
+        self,
+        distance: Union[str, NumericalComparatorBase],
+        disable_debug_handle_valdiation: bool = False,
     ):
         """
         Compares logged intermediate outputs from the exported graph (in ETRecord)
@@ -1419,12 +1419,15 @@ class Inspector:
         compare the intermediate outputs from the AOT and the runtime.
 
         Args:
-            distance: the metrics the inspector will use for gap calculation. Should be one of "MSE", "L1" and "SNR".
-            disable_debug_handle_validation: Often when aten graph has symbolic shape nodes, and inbuilt ops like gt/lt etc.,
-            during re-export of such a graph 'from_node' information is lost from node.meta. As a result we loose connection
-            between edge IR nodes and aten nodes for such ops. By default we validate that every edge IR node has corresponding
-            node in aten IR, and when such validation fails numeric debugger falls back to edge IR as reference graph. This
-            flag allows one to override such behavior and make best effort comparison.
+            distance: The metrics the inspector will use for gap calculation. Can be either:
+                - A string: one of "MSE", "L1", or "SNR" for built-in comparators.
+                - A custom NumericalComparatorBase instance: allows you to define custom comparison logic
+                  by subclassing NumericalComparatorBase and implementing the compare() method.
+            disable_debug_handle_validation: Often when aten graph has symbolic shape nodes and inbuilt ops like gt/lt etc.,
+                during re-export of such a graph 'from_node' information is lost from node.meta. As a result we loose
+                connection between edge IR nodes and aten nodes for such ops. By default we validate that every edge IR
+                node has corresponding node in aten IR, and when such validation fails numeric debugger falls back to edge
+                IR as reference graph. This flag allows one to override such behavior and make best effort comparison.
 
         Returns:
             pd.DataFrame: A DataFrame listing corresponding operator intermediate outputs from both stages and their computed numerical gaps.
@@ -1445,15 +1448,18 @@ class Inspector:
         mapping = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
-        metric = distance.strip().upper()
-        if metric == "MSE":
-            comparator = MSEComparator()
-        elif metric == "L1":
-            comparator = L1Comparator()
-        elif metric == "SNR":
-            comparator = SNRComparator()
+        if isinstance(distance, NumericalComparatorBase):
+            comparator = distance
         else:
-            raise ValueError(f"Unsupported distance metric {distance!r}")
+            metric = distance.strip().upper()
+            if metric == "MSE":
+                comparator = MSEComparator()
+            elif metric == "L1":
+                comparator = L1Comparator()
+            elif metric == "SNR":
+                comparator = SNRComparator()
+            else:
+                raise ValueError(f"Unsupported distance metric {distance!r}")
 
         rows = []
         for (aot_debug_handle, aot_intermediate_output), (

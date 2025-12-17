@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -76,3 +77,30 @@ class RuntimeTest(unittest.TestCase):
             with open(f.name, "rb") as f:
                 program = runtime.load_program(f.read())
                 test_add(program)
+
+    def test_load_program_with_file_like_objects(self):
+        """Regression test: Ensure file-like objects (BytesIO, etc.) work correctly.
+
+        Previously, isinstance(data, BinaryIO) check didn't work because BinaryIO
+        is a typing protocol. Fixed by using hasattr(data, 'read') duck-typing.
+        """
+        ep, inputs = create_program(ModuleAdd())
+        runtime = Runtime.get()
+
+        def test_add(program):
+            method = program.load_method("forward")
+            outputs = method.execute(inputs)
+            self.assertTrue(torch.allclose(outputs[0], inputs[0] + inputs[1]))
+
+        # Test with BytesIO
+        bytesio = io.BytesIO(ep.buffer)
+        program = runtime.load_program(bytesio)
+        test_add(program)
+
+        # Test with bytes
+        program = runtime.load_program(bytes(ep.buffer))
+        test_add(program)
+
+        # Test with bytearray
+        program = runtime.load_program(bytearray(ep.buffer))
+        test_add(program)

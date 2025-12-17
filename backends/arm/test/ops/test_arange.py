@@ -98,7 +98,6 @@ def test_arange_start_step_tosa_INT(test_data: test_data_t):
         ArangeAdd.aten_op,
         ArangeAdd.exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -111,7 +110,6 @@ def test_arange_start_step_u55_INT(test_data: test_data_t):
         input_data(),
         ArangeAdd.aten_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -124,13 +122,12 @@ def test_arange_start_step_u85_INT(test_data: test_data_t):
         input_data(),
         ArangeAdd.aten_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", ArangeAdd.test_data)
 @common.SkipIfNoModelConverter
-def test_arange_start_step_vgf_FP(test_data: test_data_t):
+def test_arange_start_step_vgf_no_quant(test_data: test_data_t):
     input_data, init_data = test_data
     module = ArangeAdd(*init_data)
     pipeline = VgfPipeline[input_t](
@@ -138,14 +135,14 @@ def test_arange_start_step_vgf_FP(test_data: test_data_t):
         input_data(),
         module.aten_op,
         module.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", ArangeAdd.test_data)
 @common.SkipIfNoModelConverter
-def test_arange_start_step_vgf_INT(test_data: test_data_t):
+def test_arange_start_step_vgf_quant(test_data: test_data_t):
     input_data, init_data = test_data
     module = ArangeAdd(*init_data)
     pipeline = VgfPipeline[input_t](
@@ -153,7 +150,7 @@ def test_arange_start_step_vgf_INT(test_data: test_data_t):
         input_data(),
         module.aten_op,
         module.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -202,28 +199,28 @@ def test_linspace_tosa_INT(test_data: test_data_t):
 
 @common.parametrize("test_data", LinspaceAdd.test_data)
 @common.SkipIfNoModelConverter
-def test_linspace_vgf_FP(test_data: test_data_t):
+def test_linspace_vgf_no_quant(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = VgfPipeline[input_t](
         LinspaceAdd(*init_data),
         input_data(),
         LinspaceAdd.aten_op,
         LinspaceAdd.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", LinspaceAdd.test_data)
 @common.SkipIfNoModelConverter
-def test_linspace_vgf_INT(test_data: test_data_t):
+def test_linspace_vgf_quant(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = VgfPipeline[input_t](
         LinspaceAdd(*init_data),
         input_data(),
         LinspaceAdd.aten_op,
         LinspaceAdd.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -252,10 +249,10 @@ def test_arange_u85_INT():
 
 
 @pytest.mark.skip(reason=skip_str)
-def test_arange_vgf_FP():
+def test_arange_vgf_no_quant():
     pass
 
 
 @pytest.mark.skip(reason=skip_str)
-def test_arange_vgf_INT():
+def test_arange_vgf_quant():
     pass

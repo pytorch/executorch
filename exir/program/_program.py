@@ -79,8 +79,8 @@ from executorch.exir.verification.verifier import (
     EXIREdgeDialectVerifier,
     get_aten_verifier,
 )
-from executorch.extension.flat_tensor.serialize.serialize import FlatTensorSerializer
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
+from torch._export.utils import _detect_fake_mode_from_gm
 from torch._export.verifier import Verifier
 from torch.export import ExportedProgram
 from torch.export._remove_auto_functionalized_pass import (
@@ -334,7 +334,8 @@ def lift_constant_tensor_pass(ep):
     graph_signature = ep.graph_signature
     buffers = list(graph_signature.buffers)
 
-    fake_mode = list(ep.graph.nodes)[0].meta["val"].fake_mode
+    fake_mode = _detect_fake_mode_from_gm(ep.graph_module)
+
     first_user_input = None
     lifted_constants = []
     for node in ep.graph.nodes:
@@ -590,6 +591,10 @@ class ExecutorchProgram:
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
+        from executorch.extension.flat_tensor.serialize.serialize import (
+            FlatTensorSerializer,
+        )
+
         self._data_serializer: DataSerializer = FlatTensorSerializer()
 
     def _get_emitter_output(self) -> EmitterOutput:
@@ -836,13 +841,11 @@ def edge_to_executorch_passes(
     Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.
     """
     passes: List[PassType] = [
-        SpecPropPass(),
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
         # there exists an unbacked symint operation.
         *config.passes,
-        # config.passes may contain external_constants_pass. This pass has to
-        # run after SpecPropPass, which populates tensor names.
+        SpecPropPass(),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)
@@ -1734,11 +1737,19 @@ class EdgeProgramManager:
                     # TODO(who?)
                     p.update_placeholder_tensor_specs(program, new_gm)
 
-            # Extract constants if the config says too.
-            if config.external_constants:
+            # Tag constant weights.
+            if (
+                isinstance(config.external_constants, bool)
+                and config.external_constants
+            ):
                 new_gm_res = external_constants_pass(new_gm)
                 new_gm = new_gm_res.graph_module
-            elif config.external_mutable_weights:
+            elif callable(config.external_constants):
+                new_gm_res = external_constants_pass(new_gm, config.external_constants)
+                new_gm = new_gm_res.graph_module
+
+            # Tag mutable weights.
+            if config.external_mutable_weights:
                 new_gm_res = external_mutable_weights_pass(new_gm, program)
                 new_gm = new_gm_res.graph_module
 
@@ -1839,6 +1850,10 @@ class ExecutorchProgramManager:
         )
 
         # Serialize emitter output, ready to be written to a file.
+        from executorch.extension.flat_tensor.serialize.serialize import (
+            FlatTensorSerializer,
+        )
+
         self._data_serializer = FlatTensorSerializer()
         self._pte_data, self._tensor_data = serialize_for_executorch(
             self._emitter_output,

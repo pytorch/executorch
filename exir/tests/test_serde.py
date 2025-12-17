@@ -335,3 +335,18 @@ class TestSerde(unittest.TestCase):
                     node.meta.get("from_node"), node_new.meta.get("from_node")
                 ):
                     self.assertEqual(node_source.to_dict(), node_source_new.to_dict())
+
+    def test_memory_ops(self) -> None:
+        class MemoryOpsModule(nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                x = exir.memory.view(x, (10, 10))
+                return x + y
+
+        inputs = (
+            torch.randn(100),
+            torch.randn(10, 10),
+        )
+        self.check_serde(MemoryOpsModule(), inputs)

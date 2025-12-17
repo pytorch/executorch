@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -480,6 +481,36 @@ TEST_F(OpIndexTensorOutTest, AllDtypesSupportedForIndex) {
   test_dtype<ScalarType::Double, ScalarType::Int, ScalarType::Double>();
 }
 
+TEST_F(OpIndexTensorOutTest, NegativeIndexSupportedForLong) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  Tensor x = tf.make({3}, {1., 2., 3.});
+  Tensor out = tf.zeros({1});
+  Tensor expected = tf.make({1}, {3.});
+
+  std::array<optional<Tensor>, 1> indices = {
+      optional<Tensor>(tfl.make({1}, {-1}))};
+
+  Tensor ret = op_index_tensor_out(x, indices, out);
+  EXPECT_TENSOR_EQ(ret, expected);
+}
+
+TEST_F(OpIndexTensorOutTest, NegativeIndexSupportedForInt) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Int> tfi;
+
+  Tensor x = tf.make({3}, {1., 2., 3.});
+  Tensor out = tf.zeros({1});
+  Tensor expected = tf.make({1}, {3.});
+
+  std::array<optional<Tensor>, 1> indices = {
+      optional<Tensor>(tfi.make({1}, {-1}))};
+
+  Tensor ret = op_index_tensor_out(x, indices, out);
+  EXPECT_TENSOR_EQ(ret, expected);
+}
+
 //
 // Death Tests
 //
@@ -912,6 +943,59 @@ TEST_F(OpIndexTensorOutTest, FastPathEmptyInput) {
   Tensor out = tf.zeros(
       {5, 5, 5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   Tensor expected = tf.ones({2, 5, 0, 4});
+  op_index_tensor_out(x, indices, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpIndexTensorOutTest, FastPathNegativeIndex) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  // clang-format off
+  Tensor x = tf.make(
+    {2, 3, 4},
+    {
+        // [0, :, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+
+        // [1, :, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -5.,  -6.,  -7.,  -8., // [1, 1, :]
+       -9., -10., -11., -12., // [1, 2, :]
+    });
+  // clang-format on
+
+  // Use negative indices in the first dimension: -1, 0, -2
+  std::array<optional<Tensor>, 3> indices = {
+      optional<Tensor>(tfl.make({3}, {-1, 0, -2})),
+      optional<Tensor>(),
+      optional<Tensor>()};
+
+  Tensor out = tf.zeros({3, 3, 4});
+  // clang-format off
+  Tensor expected = tf.make(
+    {3, 3, 4},
+    {
+        // [1, :, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -5.,  -6.,  -7.,  -8., // [1, 1, :]
+       -9., -10., -11., -12., // [1, 2, :]
+
+        // [0, :, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+
+        // [0, :, :] again (since -2 wraps to 0)
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+    });
+  // clang-format on
+
   op_index_tensor_out(x, indices, out);
 
   EXPECT_TENSOR_EQ(out, expected);

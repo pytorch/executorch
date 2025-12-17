@@ -18,7 +18,10 @@ endif()
 
 set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+)
 if(NOT ANDROID_PLATFORM)
   set(ANDROID_PLATFORM android-30)
 endif()

@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 from typing import cast, Dict, List
 
 import torch
@@ -27,6 +28,7 @@ class ReduceMeanVisitor(NodeVisitor):
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
     ) -> None:
+        # input
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
@@ -37,8 +39,11 @@ class ReduceMeanVisitor(NodeVisitor):
         in_shape = get_shape(input)
         for dim in dims:
             reduce_axes.append(dim % len(in_shape))
-        reduce_axes.sort()
+
+        if len(node.args[1]) > 1:
+            reduce_axes.sort()
 
         keep_dim = node.args[2] if len(node.args) >= 3 else False
         params = {"keep_dims": keep_dim, "axis": reduce_axes}
+        self._update_params_qdtype(node, params)
         enn_graph.define_op(node.name, "REDUCEMEAN", [input_id], [output_id], params)

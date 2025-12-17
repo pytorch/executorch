@@ -1023,6 +1023,12 @@ def get_map_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
             yield nd
 
 
+def get_scan_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
+    for nd in graph_module.graph.nodes:
+        if nd.target is torch.ops.higher_order.scan:
+            yield nd
+
+
 def get_return_specs(graph_module: fx.GraphModule) -> Set[TensorSpec]:
     return_specs = set()
     nodes = graph_module.graph.nodes
@@ -1125,7 +1131,7 @@ def _apply_algo_to_submodules(
     alignment: int,
     graph_signature: Optional[ExportGraphSignature] = None,
 ) -> list[int]:
-    """Apply algo to map/cond/while nodes in the graph module.
+    """Apply algo to map/cond/while/scan nodes in the graph module.
 
     This method will popuate graph_module.meta["non_const_buffer_sizes"] for
     all submodules and return a bufsizes list that is the maximum size of all
@@ -1160,6 +1166,9 @@ def _apply_algo_to_submodules(
 
     for map_node in get_map_nodes(graph_module):
         _handle(cast(torch.fx.Node, map_node.args[0]), alloc_graph_input=True)
+
+    for scan_node in get_scan_nodes(graph_module):
+        _handle(cast(torch.fx.Node, scan_node.args[0]), alloc_graph_input=True)
 
     # TODO: We can handle delegates the same way as map/cond/while.
     # Maybe populate the graph_module.meta["non_const_buffer_sizes"] for delegates.

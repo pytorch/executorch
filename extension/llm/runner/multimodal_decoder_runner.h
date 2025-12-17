@@ -28,8 +28,12 @@ class ET_EXPERIMENTAL MultimodalDecoderRunner
       executorch::extension::TensorPtr& tokens,
       int64_t start_pos) override {
     // run token embedding
-    auto token_embedding_outputs =
-        ET_UNWRAP(module_->execute(kTokenEmbeddingMethod, tokens));
+    auto token_embedding_result =
+        module_->execute(kTokenEmbeddingMethod, tokens);
+    if (!token_embedding_result.ok()) {
+      return token_embedding_result.error();
+    }
+    auto token_embedding_outputs = std::move(*token_embedding_result);
 
     // Return the logits tensor
     return decode(token_embedding_outputs[0], start_pos);
@@ -47,8 +51,12 @@ class ET_EXPERIMENTAL MultimodalDecoderRunner
     auto start_pos_tensor = ::executorch::extension::from_blob(
         &start_pos, {1}, executorch::aten::ScalarType::Long);
     // run text model
-    auto outputs_res = ET_UNWRAP(
-        module_->execute(kTextModelMethod, {embeddings, start_pos_tensor}));
+    auto outputs_result =
+        module_->execute(kTextModelMethod, {embeddings, start_pos_tensor});
+    if (!outputs_result.ok()) {
+      return outputs_result.error();
+    }
+    auto outputs_res = std::move(*outputs_result);
 
     ET_CHECK_MSG(
         outputs_res.size() == 1,

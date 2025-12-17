@@ -6,7 +6,7 @@
 import warnings
 from typing import Dict, Iterable
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
@@ -32,9 +32,9 @@ class CustomOp(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
-        custom_op = PyQnnWrapper.PyQnnOpWrapper(
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
+        custom_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             self.op_package_info.op_package_name,
             self.op_package_info.qnn_op_type_name,
@@ -57,7 +57,7 @@ class CustomOp(NodeVisitor):
                     arg,
                     node,
                     input_tensor,
-                    PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                    PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                     nodes_to_wrappers,
                 )
                 custom_input_tensors.append(input_tensor_wrapper)
@@ -83,7 +83,7 @@ class CustomOp(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         custom_output_tensors = [output_tensor_wrapper]

@@ -46,6 +46,7 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
             "upsampling_factor": scale_factor,
             "half_pixel_centers": True,
         }
+        self._update_params_qdtype(node, params)
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
         enn_graph.define_op(
             node.name, "RESIZE_BILINEAR", [input_id], [output_id], params

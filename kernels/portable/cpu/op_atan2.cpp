@@ -59,7 +59,7 @@ Tensor& atan2_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::FLOATHBF16>(
-        [](const auto val_a, const auto val_b) {
+        [](const auto& val_a, const auto& val_b) {
           return executorch::math::atan2(val_a, val_b);
         },
         ctx,

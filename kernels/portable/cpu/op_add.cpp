@@ -80,7 +80,7 @@ Tensor& add_out(
           CTYPE_COMPUTE,
           op_name,
           utils::SupportedTensorDtypes::REALHBBF16>(
-          [val_alpha](const auto val_a, const auto val_b) {
+          [val_alpha](const auto& val_a, const auto& val_b) {
             return val_a + val_alpha * val_b;
           },
           ctx,
@@ -136,7 +136,7 @@ Tensor& add_scalar_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-        [val_alpha_times_b](const auto val_a) {
+        [val_alpha_times_b](const auto& val_a) {
           // Cast here supports vectorization; either it does nothing
           // or it casts from CTYPE_COMPUTE to
           // Vectorized<CTYPE_COMPUTE>.

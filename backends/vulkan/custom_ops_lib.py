@@ -9,6 +9,8 @@ from typing import Optional
 import executorch.backends.vulkan.patterns as vk_patterns
 import torch.library
 
+from torch._subclasses.fake_tensor import FakeTensor
+
 namespace = "et_vk"
 lib = torch.library.Library(namespace, "DEF")
 
@@ -537,42 +539,6 @@ lib.define(
 lib.impl(name, apply_rotary_emb_impl, "CompositeExplicitAutograd")
 apply_rotary_emb_op = getattr(getattr(torch.ops, namespace), name)
 
-#############################
-## quantize/dequantize ops ##
-#############################
-
-
-def quantize_q8ta_for_conv2d_impl(
-    input: torch.Tensor,
-    scale: float,
-    zero_point: int,
-):
-    return torch.ops.quantized_decomposed.quantize_per_tensor(
-        input, scale, zero_point, -128, 127, torch.int8
-    )
-
-
-name = "quantize_q8ta_for_conv2d"
-lib.define(f"{name}(Tensor input, float scale, int zero_point) -> Tensor")
-lib.impl(name, quantize_q8ta_for_conv2d_impl, "CompositeExplicitAutograd")
-quantize_q8ta_for_conv2d_op = getattr(getattr(torch.ops, namespace), name)
-
-
-def dequantize_q8to_from_conv2d_impl(
-    input: torch.Tensor,
-    scale: float,
-    zero_point: int,
-):
-    return torch.ops.quantized_decomposed.dequantize_per_tensor(
-        input, scale, zero_point, -128, 127, input.dtype
-    )
-
-
-name = "dequantize_q8to_from_conv2d"
-lib.define(f"{name}(Tensor input, float scale, int zero_point) -> Tensor")
-lib.impl(name, dequantize_q8to_from_conv2d_impl, "CompositeExplicitAutograd")
-dequantize_q8to_from_conv2d_op = getattr(getattr(torch.ops, namespace), name)
-
 ########################
 ## add_q8ta_q8ta_q8to ##
 ########################
@@ -614,3 +580,18 @@ lib.define(
 )
 lib.impl(name, add_q8ta_q8ta_q8to_impl, "CompositeExplicitAutograd")
 add_q8ta_q8ta_q8to_op = getattr(getattr(torch.ops, namespace), name)
+
+#############################
+## select_as_symint ##
+#############################
+
+
+def select_as_symint_impl(x: torch.Tensor, dim: int, index: int):
+    assert isinstance(x, FakeTensor)
+    return x.fake_mode.shape_env.create_unbacked_symint()
+
+
+name = "select_as_symint"
+lib.define(f"{name}(Tensor x, int dim, int index) -> SymInt")
+lib.impl(name, select_as_symint_impl, "Meta")
+select_as_symint_op = getattr(getattr(torch.ops, namespace), name)

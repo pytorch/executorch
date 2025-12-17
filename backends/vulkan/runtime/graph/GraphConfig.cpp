@@ -64,7 +64,9 @@ GraphConfig::GraphConfig() {
   enable_local_wg_size_override = false;
   local_wg_size_override = {};
 
+  has_data_dependent_shapes = false;
   expect_dynamic_shapes = false;
+  force_resize = false;
 
   external_adapter = nullptr;
 }

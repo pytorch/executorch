@@ -96,6 +96,19 @@ class TensorTest: XCTestCase {
     XCTAssertEqual(tensor.scalars(), dataArray)
   }
 
+  func testInitDataViewSurvivesSourceScopeEnd() {
+    let dataArray: [Float] = [1.0, 2.0, 3.0, 4.0]
+    var view: Tensor<Float>!
+    autoreleasepool {
+      let data = Data(bytes: dataArray, count: dataArray.count * MemoryLayout<Float>.size)
+      let tensor = Tensor<Float>(data: data, shape: [4])
+      view = Tensor<Float>(tensor)
+      XCTAssertEqual(view.scalars(), dataArray)
+    }
+    XCTAssertEqual(view.count, 4)
+    XCTAssertEqual(view.scalars(), dataArray)
+  }
+
   func testWithCustomStridesAndDimensionOrder() {
     let data: [Float] = [1.0, 2.0, 3.0, 4.0]
     let tensor = Tensor<Float>(
@@ -155,6 +168,38 @@ class TensorTest: XCTestCase {
     XCTAssertEqual(tensor2.count, tensor1.count)
   }
 
+  func testInitWithTensorDerivesStridesAndSharesStorage() {
+    var scalars: [Int32] = [1, 2, 3, 4, 5, 6]
+    let tensor1 = scalars.withUnsafeMutableBytes {
+      Tensor<Int32>(bytesNoCopy: $0.baseAddress!, shape: [2, 3])
+    }
+    let tensor2 = Tensor(tensor1, shape: [3, 2])
+
+    XCTAssertEqual(tensor1.withUnsafeBytes { $0.baseAddress }, tensor2.withUnsafeBytes { $0.baseAddress })
+    XCTAssertEqual(tensor2.shape, [3, 2])
+    XCTAssertEqual(tensor2.strides, [2, 1])
+    XCTAssertEqual(tensor2.dimensionOrder, [0, 1])
+
+    scalars[0] = 99
+    XCTAssertEqual(tensor2.withUnsafeBytes { $0[0] }, 99)
+  }
+
+  func testInitWithTensorExplicitOverridesAppliesMetadata() {
+    var scalars: [Float] = [1, 2, 3, 4]
+    let tensor1 = scalars.withUnsafeMutableBytes {
+      Tensor<Float>(bytesNoCopy: $0.baseAddress!, shape: [2, 2])
+    }
+    let tensor2 = Tensor(tensor1, shape: [2, 2], dimensionOrder: [1, 0], strides: [1, 2])
+
+    XCTAssertEqual(tensor1.withUnsafeBytes { $0.baseAddress }, tensor2.withUnsafeBytes { $0.baseAddress })
+    XCTAssertEqual(tensor2.shape, [2, 2])
+    XCTAssertEqual(tensor2.dimensionOrder, [1, 0])
+    XCTAssertEqual(tensor2.strides, [1, 2])
+
+    scalars[3] = 42
+    XCTAssertEqual(tensor2.withUnsafeBytes { $0[3] }, 42)
+  }
+
   func testCopy() {
     var data: [Double] = [10.0, 20.0, 30.0, 40.0]
     let tensor1 = data.withUnsafeMutableBytes {
@@ -167,6 +212,43 @@ class TensorTest: XCTestCase {
     XCTAssertEqual(tensor1.strides, tensor2.strides)
     XCTAssertEqual(tensor1.dimensionOrder, tensor2.dimensionOrder)
     XCTAssertEqual(tensor1.count, tensor2.count)
+  }
+
+  func testCopyToSameDataType() {
+    let tensor1 = Tensor<Float>([1, 2, 3, 4], shape: [2, 2])
+    let tensor2 = tensor1.copy(to: Float.self)
+    XCTAssertEqual(tensor2.dataType, .float)
+    XCTAssertEqual(tensor2.shape, [2, 2])
+    XCTAssertEqual(tensor2.strides, tensor1.strides)
+    XCTAssertEqual(tensor2.dimensionOrder, tensor1.dimensionOrder)
+    XCTAssertEqual(tensor2.scalars(), [1, 2, 3, 4])
+  }
+
+  func testCopyToDifferentDataTypeKeepsSourceAlive() {
+    var data = [10.0, 20.0, 30.0, 40.0]
+    let tensor1 = data.withUnsafeMutableBytes {
+      Tensor<Double>(bytesNoCopy: $0.baseAddress!, shape: [2, 2])
+    }
+    let tensor2 = tensor1.copy(to: Float.self)
+    data[0] = 999.0
+    XCTAssertEqual(tensor2.dataType, .float)
+    XCTAssertEqual(tensor2.shape, [2, 2])
+    XCTAssertEqual(tensor2.scalars(), [10.0, 20.0, 30.0, 40.0])
+  }
+
+  func testCopyToPreservesShapeAndOrderOn2D() {
+    let tensor1 = Tensor<Int32>(
+      [1, 2, 3, 4, 5, 6],
+      shape: [2, 3],
+      strides: [3, 1],
+      dimensionOrder: [0, 1]
+    )
+    let tensor2 = tensor1.copy(to: Double.self)
+    XCTAssertEqual(tensor2.shape, [2, 3])
+    XCTAssertEqual(tensor2.strides, [3, 1])
+    XCTAssertEqual(tensor2.dimensionOrder, [0, 1])
+    XCTAssertEqual(tensor2.count, 6)
+    XCTAssertEqual(tensor2.scalars(), [1, 2, 3, 4, 5, 6])
   }
 
   func testResize() {

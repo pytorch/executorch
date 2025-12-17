@@ -99,6 +99,17 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSUInteger)compact:(NSUInteger)sizeInBytes error:(NSError* __autoreleasing*)error;
 
 
+/// Executes a block with a unique temporary directory.
+///
+/// A new temporary subdirectory URL is created inside the receiver’s designated
+/// base directory. The directory is passed to the block, which can use it to
+/// perform temporary file operations. After the block finishes executing,
+/// the directory and its contents are removed.
+///
+/// @param block A block to execute. The block receives a unique URL.
+- (void)withTemporaryDirectory:(void (^)(NSURL* directoryURL))block;
+
+
 /// Purges the assets storage. The assets are moved to the trash directory and are asynchronously
 /// deleted.
 ///
@@ -116,6 +127,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// The trash directory URL, the assets before removal are moved to this directory. The directory
 /// contents are deleted asynchronously.
 @property (copy, readonly, nonatomic) NSURL* trashDirectoryURL;
+
+
+/// The staging directory URL, used to hold assets that are being prepared or processed
+/// before they are moved into their final location. The contents of this directory
+/// are temporary and may be cleared when no longer needed.
+@property (copy, readonly, nonatomic) NSURL* stagingDirectoryURL;
 
 /// The file manager.
 @property (strong, readonly, nonatomic) NSFileManager* fileManager;

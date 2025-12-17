@@ -7,5 +7,7 @@ clone:
     DTYPE:
       - VALUE: half
       - VALUE: float
+      - VALUE: int32
+      - VALUE: uint8
   shader_variants:
     - NAME: clone

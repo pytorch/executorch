@@ -32,15 +32,23 @@ TextDecoderRunner::TextDecoderRunner(Module* module, IOManager* io_manager)
     TensorPtr& tokens,
     int64_t start_pos) {
   // ET_LOG(Info, "Input token %" PRIu64, input_token);
-  auto method_meta = ET_UNWRAP(module_->method_meta("forward"));
+  auto method_meta_result = module_->method_meta("forward");
+  if (!method_meta_result.ok()) {
+    return method_meta_result.error();
+  }
+  auto method_meta = std::move(*method_meta_result);
   // If only 1 input, we are not using kv cache
   bool use_kv_cache = method_meta.num_inputs() > 1;
 
   std::vector<int64_t> cache_positions;
 
   if (use_kv_cache) {
-    auto start_pos_tensor = ET_UNWRAP(populate_start_pos_or_cache_position(
-        module_, start_pos, cache_positions, tokens->numel(), "forward"));
+    auto start_pos_tensor_result = populate_start_pos_or_cache_position(
+        module_, start_pos, cache_positions, tokens->numel(), "forward");
+    if (!start_pos_tensor_result.ok()) {
+      return start_pos_tensor_result.error();
+    }
+    auto start_pos_tensor = std::move(*start_pos_tensor_result);
 
     std::vector<runtime::EValue> inputs;
     auto inputs_res = io_manager_->prepare_decode(tokens, start_pos_tensor);

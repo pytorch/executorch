@@ -6,12 +6,12 @@
 
 from typing import cast, Dict, List
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import numpy as np
 import torch
-from executorch.backends.qualcomm.utils.constants import QCOM_DATA
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA, QCOM_QUANT_ATTRS
 
-from .node_visitor import NodeVisitor
+from .node_visitor import NodeVisitor, PER_CHANNEL_ENCODING
 from .node_visitor_manager import register_node_visitor
 from .qnn_constants import (
     OpConv2d,
@@ -47,7 +47,7 @@ class Conv2d(NodeVisitor):
         output_padding_shape=None,
         transpose_conv=False,
         groups=None,
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+    ) -> PyQnnManager.PyQnnOpWrapper:
         """
         This function is shared among Conv1D, Conv2D, and DepthWise Conv2D as most of the required parameters overlaps.
         """
@@ -55,7 +55,7 @@ class Conv2d(NodeVisitor):
         conv_op.AddOutputTensors(conv_output_tensors)
         conv_op.AddTensorParam(
             OP.param_stride,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(stride_shape),
             stride_shape,
             np.array(stride, dtype=np.uint32),
@@ -63,7 +63,7 @@ class Conv2d(NodeVisitor):
         )
         conv_op.AddTensorParam(
             OP.param_pad_amount,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(padding_shape),
             padding_shape,
             np.array(
@@ -76,7 +76,7 @@ class Conv2d(NodeVisitor):
         if transpose_conv:
             conv_op.AddTensorParam(
                 OP.param_output_padding,
-                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+                PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 len(output_padding_shape),
                 output_padding_shape,
                 np.array(output_padding, dtype=np.uint32),
@@ -85,7 +85,7 @@ class Conv2d(NodeVisitor):
         else:
             conv_op.AddTensorParam(
                 OP.param_dilation,
-                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+                PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 len(dilation_shape),
                 dilation_shape,
                 np.array(dilation, dtype=np.uint32),
@@ -95,17 +95,40 @@ class Conv2d(NodeVisitor):
         if groups is not None:
             conv_op.AddScalarParam(
                 OP.param_group,
-                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+                PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 {QCOM_DATA: np.uint32(groups)},
             )
 
         return conv_op
 
+    def _reduce_bias_scales(
+        self,
+        node: torch.fx.Node,
+        filter_node: torch.fx.Node,
+        bias_node: torch.fx.Node,
+        groups: int,
+    ):
+        """_summary_
+        If transpose_conv has groups, need special handle for bias_node's per channel quant.
+        Check _derived_bias_quant_spec under backends/qualcomm/quantizer/qconfig.py for more info.
+        """
+
+        filter_scales = filter_node.meta[QCOM_QUANT_ATTRS]["scales"]
+        bias_scales = bias_node.meta[QCOM_QUANT_ATTRS]["scales"]
+        bias_zero_points = bias_node.meta[QCOM_QUANT_ATTRS]["zero_points"]
+
+        # Adding this condition to prevent reduce twice: op_validation and qnn_preprocess
+        if filter_scales.numel() != bias_scales.numel():
+            bias_scales = bias_scales.view(-1, groups)[:, 0]
+            bias_zero_points = bias_zero_points.view(-1, groups)[:, 0]
+            bias_node.meta[QCOM_QUANT_ATTRS]["scales"] = bias_scales
+            bias_node.meta[QCOM_QUANT_ATTRS]["zero_points"] = bias_zero_points
+
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[str, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         assert (
@@ -121,14 +144,21 @@ class Conv2d(NodeVisitor):
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
         filter_node = self.get_node(node.args[1])
         filter_tensor = get_parameter(filter_node, self.edge_program)
+
+        stride = cast(List[int], node.args[3])
+        padding = cast(List[int], node.args[4])
+        dilation = cast(List[int], node.args[5])
+        output_padding = cast(List[int], node.args[7])
+        groups = cast(int, node.args[8])
+
         # weight of pytorch OIHW(conv2d) / OIDHW(conv3d) or IOHW(conv_transpose2d) / IODHW(conv_transpose3d),
-        # yet QNN is HWIO or DHWIO
+        # yet QNN is HWIO or DHWIO for both conv and conv_transpose.
         is_transpose_conv = cast(bool, node.args[6])
         if is_conv2d:
             filter_axis_order = (2, 3, 0, 1) if is_transpose_conv else (2, 3, 1, 0)
@@ -141,37 +171,41 @@ class Conv2d(NodeVisitor):
             filter_node,
             node,
             filter_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
         )
         conv_input_tensors = [input_tensor_wrapper, filter_tensor_wrapper]
         if node.args[2] is not None:
             bias_node = self.get_node(node.args[2])
+            # TODO: Double check on condition below once QNN supports transpose_conv with block_quant.
+            # By checking node.args[1].target, only allow per_channel_quant to go through and bypass block_quant.
+            if (
+                is_transpose_conv
+                and groups != 1
+                and bias_node.meta.get(QCOM_QUANT_ATTRS) is not None
+                and node.args[1].target in PER_CHANNEL_ENCODING
+            ):
+                self._reduce_bias_scales(node, filter_node, bias_node, groups)
+
             bias_tensor = get_parameter(bias_node, self.edge_program)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
                 node,
                 bias_tensor,
-                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
                 nodes_to_wrappers,
             )
             conv_input_tensors.append(bias_tensor_wrapper)
-
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         conv_output_tensors = [output_tensor_wrapper]
 
-        stride = cast(List[int], node.args[3])
-        padding = cast(List[int], node.args[4])
-        dilation = cast(List[int], node.args[5])
-        output_padding = cast(List[int], node.args[7])
-        groups = cast(int, node.args[8])
         # Qnn filter tensor is (H, W, Cin, Cout) or (D, H, W, Cin, Cout)
         group_input_channels = filter_tensor.shape[-2]
         group_output_channels = int(filter_tensor.shape[-1] / groups)
@@ -204,7 +238,7 @@ class Conv2d(NodeVisitor):
         else:
             op_class = OpConv2d if is_conv2d else OpConv3d
 
-        conv_op = PyQnnWrapper.PyQnnOpWrapper(
+        conv_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             op_class.op_name,

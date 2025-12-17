@@ -276,44 +276,9 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndexMismatchShape) {
   // Try to copy and replace at index 1. This will fail because
   // copy_to.sizes[1:] and to_copy.sizes[:] don't match each other
   // which is a pre-requisite for this operator.
-  ET_EXPECT_DEATH(
-      getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack), "");
-}
-
-TEST_F(RegisterPrimOpsTest, TestETCopyIndexStaticShape) {
-  int64_t index = 1;
-  testing::TensorFactory<ScalarType::Int> tf;
-
-  EValue values[3];
-  EValue* stack[3];
-
-  // Test with static shape tensors.
-  const std::vector<int> buf = {1, 2, 3, 4};
-  auto copy_to = tf.make({2, 2}, buf);
-  auto to_copy = tf.make({2}, {5, 6});
-
-  values[0] = EValue(copy_to);
-  values[1] = EValue(to_copy);
-  values[2] = EValue(index);
-
-  stack[0] = &values[0];
-  stack[1] = &values[1];
-  stack[2] = &values[2];
-
-  // Copy and replace at index 1.
-  getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack);
-  EXPECT_EQ(copy_to.sizes()[0], 2);
-  EXPECT_EQ(copy_to.sizes()[1], 2);
-  EXPECT_TENSOR_EQ(copy_to, tf.make({2, 2}, {1, 2, 5, 6}));
-
-#ifndef USE_ATEN_LIB
-  // Copy and replace at index 2. This should trigger an EXPECT
-  // in lean mode.
-  index = 2;
-  values[2] = EValue(index);
-  ET_EXPECT_DEATH(
-      getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack), "");
-#endif
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack));
 }
 
 TEST_F(RegisterPrimOpsTest, TestBooleanOps) {

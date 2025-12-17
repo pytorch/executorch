@@ -125,7 +125,9 @@ class NodeConverter(ABC):
         node: Node,
         partition_list: list[Partition],
         custom_delegation_options: CustomDelegationOptions,
-    ):
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+    ) -> bool:
         """Check if the given `node` supports the assigned partitioning, which is stored  the `partition_list`. Child
             classes can overwrite this method in case they have delegation restrictions based on the context defined by
             the partitioning result.
@@ -133,6 +135,9 @@ class NodeConverter(ABC):
         :param node: torch.Node to check.
         :param partition_list: List of proposed partitions.
         :param custom_delegation_options: Custom user options which affect node delegation.
+        :param neutron_target_spec: NeutronTargetSpec instance.
+        :param parameters_mapping: Dictionary mapping tensor names to their static data.
+        :return: Boolean indicating whether the node supports the current partitioning.
         """
         return True
 
@@ -184,6 +189,14 @@ class NodeConverter(ABC):
         :return: AtenModelBuilderDirector instance.
         """
         return self.context.tflite_builder
+
+    @property
+    def neutron_target_spec(self) -> NeutronTargetSpec:
+        """
+        Get an instance of NeutronTargetSpec from the conversion context.
+        :return: NeutronTargetSpec instance.
+        """
+        return self.builder.neutron_target_spec
 
     def _create_tflite_op_with_io_tensors(self, node: Node) -> tflite_model.Operator:
         """

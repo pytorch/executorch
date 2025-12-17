@@ -64,6 +64,14 @@ class DecomposeEluPass(ArmPass):
         if op not in edge_elu_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
+            return super().call_operator(op, args, kwargs, meta)
+
         (
             expm1_op,
             ge_op,
@@ -75,8 +83,17 @@ class DecomposeEluPass(ArmPass):
         alpha = args[1] if len(args) > 1 else 1.0
 
         if alpha == 0:
-            relu_op = exir_ops.edge.aten.relu.default
-            return super().call_operator(relu_op, (input,), {}, meta, updated=True)
+            relu_op = exir_ops.edge.aten.clamp.default
+            return super().call_operator(
+                relu_op,
+                (
+                    input,
+                    0,
+                ),
+                {},
+                meta,
+                updated=True,
+            )
 
         expm1_node = super().call_operator(expm1_op, (input,), {}, meta, updated=True)
         mul_node = super().call_operator(

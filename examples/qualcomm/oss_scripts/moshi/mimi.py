@@ -186,6 +186,7 @@ def inference_mimi_encoder(args, encoder_inputs, encoder_pte_filename):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
     )
     adb.push(inputs=encoder_inputs)
     adb.execute()
@@ -360,6 +361,7 @@ def inference_static_mimi_decoder(
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
         runner="examples/qualcomm/oss_scripts/moshi/qnn_mimi_decoder_runner",
     )
     adb.push(inputs=encoded_results)
@@ -520,12 +522,6 @@ if __name__ == "__main__":
         help="Max duration seconds for the audio to be processed.",
         type=float,
         default=10.0,
-    )
-
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated mimi encoder/decoder in the given directory.",
-        type=str,
     )
 
     parser.add_argument(

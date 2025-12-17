@@ -62,7 +62,7 @@ Tensor& div_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::FLOATHBF16>(
-        [](const auto val_a, const auto val_b) { return val_a / val_b; },
+        [](const auto& val_a, const auto& val_b) { return val_a / val_b; },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
@@ -195,7 +195,7 @@ Tensor& div_scalar_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-        [val_b](const auto val_a) { return val_a / val_b; },
+        [val_b](const auto& val_a) { return val_a / val_b; },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,

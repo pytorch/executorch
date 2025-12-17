@@ -34,7 +34,6 @@ name_to_opinfo = {
     op.aten_name if op.aten_name is not None else op.name: op for op in op_db
 }
 
-# pyre-ignore
 yaml = ruamel.yaml.YAML()
 
 dtr = DtypeRunner()

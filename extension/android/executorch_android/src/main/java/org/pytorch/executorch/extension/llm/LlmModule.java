@@ -11,6 +11,7 @@ package org.pytorch.executorch.extension.llm;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import java.io.File;
+import java.util.List;
 import org.pytorch.executorch.ExecuTorchRuntime;
 import org.pytorch.executorch.annotations.Experimental;
 
@@ -25,6 +26,7 @@ public class LlmModule {
 
   public static final int MODEL_TYPE_TEXT = 1;
   public static final int MODEL_TYPE_TEXT_VISION = 2;
+  public static final int MODEL_TYPE_MULTIMODAL = 2;
 
   private final HybridData mHybridData;
   private static final int DEFAULT_SEQ_LEN = 128;
@@ -32,14 +34,22 @@ public class LlmModule {
 
   @DoNotStrip
   private static native HybridData initHybrid(
-      int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath);
+      int modelType,
+      String modulePath,
+      String tokenizerPath,
+      float temperature,
+      List<String> dataFiles);
 
   /**
    * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
-   * data path.
+   * dataFiles.
    */
   public LlmModule(
-      int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath) {
+      int modelType,
+      String modulePath,
+      String tokenizerPath,
+      float temperature,
+      List<String> dataFiles) {
     ExecuTorchRuntime runtime = ExecuTorchRuntime.getRuntime();
 
     File modelFile = new File(modulePath);
@@ -50,12 +60,27 @@ public class LlmModule {
     if (!tokenizerFile.canRead() || !tokenizerFile.isFile()) {
       throw new RuntimeException("Cannot load tokenizer path " + tokenizerPath);
     }
-    mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, dataPath);
+
+    mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, dataFiles);
+  }
+
+  /**
+   * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
+   * data path.
+   */
+  public LlmModule(
+      int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath) {
+    this(
+        modelType,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        dataPath != null ? List.of(dataPath) : List.of());
   }
 
   /** Constructs a LLM Module for a model with given model path, tokenizer, temperature. */
   public LlmModule(String modulePath, String tokenizerPath, float temperature) {
-    this(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, null);
+    this(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, List.of());
   }
 
   /**
@@ -63,12 +88,12 @@ public class LlmModule {
    * path.
    */
   public LlmModule(String modulePath, String tokenizerPath, float temperature, String dataPath) {
-    this(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, dataPath);
+    this(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, List.of(dataPath));
   }
 
   /** Constructs a LLM Module for a model with given path, tokenizer, and temperature. */
   public LlmModule(int modelType, String modulePath, String tokenizerPath, float temperature) {
-    this(modelType, modulePath, tokenizerPath, temperature, null);
+    this(modelType, modulePath, tokenizerPath, temperature, List.of());
   }
 
   /** Constructs a LLM Module for a model with the given LlmModuleConfig */
@@ -162,12 +187,14 @@ public class LlmModule {
       LlmCallback llmCallback,
       boolean echo) {
     prefillPrompt(prompt);
-    prefillImages(image, width, height, channels);
-    return generate("", llmCallback, echo);
+    if (image != null) {
+      prefillImages(image, width, height, channels);
+    }
+    return generate(prompt, seqLen, llmCallback, echo);
   }
 
   /**
-   * Prefill an LLaVA Module with the given images input.
+   * Prefill a multimodal Module with the given images input.
    *
    * @param image Input image as a byte array
    * @param width Input image width
@@ -177,7 +204,7 @@ public class LlmModule {
    *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
-  @Deprecated
+  @Experimental
   public long prefillImages(int[] image, int width, int height, int channels) {
     int nativeResult = appendImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
@@ -189,14 +216,104 @@ public class LlmModule {
   private native int appendImagesInput(int[] image, int width, int height, int channels);
 
   /**
-   * Prefill an LLaVA Module with the given text input.
+   * Prefill a multimodal Module with the given images input.
    *
-   * @param prompt The text prompt to LLaVA.
+   * @param image Input normalized image as a float array
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
    * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
    *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
-  @Deprecated
+  @Experimental
+  public long prefillImages(float[] image, int width, int height, int channels) {
+    int nativeResult = appendNormalizedImagesInput(image, width, height, channels);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendNormalizedImagesInput(
+      float[] image, int width, int height, int channels);
+
+  /**
+   * Prefill a multimodal Module with the given audio input.
+   *
+   * @param audio Input preprocessed audio as a byte array
+   * @param batch_size Input batch size
+   * @param n_bins Input number of bins
+   * @param n_frames Input number of frames
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public long prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
+    int nativeResult = appendAudioInput(audio, batch_size, n_bins, n_frames);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
+
+  /**
+   * Prefill a multimodal Module with the given audio input.
+   *
+   * @param audio Input preprocessed audio as a float array
+   * @param batch_size Input batch size
+   * @param n_bins Input number of bins
+   * @param n_frames Input number of frames
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public long prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
+    int nativeResult = appendAudioInputFloat(audio, batch_size, n_bins, n_frames);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendAudioInputFloat(float[] audio, int batch_size, int n_bins, int n_frames);
+
+  /**
+   * Prefill a multimodal Module with the given raw audio input.
+   *
+   * @param audio Input raw audio as a byte array
+   * @param batch_size Input batch size
+   * @param n_channels Input number of channels
+   * @param n_samples Input number of samples
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public long prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
+    int nativeResult = appendRawAudioInput(audio, batch_size, n_channels, n_samples);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendRawAudioInput(
+      byte[] audio, int batch_size, int n_channels, int n_samples);
+
+  /**
+   * Prefill a multimodal Module with the given text input.
+   *
+   * @param prompt The text prompt to prefill.
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
   public long prefillPrompt(String prompt) {
     int nativeResult = appendTextInput(prompt);
     if (nativeResult != 0) {

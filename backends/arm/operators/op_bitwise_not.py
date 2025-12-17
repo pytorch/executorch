@@ -5,6 +5,8 @@
 
 from typing import Any, List
 
+import tosa_serializer as ts
+
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -38,9 +40,6 @@ class BitwiseNotVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
@@ -50,10 +49,14 @@ class BitwiseNotVisitor(NodeVisitor):
             output.tosa_spec,
         )
 
+        attr = ts.TosaSerializerAttribute()
+        attr.BitwiseNotAttribute()
+
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.TosaOp.Op().BITWISE_NOT,
+            ts.Op.BITWISE_NOT,
             [inputs[0].name],
             [output.name],
+            attr,
         )

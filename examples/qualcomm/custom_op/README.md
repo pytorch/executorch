@@ -10,7 +10,7 @@ This folder contains examples demonstrating how to register custom operators int
 
 - Please finish [setup QNN backend](../../../docs/source/backends-qualcomm.md).
 
-- Please follow [the instructions to install proper version of Hexagon SDK and Hexagon Tools.](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/linux_setup.html#htp-and-dsp)
+- Please follow [the instructions to install proper version of Hexagon SDK and Hexagon Tools.](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/linux_setup.html#htp-and-dsp)
   - This example is verified with SM8650 (Snapdragon 8 Gen 3).
   - Install hexagon-sdk-5.4.0, hexagon-sdk-6.0.0, and hexagon tool 8.8.02
   ```bash
@@ -91,7 +91,7 @@ For now, only support one output tensors.
 * Data type: backend specific
 * Shape: Any
 
-Consult the Qualcomm AI Engine Direct documentation for information on [generation op packages](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/op_def_schema.html).
+Consult the Qualcomm AI Engine Direct documentation for information on [generation op packages](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/op_def_schema.html).
 
 ## Registering Op Packages
 After an op package library has been generated, certain information needs to be passed to the `compile_spec` in order to properly delegate the nodes. [The example script](custom_ops_1.py) shows how to construct the `QnnExecuTorchOpPackageOptions` and register op packages with the `compile spec`.

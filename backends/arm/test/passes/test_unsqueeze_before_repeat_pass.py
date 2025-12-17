@@ -3,16 +3,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import torch
 from executorch.backends.arm._passes import UnsqueezeBeforeRepeatPass
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
-input_t = Tuple[
-    torch.Tensor, Dict[str, int], list[str]
-]  # Input x, ops_after_pass, ops_not_after_pass
+pipeline_input_t = Tuple[torch.Tensor, ...]
+test_case_t = Tuple[
+    pipeline_input_t,
+    Dict[str, int],
+    List[str],
+]
 
 
 class Repeat(torch.nn.Module):
@@ -20,10 +23,10 @@ class Repeat(torch.nn.Module):
     Basic repeat model.
     """
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x.repeat(2, 2, 2, 2)
 
-    test_data: Dict[str, input_t] = {
+    test_data: Dict[str, test_case_t] = {
         "insert_view": (
             (torch.rand((2, 3, 4)),),
             {"aten_repeat_default": 3, "aten_view_copy_default": 4},
@@ -38,14 +41,14 @@ class Repeat(torch.nn.Module):
 
 
 @common.parametrize("test_data", Repeat.test_data)
-def test_unsqueeze_before_repeat_tosa_FP(test_data: input_t):
+def test_unsqueeze_before_repeat_tosa_FP(test_data: test_case_t):
     """
     When rank(input) != number of repeated dimensions (=4 in Repeat module),
     insert view.
     """
     module = Repeat()
     data, ops_after_pass, ops_not_after_pass = test_data
-    pipeline = PassPipeline(
+    pipeline = PassPipeline[pipeline_input_t](
         module,
         data,
         quantize=False,

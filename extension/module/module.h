@@ -63,7 +63,9 @@ class Module {
   explicit Module(
       const std::string& file_path,
       const LoadMode load_mode = LoadMode::File,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
+      std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
+      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr);
 
   /**
    * Constructs an instance by loading a program from a file with specified
@@ -78,7 +80,9 @@ class Module {
       const std::string& file_path,
       const std::string& data_map_path,
       const LoadMode load_mode = LoadMode::File,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
+      std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
+      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr);
 
   /**
    * Constructs an instance by loading a program from a file with specified
@@ -93,7 +97,9 @@ class Module {
       const std::string& file_path,
       std::vector<std::string> data_files,
       const LoadMode load_mode = LoadMode::File,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
+      std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
+      std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr);
 
   /**
    * Constructs an instance with the provided data loader and memory allocator.
@@ -348,7 +354,11 @@ class Module {
   ET_NODISCARD inline runtime::Result<runtime::EValue> get(
       const std::string& method_name,
       const std::vector<runtime::EValue>& input_values) {
-    auto result = ET_UNWRAP(execute(method_name, input_values));
+    auto execute_result = execute(method_name, input_values);
+    if (!execute_result.ok()) {
+      return execute_result.error();
+    }
+    auto result = std::move(*execute_result);
     if (result.empty()) {
       return runtime::Error::InvalidArgument;
     }

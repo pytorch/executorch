@@ -1,10 +1,11 @@
 # YOLO12 Detection C++ Inference with ExecuTorch
 
-This example demonstrates how to perform inference of [Ultralytics YOLO12 family](https://docs.ultralytics.com/models/yolo12/) detection models in C++ leveraging the Executorch backends:
+This example demonstrates how to perform inference of [YOLO12 family](https://docs.ultralytics.com/models/yolo12/) detection models in C++ leveraging the Executorch backends:
+
 - [OpenVINO](../../../backends/openvino/README.md)
 - [XNNPACK](../../../backends/xnnpack/README.md)
 
-# Performance Evaluation
+## Performance Evaluation
 
 | CPU                            | Model   | Backend  | Device | Precision | Average Latency, ms |
 |--------------------------------|---------|----------|--------|-----------|---------------------|
@@ -17,8 +18,7 @@ This example demonstrates how to perform inference of [Ultralytics YOLO12 family
 | Intel(R) Core(TM) Ultra 7 155H | yolo12s | xnnpack  | CPU    | FP32      | 169.36              |
 | Intel(R) Core(TM) Ultra 7 155H | yolo12l | xnnpack  | CPU    | FP32      | 436.876             |
 
-
-# Instructions
+## Instructions
 
 ### Step 1: Install ExecuTorch
 
@@ -31,35 +31,36 @@ To install ExecuTorch, follow this [guide](https://pytorch.org/executorch/stable
 
 ### Step 3: Install the demo requirements
 
-
 Python demo requirements:
+
 ```bash
 python -m pip install -r examples/models/yolo12/requirements.txt
 ```
 
 Demo infenrece dependency - OpenCV library:
-https://opencv.org/get-started/
+<https://opencv.org/get-started/>
 
-
-### Step 4: Export the Yolo12 model to the ExecuTorch
-
+### Step 4: Export the YOLO12 model to the ExecuTorch
 
 OpenVINO:
+
 ```bash
 python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080]  --backend openvino --device CPU
 ```
 
 OpenVINO quantized model:
+
 ```bash
 python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080]  --backend openvino --quantize --video_input /path/to/calibration/video --device CPU
 ```
 
 XNNPACK:
+
 ```bash
 python export_and_validate.py --model_name yolo12s --input_dims=[1920,1080] --backend xnnpack
 ```
 
-> **_NOTE:_**  Quantization for XNNPACK backend is WIP. Please refere to https://github.com/pytorch/executorch/issues/11523 for more details.
+> **_NOTE:_**  Quantization for XNNPACK backend is WIP. Please refere to <https://github.com/pytorch/executorch/issues/11523> for more details.
 
 Exported model could be validated using the `--validate` key:
 
@@ -70,8 +71,8 @@ python export_and_validate.py --model_name yolo12s --backend ... --validate data
 A list of available datasets and instructions on how to use a custom dataset can be found [here](https://docs.ultralytics.com/datasets/detect/).
 Validation only supports the default `--input_dims`; please do not specify this parameter when using the `--validate` flag.
 
-
 To get a full parameters description please use the following command:
+
 ```bash
 python export_and_validate.py --help
 ```
@@ -103,11 +104,11 @@ make -j$(nproc)
 ```
 
 To get a full parameters description please use the following command:
-```
+
+```bash
 ./build/Yolo12DetectionDemo --help
 ```
 
+## Credits
 
-# Credits:
-
-Ultralytics examples: https://github.com/ultralytics/ultralytics/tree/main/examples
+Ultralytics examples: <https://github.com/ultralytics/ultralytics/tree/main/examples>

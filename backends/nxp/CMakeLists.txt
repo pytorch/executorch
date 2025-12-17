@@ -17,5 +17,5 @@ target_include_directories(
 install(
   TARGETS executorch_delegate_neutron
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )

@@ -39,14 +39,49 @@ class TextRunnerTest: XCTestCase {
   let userPrompt = "The capital of France is called"
   let sequenceLength = 128
 
-  func test() {
+  func testLLaMA() {
     let bundle = Bundle(for: type(of: self))
     guard let modelPath = bundle.path(forResource: "llama3_2-1B", ofType: "pte"),
-          let tokenizerPath = bundle.path(forResource: "tokenizer", ofType: "model") else {
+          let tokenizerPath = bundle.path(forResource: "llama_tokenizer", ofType: "model") else {
       XCTFail("Couldn't find model or tokenizer files")
       return
     }
     let runner = TextRunner(modelPath: modelPath, tokenizerPath: tokenizerPath, specialTokens: SpecialTokens.defaultSpecialTokens())
+    var text = ""
+
+    do {
+      try runner.generate(userPrompt, Config {
+        $0.sequenceLength = sequenceLength
+      }) { token in
+        text += token
+      }
+    } catch {
+      XCTFail("Failed to generate text with error \(error)")
+    }
+    XCTAssertTrue(text.lowercased().contains("paris"))
+
+    text = ""
+    runner.reset()
+    do {
+      try runner.generate(userPrompt, Config {
+        $0.sequenceLength = sequenceLength
+      }) { token in
+        text += token
+      }
+    } catch {
+      XCTFail("Failed to generate text with error \(error)")
+    }
+    XCTAssertTrue(text.lowercased().contains("paris"))
+  }
+
+  func testPhi4() {
+    let bundle = Bundle(for: type(of: self))
+    guard let modelPath = bundle.path(forResource: "phi4-mini", ofType: "pte"),
+          let tokenizerPath = bundle.path(forResource: "phi_tokenizer", ofType: "json") else {
+      XCTFail("Couldn't find model or tokenizer files")
+      return
+    }
+    let runner = TextRunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
     var text = ""
 
     do {

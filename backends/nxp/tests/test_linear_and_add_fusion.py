@@ -18,6 +18,7 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
 from executorch.backends.nxp.aten_passes.remove_nodes_with_known_outputs import (
     RemoveNodesWithKnownOutputs,
 )
+from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from parameterized import parameterized
 
@@ -121,10 +122,11 @@ class TestLinearAndAddFusing(unittest.TestCase):
         original_module = program.module()
 
         modified_module = NeutronAtenPassManager(
+            neutron_target_spec,
             [
                 RemoveNodesWithKnownOutputs(),  # Make the added tensor static.
                 FuseLinearAndAddPass(),
-            ]
+            ],
         )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
@@ -167,10 +169,11 @@ class TestLinearAndAddFusing(unittest.TestCase):
         original_module = program.module()
 
         modified_module = NeutronAtenPassManager(
+            neutron_target_spec,
             [
                 RemoveNodesWithKnownOutputs(),  # Make the added tensor static.
                 FuseLinearAndAddPass(),
-            ]
+            ],
         )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
@@ -209,10 +212,11 @@ class TestLinearAndAddFusing(unittest.TestCase):
         original_module = program.module()
 
         modified_module = NeutronAtenPassManager(
+            neutron_target_spec,
             [
                 RemoveNodesWithKnownOutputs(),  # Make the added tensor static.
                 FuseLinearAndAddPass(),
-            ]
+            ],
         )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
@@ -253,10 +257,11 @@ class TestLinearAndAddFusing(unittest.TestCase):
         original_module = program.module()
 
         modified_module = NeutronAtenPassManager(
+            neutron_target_spec,
             [
                 RemoveNodesWithKnownOutputs(),  # Make the added tensor static.
                 FuseLinearAndAddPass(),
-            ]
+            ],
         )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
@@ -295,10 +300,11 @@ class TestLinearAndAddFusing(unittest.TestCase):
         original_module = program.module()
 
         modified_module = NeutronAtenPassManager(
+            neutron_target_spec,
             [
                 RemoveNodesWithKnownOutputs(),  # Make the added tensor static.
                 FuseLinearAndAddPass(),
-            ]
+            ],
         )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
@@ -340,10 +346,11 @@ class TestLinearAndAddFusing(unittest.TestCase):
         original_module = program.module()
 
         modified_module = NeutronAtenPassManager(
+            neutron_target_spec,
             [
                 RemoveNodesWithKnownOutputs(),  # Make the added tensor static.
                 FuseLinearAndAddPass(),
-            ]
+            ],
         )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
@@ -381,10 +388,11 @@ class TestLinearAndAddFusing(unittest.TestCase):
         original_module = program.module()
 
         modified_module = NeutronAtenPassManager(
+            neutron_target_spec,
             [
                 RemoveNodesWithKnownOutputs(),  # Make the added tensor static.
                 FuseLinearAndAddPass(),
-            ]
+            ],
         )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
@@ -424,10 +432,11 @@ class TestLinearAndAddFusing(unittest.TestCase):
         original_module = program.module()
 
         modified_module = NeutronAtenPassManager(
+            neutron_target_spec,
             [
                 RemoveNodesWithKnownOutputs(),  # Make the added tensor static.
                 FuseLinearAndAddPass(),
-            ]
+            ],
         )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
@@ -474,9 +483,9 @@ class TestLinearAndAddFusing(unittest.TestCase):
         program = torch.export.export(module, example_input, strict=True)
         original_module = program.module()
 
-        modified_module = NeutronAtenPassManager([FuseLinearAndAddPass()])(
-            deepcopy(program.module())
-        ).graph_module
+        modified_module = NeutronAtenPassManager(
+            neutron_target_spec, [FuseLinearAndAddPass()]
+        )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
         original_nodes = list(original_module.graph.nodes)
@@ -513,9 +522,9 @@ class TestLinearAndAddFusing(unittest.TestCase):
         program = torch.export.export(module, example_input, strict=True)
         original_module = program.module()
 
-        modified_module = NeutronAtenPassManager([FuseLinearAndAddPass()])(
-            deepcopy(program.module())
-        ).graph_module
+        modified_module = NeutronAtenPassManager(
+            neutron_target_spec, [FuseLinearAndAddPass()]
+        )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
         original_nodes = list(original_module.graph.nodes)
@@ -550,9 +559,9 @@ class TestLinearAndAddFusing(unittest.TestCase):
         program = torch.export.export(module, example_input, strict=True)
         original_module = program.module()
 
-        modified_module = NeutronAtenPassManager([FuseLinearAndAddPass()])(
-            deepcopy(program.module())
-        ).graph_module
+        modified_module = NeutronAtenPassManager(
+            neutron_target_spec, [FuseLinearAndAddPass()]
+        )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
         original_nodes = list(original_module.graph.nodes)
@@ -584,9 +593,9 @@ class TestLinearAndAddFusing(unittest.TestCase):
         program = torch.export.export(module, example_input, strict=True)
         original_module = program.module()
 
-        modified_module = NeutronAtenPassManager([FuseLinearAndAddPass()])(
-            deepcopy(program.module())
-        ).graph_module
+        modified_module = NeutronAtenPassManager(
+            neutron_target_spec, [FuseLinearAndAddPass()]
+        )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
         original_nodes = list(original_module.graph.nodes)
@@ -618,9 +627,9 @@ class TestLinearAndAddFusing(unittest.TestCase):
         program = torch.export.export(module, example_input, strict=True)
         original_module = program.module()
 
-        modified_module = NeutronAtenPassManager([FuseLinearAndAddPass()])(
-            deepcopy(program.module())
-        ).graph_module
+        modified_module = NeutronAtenPassManager(
+            neutron_target_spec, [FuseLinearAndAddPass()]
+        )(deepcopy(program.module())).graph_module
 
         # Make sure the module wasn't broken.
         original_nodes = list(original_module.graph.nodes)

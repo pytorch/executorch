@@ -14,6 +14,8 @@
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
+#include <executorch/backends/cadence/common/xt_macros.h>
+
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
@@ -96,14 +98,37 @@ Tensor& bitwise_xor_Tensor_out(
       for (int i = 0; i < b_dim; i++)
         p_inp2_shape[i] = b.size(i);
 
-      xa_nn_broadcast_8_8(ptr1, p_out_shape, pin1, p_inp1_shape, out_dim);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_broadcast_8_8,
+          ptr1,
+          p_out_shape,
+          pin1,
+          p_inp1_shape,
+          out_dim);
 
-      xa_nn_broadcast_8_8(ptr2, p_out_shape, pin2, p_inp2_shape, out_dim);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_broadcast_8_8,
+          ptr2,
+          p_out_shape,
+          pin2,
+          p_inp2_shape,
+          out_dim);
 
       const WORD8* __restrict__ p_inp1 = (const WORD8* __restrict__)ptr1;
       const WORD8* __restrict__ p_inp2 = (const WORD8* __restrict__)ptr2;
 
-      xa_nn_elm_logicalxor_boolxbool_bool(p_out, p_inp1, p_inp2, num_elm);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_logicalxor_boolxbool_bool,
+          p_out,
+          p_inp1,
+          p_inp2,
+          num_elm);
     } else if (a_is_broadcasted && !b_is_broadcasted) {
       WORD8* __restrict__ ptr1 =
           (WORD8* __restrict__)kernels::allocate_temp_memory(ctx, num_elm);
@@ -124,11 +149,26 @@ Tensor& bitwise_xor_Tensor_out(
       for (int i = 0; i < a_dim; i++)
         p_inp1_shape[i] = a.size(i);
 
-      xa_nn_broadcast_8_8(ptr1, p_out_shape, pin1, p_inp1_shape, out_dim);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_broadcast_8_8,
+          ptr1,
+          p_out_shape,
+          pin1,
+          p_inp1_shape,
+          out_dim);
 
       const WORD8* __restrict__ p_inp1 = (const WORD8* __restrict__)ptr1;
 
-      xa_nn_elm_logicalxor_boolxbool_bool(p_out, p_inp1, p_inp2, num_elm);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_logicalxor_boolxbool_bool,
+          p_out,
+          p_inp1,
+          p_inp2,
+          num_elm);
     } else if (!a_is_broadcasted && b_is_broadcasted) {
       WORD8* __restrict__ ptr1 =
           (WORD8* __restrict__)kernels::allocate_temp_memory(ctx, num_elm);
@@ -149,11 +189,26 @@ Tensor& bitwise_xor_Tensor_out(
       for (int i = 0; i < b_dim; i++)
         p_inp2_shape[i] = b.size(i);
 
-      xa_nn_broadcast_8_8(ptr1, p_out_shape, pinp2, p_inp2_shape, out_dim);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_broadcast_8_8,
+          ptr1,
+          p_out_shape,
+          pinp2,
+          p_inp2_shape,
+          out_dim);
 
       const WORD8* __restrict__ p_inp2 = (const WORD8* __restrict__)ptr1;
 
-      xa_nn_elm_logicalxor_boolxbool_bool(p_out, p_inp1, p_inp2, num_elm);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_logicalxor_boolxbool_bool,
+          p_out,
+          p_inp1,
+          p_inp2,
+          num_elm);
     } else {
       const WORD8* __restrict__ p_inp1 =
           (const WORD8* __restrict__)a.const_data_ptr<bool>();

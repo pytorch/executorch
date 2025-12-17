@@ -12,6 +12,7 @@ from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from torch import Tensor
 from torch._export.verifier import Verifier
 from torch._ops import OpOverload
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export import ExportedProgram
 from torch.export.exported_program import ModuleCallEntry, ModuleCallSignature
 from torch.export.graph_signature import (
@@ -37,6 +38,7 @@ class ProgramBuilder(GraphBuilder):
         self,
         mode: Optional[IrMode] = None,
         _core_aten_ops_exception_list: Optional[list[OpOverload]] = None,
+        fake_tensor_mode: Optional[FakeTensorMode] = None,
     ) -> None:
         self.input_specs: list[InputSpec] = []
         self.output_specs: list[OutputSpec] = []
@@ -46,7 +48,7 @@ class ProgramBuilder(GraphBuilder):
         self._core_aten_ops_exception_list: list[OpOverload] = (
             _core_aten_ops_exception_list or []
         )
-        super().__init__()
+        super().__init__(fake_tensor_mode=fake_tensor_mode)
 
     def insert_input_spec(
         self, target: str, input_kind: InputKind, value: Tensor

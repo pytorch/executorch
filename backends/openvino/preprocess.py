@@ -14,6 +14,8 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
 from openvino.frontend.pytorch.torchdynamo.compile import (  # type: ignore[import-untyped]
     openvino_compile,
 )
@@ -36,6 +38,12 @@ class OpenvinoBackend(BackendDetails):
         Returns:
             PreprocessResult: The result of preprocessing, including the compiled model bytes.
         """
+        transformed_ep = DimOrderOpsRevertPass()(edge_program.graph_module)
+
+        # Update the edge_program with the transformed graph
+        if transformed_ep and transformed_ep.graph_module:
+            edge_program._graph_module = transformed_ep.graph_module
+
         input_names = edge_program.graph_signature.user_inputs
         args = []
         for node in edge_program.graph.nodes:

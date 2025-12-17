@@ -43,6 +43,12 @@ def RESIZE(
             )
         bilinear = resize_mode == "bilinear"
         output_dtype = torch.int32 if bilinear else torch.int8
+    elif x.dtype == torch.int16:
+        if not tosa_spec.support_integer():
+            raise TosaValueError(
+                f"Context TOSA spec {tosa_spec} doesn't support int16", op="RESIZE"
+            )
+        output_dtype = x.dtype
     elif x.dtype in (torch.float16, torch.float32):
         if not tosa_spec.support_float():
             raise TosaValueError(

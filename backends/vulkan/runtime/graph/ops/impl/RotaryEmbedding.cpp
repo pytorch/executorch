@@ -43,10 +43,17 @@ utils::uvec3 rotary_embedding_global_wg_size(
 
   const ValueRef xq_out = args.at(0).refs.at(0);
 
-  utils::uvec3 global_wg_size = graph->logical_limits_of(xq_out);
-  global_wg_size[0] /= 2;
+  // Head dim texel size
+  const uint32_t D4 = utils::div_up_4(graph->size_at<uint32_t>(-1, xq_out));
+  // Divide by 2 since each invocation computes 2 output locations
+  const uint32_t D8 = utils::div_up(D4, uint32_t(2));
 
-  return global_wg_size;
+  // Number of query heads
+  const uint32_t QH = graph->size_at<uint32_t>(-2, xq_out);
+  // Input tokens sequence length
+  const uint32_t S = graph->size_at<uint32_t>(-3, xq_out);
+
+  return {D8, QH, S};
 }
 
 void add_rotary_embedding_node(
@@ -73,7 +80,13 @@ void add_rotary_embedding_node(
   VK_CHECK_COND(graph.has_standard_axis_map(freqs_sin));
 
   std::string kernel_name = "rotary_embedding";
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(xq_out));
   add_dtype_suffix(kernel_name, graph.dtype_of(xq_out));
+
+  vkapi::ParamsBindList param_ubos = {
+      graph.meta_ubo(xq_out),
+      graph.meta_ubo(xk_out),
+      graph.meta_ubo(freqs_cos)};
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -84,7 +97,7 @@ void add_rotary_embedding_node(
       {{{xq_out, xk_out}, vkapi::kWrite},
        {{xq, xk, freqs_cos, freqs_sin}, vkapi::kRead}},
       // Parameter buffers
-      {graph.logical_limits_ubo(xq_out), graph.logical_limits_ubo(xk_out)},
+      param_ubos,
       // Push Constants
       {},
       // Specialization Constants

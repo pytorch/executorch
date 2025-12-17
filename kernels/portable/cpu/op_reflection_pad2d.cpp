@@ -44,7 +44,7 @@ Tensor& reflection_pad2d_out(
       out);
 
   ScalarType in_type = in.scalar_type();
-  constexpr auto name = "reflection_pad2d.out";
+  static constexpr auto name = "reflection_pad2d.out";
 
   ET_SWITCH_ALL_TYPES(in_type, ctx, name, CTYPE, [&] {
     pad2d<CTYPE>(reflection_ix, in, out, padding);

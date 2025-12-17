@@ -95,14 +95,14 @@ def test_leaky_relu_u85_INT(test_data):
 
 @common.parametrize("test_data", LeakyReLU.test_data)
 @common.SkipIfNoModelConverter
-def test_leaky_relu_vgf_FP(test_data):
+def test_leaky_relu_vgf_no_quant(test_data):
     data, slope = test_data()
     pipeline = VgfPipeline[input_t1](
         LeakyReLU(slope),
         data,
         [],
         use_to_edge_transform_and_lower=True,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.add_stage_after(
         "to_edge_transform_and_lower", pipeline.tester.check_not, [aten_op]
@@ -112,14 +112,14 @@ def test_leaky_relu_vgf_FP(test_data):
 
 @common.parametrize("test_data", LeakyReLU.test_data)
 @common.SkipIfNoModelConverter
-def test_leaky_relu_vgf_INT(test_data):
+def test_leaky_relu_vgf_quant(test_data):
     data, slope = test_data()
     pipeline = VgfPipeline[input_t1](
         LeakyReLU(slope),
         data,
         [],
         use_to_edge_transform_and_lower=True,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.run()

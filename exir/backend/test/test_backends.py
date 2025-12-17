@@ -12,6 +12,7 @@ import executorch.exir as exir
 import torch
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import LoweredBackendModule, to_backend
+from executorch.exir.backend.backend_details import BackendDetails
 from executorch.exir.backend.canonical_partitioners.all_node_partitioner import (
     AllNodePartitioner,
 )
@@ -26,6 +27,7 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from executorch.exir.backend.test.demo_backend import DemoBackend
 from executorch.exir.backend.test.hta_partitioner_demo import (
     HTAPartitionerMultiplePatternsDemo,
     HTAPartitionerOnePatternDemo,
@@ -34,7 +36,6 @@ from executorch.exir.backend.test.op_partitioner_demo import (
     AddAttributePartitionerDemo,
     AddMulPartitionerDemo,
 )
-from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
 
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -642,7 +643,7 @@ class TestBackends(unittest.TestCase):
         self.check_backend_delegate(
             program=program_with_delegates.program,
             delegate=program_with_delegates.program.execution_plan[0].delegates[0],
-            expected_id=QnnBackend.__name__,
+            expected_id=DemoBackend.__name__,
             expected_processed=b"imqnncompiled",
         )
 
@@ -783,7 +784,7 @@ class TestBackends(unittest.TestCase):
         self.check_backend_delegate(
             program=program_with_delegates.program,
             delegate=program_with_delegates.program.execution_plan[0].delegates[0],
-            expected_id=QnnBackend.__name__,
+            expected_id=DemoBackend.__name__,
             expected_processed=b"imqnncompiled",
         )
 
@@ -1444,3 +1445,19 @@ class TestBackends(unittest.TestCase):
             self.assertTrue(
                 torch.allclose(model_outputs[0], ref_output, atol=1e-03, rtol=1e-03)
             )
+
+    def test_prohibited_nested_backends(self):
+        class MyBackend(BackendDetails):
+            @staticmethod
+            def preprocess(edge_program, compile_specs):
+                return None
+
+        with self.assertRaises(TypeError) as ctx:
+
+            class MyOtherBackend(MyBackend):
+                pass
+
+        self.assertIn(
+            "'MyBackend'  should be a final backend implementation and should not be subclassed (attempted by 'MyOtherBackend')",
+            str(ctx.exception),
+        )

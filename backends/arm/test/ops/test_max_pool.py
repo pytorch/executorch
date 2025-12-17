@@ -134,6 +134,20 @@ def test_max_pool2d_tosa_INT(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite)
+def test_max_pool2d_tosa_INT_a16w8(test_data: torch.Tensor):
+    """Test max_pool2d operation with int16 I/O quantization for TOSA INT."""
+    test_data, model_params = test_data()
+    pipeline = TosaPipelineINT[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_max_pool2d_u55_INT(test_data: torch.Tensor):
     test_data, model_params = test_data()
@@ -146,6 +160,23 @@ def test_max_pool2d_u55_INT(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
+def test_max_pool2d_16a8w_u55_INT16(test_data: torch.Tensor):
+    """Test max_pool2d with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    test_data, model_params = test_data()
+    pipeline = EthosU55PipelineINT[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_ops=[],
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_max_pool2d_u85_INT(test_data: torch.Tensor):
     test_data, model_params = test_data()
@@ -155,6 +186,23 @@ def test_max_pool2d_u85_INT(test_data: torch.Tensor):
         aten_op,
         exir_ops=[],
     ).run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_max_pool2d_16a8w_u85_INT16(test_data: torch.Tensor):
+    """Test max_pool2d with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    test_data, model_params = test_data()
+    pipeline = EthosU85PipelineINT[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_ops=[],
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
 
 
 reject_data_suite = {
@@ -221,35 +269,35 @@ def test_max_pool2d_tosa_INT_dilation(test_data):
 # VGF tests
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_max_pool2d_vgf_FP(test_data: torch.Tensor):
+def test_max_pool2d_vgf_no_quant(test_data: torch.Tensor):
     test_data, model_params = test_data()
     pipeline = VgfPipeline[input_t1](
         MaxPool2d(*model_params),
         (test_data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_max_pool2d_vgf_INT(test_data: torch.Tensor):
+def test_max_pool2d_vgf_quant(test_data: torch.Tensor):
     test_data, model_params = test_data()
     pipeline = VgfPipeline[input_t1](
         MaxPool2d(*model_params),
         (test_data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", dilation_test_data)
 @common.SkipIfNoModelConverter
-def test_max_pool2d_vgf_FP_dilation(test_data: torch.Tensor):
+def test_max_pool2d_dilation_vgf_no_quant(test_data: torch.Tensor):
     """
     VGF FP pipeline with dilation > 1 (and dilation=1 sanity cases).
     """
@@ -259,14 +307,14 @@ def test_max_pool2d_vgf_FP_dilation(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", dilation_test_data)
 @common.SkipIfNoModelConverter
-def test_max_pool2d_vgf_INT_dilation(test_data: torch.Tensor):
+def test_max_pool2d_dilation_vgf_quant(test_data: torch.Tensor):
     """
     VGF INT pipeline with dilation > 1 (and dilation=1 sanity cases).
     """
@@ -276,6 +324,6 @@ def test_max_pool2d_vgf_INT_dilation(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

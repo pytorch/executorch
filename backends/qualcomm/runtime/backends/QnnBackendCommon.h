@@ -27,10 +27,11 @@ namespace qnn {
 // qnn backend
 class QnnBackend {
  public:
-  explicit QnnBackend(
-      const QnnImplementation& implementation,
-      QnnLogger* logger)
+  explicit QnnBackend(QnnImplementation* implementation, QnnLogger* logger)
       : handle_(nullptr), implementation_(implementation), logger_(logger) {}
+  QnnBackend(const QnnBackend&) = delete; // Delete copy constructor
+  QnnBackend& operator=(const QnnBackend&) =
+      delete; // Delete assignment operator
 
   virtual ~QnnBackend();
   virtual bool IsProfileEventTypeParentOfNodeTime(
@@ -42,7 +43,7 @@ class QnnBackend {
       const QnnExecuTorchOpPackageOptions* op_package_options);
 
   Qnn_ErrorHandle_t BackendValidateOpConfig(const Qnn_OpConfig_t& op_config) {
-    return implementation_.GetQnnInterface().qnn_backend_validate_op_config(
+    return implementation_->GetQnnInterface().qnn_backend_validate_op_config(
         handle_, op_config);
   };
 
@@ -65,7 +66,7 @@ class QnnBackend {
           flatbuffers::Offset<qnn_delegate::QnnExecuTorchOpPackageInfo>>*
           op_packages_info);
   Qnn_BackendHandle_t handle_;
-  const QnnImplementation& implementation_;
+  QnnImplementation* implementation_;
   QnnOpPackageManager op_package_manager_;
   QnnLogger* logger_;
   executorch::runtime::Error VersionChecker(

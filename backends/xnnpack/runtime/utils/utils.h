@@ -82,8 +82,8 @@ void vst1(T* out, Tx8 vout);
 
 template <typename underlying_t, typename underlying_x8_t>
 void quantize_tensor_arm64_q8(
-    const float* __restrict__ in,
-    underlying_t* __restrict__ out,
+    const float* ET_RESTRICT in,
+    underlying_t* ET_RESTRICT out,
     const int64_t N,
     const float scale,
     const int32_t zero_point) {
@@ -117,8 +117,8 @@ void quantize_tensor_arm64_q8(
 
 template <typename T>
 void quantize_tensor_arm64_q8_wrapper(
-    const float* __restrict__ in,
-    T* __restrict__ out,
+    const float* ET_RESTRICT in,
+    T* ET_RESTRICT out,
     const int64_t N,
     const float scale,
     const int32_t zero_point);

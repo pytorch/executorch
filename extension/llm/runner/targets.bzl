@@ -105,6 +105,7 @@ def define_common_targets():
             exported_headers = [
                 "audio.h",
                 "image.h",
+                "wav_loader.h",
                 "multimodal_input.h",
                 "multimodal_runner.h",
                 "multimodal_prefiller.h",

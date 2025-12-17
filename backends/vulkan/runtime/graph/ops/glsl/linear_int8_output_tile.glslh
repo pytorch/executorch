@@ -35,17 +35,17 @@ void initialize(out Int8OutTile tile) {
 
 void printInt8OutTile(const Int8OutTile tile) {
   debugPrintfEXT(
-      "Int8InputTile [TILE_M4=%d][TILE_N4=%d]:\\n", TILE_M4, TILE_N4);
+      "Int8OutTile [TILE_M4=%d][TILE_N4=%d]:\\n", TILE_M4, TILE_N4);
 
   [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
-      debugPrintfEXT("  tile[%d][%d] (ivec4): ", m4, n4);
+      debugPrintfEXT("  tile[%d][%d]:\\n", m4, n4);
 
       // Each ivec4 contains 4 packed integers, each integer contains 4 8-bit
       // values
       [[unroll]] for (int vec_idx = 0; vec_idx < 4; ++vec_idx) {
         int packed_int = tile.data[m4][n4][vec_idx];
-        debugPrintfEXT("packed_int[%d]=%d -> [", vec_idx, packed_int);
+        debugPrintfEXT("    [", vec_idx, packed_int);
 
         // Extract 4 8-bit values from this packed integer
         [[unroll]] for (int byte_idx = 0; byte_idx < 4; ++byte_idx) {
@@ -56,6 +56,7 @@ void printInt8OutTile(const Int8OutTile tile) {
             debugPrintfEXT("%d] ", val);
           }
         }
+        debugPrintfEXT("(packed=%d)\\n", packed_int);
       }
       debugPrintfEXT("\\n");
     }

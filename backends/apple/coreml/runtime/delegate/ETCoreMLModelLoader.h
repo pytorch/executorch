@@ -9,6 +9,7 @@
 
 @class ETCoreMLModel;
 @class ETCoreMLAssetManager;
+@class ETCoreMLAsset;
 
 namespace executorchcoreml {
 struct ModelMetadata;
@@ -22,6 +23,12 @@ __attribute__((objc_subclassing_restricted))
 + (instancetype)new NS_UNAVAILABLE;
 
 - (instancetype)init NS_UNAVAILABLE;
+
+
++ (nullable ETCoreMLModel*)loadModelWithCompiledAsset:(ETCoreMLAsset*)compiledAsset
+                                        configuration:(MLModelConfiguration*)configuration
+                                             metadata:(const executorchcoreml::ModelMetadata&)metadata
+                                                error:(NSError* __autoreleasing*)error;
 
 /// Synchronously loads a model given the location of its on-disk representation and configuration.
 ///

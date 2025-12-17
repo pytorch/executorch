@@ -9,12 +9,12 @@
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
 * [Introduction to ExecuTorch](intro-how-it-works.md)
-* [Setting up ExecuTorch](getting-started-setup.md)
-* [Building ExecuTorch with CMake](runtime-build-and-cross-compilation.md)
+* [Setting up ExecuTorch](getting-started-setup.rst)
+* [Building ExecuTorch with CMake](using-executorch-building-from-source.md)
 :::
 ::::
 
-## Prerequsites (Hardware and Software)
+## Prerequisites (Hardware and Software)
 
 Provide instructions on what kind of hardware and software are pre-requisite for the tutorial.
 

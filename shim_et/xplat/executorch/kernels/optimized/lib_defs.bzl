@@ -58,14 +58,12 @@ def get_vec_deps():
     return []
 
 def get_vec_cxx_preprocessor_flags():
-    preprocessor_flags = [
-        (
-            DEVSERVER_PLATFORM_REGEX,
-            [
-                "-DCPU_CAPABILITY_AVX2",
-            ],
-        ),
-    ]
+    preprocessor_flags = select({
+        "DEFAULT": [],
+        "ovr_config//os:linux": [
+            "-DCPU_CAPABILITY_AVX2",
+        ],
+    })
     return preprocessor_flags
 
 def get_vec_fbcode_preprocessor_flags():

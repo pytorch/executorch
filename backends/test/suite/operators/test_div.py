@@ -46,6 +46,7 @@ class Divide(OperatorTest):
                 ),  # Adding 0.1 to avoid division by zero
             ),
             flow,
+            generate_random_test_inputs=False,
         )
 
     def test_divide_f32_bcast_first(self, flow: TestFlow) -> None:
@@ -57,6 +58,7 @@ class Divide(OperatorTest):
                 + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
             flow,
+            generate_random_test_inputs=False,
         )
 
     def test_divide_f32_bcast_second(self, flow: TestFlow) -> None:
@@ -68,6 +70,7 @@ class Divide(OperatorTest):
                 + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
             flow,
+            generate_random_test_inputs=False,
         )
 
     def test_divide_f32_bcast_unary(self, flow: TestFlow) -> None:
@@ -79,6 +82,7 @@ class Divide(OperatorTest):
                 + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
             flow,
+            generate_random_test_inputs=False,
         )
 
     def test_divide_f32_trunc(self, flow: TestFlow) -> None:
@@ -90,6 +94,7 @@ class Divide(OperatorTest):
                 + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
             flow,
+            generate_random_test_inputs=False,
         )
 
     def test_divide_f32_floor(self, flow: TestFlow) -> None:
@@ -101,4 +106,5 @@ class Divide(OperatorTest):
                 + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
             flow,
+            generate_random_test_inputs=False,
         )

@@ -78,28 +78,42 @@ def test_constant_pad_nd_tosa_INT(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
-@common.SkipIfNoModelConverter
-def test_constant_pad_nd_vgf_FP(test_data: Tuple):
-    inp, padding, value = test_data()
-    pipeline = VgfPipeline[input_t1](
+def test_constant_pad_nd_tosa_INT_a16w8(test_data: Tuple):
+    """Test constant_pad_nd op with int16 I/O quantization for TOSA INT."""
+    test_data, padding, value = test_data()
+    pipeline = TosaPipelineINT[input_t1](
         ConstantPadND(padding, value),
-        (inp,),
+        (test_data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        tosa_extensions=["int16"],
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_constant_pad_nd_vgf_INT(test_data: Tuple):
+def test_constant_pad_nd_vgf_no_quant(test_data: Tuple):
     inp, padding, value = test_data()
     pipeline = VgfPipeline[input_t1](
         ConstantPadND(padding, value),
         (inp,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_constant_pad_nd_vgf_quant(test_data: Tuple):
+    inp, padding, value = test_data()
+    pipeline = VgfPipeline[input_t1](
+        ConstantPadND(padding, value),
+        (inp,),
+        aten_op,
+        exir_op,
+        quantize=True,
     )
     pipeline.run()

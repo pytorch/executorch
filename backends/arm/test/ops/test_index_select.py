@@ -137,41 +137,41 @@ def test_index_select_u55_INT_not_delegated(test_data: input_params):
 
 @pytest.mark.parametrize("test_data", list(test_data.values()))
 @common.SkipIfNoModelConverter
-def test_index_select_vgf_FP(test_data: input_params):
+def test_index_select_vgf_no_quant(test_data: input_params):
     op, inp = test_data
     pipeline = VgfPipeline[input_params](
         op,
         inp,
         op.aten_op,
         op.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @pytest.mark.parametrize("test_data", list(test_data.values())[:-1])
 @common.SkipIfNoModelConverter
-def test_index_select_vgf_INT(test_data: input_params):
+def test_index_select_vgf_quant(test_data: input_params):
     op, inp = test_data
     pipeline = VgfPipeline[input_params](
         op,
         inp,
         op.aten_op,
         op.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @pytest.mark.parametrize("test_data", list(test_data.values())[-1:])
 @common.SkipIfNoModelConverter
-def test_index_select_vgf_INT_rand(test_data: input_params):
+def test_index_select_vgf_quant_rand(test_data: input_params):
     op, inp = test_data
     pipeline = VgfPipeline[input_params](
         op,
         inp,
         op.aten_op,
         op.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

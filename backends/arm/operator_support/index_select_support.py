@@ -2,7 +2,12 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Declare operator support for ``aten.index_select`` in TOSA.
 
+Accept int32 indices and restrict supported weight shapes to 2D or 3D with a
+unit batch dimension.
+
+"""
 import torch
 import torch.fx as fx
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
@@ -15,6 +20,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 @register_tosa_support_check
 class IndexSelectSupported(SupportedTOSAOperatorCheck):
+    """Provide TOSA support check for ``aten.index_select``."""
+
     targets = [exir_ops.edge.aten.index_select.default]
 
     tosa_specs = [
@@ -25,7 +32,12 @@ class IndexSelectSupported(SupportedTOSAOperatorCheck):
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
+        """Return True if the node is supported by TOSA.
 
+        Require int32 indices and limit weight shapes to 2D or 3D with a leading
+        dimension of 1.
+
+        """
         weights_shape = node.all_input_nodes[0].meta["val"].shape
         indices_val = node.all_input_nodes[1].meta["val"]
         indices_dtype = indices_val.dtype

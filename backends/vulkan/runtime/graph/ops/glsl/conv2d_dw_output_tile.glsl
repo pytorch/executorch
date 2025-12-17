@@ -97,6 +97,10 @@ void main() {
   for (int y = start.y, i = 0; i < TILE_SIZE + BATCH_SIZE_Y - 1; y += dilation.y, i++) {
     for (int x = start.x, j = 0; j < TILE_SIZE + BATCH_SIZE_X - 1; x += dilation.x, j++) {
       in_texels[j] = texelFetch(t_in, ivec3(x, y, pos.z), 0);
+      // Set to zero if reading out of bounds
+      if (any(greaterThanEqual(ivec2(x, y), in_sizes.xy))) {
+        in_texels[j] = VEC4_T(0);
+      }
     }
 
     // from 2nd iteration onwards accumulate dot product in 2nd sum

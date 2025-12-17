@@ -6,6 +6,7 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
     ConvertFullLikeToFullPass,
 )
@@ -18,7 +19,7 @@ from executorch.exir.pass_base import ExportPass
 torch_cosine_similarity = (torch.ops.aten.cosine_similarity.default,)
 
 
-class DecomposeCosineSimilarityPass(ExportPass):
+class DecomposeCosineSimilarityPass(ArmPass):
     """
     Decomposition of aten.cosine_similarity:
 

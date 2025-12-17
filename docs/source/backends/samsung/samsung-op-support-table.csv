@@ -1,0 +1,45 @@
+Operator,Quantization,Constraints
+add,static int8,
+avg_pool2d,static int8,"ceil_mode=False, divisor_override=pooling_region"
+batch_norm,static int8,
+bmm,static int8,
+cat,static int8,at most 1 constant tensor
+clamp,static int8,
+constant_pad_nd,static int8,padding_value=0.0 only
+conv2d,static int8,constant weights
+dequantize_per_channel,,
+dequantize_per_tensor,,
+div,static int8,
+embedding,static int8,
+expand_copy,,"expanding at most one axis, new dimensions must be size 1"
+gelu,static int8,
+getitem,,
+hardsigmoid,static int8,
+hardswish,static int8,
+hardtanh,static int8,
+layer_norm,static int8,norm at last axis only
+leaky_relu,static int8,
+linear,static int8,constant weights
+log_softmax,static int8,
+max_pool2d,static int8,"ceil_mode=False, indices not supported"
+maximum,,
+mean_dim,static int8,
+minimum,,
+mul,static int8,
+permute,static int8,
+pixel_shuffle,,
+quantize_per_channel,,
+quantize_per_tensor,,
+relu,static int8,
+reshape,static int8,
+rsqrt,static int8,
+select,static int8,
+slice_copy,static int8,
+softmax,static int8,
+sqrt,static int8,
+squeeze,static int8,
+sub,static int8,
+to_copy,,memory_format=contiguous only
+unsqueeze,static int8,
+upsample_bilinear2d,static int8,
+upsample_nearest2d,static int8,

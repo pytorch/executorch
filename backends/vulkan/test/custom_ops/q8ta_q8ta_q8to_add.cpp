@@ -38,21 +38,17 @@ TestCase create_quantized_add_test_case(
   // Set the operator name for the test case
   test_case.set_operator_name("et_vk.add_q8ta_q8ta_q8to.test");
 
+  utils::GPUMemoryLayout io_memory_layout = storage_type == utils::kBuffer
+      ? utils::kWidthPacked
+      : utils::kChannelsPacked;
+
   // Input tensor A (float/half)
   ValueSpec input_a(
-      sizes,
-      input_dtype,
-      storage_type,
-      utils::kChannelsPacked,
-      DataGenType::RANDOM);
+      sizes, input_dtype, storage_type, io_memory_layout, DataGenType::RANDOM);
 
   // Input tensor B (float/half)
   ValueSpec input_b(
-      sizes,
-      input_dtype,
-      storage_type,
-      utils::kChannelsPacked,
-      DataGenType::RANDOM);
+      sizes, input_dtype, storage_type, io_memory_layout, DataGenType::RANDOM);
 
   // Quantization parameters for input A
   float input_a_scale_val = 0.007843; // 2/255 approximately
@@ -81,11 +77,7 @@ TestCase create_quantized_add_test_case(
 
   // Output tensor (float/half)
   ValueSpec output(
-      sizes,
-      input_dtype,
-      storage_type,
-      utils::kChannelsPacked,
-      DataGenType::ZEROS);
+      sizes, input_dtype, storage_type, io_memory_layout, DataGenType::ZEROS);
 
   // Add all specs to test case for q8ta_q8ta_q8to add operation
   test_case.add_input_spec(input_a);
@@ -119,7 +111,8 @@ std::vector<TestCase> generate_quantized_add_test_cases() {
   };
 
   // Storage types to test
-  std::vector<utils::StorageType> storage_types = {utils::kTexture3D};
+  std::vector<utils::StorageType> storage_types = {
+      utils::kTexture3D, utils::kBuffer};
 
   // Data types to test
   std::vector<vkapi::ScalarType> data_types = {vkapi::kFloat};

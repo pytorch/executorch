@@ -80,6 +80,17 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "tensor_layout",
+    srcs = [
+        "tensor_layout.py",
+    ],
+    deps = [
+        ":scalar_type",
+        ":tensor",
+    ]
+)
+
+runtime.python_library(
     name = "memory",
     srcs = [
         "memory.py",

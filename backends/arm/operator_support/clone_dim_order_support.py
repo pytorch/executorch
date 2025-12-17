@@ -2,6 +2,12 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Declare operator support for dim-order clone in TOSA.
+
+This module registers a support check for ``dim_order_ops._clone_dim_order``
+ensuring input/output dtypes match and the value types are FakeTensors.
+
+"""
 
 import logging
 
@@ -19,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 @register_tosa_support_check
 class CloneSupported(SupportedTOSAOperatorCheck):
+    """Provide TOSA support check for ``_clone_dim_order``."""
+
     targets = [exir_ops.edge.dim_order_ops._clone_dim_order.default]
 
     tosa_specs = [
@@ -29,6 +37,12 @@ class CloneSupported(SupportedTOSAOperatorCheck):
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:
+        """Return True if the node is supported by TOSA.
+
+        Verify the operator target, the number and types of inputs/outputs, and
+        check that input and output dtypes match.
+
+        """
         if node.target not in self.targets:
             self.reporter.report_reject(node, f"Target {node.target} is not supported.")
             return False

@@ -45,7 +45,7 @@ def get_op_names(program: et_schema.Program, execution_plan_id: int = 0) -> set[
             op_names |= get_op_names(
                 deserialize_pte_binary(
                     program.backend_delegate_data[delegate.processed.index].data
-                )
+                ).program
             )
     return op_names
 

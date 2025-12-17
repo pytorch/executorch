@@ -6,6 +6,7 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -53,7 +54,7 @@ def _get_logsoftmax_ops(op) -> tuple:
     raise RuntimeError(f"Can't get logsoftmax decomposition ops for op {op}")
 
 
-class DecomposeSoftmaxPass(ExportPass):
+class DecomposeSoftmaxPass(ArmPass):
     """
     This pass decomposes log_softmax or softmax into more primitive ops.
     Example:
@@ -79,12 +80,12 @@ class DecomposeSoftmaxPass(ExportPass):
         )
         _input = args[0]
         dim = [args[1]]
-        op1 = super().call_operator(max_op, (_input, dim, True), {}, meta)
-        op2 = super().call_operator(sub_op, (_input, op1), {}, meta)
-        op3 = super().call_operator(exp_op, (op2,), {}, meta)
-        op4 = super().call_operator(sum_op, (op3, dim, True), {}, meta)
-        op5 = super().call_operator(reciprocal_op, (op4,), {}, meta)
-        op6 = super().call_operator(mul_op, (op3, op5), {}, meta)
+        op1 = super().call_operator(max_op, (_input, dim, True), {}, meta, updated=True)
+        op2 = super().call_operator(sub_op, (_input, op1), {}, meta, updated=True)
+        op3 = super().call_operator(exp_op, (op2,), {}, meta, updated=True)
+        op4 = super().call_operator(sum_op, (op3, dim, True), {}, meta, updated=True)
+        op5 = super().call_operator(reciprocal_op, (op4,), {}, meta, updated=True)
+        op6 = super().call_operator(mul_op, (op3, op5), {}, meta, updated=True)
         if op in log_softmax:
-            op6 = super().call_operator(log_op, (op6,), {}, meta)
+            op6 = super().call_operator(log_op, (op6,), {}, meta, updated=True)
         return op6

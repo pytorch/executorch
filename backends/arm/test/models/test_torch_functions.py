@@ -128,9 +128,8 @@ def test_torch_fns_FP(test_data):
         "Requires dynamic output shape.",
         "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
         "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
-        "t": "MLETORCH-855: Issue with Quantization folding.",
     },
-    strict=False,
+    strict=True,
 )
 def test_torch_fns_INT(test_data):
     module, inputs = test_data

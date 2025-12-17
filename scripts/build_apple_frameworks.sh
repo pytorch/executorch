@@ -31,6 +31,7 @@ libextension_apple.a,\
 libextension_data_loader.a,\
 libextension_flat_tensor.a,\
 libextension_module.a,\
+libextension_named_data_map.a,\
 libextension_tensor.a,\
 :${FRAMEWORK_EXECUTORCH_HEADERS_DIR}:${FRAMEWORK_EXECUTORCH_MODULE_NAME}"
 

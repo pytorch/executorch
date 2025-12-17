@@ -34,6 +34,7 @@ test_data_suite = {
     "zeros": lambda: torch.zeros(10, 10, 10, 10),
     "ones": lambda: torch.ones(10, 10, 10),
     "rand": lambda: torch.rand(10, 10) - 0.5,
+    "rand_4d": lambda: torch.rand(1, 1, 5, 10),
     "randn_pos": lambda: torch.randn(10) + 10,
     "randn_neg": lambda: torch.randn(10) - 10,
     "ramp": lambda: torch.arange(-16, 16, 0.2),
@@ -166,98 +167,98 @@ def test_sigmoid_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_FP(test_data: Tuple):
+def test_sigmoid_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Sigmoid(),
         (test_data(),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_INT(test_data: Tuple):
+def test_sigmoid_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Sigmoid(),
         (test_data(),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_FP_add():
+def test_sigmoid_add_vgf_no_quant():
     pipeline = VgfPipeline[input_t1](
         AddSigmoid(),
         (test_data_suite["zeros"](),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_INT_add():
+def test_sigmoid_add_vgf_quant():
     pipeline = VgfPipeline[input_t1](
         AddSigmoid(),
         (test_data_suite["ramp"](),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_FP_add_2():
+def test_sigmoid_add_2_vgf_no_quant():
     pipeline = VgfPipeline[input_t1](
         SigmoidAdd(),
         (test_data_suite["zeros"](),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_INT_add_2():
+def test_sigmoid_add_2_vgf_quant():
     pipeline = VgfPipeline[input_t1](
         SigmoidAdd(),
         (test_data_suite["zeros"](),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_FP_add_3():
+def test_sigmoid_add_3_vgf_no_quant():
     pipeline = VgfPipeline[input_t1](
         SigmoidAddSigmoid(),
         (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_INT_add_3():
+def test_sigmoid_add_3_vgf_quant():
     pipeline = VgfPipeline[input_t1](
         SigmoidAddSigmoid(),
         (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -269,22 +270,23 @@ def get_symmetric_a16w8_sigmoid_quantizer(per_channel_quantization=False):
     }
 
     quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+
+    # Use a smaller episilon value to not greatly inflate [qmin, qmax]
     quantizer.set_global(
-        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization, epsilon=2**-16
+        )
     )
 
     return Quantize(
         quantizer,
         get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization
+            is_per_channel=per_channel_quantization, epsilon=2**-16
         ),
     )
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.xfail(
-    reason="missing int16 sigmoid ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13974"
-)
 def test_sigmoid_16a8w_tosa_INT(test_data: torch.Tensor):
     """Test sigmoid operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -311,7 +313,7 @@ def test_sigmoid_16a8w_tosa_INT(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 @pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 sigmoid operations"
+    reason="MLETORCH-707: AssertionError: Output 0 does not match reference output."
 )
 def test_sigmoid_16a8w_u55_INT16(test_data: torch.Tensor):
     """Test sigmoid operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
@@ -337,9 +339,6 @@ def test_sigmoid_16a8w_u55_INT16(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 sigmoid operations"
-)
 def test_sigmoid_16a8w_u85_INT16(test_data: torch.Tensor):
     """Test sigmoid operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False

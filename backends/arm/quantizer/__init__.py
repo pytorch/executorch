@@ -12,6 +12,7 @@ log message if unavailable.
 from .quantization_config import QuantizationConfig  # noqa  # usort: skip
 from .arm_quantizer import (  # noqa
     EthosUQuantizer,
+    get_symmetric_a16w8_quantization_config,
     get_symmetric_quantization_config,
     TOSAQuantizer,
     VgfQuantizer,

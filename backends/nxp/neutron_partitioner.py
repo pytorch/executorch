@@ -15,6 +15,10 @@ import torch
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.edge_helper import (
+    DEQUANTIZE_OPERATORS,
+    QUANTIZE_OPERATORS,
+)
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
@@ -25,6 +29,7 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 from torch.nn import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
 from executorch.backends.nxp.nxp_backend import NeutronBackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -66,20 +71,15 @@ class QDQClusterRecognizer:
         compute_node: torch.fx.Node
         ops: list[torch.fx.Node]
 
-    QUANTIZE_OPERATORS = [
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    ]
-
-    DEQUANTIZE_OPERATORS = [
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-    ]
-
     AUXILIARY_OPS = [
         operator.getitem,
         exir_ops.edge.aten.view_copy.default,
         exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.hardtanh.default,
+        exir_ops.edge.aten.relu.default,
+        exir_ops.edge.aten.sigmoid.default,
+        exir_ops.edge.aten.tanh.default,
+        exir_ops.edge.dim_order_ops._clone_dim_order.default,
     ]
 
     def __init__(self):
@@ -87,11 +87,11 @@ class QDQClusterRecognizer:
 
     @staticmethod
     def is_quant_node(node: torch.fx.Node) -> bool:
-        return node.target in QDQClusterRecognizer.QUANTIZE_OPERATORS
+        return node.target in QUANTIZE_OPERATORS
 
     @staticmethod
     def is_dequant_node(node: torch.fx.Node) -> bool:
-        return node.target in QDQClusterRecognizer.DEQUANTIZE_OPERATORS
+        return node.target in DEQUANTIZE_OPERATORS
 
     @staticmethod
     def is_auxiliary_node(node: torch.fx.Node) -> bool:
@@ -201,6 +201,7 @@ supported_ops = {
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.cat.default: CatConverter,  # noqa F405
     exir_ops.edge.aten.clone.default: CloneConverter,  # noqa F405
+    exir_ops.edge.dim_order_ops._clone_dim_order.default: CloneConverter,  # noqa F405
     exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,  # noqa F405
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
@@ -208,11 +209,15 @@ supported_ops = {
     exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2dConverter,  # noqa F405
     exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
+    exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
+    exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
+    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
+    exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
+    exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
     exir_ops.edge.aten.tanh.default: TanhConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
-    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
 }
 
 
@@ -306,21 +311,21 @@ class NeutronPartitioner(Partitioner):
     def __init__(
         self,
         compile_spec: list[CompileSpec],
+        neutron_target_spec: NeutronTargetSpec,
         custom_delegation_options: CustomDelegationOptions | None = None,
     ) -> None:
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)
         self.custom_delegation_options = (
             custom_delegation_options or CustomDelegationOptions()
         )
-        target = self.delegation_spec[1][2].value.decode()
-        converter_flavor = self.delegation_spec[1][3].value.decode()
-        self.neutron_target_spec = NeutronTargetSpec(target, converter_flavor)
+        self.neutron_target_spec = neutron_target_spec
 
     def validate_partitioning_result(
         self,
         graph: Graph,
         partition_list: list[Partition],
         custom_delegation_options: CustomDelegationOptions,
+        parameters_mapping: dict[str, Parameter],
     ) -> bool:
         all_delegated_nodes = {
             node for partition in partition_list for node in partition.nodes
@@ -333,7 +338,11 @@ class NeutronPartitioner(Partitioner):
                 and node.target in supported_ops
             ):
                 if not supported_ops[node.target].supports_partitioning_result(
-                    node, partition_list, custom_delegation_options
+                    node,
+                    partition_list,
+                    custom_delegation_options,
+                    self.neutron_target_spec,
+                    parameters_mapping,
                 ):
                     # This node is not supported within its partition. Exclude it from delegation in the future.
                     partitioning_valid = False
@@ -374,6 +383,14 @@ class NeutronPartitioner(Partitioner):
             allows_single_node_partition=True,
         )
 
+        # Identify the format (NCHW/NHWC/...) for all nodes in the graph, and store it in the `node.meta`.
+        # This format will be used by the `CapabilityBasedPartitioner` to determine which nodes will be delegated.
+        NodeFormatInference(exported_program).identify_node_formats()
+
+        parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(
+            exported_program
+        )
+
         iteration_limit = len(exported_program.graph.nodes)
         for _ in range(iteration_limit):
             # Run the partitioning.
@@ -381,7 +398,10 @@ class NeutronPartitioner(Partitioner):
 
             # Check if the nodes support the partitioning result. Mark the problematic nodes with `NXP_DO_NOT_DELEGATE`.
             partitioning_valid = self.validate_partitioning_result(
-                exported_program.graph, partition_list, self.custom_delegation_options
+                exported_program.graph,
+                partition_list,
+                self.custom_delegation_options,
+                parameters_mapping,
             )
             if partitioning_valid:
                 # The result of the partitioning is fine

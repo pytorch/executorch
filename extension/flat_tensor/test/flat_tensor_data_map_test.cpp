@@ -173,7 +173,7 @@ TEST_F(FlatTensorDataMapTest, LoadAndCheckSize) {
   Result<FreeableBuffer> truncated_file = data_map_loader_->load(
       0,
       trunc_size,
-      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Constant));
   ASSERT_EQ(truncated_file.error(), Error::Ok);
 
   BufferDataLoader truncated_loader =

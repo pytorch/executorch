@@ -95,9 +95,9 @@ python_unittest(
 )
 
 runtime.python_library(
-    name = "qnn_backend_demo",
+    name = "demo_backend",
     srcs = [
-        "qnn_backend_demo.py",
+        "demo_backend.py",
     ],
     visibility = [
         "//executorch/...",
@@ -119,7 +119,7 @@ runtime.python_library(
         "//executorch/test/...",
     ],
     deps = [
-        ":qnn_backend_demo",
+        ":demo_backend",
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir/backend:partitioner",
@@ -153,7 +153,7 @@ runtime.python_library(
     name = "example_backends",
     deps = [
         ":backend_with_compiler_demo",
-        ":qnn_backend_demo",
+        ":demo_backend",
     ],
 )
 
@@ -171,7 +171,7 @@ python_unittest(
         ":backend_with_compiler_demo",
         ":hta_partitioner_demo",
         ":op_partitioner_demo",
-        ":qnn_backend_demo",
+        ":demo_backend",
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
         "//executorch/exir:delegate",
@@ -250,7 +250,7 @@ python_unittest(
     deps = [
         "fbsource//third-party/pypi/hypothesis:hypothesis",
         ":op_partitioner_demo",
-        ":qnn_backend_demo",
+        ":demo_backend",
         "//caffe2:torch",
         "//executorch/exir:delegate",
         "//executorch/exir:lib",
@@ -273,7 +273,7 @@ python_unittest(
         ":backend_with_compiler_demo",
         ":hta_partitioner_demo",
         ":op_partitioner_demo",
-        ":qnn_backend_demo",
+        ":demo_backend",
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
         "//executorch/exir:delegate",
@@ -303,7 +303,7 @@ python_unittest(
     deps = [
         "fbsource//third-party/pypi/hypothesis:hypothesis",
         ":backend_with_compiler_demo",
-        ":qnn_backend_demo",
+        ":demo_backend",
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir:schema",

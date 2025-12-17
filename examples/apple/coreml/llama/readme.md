@@ -1,5 +1,41 @@
 # ANE-friendly Llama models
 
+To export a static, ANE-friendly model use:
+
+```
+python export_static_llm_coreml.py \
+    --checkpoint /path/to/model.pth \
+    --params /path/to/params.json \
+    --output static_llm_coreml_model.pte
+```
+
+To test in python, use:
+
+```
+python run_static_llm.py \
+    --model static_llm_coreml_model.pte \
+    --params /path/to/params.json \
+    --tokenizer /path/to/tokenizer.model \
+    --prompt "Once upon a time" \
+    --max_new_tokens 100 \
+    --lookahead
+```
+
+(Enabling lookahead decoding is optional, but does improve performance.)
+
+The static model has several ANE optimizations, including:
+* Splitting linear layers for improved performance (controlled by target_split_size and max_splits args)
+* Splitting the pte into multiple Core ML pieces for improved performance (can be disabled with no_graph_breaks)
+* Re-writing SDPA to avoid 5-D tensors to imporve performance.  This also fixes an accuracy bug that was introduced in iOS 26 (addresses this: https://github.com/pytorch/executorch/issues/15833)
+
+
+We are working on adding a C++ runner as well.
+
+
+# Deprecated (export.py, run.py, and run_lookahead.py)
+
+Below we describe export.py, run.py, and run_lookahead.py.  But these are deprecated and will evenutally be removed because we are unifying around the static model formulation.
+
 This directory contains ANE-friendly Llama models.
 
 Export model with:

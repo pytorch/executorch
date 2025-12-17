@@ -79,6 +79,11 @@ class Sub2(torch.nn.Module):
         return x - y
 
 
+class SubAlpha(torch.nn.Module):
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return torch.sub(x, y, alpha=5)
+
+
 class SubTan(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
@@ -115,6 +120,18 @@ def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
+@common.parametrize("test_data", sub_tan_test_data)
+def test_sub_tensor_tosa_FP_alpha(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction with alpha (TOSA FP)"""
+    pipeline = TosaPipelineFP[input_t2](
+        SubAlpha(),
+        test_data(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", sub_test_data)
 def test_sub_tensor_tosa_INT(test_data):
     """Test Subtraction (TOSA INT)"""
@@ -132,8 +149,18 @@ def test_sub_tensor_tosa_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
 @common.parametrize("test_data", sub_tan_test_data)
 def test_sub_tensor_tosa_INT_3(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA INT)"""
+    # This test has only been added to the tosa INT profile in order to catch quantization-induced errors.
     pipeline = TosaPipelineINT[input_t2](
         SubTan(), test_data(), aten_op, exir_op, qtol=0
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_tan_test_data)
+def test_sub_tensor_tosa_INT_alpha(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction with alpha (TOSA INT)"""
+    pipeline = TosaPipelineINT[input_t2](
+        SubAlpha(), test_data(), aten_op, exir_op, qtol=0
     )
     pipeline.run()
 
@@ -192,56 +219,56 @@ def test_sub_tensor_u85_INT(test_data: Tuple[torch.Tensor, torch.Tensor]):
 
 @common.parametrize("test_data", sub_test_data)
 @common.SkipIfNoModelConverter
-def test_sub_tensor_vgf_FP(test_data: Tuple[torch.Tensor]):
+def test_sub_tensor_vgf_no_quant(test_data: Tuple[torch.Tensor]):
     """Test Subtraction (VGF FP)"""
     pipeline = VgfPipeline[input_t1](
         Sub(),
         test_data(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", sub2_test_data)
 @common.SkipIfNoModelConverter
-def test_sub_tensor_vgf_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
+def test_sub_tensor_2_vgf_no_quant(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (VGF FP)"""
     pipeline = VgfPipeline[input_t2](
         Sub2(),
         test_data(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", sub_test_data)
 @common.SkipIfNoModelConverter
-def test_sub_tensor_vgf_INT(test_data: Tuple[torch.Tensor]):
+def test_sub_tensor_vgf_quant(test_data: Tuple[torch.Tensor]):
     """Test Subtraction (VGF INT)"""
     pipeline = VgfPipeline[input_t1](
         Sub(),
         test_data(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", sub2_test_data)
 @common.SkipIfNoModelConverter
-def test_sub_tensor_vgf_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
+def test_sub_tensor_2_vgf_quant(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (VGF INT)"""
     pipeline = VgfPipeline[input_t2](
         Sub2(),
         test_data(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 

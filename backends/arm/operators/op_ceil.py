@@ -7,6 +7,8 @@ from typing import Any, List
 
 import torch.fx
 
+import tosa_serializer as ts
+
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -38,8 +40,6 @@ class CeilVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts  # type: ignore  # noqa: F401
-
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [*inputs, output], ts)
         validate_valid_dtype(
@@ -49,6 +49,8 @@ class CeilVisitor(NodeVisitor):
             output.tosa_spec,
         )
 
+        attr = ts.TosaSerializerAttribute()
+        attr.CeilAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.TosaOp.Op().CEIL, [inputs[0].name], [output.name]
+            node, tosa_graph, ts.Op.CEIL, [inputs[0].name], [output.name], attr
         )

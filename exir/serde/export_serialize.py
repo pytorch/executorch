@@ -54,6 +54,8 @@ from torch.utils._pytree import treespec_dumps, treespec_loads
 from torch.utils._sympy.numbers import int_oo
 from torch.utils._sympy.value_ranges import ValueRanges
 
+import executorch.exir as exir
+
 # pyre-ignore
 
 from .schema import (  # type: ignore[attr-defined]
@@ -202,6 +204,11 @@ _SYM_BOOL_OPS = {
     operator.lt,
     operator.gt,
     torch.sym_not,
+}
+
+
+_KNOWN_FUNCTIONS = {
+    exir.memory.view,
 }
 
 
@@ -541,6 +548,14 @@ class GraphModuleSerializer:
             ex_node = Node(
                 name=node.name,
                 target=self.serialize_operator(node.target),
+                inputs=self.serialize_hoo_inputs(node.args, node.kwargs),
+                outputs=self.serialize_hoo_outputs(node),
+                metadata=self.serialize_metadata(node),
+            )
+        elif node.target in _KNOWN_FUNCTIONS:
+            ex_node = Node(
+                name=node.name,
+                target=node._pretty_print_target(node.target),
                 inputs=self.serialize_hoo_inputs(node.args, node.kwargs),
                 outputs=self.serialize_hoo_outputs(node),
                 metadata=self.serialize_metadata(node),
@@ -2143,17 +2158,23 @@ class GraphModuleDeserializer:
             def import_nn_module_stack(key, path, ty):
                 return key, (path, ty)
 
-            # Helper function that splits strings by commas except for those
-            # encapsulated by parens, which are valid traces.
-            # TODO: Currently this is needed due to indexing Sequential
-            # layers introducing names in the form "layer.slice(1, None, None)".
-            # If that naming is improved, this fancier splitting can probably be
-            # reverted to a simple split by comma.
+            # Helper function to split string by commas, accounting for nested parentheses/brackets
             def metadata_split(metadata):
-                # Remove the parentheses and commas inside them
-                metadata = re.sub(r"\(.*?\)", "", metadata)
-                # Split the string by comma, except for those inside parentheses
-                return re.split(r"(?<!\()\s*,\s*(?!\()", metadata)
+                out = []
+                start, depth = 0, 0
+                for position, char in enumerate(metadata):
+                    if char in "[(":
+                        depth += 1
+                    elif char in ")]":
+                        depth -= 1
+                        if depth < 0:
+                            raise ValueError(f"Mismatched brackets in metadata: {metadata}")
+                    elif char == "," and depth == 0:
+                        out.append(metadata[start:position].strip())
+                        start = position + 1
+                out.append(metadata[start:].strip())
+                assert len(out) == 3
+                return out
 
             nn_module_stack = dict(
                 import_nn_module_stack(*metadata_split(item))

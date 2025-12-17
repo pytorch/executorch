@@ -18,7 +18,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
+from executorch.exir.backend.test.demo_backend import DemoBackend
 from executorch.exir.backend.utils import tag_constant_data
 from torch.export import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
@@ -28,7 +28,7 @@ from torch.fx.passes.infra.partitioner import Partition
 class HTAPartitionerMultiplePatternsDemo(Partitioner):
     """
     An example implementation to partition graph for HTA, in this example, the backend
-    associate with this partitioner is QnnBackend. With QnnBackend, the two lowerable
+    associate with this partitioner is DemoBackend. With DemoBackend, the two lowerable
     patterns are: (lstm + conv) and (sub). backend is a class member instead of instance
     members, as it is a properties of HTAPartitionerMultiplePatternsDemo, and won't be different for
     different HTAPartitionerMultiplePatternsDemo instances.
@@ -116,7 +116,7 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
             pattern_sub.graph,
         ]
 
-        backend_id = QnnBackend.__name__
+        backend_id = DemoBackend.__name__
         self.delegation_spec = DelegationSpec(backend_id, [])
 
     def is_exclusive(self, partition_list_list: List[List[Partition]]) -> bool:
@@ -269,7 +269,7 @@ class HTAPartitionerOnePatternDemo(Partitioner):
         ]
         # Only (lstm + conv) pattern is lowerable
 
-        backend_id = QnnBackend.__name__
+        backend_id = DemoBackend.__name__
         self.delegation_spec = DelegationSpec(backend_id, [])
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:

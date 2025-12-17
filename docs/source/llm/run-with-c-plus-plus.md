@@ -10,7 +10,7 @@ Before you begin, make sure you have:
    - Please also see [Model Metadata](#model-metadata) section for important metadata to be serialized into `.pte`.
 2. A tokenizer file compatible with your model
    - For HuggingFace tokenizers, this is a JSON file `tokenizer.json`
-   - For SentencePiece tokenizers, this is is a `tokenizer.model` file and normally live alongside the weights file
+   - For SentencePiece tokenizers, this is a `tokenizer.model` file and normally lives alongside the weights file
 3. CMake and a C++ compiler installed
    - CMake version 3.29 or higher
    - g++ or clang compiler

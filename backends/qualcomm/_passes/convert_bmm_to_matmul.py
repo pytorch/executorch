@@ -47,7 +47,13 @@ class ConvertBmmToMatmul(ExportPass):
         graph = graph_module.graph
         partitions = get_source_partitions(
             graph,
-            [operator.matmul, torch.matmul, torch.bmm, torch.ops.aten.matmul.default],
+            [
+                "matmul",
+                operator.matmul,
+                torch.matmul,
+                torch.bmm,
+                torch.ops.aten.matmul.default,
+            ],
         )
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:

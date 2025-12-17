@@ -6,7 +6,7 @@
 import warnings
 from typing import cast, Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
@@ -26,15 +26,15 @@ class Softmax(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         softmax_inp_tensor_wrapper = self.define_tensor(
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         softmax_input_tensors = [softmax_inp_tensor_wrapper]
@@ -44,7 +44,7 @@ class Softmax(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         softmax_output_tensors = [output_tensor_wrapper]
@@ -62,7 +62,7 @@ class Softmax(NodeVisitor):
             )
             return None
 
-        softmax_op = PyQnnWrapper.PyQnnOpWrapper(
+        softmax_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpSoftmax.op_name,
@@ -72,7 +72,7 @@ class Softmax(NodeVisitor):
 
         softmax_op.AddScalarParam(
             OpSoftmax.param_axis,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(dim)},
         )
 

@@ -1,0 +1,25 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+quantize_and_pack_4h4w:
+  parameter_names_with_default_values:
+    DTYPE: float
+    OUTPUT_STORAGE: texture3d
+    INPUT_STORAGE: texture3d
+    STORAGE: texture3d
+    GRANULARITY: per_tensor
+  generate_variant_forall:
+    combination:
+      parameter_names: [OUTPUT_STORAGE, INPUT_STORAGE]
+      combos:
+        - parameter_values: [texture3d, texture3d]
+        - parameter_values: [buffer, texture3d]
+        - parameter_values: [buffer, buffer]
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+  shader_variants:
+    - NAME: quantize_and_pack_4h4w_per_tensor

@@ -33,25 +33,25 @@ void quantize_per_tensor_out(
 
   if (out.scalar_type() == ScalarType::Byte) {
     uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
-    impl::vision::native::kernels::quantize<uint8_t>(
+    kernels::quantize<uint8_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Char) {
     int8_t* out_data = out.mutable_data_ptr<int8_t>();
-    impl::vision::native::kernels::quantize<int8_t>(
+    kernels::quantize<int8_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else if (
       out.scalar_type() == ScalarType::Bits16 ||
       out.scalar_type() == ScalarType::UInt16) {
     uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
-    impl::vision::native::kernels::quantize<uint16_t>(
+    kernels::quantize<uint16_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Short) {
     int16_t* out_data = out.mutable_data_ptr<int16_t>();
-    impl::vision::native::kernels::quantize<int16_t>(
+    kernels::quantize<int16_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Int) {
     int32_t* out_data = out.mutable_data_ptr<int32_t>();
-    impl::vision::native::kernels::quantize<int32_t>(
+    kernels::quantize<int32_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else {
     ET_CHECK_MSG(

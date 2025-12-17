@@ -64,7 +64,7 @@ namespace {
 ```
 
 ### Weak Symbol Override
-ExecuTorch also provides a link-time method to override the PAL using weak symbols. This method is primarily maintained for backwards compatability.
+ExecuTorch also provides a link-time method to override the PAL using weak symbols. This method is primarily maintained for backwards compatibility.
 
 To override one or more PAL methods, take the following steps:
 

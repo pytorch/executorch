@@ -8,9 +8,11 @@
 
 #include <cuda_runtime.h>
 #include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
-#include <executorch/backends/cuda/runtime/shims/utils.h>
+#include <executorch/backends/cuda/runtime/utils.h>
+#include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/platform.h>
 #include <gtest/gtest.h>

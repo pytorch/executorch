@@ -35,7 +35,7 @@ from ultralytics import YOLO
 
 from ultralytics.data.utils import check_det_dataset
 from ultralytics.engine.validator import BaseValidator as Validator
-from ultralytics.utils.torch_utils import de_parallel
+from ultralytics.utils.torch_utils import unwrap_model
 
 
 class CV2VideoIter:
@@ -293,7 +293,7 @@ def _prepare_validation(
     stride = 32  # default stride
     validator.stride = stride  # used in get_dataloader() for padding
     validator.data = check_det_dataset(dataset_yaml_path)
-    validator.init_metrics(de_parallel(model))
+    validator.init_metrics(unwrap_model(model))
 
     data_loader = validator.get_dataloader(
         validator.data.get(validator.args.split), validator.args.batch

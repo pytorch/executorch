@@ -76,23 +76,23 @@ def test_maximum_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", Maximum.test_parameters)
 @common.SkipIfNoModelConverter
-def test_maximum_vgf_FP(test_data: Tuple):
+def test_maximum_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[test_t](
         Maximum(),
         test_data(),
         aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Maximum.test_parameters)
 @common.SkipIfNoModelConverter
-def test_maximum_vgf_INT(test_data: Tuple):
+def test_maximum_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[test_t](
         Maximum(),
         test_data(),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

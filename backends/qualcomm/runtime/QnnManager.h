@@ -13,6 +13,7 @@
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnBackendUnifiedRegistry.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnDlcManager.h>
 #include <executorch/runtime/core/error.h>
 
@@ -30,7 +31,13 @@ class QnnManager {
       const QnnExecuTorchContextBinary& qnn_executorch_context_binary);
 
   ~QnnManager();
-  executorch::runtime::Error Init();
+  // Initialize the shared backend bundle such as QnnBackend and QnnDevice
+  executorch::runtime::Error InitBackend();
+  // Initialize the non-shared QNN components, create the QnnGraph using the
+  // provided graph_names. Note: For online_prepare or deserialization, the
+  // graph name will be obtained from the binary.
+  executorch::runtime::Error InitContext(
+      std::optional<std::vector<std::string>> graph_names = std::nullopt);
   executorch::runtime::Error AllocateTensor(const std::string& graph_name);
   executorch::runtime::Error AllocateTensor(
       const std::string& graph_name,
@@ -47,7 +54,11 @@ class QnnManager {
       const std::string& graph_name,
       executorch::runtime::EventTracer* event_tracer);
 
+  // Destroy all QNN components and decrease reference count of shared QNN
+  // resource
   void Destroy();
+  // Only destroy all non-shared QNN components
+  void DestroyContext();
 
   bool IsAvailable() {
     return true;
@@ -103,35 +114,11 @@ class QnnManager {
     return backend_params_ptr_->qnn_context_ptr_->GetGraphNames();
   }
 
-  std::string GetBinarySignature();
-
  private:
-  std::unique_ptr<const QnnSaver_Config_t*[]> GetImplementationConfig() {
-    if (options_->saver()) {
-      auto outputDirCfg = std::make_unique<QnnSaver_Config_t>();
-      outputDirCfg->option = QNN_SAVER_CONFIG_OPTION_OUTPUT_DIRECTORY;
-      outputDirCfg->outputDirectory = options_->saver_output_dir()->c_str();
-
-      auto saverCfg = std::make_unique<const QnnSaver_Config_t*[]>(2);
-      saverCfg[0] = outputDirCfg.release();
-      saverCfg[1] = nullptr;
-
-      return saverCfg;
-    } else {
-      return nullptr;
-    }
-  }
-
-  executorch::runtime::Error LoadQnnLibrary();
-
-  static constexpr const char* htp_library_name_ = "libQnnHtp.so";
-  static constexpr const char* gpu_library_name_ = "libQnnGpu.so";
-  static constexpr const char* dsp_library_name_ = "libQnnDsp.so";
-
   QnnExecuTorchContextBinary qnn_context_blob_;
   std::unique_ptr<BackendConfigParameters> backend_params_ptr_;
-  QnnImplementation qnn_loaded_backend_;
-  std::unique_ptr<QnnLogger> logger_;
+  std::shared_ptr<QnnBackendBundle>
+      backend_bundle_ptr_; // New member to hold shared resources
   const QnnExecuTorchOptions* options_;
   std::unordered_map<std::string, std::vector<std::shared_ptr<TensorWrapper>>>
       input_tensors_;

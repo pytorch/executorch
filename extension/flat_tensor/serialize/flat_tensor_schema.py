@@ -9,16 +9,9 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
-from executorch.exir.scalar_type import ScalarType
+from executorch.exir.tensor_layout import TensorLayout
 
 # Note: check executorch/extension/data_format/flat_tensor.fbs for explanations of these fields.
-
-
-@dataclass
-class TensorLayout:
-    scalar_type: ScalarType
-    sizes: List[int]
-    dim_order: List[int]
 
 
 @dataclass

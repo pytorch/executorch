@@ -48,17 +48,44 @@ endif()
 
 # VGF backend builds
 if(EXECUTORCH_BUILD_VGF)
-
-  # include libvgf
-  set(LIBVGF_PATH
-      "${EXECUTORCH_ROOT}/examples/arm/ethos-u-scratch/ml-sdk-for-vulkan-manifest/sw/vgf-lib/"
-  )
-
   set(VULKAN_THIRD_PARTY_PATH ${EXECUTORCH_ROOT}/backends/vulkan/third-party)
   set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
   set(VOLK_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 
-  set(LIBVGF_STATIC "${LIBVGF_PATH}/build/src/libvgf.a")
+  if(APPLE
+     OR CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$"
+     OR EXISTS
+        "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ml-sdk-for-vulkan-manifest/"
+  )
+    message(STATUS "libvgf sourced from local scratch tree")
+
+    # Legacy layout: libvgf sourced from local scratch tree
+    set(LIBVGF_PATH
+        "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ml-sdk-for-vulkan-manifest/sw/vgf-lib/"
+    )
+    set(LIBVGF_STATIC "${LIBVGF_PATH}/build/src/libvgf.a")
+  else()
+    message(STATUS "libvgf installed from pip package")
+
+    set(Python3_FIND_VIRTUALENV FIRST)
+    if(EXECUTORCH_ROOT AND EXISTS "${EXECUTORCH_ROOT}/env")
+      set(Python3_EXECUTABLE "${EXECUTORCH_ROOT}/env/bin/python3")
+    endif()
+
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+    # Prefer arch-specific site-packages if present, else pure
+    set(_vgf_site_arch "${Python3_SITEARCH}/vgf_lib/binaries")
+    set(_vgf_site_pure "${Python3_SITELIB}/vgf_lib/binaries")
+    if(EXISTS "${_vgf_site_arch}")
+      set(LIBVGF_PATH "${_vgf_site_arch}")
+    else()
+      set(LIBVGF_PATH "${_vgf_site_pure}")
+    endif()
+
+    set(LIBVGF_STATIC "${LIBVGF_PATH}/lib/libvgf.a")
+  endif()
+
   set(LIBVGF_INCLUDE "${LIBVGF_PATH}/include/")
 
   add_library(vgf STATIC IMPORTED)

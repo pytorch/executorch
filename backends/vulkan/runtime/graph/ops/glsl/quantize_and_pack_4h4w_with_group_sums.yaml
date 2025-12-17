@@ -1,0 +1,30 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+quantize_and_pack_4h4w_with_group_sums:
+  parameter_names_with_default_values:
+    DTYPE: float
+    OUTPUT_STORAGE: buffer
+    INPUT_STORAGE: texture3d
+    NUM_GROUPS_PER_WG: 2
+    NUM_WORKERS_PER_GROUP: 32
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+  shader_variants:
+    - NAME: quantize_and_pack_4h4w_with_group_sums_o2w32_buffer_texture3d
+    - NAME: quantize_and_pack_4h4w_with_group_sums_o2w32_buffer_buffer
+      OUTPUT_STORAGE: buffer
+      INPUT_STORAGE: buffer
+    - NAME: quantize_and_pack_4h4w_with_group_sums_o4w16_buffer_texture3d
+      NUM_GROUPS_PER_WG: 4
+      NUM_WORKERS_PER_GROUP: 16
+    - NAME: quantize_and_pack_4h4w_with_group_sums_o4w16_buffer_buffer
+      NUM_GROUPS_PER_WG: 4
+      NUM_WORKERS_PER_GROUP: 16
+      OUTPUT_STORAGE: buffer
+      INPUT_STORAGE: buffer

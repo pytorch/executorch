@@ -169,7 +169,7 @@ Tensor& max_pool2d_with_indices_backward_out(
       InvalidArgument,
       grad_input);
 
-  constexpr auto name = "max_pool2d_with_indices_backward.grad_input";
+  static constexpr auto name = "max_pool2d_with_indices_backward.grad_input";
 
   ET_SWITCH_FLOATHBF16_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
     max_pool_backward_impl<CTYPE, false>(grad_input, grad_output, indices);

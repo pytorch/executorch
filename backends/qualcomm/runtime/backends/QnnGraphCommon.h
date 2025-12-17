@@ -23,7 +23,7 @@ namespace qnn {
 class QnnGraph {
  public:
   explicit QnnGraph(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnBackend* backend,
       QnnContext* context,
       const QnnExecuTorchProfileLevel& profile_level)
@@ -44,7 +44,7 @@ class QnnGraph {
   Qnn_ErrorHandle_t GraphAddNode(
       const std::string& graph_name,
       const Qnn_OpConfig_t& op_config) {
-    return implementation_.GetQnnInterface().qnn_graph_add_node(
+    return implementation_->GetQnnInterface().qnn_graph_add_node(
         handle_[graph_name], op_config);
   };
   executorch::runtime::Error EnsureTensorInQnnGraph(
@@ -52,7 +52,7 @@ class QnnGraph {
       const std::shared_ptr<TensorWrapper>& tensor_wrapper);
 
   Qnn_ErrorHandle_t GraphFinalize(const std::string& graph_name) {
-    return implementation_.GetQnnInterface().qnn_graph_finalize(
+    return implementation_->GetQnnInterface().qnn_graph_finalize(
         handle_[graph_name],
         profile_[graph_name]->GetHandle(),
         nullptr /* signal_handle */);
@@ -84,7 +84,7 @@ class QnnGraph {
 
  private:
   std::unordered_map<std::string, Qnn_GraphHandle_t> handle_;
-  const QnnImplementation& implementation_;
+  QnnImplementation* implementation_;
   QnnBackend* backend_;
   QnnContext* context_;
   QnnExecuTorchProfileLevel profile_level_;

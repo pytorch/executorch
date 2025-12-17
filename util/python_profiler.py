@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,14 +13,17 @@ import pstats
 import re
 from pstats import Stats
 
-from snakeviz.stats import json_stats, table_rows  # type: ignore[import-not-found]
+from snakeviz.stats import (  # type: ignore[import-not-found,import-untyped]
+    json_stats,
+    table_rows,
+)
 from tornado import template  # type: ignore[import-not-found]
 
 module_found = True
 snakeviz_templates_dir: str = ""
 
 try:
-    import snakeviz  # type: ignore[import-not-found]
+    import snakeviz  # type: ignore[import-not-found,import-untyped]
 
     snakeviz_dir = os.path.dirname(os.path.abspath(snakeviz.__file__))
     snakeviz_templates_dir = os.path.join(snakeviz_dir, "templates")

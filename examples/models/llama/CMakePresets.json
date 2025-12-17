@@ -1,0 +1,67 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "llama-release",
+            "displayName": "Llama runner in Release mode",
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/llama",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "llama-debug",
+            "displayName": "Llama runner in Debug mode",
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/llama",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "llama-release",
+            "displayName": "Build Llama runner in Release mode",
+            "configurePreset": "llama-release",
+            "targets": ["llama_main"]
+        },
+        {
+            "name": "llama-debug",
+            "displayName": "Build Llama runner in Debug mode",
+            "configurePreset": "llama-debug",
+            "targets": ["llama_main"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "llama-release",
+            "displayName": "Configure and build Llama runner in Release mode",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "llama-release"
+                },
+                {
+                    "type": "build",
+                    "name": "llama-release"
+                }
+            ]
+        },
+        {
+            "name": "llama-debug",
+            "displayName": "Configure and build Llama runner in Debug mode",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "llama-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "llama-debug"
+                }
+            ]
+        }
+    ]
+}

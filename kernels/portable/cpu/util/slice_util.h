@@ -55,6 +55,7 @@ int64_t adjust_slice_indices(
     int64_t step);
 
 void compute_slice(
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     int64_t start,

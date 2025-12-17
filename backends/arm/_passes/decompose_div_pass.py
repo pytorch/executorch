@@ -4,11 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -29,7 +29,7 @@ def get_div_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get div decomposition for op {op}")
 
 
-class DecomposeDivPass(ExportPass):
+class DecomposeDivPass(ArmPass):
     """
     This pass decomposes div into a mul and a reciprocal node.
 
@@ -50,6 +50,10 @@ class DecomposeDivPass(ExportPass):
 
         numerator = args[0]
         denominator = args[1]
-        reciprocal = super().call_operator(reciprocal_op, (denominator,), {}, meta)
+        reciprocal = super().call_operator(
+            reciprocal_op, (denominator,), {}, meta, updated=True
+        )
 
-        return super().call_operator(mul_op, (numerator, reciprocal), {}, meta)
+        return super().call_operator(
+            mul_op, (numerator, reciprocal), {}, meta, updated=True
+        )

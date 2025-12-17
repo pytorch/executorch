@@ -20,10 +20,12 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-
 import torch
 import torchao
 import transformers
+from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
+    QNNIntermediateDebugger,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import (
     ModuleQConfig,
     QnnQuantizer,
@@ -31,6 +33,7 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
 )
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
+    QnnExecuTorchBackendType,
     QnnExecuTorchOpPackageOptions,
 )
 from executorch.backends.qualcomm.utils.utils import (
@@ -39,6 +42,7 @@ from executorch.backends.qualcomm.utils.utils import (
     get_soc_to_arch_map,
     to_edge_transform_and_lower_to_qnn,
 )
+from executorch.exir.backend.utils import get_delegates
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization.pt2e import MovingAverageMinMaxObserver
@@ -64,8 +68,9 @@ class SimpleADB:
         error_only (bool): Redirect stdio and leave error messages only
         shared_buffer (bool): Apply zero-copy mechanism in runtime
         runner (str): Runtime executor binary
-        expected_input_shape (Tuple[torch.Size]): input shape of dynamic graph
-        expected_output_shape (Tuple[torch.Size]): output shape of dynamic graph
+        target (str): Target toolchain name
+        expected_input_shape (Tuple[torch.Size]): Input shape of dynamic graph
+        expected_output_shape (Tuple[torch.Size]): Output shape of dynamic graph
     """
 
     def __init__(
@@ -81,6 +86,8 @@ class SimpleADB:
         shared_buffer=False,
         dump_intermediate_outputs=False,
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
+        target="aarch64-android",
+        backend=QnnExecuTorchBackendType.kHtpBackend,
         expected_input_shape=None,
         expected_output_shape=None,
     ):
@@ -100,6 +107,8 @@ class SimpleADB:
         self.error_only = error_only
         self.shared_buffer = shared_buffer
         self.runner = runner
+        self.target = target
+        self.backend = backend
         self.expected_input_shape = expected_input_shape
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
@@ -127,41 +136,51 @@ class SimpleADB:
             self._adb(["shell", f"rm -rf {self.workspace}"])
             self._adb(["shell", f"mkdir -p {self.workspace}"])
 
-            # necessary artifacts
-            artifacts = [
-                *self.pte_path,
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
+        # necessary artifacts
+        artifacts = {
+            QnnExecuTorchBackendType.kHtpBackend: [
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtp.so",
                 (
                     f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
                     f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
                 ),
                 (
-                    f"{self.qnn_sdk}/lib/aarch64-android/"
+                    f"{self.qnn_sdk}/lib/{self.target}/"
                     f"libQnnHtpV{self.htp_arch}Stub.so"
                 ),
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpPrepare.so",
+            ],
+            QnnExecuTorchBackendType.kGpuBackend: [
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnGpu.so",
+            ],
+        }[self.backend]
+
+        artifacts.extend(
+            [
+                *self.pte_path,
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
                 f"{self.build_path}/{self.runner}",
                 f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
             ]
-        input_list_file, input_files = generate_inputs(
-            self.working_dir, self.input_list_filename, inputs
         )
-
-        if input_list_file is not None:
-            # prepare input list
-            artifacts.append(input_list_file)
-
-        for artifact in artifacts:
-            self._adb(["push", artifact, self.workspace])
-
-        # input data
-        for file_name in input_files:
-            self._adb(["push", file_name, self.workspace])
-
-        # dynamic shape related
         with tempfile.TemporaryDirectory() as tmp_dir:
+            input_list_file, input_files = generate_inputs(
+                tmp_dir, self.input_list_filename, inputs
+            )
+
+            if input_list_file is not None:
+                # prepare input list
+                artifacts.append(input_list_file)
+
+            for artifact in artifacts:
+                self._adb(["push", artifact, self.workspace])
+
+            # input data
+            for file_name in input_files:
+                self._adb(["push", file_name, self.workspace])
+
+            # dynamic shape related
             if self.expected_input_shape and self.expected_output_shape:
                 shape_info = {
                     "input_shape": self.expected_input_shape,
@@ -383,6 +402,7 @@ def build_executorch_binary(
     shared_buffer=False,
     metadata=None,
     dump_intermediate_outputs=False,
+    qnn_intermediate_debugger: QNNIntermediateDebugger = None,
     passes_job=None,
     passes_dependency=None,
     qat_training_data=None,
@@ -418,7 +438,7 @@ def build_executorch_binary(
         None: The function writes the output to a specified .pte file.
     """
     backend_options = generate_htp_compiler_spec(
-        use_fp16=False if quant_dtype else True
+        use_fp16=False if quant_dtype is not None else True
     )
     compile_spec = generate_qnn_executorch_compiler_spec(
         soc_model=getattr(QcomChipset, soc_model),
@@ -465,6 +485,19 @@ def build_executorch_binary(
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
         )
+
+    if qnn_intermediate_debugger:
+        lowered_module_nodes = get_delegates(edge_prog_mgr.exported_program().graph)
+        assert (
+            len(lowered_module_nodes) == 1
+        ), "Graph with partitions are currently unsupported."
+
+        lowered_module_node = lowered_module_nodes[0]
+        lower_module = getattr(
+            edge_prog_mgr.exported_program().graph_module, lowered_module_node.name
+        )
+        edge_module = lower_module.original_module.module()
+        qnn_intermediate_debugger.set_edge_module(edge_module=edge_module)
 
     executorch_config = ExecutorchBackendConfig(
         # For shared buffer, user must pass the memory address
@@ -808,7 +841,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-S",
         "--skip_delegate_node_ids",
-        help="If specified, skip delegation for the specified node based on node ids. Node ids should be seperated by comma. e.g., aten_relu_default_10,aten_relu_default_2",
+        help="If specified, skip delegation for the specified node based on node ids. Node ids should be separated by comma. e.g., aten_relu_default_10,aten_relu_default_2",
         default=None,
         type=str,
     )
@@ -816,7 +849,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-f",
         "--skip_delegate_node_ops",
-        help="If specified, skip delegation for the specified op. Node ops should be seperated by comma. e.g., aten.add.Tensor,aten.relu.default",
+        help="If specified, skip delegation for the specified op. Node ops should be separated by comma. e.g., aten.add.Tensor,aten.relu.default",
         default=None,
         type=str,
     )
@@ -851,6 +884,7 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
+        "-D",
         "--dump_intermediate_outputs",
         help="If specified, enable dump intermediate outputs",
         action="store_true",
@@ -875,6 +909,25 @@ def setup_common_args_and_variables():
         "--seed",
         help="Set the seed for generating random numbers in both torch and random.",
         type=int,
+    )
+
+    parser.add_argument(
+        "-t",
+        "--target",
+        help="Target platform for deployment",
+        choices=[
+            "aarch64-android",
+            "aarch64-oe-linux-gcc9.3",
+            "aarch64-oe-linux-gcc11.2",
+        ],
+        default="aarch64-android",
+        type=str,
+    )
+
+    parser.add_argument(
+        "--pre_gen_pte",
+        help="Run the pre-generated pte in the given directory.",
+        type=str,
     )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
@@ -918,24 +971,35 @@ def generate_inputs(dest_path: str, file_name: str, inputs=None):
     input_list_file = None
     input_files = []
 
+    def prepare_input_file(tensor, fd, index, sub_index):
+        # transform torch.Tensor to raw file
+        input_file_name = f"input_{index}_{sub_index}.raw"
+        input_file_path = f"{dest_path}/{input_file_name}"
+        if not isinstance(tensor, torch.Tensor):
+            tensor = torch.tensor(tensor)
+        tensor.detach().numpy().tofile(input_file_path)
+        input_files.append(input_file_path)
+        # prepare input_list
+        if sub_index > 0:
+            fd.write(" ")
+        fd.write(input_file_name)
+
     # Prepare input data
     if inputs is not None:
         input_list_file = f"{dest_path}/{file_name}"
+
         with open(input_list_file, "w") as f:
             for idx, data in enumerate(inputs):
-                for i, d in enumerate(data):
-                    # transform torch.Tensor to raw file
-                    file_name = f"input_{idx}_{i}.raw"
-                    file_path = f"{dest_path}/{file_name}"
-                    if not isinstance(d, torch.Tensor):
-                        d = torch.tensor(d)
-                    d.detach().numpy().tofile(file_path)
-                    input_files.append(file_path)
+                sub_index = 0
+                for d in data:
+                    if isinstance(d, (list, tuple)):
+                        for sub_d in d:
+                            prepare_input_file(sub_d, f, idx, sub_index)
+                            sub_index += 1
+                    else:
+                        prepare_input_file(d, f, idx, sub_index)
+                        sub_index += 1
 
-                    # prepare input_list
-                    if i > 0:
-                        f.write(" ")
-                    f.write(file_name)
                 f.write("\n")
 
     return input_list_file, input_files

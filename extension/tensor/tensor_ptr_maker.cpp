@@ -96,7 +96,7 @@ TensorPtr random_strided(
     }
   } ctx;
 
-  ET_SWITCH_REALHBBF16_TYPES(type, ctx, "random_strided", CTYPE, [&] {
+  ET_SWITCH_REALHBBF16_AND_UINT_TYPES(type, ctx, "random_strided", CTYPE, [&] {
     std::generate_n(tensor->mutable_data_ptr<CTYPE>(), tensor->numel(), [&]() {
       return static_cast<CTYPE>(distribution(gen));
     });
@@ -138,7 +138,7 @@ TensorPtr full_strided(
     }
   } ctx;
 
-  ET_SWITCH_REALHBBF16_TYPES(type, ctx, "full_strided", CTYPE, [&] {
+  ET_SWITCH_REALHBBF16_AND_UINT_TYPES(type, ctx, "full_strided", CTYPE, [&] {
     CTYPE value;
     ET_EXTRACT_SCALAR(fill_value, value);
     std::fill(

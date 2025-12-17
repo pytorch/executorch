@@ -1,0 +1,76 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "gemma3-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/gemma3",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "gemma3-cpu",
+            "displayName": "Gemma3 runner (CPU)",
+            "inherits": ["gemma3-base"]
+        },
+        {
+            "name": "gemma3-cuda",
+            "displayName": "Gemma3 runner (CUDA)",
+            "inherits": ["gemma3-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Linux"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "gemma3-cpu",
+            "displayName": "Build Gemma3 runner (CPU)",
+            "configurePreset": "gemma3-cpu",
+            "targets": ["gemma3_e2e_runner"]
+        },
+        {
+            "name": "gemma3-cuda",
+            "displayName": "Build Gemma3 runner (CUDA)",
+            "configurePreset": "gemma3-cuda",
+            "targets": ["gemma3_e2e_runner"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "gemma3-cpu",
+            "displayName": "Configure and build Gemma3 runner (CPU)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "gemma3-cpu"
+                },
+                {
+                    "type": "build",
+                    "name": "gemma3-cpu"
+                }
+            ]
+        },
+        {
+            "name": "gemma3-cuda",
+            "displayName": "Configure and build Gemma3 runner (CUDA)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "gemma3-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "gemma3-cuda"
+                }
+            ]
+        }
+    ]
+}

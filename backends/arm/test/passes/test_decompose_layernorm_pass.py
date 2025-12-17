@@ -24,7 +24,7 @@ class LayerNorm(torch.nn.Module):
         super(LayerNorm, self).__init__()
         self.layer_norm = torch.nn.LayerNorm(10)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.layer_norm(x)
         return x
 

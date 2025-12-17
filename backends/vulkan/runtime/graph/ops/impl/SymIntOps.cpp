@@ -81,9 +81,58 @@ void sym_add(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       new ExecuteNode(resize_sym_add_node, args));
 }
 
+void select_as_symint_impl(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& unused,
+    const std::vector<ValueRef>& args) {
+  (void)unused; // Unused parameter
+
+  const ValueRef x = args.at(0);
+  const ValueRef dim = args.at(1);
+  const ValueRef index = args.at(2);
+  const ValueRef out = args.at(3);
+
+  const int64_t dim_val = graph->extract_scalar<int64_t>(dim);
+  int64_t index_val = graph->extract_scalar<int64_t>(index);
+
+  const std::vector<int64_t> x_sizes = graph->sizes_of(x);
+  const vkapi::ScalarType x_dtype = graph->dtype_of(x);
+
+  if (index_val < 0) {
+    index_val += x_sizes[dim_val];
+  }
+
+  const StagingPtr x_staging = graph->get_staging(graph->staging_of(x));
+
+  int32_t x_val;
+  switch (x_dtype) {
+    case vkapi::ScalarType::Int:
+      x_val = x_staging->select_element_at_dim<int32_t>(
+          x_sizes, dim_val, index_val);
+      break;
+    case vkapi::ScalarType::Long:
+      x_val = static_cast<int32_t>(x_staging->select_element_at_dim<int64_t>(
+          x_sizes, dim_val, index_val));
+      break;
+    default:
+      VK_THROW("Unsupported dtype for select_as_symint");
+  }
+
+  graph->set_symint(out, x_val);
+}
+
+void select_as_symint(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  select_as_symint_impl(&graph, {}, args);
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      select_as_symint_impl, args, {}, "select_as_symint", true));
+  graph.set_has_data_dependent_shapes();
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(sym_size.int, sym_size_int);
   VK_REGISTER_OP(add, sym_add);
+  VK_REGISTER_OP(et_vk.select_as_symint.default, select_as_symint);
 }
 
 } // namespace vkcompute

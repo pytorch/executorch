@@ -11,12 +11,9 @@
 
 #pragma once
 
-#include <cstdint>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/runner/irunner.h>
@@ -30,8 +27,16 @@ namespace llm = ::executorch::extension::llm;
 std::unique_ptr<llm::TextLLMRunner> create_llama_runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
-    std::optional<const std::string> data_path = std::nullopt,
-    float temperature = -1.0f);
+    std::optional<const std::string> data_path,
+    float temperature = -1.0f,
+    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer = nullptr);
+
+std::unique_ptr<llm::TextLLMRunner> create_llama_runner(
+    const std::string& model_path,
+    const std::string& tokenizer_path,
+    std::vector<std::string> data_files = {},
+    float temperature = -1.0f,
+    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer = nullptr);
 
 std::unique_ptr<tokenizers::Tokenizer> load_llama_tokenizer(
     const std::string& tokenizer_path,

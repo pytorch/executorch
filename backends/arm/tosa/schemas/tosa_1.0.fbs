@@ -510,13 +510,31 @@ table TosaTensor {
   variable: bool;                   // is this a variable tensor
   is_unranked: bool;                // whether this is an unranked tensor
   variable_name:string;             // name for variable attribute
+
+  // In a model that is larger than 2GB, then tensors instead uses the following
+  // attributes to find stored data, which is outside of flatbuffers
+  // the offset is calculated relative to the beginning of the file and is only
+  // valid if > 1.
+  offset: ulong;
+  size: ulong;
+}
+
+table TosaShape {
+  name: string;                     // name of the shape
+  rank: uint32;                     // rank of the shape
+  data: [ubyte] (force_align: 8);   // raw data array if it's a constant shape
+}
+
+table OpLocation {
+  text: string;       // Opaque string, interpretted by user
 }
 
 table TosaOperator {
   op:Op;                    // operator enum
   attribute:Attribute;      // union structure. operator attribute
-  inputs:[string];          // list of input tensor names
-  outputs:[string];         // list of output tensor names
+  inputs:[string];          // list of input tensor or shape names
+  outputs:[string];         // list of output tensor or shape names
+  location: OpLocation;     // location of this Op in mlir
 }
 
 table TosaBasicBlock {
@@ -525,6 +543,7 @@ table TosaBasicBlock {
   tensors:[TosaTensor];     // tensors array
   inputs:[string];          // name of graph inputs
   outputs:[string];         // name of graph outputs
+  shapes:[TosaShape];       // shapes array
 }
 
 table TosaRegion {

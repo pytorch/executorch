@@ -9,8 +9,6 @@ targets across integer and float TOSA profiles.
 
 """
 
-# pyre-unsafe
-
 
 import logging
 
@@ -50,5 +48,5 @@ class RightShiftSupported(SupportedTOSAOperatorCheck):
         """
         # TODO MLETORCH-525 Remove warning
         if tosa_spec.is_U55_subset:
-            logging.warning(f"{node.target} may introduce one-off errors.")
+            logger.warning(f"{node.target} may introduce one-off errors.")
         return True

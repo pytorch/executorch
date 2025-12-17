@@ -57,7 +57,7 @@ Tensor& pow_Tensor_Tensor_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::REALHBF16>(
-        [](const auto val_a, const auto val_b) {
+        [](const auto& val_a, const auto& val_b) {
           return executorch::math::pow(val_a, val_b);
         },
         ctx,

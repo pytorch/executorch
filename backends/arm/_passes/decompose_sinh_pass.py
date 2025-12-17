@@ -11,7 +11,7 @@ from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
-    ReplaceScalarWithTensorArgPassTOSAMI,
+    ReplaceScalarWithTensorByProfilePass,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -36,12 +36,20 @@ class DecomposeSinhPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {
         InsertTableOpsPass,
         MatchArgRanksPass,
-        ReplaceScalarWithTensorArgPassTOSAMI,
+        ReplaceScalarWithTensorByProfilePass,
         MatchArgDtypePass,
     }
 
     def call_operator(self, op, args, kwargs, meta):
         if op is not edge_sinh:
+            return super().call_operator(op, args, kwargs, meta)
+
+        is_quantized = (
+            len(meta.data.get("input_qparams", {})) > 0
+            and len(meta.data.get("output_qparams", {})) > 0
+        )
+        if is_quantized:
+            # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 
         x = args

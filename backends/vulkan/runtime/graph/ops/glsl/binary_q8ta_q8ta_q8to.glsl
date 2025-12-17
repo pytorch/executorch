@@ -25,8 +25,6 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-#extension GL_EXT_debug_printf : enable
-#define DEBUG_MODE
 #include "indexing.glslh"
 #include "common.glslh"
 

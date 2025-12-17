@@ -12,7 +12,7 @@ import math
 import re
 
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Literal, Optional, Tuple
+from typing import ClassVar, Dict, List, Literal, Optional, Sequence, Tuple
 
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
@@ -22,9 +22,11 @@ from executorch.exir._serialize._flatbuffer import (
     _program_json_to_flatbuffer,
 )
 from executorch.exir._serialize._named_data_store import (
-    BufferEntry,
+    NamedDataStore,
     NamedDataStoreOutput,
 )
+
+from executorch.exir._serialize.data_serializer import DataEntry
 
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
 
@@ -45,6 +47,19 @@ from executorch.exir.tensor import ALIGNMENT
 # regardless of the host system, since all commonly-used modern CPUs are little
 # endian.
 _HEADER_BYTEORDER: Literal["little"] = "little"
+
+
+@dataclass
+class PTEFile:
+    """
+    Wraps together the data required to serialize into a PTE file.
+    """
+
+    program: Program
+    # TODO(lfq): add constant data (currently restored in the program)
+    # TODO(lfq): update this to List[bytes]
+    mutable_data: Optional[List[Buffer]] = None
+    named_data: Optional[NamedDataStoreOutput] = None
 
 
 @dataclass
@@ -368,8 +383,8 @@ def _extract_constant_segment(
 def _extract_named_data(
     program: Program,
     segments: List[AlignedData],
-    buffers: List[BufferEntry],
-    name_to_buffer_idx: Dict[str, int],
+    buffers: Sequence[bytes],
+    name_to_data_entry: Dict[str, DataEntry],
 ) -> None:
     """Modifies the program in-place to add references to the named data
         segments.
@@ -379,7 +394,7 @@ def _extract_named_data(
         segments: A list of buffers to append extracted segments to. Modified in-place.
         buffers: A list of unique buffers and the information required to
             serialize them. Not modified.
-        name_to_buffer_idx: A map from the name of a blob to the index in buffers.
+        name_to_data_entry: A map from the blob name to DataEntry.
             Not modified.
     """
     if program.named_data is not None and len(program.named_data) > 0:
@@ -389,14 +404,14 @@ def _extract_named_data(
     segment_index_map: Dict[int, int] = {}
 
     named_data: List[NamedData] = []
-    for name, buffer_idx in name_to_buffer_idx.items():
-        segment_index = segment_index_map.get(buffer_idx, None)
+    for name, data_entry in name_to_data_entry.items():
+        segment_index = segment_index_map.get(data_entry.buffer_index, None)
         if segment_index is None:
             segment_index = len(segments)
-            segment_index_map[buffer_idx] = segment_index
+            segment_index_map[data_entry.buffer_index] = segment_index
             segments.append(
                 AlignedData(
-                    Cord(buffers[buffer_idx].buffer), buffers[buffer_idx].alignment
+                    Cord(buffers[data_entry.buffer_index]), data_entry.alignment
                 )
             )
         named_data.append(NamedData(key=name, segment_index=segment_index))
@@ -404,19 +419,17 @@ def _extract_named_data(
 
 
 def serialize_pte_binary(
-    program: Program,
+    pte_file: PTEFile,
     *,
-    mutable_data: Optional[List[Buffer]] = None,
     extract_delegate_segments: bool = False,
     segment_alignment: int = 128,
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
-    named_data: Optional[NamedDataStoreOutput] = None,
 ) -> Cord:
     """Returns the runtime binary representation of the given Program.
 
     Args:
-        program: The Program to serialize.
+        pte_file: PTEFile class containing the program and segments.
         extract_delegate_segments: Whether to move delegate data blobs from the
             Program into separate segments, rather than encoding those blobs
             in the flatbuffer data. When true, will also:
@@ -431,8 +444,6 @@ def serialize_pte_binary(
         delegate_alignment: If provided, the minimum alignment of delegate data
             in the program. Must be a power of 2. If not provided, uses the
             value in the schema file.
-        named_data: If provided, named blobs to be stored in segments
-            after the PTE file.
     Returns:
         The serialized form of the Program, ready for execution by the runtime.
     """
@@ -443,7 +454,7 @@ def serialize_pte_binary(
     # Don't modify the original program.
     # TODO(T144120904): Could avoid yet more huge copies with a more shallow
     # copy, reusing the actual data blobs.
-    program = copy.deepcopy(program)
+    program = copy.deepcopy(pte_file.program)
 
     # Store extracted segment data, with any buffer-specific alignment.
     # This may be constant data, delegate data or named data.
@@ -467,9 +478,9 @@ def serialize_pte_binary(
         # Add to the aggregate segments cord.
         segments.append(AlignedData(constant_segment_data))
 
-    if mutable_data is not None:
+    if pte_file.mutable_data is not None:
         mutable_segment_data, mutable_segment_offsets = _extract_constant_segment(
-            mutable_data,
+            pte_file.mutable_data,
             tensor_alignment=None,  # data is copied at Method load so no need to align.
         )
         if len(mutable_segment_data) > 0:
@@ -484,8 +495,10 @@ def serialize_pte_binary(
 
     if extract_delegate_segments:
         _extract_delegate_segments(program, segments)
-    if named_data is not None:
-        _extract_named_data(program, segments, named_data.buffers, named_data.pte_data)
+    if pte_file.named_data is not None:
+        _extract_named_data(
+            program, segments, pte_file.named_data.buffers, pte_file.named_data.pte_data
+        )
 
     # Append all segments into a single Cord, adding any necessary padding to ensure that
     # each segment begins at the required alignment.
@@ -576,33 +589,16 @@ def serialize_pte_binary(
     return pte_data
 
 
-def _restore_segments(program: Program, segment_data: bytes) -> Program:
-    """Moves segments from `segment_data` into `program`.
-
-    This should recreate the original Program that the segments were extracted
-    from.
+def _restore_delegates(program: Program, segments: List[bytes]) -> Program:
+    """Find and replace the Program's references to these segments, inlining
+    the data.
 
     Args:
-        program: The Program to restore. `program.segments` must describe the
-            segment locations.
-        segment_data: The data containing the segments. Assumes that this data
-            begins at `segment_base_offset` from the extended header: i.e.,
-            the preceding data has been stripped off so that the first segment
-            begins at offset zero.
-    Returns:
-        The Program with segments restored.
-    """
-    # Extract the list of segment data blobs, which parallel program.segments.
-    segments: List[bytes] = []
-    for i, segment in enumerate(program.segments):
-        if segment.offset + segment.size > len(segment_data):
-            raise ValueError(
-                f"Segment {i} {segment} overflows data length {len(segment_data)}"
-            )
-        segments.append(segment_data[segment.offset : segment.offset + segment.size])
+        program: The Program holding non-inlined delegates. Modified in-place.
+        segments: List of bytes containing the delegate data. Not modified.
 
-    # Find and replace the Program's references to these segments, inlining the
-    # data.
+    Returns: The Program with delegates restored.
+    """
     for plan_index, plan in enumerate(program.execution_plan):
         for delegate_index, delegate in enumerate(plan.delegates):
             if delegate.processed.location == DataLocation.INLINE:
@@ -622,32 +618,131 @@ def _restore_segments(program: Program, segment_data: bytes) -> Program:
             delegate.processed = BackendDelegateDataReference(
                 location=DataLocation.INLINE, index=data_index
             )
-
-    # Replace constants from constant_segment into constant_buffer.
-    if program.constant_segment and len(program.constant_segment.offsets) > 0:
-        buffers: List[Buffer] = []
-        constant_segment = segments[program.constant_segment.segment_index]
-        for i in range(len(program.constant_segment.offsets)):
-            start_offset = program.constant_segment.offsets[i]
-            # Note: this is the original end offset plus any padding between
-            # it and the next start offset.
-            end_offset = (
-                program.constant_segment.offsets[i + 1]
-                if i < len(program.constant_segment.offsets) - 1
-                else len(constant_segment)
-            )
-            buffers.append(Buffer(storage=constant_segment[start_offset:end_offset]))
-        program.constant_buffer = buffers
-        program.constant_segment.segment_index = 0
-        program.constant_segment.offsets = []
-
-    # Clear out the segments list since the original Program didn't have one.
-    program.segments = []
     return program
 
 
-def deserialize_pte_binary(program_data: bytes) -> Program:
-    """Returns a Program deserialized from the given runtime binary data."""
+def _restore_constant_segment(
+    constant_segment: SubsegmentOffsets, segment_data: bytes
+) -> List[Buffer]:
+    """Convert constant and mutable tensors from a single byte-blob into a list of individual tensors.
+
+    Args:
+        constant_segment: SubsegmentOffset with the offsets of each tensor.
+        segment_data: byte data containing the tensors and padding. Not modified.
+
+    Returns:
+        List[Buffer] containing each tensor in a separate object.
+    """
+    buffers: List[Buffer] = []
+    for i in range(len(constant_segment.offsets)):
+        start_offset = constant_segment.offsets[i]
+        # Note: this is the original end offset plus any padding between it and the next start offset
+        end_offset = (
+            constant_segment.offsets[i + 1]
+            if i < len(constant_segment.offsets) - 1
+            else len(segment_data)
+        )
+        buffers.append(Buffer(storage=segment_data[start_offset:end_offset]))
+    return buffers
+
+
+def _restore_named_data(
+    program: Program,
+    segments: List[bytes],
+) -> NamedDataStoreOutput:
+    """Moves named data from `segments` and `program` into the
+    NamedDataStoreOutput class.
+
+    Args:
+        program: The Program holding named data references. Not modified.
+        segments: The data containing the segments. Not modified.
+    """
+    named_data_store = NamedDataStore()
+    for entry in program.named_data:
+        if entry.segment_index >= len(segments):
+            raise ValueError(
+                "Named data segment index "
+                f"{entry.segment_index} >= num segments {len(segments)}"
+            )
+        named_data_store.add_named_data(
+            key=entry.key,
+            data=segments[entry.segment_index],
+            alignment=1,  # Deserialization does not preserve alignment.
+            tensor_layout=None,  # PTE file currently does not serialize this.
+        )
+    return named_data_store.get_named_data_store_output()
+
+
+def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
+    """Moves segments from `segment_data` into `program`.
+
+    This should recreate the original Program that the segments were extracted
+    from.
+
+    Args:
+        program: The Program to restore. `program.segments` must describe the
+            segment locations.
+        segment_data: The data containing the segments. Assumes that this data
+            begins at `segment_base_offset` from the extended header: i.e.,
+            the preceding data has been stripped off so that the first segment
+            begins at offset zero.
+    Returns:
+        PTEFile, containing the Program with delegate and constant segments restored, mutable data segment, and named data segment.
+    """
+    # Extract the list of segment data blobs, which parallel program.segments.
+    segments: List[bytes] = []
+    for i, segment in enumerate(program.segments):
+        if segment.offset + segment.size > len(segment_data):
+            raise ValueError(
+                f"Segment {i} {segment} overflows data length {len(segment_data)}"
+            )
+        segments.append(segment_data[segment.offset : segment.offset + segment.size])
+
+    # Restore delegate segments that weren't inlined previously.
+    program = _restore_delegates(program, segments)
+
+    # Replace constants from constant_segment into constant_buffer.
+    if program.constant_segment and len(program.constant_segment.offsets) > 0:
+        if program.constant_segment.segment_index >= len(segments):
+            raise ValueError(
+                f"Constant segment index {program.constant_segment.segment_index} >= num segments {len(segments)}"
+            )
+        program.constant_buffer = _restore_constant_segment(
+            program.constant_segment, segments[program.constant_segment.segment_index]
+        )
+        program.constant_segment.segment_index = 0
+        program.constant_segment.offsets = []
+
+    # Extract mutable segments.
+    mutable_data = None
+    if program.mutable_data_segments and len(program.mutable_data_segments) > 0:
+        if len(program.mutable_data_segments) > 1:
+            raise ValueError("Can't handle more than 1 mutable data segment.")
+        segment_index = program.mutable_data_segments[0].segment_index
+        if segment_index >= len(segments):
+            raise ValueError(
+                f"Mutable data segment index {segment_index} >= num segments {len(segments)}"
+            )
+        mutable_data = _restore_constant_segment(
+            program.mutable_data_segments[0],
+            segments[segment_index],
+        )
+        program.mutable_data_segments = None
+
+    # Extract named data.
+    named_data = None
+    if program.named_data:
+        named_data = _restore_named_data(program, segments)
+
+    # Clear named_data and segments, which are empty pre-serialization.
+    program.named_data = []
+    program.segments = []
+
+    return PTEFile(program=program, mutable_data=mutable_data, named_data=named_data)
+
+
+def deserialize_pte_binary(program_data: bytes) -> PTEFile:
+    """Returns a PTEFile deserialized from the given runtime binary data."""
     program_size = len(program_data)
     segment_base_offset = 0
 
@@ -665,8 +760,8 @@ def deserialize_pte_binary(program_data: bytes) -> Program:
 
     if segment_base_offset != 0:
         # Move segment data back into the Program.
-        program = _restore_segments(
+        return _restore_segments(
             program=program, segment_data=program_data[segment_base_offset:]
         )
 
-    return program
+    return PTEFile(program=program, mutable_data=None, named_data=None)

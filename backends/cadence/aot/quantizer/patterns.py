@@ -112,7 +112,7 @@ class AddmmPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_linear.default
+        return torch.ops.cadence.quantized_linear.per_tensor
 
 
 class AddPattern(QuantizationPattern):
@@ -150,7 +150,7 @@ class AddPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_add.default
+        return torch.ops.cadence.quantized_add.per_tensor
 
 
 class BmmPattern(QuantizationPattern):
@@ -174,6 +174,8 @@ class BmmPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
+        # TODO: T240804887 This is actually a per-tensor variant,
+        # we just need to change the name of the op
         return torch.ops.cadence.quantized_matmul.default
 
 
@@ -265,7 +267,7 @@ class Conv1dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv2d_nchw.default
+        return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
 
 
 class Conv2dPattern(QuantizationPattern):
@@ -307,7 +309,7 @@ class Conv2dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv2d_nchw.default
+        return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
 
 
 class LayerNormPattern(QuantizationPattern):
@@ -345,7 +347,7 @@ class LayerNormPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_layer_norm.default
+        return torch.ops.cadence.quantized_layer_norm.per_tensor
 
 
 class LinearPattern(QuantizationPattern):
@@ -387,7 +389,7 @@ class LinearPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_linear.default
+        return torch.ops.cadence.quantized_linear.per_tensor
 
 
 class MatmulPattern(QuantizationPattern):
@@ -411,6 +413,7 @@ class MatmulPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
+        # TODO: T240804887 This is actually a per-tensor variant, we just need to change the name of the op
         return torch.ops.cadence.quantized_matmul.default
 
 
@@ -437,7 +440,7 @@ class ReluBasePattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_relu.default
+        return torch.ops.cadence.quantized_relu.per_tensor
 
 
 # Regular relu op
@@ -496,7 +499,7 @@ class ConvReluBasePattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv2d_nchw.default
+        return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
 
 
 # Conv1d + regular relu op fusion
@@ -524,7 +527,6 @@ class Conv2dReluPattern1(ConvReluBasePattern):
 
 
 class SoftmaxPattern(QuantizationPattern):
-
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten._softmax.default]
 
@@ -545,4 +547,192 @@ class SoftmaxPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_softmax.default
+        return torch.ops.cadence.quantized_softmax.per_tensor
+
+
+class MixedW8A32LinearPattern(QuantizationPattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.linear.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # pyre-ignore[29]
+        linear_layer = fused_partition[0].nodes[-1]
+
+        # Bail if the arguments have different shapes than expected
+        if len(linear_layer.args) != 3 or len(linear_layer.kwargs) > 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                linear_layer,
+            )
+
+        input_node = linear_layer.args[0]
+        input_shape = input_node.meta["tensor_meta"].shape
+
+        # Bail if the weights are not multiple of 4 (SIMD)
+        if input_shape[-1] % 4 != 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                linear_layer,
+            )
+        # Currenly only supporting vector-matrix multiplication
+        if len(input_shape) > 0 and input_shape[-2] != 1:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                linear_layer,
+            )
+
+        return (
+            PartitionAnchors(
+                inputs=[],
+                weights=[(linear_layer, 1)],
+                biases=[(linear_layer, 2)],
+                output=[],
+                others=[(linear_layer, 0)],
+            ),
+            linear_layer,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_w8a32_linear.default
+
+
+class MixedW8A32ConvPattern(QuantizationPattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.conv1d.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # pyre-ignore[29]
+        conv_layer = fused_partition[0].nodes[-1]
+
+        # Bail if the arguments have different shapes than expected
+        # Stride, padding, dilation and groups are not supported
+        if len(conv_layer.args) != 3 or len(conv_layer.kwargs) > 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                conv_layer,
+            )
+
+        cnn_weights = conv_layer.args[1]
+        if hasattr(cnn_weights.meta, "tensor_meta"):
+            cnn_weights_shape = cnn_weights.meta["tensor_meta"].shape
+            # Bail if the channels are not multiple of 4 (SIMD)
+            if cnn_weights_shape[0] % 4 != 0:
+                return (
+                    PartitionAnchors(
+                        empty=True,
+                    ),
+                    conv_layer,
+                )
+            if cnn_weights_shape[1] % 4 != 0:
+                return (
+                    PartitionAnchors(
+                        empty=True,
+                    ),
+                    conv_layer,
+                )
+            # Bail if the kernel size is not 3
+            if cnn_weights_shape[2] != 3:
+                return (
+                    PartitionAnchors(
+                        empty=True,
+                    ),
+                    conv_layer,
+                )
+
+        return (
+            PartitionAnchors(
+                inputs=[],
+                weights=[(conv_layer, 1)],
+                biases=[(conv_layer, 2)],
+                output=[],
+                others=[(conv_layer, 0)],
+            ),
+            conv_layer,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_w8a32_conv.default
+
+
+class MixedW8A32GruPattern(QuantizationPattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.gru.input]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        gru_layer = fused_partition[0].nodes[-1]
+        if len(gru_layer.kwargs) > 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                gru_layer,
+            )
+
+        # Bail if input or states are not multiple of 4 (SIMD)
+        if gru_layer.args[0].meta["tensor_meta"].shape[-1] % 4 != 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                gru_layer,
+            )
+        if gru_layer.args[1].meta["tensor_meta"].shape[-1] % 4 != 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                gru_layer,
+            )
+
+        class Wrapper:  # noqa: B903
+            def __init__(self, args, meta):
+                self.args = args
+                self.meta = meta
+
+        wrapper = Wrapper(tuple(gru_layer.args[2]), gru_layer.meta)
+
+        return (
+            PartitionAnchors(
+                inputs=[],
+                # pyre-fixme[6]: Expected `List[Tuple[Node, int]]` but got `List[Tuple[Wrapper, int]]`.
+                weights=[(wrapper, 0), (wrapper, 1)],
+                # pyre-fixme[6]: Expected `List[Union[Tuple[Node, int], Tuple[Node, int, DerivedQuantizationSpec]]]` but got `List[Tuple[Wrapper, int]]`.
+                biases=[(wrapper, 2), (wrapper, 3)],
+                output=[],
+                others=[(gru_layer, 0), (gru_layer, 1)],
+            ),
+            gru_layer,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_w8a32_gru.default
+
+
+class RmsNormPattern(QuantizationPattern):
+    """Pattern that preserves rms_norm from decomposition without matching anything."""
+
+    def partition_types(self) -> list[torch._ops.OpOverload]:
+        return [torch.ops.aten.rms_norm.default]
+
+    def get_anchors(
+        self, gm: torch.fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        return PartitionAnchors(empty=True), None  # pyre-ignore[7]
+
+    def replacement_op(self) -> torch._ops.OpOverload:
+        return torch.ops.aten.rms_norm.default

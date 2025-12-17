@@ -151,6 +151,7 @@ void et_pal_emit_log_message(et_timestamp_t timestamp,
   case kFatal:
     logType = OS_LOG_TYPE_FAULT;
     break;
+  case kUnknown:
   default:
     logType = OS_LOG_TYPE_DEFAULT;
     break;

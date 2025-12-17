@@ -17,10 +17,10 @@ class DecomposeSilu(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
         for node in graph.nodes:
-            if (
-                node.op == "call_function"
-                and node.target == torch.ops.aten.silu.default
-            ):
+            if node.op == "call_function" and node.target in {
+                torch.ops.aten.silu.default,
+                torch.ops.aten.silu_.default,
+            }:
                 silu_node = node
                 silu_node_input = node.args[0]
                 with graph_module.graph.inserting_after(silu_node_input):

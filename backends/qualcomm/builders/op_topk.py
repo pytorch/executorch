@@ -6,7 +6,7 @@
 import warnings
 from typing import cast, Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
@@ -31,8 +31,8 @@ class TopK(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
 
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
@@ -40,7 +40,7 @@ class TopK(NodeVisitor):
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
         )
 
@@ -70,7 +70,7 @@ class TopK(NodeVisitor):
             node,
             node,
             output_val_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -80,13 +80,13 @@ class TopK(NodeVisitor):
             node,
             node,
             output_idx_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
             wrapper_idx=1,
         )
         topk_output_tensors = [output_val_tensor_wrapper, output_index_tensor_wrapper]
 
-        topk_op = PyQnnWrapper.PyQnnOpWrapper(
+        topk_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpTopK.op_name,
@@ -96,7 +96,7 @@ class TopK(NodeVisitor):
 
         topk_op.AddScalarParam(
             OpTopK.param_k,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(k)},
         )
 
@@ -105,7 +105,7 @@ class TopK(NodeVisitor):
             largest = cast(bool, node.args[3])
             topk_op.AddScalarParam(
                 OpTopK.param_largest,
-                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+                PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
                 {QCOM_DATA: largest},
             )
 

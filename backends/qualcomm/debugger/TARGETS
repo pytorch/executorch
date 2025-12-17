@@ -10,3 +10,21 @@ runtime.python_library(
         "fbsource//third-party/pypi/pandas:pandas",
     ]
 )
+
+runtime.python_library(
+    name = "qnn_intermediate_debugger",
+    srcs = [
+        "format_outputs.py",
+        "metrics_evaluator.py",
+        "qnn_intermediate_debugger.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/qualcomm/_passes:passes",
+        "//executorch/backends/qualcomm/utils:utils",
+        "//executorch/devtools:lib",
+        "//executorch/exir:sym_util",
+        "fbsource//third-party/pypi/graphviz:graphviz",
+        "fbsource//third-party/pypi/pandas:pandas",
+    ],
+)

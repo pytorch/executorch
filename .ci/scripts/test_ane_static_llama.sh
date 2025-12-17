@@ -28,6 +28,13 @@ pushd $EXECUTORCH_ROOT/examples/apple/coreml/llama
 # Download stories llama110m artifacts
 download_stories_model_artifacts
 
+# Test static ANE llama model
+python export_static_llm_coreml.py --checkpoint stories110M.pt --params params.json --output model.pte
+
+# The ANE cannot run in github CI
+# python run_static_llm.py --model model.pte --params params.json --tokenizer tokenizer.model --prompt "Once upon a time," --lookahead
+
+# Test export of deprecated model
 python export.py -n model.pte -p params.json -c stories110M.pt --seq_length 32 --max_seq_length 64 --dtype fp16 --coreml-quantize c4w --embedding-quantize 4,32
 
 popd

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -47,7 +48,9 @@ find_package(
 )
 
 add_executable(example_runner example_runner/example_runner.cpp)
-target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
+target_compile_options(
+  executorch INTERFACE -DET_EVENT_TRACER_ENABLED -DET_BUNDLE_IO_ENABLED
+)
 
 target_include_directories(
   etdump INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../devtools/include

@@ -43,3 +43,17 @@ python_unittest(
         "//executorch/exir/_serialize:lib",
     ],
 )
+
+python_unittest(
+    name = "test_serialize",
+    srcs = [
+        "test_serialize.py",
+    ],
+    deps = [
+        "//executorch/exir:schema",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/emit:lib",
+        "//executorch/exir/capture:config",
+        "//executorch/exir/tests:lib",
+    ],
+)

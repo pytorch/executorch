@@ -3,10 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from . import (  # noqa
     clone_dim_order_support,
+    control_flow_support,
     convolution_support,
     embedding_support,
     ethos_u55_support,

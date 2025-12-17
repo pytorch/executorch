@@ -1,7 +1,7 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_oss_build_kwargs", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "get_oss_build_kwargs", "runtime")
 
 def define_common_targets():
-    for aten in (True, False):
+    for aten in get_aten_mode_options():
         if not runtime.is_oss or not aten:
             aten_suffix = "_aten" if aten else ""
 
@@ -19,6 +19,7 @@ def define_common_targets():
                     "//executorch/extension/evalue_util:print_evalue",
                     "//executorch/extension/threadpool:threadpool",
                     "//executorch/extension/threadpool:cpuinfo_utils",
+                    "//executorch/devtools/etdump:etdump_flatcc" + aten_suffix,
                 ],
                 external_deps = [
                     "gflags",

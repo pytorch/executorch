@@ -190,7 +190,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_group_norm_out(
         ret_val);
   }
 
-  constexpr auto name = "native_group_norm.out";
+  static constexpr auto name = "native_group_norm.out";
 
   ET_SWITCH_FLOATHBF16_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
     group_norm<CTYPE>(

@@ -53,14 +53,21 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
     const std::vector<int64_t> packed_sizes = graph->sizes_of(packed_);
     size_t numel = utils::multiply_integers(packed_sizes);
     api::StagingBuffer staging(
-        graph->context(), graph->dtype_of(packed_), numel);
+        graph->context(),
+        graph->dtype_of(packed_),
+        numel,
+        vkapi::CopyDirection::HOST_TO_DEVICE);
     staging.set_staging_zeros();
     return staging;
   }
 
   TensorRefPtr tref = graph->get_tref(tref_);
   size_t numel = utils::multiply_integers(tref->sizes);
-  api::StagingBuffer staging(graph->context(), tref->dtype, numel);
+  api::StagingBuffer staging(
+      graph->context(),
+      tref->dtype,
+      numel,
+      vkapi::CopyDirection::HOST_TO_DEVICE);
   graph->update_staging_nbytes_in_cmd(staging.buffer().mem_size_as_size_t());
   size_t nbytes = numel * vkapi::element_size(tref->dtype);
   staging.copy_from(tref->data, nbytes);

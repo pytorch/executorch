@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import List
+
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
@@ -14,13 +16,13 @@ from executorch.backends.arm.tosa.specification import (
 
 
 @register_fake_tosa_op(
-    "RESCALE(Tensor input1, ScalarType dtype, float scale, int in_zp, int out_zp) -> Tensor",  # schema
+    "RESCALE(Tensor input1, ScalarType dtype, float[] scale, int in_zp, int out_zp) -> Tensor",  # schema
     (
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
     ),  # target TOSA specifications
 )
 def RESCALE(
-    x: torch.Tensor, dtype: torch.dtype, scale: float, in_zp: int, out_zp: int
+    x: torch.Tensor, dtype: torch.dtype, scales: List[float], in_zp: int, out_zp: int
 ) -> torch.Tensor:
     tosa_spec = get_context_spec()
     """Casts the input tensor to dtype `dtype` to produce the correct tensor meta for a _rescale op.

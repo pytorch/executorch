@@ -23,5 +23,6 @@ runtime.python_library(
         "//executorch/exir/tests:models",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/export:lib",
+        "//executorch/runtime:runtime",  # @manual
     ],
 )

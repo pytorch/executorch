@@ -40,11 +40,11 @@ void LoggingCallback(
   QNN_EXECUTORCH_LOG(log_level, buffer);
 }
 QnnLogger::QnnLogger(
-    const QnnImplementation& implementation,
+    QnnImplementation* implementation,
     QnnLog_Callback_t callback,
     QnnExecuTorchLogLevel log_level)
-    : handle_(nullptr), implementation_(implementation) {
-  const QnnInterface& qnn_interface = implementation.GetQnnInterface();
+    : handle_(nullptr), implementation_(implementation), log_level_(log_level) {
+  const QnnInterface& qnn_interface = implementation->GetQnnInterface();
 
   QnnLog_Level_t qnn_log_level = QNN_LOG_LEVEL_ERROR;
   if (log_level > QnnExecuTorchLogLevel::kLogOff) {
@@ -86,7 +86,7 @@ QnnLogger::QnnLogger(
 }
 
 QnnLogger::~QnnLogger() {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   if (handle_ != nullptr) {
     Qnn_ErrorHandle_t error = qnn_interface.qnn_log_free(handle_);
     if (error != QNN_SUCCESS) {

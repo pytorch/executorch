@@ -26,29 +26,36 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
 # Common AOTI functionality - combines all AOTI common components
-set(_aoti_common_sources aoti_model_container.cpp common_shims.cpp)
+set(_aoti_common_sources common_shims.cpp)
 add_library(aoti_common STATIC ${_aoti_common_sources})
 target_include_directories(
   aoti_common
   PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
-         # PyTorch AOTI headers from ExecuTorch's torch detection
-         ${TORCH_INCLUDE_DIRS}
+         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
 )
-target_compile_options(aoti_common PUBLIC -fexceptions -frtti -fPIC)
-# Ensure symbols are exported properly
-target_link_options(aoti_common PUBLIC -Wl,--export-dynamic)
-
-# Link against PyTorch libraries and standard libraries
-target_link_libraries(
+target_compile_options(
   aoti_common
-  PUBLIC extension_tensor ${CMAKE_DL_LIBS}
-         # Link PyTorch libraries for AOTI functions
-         ${TORCH_LIBRARIES}
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
 )
+target_compile_definitions(
+  aoti_common PRIVATE $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
+)
+# Ensure symbols are exported properly
+if(APPLE)
+  target_link_options(aoti_common PUBLIC -Wl,-export_dynamic)
+else()
+  target_link_options(
+    aoti_common PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
+  )
+endif()
+
+# Link against ExecuTorch libraries and standard libraries
+target_link_libraries(aoti_common PUBLIC extension_tensor ${CMAKE_DL_LIBS})
 executorch_target_link_options_shared_lib(aoti_common)
 
 install(
   TARGETS aoti_common
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )

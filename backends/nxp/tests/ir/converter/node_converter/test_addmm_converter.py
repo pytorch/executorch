@@ -19,6 +19,7 @@ from executorch.backends.nxp.tests.executors import (
 )
 from executorch.backends.nxp.tests.models import AddmmModule, LinearModule
 from executorch.exir.dialects._ops import ops as exir_ops
+from parameterized import parameterized
 from torch.export import ExportedProgram
 
 
@@ -28,15 +29,18 @@ class TestAddmmConversion(unittest.TestCase):
         torch.manual_seed(23)
         np.random.seed(42)
 
-    def test_addmm_conversion(self):
+    @parameterized.expand([("QAT", True), ("PTQ", False)])
+    def test_addmm_conversion(self, _, use_qat: bool):
         with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program, call_original=True
+            EdgeProgramToIRConverter.convert_program,
+            call_original=True,
+            owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             input_shape = (1, 32)
             model = AddmmModule(input_shape[1])
 
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_qat=use_qat
             ).exported_program()
 
             # Make sure that all nodes were delegated.
@@ -58,15 +62,18 @@ class TestAddmmConversion(unittest.TestCase):
                 tfl_model=tflite_flatbuffers_model,
             )
 
-    def test_linear_conversion__with_bias(self):
+    @parameterized.expand([("QAT", True), ("PTQ", False)])
+    def test_linear_conversion__with_bias(self, _, use_qat: bool):
         with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program, call_original=True
+            EdgeProgramToIRConverter.convert_program,
+            call_original=True,
+            owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             input_shape = (10, 32)
             model = LinearModule(bias=True)
 
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_qat=use_qat
             ).exported_program()
 
             # Make sure that all nodes were delegated.

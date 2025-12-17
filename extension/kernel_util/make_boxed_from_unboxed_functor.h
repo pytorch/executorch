@@ -34,9 +34,6 @@
 //===----------------------------------------------------------------------===//
 
 #pragma once
-#if __cplusplus < 201703L
-#error "This header requires C++17"
-#endif
 
 #include <executorch/extension/kernel_util/meta_programming.h>
 #include <executorch/extension/kernel_util/type_list.h>

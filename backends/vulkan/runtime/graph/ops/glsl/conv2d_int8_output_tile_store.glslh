@@ -16,7 +16,7 @@
 
 void store_packed_int8_output_tile(
     const Int8OutTile int8_tile,
-    const Conv2dBlockIndex block_idx,
+    Conv2dBlockIndex block_idx,
     const Conv2dBlockExtents block_extents) {
 #ifdef PACKED_INT8_OUTPUT_BUFFER
   [[unroll]] for (int m4 = 0; m4 < TILE_M4; m4++) {
@@ -34,8 +34,11 @@ void store_packed_int8_output_tile(
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; n4++) {
       if (block_idx.data.x + m4 < block_extents.data.x &&
           block_idx.data.z + n4 < block_extents.data.z) {
+        const ivec3 idx_offset = ivec3(m4, 0, n4);
         imageStore(
-            t_packed_int8_output, block_idx.data, int8_tile.data[m4][n4]);
+            t_packed_int8_output,
+            block_idx.data + idx_offset,
+            int8_tile.data[m4][n4]);
       }
     }
   }
