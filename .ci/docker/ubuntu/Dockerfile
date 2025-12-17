@@ -113,7 +113,8 @@ RUN rm -f install_cuda.sh install_pytorch_cuda.sh install_cuda_windows_cross_com
 # Set up CUDA environment for Linux compilation (nvcc, etc.)
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
-ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+# Ensure system libstdc++ is found before conda's (GLIBCXX_3.4.30 compatibility)
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 # Windows CUDA for cross-compilation
 ENV WINDOWS_CUDA_HOME=/opt/cuda-windows/extracted/cuda_cudart/cudart
 
