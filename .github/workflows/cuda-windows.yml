@@ -1,7 +1,7 @@
 # Test ExecuTorch CUDA Windows Cross-Compilation Export
 # This workflow tests model export targeting CUDA Windows using optimum-executorch.
-# It runs on a Linux machine with CUDA and installs mingw + Windows CUDA SDK at runtime
-# for Windows cross-compilation.
+# It runs on a Linux machine with CUDA and uses the executorch-ubuntu-22.04-cuda-windows
+# Docker image which has mingw and Windows CUDA SDK pre-installed for cross-compilation.
 
 name: Test CUDA Windows Export
 
@@ -54,47 +54,23 @@ jobs:
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
       gpu-arch-version: 12.8
-      use-custom-docker-registry: false
+      docker-image: ci-image:executorch-ubuntu-22.04-cuda-windows
       submodules: recursive
       upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-windows-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
 
-        echo "::group::Install Windows cross-compilation dependencies"
-        # Install mingw-w64 cross-compiler
-        sudo apt-get update
-        sudo apt-get install -y --no-install-recommends g++-mingw-w64-x86-64 mingw-w64-tools p7zip-full
+        echo "::group::Verify pre-installed dependencies"
         x86_64-w64-mingw32-g++ --version
-
-        # Download and extract Windows CUDA toolkit
-        # We need this for cross-compiling CUDA code for Windows
-        # Note: CUDA 12.8 installer is versioned as 12.8.1 with driver 572.61
-        CUDA_INSTALLER_VERSION="12.8.1"
-        CUDA_DRIVER_VERSION="572.61"
-        WINDOWS_CUDA_INSTALL_DIR="/tmp/cuda-windows"
-        mkdir -p "${WINDOWS_CUDA_INSTALL_DIR}"
-
-        CUDA_INSTALLER="cuda_${CUDA_INSTALLER_VERSION}_${CUDA_DRIVER_VERSION}_windows.exe"
-        CUDA_URL="https://developer.download.nvidia.com/compute/cuda/${CUDA_INSTALLER_VERSION}/local_installers/${CUDA_INSTALLER}"
-
-        echo "Downloading Windows CUDA toolkit from ${CUDA_URL}..."
-        wget -q "${CUDA_URL}" -O "${WINDOWS_CUDA_INSTALL_DIR}/${CUDA_INSTALLER}"
-
-        echo "Extracting Windows CUDA toolkit..."
-        7z x "${WINDOWS_CUDA_INSTALL_DIR}/${CUDA_INSTALLER}" -o"${WINDOWS_CUDA_INSTALL_DIR}/extracted" -y
-
-        # Clean up installer
-        rm -f "${WINDOWS_CUDA_INSTALL_DIR}/${CUDA_INSTALLER}"
-
-        # Set environment variable for Windows CUDA
-        export WINDOWS_CUDA_HOME="${WINDOWS_CUDA_INSTALL_DIR}/extracted/cuda_cudart/cudart"
+        nvcc --version
+        python3 -c "import torch; print(f'PyTorch {torch.__version__} with CUDA {torch.version.cuda}')"
         echo "WINDOWS_CUDA_HOME=${WINDOWS_CUDA_HOME}"
         ls -la "${WINDOWS_CUDA_HOME}"
         echo "::endgroup::"
 
         echo "::group::Setup ExecuTorch"
-        ./install_executorch.sh
+        ./install_executorch.sh --use-pt-pinned-commit
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
