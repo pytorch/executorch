@@ -225,7 +225,7 @@ Now, we can start to fill in function body step by step:
     - **tensor_source_node**: current graph source node of the tensor
     - **target_build_node**: current node to build, which is important for fixed point mixed-precision to work properly
     - **tensor**: torch tensor emitted by node
-    - **tensor_type**: type compatible with QNN SDK, oftenly use `QNN_TENSOR_TYPE_NATIVE` for intermediate outputs and `QNN_TENSOR_TYPE_STATIC` for constant parameters
+    - **tensor_type**: type compatible with QNN SDK, often use `QNN_TENSOR_TYPE_NATIVE` for intermediate outputs and `QNN_TENSOR_TYPE_STATIC` for constant parameters
     - **nodes_to_wrappers**: dictionary of graph node and its output tensor (note: the tensor here is not a torch tensor but a wrapped object for QNN)
     - **node_name**: (optional) tensor name for user to specify
     - **wrapper_idx**: (optional) defaults to zero if node is not a tuple, otherwise it acts as an indexer to output tensors. e.g. when slicing input tensor into multiple outputs, `wrapper_idx` is necessary for getting correct wrapped tensor object
@@ -280,7 +280,7 @@ Now, we can start to fill in function body step by step:
             nodes_to_wrappers,
         )
     ```
-    Althought the input / output activations might map to the graph IOs (a.k.a. user inputs / outputs) with corresponding type   `QNN_TENSOR_TYPE_APP_READ` / `QNN_TENSOR_TYPE_APP_WRITE`. Users are still expected to have `QNN_TENSOR_TYPE_NATIVE` for all nodes' IOs and leave the  detection logic handled inside `define_tensor` method.
+    Although the input / output activations might map to the graph IOs (a.k.a. user inputs / outputs) with corresponding type   `QNN_TENSOR_TYPE_APP_READ` / `QNN_TENSOR_TYPE_APP_WRITE`. Users are still expected to have `QNN_TENSOR_TYPE_NATIVE` for all nodes' IOs and leave the  detection logic handled inside `define_tensor` method.
 
 5. Generate operator object in QNN graph:
     ```python
@@ -330,7 +330,7 @@ Now, we can start to fill in function body step by step:
     - **data_type**: type compatible with QNN SDK, e.g. `QNN_DATATYPE_FLOAT_32`, `QNN_DATATYPE_UINT_32`, etc.
     - **rank**: dimensions of tensor
     - **dims**: shape of tensor
-    - **data**: tesnor data
+    - **data**: tensor data
     - **copy_data**: user should specify to True for constant parameters
 
 8. Last, return operator object for partitioner to conduct validation:
