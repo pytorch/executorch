@@ -19,10 +19,10 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
     get_current_qnn_manager,
 )
-from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
