@@ -178,8 +178,18 @@ def annotate_atan(node: Node, quantization_config: QuantizationConfig) -> None:
 def annotate_topk(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
-    # We can use single_in_single_out since we don't want to quantize indices output
-    annotate_single_in_single_out(node, quantization_config)
+
+    input_qspec_map = {}
+    if _is_float_tensor(node.args[0]):
+        input_act = node.args[0]
+        assert isinstance(input_act, Node)
+        input_qspec_map[input_act] = quantization_config.input_activation
+
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=quantization_config.output_activation,
+        _annotated=True,
+    )
 
 
 def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None:
