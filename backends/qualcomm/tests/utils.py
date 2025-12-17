@@ -184,6 +184,7 @@ class TestQNN(unittest.TestCase):
     dump_intermediate_outputs: bool = False
     inference_speed: float = 0.0
     inference_speed_output_path = "outputs/inference_speed.txt"
+    static_llm_eval_method = ""
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -496,7 +497,7 @@ class TestQNN(unittest.TestCase):
                         f" --performance_output_path {self.inference_speed_output_path}"
                     )
                 adb.execute(method_index=method_index, output_callback=output_callback)
-                adb.pull(output_path=tmp_dir, callback=post_process)
+                adb.pull(host_output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
 
                 if expected_profile_events != -1:

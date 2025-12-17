@@ -173,7 +173,7 @@ class TextDecoder(Component):
         self.mode = mode
         self.passes_job = get_capture_program_passes()
         self.dep_table = get_passes_dependency_for_capture_program()
-        self.meta = None
+
         self.quant_recipe: StaticLLMQuantRecipe = (
             self.config.quant_recipe(True) if self.config.quant_recipe else None
         )
@@ -188,16 +188,6 @@ class TextDecoder(Component):
             get_passes_dependency_for_capture_program() if apply_embedding else None
         )
 
-        # check if sharding required
-        if self.config.num_sharding > 1:
-            SplitGraph, setting = model_sharding.get_split_graph_pass(
-                self.meta["get_n_layers"],
-                shares=self.config.num_sharding,
-            )
-            self.passes_job[SplitGraph] = setting
-            self.dep_table[SplitGraph] = [FoldQDQ]
-            self.dep_table[TagQuantIO] = [SplitGraph]
-
         # load static llama model args
         params_path = (
             config.params_path if control_args.params is None else control_args.params
@@ -210,6 +200,17 @@ class TextDecoder(Component):
         self.decoder = None
         if (instance := self._prepare_model()) is not None:
             self.tok_embedding, self.decoder = instance
+            self.meta = self.decoder.get_metadata()
+
+        # check if sharding required
+        if self.decoder and self.config.num_sharding > 1:
+            SplitGraph, setting = model_sharding.get_split_graph_pass(
+                self.meta["get_n_layers"],
+                shares=self.config.num_sharding,
+            )
+            self.passes_job[SplitGraph] = setting
+            self.dep_table[SplitGraph] = [FoldQDQ]
+            self.dep_table[TagQuantIO] = [SplitGraph]
 
     def _process_model_args(self, model_args: ModelArgs):
         # TODO: support batch inputs if necessary
@@ -391,9 +392,7 @@ class TextDecoder(Component):
 
                     hf_config = Gemma3Config.from_pretrained(self.config.repo_id)
                     kwargs["layer_types"] = hf_config.text_config.layer_types
-                    kwargs["rope_local_base_freq"] = (
-                        hf_config.text_config.rope_local_base_freq
-                    )
+                    kwargs["rope_local_base_freq"] = self.model_args.local_rope_theta
                     kwargs["sliding_window"] = hf_config.sliding_window
 
         return kwargs
@@ -451,7 +450,6 @@ class TextDecoder(Component):
             **self._get_model_specific_kwargs(),
         )
         # get example input
-        self.meta = decoder.get_metadata()
         self.example_input = decoder.get_example_inputs()
         self.export_input = (
             self.example_input[0],  # tokens or hidden_states
@@ -834,8 +832,7 @@ class HybridTextDecoder(Component):
         data = request.method_data[TEXT_DECODER]
         models = [d for d in [self.decode, self.prefill] if d.decoder is not None]
         example_inputs = [m.export_input for m in models if m is not None]
-        # For backward compatibility, we keep the graph name as forward if we use kv mode for evaluation LLM models
-        graph_names = ["forward"] if len(models) == 1 else DECODER_GRAPH_NAMES
+        graph_names = DECODER_GRAPH_NAMES[: len(models)]
 
         # start lowering
         if self.apply_embedding:
@@ -899,7 +896,7 @@ class HybridTextDecoder(Component):
 
         if self.config.num_sharding > 1 and self.control_args.model_mode == "kv":
             # weight-sharing based context binaries cannot be opened in x86 host
-            update_spill_fill_size(edge_prog_mgr.exported_program())
+            update_spill_fill_size(edge_prog_mgr.exported_program("kv_forward"))
 
         if self.control_args.verbose:
             for ep in edge_prog_mgr._edge_programs.values():

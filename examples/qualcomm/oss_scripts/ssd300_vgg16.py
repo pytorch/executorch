@@ -237,7 +237,7 @@ def main(args):
             print("\nMean Average Precision (mAP): %.3f" % mAP)
             pp.pprint(APs)
 
-    adb.pull(output_path=args.artifact, callback=post_process)
+    adb.pull(host_output_path=args.artifact, callback=post_process)
 
 
 if __name__ == "__main__":
