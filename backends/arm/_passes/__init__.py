@@ -51,7 +51,6 @@ from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
 from .decompose_int16_activation_conv_pass import (  # noqa
     DecomposeConvWithInt16ActivationPass,
 )
-from .decompose_int32_clamp_pass import DecomposeInt32ClampPass  # noqa
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
@@ -75,6 +74,9 @@ from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
 from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
 from .decompose_sum_pass import DecomposeSumPass  # noqa
+from .decompose_tosa_unsupported_clamp_pass import (  # noqa
+    DecomposeTOSAUnsupportedClampPass,
+)
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa

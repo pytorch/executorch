@@ -141,19 +141,25 @@ VulkanImage Allocator::create_image(
       allocate_memory);
 }
 
-VulkanBuffer Allocator::create_staging_buffer(const VkDeviceSize size) {
+VulkanBuffer Allocator::create_staging_buffer(
+    const VkDeviceSize size,
+    const CopyDirection direction) {
   const VkBufferUsageFlags buffer_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
   VmaAllocationCreateInfo alloc_create_info = {};
-  alloc_create_info.flags = DEFAULT_ALLOCATION_STRATEGY;
+  alloc_create_info.flags =
+      DEFAULT_ALLOCATION_STRATEGY | VMA_ALLOCATION_CREATE_MAPPED_BIT;
   alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
   // Staging buffers are accessed by both the CPU and GPU, so set the
   // appropriate flags to indicate that the host device will be accessing
   // the data from this buffer.
-  alloc_create_info.flags |=
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-      VMA_ALLOCATION_CREATE_MAPPED_BIT;
+  if (direction == CopyDirection::HOST_TO_DEVICE) {
+    alloc_create_info.flags |=
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+  } else {
+    alloc_create_info.flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+  }
   alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
   alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
   alloc_create_info.preferredFlags =
