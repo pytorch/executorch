@@ -8,7 +8,6 @@ import logging
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
 from executorch.backends.qualcomm.builders import node_visitor_manager
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
@@ -18,6 +17,9 @@ from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
 )
 from executorch.backends.qualcomm.utils.constants import QCOM_BYPASS_NODE
 
+from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
+    get_current_qnn_manager,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
@@ -52,7 +54,8 @@ class QnnOperatorSupport(OperatorSupportBase):
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
     ):
-        python_options = flatbuffer_to_option(compiler_specs[0].value)
+        option = generate_qnn_executorch_option(compiler_specs)
+        python_options = flatbuffer_to_option(option)
         self.node_visitors = node_visitor_manager.get_node_visitors(
             edge_program,
             op_package_infos=python_options.op_package_options.op_package_infos,
@@ -61,11 +64,9 @@ class QnnOperatorSupport(OperatorSupportBase):
         self.skip_node_op_set = skip_node_op_set
         self.skip_node_id_set = skip_node_id_set
         self.nodes_to_wrappers = defaultdict(dict)
-        self.qnn_manager = PyQnnManager.QnnManager(
-            generate_qnn_executorch_option(compiler_specs)
+        self.qnn_manager = get_current_qnn_manager(
+            python_options.backend_options.backend_type, compiler_specs
         )
-
-        self.qnn_manager.Init()
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
         if node.op != "call_function" or node.target in not_supported_operator:
@@ -114,9 +115,6 @@ class QnnOperatorSupport(OperatorSupportBase):
         self.nodes_to_wrappers.clear()
         print(f"[QNN Partitioner Op Support]: {node.target.__name__} | {supported}")
         return supported
-
-    def __del__(self):
-        self.qnn_manager.Destroy()
 
 
 class QnnPartitioner(Partitioner):

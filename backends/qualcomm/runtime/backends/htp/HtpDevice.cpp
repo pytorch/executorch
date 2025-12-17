@@ -376,7 +376,7 @@ void HtpDevice::ReleasePerformanceVote() {
 
 Error HtpDevice::AfterCreateDevice() {
   if (IsPerfModeEnabled()) {
-    const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+    const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
     Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
     // Get htp_perf_infra
