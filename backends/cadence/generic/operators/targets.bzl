@@ -15,6 +15,7 @@ def define_common_targets():
         exported_headers = ["quantized_op_macros.h"],
         exported_deps = [
             ":cadence_type_util",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/runtime/kernel:kernel_includes",
         ]
     )
