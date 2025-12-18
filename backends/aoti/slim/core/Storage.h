@@ -12,9 +12,10 @@
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
-#include <executorch/backends/aoti/slim/c10/util/Exception.h>
 #include <executorch/backends/aoti/slim/util/SharedPtr.h>
 #include <executorch/backends/aoti/slim/util/SizeUtil.h>
+#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/log.h>
 
 namespace executorch::backends::aoti::slim {
 using DeleterFn = void (*)(void*);
@@ -98,12 +99,11 @@ struct DeviceTraits<executorch::backends::aoti::slim::c10::DeviceType::CUDA> {
       direction = cudaMemcpyDeviceToHost;
       cuda_device = src_device; // Use source CUDA device
     } else {
-      STANDALONE_CHECK(
+      ET_CHECK_MSG(
           src_device.index() == dst_device.index(),
-          "CUDA memcpy failed across different device indices: ",
-          src_device.index(),
-          "!=",
-          dst_device.index());
+          "CUDA memcpy failed across different device indices: %d != %d",
+          static_cast<int>(src_device.index()),
+          static_cast<int>(dst_device.index()));
     }
     // Set up CUDA context for the appropriate device
     executorch::backends::aoti::slim::cuda::CUDAGuard guard(cuda_device);
@@ -116,11 +116,11 @@ struct DeviceTraits<executorch::backends::aoti::slim::c10::DeviceType::CUDA> {
   static void* allocate(
       size_t nbytes,
       const executorch::backends::aoti::slim::c10::Device& device) {
-    STANDALONE_CHECK(false, "Build with USE_CUDA=1 to enable CUDA support");
+    ET_CHECK_MSG(false, "Build with USE_CUDA=1 to enable CUDA support");
   }
 
   static void free(void* ptr) {
-    STANDALONE_WARN("Build with USE_CUDA=1 to enable CUDA support");
+    ET_LOG(Error, "Build with USE_CUDA=1 to enable CUDA support");
   }
 
   static void memcpy(
@@ -129,7 +129,7 @@ struct DeviceTraits<executorch::backends::aoti::slim::c10::DeviceType::CUDA> {
       size_t nbytes,
       const executorch::backends::aoti::slim::c10::Device& dst_device,
       const executorch::backends::aoti::slim::c10::Device& src_device) {
-    STANDALONE_CHECK(false, "Build with USE_CUDA=1 to enable CUDA support");
+    ET_CHECK_MSG(false, "Build with USE_CUDA=1 to enable CUDA support");
   }
 };
 #endif
@@ -156,7 +156,7 @@ class MaybeOwningStorage {
       deleter_ = DeviceTraits<
           executorch::backends::aoti::slim::c10::DeviceType::CUDA>::free;
     } else {
-      STANDALONE_CHECK(false, "Unsupported device type");
+      ET_CHECK_MSG(false, "Unsupported device type");
     }
   }
 
@@ -217,10 +217,10 @@ class MaybeOwningStorage {
       void* src_data_ptr,
       size_t nbytes,
       const executorch::backends::aoti::slim::c10::Device& src_device) {
-    STANDALONE_CHECK(
-        dst_data_ptr, "Storage clone failed: dst_data_ptr can not be nullptr")
-    STANDALONE_CHECK(
-        src_data_ptr, "Storage clone failed: src_data_ptr can not be nullptr")
+    ET_CHECK_MSG(
+        dst_data_ptr, "Storage clone failed: dst_data_ptr can not be nullptr");
+    ET_CHECK_MSG(
+        src_data_ptr, "Storage clone failed: src_data_ptr can not be nullptr");
     if (dst_data_ptr == src_data_ptr) {
       return;
     }
@@ -238,8 +238,7 @@ class MaybeOwningStorage {
 
   MaybeOwningStorage clone(
       const executorch::backends::aoti::slim::c10::Device& device) const {
-    STANDALONE_CHECK(
-        data_, "Storage clone failed: source data can not be nullptr")
+    ET_CHECK_MSG(data_, "Storage clone failed: source data can not be nullptr");
     // Create a new owning storage with the specified device and same capacity
     MaybeOwningStorage cloned_storage(device, capacity_);
 

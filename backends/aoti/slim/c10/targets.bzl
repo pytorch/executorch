@@ -15,7 +15,9 @@ def define_common_targets():
             exclude = ["cuda/**/*.h"],
         ),
         visibility = ["@EXECUTORCH_CLIENTS"],
-        exported_deps = [],
+        exported_deps = [
+            "//executorch/runtime/platform:platform",
+        ],
     )
 
     # c10 CUDA-specific headers (requires CUDA SDK)

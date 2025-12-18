@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <executorch/backends/aoti/slim/c10/util/Exception.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <cstdint>
 #include <functional>
@@ -75,7 +75,7 @@ template <
     typename C,
     std::enable_if_t<std::is_integral_v<typename C::value_type>, int> = 0>
 inline int64_t numelements_from_dim(const int k, const C& dims) {
-  STANDALONE_INTERNAL_ASSERT_DEBUG_ONLY(k >= 0);
+  ET_CHECK_MSG(k >= 0, "numelements_from_dim: k must be non-negative");
 
   if (k > static_cast<int>(dims.size())) {
     return 1;
@@ -92,8 +92,10 @@ template <
     typename C,
     std::enable_if_t<std::is_integral_v<typename C::value_type>, int> = 0>
 inline int64_t numelements_to_dim(const int k, const C& dims) {
-  STANDALONE_INTERNAL_ASSERT(0 <= k);
-  STANDALONE_INTERNAL_ASSERT((unsigned)k <= dims.size());
+  ET_CHECK_MSG(0 <= k, "numelements_to_dim: k must be non-negative");
+  ET_CHECK_MSG(
+      (unsigned)k <= dims.size(),
+      "numelements_to_dim: k must not exceed dims.size()");
 
   auto cend = dims.cbegin();
   std::advance(cend, k);
@@ -106,14 +108,16 @@ template <
     typename C,
     std::enable_if_t<std::is_integral_v<typename C::value_type>, int> = 0>
 inline int64_t numelements_between_dim(int k, int l, const C& dims) {
-  STANDALONE_INTERNAL_ASSERT(0 <= k);
-  STANDALONE_INTERNAL_ASSERT(0 <= l);
+  ET_CHECK_MSG(0 <= k, "numelements_between_dim: k must be non-negative");
+  ET_CHECK_MSG(0 <= l, "numelements_between_dim: l must be non-negative");
 
   if (k > l) {
     std::swap(k, l);
   }
 
-  STANDALONE_INTERNAL_ASSERT((unsigned)l < dims.size());
+  ET_CHECK_MSG(
+      (unsigned)l < dims.size(),
+      "numelements_between_dim: l must be less than dims.size()");
 
   auto cbegin = dims.cbegin();
   auto cend = dims.cbegin();

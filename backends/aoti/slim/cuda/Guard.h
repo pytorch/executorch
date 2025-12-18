@@ -73,10 +73,7 @@ struct CUDAGuard {
   /// Sets the current CUDA device to the passed device.  Errors if the passed
   /// device is not a CUDA device.
   explicit CUDAGuard(executorch::backends::aoti::slim::c10::Device device) {
-    STANDALONE_CHECK(
-        device.is_cuda(),
-        "Expected a CUDA device for CUDAGuard, but got ",
-        device);
+    ET_CHECK_MSG(device.is_cuda(), "Expected a CUDA device for CUDAGuard");
     set_index(device.index());
   }
 

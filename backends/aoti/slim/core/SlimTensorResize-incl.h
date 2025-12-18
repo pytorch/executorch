@@ -10,7 +10,7 @@ namespace executorch::backends::aoti::slim {
 inline void SlimTensor::empty_tensor_restride(
     executorch::backends::aoti::slim::c10::MemoryFormat memory_format) {
 #ifdef DEBUG
-  STANDALONE_INTERNAL_ASSERT(
+  ET_DCHECK_MSG(
       compute_numel() == numel_,
       "If you are seeing this error, that means empty_tensor_restride was "
       "called before setting correct numel");
@@ -30,30 +30,29 @@ inline void SlimTensor::empty_tensor_restride(
               std::max<int64_t>(sizes_and_strides_.size_at_unchecked(i + 1), 1),
               std::addressof(sizes_and_strides_.stride_at_unchecked(i)));
         }
-        STANDALONE_CHECK(!overflowed, "Stride calculation overflowed");
+        ET_CHECK_MSG(!overflowed, "Stride calculation overflowed");
       }
       break;
     }
     case executorch::backends::aoti::slim::c10::MemoryFormat::ChannelsLast: {
-      STANDALONE_CHECK(
+      ET_CHECK_MSG(
           dim() == 4, "required rank 4 tensor to use channels_last format");
       set_sizes_and_strides(sizes(), get_channels_last_strides_2d(sizes()));
       break;
     }
     case executorch::backends::aoti::slim::c10::MemoryFormat::ChannelsLast3d: {
-      STANDALONE_CHECK(
+      ET_CHECK_MSG(
           dim() == 5, "required rank 5 tensor to use channels_last_3d format");
       set_sizes_and_strides(sizes(), get_channels_last_strides_3d(sizes()));
       break;
     }
     case executorch::backends::aoti::slim::c10::MemoryFormat::Preserve:
-      STANDALONE_CHECK(false, "unsupported memory format ", memory_format);
-      // Cleaning warning messages, no need to break as STANDALONE_CHECK(false)
+      ET_CHECK_MSG(false, "unsupported memory format: Preserve");
+      // Cleaning warning messages, no need to break as ET_CHECK_MSG(false)
       // terminates flow.
       // break;
     case executorch::backends::aoti::slim::c10::MemoryFormat::NumOptions:
-      STANDALONE_INTERNAL_ASSERT(
-          false, "invalid memory format ", memory_format);
+      ET_DCHECK_MSG(false, "invalid memory format: NumOptions");
   }
   // recompute contiguous flag, as currently NHWC/NCHW flags are not mutually
   // exclusive see #24090
@@ -64,7 +63,7 @@ inline void _resize_bytes(
     MaybeOwningStorage* storage,
     size_t new_size_bytes,
     size_t storage_offset_in_bytes) {
-  STANDALONE_CHECK(
+  ET_CHECK_MSG(
       storage->is_resizable(),
       "Trying to resize storage that is not resizable");
 
@@ -162,11 +161,10 @@ inline SlimTensor SlimTensor::resize_(
     executorch::backends::aoti::slim::c10::MemoryFormat memory_format =
         static_cast<executorch::backends::aoti::slim::c10::MemoryFormat>(
             optional_memory_format.value());
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         memory_format !=
             executorch::backends::aoti::slim::c10::MemoryFormat::Preserve,
-        "Unsupported memory format",
-        memory_format);
+        "Unsupported memory format: Preserve");
     this->empty_tensor_restride(memory_format);
   }
   return *this;

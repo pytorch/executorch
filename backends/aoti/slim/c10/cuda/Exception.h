@@ -9,12 +9,14 @@
 #include <iostream>
 #include <stdexcept>
 
-#include <executorch/backends/aoti/slim/c10/util/Exception.h>
+#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/log.h>
 
-#define STANDALONE_CUDA_CHECK(EXPR)                                    \
-  do {                                                                 \
-    const cudaError_t __err = EXPR;                                    \
-    STANDALONE_CHECK(__err == cudaSuccess, cudaGetErrorString(__err)); \
+#define STANDALONE_CUDA_CHECK(EXPR)                                         \
+  do {                                                                      \
+    const cudaError_t __err = EXPR;                                         \
+    ET_CHECK_MSG(                                                           \
+        __err == cudaSuccess, "CUDA error: %s", cudaGetErrorString(__err)); \
   } while (0)
 
 #define STANDALONE_CUDA_CHECK_WARN(EXPR)                            \
@@ -22,7 +24,7 @@
     const cudaError_t __err = EXPR;                                 \
     if (STANDALONE_UNLIKELY(__err != cudaSuccess)) {                \
       [[maybe_unused]] auto error_unused = cudaGetLastError();      \
-      STANDALONE_WARN("CUDA warning: ", cudaGetErrorString(__err)); \
+      ET_LOG(Error, "CUDA warning: %s", cudaGetErrorString(__err)); \
     }                                                               \
   } while (0)
 

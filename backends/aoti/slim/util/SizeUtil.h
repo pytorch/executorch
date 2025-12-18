@@ -6,7 +6,6 @@
 #include <stdexcept>
 
 #include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
-#include <executorch/backends/aoti/slim/c10/util/Exception.h>
 #include <executorch/backends/aoti/slim/c10/util/accumulate.h>
 #include <executorch/backends/aoti/slim/c10/util/irange.h>
 #include <executorch/backends/aoti/slim/c10/util/safe_numerics.h>
@@ -34,7 +33,7 @@ inline int64_t safe_compute_numel(
   bool overflowed =
       executorch::backends::aoti::slim::c10::safe_multiplies_u64(sizes, &n);
   overflowed |= (n > storage_max());
-  STANDALONE_CHECK(!overflowed, "numel: integer multiplication overflow");
+  ET_CHECK_MSG(!overflowed, "numel: integer multiplication overflow");
   return static_cast<int64_t>(n);
 }
 
@@ -54,7 +53,7 @@ inline std::vector<int64_t> safe_compute_contiguous_strides(
         stride = new_stride;
       }
     }
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         !overflowed, "contiguous_strides: stride multiplication overflow");
   }
   return strides;
@@ -86,8 +85,7 @@ inline size_t compute_storage_nbytes_contiguous(
   overflowed |= executorch::backends::aoti::slim::c10::mul_overflows(
       size, itemsize_bytes, &size);
   overflowed |= size > storage_max();
-  STANDALONE_CHECK(
-      !overflowed, "Storage size calculation overflowed with sizes=", sizes);
+  ET_CHECK_MSG(!overflowed, "Storage size calculation overflowed");
   return static_cast<size_t>(size);
 #else
   const auto numel = multiply_integers(sizes);
@@ -101,13 +99,11 @@ inline size_t compute_storage_nbytes(
     executorch::backends::aoti::slim::c10::IntArrayRef strides,
     size_t itemsize_bytes,
     size_t storage_offset) {
-  STANDALONE_CHECK(
+  ET_CHECK_MSG(
       sizes.size() == strides.size(),
-      "dimensionality of sizes (",
+      "dimensionality of sizes (%zu) must match dimensionality of strides (%zu)",
       sizes.size(),
-      ") must match dimensionality of strides (",
-      strides.size(),
-      ")");
+      strides.size());
 
 // Ignore overflow checks on mobile
 #ifndef STANDALONE_MOBILE
@@ -130,12 +126,7 @@ inline size_t compute_storage_nbytes(
   overflowed |= executorch::backends::aoti::slim::c10::mul_overflows(
       size, itemsize_bytes, &size);
   overflowed |= size > storage_max();
-  STANDALONE_CHECK(
-      !overflowed,
-      "Storage size calculation overflowed with sizes=",
-      sizes,
-      " and strides=",
-      strides);
+  ET_CHECK_MSG(!overflowed, "Storage size calculation overflowed");
   return static_cast<size_t>(size);
 #else
   // size of the underlying storage is 1 bigger than the offset
@@ -186,29 +177,36 @@ inline std::vector<int64_t> infer_size(
   bool overflowed = false;
   for (size_t dim = 0; dim < ndim; dim++) {
     if (shape[dim] == -1) {
-      STANDALONE_CHECK(
+      ET_CHECK_MSG(
           !infer_dim.has_value(), "only one dimension can be inferred");
       infer_dim = dim;
       result_shape.push_back(-1); // placeholder
     } else {
-      STANDALONE_CHECK(shape[dim] >= 0, "invalid shape dimension ", shape[dim]);
+      ET_CHECK_MSG(
+          shape[dim] >= 0,
+          "invalid shape dimension %ld",
+          static_cast<long>(shape[dim]));
       overflowed |= executorch::backends::aoti::slim::c10::mul_overflows(
           new_size, shape[dim], &new_size);
       result_shape.push_back(shape[dim]);
     }
   }
-  STANDALONE_CHECK(!overflowed, "shape calculation overflowed");
+  ET_CHECK_MSG(!overflowed, "shape calculation overflowed");
 
   if (infer_dim.has_value()) {
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         new_size != 0,
         "cannot reshape tensor of 0 elements into shape with -1");
-    STANDALONE_CHECK(
-        numel % new_size == 0, "shape is invalid for input size ", numel);
+    ET_CHECK_MSG(
+        numel % new_size == 0,
+        "shape is invalid for input size %ld",
+        static_cast<long>(numel));
     result_shape[*infer_dim] = numel / new_size;
   } else {
-    STANDALONE_CHECK(
-        numel == new_size, "shape is invalid for input of size ", numel);
+    ET_CHECK_MSG(
+        numel == new_size,
+        "shape is invalid for input of size %ld",
+        static_cast<long>(numel));
   }
   return result_shape;
 }
@@ -282,7 +280,7 @@ inline std::optional<std::vector<int64_t>> compute_stride(
       }
     }
   }
-  STANDALONE_CHECK(!overflowed, "overflowed while computing strides");
+  ET_CHECK_MSG(!overflowed, "overflowed while computing strides");
 
   if (view_d != -1) {
     return std::nullopt; // not viewable

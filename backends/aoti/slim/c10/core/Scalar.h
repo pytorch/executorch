@@ -7,11 +7,11 @@
 
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/aoti/slim/c10/macros/Macros.h>
-#include <executorch/backends/aoti/slim/c10/util/Exception.h>
 #include <executorch/backends/aoti/slim/c10/util/Half.h>
 #include <executorch/backends/aoti/slim/c10/util/TypeCast.h>
 #include <executorch/backends/aoti/slim/c10/util/complex.h>
 #include <executorch/backends/aoti/slim/c10/util/overflows.h>
+#include <executorch/runtime/platform/assert.h>
 
 // Copy-pasted from c10/core/Scalar.h, but dropping SymScalar support
 
@@ -102,7 +102,7 @@ class Scalar {
     } else if (Tag::HAS_u == tag) {                                            \
       return checked_convert<type, uint64_t>(v.u, #type);                      \
     }                                                                          \
-    STANDALONE_CHECK(false)                                                    \
+    ET_CHECK_MSG(false, "Unknown Scalar tag");                                 \
   }
 
   // TODO: Support ComplexHalf accessor
@@ -158,9 +158,9 @@ class Scalar {
   }
 
   Scalar operator-() const {
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         !isBoolean(),
-        "torch boolean negative, the `-` operator, is not supported.");
+        "torch boolean negative, the `-` operator, is not supported");
     if (isFloatingPoint()) {
       return Scalar(-v.d);
     } else if (isComplex()) {
@@ -168,8 +168,7 @@ class Scalar {
     } else if (isIntegral(false)) {
       return Scalar(-v.i);
     }
-    STANDALONE_INTERNAL_ASSERT(
-        false, "unknown ivalue tag ", static_cast<int>(tag));
+    ET_CHECK_MSG(false, "unknown ivalue tag");
   }
 
   Scalar conj() const {
@@ -188,8 +187,7 @@ class Scalar {
     } else if (isIntegral(false)) {
       return std::log(v.i);
     }
-    STANDALONE_INTERNAL_ASSERT(
-        false, "unknown ivalue tag ", static_cast<int>(tag));
+    ET_CHECK_MSG(false, "unknown ivalue tag");
   }
 
   template <
@@ -219,7 +217,7 @@ class Scalar {
       // boolean scalar does not equal to a non boolean value
       return false;
     } else {
-      STANDALONE_INTERNAL_ASSERT(false);
+      ET_CHECK_MSG(false, "unexpected tag in equal");
     }
   }
 
@@ -249,7 +247,7 @@ class Scalar {
       // boolean scalar does not equal to a non boolean value
       return false;
     } else {
-      STANDALONE_INTERNAL_ASSERT(false);
+      ET_CHECK_MSG(false, "unexpected tag in equal");
     }
   }
 

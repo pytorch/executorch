@@ -153,13 +153,11 @@ class SlimTensor {
       executorch::backends::aoti::slim::c10::IntArrayRef strides,
       std::optional<int64_t> storage_offset = std::nullopt) {
     const int64_t new_dim = static_cast<int64_t>(sizes.size());
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         new_dim == static_cast<int64_t>(strides.size()),
-        "dimensionality of sizes (",
-        new_dim,
-        ") must match dimensionality of strides (",
-        strides.size(),
-        ")");
+        "dimensionality of sizes (%ld) must match dimensionality of strides (%zu)",
+        static_cast<long>(new_dim),
+        strides.size());
 
     std::vector<int64_t> new_sizes = sizes.vec();
     std::vector<int64_t> new_strides = strides.vec();
@@ -183,7 +181,7 @@ class SlimTensor {
         }
       }
     }
-    STANDALONE_CHECK(!overflowed, "Stride calculation overflowed");
+    ET_CHECK_MSG(!overflowed, "Stride calculation overflowed");
 
     sizes_and_strides_.set_sizes(new_sizes);
     sizes_and_strides_.set_strides(new_strides);
@@ -235,13 +233,13 @@ class SlimTensor {
   }
 
   SlimTensor to(executorch::backends::aoti::slim::c10::ScalarType dtype) const {
-    STANDALONE_CHECK(false, "TBD: to(dtype)");
+    ET_CHECK_MSG(false, "TBD: to(dtype)");
   }
 
   SlimTensor& copy_(const SlimTensor& other) {
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         this->numel() == other.numel(), "copy_: numel of tensors must match");
-    STANDALONE_CHECK(this->dtype() == other.dtype(), "copy_: dtype must match");
+    ET_CHECK_MSG(this->dtype() == other.dtype(), "copy_: dtype must match");
 
     if (this->numel() == 0) {
       return *this;
@@ -291,7 +289,7 @@ class SlimTensor {
             other.device() // src device
         );
 #else
-        STANDALONE_CHECK(false, "copy_: no CUDA support");
+        ET_CHECK_MSG(false, "copy_: no CUDA support");
 #endif
       }
       // Increment the multi-dimensional counter
@@ -315,13 +313,13 @@ class SlimTensor {
       } else if (this->device().is_cuda()) {
 #ifdef USE_CUDA
         cudaError_t err = cudaMemset(this->data_ptr(), 0, this->nbytes());
-        STANDALONE_CHECK(
+        ET_CHECK_MSG(
             err == cudaSuccess,
-            "CUDA memset failed: ",
+            "CUDA memset failed: %s",
             cudaGetErrorString(err));
         return *this;
 #else
-        STANDALONE_CHECK(false, "CUDA support not available");
+        ET_CHECK_MSG(false, "CUDA support not available");
 #endif
       }
     }
@@ -342,9 +340,9 @@ class SlimTensor {
                 host_data.data(),
                 this->nbytes(),
                 cudaMemcpyHostToDevice);
-            STANDALONE_CHECK(
+            ET_CHECK_MSG(
                 err == cudaSuccess,
-                "CUDA memcpy failed: ",
+                "CUDA memcpy failed: %s",
                 cudaGetErrorString(err));
           } else {
             std::vector<SType> host_data(this->numel(), typed_value);
@@ -353,9 +351,9 @@ class SlimTensor {
                 host_data.data(),
                 this->nbytes(),
                 cudaMemcpyHostToDevice);
-            STANDALONE_CHECK(
+            ET_CHECK_MSG(
                 err == cudaSuccess,
-                "CUDA memcpy failed: ",
+                "CUDA memcpy failed: %s",
                 cudaGetErrorString(err));
           }
         } else {
@@ -366,7 +364,7 @@ class SlimTensor {
           this->copy_(cpu_tensor);
         }
 #else
-        STANDALONE_CHECK(false, "CUDA support not available");
+        ET_CHECK_MSG(false, "CUDA support not available");
 #endif
       } else if (this->device().is_cpu()) {
         if (this->is_contiguous()) {
@@ -448,7 +446,7 @@ class SlimTensor {
             value.to<executorch::backends::aoti::slim::c10::complex<double>>());
         break;
       default:
-        STANDALONE_CHECK(false, "fill_: Unsupported dtype");
+        ET_CHECK_MSG(false, "fill_: Unsupported dtype");
     }
     return *this;
   }
@@ -492,13 +490,11 @@ class SlimTensor {
   // Generic element access returning SlimTensor
   SlimTensor operator[](
       executorch::backends::aoti::slim::c10::IntArrayRef indices) const {
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         indices.size() <= this->dim(),
-        "Number of indices (",
+        "Number of indices (%zu) cannot exceed tensor dimensions (%zu)",
         indices.size(),
-        ") cannot exceed tensor dimensions (",
-        this->dim(),
-        ")");
+        this->dim());
 
     if (indices.size() == this->dim()) {
       // Full indexing - return 0-dimensional tensor
@@ -583,16 +579,16 @@ class SlimTensor {
         return this
             ->item<executorch::backends::aoti::slim::c10::complex<double>>();
       default:
-        STANDALONE_CHECK(false, "item(): Unsupported dtype");
+        ET_CHECK_MSG(false, "item(): Unsupported dtype");
     }
   }
 
   // Templated version to access 0-dimensional tensor
   template <typename T>
   T item() const {
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         this->dim() == 0, "item() can only be called on 0-dimensional tensors");
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         this->numel() == 1, "item() requires tensor to have exactly 1 element");
 
     // For 0-dimensional tensors, directly access the single element at
