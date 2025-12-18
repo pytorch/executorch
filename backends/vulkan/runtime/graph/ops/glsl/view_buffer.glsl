@@ -18,7 +18,8 @@ ${layout_declare_ubo(B, "BufferMetadata", "inp")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-${layout_declare_spec_const(C, "int", "all_contiguous", "0")}
+${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
+${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
 
 /*
  * The insight behind the view operation is that the contiguous index of each
@@ -31,16 +32,15 @@ void main() {
   }
 
   uint inp_bufi = outp_bufi;
-  if (all_contiguous == 0) {
-    TensorIndex outp_tidx;
-    linear_idx_to_tensor_idx(outp, outp_bufi, outp_tidx);
+  if (!is_contiguous(outp_layout) || !is_contiguous(inp_layout)) {
+    TensorIndex outp_tidx = linear_idx_to_tensor_idx(
+        outp, outp_bufi, outp_layout);
 
     // To map the output to the input, find the input element that has the same
     // contiguous index as the output element.
     const uint contig_idx = tensor_idx_to_contiguous_idx(outp, outp_tidx);
 
-    TensorIndex inp_tidx;
-    contiguous_idx_to_tensor_idx(inp, contig_idx, inp_tidx);
+    TensorIndex inp_tidx = contiguous_idx_to_tensor_idx(inp, contig_idx);
 
     inp_bufi = tensor_idx_to_linear_idx(inp, inp_tidx);
   }

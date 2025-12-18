@@ -36,8 +36,7 @@ void main() {
     return;
   }
 
-  TensorIndex inp_tidx;
-  linear_idx_to_tensor_idx(inp, inp_bufi, inp_tidx);
+  TensorIndex inp_tidx = linear_idx_to_tensor_idx(inp, inp_bufi);
 
   TensorIndex outp_tidx = inp_tidx;
   permute(outp_tidx, permute_order);
