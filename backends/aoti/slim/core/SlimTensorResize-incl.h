@@ -156,7 +156,7 @@ inline SlimTensor* _resize_impl_(
 inline SlimTensor SlimTensor::resize_(
     executorch::backends::aoti::slim::c10::IntArrayRef sizes,
     std::optional<c10::MemoryFormat> optional_memory_format) {
-  _resize_impl_(this, sizes, /*stride=*/std::nullopt, true);
+  _resize_impl_(this, sizes, /*strides=*/std::nullopt, true);
 
   if (optional_memory_format.has_value()) {
     executorch::backends::aoti::slim::c10::MemoryFormat memory_format =
