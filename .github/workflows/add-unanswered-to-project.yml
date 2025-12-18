@@ -22,8 +22,8 @@ jobs:
             const excludedAuthors = new Set([
               "nil-is-all", "tanvirislam-meta", "cbilgin", "kimishpatel", "psiddh", "digantdesai", "SS-JIA", "ahmtox", "mcr229", 
               "shoumikhin", "manuelcandales", "metascroy", "cccclai", "rohansjoshi", "kirklandsign", "abhinaykukkadapu", 
-              "JacobSzwejbka", "Conarnar", "lucylq", "larryliu0820", "BujSet", "Gasoonjia", "Juntian777", "guangy10", "jackzhxng",
-              "GregoryComer", "leafs1", "swolchok", "mergennachin", "tarun292", "byjlw", "jathu", "Jack-Khuu", "georgehong", 
+              "JacobSzwejbka", "Conarnar", "rascani", "lucylq", "larryliu0820", "BujSet", "Gasoonjia", "Juntian777", "guangy10", 
+              "jackzhxng", "GregoryComer", "leafs1", "swolchok", "mergennachin", "tarun292", "byjlw", "jathu", "Jack-Khuu", "georgehong", 
               "zhenyan-zhang-meta", "silverguo", "harishs88ss", "AlannaBurke", "dbort", "huydhn", "mcremon-meta", "trivedivivek", 
               "angelayi", "helunwencser", "hsharma35", "zhxchen17", "iseeyuan", "svekars", "nathanaelsee", "dulinriley", 
               "jerryzh168", "cmodi-meta", "bigfootjon", "sxu", "ydwu4", "Riandy", "tugsbayasgalan", "bsoyluoglu", "yangw-dev", 
