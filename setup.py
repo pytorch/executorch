@@ -677,9 +677,14 @@ class CustomBuild(build):
             f"-DCMAKE_BUILD_TYPE={cmake_build_type}",
         ]
 
-        # Use ClangCL on Windows.
+        # Use ClangCL on Windows, but not when building with CUDA
+        # (CUDA 12.x MSBuild targets have compatibility issues with ClangCL)
         if _is_windows():
-            cmake_configuration_args += ["-T ClangCL"]
+            # Check if CUDA build is enabled via CMAKE_ARGS environment variable
+            cmake_args_env = os.environ.get("CMAKE_ARGS", "")
+            cuda_enabled = "EXECUTORCH_BUILD_CUDA=ON" in cmake_args_env
+            if not cuda_enabled:
+                cmake_configuration_args += ["-T ClangCL"]
 
         # Allow adding extra cmake args through the environment. Used by some
         # tests and demos to expand the set of targets included in the pip
