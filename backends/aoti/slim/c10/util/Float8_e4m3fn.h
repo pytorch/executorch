@@ -32,7 +32,7 @@
 #include <climits>
 #include <iostream>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 namespace detail {
 
@@ -233,6 +233,6 @@ inline std::ostream& operator<<(std::ostream& out, const Float8_e4m3fn& value) {
   return out;
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 #include <executorch/backends/aoti/slim/c10/util/Float8_e4m3fn-inl.h> // IWYU pragma: keep

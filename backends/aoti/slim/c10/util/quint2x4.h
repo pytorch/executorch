@@ -3,7 +3,7 @@
 
 #include <executorch/backends/aoti/slim/c10/macros/Macros.h>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 /**
  * quint2x4 is for un-signed 2 bit quantized Tensors that are packed to byte
@@ -16,4 +16,4 @@ struct alignas(1) quint2x4 {
   STANDALONE_HOST_DEVICE explicit quint2x4(uint8_t val) : val_(val) {}
 };
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

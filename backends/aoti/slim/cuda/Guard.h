@@ -14,19 +14,20 @@
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
 
-namespace standalone::slim::cuda {
+namespace executorch::backends::aoti::slim::cuda {
 
 // Thread-local stream management
 namespace detail {
-inline thread_local std::
-    unordered_map<standalone::c10::DeviceIndex, cudaStream_t>
-        current_streams_;
+inline thread_local std::unordered_map<
+    executorch::backends::aoti::slim::c10::DeviceIndex,
+    cudaStream_t>
+    current_streams_;
 }
 
 /// Set the current CUDA stream for the specified device
 inline void setCurrentCUDAStream(
     cudaStream_t stream,
-    standalone::c10::DeviceIndex device_index = -1) {
+    executorch::backends::aoti::slim::c10::DeviceIndex device_index = -1) {
   if (device_index == -1) {
     // Get current device if not specified
     int current_device;
@@ -39,7 +40,7 @@ inline void setCurrentCUDAStream(
 
 /// Get the current CUDA stream for the specified device
 inline cudaStream_t getCurrentCUDAStream(
-    standalone::c10::DeviceIndex device_index = -1) {
+    executorch::backends::aoti::slim::c10::DeviceIndex device_index = -1) {
   if (device_index == -1) {
     // Get current device if not specified
     int current_device;
@@ -64,13 +65,14 @@ struct CUDAGuard {
   explicit CUDAGuard() = delete;
 
   /// Set the current CUDA device to the passed device index.
-  explicit CUDAGuard(standalone::c10::DeviceIndex device_index) {
+  explicit CUDAGuard(
+      executorch::backends::aoti::slim::c10::DeviceIndex device_index) {
     set_index(device_index);
   }
 
   /// Sets the current CUDA device to the passed device.  Errors if the passed
   /// device is not a CUDA device.
-  explicit CUDAGuard(standalone::c10::Device device) {
+  explicit CUDAGuard(executorch::backends::aoti::slim::c10::Device device) {
     STANDALONE_CHECK(
         device.is_cuda(),
         "Expected a CUDA device for CUDAGuard, but got ",
@@ -94,7 +96,8 @@ struct CUDAGuard {
   }
 
   /// Sets the CUDA device to the given device index.
-  void set_index(standalone::c10::DeviceIndex device_index) {
+  void set_index(
+      executorch::backends::aoti::slim::c10::DeviceIndex device_index) {
     int orig_index = -1;
     STANDALONE_CUDA_CHECK(cudaGetDevice(&orig_index));
 
@@ -107,8 +110,8 @@ struct CUDAGuard {
 
  private:
   /// The guard for the current device.
-  standalone::c10::DeviceIndex original_device_index_;
-  standalone::c10::DeviceIndex current_device_index_;
+  executorch::backends::aoti::slim::c10::DeviceIndex original_device_index_;
+  executorch::backends::aoti::slim::c10::DeviceIndex current_device_index_;
 };
 
 struct CUDAStreamGuard {
@@ -118,7 +121,7 @@ struct CUDAStreamGuard {
   /// Set the current CUDA stream to the passed stream on the specified device.
   explicit CUDAStreamGuard(
       cudaStream_t stream,
-      standalone::c10::DeviceIndex device_index)
+      executorch::backends::aoti::slim::c10::DeviceIndex device_index)
       : device_guard_(device_index) {
     set_stream(stream, device_index);
   }
@@ -140,7 +143,7 @@ struct CUDAStreamGuard {
   /// Sets the CUDA stream to the given stream on the specified device.
   void set_stream(
       cudaStream_t stream,
-      standalone::c10::DeviceIndex device_index) {
+      executorch::backends::aoti::slim::c10::DeviceIndex device_index) {
     // Store the original stream for this device
     original_stream_ = getCurrentCUDAStream(device_index);
     current_stream_ = stream;
@@ -156,7 +159,7 @@ struct CUDAStreamGuard {
   }
 
   /// Get the device index being guarded
-  standalone::c10::DeviceIndex device_index() const {
+  executorch::backends::aoti::slim::c10::DeviceIndex device_index() const {
     return device_index_;
   }
 
@@ -168,7 +171,7 @@ struct CUDAStreamGuard {
   /// The current stream being guarded
   cudaStream_t current_stream_ = nullptr;
   /// The device index for this stream guard
-  standalone::c10::DeviceIndex device_index_;
+  executorch::backends::aoti::slim::c10::DeviceIndex device_index_;
 };
 
-} // namespace standalone::slim::cuda
+} // namespace executorch::backends::aoti::slim::cuda

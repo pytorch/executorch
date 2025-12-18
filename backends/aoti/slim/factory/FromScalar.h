@@ -2,14 +2,14 @@
 
 #include <executorch/backends/aoti/slim/factory/Empty.h>
 
-namespace standalone::slim {
+namespace executorch::backends::aoti::slim {
 
 inline SlimTensor scalar_to_tensor(
-    const standalone::c10::Scalar& s,
-    const standalone::c10::Device& device = CPU_DEVICE) {
+    const executorch::backends::aoti::slim::c10::Scalar& s,
+    const executorch::backends::aoti::slim::c10::Device& device = CPU_DEVICE) {
   SlimTensor result = empty_strided({}, {}, s.type(), device);
   result.fill_(s);
   return result;
 }
 
-} // namespace standalone::slim
+} // namespace executorch::backends::aoti::slim

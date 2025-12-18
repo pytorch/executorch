@@ -8,7 +8,7 @@
 #include <limits>
 #include <type_traits>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 // In some versions of MSVC, there will be a compiler error when building.
 // C4146: unary minus operator applied to unsigned type, result still unsigned
 // C4804: unsafe use of type 'bool' in operation
@@ -50,11 +50,12 @@ overflows(From f, bool strict_unsigned = false) {
     // `a + 255 * b`.
     if (!strict_unsigned) {
       return greater_than_max<To>(f) ||
-          (standalone::c10::is_negative(f) &&
+          (executorch::backends::aoti::slim::c10::is_negative(f) &&
            -static_cast<uint64_t>(f) > static_cast<uint64_t>(limit::max()));
     }
   }
-  return standalone::c10::less_than_lowest<To>(f) || greater_than_max<To>(f);
+  return executorch::backends::aoti::slim::c10::less_than_lowest<To>(f) ||
+      greater_than_max<To>(f);
 }
 
 template <typename To, typename From>
@@ -97,4 +98,4 @@ std::enable_if_t<is_complex<From>::value, bool> overflows(
              typename scalar_value_type<To>::type,
              typename From::value_type>(f.imag(), strict_unsigned);
 }
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

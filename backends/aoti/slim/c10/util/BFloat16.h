@@ -20,7 +20,7 @@
 #include <sycl/sycl.hpp> // for SYCL 2020
 #endif
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 namespace detail {
 inline STANDALONE_HOST_DEVICE float f32_from_bits(uint16_t src) {
@@ -118,6 +118,6 @@ inline std::ostream& operator<<(std::ostream& out, const BFloat16& value) {
   return out;
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 #include <executorch/backends/aoti/slim/c10/util/BFloat16-inl.h> // IWYU pragma: keep

@@ -29,7 +29,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 /// ArrayRef - Represent a constant reference to an array (0 or more elements
 /// consecutively in memory), i.e. a start pointer and a length.  It allows
 /// various APIs to take consecutive elements easily and conveniently.
@@ -324,41 +324,49 @@ ArrayRef<T> makeArrayRef(const T (&Arr)[N]) {
 }
 
 // WARNING: Template instantiation will NOT be willing to do an implicit
-// conversions to get you to an standalone::c10::ArrayRef, which is why we
-// need so many overloads.
+// conversions to get you to an executorch::backends::aoti::slim::c10::ArrayRef,
+// which is why we need so many overloads.
 
 template <typename T>
 bool operator==(
-    standalone::c10::ArrayRef<T> a1,
-    standalone::c10::ArrayRef<T> a2) {
+    executorch::backends::aoti::slim::c10::ArrayRef<T> a1,
+    executorch::backends::aoti::slim::c10::ArrayRef<T> a2) {
   return a1.equals(a2);
 }
 
 template <typename T>
 bool operator!=(
-    standalone::c10::ArrayRef<T> a1,
-    standalone::c10::ArrayRef<T> a2) {
+    executorch::backends::aoti::slim::c10::ArrayRef<T> a1,
+    executorch::backends::aoti::slim::c10::ArrayRef<T> a2) {
   return !a1.equals(a2);
 }
 
 template <typename T>
-bool operator==(const std::vector<T>& a1, standalone::c10::ArrayRef<T> a2) {
-  return standalone::c10::ArrayRef<T>(a1).equals(a2);
+bool operator==(
+    const std::vector<T>& a1,
+    executorch::backends::aoti::slim::c10::ArrayRef<T> a2) {
+  return executorch::backends::aoti::slim::c10::ArrayRef<T>(a1).equals(a2);
 }
 
 template <typename T>
-bool operator!=(const std::vector<T>& a1, standalone::c10::ArrayRef<T> a2) {
-  return !standalone::c10::ArrayRef<T>(a1).equals(a2);
+bool operator!=(
+    const std::vector<T>& a1,
+    executorch::backends::aoti::slim::c10::ArrayRef<T> a2) {
+  return !executorch::backends::aoti::slim::c10::ArrayRef<T>(a1).equals(a2);
 }
 
 template <typename T>
-bool operator==(standalone::c10::ArrayRef<T> a1, const std::vector<T>& a2) {
-  return a1.equals(standalone::c10::ArrayRef<T>(a2));
+bool operator==(
+    executorch::backends::aoti::slim::c10::ArrayRef<T> a1,
+    const std::vector<T>& a2) {
+  return a1.equals(executorch::backends::aoti::slim::c10::ArrayRef<T>(a2));
 }
 
 template <typename T>
-bool operator!=(standalone::c10::ArrayRef<T> a1, const std::vector<T>& a2) {
-  return !a1.equals(standalone::c10::ArrayRef<T>(a2));
+bool operator!=(
+    executorch::backends::aoti::slim::c10::ArrayRef<T> a1,
+    const std::vector<T>& a2) {
+  return !a1.equals(executorch::backends::aoti::slim::c10::ArrayRef<T>(a2));
 }
 
 using IntArrayRef = ArrayRef<int64_t>;
@@ -368,4 +376,4 @@ using IntList
                  "semantics obvious. Use IntArrayRef instead!")]] =
         ArrayRef<int64_t>;
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

@@ -6,9 +6,9 @@
 #include <executorch/backends/aoti/slim/core/Storage.h>
 #include <executorch/backends/aoti/slim/util/SizeUtil.h>
 
-namespace standalone::slim {
+namespace executorch::backends::aoti::slim {
 inline void SlimTensor::empty_tensor_restride(
-    standalone::c10::MemoryFormat memory_format) {
+    executorch::backends::aoti::slim::c10::MemoryFormat memory_format) {
 #ifdef DEBUG
   STANDALONE_INTERNAL_ASSERT(
       compute_numel() == numel_,
@@ -16,7 +16,7 @@ inline void SlimTensor::empty_tensor_restride(
       "called before setting correct numel");
 #endif
   switch (memory_format) {
-    case standalone::c10::MemoryFormat::Contiguous: {
+    case executorch::backends::aoti::slim::c10::MemoryFormat::Contiguous: {
       // dim_ is a virtual call, don't repeat it
       const auto dim_ = dim();
       sizes_and_strides_.resize(dim_);
@@ -25,7 +25,7 @@ inline void SlimTensor::empty_tensor_restride(
         const auto last_idx = dim_ - 1;
         sizes_and_strides_.stride_at_unchecked(last_idx) = 1;
         for (int64_t i = static_cast<int64_t>(last_idx) - 1; i >= 0; --i) {
-          overflowed |= standalone::c10::mul_overflows(
+          overflowed |= executorch::backends::aoti::slim::c10::mul_overflows(
               sizes_and_strides_.stride_at_unchecked(i + 1),
               std::max<int64_t>(sizes_and_strides_.size_at_unchecked(i + 1), 1),
               std::addressof(sizes_and_strides_.stride_at_unchecked(i)));
@@ -34,24 +34,24 @@ inline void SlimTensor::empty_tensor_restride(
       }
       break;
     }
-    case standalone::c10::MemoryFormat::ChannelsLast: {
+    case executorch::backends::aoti::slim::c10::MemoryFormat::ChannelsLast: {
       STANDALONE_CHECK(
           dim() == 4, "required rank 4 tensor to use channels_last format");
       set_sizes_and_strides(sizes(), get_channels_last_strides_2d(sizes()));
       break;
     }
-    case standalone::c10::MemoryFormat::ChannelsLast3d: {
+    case executorch::backends::aoti::slim::c10::MemoryFormat::ChannelsLast3d: {
       STANDALONE_CHECK(
           dim() == 5, "required rank 5 tensor to use channels_last_3d format");
       set_sizes_and_strides(sizes(), get_channels_last_strides_3d(sizes()));
       break;
     }
-    case standalone::c10::MemoryFormat::Preserve:
+    case executorch::backends::aoti::slim::c10::MemoryFormat::Preserve:
       STANDALONE_CHECK(false, "unsupported memory format ", memory_format);
       // Cleaning warning messages, no need to break as STANDALONE_CHECK(false)
       // terminates flow.
       // break;
-    case standalone::c10::MemoryFormat::NumOptions:
+    case executorch::backends::aoti::slim::c10::MemoryFormat::NumOptions:
       STANDALONE_INTERNAL_ASSERT(
           false, "invalid memory format ", memory_format);
   }
@@ -125,8 +125,8 @@ inline void _maybe_resize_storage(SlimTensor* self, int64_t new_size_bytes) {
 
 inline SlimTensor* _resize_impl_(
     SlimTensor* self,
-    standalone::c10::IntArrayRef sizes,
-    std::optional<standalone::c10::IntArrayRef> strides,
+    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+    std::optional<executorch::backends::aoti::slim::c10::IntArrayRef> strides,
     bool resize_storage) {
   if (self->sizes() == sizes &&
       (!strides || self->strides() == strides.value())) {
@@ -154,16 +154,17 @@ inline SlimTensor* _resize_impl_(
 }
 
 inline SlimTensor SlimTensor::resize_(
-    standalone::c10::IntArrayRef sizes,
+    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
     std::optional<c10::MemoryFormat> optional_memory_format) {
   _resize_impl_(this, sizes, /*stride=*/std::nullopt, true);
 
   if (optional_memory_format.has_value()) {
-    standalone::c10::MemoryFormat memory_format =
-        static_cast<standalone::c10::MemoryFormat>(
+    executorch::backends::aoti::slim::c10::MemoryFormat memory_format =
+        static_cast<executorch::backends::aoti::slim::c10::MemoryFormat>(
             optional_memory_format.value());
     STANDALONE_CHECK(
-        memory_format != standalone::c10::MemoryFormat::Preserve,
+        memory_format !=
+            executorch::backends::aoti::slim::c10::MemoryFormat::Preserve,
         "Unsupported memory format",
         memory_format);
     this->empty_tensor_restride(memory_format);
@@ -171,4 +172,4 @@ inline SlimTensor SlimTensor::resize_(
   return *this;
 }
 
-} // namespace standalone::slim
+} // namespace executorch::backends::aoti::slim

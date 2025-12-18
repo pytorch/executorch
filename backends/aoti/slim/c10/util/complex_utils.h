@@ -5,7 +5,7 @@
 
 #include <limits>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 template <typename T>
 struct is_complex : public std::false_type {};
@@ -14,7 +14,8 @@ template <typename T>
 struct is_complex<std::complex<T>> : public std::true_type {};
 
 template <typename T>
-struct is_complex<standalone::c10::complex<T>> : public std::true_type {};
+struct is_complex<executorch::backends::aoti::slim::c10::complex<T>>
+    : public std::true_type {};
 
 // Extract double from std::complex<double>; is identity otherwise
 // TODO: Write in more idiomatic C++17
@@ -27,19 +28,20 @@ struct scalar_value_type<std::complex<T>> {
   using type = T;
 };
 template <typename T>
-struct scalar_value_type<standalone::c10::complex<T>> {
+struct scalar_value_type<executorch::backends::aoti::slim::c10::complex<T>> {
   using type = T;
 };
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 namespace std {
 
 template <typename T>
-class numeric_limits<standalone::c10::complex<T>> : public numeric_limits<T> {};
+class numeric_limits<executorch::backends::aoti::slim::c10::complex<T>>
+    : public numeric_limits<T> {};
 
 template <typename T>
-bool isnan(const standalone::c10::complex<T>& v) {
+bool isnan(const executorch::backends::aoti::slim::c10::complex<T>& v) {
   return std::isnan(v.real()) || std::isnan(v.imag());
 }
 

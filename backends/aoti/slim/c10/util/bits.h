@@ -3,7 +3,7 @@
 
 #include <executorch/backends/aoti/slim/c10/macros/Macros.h>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 /**
  * bits1x8 is an uninterpreted dtype of a tensor with 1 bit (packed to byte
@@ -58,4 +58,4 @@ struct alignas(2) bits16 {
   STANDALONE_HOST_DEVICE explicit bits16(uint16_t val) : val_(val) {}
 };
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

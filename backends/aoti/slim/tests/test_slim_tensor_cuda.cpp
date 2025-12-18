@@ -15,7 +15,7 @@
 #include <executorch/backends/aoti/slim/factory/Empty.h>
 #include <executorch/backends/aoti/slim/factory/Factory.h>
 
-namespace standalone::slim {
+namespace executorch::backends::aoti::slim {
 namespace {
 
 class SlimTensorCUDATest : public ::testing::Test {
@@ -30,22 +30,30 @@ class SlimTensorCUDATest : public ::testing::Test {
 };
 
 TEST_F(SlimTensorCUDATest, EmptyCUDATensorCreation) {
-  auto tensor =
-      empty({2, 3, 4}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
+  auto tensor = empty(
+      {2, 3, 4},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
   EXPECT_EQ(tensor.dim(), 3);
   EXPECT_EQ(tensor.size(0), 2);
   EXPECT_EQ(tensor.size(1), 3);
   EXPECT_EQ(tensor.size(2), 4);
   EXPECT_EQ(tensor.numel(), 24);
-  EXPECT_EQ(tensor.device().type(), standalone::c10::DeviceType::CUDA);
+  EXPECT_EQ(
+      tensor.device().type(),
+      executorch::backends::aoti::slim::c10::DeviceType::CUDA);
   EXPECT_TRUE(tensor.is_contiguous());
 }
 
 TEST_F(SlimTensorCUDATest, ZerosCUDATensor) {
-  auto tensor =
-      zeros({3, 3}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
+  auto tensor = zeros(
+      {3, 3},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
   EXPECT_EQ(tensor.numel(), 9);
-  EXPECT_EQ(tensor.device().type(), standalone::c10::DeviceType::CUDA);
+  EXPECT_EQ(
+      tensor.device().type(),
+      executorch::backends::aoti::slim::c10::DeviceType::CUDA);
 
   std::vector<float> host_data(9);
   cudaMemcpy(
@@ -60,8 +68,10 @@ TEST_F(SlimTensorCUDATest, ZerosCUDATensor) {
 }
 
 TEST_F(SlimTensorCUDATest, OnesCUDATensor) {
-  auto tensor =
-      ones({2, 2}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
+  auto tensor = ones(
+      {2, 2},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
   EXPECT_EQ(tensor.numel(), 4);
 
   std::vector<float> host_data(4);
@@ -77,8 +87,10 @@ TEST_F(SlimTensorCUDATest, OnesCUDATensor) {
 }
 
 TEST_F(SlimTensorCUDATest, FillCUDATensor) {
-  auto tensor =
-      empty({2, 3}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
+  auto tensor = empty(
+      {2, 3},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
   tensor.fill_(5.0f);
 
   std::vector<float> host_data(6);
@@ -94,8 +106,10 @@ TEST_F(SlimTensorCUDATest, FillCUDATensor) {
 }
 
 TEST_F(SlimTensorCUDATest, CloneCUDATensor) {
-  auto tensor =
-      empty({2, 3}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
+  auto tensor = empty(
+      {2, 3},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
   tensor.fill_(3.14f);
 
   auto cloned = tensor.clone();
@@ -116,12 +130,16 @@ TEST_F(SlimTensorCUDATest, CloneCUDATensor) {
 }
 
 TEST_F(SlimTensorCUDATest, CopyCUDAToCUDA) {
-  auto src =
-      empty({2, 3}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
+  auto src = empty(
+      {2, 3},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
   src.fill_(2.5f);
 
-  auto dst =
-      empty({2, 3}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
+  auto dst = empty(
+      {2, 3},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
   dst.copy_(src);
 
   std::vector<float> host_data(6);
@@ -137,12 +155,16 @@ TEST_F(SlimTensorCUDATest, CopyCUDAToCUDA) {
 }
 
 TEST_F(SlimTensorCUDATest, CopyCPUToCUDA) {
-  auto cpu_tensor =
-      empty({2, 3}, standalone::c10::ScalarType::Float, CPU_DEVICE);
+  auto cpu_tensor = empty(
+      {2, 3},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      CPU_DEVICE);
   cpu_tensor.fill_(1.5f);
 
-  auto cuda_tensor =
-      empty({2, 3}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
+  auto cuda_tensor = empty(
+      {2, 3},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
   cuda_tensor.copy_(cpu_tensor);
 
   std::vector<float> host_data(6);
@@ -158,12 +180,16 @@ TEST_F(SlimTensorCUDATest, CopyCPUToCUDA) {
 }
 
 TEST_F(SlimTensorCUDATest, CopyCUDAToCPU) {
-  auto cuda_tensor =
-      empty({2, 3}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
+  auto cuda_tensor = empty(
+      {2, 3},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
   cuda_tensor.fill_(4.5f);
 
-  auto cpu_tensor =
-      empty({2, 3}, standalone::c10::ScalarType::Float, CPU_DEVICE);
+  auto cpu_tensor = empty(
+      {2, 3},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      CPU_DEVICE);
   cpu_tensor.copy_(cuda_tensor);
 
   float* data = static_cast<float*>(cpu_tensor.data_ptr());
@@ -174,14 +200,20 @@ TEST_F(SlimTensorCUDATest, CopyCUDAToCPU) {
 
 TEST_F(SlimTensorCUDATest, CUDAGuard) {
   cuda::CUDAGuard guard(0);
-  auto tensor =
-      empty({2, 3}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
-  EXPECT_EQ(tensor.device().type(), standalone::c10::DeviceType::CUDA);
+  auto tensor = empty(
+      {2, 3},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
+  EXPECT_EQ(
+      tensor.device().type(),
+      executorch::backends::aoti::slim::c10::DeviceType::CUDA);
 }
 
 TEST_F(SlimTensorCUDATest, ReshapeCUDATensor) {
-  auto tensor =
-      empty({2, 6}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
+  auto tensor = empty(
+      {2, 6},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
   auto reshaped = tensor.reshape({3, 4});
   EXPECT_EQ(reshaped.dim(), 2);
   EXPECT_EQ(reshaped.size(0), 3);
@@ -190,8 +222,10 @@ TEST_F(SlimTensorCUDATest, ReshapeCUDATensor) {
 }
 
 TEST_F(SlimTensorCUDATest, TransposeCUDATensor) {
-  auto tensor =
-      empty({2, 3}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
+  auto tensor = empty(
+      {2, 3},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
   auto transposed = tensor.transpose(0, 1);
   EXPECT_EQ(transposed.size(0), 3);
   EXPECT_EQ(transposed.size(1), 2);
@@ -199,8 +233,10 @@ TEST_F(SlimTensorCUDATest, TransposeCUDATensor) {
 }
 
 TEST_F(SlimTensorCUDATest, PermuteCUDATensor) {
-  auto tensor =
-      empty({2, 3, 4}, standalone::c10::ScalarType::Float, DEFAULT_CUDA_DEVICE);
+  auto tensor = empty(
+      {2, 3, 4},
+      executorch::backends::aoti::slim::c10::ScalarType::Float,
+      DEFAULT_CUDA_DEVICE);
   auto permuted = tensor.permute({2, 0, 1});
   EXPECT_EQ(permuted.size(0), 4);
   EXPECT_EQ(permuted.size(1), 2);
@@ -209,4 +245,4 @@ TEST_F(SlimTensorCUDATest, PermuteCUDATensor) {
 }
 
 } // namespace
-} // namespace standalone::slim
+} // namespace executorch::backends::aoti::slim

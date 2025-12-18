@@ -8,7 +8,7 @@
 #include <sycl/sycl.hpp>
 #endif
 
-namespace standalone::c10::detail {
+namespace executorch::backends::aoti::slim::c10::detail {
 
 /*
  * Convert a 8-bit floating-point number in either f8 E4M3FNUZ or bf8 E5M2FNUZ
@@ -61,4 +61,4 @@ inline STANDALONE_HOST_DEVICE float fp8_fnuz_to_fp32_value(uint8_t x) {
   return fp32_from_bits(retval);
 }
 
-} // namespace standalone::c10::detail
+} // namespace executorch::backends::aoti::slim::c10::detail

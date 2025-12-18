@@ -56,7 +56,7 @@ unsigned char _BitScanReverse64(unsigned long* _Index, unsigned __int64 _Mask);
 }
 #endif
 
-namespace standalone::c10::llvm {
+namespace executorch::backends::aoti::slim::c10::llvm {
 /// The behavior an operation has on an input of 0.
 enum ZeroBehavior {
   /// The returned value is undefined.
@@ -620,7 +620,7 @@ inline double BitsToDouble(uint64_t Bits) {
 /// This function takes a 32-bit integer and returns the bit equivalent float.
 inline float BitsToFloat(uint32_t Bits) {
   // TODO: Use std::bit_cast once C++20 becomes available.
-  return standalone::c10::bit_cast<float>(Bits);
+  return executorch::backends::aoti::slim::c10::bit_cast<float>(Bits);
 }
 
 /// This function takes a double and returns the bit equivalent 64-bit integer.
@@ -896,4 +896,4 @@ SaturatingMultiplyAdd(T X, T Y, T A, bool* ResultOverflowed = nullptr) {
 
 /// Use this rather than HUGE_VALF; the latter causes warnings on MSVC.
 extern const float huge_valf;
-} // namespace standalone::c10::llvm
+} // namespace executorch::backends::aoti::slim::c10::llvm
