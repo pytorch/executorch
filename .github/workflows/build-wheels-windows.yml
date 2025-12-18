@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - .ci/**/*
-      - .github/workflows/build-wheels-macos.yml
+      - .github/workflows/build-wheels-windows.yml
       - examples/**/*
       - pyproject.toml
       - setup.py
