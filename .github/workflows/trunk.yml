@@ -839,7 +839,7 @@ jobs:
           qwen3-0.6b|xnnpack|--quantize,
           qwen3-1.7b|xnnpack|--quantize,
           gemma3-1b|xnnpack|--quantize,
-          phi4-mini|xnnpack|--quantize,
+          # phi4-mini|xnnpack|--quantize, transformers v5.0.0rc0 introduces a data-dependent branching in transformers/modeling_rope_utils.py:61 
           smollm2-135m|xnnpack|--quantize,
           smollm3-3b|xnnpack|--quantize
         ]

@@ -75,7 +75,7 @@ template <
     typename C,
     std::enable_if_t<std::is_integral_v<typename C::value_type>, int> = 0>
 inline int64_t numelements_from_dim(const int k, const C& dims) {
-  ET_CHECK_MSG(k >= 0, "numelements_from_dim: k must be non-negative");
+  ET_DCHECK_MSG(k >= 0, "numelements_from_dim: k must be non-negative");
 
   if (k > static_cast<int>(dims.size())) {
     return 1;

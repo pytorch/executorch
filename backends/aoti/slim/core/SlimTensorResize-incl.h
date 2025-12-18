@@ -9,12 +9,10 @@
 namespace executorch::backends::aoti::slim {
 inline void SlimTensor::empty_tensor_restride(
     executorch::backends::aoti::slim::c10::MemoryFormat memory_format) {
-#ifdef DEBUG
   ET_DCHECK_MSG(
       compute_numel() == numel_,
       "If you are seeing this error, that means empty_tensor_restride was "
       "called before setting correct numel");
-#endif
   switch (memory_format) {
     case executorch::backends::aoti::slim::c10::MemoryFormat::Contiguous: {
       // dim_ is a virtual call, don't repeat it
@@ -155,7 +153,7 @@ inline SlimTensor* _resize_impl_(
 inline SlimTensor SlimTensor::resize_(
     executorch::backends::aoti::slim::c10::IntArrayRef sizes,
     std::optional<c10::MemoryFormat> optional_memory_format) {
-  _resize_impl_(this, sizes, /*stride=*/std::nullopt, true);
+  _resize_impl_(this, sizes, /*strides=*/std::nullopt, true);
 
   if (optional_memory_format.has_value()) {
     executorch::backends::aoti::slim::c10::MemoryFormat memory_format =

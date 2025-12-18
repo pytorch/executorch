@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <stdexcept>
 
 #ifdef USE_CUDA

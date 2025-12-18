@@ -59,7 +59,7 @@ class ArrayRef final {
   size_type Length;
 
   void debugCheckNullptrInvariant() {
-    ET_CHECK_MSG(
+    ET_DCHECK_MSG(
         Data != nullptr || Length == 0,
         "created ArrayRef with nullptr and non-zero length! std::optional "
         "relies on this being illegal");
