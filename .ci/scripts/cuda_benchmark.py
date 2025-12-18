@@ -73,7 +73,13 @@ def parse_pytorch_observer_log(log_line: str) -> Optional[RunMetrics]:
             else 0
         )
         model_load_time_ms = model_load_end_ms - model_load_start_ms
-        first_token_latency_ms = first_token_ms - prompt_eval_end_ms
+
+        # First token latency (TTFT): time from inference start to first token
+        # For multimodal models (e.g., whisper, voxtral, gemma3), this includes:
+        # 1. Encoding time (image/audio processing)
+        # 2. Prefill time (decoder processing encoder outputs)
+        # This represents the end-to-end user experience of waiting for the first token
+        first_token_latency_ms = first_token_ms - inference_start_ms
 
         return RunMetrics(
             generated_tokens=generated_tokens,
