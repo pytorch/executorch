@@ -365,10 +365,10 @@ for i in "${!test_model[@]}"; do
 
         visualization_file=""
         if [ "$visualize_tosa" = true ]; then
-            visualization_file+="--tosa"
+            visualization_file+=" --tosa"
         fi
         if [ "$visualize_pte" = true ]; then
-            visualization_file+="--pte"
+            visualization_file+=" --pte"
         fi
 
         me_flags="${visualization_file} ${perf_flags}"
