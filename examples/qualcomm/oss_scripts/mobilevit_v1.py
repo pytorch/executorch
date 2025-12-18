@@ -24,7 +24,7 @@ from executorch.examples.qualcomm.utils import (
 )
 from PIL import Image
 from torchvision import datasets
-from transformers import AutoModelForImageClassification, MobileViTFeatureExtractor
+from transformers import AutoImageProcessor, AutoModelForImageClassification
 
 
 def get_imagenet_dataset(dataset_path, data_size, shuffle=True):
@@ -39,15 +39,13 @@ def get_imagenet_dataset(dataset_path, data_size, shuffle=True):
     # prepare input data
     inputs, targets = [], []
     data_loader = get_data_loader()
-    feature_extractor = MobileViTFeatureExtractor.from_pretrained(
-        "apple/mobilevit-xx-small"
-    )
+    image_processor = AutoImageProcessor.from_pretrained("apple/mobilevit-xx-small")
     for index, data in enumerate(data_loader.dataset.imgs):
         if index >= data_size:
             break
         data_path, target = data
         image = Image.open(data_path).convert("RGB")
-        feature = feature_extractor(images=image, return_tensors="pt")
+        feature = image_processor(images=image, return_tensors="pt")
         inputs.append((feature["pixel_values"],))
         targets.append(torch.tensor(target))
 

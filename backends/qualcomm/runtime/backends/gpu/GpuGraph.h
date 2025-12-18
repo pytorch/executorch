@@ -17,7 +17,7 @@ namespace qnn {
 class GpuGraph : public QnnGraph {
  public:
   GpuGraph(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnBackend* backend,
       QnnContext* context,
       const QnnExecuTorchProfileLevel& profile_level,

@@ -167,98 +167,98 @@ def test_sigmoid_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_FP(test_data: Tuple):
+def test_sigmoid_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Sigmoid(),
         (test_data(),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_INT(test_data: Tuple):
+def test_sigmoid_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Sigmoid(),
         (test_data(),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_FP_add():
+def test_sigmoid_add_vgf_no_quant():
     pipeline = VgfPipeline[input_t1](
         AddSigmoid(),
         (test_data_suite["zeros"](),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_INT_add():
+def test_sigmoid_add_vgf_quant():
     pipeline = VgfPipeline[input_t1](
         AddSigmoid(),
         (test_data_suite["ramp"](),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_FP_add_2():
+def test_sigmoid_add_2_vgf_no_quant():
     pipeline = VgfPipeline[input_t1](
         SigmoidAdd(),
         (test_data_suite["zeros"](),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_INT_add_2():
+def test_sigmoid_add_2_vgf_quant():
     pipeline = VgfPipeline[input_t1](
         SigmoidAdd(),
         (test_data_suite["zeros"](),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_FP_add_3():
+def test_sigmoid_add_3_vgf_no_quant():
     pipeline = VgfPipeline[input_t1](
         SigmoidAddSigmoid(),
         (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_vgf_INT_add_3():
+def test_sigmoid_add_3_vgf_quant():
     pipeline = VgfPipeline[input_t1](
         SigmoidAddSigmoid(),
         (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 

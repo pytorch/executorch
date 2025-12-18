@@ -156,10 +156,6 @@ table QnnExecuTorchHtpBackendOptions {
   /// Signed or unsigned HTP PD session. The default PD session is unsigned.
   pd_session:QnnExecuTorchHtpPdSession;
 
-  /// Optional parameter specifying the directory of QNN Skel library. Only
-  /// useful for backends which have a Skel library.
-  skel_library_dir:string;
-
   /// With using conv hmx with short depths, we might have better performance,
   /// but convolution that have short depth and/or weights that are not
   /// symmetric could exhibit inaccurate results.
@@ -262,10 +258,6 @@ table QnnExecuTorchOptions {
 
   /// Optional backend specific options for the HTP backend.
   backend_options:QnnExecuTorchBackendOptions;
-
-  /// Optional parameter to create qnn graph if QNN context blob is not given
-  /// It could be a list of names only when doing weight-sharing lowering
-  graph_name:[string];
 
   /// Optional parameter to override the QNN backend library.
   library_path:string;

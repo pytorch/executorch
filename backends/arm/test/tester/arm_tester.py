@@ -755,7 +755,10 @@ class ArmTester(Tester):
         return graph
 
     def dump_operator_distribution(
-        self, path_to_dump: Optional[str] = None, print_table: bool = True
+        self,
+        path_to_dump: Optional[str] = None,
+        print_table: bool = True,
+        include_dtypes: bool = True,
     ):
         """Dump the distribution of operators in the current stage.
         In the partition stage, additional information is included such as the number of
@@ -780,22 +783,38 @@ class ArmTester(Tester):
             delegation_info = get_delegation_info(graph_module)
             if print_table:
                 op_dist = delegation_info.get_operator_delegation_dataframe()
+            op_dist = _get_tosa_operator_distribution(graph_module, include_dtypes)
+            if include_dtypes:
+                op_dist = {
+                    "Operator": [op_type[0] for op_type, _ in op_dist],
+                    "Dtype": [op_type[1] for op_type, _ in op_dist],
+                    "Count": [count for _, count in op_dist],
+                }
             else:
-                op_dist = dict(_get_operator_distribution(graph_module.graph))
-            to_print += _format_dict(op_dist, print_table)
-            to_print += "\n" + _get_tosa_operator_distribution(
-                graph_module, print_table
-            )
-            to_print += "\n"
-            to_print += delegation_info.get_summary()
+                op_dist = {
+                    "Operator": [op for op, _ in op_dist],
+                    "Count": [count for _, count in op_dist],
+                }
+            to_print += "TOSA operators:\n" + _format_dict(dict(op_dist), print_table)
+            to_print += "\n" + delegation_info.get_summary()
         else:
             graph = self.get_graph(self.cur)
-            op_dist = dict(_get_operator_distribution(graph))
+            if include_dtypes:
+                op_dist = _get_operator_dtype_distribution(graph)
+            else:
+                op_dist = _get_operator_distribution(graph)
             if print_table:
-                op_dist = {
-                    "Operator": list(op_dist),
-                    "Count": [op_dist[key] for key in op_dist],
-                }
+                if include_dtypes:
+                    op_dist = {
+                        "Operator": [op_dtype[0] for op_dtype, _ in op_dist],
+                        "Dtype": [op_dtype[1] for op_dtype, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
+                else:
+                    op_dist = {
+                        "Operator": [op for op, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
             to_print += _format_dict(op_dist, print_table) + "\n"
 
         _dump_str(to_print, path_to_dump)
@@ -939,6 +958,38 @@ class ArmTester(Tester):
             if intermediate_path.startswith(tempdir):
                 shutil.rmtree(intermediate_path, ignore_errors=True)
 
+    def check_dtype_count(self, dtype_dict: Dict[str, Dict[str, int]]):
+        if self.cur in (
+            StageType.PARTITION,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+        ):
+            graph_module = self.get_artifact().exported_program().graph_module
+            op_dist = _get_tosa_operator_distribution(graph_module, include_dtypes=True)
+            op_dist_dict: Dict[str, Dict[str, int]] = defaultdict(dict)
+            for op_dtype, count in op_dist:
+                if isinstance(op_dtype, str):
+                    raise ValueError(
+                        f"Expected {_get_tosa_operator_distribution.__name__} to return "
+                        "Tuple[Tuple[str, str], int]."
+                    )
+                else:
+                    op, dtype = op_dtype
+
+                op_dist_dict[op].update({dtype: count})
+            for op in dtype_dict.keys():
+                if op not in op_dist_dict:
+                    raise RuntimeError(f"Could not find op {op}.")
+                for dtype, count in dtype_dict[op].items():
+                    dtype_count = op_dist_dict[op].setdefault(dtype, 0)
+                    if dtype_count != count:
+                        raise RuntimeError(
+                            f"Expected {count} occurencies of {op=}, {dtype=} but found {dtype_count}."
+                        )
+
+        else:
+
+            raise NotImplementedError(f"Cannot check dtypes for stage {self.cur}")
+
 
 def _get_dtype_distribution(
     graph: Graph, tosa_spec: TosaSpecification
@@ -958,13 +1009,35 @@ def _get_dtype_distribution(
     return Counter(placeholder_dtypes), Counter(call_function_dtypes)
 
 
-def _get_operator_distribution(graph: Graph) -> dict[str, int]:
+def _get_operator_distribution(graph: Graph) -> List[Tuple[str, int]]:
     """Counts the occurences of operator names in a graph.
-    The result is a dict {'operator name':'number of nodes'}
+    The result is a sorted list [('operator name':'number of nodes')]
     """
-    return Counter(
-        [str(node.target) for node in list(graph.nodes) if node.op == "call_function"]
+    return sorted(
+        Counter(
+            [
+                str(node.target)
+                for node in list(graph.nodes)
+                if node.op == "call_function"
+            ]
+        ).items()
     )
+
+
+def _get_operator_dtype_distribution(graph: Graph) -> List[Tuple[Tuple[str, str], int]]:
+    """Counts the occurences of operator names and dtype pairs in a graph.
+    The result is a sorted list[(('operator name','dtype'),'number of nodes')]
+    """
+    target_dtype_pairs = []
+    for node in graph.nodes:
+        if node.op != "call_function":
+            continue
+        if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
+            dtype = str(node.meta["val"].dtype)
+        else:
+            dtype = "UNKNOWN"
+        target_dtype_pairs.append((str(node.target), dtype))
+    return sorted(Counter(target_dtype_pairs).items())
 
 
 def _format_export_graph_signature(signature: ExportGraphSignature) -> str:
@@ -984,14 +1057,15 @@ def _format_export_graph_signature(signature: ExportGraphSignature) -> str:
 
 
 def _get_tosa_operator_distribution(
-    graph_module: torch.fx.GraphModule, print_table=False
-) -> str:
+    graph_module: torch.fx.GraphModule, include_dtypes=False
+) -> list[Tuple[str, int]] | list[Tuple[Tuple[str, str], int]]:
     """Counts the occurences of operator names of all lowered modules containing
     a TOSA flatbuffer.
     The result is a string with the operator distribution or an error message.
     """
-    op_list = []
     id = 0
+    unknown_dtype_str = "UNKNOWN"
+    op_list = []
     while lowered_module := getattr(graph_module, f"lowered_module_{id}", None):
         compile_spec = parse_compile_spec(lowered_module.compile_specs)
         if isinstance(compile_spec, TosaCompileSpec):
@@ -999,22 +1073,42 @@ def _get_tosa_operator_distribution(
             tosa_json = dbg_tosa_fb_to_json(tosa_fb)
             for region in tosa_json["regions"]:
                 for block in region["blocks"]:
-                    op_list.extend([operator["op"] for operator in block["operators"]])
+                    for operator in block["operators"]:
+                        op = operator["op"]
+                        if include_dtypes:
+                            outputs = operator.get("outputs", [])
+                            if outputs == []:
+                                op_list.append((op, unknown_dtype_str))
+                                continue
+                            tensor_block = block.get("tensors", {})
+                            tensors_with_matching_name = [
+                                t for t in tensor_block if t["name"] == outputs[0]
+                            ]
+                            dtype = (
+                                tensors_with_matching_name[0]["type"]
+                                if len(tensors_with_matching_name) > 0
+                                else unknown_dtype_str
+                            )
+                            op_list.append((op, dtype))
+                        else:
+                            op_list.append(op)
+
         elif isinstance(compile_spec, EthosUCompileSpec):
-            return "Can not get operator distribution for Vela command stream."
+            raise NotImplementedError(
+                "Can not get operator distribution for Vela command stream."
+            )
         elif isinstance(compile_spec, VgfCompileSpec):
-            return "Can not get operator distribution for VGF."
+            raise NotImplementedError("Can not get operator distribution for VGF.")
         else:
-            return f"Unknown output format '{compile_spec.get_output_format()}'."
+            raise NotImplementedError(
+                f"Unknown output format '{compile_spec.get_output_format()}'."
+            )
         id += 1
     if id == 0:
-        return "No delegate with name 'lowered_module_0 found in graph module."
-    op_dist = dict(Counter(op_list))
-    op_dist = {
-        "Operator": list(op_dist.keys()),
-        "Count": [item[1] for item in op_dist.items()],
-    }
-    return "TOSA operators:\n" + _format_dict(dict(op_dist), print_table)
+        raise ValueError(
+            "No delegate with name 'lowered_module_0 found in graph module."
+        )
+    return sorted(Counter(op_list).items())
 
 
 def _dump_str(to_print: str, path_to_dump: Optional[str] = None):

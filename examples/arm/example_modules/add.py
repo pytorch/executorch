@@ -15,13 +15,15 @@
 
 import torch
 
+b = 2
+
 
 class myModelAdd(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x):
-        return x + x
+        return x + x + b
 
 
 ModelUnderTest = myModelAdd()

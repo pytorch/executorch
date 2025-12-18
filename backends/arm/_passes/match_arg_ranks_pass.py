@@ -63,6 +63,8 @@ class MatchArgRanksPass(ArmPass):
         exir_ops.edge.aten.bitwise_and.Tensor,
         exir_ops.edge.aten.bitwise_xor.Tensor,
         exir_ops.edge.aten.bitwise_or.Tensor,
+        exir_ops.edge.aten.maximum.default,
+        exir_ops.edge.aten.minimum.default,
     ]
 
     def _match_op_rank(self, graph_module, node, arg, max_rank):

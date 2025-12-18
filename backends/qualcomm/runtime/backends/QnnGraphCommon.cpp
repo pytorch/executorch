@@ -14,7 +14,7 @@ using executorch::runtime::Error;
 
 Error QnnGraph::Configure(const std::string& graph_name) {
   // create qnn backend
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   std::vector<const QnnGraph_Config_t*> temp_graph_config;
   ET_CHECK_OR_RETURN_ERROR(
@@ -81,7 +81,7 @@ Qnn_ErrorHandle_t QnnGraph::GraphExecute(
     return QNN_COMMON_ERROR_GENERAL;
   }
 
-  return implementation_.GetQnnInterface().qnn_graph_execute(
+  return implementation_->GetQnnInterface().qnn_graph_execute(
       handle_[graph_name],
       input_tensor_structs.data(),
       input_tensor_structs.size(),
@@ -94,7 +94,7 @@ Qnn_ErrorHandle_t QnnGraph::GraphExecute(
 Error QnnGraph::EnsureTensorInQnnGraph(
     const std::string& graph_name,
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   if (!tensor_wrapper->IsTensorCreated()) {

@@ -248,39 +248,39 @@ def test_mul_tensor_u85_INT_int32(test_data: torch.Tensor):
     test_data_suite | test_data_suite_2 | test_data_int32_without_broadcasting,
 )
 @common.SkipIfNoModelConverter
-def test_mul_tensor_vgf_FP(test_data: torch.Tensor):
+def test_mul_tensor_vgf_no_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
         Mul(),
         test_data(),
         aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite | test_data_suite_2)
 @common.SkipIfNoModelConverter
-def test_mul_tensor_vgf_INT(test_data: torch.Tensor):
+def test_mul_tensor_vgf_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
         Mul(),
         test_data(),
         aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite_int32)
 @common.SkipIfNoModelConverter
-def test_mul_tensor_vgf_INT_int32(test_data: torch.Tensor):
+def test_mul_tensor_int32_vgf_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
         Mul(),
         test_data(),
         aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 

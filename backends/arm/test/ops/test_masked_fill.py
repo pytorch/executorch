@@ -147,19 +147,25 @@ def test_masked_fill_scalar_u85_INT(test_module):
 
 @common.parametrize("test_module", test_modules)
 @common.SkipIfNoModelConverter
-def test_masked_fill_scalar_vgf_FP(test_module):
+def test_masked_fill_scalar_vgf_no_quant(test_module):
     module, inputs = test_module()
     pipeline = VgfPipeline[input_t](
-        module, inputs, aten_op=[], tosa_version="TOSA-1.0+FP"
+        module,
+        inputs,
+        aten_op=[],
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
 @common.SkipIfNoModelConverter
-def test_masked_fill_scalar_vgf_INT(test_module):
+def test_masked_fill_scalar_vgf_quant(test_module):
     module, inputs = test_module()
     pipeline = VgfPipeline[input_t](
-        module, inputs, aten_op=[], tosa_version="TOSA-1.0+INT"
+        module,
+        inputs,
+        aten_op=[],
+        quantize=True,
     )
     pipeline.run()

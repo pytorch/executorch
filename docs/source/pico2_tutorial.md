@@ -19,7 +19,7 @@ A 28×28 MNIST digit classifier running on memory constrained, low power microco
 - Verify ARM toolchain
 
 ```bash
-which arm-none-eabi-gcc # --> arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/
+which arm-none-eabi-gcc # --> arm/arm-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/
 ```
 
 ## Step 1: Generate pte from given example Model

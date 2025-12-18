@@ -15,6 +15,7 @@ def define_common_targets():
         exported_headers = ["quantized_op_macros.h"],
         exported_deps = [
             ":cadence_type_util",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/runtime/kernel:kernel_includes",
         ]
     )
@@ -313,73 +314,6 @@ def define_common_targets():
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
             "//executorch/runtime/kernel:kernel_includes",
             ":quantized_op_macros",
-        ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
-
-    # Combined target for backward compatibility
-    # NOTE: cadence_aot_lib now uses individual targets directly for better linking
-    runtime.cxx_library(
-        name = "op_where_scalar",
-        srcs = ["op_where_scalar.cpp"],
-        exported_headers = ["op_where_scalar.h", "operators.h"],
-        platforms = CXX,
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/kernel:kernel_runtime_context",
-        ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "op_rope",
-        srcs = ["op_rope.cpp"],
-        exported_headers = ["op_rope.h", "operators.h"],
-        platforms = CXX,
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/kernel:kernel_runtime_context",
-        ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "op_linalg_svd",
-        srcs = ["op_linalg_svd.cpp"],
-        headers = ["op_linalg_svd.h"],
-        platforms = CXX,
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-            "//executorch/runtime/kernel:kernel_runtime_context",
-        ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "op_roi_align_box_processor",
-        srcs = ["op_roi_align_box_processor.cpp"],
-        exported_headers = ["op_roi_align_box_processor.h", "operators.h"],
-        platforms = CXX,
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/kernel:kernel_runtime_context",
         ],
         visibility = [
             "//executorch/backends/cadence/...",

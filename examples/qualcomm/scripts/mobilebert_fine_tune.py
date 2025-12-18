@@ -131,8 +131,8 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
     )
 
     # tokenize dataset
-    encoded_data_train = tokenizer.batch_encode_plus(
-        data[data.data_type == "train"].Title.values,
+    encoded_data_train = tokenizer(
+        data[data.data_type == "train"].Title.values.tolist(),
         add_special_tokens=True,
         return_attention_mask=True,
         max_length=256,
@@ -140,8 +140,8 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
         truncation=True,
         return_tensors="pt",
     )
-    encoded_data_val = tokenizer.batch_encode_plus(
-        data[data.data_type == "val"].Title.values,
+    encoded_data_val = tokenizer(
+        data[data.data_type == "val"].Title.values.tolist(),
         add_special_tokens=True,
         return_attention_mask=True,
         max_length=256,

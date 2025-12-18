@@ -86,7 +86,7 @@ case "$HF_MODEL" in
     MODEL_NAME="voxtral"
     RUNNER_TARGET="voxtral_runner"
     RUNNER_PATH="voxtral"
-    EXPECTED_OUTPUT="poem"
+    EXPECTED_OUTPUT="existence"
     PREPROCESSOR="voxtral_preprocessor.pte"
     TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main" # @lint-ignore
     TOKENIZER_FILE="tekken.json"

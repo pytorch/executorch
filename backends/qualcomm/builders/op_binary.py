@@ -6,7 +6,7 @@
 import warnings
 from typing import Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
@@ -33,14 +33,14 @@ class Binary(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         out_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             node,
             out_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         binary_output_tensors = [output_tensor_wrapper]
@@ -49,7 +49,7 @@ class Binary(NodeVisitor):
         for index in range(2):
             input_node = self.get_node(node.args[index])
             input_tensor = self.get_tensor(input_node, node)
-            tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+            tensor_type = PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
 
             input_tensor_wrapper = self.define_tensor(
                 input_node,
@@ -60,7 +60,7 @@ class Binary(NodeVisitor):
             )
             binary_input_tensors.append(input_tensor_wrapper)
 
-        binary_op = PyQnnWrapper.PyQnnOpWrapper(
+        binary_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpElementWiseBinary.op_name,
@@ -77,7 +77,7 @@ class Binary(NodeVisitor):
 
         binary_op.AddScalarParam(
             OpElementWiseBinary.param_operation,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(QNN_BINARY_OPERATOR[node.target])},
         )
 

@@ -311,8 +311,6 @@ def test_fail_dump_tosa_ops(capsys, test_data: input_t1):
         Add(), test_data, aten_ops, exir_ops, use_to_edge_transform_and_lower=True
     )
     pipeline.dump_operator_distribution("to_edge_transform_and_lower")
-    pipeline.run()
-    assert (
-        "Can not get operator distribution for Vela command stream."
-        in capsys.readouterr().out
-    )
+    error_msg = "Can not get operator distribution for Vela command stream."
+    with pytest.raises(NotImplementedError, match=error_msg):
+        pipeline.run()

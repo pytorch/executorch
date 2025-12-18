@@ -34,6 +34,7 @@ CUSTOM_EDGE_OPS = [
     "pixel_shuffle.default",
     "pixel_unshuffle.default",
     "while_loop.default",
+    "clamp.Tensor",
 ]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 

@@ -20,6 +20,8 @@ import tempfile
 from itertools import count
 from typing import cast, Dict, final, List
 
+import torch
+
 import tosa_serializer as ts
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
@@ -33,6 +35,7 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import TOSA_TENSOR_NAME_META
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.dim_order_utils import get_memory_format
 from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph, GraphModule, Node
@@ -110,6 +113,15 @@ def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
         graph_module.recompile()
 
     return graph_module
+
+
+def _get_matching_fake_tensor(node: Node):
+    """Return a fake tensor with the same properties as node,
+    but with .dim_order() == node.meta["tosa_dim_order"]
+    """
+    fake_tensor = node.meta["val"]
+    desired_dim_order = node.meta["tosa_dim_order"]
+    return fake_tensor.to(memory_format=get_memory_format(list(desired_dim_order)))
 
 
 def arm_get_first_delegation_tag(graph_module) -> str:
@@ -254,6 +266,47 @@ class TOSABackend(BackendDetails):
         return PreprocessResult(processed_bytes=binary)
 
     @staticmethod
+    def _regularize_submodule(submodule: GraphModule, submodule_node: Node):
+        """To make a submodule fit into the normal flow of a graph_module, we need to do some regularizations.
+
+        - Buffers created before passes are treated as input to the submodule. Buffers created during passes
+            are treated as "normal" buffers, i.e. gathered from the state_dict.
+            To make it easy to tell them apart, mark all placeholders with "is_input = True" before running passes.
+        - Make sure output node args[0] is always iterable.
+        - Match the dim_order() of the input tensors with the dim orders of the submodule_node inputs.
+        - Match the dim_order() of the out tensors with the dim orders of the submodule_node outputs.
+        """
+        submodule_inputs: list[Node] = []
+        for node in submodule.graph.nodes:
+            if node.op == "placeholder":
+                node.meta["is_input"] = True
+                submodule_inputs.append(node)
+        match submodule_node.target:
+            case torch.ops.higher_order.cond:
+                args = cast(list[Node], submodule_node.args[-1])
+            case torch.ops.higher_order.while_loop:
+                args = cast(list[Node], submodule_node.args[-2]) + cast(
+                    list, submodule_node.args[-1]
+                )
+            case _:
+                raise RuntimeError(
+                    f"Unexpected control flow target: {submodule_node.target}"
+                )
+
+        for submodule_input, submodule_arg in zip(submodule_inputs, args, strict=True):
+            submodule_input.meta["val"] = _get_matching_fake_tensor(submodule_arg)
+
+        output_node = submodule.graph.output_node()
+        if isinstance(output_node.args[0], Node):
+            output_node.update_arg(0, [output_node.args[0]])
+        output_args = cast(list[Node], output_node.args[0])
+
+        # Not all outputs might be used, causing len(users) < len(outputs)
+        # Therefore, strict != True in the zip
+        for submodule_output, submodule_user in zip(output_args, submodule_node.users):
+            submodule_output.meta["val"] = _get_matching_fake_tensor(submodule_user)
+
+    @staticmethod
     def _preprocess_module(  # noqa: C901
         graph_module: GraphModule,
         edge_program: ExportedProgram,
@@ -278,9 +331,6 @@ class TOSABackend(BackendDetails):
 
         """
         tosa_spec = compile_spec.tosa_spec
-        output_node = graph_module.graph.output_node()
-        if isinstance(output_node.args[0], Node):
-            output_node.update_arg(0, [output_node.args[0]])
         node_to_id_map = _annotate_external_ids(graph_module.graph)
         artifact_path = compile_spec.get_intermediate_path()
         output_order_workaround = compile_spec.get_output_order_workaround()
@@ -351,7 +401,10 @@ class TOSABackend(BackendDetails):
                 raise
 
         # Recursively preprocess controlflow submodules.
-        for name, submodule, _ in get_cond_while_submodules(graph_module):
+        for name, submodule, control_flow_node in get_cond_while_submodules(
+            graph_module
+        ):
+            TOSABackend._regularize_submodule(submodule, control_flow_node)
             TOSABackend._preprocess_module(
                 submodule,
                 edge_program,

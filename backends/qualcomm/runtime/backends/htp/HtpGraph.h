@@ -19,7 +19,7 @@ namespace qnn {
 class HtpGraph : public QnnGraph {
  public:
   HtpGraph(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnBackend* backend,
       QnnContext* context,
       const QnnExecuTorchProfileLevel& profile_level,

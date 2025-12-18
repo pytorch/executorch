@@ -225,69 +225,77 @@ def test_matmul_combo_u85_INT(test_data: input_t1):
 
 @common.parametrize("test_data", MatMul.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_vgf_FP(test_data: input_t1):
+def test_matmul_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
-        MatMul(), test_data(), aten_op_mm, exir_op_mm, tosa_version="TOSA-1.0+FP"
+        MatMul(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", MatMulSingleInput.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_single_input_vgf_FP(test_data: input_t1):
+def test_matmul_single_input_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         MatMulSingleInput(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", MatMulCombo.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_combo_vgf_FP(test_data: input_t1):
+def test_matmul_combo_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
-        MatMulCombo(), test_data(), aten_op_mm, exir_op_mm, tosa_version="TOSA-1.0+FP"
+        MatMulCombo(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", MatMul.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_vgf_INT(test_data: input_t1):
+def test_matmul_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         MatMul(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", MatMulSingleInput.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_single_input_vgf_INT(test_data: input_t1):
+def test_matmul_single_input_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         MatMulSingleInput(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", MatMulCombo.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_combo_vgf_INT(test_data: input_t1):
+def test_matmul_combo_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         MatMulCombo(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

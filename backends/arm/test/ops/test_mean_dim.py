@@ -85,27 +85,27 @@ def test_adaptive_avg_pool2d_u85_INT(test_data):
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
 @common.SkipIfNoModelConverter
-def test_adaptive_avg_pool2d_vgf_FP(test_data):
+def test_adaptive_avg_pool2d_vgf_no_quant(test_data):
     pipeline = VgfPipeline[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
 @common.SkipIfNoModelConverter
-def test_adaptive_avg_pool2d_vgf_INT(test_data):
+def test_adaptive_avg_pool2d_vgf_quant(test_data):
     pipeline = VgfPipeline[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
         symmetric_io_quantization=True,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -322,28 +322,28 @@ def test_mean_dim_u85_INT(test_data):
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
 @common.SkipIfNoModelConverter
-def test_mean_dim_vgf_FP(test_data):
+def test_mean_dim_vgf_no_quant(test_data):
     test_data_val, dim, keep_dim = test_data()
     pipeline = VgfPipeline[input_t](
         MeanDim(dim, keep_dim),
         (test_data_val,),
         MeanDim.torch_op,
         MeanDim.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
 @common.SkipIfNoModelConverter
-def test_mean_dim_vgf_INT(test_data):
+def test_mean_dim_vgf_quant(test_data):
     test_data_val, dim, keep_dim = test_data()
     pipeline = VgfPipeline[input_t](
         MeanDim(dim, keep_dim),
         (test_data_val,),
-        [],  # Might be sum, avgpool, or both
+        [],
         symmetric_io_quantization=True,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 

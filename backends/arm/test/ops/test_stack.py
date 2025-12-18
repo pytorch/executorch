@@ -122,29 +122,29 @@ def test_stack_u85_INT(test_module: input_t1):
 
 @common.SkipIfNoModelConverter
 @common.parametrize("test_module", test_data_suite)
-def test_stack_vgf_FP(test_module: input_t1):
+def test_stack_vgf_no_quant(test_module: input_t1):
     test_data = test_module()
     pipeline = VgfPipeline[input_t1](
         Stack(),
         test_data,
         aten_op=Stack.aten_op,
         exir_op=Stack.exir_op,
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=False,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
 @common.parametrize("test_module", test_data_suite)
-def test_stack_vgf_INT(test_module: input_t1):
+def test_stack_vgf_quant(test_module: input_t1):
     test_data = test_module()
     pipeline = VgfPipeline[input_t1](
         Stack(),
         test_data,
         aten_op=Stack.aten_op,
         exir_op=Stack.exir_op,
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=False,
+        quantize=True,
     )
     pipeline.run()

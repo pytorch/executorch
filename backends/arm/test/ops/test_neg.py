@@ -75,21 +75,25 @@ def test_neg_u85_INT(test_data: input_t1):
 
 @common.parametrize("test_data", Neg.test_data)
 @common.SkipIfNoModelConverter
-def test_neg_vgf_FP(test_data: input_t1):
+def test_neg_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
-        Neg(), test_data, Neg.aten_op, Neg.exir_op, tosa_version="TOSA-1.0+FP"
+        Neg(),
+        test_data,
+        Neg.aten_op,
+        Neg.exir_op,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Neg.test_data)
 @common.SkipIfNoModelConverter
-def test_neg_vgf_INT(test_data: input_t1):
+def test_neg_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Neg(),
         test_data,
         Neg.aten_op,
         Neg.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

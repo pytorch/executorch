@@ -37,6 +37,7 @@ runtime.python_library(
         "//executorch/examples/qualcomm:utils",
         "//executorch/examples/models:models",
         "//executorch/backends/qualcomm/debugger:utils",
+        "//executorch/backends/qualcomm/debugger:qnn_intermediate_debugger",
     ],
 )
 
