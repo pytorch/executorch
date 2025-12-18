@@ -8,7 +8,7 @@
 set -x
 
 sudo apt install ffmpeg -y
-pip install torchcodec==0.7.0.dev20251012 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+pip install torchcodec==0.10.0.dev20251211 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 pip install moshi==0.2.11
 pip install bitsandbytes soundfile einops
 # Run llama2/install requirements for torchao deps

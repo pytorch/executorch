@@ -269,6 +269,6 @@ class TosaArg:
             attrs.append(f"number={self.number!r}")
         if hasattr(self, "tosa_spec") and self.tosa_spec is not None:
             attrs.append(f"tosa_spec={self.tosa_spec!r}")
-        if hasattr(self, "names"):
+        if hasattr(self, "multiple_output_names"):
             attrs.append(f"names={self.multiple_output_names!r}")
         return f"{self.__class__.__name__}({', '.join(attrs)})"

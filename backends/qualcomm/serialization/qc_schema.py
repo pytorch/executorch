@@ -155,7 +155,6 @@ class QnnExecuTorchHtpBackendOptions:
     )
     precision: QnnExecuTorchHtpPrecision = QnnExecuTorchHtpPrecision.kHtpQuantized
     pd_session: QnnExecuTorchHtpPdSession = QnnExecuTorchHtpPdSession.kHtpUnsignedPd
-    skel_library_dir: str = ""
     use_conv_hmx: bool = True
     use_dlbc: bool = False
     use_fold_relu: bool = True
@@ -222,7 +221,6 @@ class QnnExecuTorchOpPackageOptions:
 class QnnExecuTorchOptions:
     soc_info: SocInfo
     backend_options: QnnExecuTorchBackendOptions
-    graph_name: List[str] = field(default_factory=lambda: ["forward"])
     library_path: str = ""
     log_level: QnnExecuTorchLogLevel = QnnExecuTorchLogLevel.kLogOff
     online_prepare: bool = False
