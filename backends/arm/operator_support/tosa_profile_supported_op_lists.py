@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025 Arm LimitAed and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -54,6 +54,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.exp.default,
     exir_ops.edge.aten.expm1.default,
     exir_ops.edge.aten.log.default,
+    exir_ops.edge.aten.log1p.default,
     exir_ops.edge.aten.linear.default,
     exir_ops.edge.aten.split_with_sizes_copy.default,
     exir_ops.edge.aten.split_copy.Tensor,
@@ -154,6 +155,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.erf.default,
     exir_ops.edge.aten.exp.default,
     exir_ops.edge.aten.expm1.default,
+    exir_ops.edge.aten.log1p.default,
     exir_ops.edge.aten.log.default,
     exir_ops.edge.aten.linear.default,
     exir_ops.edge.aten.split_with_sizes_copy.default,
