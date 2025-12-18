@@ -163,3 +163,17 @@ def test_mv2_partial_quant_tosa_INT_FP():
     )
     _use_partial_quantizer(pipeline)
     pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_mv2_partial_quant_vgf_quant():
+    pipeline = VgfPipeline[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        quantize=True,
+        atol=0.10,
+    )
+    _use_partial_quantizer(pipeline)
+    pipeline.run()
