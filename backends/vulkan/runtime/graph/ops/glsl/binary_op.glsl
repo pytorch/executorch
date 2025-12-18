@@ -94,8 +94,7 @@ void main() {
     return;
   }
 
-  TensorIndex outp_tidx;
-  linear_idx_to_tensor_idx(outp, out_bufi, outp_tidx);
+  TensorIndex outp_tidx = linear_idx_to_tensor_idx(outp, out_bufi);
 
   TensorIndex inp_tidx = outp_tidx;
   clamp_tensor_idx(inp, inp_tidx);
