@@ -1,4 +1,4 @@
-load(":targets.bzl", "define_common_targets")
+load("targets.bzl", "define_common_targets")
 
 oncall("executorch")
 

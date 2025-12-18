@@ -1,28 +1,16 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
 #pragma once
-
-#include <c10/macros/Macros.h>
-#include <executorch/runtime/core/array_ref.h>
-#include <executorch/runtime/platform/assert.h>
 
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
 
-#define C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE 5
+#include <executorch/backends/aoti/slim/c10/macros/Macros.h>
+#include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
 
-namespace c10 {
+#define STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE 5
 
-using ::executorch::runtime::ArrayRef;
-using ::executorch::runtime::IntArrayRef;
+namespace standalone::c10 {
 
 // Packed container for TensorImpl sizes and strides.
 // This design improves on the previous approach of using a pair of
@@ -48,14 +36,14 @@ class SizesAndStrides {
   }
 
   ~SizesAndStrides() {
-    if (C10_UNLIKELY(!isInline())) {
+    if (STANDALONE_UNLIKELY(!isInline())) {
       // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
       free(outOfLineStorage_);
     }
   }
 
   SizesAndStrides(const SizesAndStrides& rhs) : size_(rhs.size_) {
-    if (C10_LIKELY(rhs.isInline())) {
+    if (STANDALONE_LIKELY(rhs.isInline())) {
       copyDataInline(rhs);
     } else {
       allocateOutOfLineStorage(size_);
@@ -70,9 +58,7 @@ class SizesAndStrides {
     return !(
         isInline()
             ? std::memcmp(
-                  inlineStorage_,
-                  other.inlineStorage_,
-                  sizeof(inlineStorage_))
+                  inlineStorage_, other.inlineStorage_, sizeof(inlineStorage_))
             : std::memcmp(
                   outOfLineStorage_,
                   other.outOfLineStorage_,
@@ -83,8 +69,8 @@ class SizesAndStrides {
     if (this == &rhs) {
       return *this;
     }
-    if (C10_LIKELY(rhs.isInline())) {
-      if (C10_UNLIKELY(!isInline())) {
+    if (STANDALONE_LIKELY(rhs.isInline())) {
+      if (STANDALONE_UNLIKELY(!isInline())) {
         // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
         free(outOfLineStorage_);
       }
@@ -103,7 +89,7 @@ class SizesAndStrides {
 
   // Move from rhs. rhs.size() == 0 afterwards.
   SizesAndStrides(SizesAndStrides&& rhs) noexcept : size_(rhs.size_) {
-    if (C10_LIKELY(isInline())) {
+    if (STANDALONE_LIKELY(isInline())) {
       memcpy(inlineStorage_, rhs.inlineStorage_, sizeof(inlineStorage_));
     } else {
       outOfLineStorage_ = rhs.outOfLineStorage_;
@@ -118,8 +104,8 @@ class SizesAndStrides {
     if (this == &rhs) {
       return *this;
     }
-    if (C10_LIKELY(rhs.isInline())) {
-      if (C10_UNLIKELY(!isInline())) {
+    if (STANDALONE_LIKELY(rhs.isInline())) {
+      if (STANDALONE_UNLIKELY(!isInline())) {
         // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
         free(outOfLineStorage_);
       }
@@ -144,7 +130,7 @@ class SizesAndStrides {
   }
 
   const int64_t* sizes_data() const noexcept {
-    if (C10_LIKELY(isInline())) {
+    if (STANDALONE_LIKELY(isInline())) {
       return &inlineStorage_[0];
     } else {
       return &outOfLineStorage_[0];
@@ -152,7 +138,7 @@ class SizesAndStrides {
   }
 
   int64_t* sizes_data() noexcept {
-    if (C10_LIKELY(isInline())) {
+    if (STANDALONE_LIKELY(isInline())) {
       return &inlineStorage_[0];
     } else {
       return &outOfLineStorage_[0];
@@ -185,41 +171,37 @@ class SizesAndStrides {
   }
 
   void set_strides(IntArrayRef strides) {
-    ET_DCHECK_MSG(
-        strides.size() == size(),
-        "strides size %zu must match current size %zu",
-        strides.size(),
-        size());
+    STANDALONE_INTERNAL_ASSERT(strides.size() == size());
     std::copy(strides.begin(), strides.end(), strides_begin());
   }
 
   const int64_t* strides_data() const noexcept {
-    if (C10_LIKELY(isInline())) {
-      return &inlineStorage_[C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE];
+    if (STANDALONE_LIKELY(isInline())) {
+      return &inlineStorage_[STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE];
     } else {
       return &outOfLineStorage_[size()];
     }
   }
 
   int64_t* strides_data() noexcept {
-    if (C10_LIKELY(isInline())) {
-      return &inlineStorage_[C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE];
+    if (STANDALONE_LIKELY(isInline())) {
+      return &inlineStorage_[STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE];
     } else {
       return &outOfLineStorage_[size()];
     }
   }
 
   strides_const_iterator strides_begin() const noexcept {
-    if (C10_LIKELY(isInline())) {
-      return &inlineStorage_[C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE];
+    if (STANDALONE_LIKELY(isInline())) {
+      return &inlineStorage_[STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE];
     } else {
       return &outOfLineStorage_[size()];
     }
   }
 
   strides_iterator strides_begin() noexcept {
-    if (C10_LIKELY(isInline())) {
-      return &inlineStorage_[C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE];
+    if (STANDALONE_LIKELY(isInline())) {
+      return &inlineStorage_[STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE];
     } else {
       return &outOfLineStorage_[size()];
     }
@@ -280,13 +262,16 @@ class SizesAndStrides {
     if (newSize == oldSize) {
       return;
     }
-    if (C10_LIKELY(
-            newSize <= C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE && isInline())) {
+    if (STANDALONE_LIKELY(
+            newSize <= STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE &&
+            isInline())) {
       if (oldSize < newSize) {
-        const auto bytesToZero = (newSize - oldSize) * sizeof(inlineStorage_[0]);
+        const auto bytesToZero =
+            (newSize - oldSize) * sizeof(inlineStorage_[0]);
         memset(&inlineStorage_[oldSize], 0, bytesToZero);
         memset(
-            &inlineStorage_[C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE + oldSize],
+            &inlineStorage_
+                [STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE + oldSize],
             0,
             bytesToZero);
       }
@@ -298,19 +283,21 @@ class SizesAndStrides {
 
  private:
   void resizeSlowPath(size_t newSize, size_t oldSize) {
-    if (newSize <= C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE) {
-      ET_DCHECK_MSG(
+    if (newSize <= STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE) {
+      STANDALONE_INTERNAL_ASSERT_DEBUG_ONLY(
           !isInline(),
           "resizeSlowPath called when fast path should have been hit!");
       int64_t* tempStorage = outOfLineStorage_;
       memcpy(
           &inlineStorage_[0],
           &tempStorage[0],
-          C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE * sizeof(inlineStorage_[0]));
+          STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE *
+              sizeof(inlineStorage_[0]));
       memcpy(
-          &inlineStorage_[C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE],
+          &inlineStorage_[STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE],
           &tempStorage[oldSize],
-          C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE * sizeof(inlineStorage_[0]));
+          STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE *
+              sizeof(inlineStorage_[0]));
       // CANNOT USE freeOutOfLineStorage() HERE! outOfLineStorage_
       // HAS BEEN OVERWRITTEN!
       // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
@@ -322,7 +309,7 @@ class SizesAndStrides {
         int64_t* tempStorage =
             // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
             static_cast<int64_t*>(malloc(storageBytes(newSize)));
-        ET_CHECK_MSG(
+        STANDALONE_CHECK(
             tempStorage,
             "Could not allocate memory to change Tensor SizesAndStrides!");
         const auto bytesToCopy = oldSize * sizeof(inlineStorage_[0]);
@@ -335,7 +322,7 @@ class SizesAndStrides {
         }
         memcpy(
             &tempStorage[newSize],
-            &inlineStorage_[C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE],
+            &inlineStorage_[STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE],
             bytesToCopy);
         if (bytesToZero) {
           memset(&tempStorage[newSize + oldSize], 0, bytesToZero);
@@ -370,11 +357,11 @@ class SizesAndStrides {
   }
 
   bool isInline() const noexcept {
-    return size_ <= C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE;
+    return size_ <= STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE;
   }
 
   void copyDataInline(const SizesAndStrides& rhs) {
-    ET_DCHECK_MSG(rhs.isInline(), "rhs must be inline");
+    STANDALONE_INTERNAL_ASSERT_DEBUG_ONLY(rhs.isInline());
     memcpy(inlineStorage_, rhs.inlineStorage_, sizeof(inlineStorage_));
   }
 
@@ -385,17 +372,17 @@ class SizesAndStrides {
   void allocateOutOfLineStorage(size_t size) {
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
     outOfLineStorage_ = static_cast<int64_t*>(malloc(storageBytes(size)));
-    ET_CHECK_MSG(
+    STANDALONE_CHECK(
         outOfLineStorage_,
         "Could not allocate memory for Tensor SizesAndStrides!");
   }
 
   void resizeOutOfLineStorage(size_t newSize) {
-    ET_DCHECK_MSG(!isInline(), "must not be inline");
+    STANDALONE_INTERNAL_ASSERT_DEBUG_ONLY(!isInline());
     outOfLineStorage_ = static_cast<int64_t*>(
         // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
         realloc(outOfLineStorage_, storageBytes(newSize)));
-    ET_CHECK_MSG(
+    STANDALONE_CHECK(
         outOfLineStorage_,
         "Could not allocate memory for Tensor SizesAndStrides!");
   }
@@ -408,8 +395,8 @@ class SizesAndStrides {
   union {
     int64_t* outOfLineStorage_;
     // NOLINTNEXTLINE(*c-array*)
-    int64_t inlineStorage_[C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE * 2]{};
+    int64_t inlineStorage_[STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE * 2]{};
   };
 };
 
-} // namespace c10
+} // namespace standalone::c10

@@ -1,16 +1,7 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
-
 #pragma once
 
-#include <executorch/runtime/core/array_ref.h>
-#include <executorch/runtime/platform/assert.h>
+#include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
+#include <executorch/backends/aoti/slim/c10/util/Exception.h>
 
 #include <cstdint>
 #include <ostream>
@@ -34,11 +25,7 @@
 //    Regardless of input tensors format, the output should be in channels_last
 //    format.
 
-namespace c10 {
-
-using ::executorch::runtime::ArrayRef;
-using ::executorch::runtime::IntArrayRef;
-
+namespace standalone::c10 {
 enum class MemoryFormat : int8_t {
   Contiguous,
   Preserve,
@@ -50,7 +37,8 @@ enum class MemoryFormat : int8_t {
 // If you are seeing this, it means that this call site was not checked if
 // the memory format could be preserved, and it was switched to old default
 // behaviour of contiguous
-#define LEGACY_CONTIGUOUS_MEMORY_FORMAT ::c10::get_contiguous_memory_format()
+#define LEGACY_CONTIGUOUS_MEMORY_FORMAT \
+  ::standalone::c10::get_contiguous_memory_format()
 
 inline MemoryFormat get_contiguous_memory_format() {
   return MemoryFormat::Contiguous;
@@ -69,10 +57,7 @@ inline std::ostream& operator<<(
     case MemoryFormat::ChannelsLast3d:
       return stream << "ChannelsLast3d";
     default:
-      ET_CHECK_MSG(
-          false,
-          "Unknown memory format %d",
-          static_cast<int>(memory_format));
+      STANDALONE_CHECK(false, "Unknown memory format ", memory_format);
   }
 }
 
@@ -94,10 +79,8 @@ inline std::vector<T> get_channels_last_strides_2d(ArrayRef<T> sizes) {
       strides[1] = strides[2] * sizes[2];
       return strides;
     default:
-      ET_CHECK_MSG(
-          false,
-          "ChannelsLast2d doesn't support size %zu",
-          static_cast<size_t>(sizes.size()));
+      STANDALONE_INTERNAL_ASSERT(
+          false, "ChannelsLast2d doesn't support size ", sizes.size());
   }
 }
 
@@ -123,10 +106,8 @@ std::vector<T> get_channels_last_strides_3d(ArrayRef<T> sizes) {
       strides[1] = strides[2] * sizes[2];
       return strides;
     default:
-      ET_CHECK_MSG(
-          false,
-          "ChannelsLast3d doesn't support size %zu",
-          static_cast<size_t>(sizes.size()));
+      STANDALONE_INTERNAL_ASSERT(
+          false, "ChannelsLast3d doesn't support size ", sizes.size());
   }
 }
 
@@ -213,6 +194,56 @@ inline bool is_channels_last_strides_3d_s5(
   return true;
 }
 
+// Note [Ambiguous is_channels_last_strides_xd]
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// The flaw of carrying memory_format implicitly through strides is very hard
+// to WAR properly. issue #24090
+// Without the history of permutation, we can't infer the memory_format of a
+// tensor from the snapshot of its size & stride
+// e.g.
+//
+// 1. We can NOT specify the memory_format of N111 tensor through strides in a
+//  meaningful way;
+//
+// 2. Two path that ended up with identical size/stride
+//  N11W contiguous tensor sliced at w-dimension becomes [N,1,1,1]@[W,W,W,W]
+//  NC11 channels_last tensor sliced at c-dimension becomes [N,1,1,1]@[C,C,C,C]
+//    So if we see a tensor [N,1,1,1]@[X,X,X,X], there's no way for us to infer
+//    the memory_format of the original tensor.
+//
+// Due to the limitations, our temporary WAR `is_channels_last_strides` does the
+// best effort to infer whether the original memory_format of a tensor is
+// MemoryFormat::ChannelsLast. The two objectives of this function (ordered
+// by their importance):
+//   1. Ensure that normal shape manipulation does not accidentally change the
+//      MemoryFormat of an existing tensor.
+//   2. Allows user to mark MemoryFormat::ChannelsLast to tensors;
+//
+// The function does so via checking strides of the tensor, including strides of
+// size-1 dimensions. Although conventionally PyTorch implies no restriction on
+// trivial stride (stride for size-1 dimension).
+//
+// Note that this approach is a compromise. We did not solve the problem
+// completely. Many cases we will not be able to infer the correct memory
+// format.
+// The implementation of `is_channels_last_strides` is to serve the objectives:
+// MemoryFormat::ChannelsLast has to be explicitly opted-in (no accidental
+// conversion); Best effort to maintain the ChannelsLast flag.
+//
+// Due to the fact that this is not a bulletproof solution, through testing
+// (aten/src/ATen/test/memory_format_test.cpp)
+//   a. we ensure that the common tasks are supported;
+//   a. we identify corner cases where the implementation compromises on.
+//
+// By the time accumulated permutation is enabled to replace implicit
+// memory_format through strides, we should be updating our tests and fix the
+// issues in our tests.
+//
+// We use Channels Last 2d as an example above.
+// This is a general problem for all the is_channels_last_strides_xd
+// implementation. Please check the helper functions
+// (is_channels_last_strides_*d_s*) for more details.
+
 template <typename T>
 inline bool is_channels_last_strides_2d(
     const ArrayRef<T> sizes,
@@ -257,4 +288,4 @@ inline bool is_channels_last_strides_3d(
   return is_channels_last_strides_3d<int64_t>(sizes, strides);
 }
 
-} // namespace c10
+} // namespace standalone::c10

@@ -1,23 +1,12 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
 #pragma once
 
-#include <c10/util/irange.h>
-#include <executorch/runtime/core/array_ref.h>
+#include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
+#include <executorch/backends/aoti/slim/c10/util/irange.h>
 
 #include <algorithm>
 #include <cstdint>
-#include <vector>
 
-namespace c10 {
-
-using ::executorch::runtime::ArrayRef;
+namespace standalone::c10 {
 
 template <typename T>
 bool _compute_contiguous(ArrayRef<T> sizes, ArrayRef<T> strides, T numel) {
@@ -133,7 +122,7 @@ bool _compute_non_overlapping_and_dense(
     return sizes[0] < 2 || strides[0] == 1;
   }
   std::vector<int64_t> perm(dim);
-  for (const auto i : c10::irange(dim)) {
+  for (const auto i : irange(dim)) {
     perm[i] = i;
   }
   // Sort by strides, leaving 0 and 1 sized dims at the end of the array
@@ -146,7 +135,7 @@ bool _compute_non_overlapping_and_dense(
     return strides[a] < strides[b];
   });
   T require_stride = 1;
-  for (const auto i : c10::irange(dim)) {
+  for (const auto i : irange(dim)) {
     const auto& size_perm_i = sizes[perm[i]];
     if (size_perm_i < 2) {
       return true;
@@ -159,4 +148,4 @@ bool _compute_non_overlapping_and_dense(
   return true;
 }
 
-} // namespace c10
+} // namespace standalone::c10
