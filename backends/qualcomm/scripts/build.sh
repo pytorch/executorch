@@ -6,6 +6,8 @@
 # LICENSE file in the root directory of this source tree.
 set -e
 
+pip install pydot
+
 # Check if running on macOS/Darwin
 if [[ "$(uname -s)" == "Darwin" ]]; then
     echo "Error: Qualcomm backend Python interface requires Linux operating system."

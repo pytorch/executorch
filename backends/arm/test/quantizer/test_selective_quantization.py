@@ -143,7 +143,7 @@ def test_mv3_selective_quant_int16():
     a16w8_config = get_symmetric_a16w8_quantization_config()
     quantization_annotations = {
         "aten.conv2d.default": {
-            a16w8_config.output_activation: 29,
+            a16w8_config.output_activation: 34,
         },
         "aten.hardswish_.default": {
             a16w8_config.output_activation: 18,

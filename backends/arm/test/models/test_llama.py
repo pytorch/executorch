@@ -206,3 +206,22 @@ def test_llama_partial_quant_tosa_INT_FP():
         )
         _use_partial_quantizer(pipeline)
         pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_llama_partial_quant_vgf_quant():
+    llama_model, llama_inputs, llama_meta = TestLlama().prepare_model()
+
+    if llama_model is None or llama_inputs is None:
+        pytest.skip("Missing model and/or input files")
+
+    with torch.no_grad():
+        pipeline = VgfPipeline[input_t](
+            llama_model,
+            llama_inputs,
+            aten_op=[],
+            exir_op=[],
+            quantize=True,
+        )
+        _use_partial_quantizer(pipeline)
+        pipeline.run()

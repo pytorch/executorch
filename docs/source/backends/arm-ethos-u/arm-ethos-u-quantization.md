@@ -10,6 +10,7 @@ The Arm Ethos-U delegate supports the following quantization schemes:
 
 - 8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow).
 - Limited support for 16-bit quantization with 16-bit activations and 8-bit weights (a.k.a 16x8 quantization). This is under development.
+- Partial quantization is *not* supported on the Ethos-U backend. The entire model must be quantized.
 
 ### Quantization API
 

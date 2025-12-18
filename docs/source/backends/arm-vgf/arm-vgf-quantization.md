@@ -13,6 +13,25 @@ The quantization schemes supported by the VGF Backend are:
 
 Weight-only quantization is not currently supported on the VGF backend.
 
+### Partial Quantization
+
+The VGF backend supports partial quantization, where only parts of the model
+are quantized while others remain in floating-point. This can be useful for
+models where certain layers are not well-suited for quantization or when a
+balance between performance and accuracy is desired.
+
+For every node (op) in the graph, the quantizer looks at the *quantization
+configuration* set for that specific node. If the configuration is set to
+`None`, the node is left in floating-point; if it is provided (not `None`), the
+node is quantized according to that configuration.
+
+With the [Quantization API](#quantization-api), users can specify the
+quantization configurations for specific layers or submodules of the model. The
+`set_global` method is first used to set a default quantization configuration
+(could be `None` as explained above) for all nodes in the model. Then,
+configurations for specific layers or submodules can override the global
+setting using the `set_module_name` or `set_module_type` methods.
+
 ### Quantization API
 
 ```python

@@ -479,6 +479,12 @@ def get_quant_properties(  # noqa: C901
     weight_qspec = quantization_config.get_weight_qspec()
     output_act_qspec = quantization_config.get_output_act_qspec()
     bias_qspec = quantization_config.get_bias_qspec(node)
+    if output_act_qspec is not None:
+        # Check if output activation qspec is symmetric. In that case
+        # we avoid conv + relu fusion for quantization annotation.
+        is_symmetric = output_act_qspec.qscheme == torch.per_tensor_symmetric
+    else:
+        is_symmetric = False
 
     quant_properties = _OpQuantProperties()
 
@@ -491,7 +497,7 @@ def get_quant_properties(  # noqa: C901
             or n.args[1] == 0
         )
 
-    if _match_pattern(
+    if not is_symmetric and _match_pattern(
         node,
         [
             _conv_ops,
@@ -536,7 +542,7 @@ def get_quant_properties(  # noqa: C901
             torch.ops.aten.batch_norm.default,
         ]:
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
-    elif _match_pattern(
+    elif not is_symmetric and _match_pattern(
         node,
         [
             [
@@ -712,6 +718,7 @@ def get_quant_properties(  # noqa: C901
     ):
         submodule_args_pos = -1 if node.target == torch.ops.higher_order.cond else -2
         submodule_args = node.args[submodule_args_pos]
+        output_qspec = output_act_qspec
         if len(submodule_args) > 0:  # type: ignore[arg-type]
             # The way the TOSA backend handles quantized inputs, arrays of input tensors (such as the input to a
             # conditional graph) need shared quantization.
@@ -727,7 +734,14 @@ def get_quant_properties(  # noqa: C901
                     ],
                 )
             ]
-        quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
+            if node.target == torch.ops.higher_order.while_loop:
+                # The output of the while loop body can either re-enter the body, or exit the while loop.
+                # Therefore, A and B in the diagram below need to share the same quantization parameters.
+                # A -> while ( RESCALE -> ... RESCALE -> ) -> B
+                output_qspec = shared_qspec
+
+        quant_properties.quant_output = _QuantProperty(0, output_qspec)
+
     else:
         return None
 
