@@ -35,19 +35,27 @@ class NeutronConverterManager:
             module.name
             for module in pkgutil.iter_modules()
             if module.name.startswith("neutron_converter")
+            or module.name == "eiq_neutron_sdk"
         ]
 
-        requested_module_name = f"neutron_converter_{neutron_converter_flavor}"
+        if neutron_converter_flavor:
+            requested_module_name = f"neutron_converter_{neutron_converter_flavor}"
+            print(
+                "Warning: The use of converter flavors will be deprecated. Use empty string to select 'eiq_neutron_sdk' module."
+            )
+        else:
+            requested_module_name = "eiq_neutron_sdk"
+
         if requested_module_name not in neutron_converter_modules:
             if len(neutron_converter_modules) > 0:
                 raise RuntimeError(
-                    f"Neutron Converter module with flavor '{neutron_converter_flavor}' "
+                    f"Neutron Converter module '{requested_module_name}' "
                     f"not found. Available modules: {neutron_converter_modules}."
                 )
             else:
                 raise RuntimeError(
-                    f"Neutron Converter module with flavor '{neutron_converter_flavor}' "
-                    f"not found. Install 'neutron_converter_[flavor]' Python package."
+                    f"Neutron Converter module '{requested_module_name}' "
+                    f"not found. Install 'eiq_neutron_sdk' or 'neutron_converter_[flavor]' Python package."
                 )
 
         self.neutron_converter = importlib.import_module(
