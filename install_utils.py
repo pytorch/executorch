@@ -108,10 +108,18 @@ def determine_torch_url(torch_nightly_url_base, supported_cuda_versions):
         URL string for PyTorch packages
     """
     if platform.system().lower() == "windows":
-        print(
-            "Windows detected, using CPU-only PyTorch until CUDA support is available"
-        )
-        return f"{torch_nightly_url_base}/cpu"
+        # Try CUDA detection on Windows as well
+        print("Windows detected, attempting CUDA detection...")
+        try:
+            cuda_version = _get_cuda_version(supported_cuda_versions)
+            major, minor = cuda_version
+            print(f"Detected CUDA version: {major}.{minor}")
+            torch_url = _get_pytorch_cuda_url(cuda_version, torch_nightly_url_base)
+            print(f"Using PyTorch URL: {torch_url}")
+            return torch_url
+        except Exception as err:
+            print(f"CUDA detection failed ({err}), using CPU-only PyTorch")
+            return f"{torch_nightly_url_base}/cpu"
 
     print("Attempting to detect CUDA via nvcc...")
 
