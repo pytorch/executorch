@@ -33,13 +33,12 @@ void main() {
     return;
   }
 
-  TensorIndex outp_tidx;
-  linear_idx_to_tensor_idx(outp, outp_bufi, outp_tidx);
+  TensorIndex outp_tidx = linear_idx_to_tensor_idx(outp, outp_bufi);
 
   // Map output tensor index to input tensor index by taking modulo
   // with input tensor sizes for each dimension
   TensorIndex inp_tidx = outp_tidx;
-  for (int d = 0; d < ndim(inp); ++d) {
+  for (int d = 0; d < ndim(outp); ++d) {
     uint inp_size = size_at(inp, d);
     uint outp_idx = idx_at(outp_tidx, d);
     inp_tidx.data[div_4(d)][mod_4(d)] = outp_idx % inp_size;
