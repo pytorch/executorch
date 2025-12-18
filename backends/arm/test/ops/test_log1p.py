@@ -54,7 +54,7 @@ def test_log1p_tosa_INT(test_data: input_t1):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_atan_vgf_no_quant(test_data: Tuple):
+def test_log1p_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Log1p(),
         test_data(),
@@ -67,7 +67,7 @@ def test_atan_vgf_no_quant(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_atan_vgf_quant(test_data: Tuple):
+def test_log1p_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Log1p(),
         test_data(),
