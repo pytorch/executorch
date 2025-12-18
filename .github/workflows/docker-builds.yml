@@ -33,7 +33,8 @@ jobs:
       matrix:
         runner: [linux.4xlarge]
         docker-image-name: [
-          executorch-ubuntu-22.04-gcc9,
+          executorch-ubuntu-22.04-gcc11,
+          executorch-ubuntu-22.04-gcc9-nopytorch,
           executorch-ubuntu-22.04-clang12,
           executorch-ubuntu-22.04-linter,
           executorch-ubuntu-22.04-arm-sdk,
@@ -70,7 +71,7 @@ jobs:
 
       - name: Build docker image
         id: build-docker-image
-        timeout-minutes: 45
+        timeout-minutes: 145
         uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
         with:
           docker-image-name: ci-image:${{ matrix.docker-image-name }}

@@ -232,28 +232,28 @@ def test_avg_pool2d_16a8w_u85_INT16(test_module):
 
 @common.parametrize("test_module", test_modules)
 @common.SkipIfNoModelConverter
-def test_avg_pool2d_vgf_FP(test_module):
+def test_avg_pool2d_vgf_no_quant(test_module):
     model, input_tensor = test_module()
     pipeline = VgfPipeline[input_t](
         model,
         input_tensor,
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
 @common.SkipIfNoModelConverter
-def test_avg_pool2d_vgf_INT(test_module):
+def test_avg_pool2d_vgf_quant(test_module):
     model, input_tensor = test_module()
     pipeline = VgfPipeline[input_t](
         model,
         input_tensor,
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 

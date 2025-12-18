@@ -6,7 +6,7 @@
 
 from typing import Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
@@ -27,15 +27,15 @@ class DepthToSpaceVisitor(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -44,7 +44,7 @@ class DepthToSpaceVisitor(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -54,7 +54,7 @@ class DepthToSpaceVisitor(NodeVisitor):
         block_size = np.array(block_size, dtype=np.uint32)
         block_size_shape = [2]
 
-        depth_to_space_op = PyQnnWrapper.PyQnnOpWrapper(
+        depth_to_space_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpDepthToSpace.op_name,
@@ -63,7 +63,7 @@ class DepthToSpaceVisitor(NodeVisitor):
         depth_to_space_op.AddOutputTensors([output_tensor_wrapper])
         depth_to_space_op.AddTensorParam(
             OpDepthToSpace.param_block_size,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(block_size.shape),
             block_size_shape,
             block_size,
@@ -71,7 +71,7 @@ class DepthToSpaceVisitor(NodeVisitor):
         )
         depth_to_space_op.AddScalarParam(
             OpDepthToSpace.param_mode,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(OpDepthToSpace.Mode.CRD)},
         )
 

@@ -123,56 +123,56 @@ def test_pixel_shuffle_tosa_INT(test_data: input_t1):
 
 @common.parametrize("test_data", PixelUnShuffle.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_pixel_unshuffle_vgf_FP(test_data: input_t1):
+def test_pixel_unshuffle_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         PixelUnShuffle(),
         test_data(),
         aten_op_pixel_unshuffle,
         exir_op_pixel_unshuffle,
-        tosa_version="TOSA-1.0+FP",
         run_on_vulkan_runtime=True,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", PixelUnShuffle.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_pixel_unshuffle_vgf_INT(test_data: input_t1):
+def test_pixel_unshuffle_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         PixelUnShuffle(),
         test_data(),
         aten_op_pixel_unshuffle,
         exir_op_pixel_unshuffle,
-        tosa_version="TOSA-1.0+INT",
         run_on_vulkan_runtime=True,
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", PixelShuffle.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_pixel_shuffle_vgf_FP(test_data: input_t1):
+def test_pixel_shuffle_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         PixelShuffle(),
         test_data(),
         aten_op_pixel_shuffle,
         exir_op_pixel_shuffle,
-        tosa_version="TOSA-1.0+FP",
         run_on_vulkan_runtime=True,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", PixelShuffle.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_pixel_shuffle_vgf_INT(test_data: input_t1):
+def test_pixel_shuffle_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         PixelShuffle(),
         test_data(),
         aten_op_pixel_shuffle,
         exir_op_pixel_shuffle,
-        tosa_version="TOSA-1.0+INT",
         run_on_vulkan_runtime=True,
+        quantize=True,
     )
     pipeline.run()
 

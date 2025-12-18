@@ -14,7 +14,7 @@ namespace backends {
 namespace qnn {
 
 QnnContext::~QnnContext() {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   if (handle_ != nullptr) {
     QNN_EXECUTORCH_LOG_INFO("Destroy Qnn context");
@@ -33,7 +33,7 @@ QnnContext::~QnnContext() {
 
 Error QnnContext::Configure() {
   // create qnn context
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   std::vector<const QnnContext_Config_t*> temp_context_config;
@@ -95,7 +95,7 @@ Error QnnContext::Configure() {
 
 Error QnnContext::GetContextBinary(
     QnnExecuTorchContextBinary& qnn_executorch_context_binary) {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_ContextBinarySize_t binary_size = 0;
   Qnn_ContextBinarySize_t bytes_written = 0;
   Qnn_ErrorHandle_t error =
