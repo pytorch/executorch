@@ -438,6 +438,8 @@ class StaticAttentionIOManager {
     RopeT* rope_freqs_cos;
     RopeT* rope_freqs_sin;
     StaticAttentionUpdateStyle style = StaticAttentionUpdateStyle::SMART_MASK;
+    bool generate_full_logits = true;
+    std::optional<size_t> last_valid_token_pos_index = 0;
   };
 
   StaticAttentionIOManager(StaticAttentionIOConfig config)
@@ -607,9 +609,16 @@ class StaticAttentionIOManager {
       batch_len = std::min(input_len, tokens.size() - i);
       if (input_pos_ + batch_len > config_.max_context_len) {
         ET_LOG(Error, "Maximum context size reached, stopping prefill.");
-        return input_len - 1;
+        return config_.generate_full_logits ? input_len - 1 : 0;
       }
       std::copy(&tokens[i], &tokens[i + batch_len], input_buffer.begin());
+      if (!config_.generate_full_logits && config_.last_valid_token_pos_index) {
+        last_valid_token_pos_ = batch_len - 1;
+        set_input(
+            method,
+            *config_.last_valid_token_pos_index,
+            &last_valid_token_pos_);
+      }
       prepare(method);
       ET_CHECK(method.execute() == executorch::runtime::Error::Ok);
       update(
@@ -622,10 +631,12 @@ class StaticAttentionIOManager {
         auto* logits = logits_tensor.const_data_ptr<LogitT>();
         logits_callback(executorch::runtime::Span(
             logits,
-            logits + batch_len * logits_tensor.size(logits_tensor.dim() - 1)));
+            logits +
+                (config_.generate_full_logits ? batch_len : 1) *
+                    logits_tensor.size(logits_tensor.dim() - 1)));
       }
     }
-    return batch_len - 1;
+    return config_.generate_full_logits ? batch_len - 1 : 0;
   }
 
   /**
@@ -647,6 +658,11 @@ class StaticAttentionIOManager {
       auto& mask = *pair.second;
       mask.set_causal_mask();
       set_input(method, config_.cache_len_to_mask_idx[pair.first], mask.get());
+    }
+    if (!config_.generate_full_logits && config_.last_valid_token_pos_index) {
+      last_valid_token_pos_ = 0;
+      set_input(
+          method, *config_.last_valid_token_pos_index, &last_valid_token_pos_);
     }
 
     while (true) {
@@ -685,6 +701,7 @@ class StaticAttentionIOManager {
       size_t window_size,
       size_t n_verifications,
       std::unordered_map<TokenT, SuffixCache<TokenT>> suffix_caches) {
+    ET_CHECK(config_.generate_full_logits);
     ET_LOG(
         Info,
         "Decoding with lookahead and verification at position %zu",
@@ -968,6 +985,7 @@ class StaticAttentionIOManager {
   std::unordered_map<size_t, PerCacheLenMasks> attentionMasks_;
   std::vector<RopeT> rope_freqs_cos_override_;
   std::vector<RopeT> rope_freqs_sin_override_;
+  int64_t last_valid_token_pos_;
 };
 
 } // namespace example

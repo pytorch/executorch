@@ -47,11 +47,10 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
-# Python dependencies required for use.
-# coremltools has issue with python 3.13, see https://github.com/apple/coremltools/issues/2487
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10,<3.14"
 dependencies=[
   "expecttest",
   "flatbuffers",
@@ -132,4 +131,4 @@ first_party_detection = false
 # Emit syntax compatible with older versions of python instead of only the range
 # specified by `requires-python`. TODO: Remove this once we support these older
 # versions of python and can expand the `requires-python` range.
-target-version = ["py38", "py39", "py310", "py311", "py312"]
+target-version = ["py38", "py39", "py310", "py311", "py312", "py313"]

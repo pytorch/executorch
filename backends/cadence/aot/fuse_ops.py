@@ -40,7 +40,6 @@ from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, ProxyValue
-from executorch.exir.passes import dead_code_elimination_pass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from torch.fx.node import Argument
 from torch.nn.utils.fusion import fuse_conv_bn_weights
@@ -523,29 +522,31 @@ class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseCascadedViewOps(ExportPass):
+class FuseCascadedViewOps(RemoveOrReplacePassInterface):
     """
     Fuse a cascaded chain of view ops
     """
 
-    def fuse_cascaded_view_ops(self, graph_module: torch.fx.GraphModule):
-        view_target = exir_ops.edge.aten.view_copy.default
-        for view_node in graph_module.graph.find_nodes(
-            op="call_function", target=view_target, sort=True
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.view_copy.default]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # Check if the input to this view node is also a view node
+        input_view = node.args[0]
+        if not isinstance(input_view, torch.fx.Node):
+            return False
+
+        if (
+            input_view.op != "call_function"
+            or input_view.target != exir_ops.edge.aten.view_copy.default
         ):
-            input_view = view_node.args[0]
-            if input_view.op != "call_function" or input_view.target != view_target:
-                continue
+            return False
 
-            view_node.replace_input_with(input_view, input_view.args[0])
-
-        graph_module.recompile()
-
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        self.fuse_cascaded_view_ops(graph_module)
-        dead_code_elimination_pass(graph_module)
-        result = super().call(graph_module)
-        return result
+        # Replace the input of this view node with the input of the cascaded view
+        # This effectively "skips" the intermediate view node
+        node.replace_input_with(input_view, cast(torch.fx.Node, input_view.args[0]))
+        return True
 
 
 class FuseOpPairsAcrossBranchesPass(ExportPass):

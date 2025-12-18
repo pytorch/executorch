@@ -19,9 +19,7 @@ namespace qnn {
 QnnDlcManager::QnnDlcManager(
     const QnnExecuTorchContextBinary& qnn_context_blob,
     const QnnExecuTorchOptions* options)
-    : qnn_loaded_backend_(""),
-      qnn_context_blob_(qnn_context_blob),
-      options_(options) {
+    : qnn_context_blob_(qnn_context_blob), options_(options) {
   if (options_ == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Fail to create QnnDlcManager, options is nullptr");
@@ -36,16 +34,18 @@ Error QnnDlcManager::Create() {
   return Error::Ok;
 }
 
-Error QnnDlcManager::Configure() {
+Error QnnDlcManager::Configure(const std::vector<std::string>& graph_names) {
   return Error::Ok;
 }
 
-Error QnnDlcManager::SetUpDlcEnvironment(const Qnn_Version_t& coreApiVersion) {
+Error QnnDlcManager::SetUpDlcEnvironment(
+    const Qnn_Version_t& coreApiVersion,
+    const std::vector<std::string>& graph_names) {
   return Error::Ok;
 }
 
 Error QnnDlcManager::RegisterGraphsFromDLC(
-    const QnnImplementation& implementation,
+    QnnImplementation* implementation,
     QnnBackend* backend,
     QnnContext* context,
     QnnBackendCache* cache) {
@@ -103,7 +103,7 @@ Error QnnDlcManager::RegisterGraphsFromDLC(
   snprintf(dlc_path, sizeof(dlc_path), "/proc/self/fd/%d", fd);
 
   const QNN_INTERFACE_VER_TYPE& interfaceVer =
-      implementation.GetQnnInterface().GetInterfaceVer();
+      implementation->GetQnnInterface().GetInterfaceVer();
 
   if (composeGraphsFromDlc(
           /*backendHandle=*/backend->GetHandle(),
@@ -133,9 +133,7 @@ Error QnnDlcManager::RegisterGraphsFromDLC(
   return Error::Ok;
 }
 
-void QnnDlcManager::ResetBackendParams() {}
-void QnnDlcManager::ResetLogger() {}
-void QnnDlcManager::TerminateAllBackends() {}
+void QnnDlcManager::Destroy() {}
 
 } // namespace qnn
 } // namespace backends

@@ -10,6 +10,7 @@ from typing import Tuple
 import pytest
 
 import torch
+from executorch.backends.arm.quantizer import get_symmetric_quantization_config
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -37,6 +38,14 @@ quant_test_data = {
     "per_channel_quantization=true": True,
     "per_channel_quantization=false": False,
 }
+
+
+def _use_partial_quantizer(pipeline):
+    """Set the pipeline's quantizer to only include Conv2d and ReLU6"""
+    quant_cfg = get_symmetric_quantization_config()
+    pipeline.quantizer.set_global(None)
+    pipeline.quantizer.set_module_type(torch.nn.Conv2d, quant_cfg)
+    pipeline.quantizer.set_module_type(torch.nn.ReLU6, quant_cfg)
 
 
 def test_mv2_tosa_FP():
@@ -114,29 +123,57 @@ def test_mv2_u85_INT(per_channel_quantization):
 
 @common.SkipIfNoModelConverter
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_mv2_vgf_INT(per_channel_quantization):
+def test_mv2_vgf_quant(per_channel_quantization):
     pipeline = VgfPipeline[input_t](
         mv2,
         model_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
         per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_mv2_vgf_FP():
+def test_mv2_vgf_no_quant():
     pipeline = VgfPipeline[input_t](
         mv2,
         model_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
+    pipeline.run()
+
+
+def test_mv2_partial_quant_tosa_INT_FP():
+    pipeline = TosaPipelineINT[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        tosa_extensions=["FP"],
+        use_to_edge_transform_and_lower=True,
+        atol=0.20,
+    )
+    _use_partial_quantizer(pipeline)
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_mv2_partial_quant_vgf_quant():
+    pipeline = VgfPipeline[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        quantize=True,
+        atol=0.10,
+    )
+    _use_partial_quantizer(pipeline)
     pipeline.run()

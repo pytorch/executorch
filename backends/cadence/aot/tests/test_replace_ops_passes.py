@@ -460,9 +460,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder = GraphBuilder()
         x_tensor = torch.randn(*shape, dtype=torch.float32)
         x = builder.placeholder("x", x_tensor)
-        weights_tensor = torch.randn(
-            [out_channels, in_channels // groups, kernel], dtype=torch.float32
-        )
+        # For regular conv: weight shape is [out_channels, in_channels // groups, kernel]
+        weights_shape = [out_channels, in_channels // groups, kernel]
+        weights_tensor = torch.randn(weights_shape, dtype=torch.float32)
         weights = builder.placeholder("weights", weights_tensor)
         bias: Optional[ProxyValue] = None
         bias_tensor: Optional[torch.Tensor] = None
@@ -486,11 +486,23 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder.output([convolution])
         original_gm = builder.get_graph_module()
 
-        replacement_pass_result = (
-            ReplaceAtenConvolutionWithCadenceConvolutionPass().call(original_gm)
-        )
+        gm_before = copy.deepcopy(original_gm)
+        p = ReplaceAtenConvolutionWithCadenceConvolutionPass()
+        replacement_pass_result = cast(PassResult, p(original_gm))
         self.assertIsNotNone(replacement_pass_result)
+        self.assertTrue(replacement_pass_result.modified)
         graph_after_passes = replacement_pass_result.graph_module
+
+        # Validate numerical accuracy
+        inputs = (x_tensor, weights_tensor)
+        if bias is not None:
+            inputs += (cast(torch.Tensor, bias_tensor),)
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceAtenConvolutionWithCadenceConvolutionPass",
+        )
 
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
@@ -508,26 +520,18 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-        inputs = (x.to_tensor(), weights.to_tensor())
-        if bias is not None:
-            inputs += (bias.to_tensor(),)
-        self.assertTensorMetadataIsSame(
-            pytree.tree_flatten(original_gm.forward(*inputs))[0],
-            pytree.tree_flatten(graph_after_passes.forward(*inputs))[0],
-        )
-
     @expand(
         [
-            [(1, 8, 18), 8, 16, 3],
-            [(1, 8, 18), 8, 16, 5, 2],
+            [(1, 8, 16), 8, 16, 3],
+            [(1, 8, 16), 8, 16, 5, 2],
             # depthwise + bias
-            [(1, 8, 18), 8, 16, 5, 2, 0, 1, True, True],
+            [(1, 8, 16), 8, 16, 5, 2, 0, 1, True, True],
             # no bias
-            [(1, 8, 18), 8, 16, 3, 2, 4, 3, False, False],
+            [(1, 8, 16), 8, 16, 3, 2, 4, 3, False, False],
             # depthwise + no bias
-            [(1, 8, 18), 8, 16, 3, 1, 0, 1, True, False],
+            [(1, 8, 16), 8, 16, 3, 1, 0, 1, True, False],
             # bias
-            [(1, 8, 18), 8, 16, 5, 2, 0, 1, False, True],
+            [(1, 8, 16), 8, 16, 5, 2, 0, 1, False, True],
         ]
     )
     @torch.no_grad()
@@ -546,16 +550,20 @@ class TestReplaceOpsPasses(unittest.TestCase):
     ) -> None:
         groups = in_channels if depthwise else 1
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
+        x_tensor = torch.randn(*shape, dtype=torch.float32)
+        x = builder.placeholder("x", x_tensor)
+        # For transposed conv: weight shape is [in_channels, out_channels // groups, kernel]
         weights_shape = [in_channels, out_channels // groups, kernel]
+        weights_tensor = torch.randn(weights_shape, dtype=torch.float32)
         weights = builder.placeholder(
             "weights",
-            torch.randn(weights_shape, dtype=torch.float32),
+            weights_tensor,
+        )
+        bias_tensor = (
+            torch.randn([out_channels], dtype=torch.float32) if bias_enabled else None
         )
         bias = (
-            builder.placeholder(
-                "bias", torch.randn([out_channels], dtype=torch.float32)
-            )
+            builder.placeholder("bias", cast(torch.Tensor, bias_tensor))
             if bias_enabled
             else None
         )
@@ -575,12 +583,24 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         builder.output([convolution])
         original_gm = builder.get_graph_module()
+        gm_before = copy.deepcopy(original_gm)
 
-        replacement_pass_result = (
-            ReplaceAtenConvolutionWithCadenceConvolutionPass().call(original_gm)
-        )
+        p = ReplaceAtenConvolutionWithCadenceConvolutionPass()
+        replacement_pass_result = cast(PassResult, p(original_gm))
         self.assertIsNotNone(replacement_pass_result)
+        self.assertTrue(replacement_pass_result.modified)
         graph_after_passes = replacement_pass_result.graph_module
+
+        inputs = (x_tensor, weights_tensor)
+        if bias_tensor is not None:
+            inputs += (bias_tensor,)
+
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceAtenConvolutionWithCadenceConvolutionPass",
+        )
 
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
@@ -591,14 +611,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 graph_after_passes, exir_ops.edge.cadence.transposed_convolution.default
             ),
             1,
-        )
-
-        inputs = (x.to_tensor(), weights.to_tensor())
-        if bias is not None:
-            inputs += (bias.to_tensor(),)
-        self.assertTensorMetadataIsSame(
-            pytree.tree_flatten(original_gm.forward(*inputs))[0],
-            pytree.tree_flatten(graph_after_passes.forward(*inputs))[0],
         )
 
     @expand(
@@ -614,7 +626,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
     @torch.no_grad()
     def test_replace_transposed_conv_with_linear(
         self,
-        shape: Tuple[int],
+        shape: Tuple[int, ...],
         in_channels: int,
         out_channels: int,
         kernel: int,
@@ -625,19 +637,29 @@ class TestReplaceOpsPasses(unittest.TestCase):
         bias_enabled: bool = True,
         channel_last: bool = False,
     ) -> None:
-        transposed = True
         output_padding = [0]
         groups = in_channels if depthwise else 1
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
-        weights = builder.placeholder(
-            "weights",
-            torch.randn([in_channels, out_channels, kernel], dtype=torch.float32),
+        x_tensor = torch.randn(*shape, dtype=torch.float32)
+        x = builder.placeholder("x", x_tensor)
+        # For transposed conv: weight shape is [in_channels, out_channels // groups, kernel]
+        weights_tensor = torch.randn(
+            [in_channels, out_channels // groups, kernel], dtype=torch.float32
+        )
+        weights = builder.placeholder("weights", weights_tensor)
+
+        transposed_weights = builder.call_operator(
+            op=exir_ops.edge.aten.transpose_copy.int, args=(weights, 0, 1)
+        )
+        flipped_weights = builder.call_operator(
+            exir_ops.edge.aten.flip.default,
+            args=(transposed_weights, [-1]),
+        )
+        bias_tensor = (
+            torch.randn([out_channels], dtype=torch.float32) if bias_enabled else None
         )
         bias = (
-            builder.placeholder(
-                "bias", torch.randn([out_channels], dtype=torch.float32)
-            )
+            builder.placeholder("bias", cast(torch.Tensor, bias_tensor))
             if bias_enabled
             else None
         )
@@ -647,17 +669,17 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 args=(x, [0, 2, 1]),
             )
         convolution = builder.call_operator(
-            op=exir_ops.edge.aten.convolution.default,
+            op=exir_ops.edge.cadence.transposed_convolution.default,
             args=(
                 x,
-                weights,
+                flipped_weights,
                 bias,
                 [stride],
                 [padding],
                 [dilation],
-                transposed,
                 output_padding,
                 groups,
+                False,
             ),
         )
         if channel_last:
@@ -668,11 +690,24 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder.output([convolution])
         original_gm = builder.get_graph_module()
 
-        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
-        p2 = ReplaceTransposedConvWithLinearPass()
-        graph_after_passes = cast(
-            PassResult, p2(cast(PassResult, p1(original_gm)).graph_module)
-        ).graph_module
+        gm_before = copy.deepcopy(original_gm)
+
+        # Run ReplaceTransposedConvWithLinearPass
+        result = ReplaceTransposedConvWithLinearPass().call(original_gm)
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = (x_tensor, weights_tensor)
+        if bias_tensor is not None:
+            inputs += (bias_tensor,)
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceTransposedConvWithLinearPass",
+        )
+
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.linear.default),
             1,
@@ -684,6 +719,12 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.cadence.conv1d.default)
             + count_node(graph_after_passes, exir_ops.edge.cadence.conv2d.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.cadence.transposed_convolution.default
+            ),
             0,
         )
 
@@ -1317,8 +1358,21 @@ class TestReplaceOpsPasses(unittest.TestCase):
             op=exir_ops.edge.aten.transpose_copy.int,
             args=(x, dim0, dim1),
         )
+
+        gm_before = copy.deepcopy(original_gm)
         p = ReplaceNopTransposeOrPermuteWithViewPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x]
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceNopTransposeOrPermuteWithViewPass",
+        )
 
         # Assert that transpose op was removed, and a view op was placed instead
         self.assertEqual(
@@ -1345,8 +1399,21 @@ class TestReplaceOpsPasses(unittest.TestCase):
             op=exir_ops.edge.aten.permute_copy.default,
             args=(x, dims),
         )
+
+        gm_before = copy.deepcopy(original_gm)
         p = ReplaceNopTransposeOrPermuteWithViewPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        # Validate numerical accuracy
+        inputs = [x]
+        validate(
+            gm_before,
+            graph_after_passes,
+            inputs,
+            "ReplaceNopTransposeOrPermuteWithViewPass",
+        )
 
         # Assert that permute op was removed, and a view op was placed instead
         self.assertEqual(
@@ -1863,8 +1930,11 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Apply replacement pass.
         p = ReplaceConvWithChannelLastConvPass()
         original = copy.deepcopy(gm)
-        gm_after_replacement = p.call(gm).graph_module
-        # Check that no replacement was made.
+        result = p.call(gm)
+        self.assertTrue(result.modified)
+        gm_after_replacement = result.graph_module
+
+        # Check that replacement was made.
         self.assertEqual(
             count_node(
                 gm_after_replacement,
@@ -1877,9 +1947,11 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
             3,
         )
+
+        # Validate numerical accuracy
         validate(
-            gm_after_replacement,
             original,
+            gm_after_replacement,
             placeholders,
             "ReplaceConvWithChannelLastConvPass",
         )
@@ -1933,14 +2005,23 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
     def test_slice_no_transpose_if_already_outermost(self) -> None:
         # Create a graph with a single slice node.
+        x = torch.randn(3, 224, 224)
         gm = self.create_slice_graph((3, 224, 224), 0, 1, 2)
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.slice_copy.Tensor), 1)
 
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = MakeSliceAndCatDimOutermostPass()
-        gm_after_pass = cast(PassResult, p(gm)).graph_module
+        result = cast(PassResult, p(gm))
+        self.assertFalse(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(original, gm_after_pass, [x], "MakeSliceAndCatDimOutermostPass")
 
         # Assert that no transpose ops were added.
         self.assertEqual(
@@ -1950,14 +2031,23 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
     def test_slice_no_transpose_if_outermost_dimensions_are_one(self) -> None:
         # Create a graph with a single slice node on second outermost dimension.
+        x = torch.randn(1, 3, 4, 6)
         gm = self.create_slice_graph((1, 3, 4, 6), 1, 1, 2)
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.slice_copy.Tensor), 1)
 
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = MakeSliceAndCatDimOutermostPass()
-        gm_after_pass = cast(PassResult, p(gm)).graph_module
+        result = cast(PassResult, p(gm))
+        self.assertFalse(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(original, gm_after_pass, [x], "MakeSliceAndCatDimOutermostPass")
 
         # Assert that no transpose ops were added. The slice is on the second
         # outermost dimension, but the outermost dimension is already 1.
@@ -1968,14 +2058,23 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
     def test_slice_insert_transpose(self) -> None:
         # Create a graph with a single slice node.
+        x = torch.randn(1, 3, 4, 6)
         gm = self.create_slice_graph((1, 3, 4, 6), 2, 1, 2)
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.slice_copy.Tensor), 1)
 
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = MakeSliceAndCatDimOutermostPass()
-        gm_after_pass = cast(PassResult, p(gm)).graph_module
+        result = cast(PassResult, p(gm))
+        self.assertTrue(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(original, gm_after_pass, [x], "MakeSliceAndCatDimOutermostPass")
 
         # Assert that there are two transpose ops added.
         self.assertEqual(
@@ -1997,14 +2096,26 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
     def test_cat_no_transpose_if_already_outermost(self) -> None:
         # Create a graph with a single slice node on second outermost dimension.
+        input1 = torch.randn(1, 3, 5)
+        input2 = torch.randn(2, 3, 5)
         gm = self.create_cat_graph(input_shapes=((1, 3, 5), (2, 3, 5)), cat_dim=0)
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
 
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = MakeSliceAndCatDimOutermostPass()
-        gm_after_pass = cast(PassResult, p(gm)).graph_module
+        result = cast(PassResult, p(gm))
+        self.assertFalse(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(
+            original, gm_after_pass, [input1, input2], "MakeSliceAndCatDimOutermostPass"
+        )
 
         # Assert that no transpose ops were added. The slice is on the second
         # outermost dimension, but the outermost dimension is already 1.
@@ -2015,14 +2126,26 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
     def test_cat_no_transpose_if_outermost_dimensions_are_one(self) -> None:
         # Create a graph with a single slice node on second outermost dimension.
+        input1 = torch.randn(1, 1, 3, 5)
+        input2 = torch.randn(1, 2, 3, 5)
         gm = self.create_cat_graph(input_shapes=((1, 1, 3, 5), (1, 2, 3, 5)), cat_dim=1)
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
 
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = MakeSliceAndCatDimOutermostPass()
-        gm_after_pass = cast(PassResult, p(gm)).graph_module
+        result = cast(PassResult, p(gm))
+        self.assertFalse(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(
+            original, gm_after_pass, [input1, input2], "MakeSliceAndCatDimOutermostPass"
+        )
 
         # Assert that no transpose ops were added. The slice is on the second
         # outermost dimension, but the outermost dimension is already 1.
@@ -2033,6 +2156,8 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
 
     def test_cat_insert_transpose(self) -> None:
         # Create a graph with a single slice node on second outermost dimension.
+        input1 = torch.randn(1, 1, 3, 5)
+        input2 = torch.randn(1, 1, 3, 3)
         gm = self.create_cat_graph(
             input_shapes=((1, 1, 3, 5), (1, 1, 3, 3)), cat_dim=-1
         )
@@ -2040,9 +2165,19 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
 
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
         # Apply replacement pass.
         p = MakeSliceAndCatDimOutermostPass()
-        gm_after_pass = cast(PassResult, p(gm)).graph_module
+        result = cast(PassResult, p(gm))
+        self.assertTrue(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(
+            original, gm_after_pass, [input1, input2], "MakeSliceAndCatDimOutermostPass"
+        )
 
         # Assert that transpose ops were added to make cat on outermost dimension.
         self.assertEqual(

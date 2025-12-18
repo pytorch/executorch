@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
@@ -25,15 +25,15 @@ class PReLU(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         prelu_inp_tensor_wrapper = self.define_tensor(
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -55,7 +55,7 @@ class PReLU(NodeVisitor):
             coeff_node,
             node,
             coeff_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
         )
         prelu_input_tensors = [prelu_inp_tensor_wrapper, coeff_tensor_wrapper]
@@ -65,12 +65,12 @@ class PReLU(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         prelu_output_tensors = [output_tensor_wrapper]
 
-        prelu_op = PyQnnWrapper.PyQnnOpWrapper(
+        prelu_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpPRelu.op_name,
