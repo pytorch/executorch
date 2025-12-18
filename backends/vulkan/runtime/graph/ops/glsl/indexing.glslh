@@ -223,13 +223,13 @@ TensorIndex contiguous_idx_to_tensor_idx(
   uint contiguous_strides[DIMLIMIT];
 
   contiguous_strides[0] = 1;
-  [[unroll]] for (int i = 1; i < DIMLIMIT; ++i) {
-    contiguous_strides[i] = meta.sizes[div_4(i - 1)][mod_4(i - 1)] * contiguous_strides[i - 1];
+  [[unroll]] for (int d = 1; d < DIMLIMIT; ++d) {
+    contiguous_strides[d] = size_at(meta, d - 1) * contiguous_strides[d - 1];
   }
 
-  [[unroll]] for (int i = DIMLIMIT - 1; i >= 0; --i) {
-    tidx.data[div_4(i)][mod_4(i)] = contiguous_idx / contiguous_strides[i];
-    contiguous_idx = contiguous_idx % contiguous_strides[i];
+  [[unroll]] for (int d = DIMLIMIT - 1; d >= 0; --d) {
+    tidx.data[div_4(d)][mod_4(d)] = contiguous_idx / contiguous_strides[d];
+    contiguous_idx = contiguous_idx % contiguous_strides[d];
   }
 
   return tidx;
@@ -241,13 +241,13 @@ uint tensor_idx_to_contiguous_idx(
   uint contiguous_strides[DIMLIMIT];
 
   contiguous_strides[0] = 1;
-  [[unroll]] for (int i = 1; i < DIMLIMIT; ++i) {
-    contiguous_strides[i] = meta.sizes[div_4(i - 1)][mod_4(i - 1)] * contiguous_strides[i - 1];
+  [[unroll]] for (int d = 1; d < DIMLIMIT; ++d) {
+    contiguous_strides[d] = size_at(meta, d - 1) * contiguous_strides[d - 1];
   }
 
   uint contig_idx = 0;
-  [[unroll]] for (int i = 0; i < DIMLIMIT; ++i) {
-    contig_idx += contiguous_strides[i] * tidx.data[div_4(i)][mod_4(i)];
+  [[unroll]] for (int d = 0; d < DIMLIMIT; ++d) {
+    contig_idx += contiguous_strides[d] * idx_at(tidx, d);
   }
 
   return contig_idx;
@@ -275,9 +275,9 @@ TensorIndex linear_idx_to_tensor_idx_contig_case(
     uint linear_idx) {
   TensorIndex tidx;
 
-  [[unroll]] for (int i = DIMLIMIT - 1; i >= 0; --i) {
-    tidx.data[div_4(i)][mod_4(i)] = linear_idx / meta.strides[div_4(i)][mod_4(i)];
-    linear_idx = linear_idx % meta.strides[div_4(i)][mod_4(i)];
+  [[unroll]] for (int d = DIMLIMIT - 1; d >= 0; --d) {
+    tidx.data[div_4(d)][mod_4(d)] = linear_idx / stride_at(meta, d);
+    linear_idx = linear_idx % stride_at(meta, d);
   }
 
   return tidx;
@@ -290,10 +290,10 @@ TensorIndex linear_idx_to_tensor_idx_channelslast_case(
 
   const uint dim_order[DIMLIMIT] = uint[DIMLIMIT](2, 0, 1, 3, 6, 5, 4, 7);
 
-  [[unroll]] for (int i = DIMLIMIT - 1; i >= 0; --i) {
-    uint dim = dim_order[i];
-    tidx.data[div_4(dim)][mod_4(dim)] = linear_idx / meta.strides[div_4(dim)][mod_4(dim)];
-    linear_idx = linear_idx % meta.strides[div_4(dim)][mod_4(dim)];
+  [[unroll]] for (int d = DIMLIMIT - 1; d >= 0; --d) {
+    uint dim = dim_order[d];
+    tidx.data[div_4(dim)][mod_4(dim)] = linear_idx / stride_at(meta, dim);
+    linear_idx = linear_idx % stride_at(meta, dim);
   }
 
   return tidx;
@@ -315,8 +315,8 @@ uint tensor_idx_to_linear_idx(
     const BufferMetadata meta,
     const TensorIndex tidx) {
   uint lin_idx = 0;
-  [[unroll]] for (int i = 0; i < DIMLIMIT; ++i) {
-    lin_idx += meta.strides[div_4(i)][mod_4(i)] * tidx.data[div_4(i)][mod_4(i)];
+  [[unroll]] for (int d = 0; d < DIMLIMIT; ++d) {
+    lin_idx += stride_at(meta, d) * idx_at(tidx, d);
   }
 
   return lin_idx;
