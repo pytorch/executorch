@@ -222,36 +222,15 @@ TensorIndex contiguous_idx_to_tensor_idx(
 
   uint contiguous_strides[DIMLIMIT];
 
-  // Manual loop unrolling to avoid dynamic array accesses, which may cause
-  // severe performance issues on some GPUs
-
   contiguous_strides[0] = 1;
-  contiguous_strides[1] = meta.sizes[0][0] * contiguous_strides[0];
-  contiguous_strides[2] = meta.sizes[0][1] * contiguous_strides[1];
-  contiguous_strides[3] = meta.sizes[0][2] * contiguous_strides[2];
+  [[unroll]] for (int i = 1; i < DIMLIMIT; ++i) {
+    contiguous_strides[i] = meta.sizes[div_4(i - 1)][mod_4(i - 1)] * contiguous_strides[i - 1];
+  }
 
-  contiguous_strides[4] = meta.sizes[0][3] * contiguous_strides[3];
-  contiguous_strides[5] = meta.sizes[1][0] * contiguous_strides[4];
-  contiguous_strides[6] = meta.sizes[1][1] * contiguous_strides[5];
-  contiguous_strides[7] = meta.sizes[1][2] * contiguous_strides[6];
-
-  tidx.data[1][3] = contiguous_idx / contiguous_strides[7];
-  contiguous_idx = contiguous_idx % contiguous_strides[7];
-  tidx.data[1][2] = contiguous_idx / contiguous_strides[6];
-  contiguous_idx = contiguous_idx % contiguous_strides[6];
-  tidx.data[1][1] = contiguous_idx / contiguous_strides[5];
-  contiguous_idx = contiguous_idx % contiguous_strides[5];
-  tidx.data[1][0] = contiguous_idx / contiguous_strides[4];
-  contiguous_idx = contiguous_idx % contiguous_strides[4];
-
-  tidx.data[0][3] = contiguous_idx / contiguous_strides[3];
-  contiguous_idx = contiguous_idx % contiguous_strides[3];
-  tidx.data[0][2] = contiguous_idx / contiguous_strides[2];
-  contiguous_idx = contiguous_idx % contiguous_strides[2];
-  tidx.data[0][1] = contiguous_idx / contiguous_strides[1];
-  contiguous_idx = contiguous_idx % contiguous_strides[1];
-  tidx.data[0][0] = contiguous_idx / contiguous_strides[0];
-  contiguous_idx = contiguous_idx % contiguous_strides[0];
+  [[unroll]] for (int i = DIMLIMIT - 1; i >= 0; --i) {
+    tidx.data[div_4(i)][mod_4(i)] = contiguous_idx / contiguous_strides[i];
+    contiguous_idx = contiguous_idx % contiguous_strides[i];
+  }
 
   return tidx;
 }
@@ -261,28 +240,15 @@ uint tensor_idx_to_contiguous_idx(
     const TensorIndex tidx) {
   uint contiguous_strides[DIMLIMIT];
 
-  // Manual loop unrolling to avoid dynamic array accesses, which may cause
-  // severe performance issues on some GPUs
-
   contiguous_strides[0] = 1;
-  contiguous_strides[1] = meta.sizes[0][0] * contiguous_strides[0];
-  contiguous_strides[2] = meta.sizes[0][1] * contiguous_strides[1];
-  contiguous_strides[3] = meta.sizes[0][2] * contiguous_strides[2];
+  [[unroll]] for (int i = 1; i < DIMLIMIT; ++i) {
+    contiguous_strides[i] = meta.sizes[div_4(i - 1)][mod_4(i - 1)] * contiguous_strides[i - 1];
+  }
 
-  contiguous_strides[4] = meta.sizes[0][3] * contiguous_strides[3];
-  contiguous_strides[5] = meta.sizes[1][0] * contiguous_strides[4];
-  contiguous_strides[6] = meta.sizes[1][1] * contiguous_strides[5];
-  contiguous_strides[7] = meta.sizes[1][2] * contiguous_strides[6];
-
-  uint contig_idx = contiguous_strides[0] * tidx.data[0][0];
-  contig_idx += contiguous_strides[1] * tidx.data[0][1];
-  contig_idx += contiguous_strides[2] * tidx.data[0][2];
-  contig_idx += contiguous_strides[3] * tidx.data[0][3];
-
-  contig_idx += contiguous_strides[4] * tidx.data[1][0];
-  contig_idx += contiguous_strides[5] * tidx.data[1][1];
-  contig_idx += contiguous_strides[6] * tidx.data[1][2];
-  contig_idx += contiguous_strides[7] * tidx.data[1][3];
+  uint contig_idx = 0;
+  [[unroll]] for (int i = 0; i < DIMLIMIT; ++i) {
+    contig_idx += contiguous_strides[i] * tidx.data[div_4(i)][mod_4(i)];
+  }
 
   return contig_idx;
 }
@@ -309,26 +275,10 @@ TensorIndex linear_idx_to_tensor_idx_contig_case(
     uint linear_idx) {
   TensorIndex tidx;
 
-  // Manual loop unrolling to avoid dynamic array accesses, which may cause
-  // severe performance issues on some GPUs
-
-  tidx.data[1][3] = linear_idx / meta.strides[1][3];
-  linear_idx = linear_idx % meta.strides[1][3];
-  tidx.data[1][2] = linear_idx / meta.strides[1][2];
-  linear_idx = linear_idx % meta.strides[1][2];
-  tidx.data[1][1] = linear_idx / meta.strides[1][1];
-  linear_idx = linear_idx % meta.strides[1][1];
-  tidx.data[1][0] = linear_idx / meta.strides[1][0];
-  linear_idx = linear_idx % meta.strides[1][0];
-
-  tidx.data[0][3] = linear_idx / meta.strides[0][3];
-  linear_idx = linear_idx % meta.strides[0][3];
-  tidx.data[0][2] = linear_idx / meta.strides[0][2];
-  linear_idx = linear_idx % meta.strides[0][2];
-  tidx.data[0][1] = linear_idx / meta.strides[0][1];
-  linear_idx = linear_idx % meta.strides[0][1];
-  tidx.data[0][0] = linear_idx / meta.strides[0][0];
-  linear_idx = linear_idx % meta.strides[0][0];
+  [[unroll]] for (int i = DIMLIMIT - 1; i >= 0; --i) {
+    tidx.data[div_4(i)][mod_4(i)] = linear_idx / meta.strides[div_4(i)][mod_4(i)];
+    linear_idx = linear_idx % meta.strides[div_4(i)][mod_4(i)];
+  }
 
   return tidx;
 }
@@ -338,26 +288,13 @@ TensorIndex linear_idx_to_tensor_idx_channelslast_case(
     uint linear_idx) {
   TensorIndex tidx;
 
-  // Manual loop unrolling to avoid dynamic array accesses, which may cause
-  // severe performance issues on some GPUs
+  const uint dim_order[DIMLIMIT] = uint[DIMLIMIT](2, 0, 1, 3, 6, 5, 4, 7);
 
-  tidx.data[1][3] = linear_idx / meta.strides[1][3];
-  linear_idx = linear_idx % meta.strides[1][3];
-  tidx.data[1][2] = linear_idx / meta.strides[1][2];
-  linear_idx = linear_idx % meta.strides[1][2];
-  tidx.data[1][1] = linear_idx / meta.strides[1][1];
-  linear_idx = linear_idx % meta.strides[1][1];
-  tidx.data[1][0] = linear_idx / meta.strides[1][0];
-  linear_idx = linear_idx % meta.strides[1][0];
-
-  tidx.data[0][3] = linear_idx / meta.strides[0][3];
-  linear_idx = linear_idx % meta.strides[0][3];
-  tidx.data[0][1] = linear_idx / meta.strides[0][1];
-  linear_idx = linear_idx % meta.strides[0][1];
-  tidx.data[0][0] = linear_idx / meta.strides[0][0];
-  linear_idx = linear_idx % meta.strides[0][0];
-  tidx.data[0][2] = linear_idx / meta.strides[0][2];
-  linear_idx = linear_idx % meta.strides[0][2];
+  [[unroll]] for (int i = DIMLIMIT - 1; i >= 0; --i) {
+    uint dim = dim_order[i];
+    tidx.data[div_4(dim)][mod_4(dim)] = linear_idx / meta.strides[div_4(dim)][mod_4(dim)];
+    linear_idx = linear_idx % meta.strides[div_4(dim)][mod_4(dim)];
+  }
 
   return tidx;
 }
@@ -377,18 +314,10 @@ TensorIndex linear_idx_to_tensor_idx(
 uint tensor_idx_to_linear_idx(
     const BufferMetadata meta,
     const TensorIndex tidx) {
-  // Manual loop unrolling to avoid dynamic array accesses, which may cause
-  // severe performance issues on some GPUs
-
-  uint lin_idx = meta.strides[0][0] * tidx.data[0][0];
-  lin_idx += meta.strides[0][1] * tidx.data[0][1];
-  lin_idx += meta.strides[0][2] * tidx.data[0][2];
-  lin_idx += meta.strides[0][3] * tidx.data[0][3];
-
-  lin_idx += meta.strides[1][0] * tidx.data[1][0];
-  lin_idx += meta.strides[1][1] * tidx.data[1][1];
-  lin_idx += meta.strides[1][2] * tidx.data[1][2];
-  lin_idx += meta.strides[1][3] * tidx.data[1][3];
+  uint lin_idx = 0;
+  [[unroll]] for (int i = 0; i < DIMLIMIT; ++i) {
+    lin_idx += meta.strides[div_4(i)][mod_4(i)] * tidx.data[div_4(i)][mod_4(i)];
+  }
 
   return lin_idx;
 }
