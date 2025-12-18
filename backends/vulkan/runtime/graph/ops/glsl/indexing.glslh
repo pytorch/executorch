@@ -34,6 +34,13 @@
  *   - bits 12-15: dim_order[3]
  */
 
+// Extracts the 4-bit packed value at the given position (0..7) from a 32-bit
+// int. Position 0 corresponds to the least-significant 4 bits; position 7 to
+// the most-significant.
+int extract_4b(const int packed, const int pos) {
+  return (packed >> (pos * 4)) & 0xF;
+}
+
 
 // Corresponds to dim_order[:4] = [0, 1, 2, 3]
 #define CONTIGUOUS_BUFFER_LAYOUT_ID 12816
@@ -167,15 +174,6 @@ uint idx_at(const TensorIndex tidx, const int dim) {
 
 uint idx_at(const TensorIndex tidx, const uint dim) {
   return tidx.data[div_4(dim)][mod_4(dim)];
-}
-
-void permute(inout TensorIndex tidx, const ivec4 permute_order[DIMLIMIT_DIV4]) {
-  TensorIndex new_tidx = tidx;
-  for (int d = 0; d < DIMLIMIT; ++d) {
-    int src_dim = permute_order[div_4(d)][mod_4(d)];
-    new_tidx.data[div_4(d)][mod_4(d)] = idx_at(tidx, src_dim);
-  }
-  tidx = new_tidx;
 }
 
 uint x(const TensorIndex tidx) {
