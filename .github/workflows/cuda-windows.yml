@@ -64,13 +64,13 @@ jobs:
         echo "::group::Verify pre-installed dependencies"
         x86_64-w64-mingw32-g++ --version
         nvcc --version
-        python3 -c "import torch; print(f'PyTorch {torch.__version__} with CUDA {torch.version.cuda}')"
+        python -c "import torch; print(f'PyTorch {torch.__version__} with CUDA {torch.version.cuda}')"
         echo "WINDOWS_CUDA_HOME=${WINDOWS_CUDA_HOME}"
         ls -la "${WINDOWS_CUDA_HOME}"
         echo "::endgroup::"
 
         echo "::group::Setup ExecuTorch"
-        ./install_executorch.sh --use-pt-pinned-commit
+        PYTHON_EXECUTABLE=python ./install_executorch.sh --use-pt-pinned-commit
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
