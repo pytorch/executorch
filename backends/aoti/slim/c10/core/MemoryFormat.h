@@ -1,31 +1,17 @@
 #pragma once
 
-#include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
+#include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/platform/assert.h>
 
 #include <cstdint>
 #include <ostream>
 #include <vector>
 
-// Memory format is not the property of a Tensor. It is the way to tell an
-// operator how the result should be organized in memory and nothing more. That
-// means memory format should never be used as return value for any tensor state
-// interrogation functions (internally and externally).
-//
-// Possible options are:
-//  Preserve:
-//    If any of the input tensors is in channels_last format, operator output
-//    should be in channels_last format
-//
-//  Contiguous:
-//    Regardless of input tensors format, the output should be contiguous
-//    Tensor.
-//
-//  ChannelsLast:
-//    Regardless of input tensors format, the output should be in channels_last
-//    format.
-
 namespace executorch::backends::aoti::slim::c10 {
+
+using ::executorch::runtime::ArrayRef;
+using ::executorch::runtime::IntArrayRef;
+
 enum class MemoryFormat : int8_t {
   Contiguous,
   Preserve,

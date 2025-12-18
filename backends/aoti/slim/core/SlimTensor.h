@@ -24,8 +24,8 @@ class SlimTensor {
  public:
   SlimTensor(
       Storage&& storage,
-      executorch::backends::aoti::slim::c10::IntArrayRef sizes,
-      executorch::backends::aoti::slim::c10::IntArrayRef strides,
+      IntArrayRef sizes,
+      IntArrayRef strides,
       executorch::backends::aoti::slim::c10::ScalarType dtype,
       int64_t storage_offset = 0)
       : storage_(std::move(storage)),
@@ -70,7 +70,7 @@ class SlimTensor {
     return executorch::backends::aoti::slim::c10::elementSize(dtype_);
   }
 
-  executorch::backends::aoti::slim::c10::IntArrayRef sizes() const {
+  IntArrayRef sizes() const {
     return sizes_and_strides_.sizes_arrayref();
   }
 
@@ -80,7 +80,7 @@ class SlimTensor {
     return sizes_and_strides_.size_at(static_cast<size_t>(wrapped_dim));
   }
 
-  executorch::backends::aoti::slim::c10::IntArrayRef strides() const {
+  IntArrayRef strides() const {
     return sizes_and_strides_.strides_arrayref();
   }
 
@@ -149,8 +149,8 @@ class SlimTensor {
   }
 
   void set_sizes_and_strides(
-      executorch::backends::aoti::slim::c10::IntArrayRef sizes,
-      executorch::backends::aoti::slim::c10::IntArrayRef strides,
+      IntArrayRef sizes,
+      IntArrayRef strides,
       std::optional<int64_t> storage_offset = std::nullopt) {
     const int64_t new_dim = static_cast<int64_t>(sizes.size());
     ET_CHECK_MSG(
@@ -159,8 +159,8 @@ class SlimTensor {
         static_cast<long>(new_dim),
         strides.size());
 
-    std::vector<int64_t> new_sizes = sizes.vec();
-    std::vector<int64_t> new_strides = strides.vec();
+    std::vector<int64_t> new_sizes = toVec(sizes);
+    std::vector<int64_t> new_strides = toVec(strides);
 
     // stride calculation logic
     bool overflowed = false;
@@ -183,8 +183,8 @@ class SlimTensor {
     }
     ET_CHECK_MSG(!overflowed, "Stride calculation overflowed");
 
-    sizes_and_strides_.set_sizes(new_sizes);
-    sizes_and_strides_.set_strides(new_strides);
+    sizes_and_strides_.set_sizes(makeArrayRef(new_sizes));
+    sizes_and_strides_.set_strides(makeArrayRef(new_strides));
     if (storage_offset.has_value()) {
       storage_offset_ = *storage_offset;
     }
@@ -193,8 +193,7 @@ class SlimTensor {
     refresh_contiguous();
   }
 
-  void set_sizes_contiguous(
-      executorch::backends::aoti::slim::c10::IntArrayRef new_size) {
+  void set_sizes_contiguous(IntArrayRef new_size) {
     sizes_and_strides_.set_sizes(new_size);
     refresh_numel();
     empty_tensor_restride(
@@ -205,7 +204,7 @@ class SlimTensor {
       executorch::backends::aoti::slim::c10::MemoryFormat memory_format);
 
   SlimTensor resize_(
-      executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+      IntArrayRef sizes,
       std::optional<c10::MemoryFormat> optional_memory_format);
 
   // Conversion operations
@@ -461,35 +460,41 @@ class SlimTensor {
         executorch::backends::aoti::slim::compute_contiguous_strides(
             this->sizes());
     return _clone_impl(
-        this->sizes(), contig_strides, this->dtype(), this->device());
+        this->sizes(),
+        makeArrayRef(contig_strides),
+        this->dtype(),
+        this->device());
   }
 
   // View operations
   SlimTensor as_strided(
-      executorch::backends::aoti::slim::c10::IntArrayRef sizes,
-      executorch::backends::aoti::slim::c10::IntArrayRef strides,
+      IntArrayRef sizes,
+      IntArrayRef strides,
       int64_t storage_offset) const;
-  SlimTensor as_strided_(
-      executorch::backends::aoti::slim::c10::IntArrayRef sizes,
-      executorch::backends::aoti::slim::c10::IntArrayRef strides,
-      int64_t storage_offset);
+  SlimTensor
+  as_strided_(IntArrayRef sizes, IntArrayRef strides, int64_t storage_offset);
 
-  SlimTensor permute(
-      executorch::backends::aoti::slim::c10::IntArrayRef dims) const;
+  SlimTensor permute(IntArrayRef dims) const;
+
+  SlimTensor permute(std::initializer_list<int64_t> dims) const {
+    return permute(makeArrayRef(dims));
+  }
 
   // Transpose operations
   SlimTensor transpose() const;
   SlimTensor transpose(int64_t dim0, int64_t dim1) const;
   SlimTensor t() const;
 
-  SlimTensor reshape(
-      executorch::backends::aoti::slim::c10::IntArrayRef proposed_shape) const;
+  SlimTensor reshape(IntArrayRef proposed_shape) const;
+
+  SlimTensor reshape(std::initializer_list<int64_t> proposed_shape) const {
+    return reshape(makeArrayRef(proposed_shape));
+  }
 
   SlimTensor narrow(int64_t dim, int64_t start, int64_t length) const;
 
   // Generic element access returning SlimTensor
-  SlimTensor operator[](
-      executorch::backends::aoti::slim::c10::IntArrayRef indices) const {
+  SlimTensor operator[](IntArrayRef indices) const {
     ET_CHECK_MSG(
         indices.size() <= this->dim(),
         "Number of indices (%zu) cannot exceed tensor dimensions (%zu)",
@@ -532,8 +537,8 @@ class SlimTensor {
       int64_t new_storage_offset = this->storage_offset_ + offset_adjustment;
       return SlimTensor(
           Storage(this->storage_),
-          new_sizes,
-          new_strides,
+          makeArrayRef(new_sizes),
+          makeArrayRef(new_strides),
           this->dtype_,
           new_storage_offset);
     }
@@ -541,12 +546,12 @@ class SlimTensor {
 
   // Convenience overload for single index
   SlimTensor operator[](int64_t index) const {
-    return (*this)[executorch::backends::aoti::slim::c10::IntArrayRef{index}];
+    return (*this)[IntArrayRef{index}];
   }
 
   // Convenience overloads for common multi-dimensional cases
   SlimTensor operator[](std::initializer_list<int64_t> indices) const {
-    return (*this)[executorch::backends::aoti::slim::c10::IntArrayRef(indices)];
+    return (*this)[makeArrayRef(indices)];
   }
 
   // Extract scalar value from 0-dimensional tensor
@@ -599,8 +604,8 @@ class SlimTensor {
 
  private:
   SlimTensor _clone_impl(
-      executorch::backends::aoti::slim::c10::IntArrayRef sizes,
-      executorch::backends::aoti::slim::c10::IntArrayRef strides,
+      IntArrayRef sizes,
+      IntArrayRef strides,
       executorch::backends::aoti::slim::c10::ScalarType dtype,
       const executorch::backends::aoti::slim::c10::Device& device) const {
     Storage storage = new_storage(sizes, strides, dtype, device);
