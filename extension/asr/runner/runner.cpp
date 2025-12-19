@@ -120,7 +120,7 @@ Error AsrRunner::load() {
       executorch::runtime::set_option("CudaBackend", backend_options.view());
   if (opt_err != ::executorch::runtime::Error::Ok) {
     ET_LOG(
-        Warning,
+        Error,
         "Failed to set CUDA backend options: %d",
         static_cast<int>(opt_err));
   }
