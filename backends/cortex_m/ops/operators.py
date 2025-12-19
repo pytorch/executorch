@@ -818,6 +818,7 @@ def quantized_depthwise_conv2d_impl(
 
     return result.to(torch.int8)
 
+
 # ===================================================================
 # QUANTIZED AVG_POOL2D OPERATION DEFINITION
 # ===================================================================
