@@ -12,6 +12,7 @@ import torch
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     INT8_PER_CHANNEL_CONFIG,
     INT8_PER_TENSOR_CONFIG,
+    SOFTMAX_PER_TENSOR_CONFIG,
 )
 from torchao.quantization.pt2e.quantizer import OperatorConfig
 
@@ -47,6 +48,11 @@ CONV_OP_PATTERNS = [
     [torch.ops.aten.conv2d.default, torch.ops.aten.clamp_.default],
 ]
 
+SOFTMAX_OP_PATTERNS = [
+    [torch.ops.aten._softmax.default],
+    [torch.ops.aten.softmax.int],
+]
+
 # ----------------- OPERATOR CONFIG PRESETS -----------------
 INT8_BINARY_OPS_OPERATOR_CONFIG = OperatorConfig(
     INT8_PER_TENSOR_CONFIG, BINARY_OP_PATTERNS
@@ -60,4 +66,9 @@ INT8_LINEAR_OPERATOR_CONFIG = OperatorConfig(
 INT8_CONV_OPERATOR_CONFIG = OperatorConfig(
     INT8_PER_CHANNEL_CONFIG,
     CONV_OP_PATTERNS,
+)
+
+INT8_SOFTMAX_OPERATOR_CONFIG = OperatorConfig(
+    SOFTMAX_PER_TENSOR_CONFIG,
+    SOFTMAX_OP_PATTERNS,
 )
