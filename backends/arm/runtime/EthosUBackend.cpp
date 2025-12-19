@@ -10,6 +10,11 @@
  * ethos-u-core-driver for hardware interaction.
  */
 
+// Workaround for runtime/core/portable_type/c10/c10/util/Float16-math.h
+#if defined(__GNUC__) && defined(__ZEPHYR__)
+#pragma GCC diagnostic ignored "-Wdouble-promotion"
+#endif
+
 #include <cstdint>
 #include <cstring>
 #include <memory>

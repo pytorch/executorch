@@ -80,6 +80,7 @@ target_link_libraries(
   cortex_m_kernels
   PRIVATE cmsis-nn
   PRIVATE executorch
+  PRIVATE kernels_util_all_deps
 )
 
 # Include directories for cortex_m_kernels
