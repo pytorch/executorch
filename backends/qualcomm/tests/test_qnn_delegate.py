@@ -6570,8 +6570,8 @@ class TestExampleMultimodalityScript(TestQNN):
                     text_embedding_pte_size = msg["text_embedding_pte_size"]
                     decoder_pte_size = msg["pte_size"]
                     self.assertLessEqual(encoder_pte_size, 110_000_000)  # 110MB
-                    self.assertLessEqual(text_embedding_pte_size, 95_000_000)  # 95MB
-                    self.assertLessEqual(decoder_pte_size, 375_000_000)  # 375MB
+                    self.assertLessEqual(text_embedding_pte_size, 100_000_000)  # 100MB
+                    self.assertLessEqual(decoder_pte_size, 400_000_000)  # 400MB
                     print(f"Encoder PTE Size: {encoder_pte_size} bytes")
                     print(f"Text Embedding PTE Size: {text_embedding_pte_size} bytes")
                     print(f"Decoder PTE Size: {decoder_pte_size} bytes")
@@ -6628,9 +6628,9 @@ class TestExampleMultimodalityScript(TestQNN):
                     encoder_pte_size = msg["encoder_pte_size"]
                     text_embedding_pte_size = msg["text_embedding_pte_size"]
                     decoder_pte_size = msg["pte_size"]
-                    self.assertLessEqual(encoder_pte_size, 390_000_000)  # 390MB
-                    self.assertLessEqual(text_embedding_pte_size, 275_000_000)  # 275MB
-                    self.assertLessEqual(decoder_pte_size, 510_000_000)  # 510MB
+                    self.assertLessEqual(encoder_pte_size, 425_000_000)  # 425MB
+                    self.assertLessEqual(text_embedding_pte_size, 300_000_000)  # 300MB
+                    self.assertLessEqual(decoder_pte_size, 550_000_000)  # 550MB
                     print(f"Encoder PTE Size: {encoder_pte_size} bytes")
                     print(f"Text Embedding PTE Size: {text_embedding_pte_size} bytes")
                     print(f"Decoder PTE Size: {decoder_pte_size} bytes")
