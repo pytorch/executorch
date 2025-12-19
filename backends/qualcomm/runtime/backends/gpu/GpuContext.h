@@ -18,7 +18,7 @@ class QnnDlcManager;
 class GpuContext : public QnnContext {
  public:
   GpuContext(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnBackend* backend,
       QnnDevice* device,
       QnnBackendCache* cache,

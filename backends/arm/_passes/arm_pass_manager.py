@@ -54,12 +54,12 @@ from executorch.backends.arm._passes import (
     DecomposeGluPass,
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
-    DecomposeInt32ClampPass,
     DecomposeIntPowPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
     DecomposeLinalgVectorNormPass,
     DecomposeLinearPass,
+    DecomposeLog1pPass,
     DecomposeLogitPass,
     DecomposeMaskedFillPass,
     DecomposeMaxPool2dPass,
@@ -78,6 +78,7 @@ from executorch.backends.arm._passes import (
     DecomposeSoftmaxUnstablePass,
     DecomposeSqrtPass,
     DecomposeSumPass,
+    DecomposeTOSAUnsupportedClampPass,
     DecomposeVarPass,
     DecorateFp32toInt32CastingPass,
     FoldAndAnnotateQParamsPass,
@@ -94,6 +95,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
+    NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
     QuantizeClampArgumentsPass,
     RemoveGetItemPass,
@@ -220,13 +222,14 @@ class ArmPassManager(PassManager):
             [
                 FuseQuantizedActivationPass(),
                 ConvertToClampPass(),
-                DecomposeInt32ClampPass(),
+                DecomposeTOSAUnsupportedClampPass(),
                 DecomposeGroupNormPass(),
                 DecomposeLayerNormPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
                 AnnotateDecomposedMatmulPass(),
                 ConvertELUParamsPass(),
+                NormalizeWhileInitialArgsPass(use_exir_clone=True),
             ]
         )
 
@@ -266,6 +269,7 @@ class ArmPassManager(PassManager):
                 DecomposeEluPass(),
                 DecomposeExpm1Pass(),
                 DecomposeIntPowPass(),
+                DecomposeLog1pPass(),
                 PromoteBoolOperandsPass(),
                 DecomposeSinhPass(),
                 DecomposeSignPass(),
@@ -403,6 +407,7 @@ class ArmPassManager(PassManager):
         # Transformation passes (post scalar removal)
         self.add_passes(
             [
+                NormalizeWhileInitialArgsPass(use_exir_clone=False),
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupNormPass(),
                 DecomposeLayerNormPass(),

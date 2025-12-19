@@ -72,15 +72,8 @@ def test_conformer_tosa_INT():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-    )
-    pipeline.pop_stage("check_count.exir")
-    pipeline.change_args(
-        "run_method_and_compare_outputs",
-        get_test_inputs(
-            TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
-        ),
-        rtol=TestConformer.rtol,
         atol=TestConformer.atol,
+        rtol=TestConformer.rtol,
     )
     pipeline.run()
 
@@ -93,38 +86,26 @@ def test_conformer_u55_INT():
     pipeline = EthosU55PipelineINT[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
-        aten_ops=TestConformer.aten_ops,
+        aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
+        atol=TestConformer.atol,
+        rtol=TestConformer.rtol,
     )
-    pipeline.change_args(
-        "run_method_and_compare_outputs",
-        get_test_inputs(
-            TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
-        ),
-        rtol=1.0,
-        atol=5.0,
-    )
+    pipeline.pop_stage("check_count.exir")
     pipeline.run()
 
 
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(reason="All IO needs to have the same data type (MLETORCH-635)")
 def test_conformer_u85_INT():
     pipeline = EthosU85PipelineINT[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
-        aten_ops=TestConformer.aten_ops,
+        aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-    )
-    pipeline.change_args(
-        "run_method_and_compare_outputs",
-        get_test_inputs(
-            TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
-        ),
-        rtol=1.0,
-        atol=5.0,
+        atol=TestConformer.atol,
+        rtol=TestConformer.rtol,
     )
     pipeline.run()
 
@@ -137,16 +118,9 @@ def test_conformer_vgf_quant():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-        quantize=True,
-    )
-    pipeline.pop_stage("check_count.exir")
-    pipeline.change_args(
-        "run_method_and_compare_outputs",
-        get_test_inputs(
-            TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
-        ),
-        rtol=TestConformer.rtol,
         atol=TestConformer.atol,
+        rtol=TestConformer.rtol,
+        quantize=True,
     )
     pipeline.run()
 

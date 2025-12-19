@@ -280,10 +280,15 @@ class BasePipelineMaker(Generic[T]):
         self.add_stage_after(stage_id, self.tester.dump_artifact, suffix=suffix)
         return self
 
-    def dump_operator_distribution(self, stage_id: str, suffix: str | None = None):
+    def dump_operator_distribution(
+        self, stage_id: str, suffix: str | None = None, include_dtypes: bool = False
+    ):
         """Adds a dump_operator_distribution stage after the given stage id."""
         self.add_stage_after(
-            stage_id, self.tester.dump_operator_distribution, suffix=suffix
+            stage_id,
+            self.tester.dump_operator_distribution,
+            suffix=suffix,
+            include_dtypes=include_dtypes,
         )
         return self
 
@@ -385,14 +390,15 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
             ),
         }
         tosa_version = _require_tosa_version()
+        tosa_spec: TosaSpecification = tosa_profiles[tosa_version]
 
         compile_spec = common.get_tosa_compile_spec(
-            tosa_profiles[tosa_version],
+            tosa_spec,
             custom_path=custom_path,
             tosa_debug_mode=tosa_debug_mode,
         )
 
-        quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+        quantizer = TOSAQuantizer(tosa_spec)
         # choose 16A8W quantization config when int16 extension is requested
         if "int16" in tosa_extensions:
             quantization_config = get_symmetric_a16w8_quantization_config(
@@ -417,7 +423,7 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
         )
         self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
-        remove_quant_nodes_stage = (
+        remove_torch_quant_nodes_stage = (
             "to_edge_transform_and_lower"
             if use_to_edge_transform_and_lower
             else "partition"
@@ -435,13 +441,28 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
                 suffix="quant_nodes",
             )
             self.add_stage_after(
-                remove_quant_nodes_stage,
+                remove_torch_quant_nodes_stage,
                 self.tester.check_not,
                 [
                     "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
                     "torch.ops.quantized_decomposed.quantize_per_tensor.default",
                 ],
                 suffix="quant_nodes",
+            )
+
+        # For pure INT lowering, outer exir Q/DQ nodes remain in the graph because we can't partition them.
+        # In INT+FP lowering, we partition these nodes, so a check is added to verify that.
+        if tosa_spec.support_integer() and tosa_spec.support_float():
+            self.add_stage_after(
+                remove_torch_quant_nodes_stage,
+                self.tester.check_not,
+                [
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default",
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_channel_default",
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default",
+                ],
+                suffix="exir_quant_nodes",
             )
 
         if run_on_tosa_ref_model:
@@ -1088,6 +1109,12 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
             transform_passes=transform_passes,
         )
 
+        remove_torch_quant_nodes_stage = (
+            "to_edge_transform_and_lower"
+            if use_to_edge_transform_and_lower
+            else "partition"
+        )
+
         if quantize:
             quantizer = VgfQuantizer(compile_spec)
             quantization_config = get_symmetric_quantization_config(
@@ -1098,12 +1125,6 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
             quant_stage = Quantize(quantizer, quantization_config)
 
             self.add_stage(self.tester.quantize, quant_stage, pos=0)
-
-            remove_quant_nodes_stage = (
-                "to_edge_transform_and_lower"
-                if use_to_edge_transform_and_lower
-                else "partition"
-            )
 
             if _has_quantizable_inputs(test_data):
                 # only add stages if we have quantizable input
@@ -1117,7 +1138,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
                     suffix="quant_nodes",
                 )
                 self.add_stage_after(
-                    remove_quant_nodes_stage,
+                    remove_torch_quant_nodes_stage,
                     self.tester.check_not,
                     [
                         "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
@@ -1134,6 +1155,21 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
                     "torch.ops.quantized_decomposed.quantize_per_tensor.default",
                 ],
                 suffix="quant_nodes",
+            )
+
+        # For pure INT lowering, outer exir Q/DQ nodes remain in the graph because we can't partition them.
+        # In INT+FP lowering, we partition these these nodes, so a check is added to verify that.
+        if tosa_spec.support_integer() and tosa_spec.support_float():
+            self.add_stage_after(
+                remove_torch_quant_nodes_stage,
+                self.tester.check_not,
+                [
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default",
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_channel_default",
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default",
+                ],
+                suffix="exir_quant_nodes",
             )
 
         if run_on_vulkan_runtime:

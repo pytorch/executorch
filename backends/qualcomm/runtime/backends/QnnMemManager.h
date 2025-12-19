@@ -20,7 +20,7 @@ namespace qnn {
 class QnnMemManager {
  public:
   explicit QnnMemManager(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnContext* context,
       QnnExecuTorchLogLevel log_level)
       : implementation_(implementation),
@@ -55,7 +55,7 @@ class QnnMemManager {
  private:
   void DeRegisterMem();
 
-  const QnnImplementation& implementation_;
+  QnnImplementation* implementation_;
   QnnContext* context_;
   QnnExecuTorchLogLevel log_level_;
   // Store the registered Qnn_MemHandle_t for de-registration

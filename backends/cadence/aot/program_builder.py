@@ -77,13 +77,18 @@ class ProgramBuilder(GraphBuilder):
         return placeholder
 
     def output(
-        self, results: list[ProxyValue], output_kinds: Optional[list[OutputKind]] = None
+        self,
+        results: list[ProxyValue],
+        output_kinds: Optional[list[OutputKind]] = None,
+        output_targets: Optional[list[str | None]] = None,
     ) -> ProxyValue:
         if output_kinds is None:
             output_kinds = [OutputKind.USER_OUTPUT] * len(results)
-        for result, out_kind in zip(results, output_kinds):
+        if output_targets is None:
+            output_targets = [None] * len(results)
+        for result, out_kind, target in zip(results, output_kinds, output_targets):
             self.output_specs.append(
-                OutputSpec(out_kind, TensorArgument(result.node.name), target=None)
+                OutputSpec(out_kind, TensorArgument(result.node.name), target=target)
             )
         return super().output(results)
 

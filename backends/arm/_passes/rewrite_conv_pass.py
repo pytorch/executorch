@@ -236,8 +236,8 @@ class RewriteConvPass(ArmPass):
                 stride,
                 pad,
                 dilation,
-                transposed,
-                output_pad,
+                _,
+                _,
                 group,
             ) = node.args
 
@@ -290,9 +290,6 @@ class RewriteConvPass(ArmPass):
                 stride,
                 pad,
                 dilation,
-                transposed,
-                output_pad,
-                group,
             )
 
             with graph_module.graph.inserting_after(node):

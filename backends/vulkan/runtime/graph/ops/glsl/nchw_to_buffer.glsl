@@ -29,10 +29,8 @@ void main() {
     return;
   }
 
-  TensorIndex outp_tidx;
+  TensorIndex outp_tidx = linear_idx_to_tensor_idx(outp, outp_bufi);
   uint nchwi;
-
-  linear_idx_to_tensor_idx(outp, outp_bufi, outp_tidx);
 
   if (transpose_hw == 1) {
     BufferMetadata transposed_meta = outp;

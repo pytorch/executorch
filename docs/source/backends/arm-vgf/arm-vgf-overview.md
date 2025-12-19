@@ -17,7 +17,7 @@ The target system must include ML SDK for Vulkan and a Vulkan driver with Vulkan
 
 ```{tip}
 All requirements can be downloaded using `examples/arm/setup.sh --enable-mlsdk-deps --disable-ethos-u-deps` and added to the path using
-`source examples/arm/ethos-u-scratch/setup_path.sh`
+`source examples/arm/arm-scratch/setup_path.sh`
 ```
 
 For the AOT flow, compilation of a model to `.pte` format using the VGF backend, the requirements are:
@@ -83,6 +83,8 @@ See [Partitioner API](arm-vgf-partitioner.md) for more information of the Partit
 
 The VGF quantizer supports [Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)
 and [Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html).
+
+Partial quantization is supported, allowing users to quantize only specific parts of the model while leaving others in floating-point.
 
 For more information on quantization, see [Quantization](arm-vgf-quantization.md).
 

@@ -47,6 +47,12 @@
     - arg_meta: null
       kernel_name: cortex_m::quantized_linear_out
 
+- func: cortex_m::softmax.out(Tensor input, int dim, int input_zero_point, int output_zero_point, int input_multiplier, int input_shift, int diff_min, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: cortex_m::softmax_out
+
 - func: cortex_m::transpose.out(Tensor input, int[] perm, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
   kernels:
@@ -64,3 +70,9 @@
   kernels:
     - arg_meta: null
       kernel_name: cortex_m::quantized_depthwise_conv2d_out
+
+- func: cortex_m::quantized_avg_pool2d.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, Scalar zero_point, Scalar multiplier, Scalar shift, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: cortex_m::quantized_avg_pool2d_out

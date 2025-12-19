@@ -15,7 +15,7 @@ namespace qnn {
 using executorch::runtime::Error;
 
 GpuContext::GpuContext(
-    const QnnImplementation& implementation,
+    QnnImplementation* implementation,
     QnnBackend* backend,
     QnnDevice* device,
     QnnBackendCache* cache,
