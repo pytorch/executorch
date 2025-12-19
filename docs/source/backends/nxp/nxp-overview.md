@@ -23,11 +23,11 @@ Among currently supported machine learning models are:
 ## Development Requirements
 
 - [MCUXpresso IDE](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-integrated-development-environment-ide:MCUXpresso-IDE) or [MCUXpresso Visual Studio Code extension](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-for-visual-studio-code:MCUXPRESSO-VSC)
-- [MCUXpresso SDK 25.06](https://mcuxpresso.nxp.com/mcuxsdk/25.06.00/html/index.html)
-- eIQ Neutron Converter for MCUXPresso SDK 25.06, what you can download from eIQ PyPI: 
+- [MCUXpresso SDK 25.12](https://mcuxpresso.nxp.com/mcuxsdk/25.12.00/html/index.html)
+- eIQ Neutron Converter for MCUXPresso SDK 25.12, what you can download from eIQ PyPI:
 
 ```commandline
-$ pip install --index-url https://eiq.nxp.com/repository neutron_converter_SDK_25_06
+$ pip install --index-url https://eiq.nxp.com/repository neutron_converter_SDK_25_12
 ```
 
 Instead of manually installing requirements, except MCUXpresso IDE and SDK, you can use the setup script: 
