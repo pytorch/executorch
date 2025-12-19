@@ -58,6 +58,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_sum.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_select_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_view_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/delinearize_index.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/dtype_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/normalization_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/select_copy_util.cpp"
@@ -80,6 +81,7 @@ target_include_directories(
 add_library(
   custom_ops
   "quantized_linear_out.cpp"
+  "quantized_add_out.cpp"
   "quantized_conv2d_nchw_out.cpp"
   "quantized_conv2d_nhwc_out.cpp"
   "quantized_relu_out.cpp"

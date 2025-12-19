@@ -1,0 +1,27 @@
+/home/kvariar/ExecuTorch/stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xa_nnlib.dir/library/api/vsoftmaxf.c.o: \
+  /home/kvariar/ExecuTorch/stable/executorch/backends/cadence/vision/third-party/library/api/vsoftmaxf.c \
+  /home/kvariar/ExecuTorch/stable/executorch/backends/cadence/vision/third-party/include/api.h \
+  /home/kvariar/ExecuTorch/stable/executorch/backends/cadence/vision/third-party/include/dtypes.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/include/stddef.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/include/c99/stddef.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/include/c99/yvals.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/arch/include/xtensa/config/core-isa.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/tools/RJ-2024.4-linux/XtensaTools/llvm/lib/clang/15.0.7/include/stdarg.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/include/assert.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/include/inttypes.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/include/stdint.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/include/complex.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/include/yvals.h \
+  /home/kvariar/ExecuTorch/stable/executorch/backends/cadence/vision/third-party/include_private/common.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/arch/include/xtensa/tie/xt_ivpn.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/arch/include/xtensa/tie/VectraFP.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/arch/include/xtensa/tie/xt_ivp32.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/arch/include/xtensa/tie/xt_core.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/arch/include/xtensa/tie/xt_ivpn_scalarfp.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/arch/include/xtensa/tie/xt_FP.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/arch/include/xtensa/tie/xt_ivpn_verification.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/arch/include/xtensa/tie/xt_density.h \
+  /fac/proj_apps_dspqa/xtensa/XtDevTools/install/builds/RJ-2024.4-linux/Vision_130_32k_iDMA_Cache/xtensa-elf/arch/include/xtensa/tie/xt_misc.h \
+  /home/kvariar/ExecuTorch/stable/executorch/backends/cadence/vision/third-party/include_private/expf_tbl.h \
+  /home/kvariar/ExecuTorch/stable/executorch/backends/cadence/vision/third-party/include_private/inff_tbl.h \
+  /home/kvariar/ExecuTorch/stable/executorch/backends/cadence/vision/third-party/include_private/nanf_tbl.h

@@ -90,7 +90,12 @@ elseif(EXECUTORCH_FUSION_G3_OPT)
   )
 elseif(EXECUTORCH_VISION_OPT)
   set(TARGET_DIR vision)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
+  add_compile_definitions(DRAM0_BUFF_SIZE=${DRAM0_BUFF_SIZE} DRAM1_BUFF_SIZE=${DRAM1_BUFF_SIZE})
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party
+    ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+  )
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/../generic/kernels)
 else()
   set(TARGET_DIR generic)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)

@@ -267,7 +267,6 @@ void quantized_conv2d_nhwc_per_tensor_out(
     int64_t output_zero_point,
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
-    bool channel_last,
     Tensor& out) {
   quantized_conv2d_nhwc(
       input,

@@ -164,23 +164,35 @@
 #define inline_ static inline
 #endif
 
+#ifndef MAX_FLT32
+#define MAX_FLT32  (3.402823466e+38F)
+#endif
+#ifndef MIN_FLT32
+#define MIN_FLT32  (1.175494351e-38F)
+#endif
+#ifndef MAX_INT8
+#define MAX_INT8  (0x7f)
+#endif
+#ifndef MIN_INT8
+#define MIN_INT8  (- MAX_INT8 - 1)
+#endif
 #ifndef MAX_INT16
-#define MAX_INT16 ((int16_t)0x7FFF)
+#define MAX_INT16 (0x7FFF)
 #endif
 #ifndef MIN_INT16
-#define MIN_INT16 ((int16_t)0x8000)
+#define MIN_INT16 (0x8000)
 #endif
 #ifndef MAX_INT32
-#define MAX_INT32 ((int32_t)0x7FFFFFFFL)
+#define MAX_INT32 (0x7FFFFFFFL)
 #endif
 #ifndef MIN_INT32
-#define MIN_INT32 ((int32_t)0x80000000L)
+#define MIN_INT32 (0x80000000L)
 #endif
 #ifndef MIN_INT64
-#define MIN_INT64 ((int64_t)0x8000000000000000LL)
+#define MIN_INT64 (0x8000000000000000LL)
 #endif
 #ifndef MAX_INT64
-#define MAX_INT64 ((int64_t)0x7fffffffffffffffLL)
+#define MAX_INT64 (0x7fffffffffffffffLL)
 #endif
 
 /* size of variables in bytes */
@@ -188,6 +200,22 @@
 #define SIZEOF_BYTE(x) (sizeof(x) << 1)
 #else
 #define SIZEOF_BYTE(x) sizeof(x)
+#endif
+
+#ifndef FLT32_SIZE
+#define FLT32_SIZE  4
+#endif
+#ifndef INT8_SIZE
+#define INT8_SIZE 1
+#endif
+#ifndef INT16_SIZE
+#define INT16_SIZE 2
+#endif
+#ifndef INT32_SIZE
+#define INT32_SIZE 4
+#endif
+#ifndef INT64_SIZE
+#define INT64_SIZE 8
 #endif
 
 /*---------------------------------------

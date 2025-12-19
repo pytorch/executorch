@@ -48,7 +48,7 @@
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
-static uint8_t temp_allocator_pool[1024U * 1024U];
+static uint8_t temp_allocator_pool[4 * 1024U * 1024U];
 
 DEFINE_string(
     model_path,
@@ -446,7 +446,7 @@ int main(int argc, char** argv) {
     }
   } else {
     // Print the first and last 100 elements of long lists of scalars.
-    std::cout << executorch::extension::evalue_edge_items(100);
+    std::cout << executorch::extension::evalue_edge_items(10000000);
 
     for (int i = 0; i < outputs.size(); ++i) {
       std::cout << "OutputX " << i << ": " << outputs[i] << std::endl;

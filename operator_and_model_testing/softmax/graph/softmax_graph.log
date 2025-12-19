@@ -1,0 +1,27 @@
+/home/kvariar/ExecuTorch/stable/executorch/.venv/lib/python3.11/site-packages/torch/_dynamo/utils.py:2929: UserWarning: Implicit dimension choice for softmax has been deprecated. Change the call to include dim=X as an argument.
+  return fn()
+/home/kvariar/ExecuTorch/stable/executorch/.venv/lib/python3.11/site-packages/torch/nn/functional.py:2150: UserWarning: Implicit dimension choice for softmax has been deprecated. Change the call to include dim=X as an argument.
+  return handle_torch_function(
+[INFO 2025-11-17 22:00:32,862 utils.py:50] Core ATen graph:
+graph():
+    %x : [num_users=1] = placeholder[target=x]
+    %softmax : [num_users=1] = call_function[target=torch.ops.aten.softmax.int](args = (%x, 1), kwargs = {})
+    return (softmax,)
+[INFO 2025-11-17 22:00:33,262 utils.py:70] Exported graph:
+ExportedProgram:
+    class GraphModule(torch.nn.Module):
+        def forward(self, x: "f32[2, 2]"):
+             # File: /home/kvariar/ExecuTorch/stable/executorch/examples/models/toy_model/model.py:83 in forward, code: z = self.softmax(x)
+            aten__softmax_default: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten__softmax_default(x, 1, False);  x = None
+            return (aten__softmax_default,)
+            
+Graph signature: 
+    # inputs
+    x: USER_INPUT
+    
+    # outputs
+    aten__softmax_default: USER_OUTPUT
+    
+Range constraints: {}
+
+[INFO 2025-11-17 22:00:33,335 utils.py:141] Saved exported program to ./softmax.pte

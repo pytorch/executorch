@@ -16,7 +16,7 @@ from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
 m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
-torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
+torch.ops.load_library("/home/kvariar/ExecuTorch/PyTorch/executorch/pip-out/lib.linux-x86_64-cpython-311/executorch/kernels/quantized/libquantized_ops_aot_lib.so")
 
 # Registry to track all ops with reference implementations
 _REGISTERED_REF_IMPLEMENTATIONS: set[str] = set()

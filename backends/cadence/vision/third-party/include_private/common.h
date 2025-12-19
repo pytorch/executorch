@@ -33,19 +33,10 @@
 #include <xtensa/tie/xt_core.h>
 #include <xtensa/tie/xt_density.h>
 #include <xtensa/tie/xt_misc.h>
-#if XCHAL_HAVE_IDMA
-#ifndef IDMA_USE_MULTICHANNEL
-  #define IDMA_USE_MULTICHANNEL 1
-#endif
-#include <xtensa/idma.h>
-#endif
 #define IVP_SIMD_WIDTH XCHAL_IVPN_SIMD_WIDTH
 
 #include "xtensa/config/core-isa.h"
 #include "xtensa/tie/xt_ivpn.h"
-#if XCHAL_HAVE_IDMA
-#include "xtensa/idma.h"
-#endif
 
 #ifdef _MSC_VER
 #define ALIGN(x) _declspec(align(x))
@@ -69,16 +60,6 @@
 #else
 #define restrict_clang
 #endif
-
-// Performance measurement macros
-#define XTPERF_PRINTF(...) printf(__VA_ARGS__)
-#define TIME_DECL(test) long start_time_##test, end_time_##test;
-#define TIME_START(test) { start_time_##test = 0;   XT_WSR_CCOUNT(0); }
-#define TIME_END(test) { end_time_##test = XT_RSR_CCOUNT(); }
-#define TIME_DISPLAY(test, opcnt, opname) { long long cycles_##test = end_time_##test - start_time_##test; \
-		XTPERF_PRINTF("PERF_LOG : %s : %d : %s : %lld : cycles : %.2f : %s/cycle : %.2f : cycles/%s\n", \
-		       #test, opcnt, opname, cycles_##test, cycles_##test == 0 ? 0 : (double)(opcnt)/cycles_##test, \
-           opname, cycles_##test == 0 ? 0 : 1/((double)(opcnt)/cycles_##test), opname); }
 
 //-----------------------------------------------------
 // log2(BBE_SIMD_WIDTH)
@@ -189,6 +170,21 @@
 #else
 #define HAVE_32X32 0
 #endif
+
+/*------ INSTRUCTION EMULATIONS ------*/
+
+#ifndef IVP_ADDSN_2X32
+#define IVP_ADDSN_2X32(b_, c_)                                                 \
+  ({                                                                           \
+    xb_vecN_2x32v a_;                                                          \
+    xb_vecN_2x64w tmp_a_;                                                      \
+    tmp_a_ = IVP_MULN_2X32(b_, 1);                                             \
+    IVP_MULAN_2X32(tmp_a_, c_, 1);                                             \
+    a_ = IVP_PACKVRN_2X64W(tmp_a_, 0);                                         \
+    a_;                                                                        \
+  })
+#endif
+
 
 #ifdef __cplusplus
 #define externC extern "C"

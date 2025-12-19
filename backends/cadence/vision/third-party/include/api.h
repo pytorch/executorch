@@ -69,12 +69,43 @@ N      multiple of BBE_SIMD_WIDTH (vsoftmax)
 void vsoftmaxf(float32_t *y, const float32_t *x, int N);
 
 void tensor_transposef(float32_t *restrict ptr_out
-    ,const int *const ptr_out_shape
-    ,const float32_t *restrict ptr_inp
-    ,const int *const ptr_inp_shape
-    ,const int *restrict ptr_permute_vec
-    ,int num_out_dims
-    ,int num_inp_dims);
+  ,const int *const ptr_out_shape
+  ,const float32_t *restrict ptr_inp
+  ,const int *const ptr_inp_shape
+  ,const int *restrict ptr_permute_vec
+  ,int num_out_dims
+  ,int num_inp_dims);
+
+void quantize_f32_asym8s(int8_t *restrict ptr_out
+  ,const float32_t *restrict ptr_inp
+  ,float32_t scale
+  ,int zero_bias
+  ,int N);
+
+void dequantize_asym8s_f32(float32_t *restrict ptr_out
+  ,const int8_t *restrict ptr_inp
+  ,float32_t scale
+  ,int zero_bias
+  ,int N);
+
+void maxpool2d_with_indices_j2x2_f32(float32_t *restrict ptr_out
+  ,const float32_t *restrict ptr_inp
+  ,int *restrict ptr_indices
+  ,int inp_height ,int inp_width
+  ,int out_height ,int out_width
+  ,int32_t in_pitch_width, int32_t in_pitch_height
+  ,int32_t out_pitch_width, int32_t out_pitch_height
+  ,uint8_t kernel_height
+  ,uint8_t kernel_width);
+
+void maxpool2d_j2x2_f32(float32_t *restrict ptr_out
+  ,const float32_t *restrict ptr_inp
+  ,int inp_height ,int inp_width
+  ,int out_height ,int out_width
+  ,int32_t in_pitch_width, int32_t in_pitch_height
+  ,int32_t out_pitch_width, int32_t out_pitch_height
+  ,uint8_t kernel_height
+  ,uint8_t kernel_width);
 
 #ifdef __cplusplus
 };
