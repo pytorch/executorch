@@ -5,15 +5,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from math import prod
 from typing import Sequence
 
 import torch
 import torch.nn.functional as F
 from executorch.backends.cortex_m.passes.passes_utils import (
+    dequantize_per_tensor_cmsis,
     is_channel_broadcast,
+    quantize_per_tensor_cmsis,
     requantize_cmsis,
     SHIFT_INT8,
+)
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    CMSIS_SOFTMAX_SCALE,
+    CMSIS_SOFTMAX_ZERO_POINT,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -23,6 +30,8 @@ from torch.library import impl, Library, register_fake
 
 # New operator library with a custom namespace to allow fusion etc.
 lib = Library("cortex_m", "DEF")
+
+SOFTMAX_INPUT_INTEGER_BITS = 5
 
 ###
 # dequantize_per_tensor
@@ -402,6 +411,65 @@ def quantized_linear_impl(
 
 
 # ===================================================================
+# SOFTMAX OPERATION DEFINITION
+# ===================================================================
+
+lib.define(
+    "softmax(Tensor input, int dim, int input_zero_point, int output_zero_point, int input_multiplier, int input_shift, int diff_min) -> Tensor"
+)
+lib.define(
+    "softmax.out(Tensor input, int dim, int input_zero_point, int output_zero_point, int input_multiplier, int input_shift, int diff_min, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::softmax")
+def softmax_meta(
+    input: torch.Tensor,
+    dim: int,
+    input_zero_point: int,
+    output_zero_point: int,
+    input_multiplier: int,
+    input_shift: int,
+    diff_min: int,
+) -> torch.Tensor:
+    return torch.empty_like(input, dtype=torch.int8)
+
+
+@impl(lib, "softmax", "CompositeExplicitAutograd")
+def softmax_impl(
+    input: torch.Tensor,
+    dim: int,
+    input_zero_point: int,
+    output_zero_point: int,
+    input_multiplier: int,
+    input_shift: int,
+    diff_min: int,
+) -> torch.Tensor:
+    del diff_min  # not used in reference path
+    if input.dtype != torch.int8:
+        raise TypeError(
+            f"cortex_m.softmax: expected int8 input tensor, got {input.dtype}"
+        )
+    if output_zero_point != CMSIS_SOFTMAX_ZERO_POINT:
+        raise ValueError(
+            f"cortex_m.softmax: expected output_zero_point {CMSIS_SOFTMAX_ZERO_POINT}, got {output_zero_point}"
+        )
+
+    real_multiplier = float(input_multiplier) / float(1 << 31)
+    real_multiplier = math.ldexp(real_multiplier, input_shift)
+    input_scale = real_multiplier / float(1 << (31 - SOFTMAX_INPUT_INTEGER_BITS))
+    if input_scale <= 0:
+        raise ValueError(
+            f"cortex_m.softmax: derived non-positive input scale {input_scale}"
+        )
+
+    input_fp = (input.to(torch.int32) - int(input_zero_point)).float() * input_scale
+    probs = torch.softmax(input_fp, dim=dim)
+    quantized = torch.round(probs / CMSIS_SOFTMAX_SCALE) + int(output_zero_point)
+    return quantized.clamp(-128, 127).to(torch.int8)
+
+
+# ===================================================================
 # TRANSPOSE OPERATION DEFINITION
 # ===================================================================
 lib.define("transpose(Tensor input, int[] perm) -> Tensor")
@@ -577,3 +645,74 @@ def quantized_conv2d_impl(
     result = torch.clamp(result, activation_min, activation_max)
 
     return result.to(torch.int8)
+
+
+# ===================================================================
+# QUANTIZED AVG_POOL2D OPERATION DEFINITION
+# ===================================================================
+
+lib.define(
+    "quantized_avg_pool2d("
+    "Tensor input, "
+    "int[] kernel_size, "
+    "int[] stride, "
+    "int[] padding, "
+    "Scalar zero_point, "
+    "Scalar multiplier, "
+    "Scalar shift"
+    ") -> Tensor"
+)
+lib.define(
+    "quantized_avg_pool2d.out("
+    "Tensor input, "
+    "int[] kernel_size, "
+    "int[] stride, "
+    "int[] padding, "
+    "Scalar zero_point, "
+    "Scalar multiplier, "
+    "Scalar shift, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_avg_pool2d")
+def quantized_avg_pool2d_meta(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    zero_point: int,
+    multiplier: int,
+    shift: int,
+) -> torch.Tensor:
+    # Compute output shape as in PyTorch avg_pool2d
+
+    output = F.avg_pool2d(input, kernel_size, stride, padding)
+    return torch.empty_like(output, dtype=torch.int8)
+
+
+@impl(lib, "quantized_avg_pool2d", "CompositeExplicitAutograd")
+def quantized_avg_pool2d_impl(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    zero_point: int,
+    multiplier: int,
+    shift: int,
+) -> torch.Tensor:
+
+    dequant_input = dequantize_per_tensor_cmsis(input, zero_point, multiplier, shift)
+
+    # TODO: implement count_include_pad=True, ceil_mode=True.
+    result = F.avg_pool2d(
+        dequant_input,
+        kernel_size,
+        stride=stride,
+        padding=padding,
+        count_include_pad=False,
+        ceil_mode=False,
+    )
+    result = quantize_per_tensor_cmsis(result, zero_point, multiplier, shift)
+    output = torch.clamp(result, -128, 127)
+    return output.to(torch.int8)
