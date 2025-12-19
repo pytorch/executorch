@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <utility>
 
-#include <executorch/backends/aoti/slim/c10/util/Exception.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace executorch::backends::aoti::slim {
 
@@ -141,11 +141,11 @@ class NonAtomicSharedPtr {
     return cb_ ? cb_->ptr : nullptr;
   }
   T& operator*() const {
-    STANDALONE_CHECK(cb_, "Dereferencing null NonAtomicSharedPtr");
+    ET_CHECK_MSG(cb_, "Dereferencing null NonAtomicSharedPtr");
     return *cb_->ptr;
   }
   T* operator->() const {
-    STANDALONE_CHECK(cb_, "Accessing member of null NonAtomicSharedPtr");
+    ET_CHECK_MSG(cb_, "Accessing member of null NonAtomicSharedPtr");
     return cb_->ptr;
   }
   long use_count() const noexcept {

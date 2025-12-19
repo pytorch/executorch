@@ -2,7 +2,6 @@
 
 #include <executorch/backends/aoti/slim/c10/util/Array.h>
 #include <executorch/backends/aoti/slim/c10/util/BFloat16.h>
-#include <executorch/backends/aoti/slim/c10/util/Exception.h>
 #include <executorch/backends/aoti/slim/c10/util/Float4_e2m1fn_x2.h>
 #include <executorch/backends/aoti/slim/c10/util/Float8_e4m3fn.h>
 #include <executorch/backends/aoti/slim/c10/util/Float8_e4m3fnuz.h>
@@ -17,6 +16,7 @@
 #include <executorch/backends/aoti/slim/c10/util/quint2x4.h>
 #include <executorch/backends/aoti/slim/c10/util/quint4x2.h>
 #include <executorch/backends/aoti/slim/c10/util/quint8.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <array>
 #include <cstddef>
@@ -388,7 +388,7 @@ inline size_t elementSize(ScalarType t) {
   switch (t) {
     AT_FORALL_SCALAR_TYPES_WITH_COMPLEX_AND_QINTS(CASE_ELEMENTSIZE_CASE)
     default:
-      STANDALONE_CHECK(false, "Unknown ScalarType");
+      ET_CHECK_MSG(false, "Unknown ScalarType");
   }
 #undef CASE_ELEMENTSIZE_CASE
 }
@@ -492,13 +492,13 @@ inline bool isSignedType(ScalarType t) {
     case ScalarType::QInt32:
     case ScalarType::QUInt4x2:
     case ScalarType::QUInt2x4:
-      STANDALONE_CHECK(false, "isSignedType not supported for quantized types");
+      ET_CHECK_MSG(false, "isSignedType not supported for quantized types");
     case ScalarType::Bits1x8:
     case ScalarType::Bits2x4:
     case ScalarType::Bits4x2:
     case ScalarType::Bits8:
     case ScalarType::Bits16:
-      STANDALONE_CHECK(false, "Bits types are undefined");
+      ET_CHECK_MSG(false, "Bits types are undefined");
       CASE_ISSIGNED(UInt16);
       CASE_ISSIGNED(UInt32);
       CASE_ISSIGNED(UInt64);
@@ -543,7 +543,7 @@ inline bool isSignedType(ScalarType t) {
       // Do not add default here, but rather define behavior of every new entry
       // here.  `-Wswitch-enum` would raise a warning in those cases.
   }
-  STANDALONE_CHECK(false, "Unknown ScalarType ", t);
+  ET_CHECK_MSG(false, "Unknown ScalarType");
 #undef CASE_ISSIGNED
 }
 
@@ -583,7 +583,7 @@ inline ScalarType toComplexType(ScalarType t) {
     case ScalarType::ComplexDouble:
       return ScalarType::ComplexDouble;
     default:
-      STANDALONE_CHECK(false, "Unknown Complex ScalarType for ", t);
+      ET_CHECK_MSG(false, "Unknown Complex ScalarType");
   }
 }
 
@@ -678,13 +678,8 @@ inline ScalarType promoteTypes(ScalarType a, ScalarType b) {
 
   // Handle identically equal types
   if (isQIntType(a) || isQIntType(b)) {
-    STANDALONE_CHECK(
-        false,
-        "promoteTypes with quantized numbers is not handled yet; figure out "
-        "what the correct rules should be, offending types: ",
-        toString(a),
-        " ",
-        toString(b));
+    ET_CHECK_MSG(
+        false, "promoteTypes with quantized numbers is not handled yet");
   }
 
   if (isBitsType(a) || isBitsType(b)) {
@@ -692,12 +687,7 @@ inline ScalarType promoteTypes(ScalarType a, ScalarType b) {
   }
 
   if (isFloat8Type(a) || isFloat8Type(b)) {
-    STANDALONE_CHECK(
-        false,
-        "Promotion for Float8 Types is not supported, attempted to promote ",
-        toString(a),
-        " and ",
-        toString(b));
+    ET_CHECK_MSG(false, "Promotion for Float8 Types is not supported");
   }
 
   if (isBarebonesUnsignedType(a) || isBarebonesUnsignedType(b)) {
@@ -717,18 +707,13 @@ inline ScalarType promoteTypes(ScalarType a, ScalarType b) {
     if (isFloatingType(b)) {
       return b;
     }
-    STANDALONE_CHECK(
-        false,
-        "Promotion for uint16, uint32, uint64 types is not supported, "
-        "attempted to promote ",
-        toString(a),
-        " and ",
-        toString(b));
+    ET_CHECK_MSG(
+        false, "Promotion for uint16, uint32, uint64 types is not supported");
   }
   auto ix_a = dtype2index[static_cast<int64_t>(a)];
-  STANDALONE_INTERNAL_ASSERT(ix_a != -1);
+  ET_DCHECK_MSG(ix_a != -1, "Invalid ScalarType a");
   auto ix_b = dtype2index[static_cast<int64_t>(b)];
-  STANDALONE_INTERNAL_ASSERT(ix_b != -1);
+  ET_DCHECK_MSG(ix_b != -1, "Invalid ScalarType b");
 
   // This table axes must be consistent with index2dtype
   // clang-format off

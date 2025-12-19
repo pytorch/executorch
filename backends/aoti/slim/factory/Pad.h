@@ -8,14 +8,14 @@ inline SlimTensor constant_pad_nd(
     const SlimTensor& self,
     executorch::backends::aoti::slim::c10::IntArrayRef pad,
     const executorch::backends::aoti::slim::c10::Scalar& value) {
-  STANDALONE_CHECK(pad.size() % 2 == 0, "Length of pad must be even");
+  ET_CHECK_MSG(pad.size() % 2 == 0, "Length of pad must be even");
 
   executorch::backends::aoti::slim::c10::IntArrayRef input_sizes = self.sizes();
   int64_t l_inp = self.dim();
   int64_t l_pad = static_cast<int64_t>(pad.size()) / 2;
   int64_t l_diff = l_inp - l_pad;
 
-  STANDALONE_CHECK(
+  ET_CHECK_MSG(
       l_pad <= l_inp,
       "Length of pad should be no more than twice the input's dimension.");
 
@@ -54,18 +54,10 @@ inline SlimTensor constant_pad_nd(
        executorch::backends::aoti::slim::c10::irange((size_t)l_pad)) {
     auto pad_idx = pad.size() - ((i + 1) * 2);
     auto new_dim = input_sizes[l_diff + i] + pad[pad_idx] + pad[pad_idx + 1];
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         new_dim > 0,
-        "The input size ",
-        input_sizes[l_diff + i],
-        ", plus negative padding ",
-        pad[pad_idx],
-        " and ",
-        pad[pad_idx + 1],
-        " resulted in a negative output size, "
-        "which is invalid. Check dimension ",
-        l_diff + i,
-        " of your input.");
+        "The input size plus negative padding resulted in a negative output size. "
+        "Check your input.");
     new_shape.emplace_back(new_dim);
   }
 
@@ -98,11 +90,8 @@ inline SlimTensor pad(
   if (mode == "constant") {
     return constant_pad_nd(self, pad, value.value_or(0.0));
   }
-  STANDALONE_CHECK(
-      false,
-      "Unsupported padding mode: ",
-      mode,
-      ". Only constant mode is available.");
+  ET_CHECK_MSG(
+      false, "Unsupported padding mode. Only constant mode is available.");
 }
 
 } // namespace executorch::backends::aoti::slim

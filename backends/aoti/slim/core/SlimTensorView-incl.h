@@ -20,25 +20,22 @@ inline SlimTensor SlimTensor::as_strided_(
     executorch::backends::aoti::slim::c10::IntArrayRef sizes,
     executorch::backends::aoti::slim::c10::IntArrayRef strides,
     int64_t storage_offset) {
-  STANDALONE_CHECK(
+  ET_CHECK_MSG(
       sizes.size() == strides.size(),
-      "as_strided: number of sizes (",
+      "as_strided: number of sizes (%zu) must equal number of strides (%zu)",
       sizes.size(),
-      ") must equal number of strides (",
-      strides.size(),
-      ")");
+      strides.size());
   for (size_t i = 0; i < sizes.size(); ++i) {
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         sizes[i] >= 0,
-        "as_strided: size at dimension ",
+        "as_strided: size at dimension %zu is negative: %ld",
         i,
-        " is negative: ",
-        sizes[i]);
+        static_cast<long>(sizes[i]));
   }
-  STANDALONE_CHECK(
+  ET_CHECK_MSG(
       storage_offset >= 0,
-      "as_strided: storage_offset must be non-negative, got: ",
-      storage_offset);
+      "as_strided: storage_offset must be non-negative, got: %ld",
+      static_cast<long>(storage_offset));
 
   this->set_sizes_and_strides(sizes, strides, storage_offset);
   return *this;
@@ -47,9 +44,9 @@ inline SlimTensor SlimTensor::as_strided_(
 inline SlimTensor SlimTensor::permute(
     executorch::backends::aoti::slim::c10::IntArrayRef dims) const {
   const size_t ndim = this->dim();
-  STANDALONE_CHECK(
+  ET_CHECK_MSG(
       ndim == static_cast<size_t>(dims.size()),
-      "permute: dims length must be equal to tensor.dim()")
+      "permute: dims length must be equal to tensor.dim()");
 
   executorch::backends::aoti::slim::c10::ArrayRef old_sizes = this->sizes();
   executorch::backends::aoti::slim::c10::ArrayRef old_strides = this->strides();
@@ -60,7 +57,7 @@ inline SlimTensor SlimTensor::permute(
   for (size_t i = 0; i < ndim; i++) {
     int64_t d =
         executorch::backends::aoti::slim::c10::maybe_wrap_dim(dims[i], ndim);
-    STANDALONE_CHECK(!seen_dims[d], "permute: duplicate dims are not allowed");
+    ET_CHECK_MSG(!seen_dims[d], "permute: duplicate dims are not allowed");
     seen_dims[d] = true;
     new_sizes[i] = old_sizes[d];
     new_strides[i] = old_strides[d];
@@ -72,7 +69,7 @@ inline SlimTensor SlimTensor::permute(
 }
 
 inline SlimTensor SlimTensor::transpose() const {
-  STANDALONE_CHECK(dim() == 2, "transpose() can only be called on 2D tensors");
+  ET_CHECK_MSG(dim() == 2, "transpose() can only be called on 2D tensors");
   return permute({1, 0});
 }
 
@@ -124,24 +121,21 @@ inline SlimTensor SlimTensor::reshape(
 
 inline SlimTensor SlimTensor::narrow(int64_t dim, int64_t start, int64_t length)
     const {
-  STANDALONE_CHECK(
+  ET_CHECK_MSG(
       this->dim() > 0, "narrow() cannot be applied to a 0-dim tensor.");
   dim = executorch::backends::aoti::slim::c10::maybe_wrap_dim(
       dim, static_cast<int64_t>(this->dim()));
   start = executorch::backends::aoti::slim::c10::maybe_wrap_dim(
       start, static_cast<int64_t>(this->size(dim)));
 
-  STANDALONE_CHECK(length >= 0, "narrow(): length must be non-negative.");
+  ET_CHECK_MSG(length >= 0, "narrow(): length must be non-negative.");
   int64_t end = start + length;
-  STANDALONE_CHECK(
+  ET_CHECK_MSG(
       end <= this->size(dim),
-      "Invalid range to narrow. range(",
-      start,
-      ", ",
-      start + length,
-      ") must be a subset of range(0, ",
-      this->size(dim),
-      ").");
+      "Invalid range to narrow. range(%ld, %ld) must be a subset of range(0, %ld).",
+      static_cast<long>(start),
+      static_cast<long>(start + length),
+      static_cast<long>(this->size(dim)));
 
   SlimTensor result = *this;
   int64_t new_storage_offset =

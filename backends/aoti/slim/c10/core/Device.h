@@ -1,8 +1,8 @@
 #pragma once
 
 #include <executorch/backends/aoti/slim/c10/core/DeviceType.h>
-#include <executorch/backends/aoti/slim/c10/util/Exception.h>
 #include <executorch/backends/aoti/slim/c10/util/StringUtil.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <algorithm>
 #include <array>
@@ -70,12 +70,7 @@ inline DeviceType parse_type(const std::string& device_string) {
       device_names.push_back(it.first);
     }
   }
-  STANDALONE_CHECK(
-      false,
-      "Expected one of ",
-      Join(", ", device_names),
-      " device type at start of device string: ",
-      device_string);
+  ET_CHECK_MSG(false, "Expected a valid device type at start of device string");
 }
 } // namespace detail
 
@@ -111,7 +106,7 @@ struct Device final {
   /// where `cpu` or `cuda` specifies the device type, and
   /// `:<device-index>` optionally specifies a device index.
   /* implicit */ Device(const std::string& device_string) : Device(Type::CPU) {
-    STANDALONE_CHECK(!device_string.empty(), "Device string must not be empty");
+    ET_CHECK_MSG(!device_string.empty(), "Device string must not be empty");
 
     std::string device_name, device_index_str;
     detail::DeviceStringParsingState pstate =
@@ -170,21 +165,14 @@ struct Device final {
         (pstate == detail::DeviceStringParsingState::kINDEX_START &&
          device_index_str.empty());
 
-    STANDALONE_CHECK(
-        !has_error, "Invalid device string: '", device_string, "'");
+    ET_CHECK_MSG(!has_error, "Invalid device string");
 
     try {
       if (!device_index_str.empty()) {
         index_ = static_cast<DeviceIndex>(std::stoi(device_index_str));
       }
     } catch (const std::exception&) {
-      STANDALONE_CHECK(
-          false,
-          "Could not parse device index '",
-          device_index_str,
-          "' in device string '",
-          device_string,
-          "'");
+      ET_CHECK_MSG(false, "Could not parse device index in device string");
     }
     type_ = detail::parse_type(device_name);
     validate();
@@ -326,13 +314,13 @@ struct Device final {
     // performance in micro-benchmarks.
     // This is safe to do, because backends that use the DeviceIndex
     // have a later check when we actually try to switch to that device.
-    STANDALONE_INTERNAL_ASSERT_DEBUG_ONLY(
+    ET_DCHECK_MSG(
         index_ >= -1,
-        "Device index must be -1 or non-negative, got ",
+        "Device index must be -1 or non-negative, got %d",
         static_cast<int>(index_));
-    STANDALONE_INTERNAL_ASSERT_DEBUG_ONLY(
+    ET_DCHECK_MSG(
         !is_cpu() || index_ <= 0,
-        "CPU device index must be -1 or zero, got ",
+        "CPU device index must be -1 or zero, got %d",
         static_cast<int>(index_));
   }
 };

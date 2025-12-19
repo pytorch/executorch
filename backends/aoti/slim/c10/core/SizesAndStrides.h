@@ -7,6 +7,7 @@
 
 #include <executorch/backends/aoti/slim/c10/macros/Macros.h>
 #include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
+#include <executorch/runtime/platform/assert.h>
 
 #define STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE 5
 
@@ -171,7 +172,11 @@ class SizesAndStrides {
   }
 
   void set_strides(IntArrayRef strides) {
-    STANDALONE_INTERNAL_ASSERT(strides.size() == size());
+    ET_DCHECK_MSG(
+        strides.size() == size(),
+        "strides size (%zu) must match size (%zu)",
+        strides.size(),
+        size());
     std::copy(strides.begin(), strides.end(), strides_begin());
   }
 
@@ -284,7 +289,7 @@ class SizesAndStrides {
  private:
   void resizeSlowPath(size_t newSize, size_t oldSize) {
     if (newSize <= STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE) {
-      STANDALONE_INTERNAL_ASSERT_DEBUG_ONLY(
+      ET_DCHECK_MSG(
           !isInline(),
           "resizeSlowPath called when fast path should have been hit!");
       int64_t* tempStorage = outOfLineStorage_;
@@ -309,7 +314,7 @@ class SizesAndStrides {
         int64_t* tempStorage =
             // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
             static_cast<int64_t*>(malloc(storageBytes(newSize)));
-        STANDALONE_CHECK(
+        ET_CHECK_MSG(
             tempStorage,
             "Could not allocate memory to change Tensor SizesAndStrides!");
         const auto bytesToCopy = oldSize * sizeof(inlineStorage_[0]);
@@ -361,7 +366,7 @@ class SizesAndStrides {
   }
 
   void copyDataInline(const SizesAndStrides& rhs) {
-    STANDALONE_INTERNAL_ASSERT_DEBUG_ONLY(rhs.isInline());
+    ET_DCHECK_MSG(rhs.isInline(), "rhs must be inline");
     memcpy(inlineStorage_, rhs.inlineStorage_, sizeof(inlineStorage_));
   }
 
@@ -372,17 +377,17 @@ class SizesAndStrides {
   void allocateOutOfLineStorage(size_t size) {
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
     outOfLineStorage_ = static_cast<int64_t*>(malloc(storageBytes(size)));
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         outOfLineStorage_,
         "Could not allocate memory for Tensor SizesAndStrides!");
   }
 
   void resizeOutOfLineStorage(size_t newSize) {
-    STANDALONE_INTERNAL_ASSERT_DEBUG_ONLY(!isInline());
+    ET_DCHECK_MSG(!isInline(), "must not be inline");
     outOfLineStorage_ = static_cast<int64_t*>(
         // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
         realloc(outOfLineStorage_, storageBytes(newSize)));
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         outOfLineStorage_,
         "Could not allocate memory for Tensor SizesAndStrides!");
   }

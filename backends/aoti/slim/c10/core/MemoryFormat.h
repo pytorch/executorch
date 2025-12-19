@@ -1,7 +1,7 @@
 #pragma once
 
 #include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
-#include <executorch/backends/aoti/slim/c10/util/Exception.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <cstdint>
 #include <ostream>
@@ -57,7 +57,7 @@ inline std::ostream& operator<<(
     case MemoryFormat::ChannelsLast3d:
       return stream << "ChannelsLast3d";
     default:
-      STANDALONE_CHECK(false, "Unknown memory format ", memory_format);
+      ET_CHECK_MSG(false, "Unknown memory format");
   }
 }
 
@@ -79,8 +79,7 @@ inline std::vector<T> get_channels_last_strides_2d(ArrayRef<T> sizes) {
       strides[1] = strides[2] * sizes[2];
       return strides;
     default:
-      STANDALONE_INTERNAL_ASSERT(
-          false, "ChannelsLast2d doesn't support size ", sizes.size());
+      ET_DCHECK_MSG(false, "ChannelsLast2d doesn't support this size");
   }
 }
 
@@ -106,8 +105,7 @@ std::vector<T> get_channels_last_strides_3d(ArrayRef<T> sizes) {
       strides[1] = strides[2] * sizes[2];
       return strides;
     default:
-      STANDALONE_INTERNAL_ASSERT(
-          false, "ChannelsLast3d doesn't support size ", sizes.size());
+      ET_DCHECK_MSG(false, "ChannelsLast3d doesn't support this size");
   }
 }
 

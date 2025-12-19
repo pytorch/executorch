@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <string>
 
-#include <executorch/backends/aoti/slim/c10/util/Exception.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace executorch::backends::aoti::slim::c10 {
 enum class DeviceType : int8_t {
@@ -94,7 +94,7 @@ inline std::string DeviceTypeName(DeviceType d, bool lower_case = false) {
 
   int idx = static_cast<int>(d);
   if (idx < 0 || idx >= COMPILE_TIME_MAX_DEVICE_TYPES) {
-    STANDALONE_CHECK(false, "Unknown device: ", static_cast<int16_t>(d));
+    ET_CHECK_MSG(false, "Unknown device");
   }
   if (d == DeviceType::PrivateUse1) {
     return get_privateuse1_backend(lower_case);
