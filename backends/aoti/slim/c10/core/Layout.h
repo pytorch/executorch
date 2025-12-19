@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/backends/aoti/slim/c10/util/Exception.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <cstdint>
 #include <ostream>
@@ -46,7 +46,7 @@ inline std::ostream& operator<<(std::ostream& stream, c10::Layout layout) {
     case c10::kJagged:
       return stream << "Jagged";
     default:
-      STANDALONE_CHECK(false, "Unknown layout");
+      ET_CHECK_MSG(false, "Unknown layout");
   }
 }
 

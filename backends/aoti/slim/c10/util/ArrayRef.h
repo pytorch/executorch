@@ -16,7 +16,7 @@
 #pragma once
 
 #include <executorch/backends/aoti/slim/c10/macros/Macros.h>
-#include <executorch/backends/aoti/slim/c10/util/Exception.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <algorithm>
 #include <array>
@@ -59,7 +59,7 @@ class ArrayRef final {
   size_type Length;
 
   void debugCheckNullptrInvariant() {
-    STANDALONE_INTERNAL_ASSERT_DEBUG_ONLY(
+    ET_DCHECK_MSG(
         Data != nullptr || Length == 0,
         "created ArrayRef with nullptr and non-zero length! std::optional "
         "relies on this being illegal");
@@ -176,14 +176,14 @@ class ArrayRef final {
 
   /// front - Get the first element.
   constexpr const T& front() const {
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         !empty(), "ArrayRef: attempted to access front() of empty list");
     return Data[0];
   }
 
   /// back - Get the last element.
   constexpr const T& back() const {
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         !empty(), "ArrayRef: attempted to access back() of empty list");
     return Data[Length - 1];
   }
@@ -195,21 +195,19 @@ class ArrayRef final {
 
   /// slice(n, m) - Take M elements of the array starting at element N
   constexpr ArrayRef<T> slice(size_t N, size_t M) const {
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         N + M <= size(),
-        "ArrayRef: invalid slice, N = ",
+        "ArrayRef: invalid slice, N = %zu; M = %zu; size = %zu",
         N,
-        "; M = ",
         M,
-        "; size = ",
         size());
     return ArrayRef<T>(data() + N, M);
   }
 
   /// slice(n) - Chop off the first N elements of the array.
   constexpr ArrayRef<T> slice(size_t N) const {
-    STANDALONE_CHECK(
-        N <= size(), "ArrayRef: invalid slice, N = ", N, "; size = ", size());
+    ET_CHECK_MSG(
+        N <= size(), "ArrayRef: invalid slice, N = %zu; size = %zu", N, size());
     return slice(N, size() - N);
   }
 
@@ -222,11 +220,10 @@ class ArrayRef final {
 
   /// Vector compatibility
   constexpr const T& at(size_t Index) const {
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         Index < Length,
-        "ArrayRef: invalid index Index = ",
+        "ArrayRef: invalid index Index = %zu; Length = %zu",
         Index,
-        "; Length = ",
         Length);
     return Data[Index];
   }

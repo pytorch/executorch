@@ -12,7 +12,7 @@ inline SlimTensor from_blob(
     executorch::backends::aoti::slim::c10::ScalarType dtype,
     const executorch::backends::aoti::slim::c10::Device& device = CPU_DEVICE,
     int64_t storage_offset = 0) {
-  STANDALONE_CHECK(data != nullptr, "data pointer can not be nullptr");
+  ET_CHECK_MSG(data != nullptr, "data pointer can not be nullptr");
 
   Storage storage(new MaybeOwningStorage(
       device,

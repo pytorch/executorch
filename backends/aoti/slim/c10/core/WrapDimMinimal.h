@@ -4,6 +4,7 @@
 #include <utility>
 
 #include <executorch/backends/aoti/slim/c10/macros/Macros.h>
+#include <executorch/runtime/platform/assert.h>
 
 // Different from the original implementation in c10, we don't need
 // to support SymInt here.
@@ -39,15 +40,16 @@ namespace detail {
 // you'll get linker errors otherwise
 template <typename T>
 T maybe_wrap_dim_slow(T dim, T dim_post_expr, bool wrap_scalar) {
-  STANDALONE_CHECK(
-      dim_post_expr >= 0, "Rank cannot be negative but got ", dim_post_expr);
+  ET_CHECK_MSG(
+      dim_post_expr >= 0,
+      "Rank cannot be negative but got %ld",
+      static_cast<long>(dim_post_expr));
 
   if (dim_post_expr == 0) {
-    STANDALONE_CHECK(
+    ET_CHECK_MSG(
         wrap_scalar,
-        "Dimension specified as ",
-        dim,
-        " but tensor has no dimensions");
+        "Dimension specified as %ld but tensor has no dimensions",
+        static_cast<long>(dim));
     return executorch::backends::aoti::slim::c10::maybe_wrap_dim(
         std::move(dim),
         /*dim_post_expr=*/1,
@@ -56,17 +58,14 @@ T maybe_wrap_dim_slow(T dim, T dim_post_expr, bool wrap_scalar) {
 
   T min = dim_post_expr * -1;
   T max = dim_post_expr - 1;
-  STANDALONE_CHECK(
+  ET_CHECK_MSG(
       min <= dim && dim <= max,
-      "Dimension out of range (expected to be in range of [",
-      min,
-      ", ",
-      max,
-      "], but got ",
-      dim,
-      ")");
+      "Dimension out of range (expected to be in range of [%ld, %ld], but got %ld)",
+      static_cast<long>(min),
+      static_cast<long>(max),
+      static_cast<long>(dim));
 
-  STANDALONE_INTERNAL_ASSERT(
+  ET_DCHECK_MSG(
       false, "should never reach here as dim should be out-of-bounds");
 }
 } // namespace detail
