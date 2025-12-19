@@ -122,6 +122,27 @@ class QuantizedOpFusionPass(ExportPass):
         args = (args[0], perms)
         return exir_ops.edge.cortex_m.transpose.default, args
 
+    def _get_avg_pool2d_replacement(self, args, meta):
+        if (
+            meta.data.get("input_qparams", {}) == {}
+            or meta.data.get("output_qparams", {}) == {}
+        ):
+            return exir_ops.edge.aten.avg_pool2d.default, args
+
+        # Extract values
+        scale = meta["input_qparams"][0].scale
+        zero_point = meta["input_qparams"][0].zp
+
+        output_mult, output_shift = quantize_multiplier_aot(scale)
+        args = (
+            *args[0:-2],
+            zero_point,
+            output_mult,
+            output_shift,
+        )
+
+        return exir_ops.edge.cortex_m.quantized_avg_pool2d.default, args
+
     def call_operator(
         self,
         op: EdgeOpOverload,
@@ -141,6 +162,8 @@ class QuantizedOpFusionPass(ExportPass):
                 op, args = self._get_maximum_replacement(args, meta)
             case exir_ops.edge.aten.permute_copy.default:
                 op, args = self._get_permute_replacement(args, meta)
+            case exir_ops.edge.aten.avg_pool2d.default:
+                op, args = self._get_avg_pool2d_replacement(args, meta)
             case _:
                 pass
 
