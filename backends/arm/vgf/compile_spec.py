@@ -6,6 +6,9 @@
 import logging
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
+from executorch.backends.arm.common.pipeline_config import (  # noqa: unused
+    ArmPassPipelineConfig,
+)
 from executorch.backends.arm.tosa import (  # type: ignore[import-not-found]
     TosaSpecification,
 )
@@ -62,3 +65,9 @@ class VgfCompileSpec(ArmCompileSpec):
     def get_output_format(cls) -> str:
         """Return the artifact format emitted by this compile spec."""
         return "vgf"
+
+    def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
+        config = super()._create_default_pipeline_config()
+        # GRPHCOMP-3140 / MLETORCH-1529
+        config.disable_fuse_duplicate_users()
+        return config

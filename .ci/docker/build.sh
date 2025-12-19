@@ -23,9 +23,14 @@ MINICONDA_VERSION=23.10.0-1
 BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
 case "${IMAGE_NAME}" in
-  executorch-ubuntu-22.04-gcc9)
+  executorch-ubuntu-22.04-gcc11)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    ;;
+  executorch-ubuntu-22.04-gcc9-nopytorch)
     LINTRUNNER=""
     GCC_VERSION=9
+    SKIP_PYTORCH=yes
     ;;
   executorch-ubuntu-22.04-clang12)
     LINTRUNNER=""
@@ -95,6 +100,7 @@ docker build \
   --build-arg "QNN_SDK=${QNN_SDK:-}" \
   --build-arg "MEDIATEK_SDK=${MEDIATEK_SDK:-}" \
   --build-arg "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION:-}" \
+  --build-arg "SKIP_PYTORCH=${SKIP_PYTORCH:-}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .

@@ -16,7 +16,7 @@ namespace backends {
 namespace qnn {
 class HtpBackend : public QnnBackend {
  public:
-  HtpBackend(const QnnImplementation& implementation, QnnLogger* logger)
+  HtpBackend(QnnImplementation* implementation, QnnLogger* logger)
       : QnnBackend(implementation, logger) {}
   ~HtpBackend() {}
 

@@ -48,15 +48,15 @@ from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv_pass import DecomposeGroupedConvPass  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
-from .decompose_int16_activation_conv2d_pass import (  # noqa
-    DecomposeConv2dWithInt16ActivationPass,
+from .decompose_int16_activation_conv_pass import (  # noqa
+    DecomposeConvWithInt16ActivationPass,
 )
-from .decompose_int32_clamp_pass import DecomposeInt32ClampPass  # noqa
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linalg_vector_norm_pass import DecomposeLinalgVectorNormPass  # noqa
 from .decompose_linear_pass import DecomposeLinearPass  # noqa
+from .decompose_log1p_pass import DecomposeLog1pPass  # noqa
 from .decompose_logit_pass import DecomposeLogitPass  # noqa
 from .decompose_masked_fill_pass import DecomposeMaskedFillPass  # noqa
 from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # noqa
@@ -75,6 +75,9 @@ from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
 from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
 from .decompose_sum_pass import DecomposeSumPass  # noqa
+from .decompose_tosa_unsupported_clamp_pass import (  # noqa
+    DecomposeTOSAUnsupportedClampPass,
+)
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
@@ -102,6 +105,7 @@ from .insert_table_ops import InsertTableOpsPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
+from .normalize_while_initial_args_pass import NormalizeWhileInitialArgsPass  # noqa
 from .promote_bool_operands_pass import PromoteBoolOperandsPass  # noqa
 from .remove_getitem_pass import RemoveGetItemPass  # noqa
 from .remove_graph_asserts_pass import RemoveGraphAssertsPass  # noqa
@@ -109,7 +113,7 @@ from .remove_noop_pass import RemoveNoopPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,
 )
-from .rewrite_conv2d_pass import RewriteConv2dPass  # noqa
+from .rewrite_conv_pass import RewriteConvPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa

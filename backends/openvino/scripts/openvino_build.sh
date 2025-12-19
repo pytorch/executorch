@@ -81,7 +81,9 @@ build_python_enabled() {
     ./install_executorch.sh --minimal
 
     # Install torchao
-    pip install third-party/ao
+    # Note: --no-build-isolation is required because torchao's setup.py imports torch
+    # See comment in torchao's pyproject.toml for more details
+    pip install third-party/ao --no-build-isolation
 }
 
 main() {
