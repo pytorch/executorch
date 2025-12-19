@@ -30,6 +30,20 @@
             }
         },
         {
+            "name": "whisper-debug-cuda",
+            "displayName": "Whisper runner (CUDA Debug)",
+            "inherits": ["whisper-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON",
+                "CMAKE_BUILD_TYPE": "Debug"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Linux"
+            }
+        },
+        {
             "name": "whisper-metal",
             "displayName": "Whisper runner (Metal)",
             "inherits": ["whisper-base"],
@@ -54,6 +68,12 @@
             "name": "whisper-cuda",
             "displayName": "Build Whisper runner (CUDA)",
             "configurePreset": "whisper-cuda",
+            "targets": ["whisper_runner"]
+        },
+        {
+            "name": "whisper-debug-cuda",
+            "displayName": "Build Whisper runner (CUDA Debug)",
+            "configurePreset": "whisper-debug-cuda",
             "targets": ["whisper_runner"]
         },
         {
@@ -89,6 +109,20 @@
                 {
                     "type": "build",
                     "name": "whisper-cuda"
+                }
+            ]
+        },
+        {
+            "name": "whisper-debug-cuda",
+            "displayName": "Configure and build Whisper runner (CUDA Debug)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "whisper-debug-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "whisper-debug-cuda"
                 }
             ]
         },
