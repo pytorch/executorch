@@ -79,8 +79,6 @@ const size_t method_allocation_pool_size = ET_ARM_METHOD_ALLOCATOR_POOL_SIZE;
 unsigned char __attribute__((
     aligned(16))) method_allocation_pool[method_allocation_pool_size];
 
-// unsigned char method_allocation_pool[method_allocation_pool_size];
-
 /**
  * The temp_allocation_pool is used for allocating temporary data during kernel
  * or delegate execution. This will be reset after each kernel or delegate call.
