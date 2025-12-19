@@ -1,44 +1,21 @@
 #pragma once
 
-#include <cstring>
-#include <type_traits>
+// Thin wrapper to reuse ExecuTorch's c10::bit_cast implementation.
+// This provides backward compatibility for SlimTensor code that uses
+// executorch::backends::aoti::slim::c10::bit_cast.
 
-#if __has_include(<bit>) && (defined(__cpp_lib_bit_cast) && __cpp_lib_bit_cast >= 201806L)
-#include <bit>
-#define STANDALONE_HAVE_STD_BIT_CAST 1
-#else
-#define STANDALONE_HAVE_STD_BIT_CAST 0
-#endif // __has_include(<bit>) && (__cplusplus >= 202002L ||
-       // (defined(__cpp_lib_bit_cast) && __cpp_lib_bit_cast >= 201806L))
+#include <c10/util/bit_cast.h>
 
-namespace executorch::backends::aoti::slim::c10 {
+namespace executorch {
+namespace backends {
+namespace aoti {
+namespace slim {
+namespace c10 {
 
-#if STANDALONE_HAVE_STD_BIT_CAST
-using std::bit_cast;
-#else
-// Implementations of std::bit_cast() from C++ 20.
-//
-// This is a less sketchy version of reinterpret_cast.
-//
-// See https://en.cppreference.com/w/cpp/numeric/bit_cast for more
-// information as well as the source of our implementations.
-template <class To, class From>
-std::enable_if_t<
-    sizeof(To) == sizeof(From) && std::is_trivially_copyable_v<From> &&
-        std::is_trivially_copyable_v<To>,
-    To>
-// constexpr support needs compiler magic
-bit_cast(const From& src) noexcept {
-  static_assert(
-      std::is_trivially_constructible_v<To>,
-      "This implementation additionally requires "
-      "destination type to be trivially constructible");
+using ::c10::bit_cast;
 
-  To dst;
-  std::memcpy(&dst, &src, sizeof(To));
-  return dst;
-}
-#endif // STANDALONE_HAVE_STD_BIT_CAST
-#undef STANDALONE_HAVE_STD_BIT_CAST
-
-} // namespace executorch::backends::aoti::slim::c10
+} // namespace c10
+} // namespace slim
+} // namespace aoti
+} // namespace backends
+} // namespace executorch

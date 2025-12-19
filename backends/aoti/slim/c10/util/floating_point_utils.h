@@ -1,33 +1,25 @@
 #pragma once
 
-#include <executorch/backends/aoti/slim/c10/macros/Macros.h>
-#include <executorch/backends/aoti/slim/c10/util/bit_cast.h>
-#include <cstdint>
+// Thin wrapper to reuse ExecuTorch's c10 floating_point_utils implementation.
+// This provides backward compatibility for SlimTensor code that uses
+// executorch::backends::aoti::slim::c10::detail::{fp32_from_bits,
+// fp32_to_bits}.
 
-namespace executorch::backends::aoti::slim::c10::detail {
+#include <c10/util/floating_point_utils.h>
 
-STANDALONE_HOST_DEVICE inline float fp32_from_bits(uint32_t w) {
-#if defined(__OPENCL_VERSION__)
-  return as_float(w);
-#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
-  return __uint_as_float((unsigned int)w);
-#elif defined(__INTEL_COMPILER)
-  return _castu32_f32(w);
-#else
-  return executorch::backends::aoti::slim::c10::bit_cast<float>(w);
-#endif
-}
+namespace executorch {
+namespace backends {
+namespace aoti {
+namespace slim {
+namespace c10 {
+namespace detail {
 
-STANDALONE_HOST_DEVICE inline uint32_t fp32_to_bits(float f) {
-#if defined(__OPENCL_VERSION__)
-  return as_uint(f);
-#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
-  return (uint32_t)__float_as_uint(f);
-#elif defined(__INTEL_COMPILER)
-  return _castf32_u32(f);
-#else
-  return executorch::backends::aoti::slim::c10::bit_cast<uint32_t>(f);
-#endif
-}
+using ::c10::detail::fp32_from_bits;
+using ::c10::detail::fp32_to_bits;
 
-} // namespace executorch::backends::aoti::slim::c10::detail
+} // namespace detail
+} // namespace c10
+} // namespace slim
+} // namespace aoti
+} // namespace backends
+} // namespace executorch
