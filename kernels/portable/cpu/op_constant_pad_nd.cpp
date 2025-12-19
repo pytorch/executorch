@@ -7,7 +7,7 @@
  */
 
 #include <c10/util/irange.h>
-#include <cmath>
+#include <c10/util/safe_numerics.h>
 #include <cstring>
 
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -64,9 +64,16 @@ void apply_padding_to_dim(
     for (ET_UNUSED const auto i : c10::irange(out_sizes.size())) {
       numel *= out_sizes[i];
     }
+    uint64_t required_size = 0;
     ET_KERNEL_CHECK_MSG(
         ctx,
-        numel >= pad_before * out_step_len,
+        !c10::mul_overflows(static_cast<uint64_t>(pad_before), static_cast<uint64_t>(out_step_len), &required_size),
+        InvalidArgument,
+        /* void */,
+        "Integer overflow when computing required padding size.");
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        numel >= required_size,
         InvalidArgument,
         /* void */,
         "Out tensor is too small for the requested padding.");
@@ -125,9 +132,17 @@ void apply_padding_to_dim(
     for (ET_UNUSED const auto i : c10::irange(out_sizes.size())) {
       numel *= out_sizes[i];
     }
+    // Safely compute required_size to avoid overflow
+    uint64_t required_size = 0;
     ET_KERNEL_CHECK_MSG(
         ctx,
-        numel >= pad_after * out_step_len,
+        !c10::mul_overflows(static_cast<uint64_t>(pad_after), static_cast<uint64_t>(out_step_len), &required_size),
+        InvalidArgument,
+        /* void */,
+        "Integer overflow when computing required padding size.");
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        numel >= required_size,
         InvalidArgument,
         /* void */,
         "Out tensor is too small for the requested padding.");
