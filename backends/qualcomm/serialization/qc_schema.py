@@ -56,6 +56,7 @@ class QcomChipset(IntEnum):
     SAR2230P = 95  # v81
     SA8255 = 52  # v73
     SW6100 = 96  # v81
+    QCS6490 = 35  # v68
 
 
 @dataclass
@@ -82,6 +83,7 @@ _soc_info_table = {
     QcomChipset.QCS9100: SocInfo(QcomChipset.QCS9100, HtpInfo(HtpArch.V73, 8)),
     QcomChipset.SAR2230P: SocInfo(QcomChipset.SAR2230P, HtpInfo(HtpArch.V81, 4)),
     QcomChipset.SW6100: SocInfo(QcomChipset.SW6100, HtpInfo(HtpArch.V81, 4)),
+    QcomChipset.QCS6490: SocInfo(QcomChipset.QCS6490, HtpInfo(HtpArch.V68, 2)),
 }
 
 
