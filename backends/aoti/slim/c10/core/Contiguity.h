@@ -1,12 +1,16 @@
 #pragma once
 
-#include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
 #include <executorch/backends/aoti/slim/c10/util/irange.h>
+#include <executorch/runtime/core/array_ref.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <vector>
 
 namespace executorch::backends::aoti::slim::c10 {
+
+using ::executorch::runtime::ArrayRef;
+using ::executorch::runtime::IntArrayRef;
 
 template <typename T>
 bool _compute_contiguous(ArrayRef<T> sizes, ArrayRef<T> strides, T numel) {

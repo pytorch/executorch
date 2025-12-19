@@ -4,6 +4,7 @@
 
 #include <executorch/backends/aoti/slim/c10/core/MemoryFormat.h>
 #include <executorch/backends/aoti/slim/core/Storage.h>
+#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
 #include <executorch/backends/aoti/slim/util/SizeUtil.h>
 
 namespace executorch::backends::aoti::slim {
@@ -35,13 +36,15 @@ inline void SlimTensor::empty_tensor_restride(
     case executorch::backends::aoti::slim::c10::MemoryFormat::ChannelsLast: {
       ET_CHECK_MSG(
           dim() == 4, "required rank 4 tensor to use channels_last format");
-      set_sizes_and_strides(sizes(), get_channels_last_strides_2d(sizes()));
+      auto strides = c10::get_channels_last_strides_2d(sizes());
+      set_sizes_and_strides(sizes(), makeArrayRef(strides));
       break;
     }
     case executorch::backends::aoti::slim::c10::MemoryFormat::ChannelsLast3d: {
       ET_CHECK_MSG(
           dim() == 5, "required rank 5 tensor to use channels_last_3d format");
-      set_sizes_and_strides(sizes(), get_channels_last_strides_3d(sizes()));
+      auto strides = c10::get_channels_last_strides_3d(sizes());
+      set_sizes_and_strides(sizes(), makeArrayRef(strides));
       break;
     }
     case executorch::backends::aoti::slim::c10::MemoryFormat::Preserve:
@@ -122,8 +125,8 @@ inline void _maybe_resize_storage(SlimTensor* self, int64_t new_size_bytes) {
 
 inline SlimTensor* _resize_impl_(
     SlimTensor* self,
-    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
-    std::optional<executorch::backends::aoti::slim::c10::IntArrayRef> strides,
+    IntArrayRef sizes,
+    std::optional<IntArrayRef> strides,
     bool resize_storage) {
   if (self->sizes() == sizes &&
       (!strides || self->strides() == strides.value())) {
@@ -151,7 +154,7 @@ inline SlimTensor* _resize_impl_(
 }
 
 inline SlimTensor SlimTensor::resize_(
-    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+    IntArrayRef sizes,
     std::optional<c10::MemoryFormat> optional_memory_format) {
   _resize_impl_(this, sizes, /*strides=*/std::nullopt, true);
 

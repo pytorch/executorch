@@ -1,16 +1,17 @@
 #pragma once
 
 #include <executorch/backends/aoti/slim/factory/Empty.h>
+#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
 
 namespace executorch::backends::aoti::slim {
 
 inline SlimTensor constant_pad_nd(
     const SlimTensor& self,
-    executorch::backends::aoti::slim::c10::IntArrayRef pad,
+    IntArrayRef pad,
     const executorch::backends::aoti::slim::c10::Scalar& value) {
   ET_CHECK_MSG(pad.size() % 2 == 0, "Length of pad must be even");
 
-  executorch::backends::aoti::slim::c10::IntArrayRef input_sizes = self.sizes();
+  IntArrayRef input_sizes = self.sizes();
   int64_t l_inp = self.dim();
   int64_t l_pad = static_cast<int64_t>(pad.size()) / 2;
   int64_t l_diff = l_inp - l_pad;
@@ -61,7 +62,8 @@ inline SlimTensor constant_pad_nd(
     new_shape.emplace_back(new_dim);
   }
 
-  SlimTensor output = empty(new_shape, self.dtype(), self.device());
+  SlimTensor output =
+      empty(makeArrayRef(new_shape), self.dtype(), self.device());
   output.fill_(value);
 
   // create a view into the center of the output tensor
@@ -84,7 +86,7 @@ inline SlimTensor constant_pad_nd(
 
 inline SlimTensor pad(
     const SlimTensor& self,
-    executorch::backends::aoti::slim::c10::IntArrayRef pad,
+    IntArrayRef pad,
     std::string_view mode,
     std::optional<double> value) {
   if (mode == "constant") {
