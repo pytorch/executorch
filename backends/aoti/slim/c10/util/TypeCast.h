@@ -9,6 +9,7 @@
 #include <executorch/backends/aoti/slim/c10/util/Half.h>
 #include <executorch/backends/aoti/slim/c10/util/complex.h>
 #include <executorch/backends/aoti/slim/c10/util/overflows.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <type_traits>
 
@@ -231,9 +232,8 @@ STANDALONE_HOST_DEVICE To convert(From f) {
 
 // Define separately to avoid being inlined and prevent code-size bloat
 [[noreturn]] inline void report_overflow(const char* name) {
-  std::ostringstream oss;
-  oss << "value cannot be converted to type " << name << " without overflow";
-  throw std::runtime_error(oss.str()); // rather than domain_error (issue 33562)
+  ET_CHECK_MSG(
+      false, "value cannot be converted to type %s without overflow", name);
 }
 
 template <typename To, typename From>

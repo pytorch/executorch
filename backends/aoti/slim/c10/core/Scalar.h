@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -274,7 +273,7 @@ class Scalar {
     } else if (isBoolean()) {
       return executorch::backends::aoti::slim::c10::ScalarType::Bool;
     } else {
-      throw std::runtime_error("Unknown scalar type.");
+      ET_CHECK_MSG(false, "Unknown scalar type.");
     }
   }
 

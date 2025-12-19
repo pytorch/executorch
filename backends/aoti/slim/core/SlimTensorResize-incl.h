@@ -10,7 +10,7 @@ namespace executorch::backends::aoti::slim {
 inline void SlimTensor::empty_tensor_restride(
     executorch::backends::aoti::slim::c10::MemoryFormat memory_format) {
   ET_DCHECK_MSG(
-      compute_numel() == numel_,
+      compute_numel(sizes_and_strides_.sizes_arrayref()) == numel_,
       "If you are seeing this error, that means empty_tensor_restride was "
       "called before setting correct numel");
   switch (memory_format) {
