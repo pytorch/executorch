@@ -26,7 +26,7 @@
 #include <type_traits>
 #include <unordered_map>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 // dummy struct for uint1 to uint7, actual functionality
 // of these dtypes will be implemented in python with Tensor subclass
@@ -60,53 +60,62 @@ struct dummy_int1_7_t {};
 
 // NB: Order matters for this macro; it is relied upon in
 // _promoteTypesLookup and the serialization format.
-#define AT_FORALL_SCALAR_TYPES_WITH_COMPLEX_AND_QINTS(_)                  \
-  _(uint8_t, Byte) /* 0 */                                                \
-  _(int8_t, Char) /* 1 */                                                 \
-  _(int16_t, Short) /* 2 */                                               \
-  _(int, Int) /* 3 */                                                     \
-  _(int64_t, Long) /* 4 */                                                \
-  _(standalone::c10::Half, Half) /* 5 */                                  \
-  _(float, Float) /* 6 */                                                 \
-  _(double, Double) /* 7 */                                               \
-  _(standalone::c10::complex<standalone::c10::Half>, ComplexHalf) /* 8 */ \
-  _(standalone::c10::complex<float>, ComplexFloat) /* 9 */                \
-  _(standalone::c10::complex<double>, ComplexDouble) /* 10 */             \
-  _(bool, Bool) /* 11 */                                                  \
-  _(standalone::c10::qint8, QInt8) /* 12 */                               \
-  _(standalone::c10::quint8, QUInt8) /* 13 */                             \
-  _(standalone::c10::qint32, QInt32) /* 14 */                             \
-  _(standalone::c10::BFloat16, BFloat16) /* 15 */                         \
-  _(standalone::c10::quint4x2, QUInt4x2) /* 16 */                         \
-  _(standalone::c10::quint2x4, QUInt2x4) /* 17 */                         \
-  _(standalone::c10::bits1x8, Bits1x8) /* 18 */                           \
-  _(standalone::c10::bits2x4, Bits2x4) /* 19 */                           \
-  _(standalone::c10::bits4x2, Bits4x2) /* 20 */                           \
-  _(standalone::c10::bits8, Bits8) /* 21 */                               \
-  _(standalone::c10::bits16, Bits16) /* 22 */                             \
-  _(standalone::c10::Float8_e5m2, Float8_e5m2) /* 23 */                   \
-  _(standalone::c10::Float8_e4m3fn, Float8_e4m3fn) /* 24 */               \
-  _(standalone::c10::Float8_e5m2fnuz, Float8_e5m2fnuz) /* 25 */           \
-  _(standalone::c10::Float8_e4m3fnuz, Float8_e4m3fnuz) /* 26 */           \
-  _(uint16_t, UInt16) /* 27 */                                            \
-  _(uint32_t, UInt32) /* 28 */                                            \
-  _(uint64_t, UInt64) /* 29 */                                            \
-  _(standalone::c10::dummy_uint1_7_t<1>, UInt1) /* 30 */                  \
-  _(standalone::c10::dummy_uint1_7_t<2>, UInt2) /* 31 */                  \
-  _(standalone::c10::dummy_uint1_7_t<3>, UInt3) /* 32 */                  \
-  _(standalone::c10::dummy_uint1_7_t<4>, UInt4) /* 33 */                  \
-  _(standalone::c10::dummy_uint1_7_t<5>, UInt5) /* 34 */                  \
-  _(standalone::c10::dummy_uint1_7_t<6>, UInt6) /* 35 */                  \
-  _(standalone::c10::dummy_uint1_7_t<7>, UInt7) /* 36 */                  \
-  _(standalone::c10::dummy_int1_7_t<1>, Int1) /* 37 */                    \
-  _(standalone::c10::dummy_int1_7_t<2>, Int2) /* 38 */                    \
-  _(standalone::c10::dummy_int1_7_t<3>, Int3) /* 39 */                    \
-  _(standalone::c10::dummy_int1_7_t<4>, Int4) /* 40 */                    \
-  _(standalone::c10::dummy_int1_7_t<5>, Int5) /* 41 */                    \
-  _(standalone::c10::dummy_int1_7_t<6>, Int6) /* 42 */                    \
-  _(standalone::c10::dummy_int1_7_t<7>, Int7) /* 43 */                    \
-  _(standalone::c10::Float8_e8m0fnu, Float8_e8m0fnu) /* 44 */             \
-  _(standalone::c10::Float4_e2m1fn_x2, Float4_e2m1fn_x2) /* 45 */
+#define AT_FORALL_SCALAR_TYPES_WITH_COMPLEX_AND_QINTS(_)                       \
+  _(uint8_t, Byte) /* 0 */                                                     \
+  _(int8_t, Char) /* 1 */                                                      \
+  _(int16_t, Short) /* 2 */                                                    \
+  _(int, Int) /* 3 */                                                          \
+  _(int64_t, Long) /* 4 */                                                     \
+  _(executorch::backends::aoti::slim::c10::Half, Half) /* 5 */                 \
+  _(float, Float) /* 6 */                                                      \
+  _(double, Double) /* 7 */                                                    \
+  _(executorch::backends::aoti::slim::c10::complex<                            \
+        executorch::backends::aoti::slim::c10::Half>,                          \
+    ComplexHalf) /* 8 */                                                       \
+  _(executorch::backends::aoti::slim::c10::complex<float>,                     \
+    ComplexFloat) /* 9 */                                                      \
+  _(executorch::backends::aoti::slim::c10::complex<double>,                    \
+    ComplexDouble) /* 10 */                                                    \
+  _(bool, Bool) /* 11 */                                                       \
+  _(executorch::backends::aoti::slim::c10::qint8, QInt8) /* 12 */              \
+  _(executorch::backends::aoti::slim::c10::quint8, QUInt8) /* 13 */            \
+  _(executorch::backends::aoti::slim::c10::qint32, QInt32) /* 14 */            \
+  _(executorch::backends::aoti::slim::c10::BFloat16, BFloat16) /* 15 */        \
+  _(executorch::backends::aoti::slim::c10::quint4x2, QUInt4x2) /* 16 */        \
+  _(executorch::backends::aoti::slim::c10::quint2x4, QUInt2x4) /* 17 */        \
+  _(executorch::backends::aoti::slim::c10::bits1x8, Bits1x8) /* 18 */          \
+  _(executorch::backends::aoti::slim::c10::bits2x4, Bits2x4) /* 19 */          \
+  _(executorch::backends::aoti::slim::c10::bits4x2, Bits4x2) /* 20 */          \
+  _(executorch::backends::aoti::slim::c10::bits8, Bits8) /* 21 */              \
+  _(executorch::backends::aoti::slim::c10::bits16, Bits16) /* 22 */            \
+  _(executorch::backends::aoti::slim::c10::Float8_e5m2, Float8_e5m2) /* 23 */  \
+  _(executorch::backends::aoti::slim::c10::Float8_e4m3fn,                      \
+    Float8_e4m3fn) /* 24 */                                                    \
+  _(executorch::backends::aoti::slim::c10::Float8_e5m2fnuz,                    \
+    Float8_e5m2fnuz) /* 25 */                                                  \
+  _(executorch::backends::aoti::slim::c10::Float8_e4m3fnuz,                    \
+    Float8_e4m3fnuz) /* 26 */                                                  \
+  _(uint16_t, UInt16) /* 27 */                                                 \
+  _(uint32_t, UInt32) /* 28 */                                                 \
+  _(uint64_t, UInt64) /* 29 */                                                 \
+  _(executorch::backends::aoti::slim::c10::dummy_uint1_7_t<1>, UInt1) /* 30 */ \
+  _(executorch::backends::aoti::slim::c10::dummy_uint1_7_t<2>, UInt2) /* 31 */ \
+  _(executorch::backends::aoti::slim::c10::dummy_uint1_7_t<3>, UInt3) /* 32 */ \
+  _(executorch::backends::aoti::slim::c10::dummy_uint1_7_t<4>, UInt4) /* 33 */ \
+  _(executorch::backends::aoti::slim::c10::dummy_uint1_7_t<5>, UInt5) /* 34 */ \
+  _(executorch::backends::aoti::slim::c10::dummy_uint1_7_t<6>, UInt6) /* 35 */ \
+  _(executorch::backends::aoti::slim::c10::dummy_uint1_7_t<7>, UInt7) /* 36 */ \
+  _(executorch::backends::aoti::slim::c10::dummy_int1_7_t<1>, Int1) /* 37 */   \
+  _(executorch::backends::aoti::slim::c10::dummy_int1_7_t<2>, Int2) /* 38 */   \
+  _(executorch::backends::aoti::slim::c10::dummy_int1_7_t<3>, Int3) /* 39 */   \
+  _(executorch::backends::aoti::slim::c10::dummy_int1_7_t<4>, Int4) /* 40 */   \
+  _(executorch::backends::aoti::slim::c10::dummy_int1_7_t<5>, Int5) /* 41 */   \
+  _(executorch::backends::aoti::slim::c10::dummy_int1_7_t<6>, Int6) /* 42 */   \
+  _(executorch::backends::aoti::slim::c10::dummy_int1_7_t<7>, Int7) /* 43 */   \
+  _(executorch::backends::aoti::slim::c10::Float8_e8m0fnu,                     \
+    Float8_e8m0fnu) /* 44 */                                                   \
+  _(executorch::backends::aoti::slim::c10::Float4_e2m1fn_x2,                   \
+    Float4_e2m1fn_x2) /* 45 */
 
 // If you want to support ComplexHalf for real, add ComplexHalf
 // into this macro (and change the name).  But beware: convert()
@@ -115,43 +124,45 @@ struct dummy_int1_7_t {};
 // TODO: To add unsigned int types here, we must define accumulate type.
 // But uint8 currently accumulates into int64, so we would have to make
 // an inconsistent choice for the larger types.  Difficult.
-#define AT_FORALL_SCALAR_TYPES_WITH_COMPLEX_EXCEPT_COMPLEX_HALF_F8NZ(_) \
-  _(uint8_t, Byte)                                                      \
-  _(int8_t, Char)                                                       \
-  _(int16_t, Short)                                                     \
-  _(int, Int)                                                           \
-  _(int64_t, Long)                                                      \
-  _(standalone::c10::Half, Half)                                        \
-  _(float, Float)                                                       \
-  _(double, Double)                                                     \
-  _(standalone::c10::complex<float>, ComplexFloat)                      \
-  _(standalone::c10::complex<double>, ComplexDouble)                    \
-  _(bool, Bool)                                                         \
-  _(standalone::c10::BFloat16, BFloat16)                                \
-  _(standalone::c10::Float8_e5m2, Float8_e5m2)                          \
-  _(standalone::c10::Float8_e4m3fn, Float8_e4m3fn)
+#define AT_FORALL_SCALAR_TYPES_WITH_COMPLEX_EXCEPT_COMPLEX_HALF_F8NZ(_)    \
+  _(uint8_t, Byte)                                                         \
+  _(int8_t, Char)                                                          \
+  _(int16_t, Short)                                                        \
+  _(int, Int)                                                              \
+  _(int64_t, Long)                                                         \
+  _(executorch::backends::aoti::slim::c10::Half, Half)                     \
+  _(float, Float)                                                          \
+  _(double, Double)                                                        \
+  _(executorch::backends::aoti::slim::c10::complex<float>, ComplexFloat)   \
+  _(executorch::backends::aoti::slim::c10::complex<double>, ComplexDouble) \
+  _(bool, Bool)                                                            \
+  _(executorch::backends::aoti::slim::c10::BFloat16, BFloat16)             \
+  _(executorch::backends::aoti::slim::c10::Float8_e5m2, Float8_e5m2)       \
+  _(executorch::backends::aoti::slim::c10::Float8_e4m3fn, Float8_e4m3fn)
 
 // This macro controls many of our C++ APIs, including constructors
 // for Scalar as well as the data() and item() accessors on Tensor
-#define AT_FORALL_SCALAR_TYPES_WITH_COMPLEX(_)                    \
-  _(uint8_t, Byte)                                                \
-  _(int8_t, Char)                                                 \
-  _(int16_t, Short)                                               \
-  _(int, Int)                                                     \
-  _(int64_t, Long)                                                \
-  _(standalone::c10::Half, Half)                                  \
-  _(float, Float)                                                 \
-  _(double, Double)                                               \
-  _(standalone::c10::complex<standalone::c10::Half>, ComplexHalf) \
-  _(standalone::c10::complex<float>, ComplexFloat)                \
-  _(standalone::c10::complex<double>, ComplexDouble)              \
-  _(bool, Bool)                                                   \
-  _(standalone::c10::BFloat16, BFloat16)                          \
-  _(standalone::c10::Float8_e5m2, Float8_e5m2)                    \
-  _(standalone::c10::Float8_e4m3fn, Float8_e4m3fn)                \
-  _(standalone::c10::Float8_e5m2fnuz, Float8_e5m2fnuz)            \
-  _(standalone::c10::Float8_e4m3fnuz, Float8_e4m3fnuz)            \
-  _(standalone::c10::Float8_e8m0fnu, Float8_e8m0fnu)
+#define AT_FORALL_SCALAR_TYPES_WITH_COMPLEX(_)                               \
+  _(uint8_t, Byte)                                                           \
+  _(int8_t, Char)                                                            \
+  _(int16_t, Short)                                                          \
+  _(int, Int)                                                                \
+  _(int64_t, Long)                                                           \
+  _(executorch::backends::aoti::slim::c10::Half, Half)                       \
+  _(float, Float)                                                            \
+  _(double, Double)                                                          \
+  _(executorch::backends::aoti::slim::c10::complex<                          \
+        executorch::backends::aoti::slim::c10::Half>,                        \
+    ComplexHalf)                                                             \
+  _(executorch::backends::aoti::slim::c10::complex<float>, ComplexFloat)     \
+  _(executorch::backends::aoti::slim::c10::complex<double>, ComplexDouble)   \
+  _(bool, Bool)                                                              \
+  _(executorch::backends::aoti::slim::c10::BFloat16, BFloat16)               \
+  _(executorch::backends::aoti::slim::c10::Float8_e5m2, Float8_e5m2)         \
+  _(executorch::backends::aoti::slim::c10::Float8_e4m3fn, Float8_e4m3fn)     \
+  _(executorch::backends::aoti::slim::c10::Float8_e5m2fnuz, Float8_e5m2fnuz) \
+  _(executorch::backends::aoti::slim::c10::Float8_e4m3fnuz, Float8_e4m3fnuz) \
+  _(executorch::backends::aoti::slim::c10::Float8_e8m0fnu, Float8_e8m0fnu)
 
 enum class ScalarType : int8_t {
 #define DEFINE_ST_ENUM_VAL_(_1, n) n,
@@ -168,19 +179,20 @@ namespace impl {
 
 // These are used to map ScalarTypes to C++ types.
 
-template <standalone::c10::ScalarType N>
+template <executorch::backends::aoti::slim::c10::ScalarType N>
 struct ScalarTypeToCPPType;
 
 #define SPECIALIZE_ScalarTypeToCPPType(cpp_type, scalar_type)                \
   template <>                                                                \
-  struct ScalarTypeToCPPType<standalone::c10::ScalarType::scalar_type> {     \
+  struct ScalarTypeToCPPType<                                                \
+      executorch::backends::aoti::slim::c10::ScalarType::scalar_type> {      \
     using type = cpp_type;                                                   \
                                                                              \
     /* This is a workaround for the CUDA bug which prevents */               \
     /* ::detail::ScalarTypeToCType<T>::type being used directly due to */    \
     /* ambiguous reference which can't to be resolved. For some reason it */ \
-    /* can't pick between standalone::c10::detail and                        \
-     * standalone::c10::cuda::detail. */                                     \
+    /* can't pick between executorch::backends::aoti::slim::c10::detail and  \
+     * executorch::backends::aoti::slim::c10::cuda::detail. */               \
     /* For repro example, please see: */                                     \
     /* https://gist.github.com/izdeby/952ae7cf256ddb740a73776d39a7e7ba */    \
     /* TODO: remove once the bug is fixed. */                                \
@@ -191,7 +203,7 @@ AT_FORALL_SCALAR_TYPES_WITH_COMPLEX_AND_QINTS(SPECIALIZE_ScalarTypeToCPPType)
 
 #undef SPECIALIZE_ScalarTypeToCPPType
 
-template <standalone::c10::ScalarType N>
+template <executorch::backends::aoti::slim::c10::ScalarType N>
 using ScalarTypeToCPPTypeT = typename ScalarTypeToCPPType<N>::type;
 
 } // namespace impl
@@ -199,12 +211,13 @@ using ScalarTypeToCPPTypeT = typename ScalarTypeToCPPType<N>::type;
 template <typename T>
 struct CppTypeToScalarType;
 
-#define SPECIALIZE_CppTypeToScalarType(cpp_type, scalar_type) \
-  template <>                                                 \
-  struct CppTypeToScalarType<cpp_type>                        \
-      : std::integral_constant<                               \
-            standalone::c10::ScalarType,                      \
-            standalone::c10::ScalarType::scalar_type> {};
+#define SPECIALIZE_CppTypeToScalarType(cpp_type, scalar_type)                 \
+  template <>                                                                 \
+  struct CppTypeToScalarType<cpp_type>                                        \
+      : std::integral_constant<                                               \
+            executorch::backends::aoti::slim::c10::ScalarType,                \
+            executorch::backends::aoti::slim::c10::ScalarType::scalar_type> { \
+  };
 
 AT_FORALL_SCALAR_TYPES_WITH_COMPLEX_AND_QINTS(SPECIALIZE_CppTypeToScalarType)
 
@@ -233,106 +246,119 @@ AT_FORALL_SCALAR_TYPES_WITH_COMPLEX_AND_QINTS(SPECIALIZE_CppTypeToScalarType)
 // instead, new types should be added to use sites on a case-by-case basis.
 // We generally are not accepting new dtypes due to binary size concerns.
 
-#define AT_FORALL_SCALAR_TYPES_AND(SCALARTYPE, _)          \
-  _(uint8_t, Byte)                                         \
-  _(int8_t, Char)                                          \
-  _(int16_t, Short)                                        \
-  _(int, Int)                                              \
-  _(int64_t, Long)                                         \
-  _(float, Float)                                          \
-  _(double, Double)                                        \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<   \
-             standalone::c10::ScalarType::SCALARTYPE>::t), \
+#define AT_FORALL_SCALAR_TYPES_AND(SCALARTYPE, _)                              \
+  _(uint8_t, Byte)                                                             \
+  _(int8_t, Char)                                                              \
+  _(int16_t, Short)                                                            \
+  _(int, Int)                                                                  \
+  _(int64_t, Long)                                                             \
+  _(float, Float)                                                              \
+  _(double, Double)                                                            \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE>::  \
+                 t),                                                           \
     SCALARTYPE)
 
-#define AT_FORALL_SCALAR_TYPES_AND2(SCALARTYPE1, SCALARTYPE2, _) \
-  _(uint8_t, Byte)                                               \
-  _(int8_t, Char)                                                \
-  _(int16_t, Short)                                              \
-  _(int, Int)                                                    \
-  _(int64_t, Long)                                               \
-  _(float, Float)                                                \
-  _(double, Double)                                              \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<         \
-             standalone::c10::ScalarType::SCALARTYPE1>::t),      \
-    SCALARTYPE1)                                                 \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<         \
-             standalone::c10::ScalarType::SCALARTYPE2>::t),      \
+#define AT_FORALL_SCALAR_TYPES_AND2(SCALARTYPE1, SCALARTYPE2, _)               \
+  _(uint8_t, Byte)                                                             \
+  _(int8_t, Char)                                                              \
+  _(int16_t, Short)                                                            \
+  _(int, Int)                                                                  \
+  _(int64_t, Long)                                                             \
+  _(float, Float)                                                              \
+  _(double, Double)                                                            \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE1>:: \
+                 t),                                                           \
+    SCALARTYPE1)                                                               \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE2>:: \
+                 t),                                                           \
     SCALARTYPE2)
 
-#define AT_FORALL_SCALAR_TYPES_AND3(SCALARTYPE1, SCALARTYPE2, SCALARTYPE3, _) \
-  _(uint8_t, Byte)                                                            \
-  _(int8_t, Char)                                                             \
-  _(int16_t, Short)                                                           \
-  _(int, Int)                                                                 \
-  _(int64_t, Long)                                                            \
-  _(float, Float)                                                             \
-  _(double, Double)                                                           \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<                      \
-             standalone::c10::ScalarType::SCALARTYPE1>::t),                   \
-    SCALARTYPE1)                                                              \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<                      \
-             standalone::c10::ScalarType::SCALARTYPE2>::t),                   \
-    SCALARTYPE2)                                                              \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<                      \
-             standalone::c10::ScalarType::SCALARTYPE3>::t),                   \
+#define AT_FORALL_SCALAR_TYPES_AND3(SCALARTYPE1, SCALARTYPE2, SCALARTYPE3, _)  \
+  _(uint8_t, Byte)                                                             \
+  _(int8_t, Char)                                                              \
+  _(int16_t, Short)                                                            \
+  _(int, Int)                                                                  \
+  _(int64_t, Long)                                                             \
+  _(float, Float)                                                              \
+  _(double, Double)                                                            \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE1>:: \
+                 t),                                                           \
+    SCALARTYPE1)                                                               \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE2>:: \
+                 t),                                                           \
+    SCALARTYPE2)                                                               \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE3>:: \
+                 t),                                                           \
     SCALARTYPE3)
 
-#define AT_FORALL_SCALAR_TYPES_AND7(                        \
-    SCALARTYPE1,                                            \
-    SCALARTYPE2,                                            \
-    SCALARTYPE3,                                            \
-    SCALARTYPE4,                                            \
-    SCALARTYPE5,                                            \
-    SCALARTYPE6,                                            \
-    SCALARTYPE7,                                            \
-    _)                                                      \
-  _(uint8_t, Byte)                                          \
-  _(int8_t, Char)                                           \
-  _(int16_t, Short)                                         \
-  _(int, Int)                                               \
-  _(int64_t, Long)                                          \
-  _(float, Float)                                           \
-  _(double, Double)                                         \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<    \
-             standalone::c10::ScalarType::SCALARTYPE1>::t), \
-    SCALARTYPE1)                                            \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<    \
-             standalone::c10::ScalarType::SCALARTYPE2>::t), \
-    SCALARTYPE2)                                            \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<    \
-             standalone::c10::ScalarType::SCALARTYPE3>::t), \
-    SCALARTYPE3)                                            \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<    \
-             standalone::c10::ScalarType::SCALARTYPE4>::t), \
-    SCALARTYPE4)                                            \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<    \
-             standalone::c10::ScalarType::SCALARTYPE5>::t), \
-    SCALARTYPE5)                                            \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<    \
-             standalone::c10::ScalarType::SCALARTYPE6>::t), \
-    SCALARTYPE6)                                            \
-  _(decltype(standalone::c10::impl::ScalarTypeToCPPType<    \
-             standalone::c10::ScalarType::SCALARTYPE7>::t), \
+#define AT_FORALL_SCALAR_TYPES_AND7(                                           \
+    SCALARTYPE1,                                                               \
+    SCALARTYPE2,                                                               \
+    SCALARTYPE3,                                                               \
+    SCALARTYPE4,                                                               \
+    SCALARTYPE5,                                                               \
+    SCALARTYPE6,                                                               \
+    SCALARTYPE7,                                                               \
+    _)                                                                         \
+  _(uint8_t, Byte)                                                             \
+  _(int8_t, Char)                                                              \
+  _(int16_t, Short)                                                            \
+  _(int, Int)                                                                  \
+  _(int64_t, Long)                                                             \
+  _(float, Float)                                                              \
+  _(double, Double)                                                            \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE1>:: \
+                 t),                                                           \
+    SCALARTYPE1)                                                               \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE2>:: \
+                 t),                                                           \
+    SCALARTYPE2)                                                               \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE3>:: \
+                 t),                                                           \
+    SCALARTYPE3)                                                               \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE4>:: \
+                 t),                                                           \
+    SCALARTYPE4)                                                               \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE5>:: \
+                 t),                                                           \
+    SCALARTYPE5)                                                               \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE6>:: \
+                 t),                                                           \
+    SCALARTYPE6)                                                               \
+  _(decltype(executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPType< \
+             executorch::backends::aoti::slim::c10::ScalarType::SCALARTYPE7>:: \
+                 t),                                                           \
     SCALARTYPE7)
 
-#define AT_FORALL_QINT_TYPES(_)          \
-  _(standalone::c10::qint8, QInt8)       \
-  _(standalone::c10::quint8, QUInt8)     \
-  _(standalone::c10::qint32, QInt32)     \
-  _(standalone::c10::quint4x2, QUInt4x2) \
-  _(standalone::c10::quint2x4, QUInt2x4)
+#define AT_FORALL_QINT_TYPES(_)                                \
+  _(executorch::backends::aoti::slim::c10::qint8, QInt8)       \
+  _(executorch::backends::aoti::slim::c10::quint8, QUInt8)     \
+  _(executorch::backends::aoti::slim::c10::qint32, QInt32)     \
+  _(executorch::backends::aoti::slim::c10::quint4x2, QUInt4x2) \
+  _(executorch::backends::aoti::slim::c10::quint2x4, QUInt2x4)
 
-#define AT_FORALL_FLOAT8_TYPES(_)                      \
-  _(standalone::c10::Float8_e5m2, Float8_e5m2)         \
-  _(standalone::c10::Float8_e4m3fn, Float8_e4m3fn)     \
-  _(standalone::c10::Float8_e5m2fnuz, Float8_e5m2fnuz) \
-  _(standalone::c10::Float8_e4m3fnuz, Float8_e4m3fnuz) \
-  _(standalone::c10::Float8_e8m0fnu, Float8_e8m0fnu)
+#define AT_FORALL_FLOAT8_TYPES(_)                                            \
+  _(executorch::backends::aoti::slim::c10::Float8_e5m2, Float8_e5m2)         \
+  _(executorch::backends::aoti::slim::c10::Float8_e4m3fn, Float8_e4m3fn)     \
+  _(executorch::backends::aoti::slim::c10::Float8_e5m2fnuz, Float8_e5m2fnuz) \
+  _(executorch::backends::aoti::slim::c10::Float8_e4m3fnuz, Float8_e4m3fnuz) \
+  _(executorch::backends::aoti::slim::c10::Float8_e8m0fnu, Float8_e8m0fnu)
 
-#define AT_FORALL_COMPLEX_TYPES(_)                 \
-  _(standalone::c10::complex<float>, ComplexFloat) \
-  _(standalone::c10::complex<double>, ComplexDouble)
+#define AT_FORALL_COMPLEX_TYPES(_)                                       \
+  _(executorch::backends::aoti::slim::c10::complex<float>, ComplexFloat) \
+  _(executorch::backends::aoti::slim::c10::complex<double>, ComplexDouble)
 
 #define DEFINE_CONSTANT(_, name) \
   constexpr ScalarType k##name = ScalarType::name;
@@ -450,10 +476,11 @@ inline ScalarType toUnderlying(ScalarType t) {
 }
 
 inline bool isSignedType(ScalarType t) {
-#define CASE_ISSIGNED(name)                                                   \
-  case ScalarType::name:                                                      \
-    return std::numeric_limits<::standalone::c10::impl::ScalarTypeToCPPTypeT< \
-        ScalarType::name>>::is_signed;
+#define CASE_ISSIGNED(name)                                                  \
+  case ScalarType::name:                                                     \
+    return std::numeric_limits<                                              \
+        ::executorch::backends::aoti::slim::c10::impl::ScalarTypeToCPPTypeT< \
+            ScalarType::name>>::is_signed;
 
   // TODO(#146647): If we expect to have numeric_limits for everything,
   // let's just have a big macro for the whole thing.
@@ -605,20 +632,21 @@ constexpr auto b1 = ScalarType::Bool;
 constexpr auto bf = ScalarType::BFloat16;
 constexpr auto ud = ScalarType::Undefined;
 
-constexpr auto index2dtype = array_of<standalone::c10::ScalarType>(
-    u1,
-    i1,
-    i2,
-    i4,
-    i8,
-    f2,
-    f4,
-    f8,
-    c2,
-    c4,
-    c8,
-    b1,
-    bf);
+constexpr auto index2dtype =
+    array_of<executorch::backends::aoti::slim::c10::ScalarType>(
+        u1,
+        i1,
+        i2,
+        i4,
+        i8,
+        f2,
+        f4,
+        f8,
+        c2,
+        c4,
+        c8,
+        b1,
+        bf);
 
 constexpr std::array<int64_t, static_cast<size_t>(ScalarType::NumOptions)>
 calculate_dtype2index() {
@@ -728,8 +756,8 @@ inline ScalarType promoteTypes(ScalarType a, ScalarType b) {
 
 inline std::ostream& operator<<(
     std::ostream& stream,
-    standalone::c10::ScalarType scalar_type) {
+    executorch::backends::aoti::slim::c10::ScalarType scalar_type) {
   return stream << toString(scalar_type);
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

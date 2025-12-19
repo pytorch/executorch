@@ -3,7 +3,7 @@
 #include <sstream>
 #include <string>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 template <class Container>
 inline std::string Join(const std::string& delimiter, const Container& v) {
   std::stringstream s;
@@ -13,4 +13,4 @@ inline std::string Join(const std::string& delimiter, const Container& v) {
   }
   return std::move(s).str();
 }
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

@@ -11,7 +11,7 @@
 #include <executorch/backends/aoti/slim/c10/util/irange.h>
 #include <executorch/backends/aoti/slim/c10/util/safe_numerics.h>
 
-namespace standalone::slim {
+namespace executorch::backends::aoti::slim {
 #ifndef STANDALONE_MOBILE
 inline constexpr uint64_t storage_max() {
   // int64_t and size_t are used somewhat inconsistently throughout ATen.
@@ -28,9 +28,11 @@ inline constexpr uint64_t storage_max() {
  * tensor. Catches integer overflow that may occur when a tensor
  * using a sparse layout has multiple dimensions with large sizes.
  */
-inline int64_t safe_compute_numel(standalone::c10::IntArrayRef sizes) {
+inline int64_t safe_compute_numel(
+    executorch::backends::aoti::slim::c10::IntArrayRef sizes) {
   uint64_t n = 1;
-  bool overflowed = standalone::c10::safe_multiplies_u64(sizes, &n);
+  bool overflowed =
+      executorch::backends::aoti::slim::c10::safe_multiplies_u64(sizes, &n);
   overflowed |= (n > storage_max());
   STANDALONE_CHECK(!overflowed, "numel: integer multiplication overflow");
   return static_cast<int64_t>(n);
@@ -59,26 +61,30 @@ inline std::vector<int64_t> safe_compute_contiguous_strides(
 }
 #endif // STANDALONE_MOBILE
 
-inline int64_t compute_numel(standalone::c10::IntArrayRef sizes) {
+inline int64_t compute_numel(
+    executorch::backends::aoti::slim::c10::IntArrayRef sizes) {
 #ifndef STANDALONE_MOBILE
   // Use overflow checks if supported by the compiler
   return safe_compute_numel(sizes);
 #else
-  return standalone::c10::multiply_integers(sizes);
+  return executorch::backends::aoti::slim::c10::multiply_integers(sizes);
 #endif
 }
 
 // named computeStorageNbytesContiguous in c10
 inline size_t compute_storage_nbytes_contiguous(
-    standalone::c10::IntArrayRef sizes,
+    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
     size_t itemsize_bytes,
     size_t storage_offset) {
 // Ignore overflow checks on mobile
 #ifndef STANDALONE_MOBILE
   uint64_t size = 1;
-  bool overflowed = standalone::c10::safe_multiplies_u64(sizes, &size);
-  overflowed |= standalone::c10::add_overflows(size, storage_offset, &size);
-  overflowed |= standalone::c10::mul_overflows(size, itemsize_bytes, &size);
+  bool overflowed =
+      executorch::backends::aoti::slim::c10::safe_multiplies_u64(sizes, &size);
+  overflowed |= executorch::backends::aoti::slim::c10::add_overflows(
+      size, storage_offset, &size);
+  overflowed |= executorch::backends::aoti::slim::c10::mul_overflows(
+      size, itemsize_bytes, &size);
   overflowed |= size > storage_max();
   STANDALONE_CHECK(
       !overflowed, "Storage size calculation overflowed with sizes=", sizes);
@@ -91,8 +97,8 @@ inline size_t compute_storage_nbytes_contiguous(
 
 // named computeStorageNbytes in c10
 inline size_t compute_storage_nbytes(
-    standalone::c10::IntArrayRef sizes,
-    standalone::c10::IntArrayRef strides,
+    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+    executorch::backends::aoti::slim::c10::IntArrayRef strides,
     size_t itemsize_bytes,
     size_t storage_offset) {
   STANDALONE_CHECK(
@@ -109,17 +115,20 @@ inline size_t compute_storage_nbytes(
   // of the last element according to stride
   uint64_t size = storage_offset + 1;
   bool overflowed = false;
-  for (const auto i : standalone::c10::irange(sizes.size())) {
+  for (const auto i :
+       executorch::backends::aoti::slim::c10::irange(sizes.size())) {
     if (sizes[i] == 0) {
       return 0;
     }
 
     uint64_t strided_size = 0;
-    overflowed |=
-        standalone::c10::mul_overflows(strides[i], sizes[i] - 1, &strided_size);
-    overflowed |= standalone::c10::add_overflows(size, strided_size, &size);
+    overflowed |= executorch::backends::aoti::slim::c10::mul_overflows(
+        strides[i], sizes[i] - 1, &strided_size);
+    overflowed |= executorch::backends::aoti::slim::c10::add_overflows(
+        size, strided_size, &size);
   }
-  overflowed |= standalone::c10::mul_overflows(size, itemsize_bytes, &size);
+  overflowed |= executorch::backends::aoti::slim::c10::mul_overflows(
+      size, itemsize_bytes, &size);
   overflowed |= size > storage_max();
   STANDALONE_CHECK(
       !overflowed,
@@ -132,7 +141,8 @@ inline size_t compute_storage_nbytes(
   // size of the underlying storage is 1 bigger than the offset
   // of the last element according to stride
   uint64_t size = 1;
-  for (const auto i : standalone::c10::irange(sizes.size())) {
+  for (const auto i :
+       executorch::backends::aoti::slim::c10::irange(sizes.size())) {
     if (sizes[i] == 0) {
       return 0;
     }
@@ -165,7 +175,7 @@ inline std::vector<int64_t> compute_contiguous_strides(c10::IntArrayRef sizes) {
 // calculates the final concrete shape by also filling in at most one '-1'
 // dimension.
 inline std::vector<int64_t> infer_size(
-    standalone::c10::IntArrayRef shape,
+    executorch::backends::aoti::slim::c10::IntArrayRef shape,
     int64_t numel) {
   int64_t new_size = 1;
   std::optional<int64_t> infer_dim;
@@ -182,8 +192,8 @@ inline std::vector<int64_t> infer_size(
       result_shape.push_back(-1); // placeholder
     } else {
       STANDALONE_CHECK(shape[dim] >= 0, "invalid shape dimension ", shape[dim]);
-      overflowed |=
-          standalone::c10::mul_overflows(new_size, shape[dim], &new_size);
+      overflowed |= executorch::backends::aoti::slim::c10::mul_overflows(
+          new_size, shape[dim], &new_size);
       result_shape.push_back(shape[dim]);
     }
   }
@@ -207,9 +217,9 @@ inline std::vector<int64_t> infer_size(
 // If so, it returns the new strides
 // If not, it returns an empty optional
 inline std::optional<std::vector<int64_t>> compute_stride(
-    standalone::c10::IntArrayRef old_sizes,
-    standalone::c10::IntArrayRef old_strides,
-    standalone::c10::IntArrayRef new_sizes) {
+    executorch::backends::aoti::slim::c10::IntArrayRef old_sizes,
+    executorch::backends::aoti::slim::c10::IntArrayRef old_strides,
+    executorch::backends::aoti::slim::c10::IntArrayRef new_sizes) {
   if (old_sizes.empty()) {
     return std::vector<int64_t>(new_sizes.size(), 1);
   }
@@ -248,7 +258,7 @@ inline std::optional<std::vector<int64_t>> compute_stride(
        tensor_d--) {
     // TODO: ask if this could lead to overflow by any chance?
     // even if so, overflow is not handled in the aten implementation
-    overflowed |= standalone::c10::mul_overflows(
+    overflowed |= executorch::backends::aoti::slim::c10::mul_overflows(
         tensor_numel, old_sizes[tensor_d], &tensor_numel);
 
     bool is_chunk_end = (tensor_d == 0) ||
@@ -280,4 +290,4 @@ inline std::optional<std::vector<int64_t>> compute_stride(
   return new_strides;
 }
 
-} // namespace standalone::slim
+} // namespace executorch::backends::aoti::slim

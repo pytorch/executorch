@@ -6,8 +6,8 @@
 #include <string>
 
 // In the standalone version, STANDALONE_CHECK throws std::runtime_error
-// instead of standalone::c10::Error.
-namespace standalone::c10::detail {
+// instead of executorch::backends::aoti::slim::c10::Error.
+namespace executorch::backends::aoti::slim::c10::detail {
 template <typename... Args>
 std::string torchCheckMsgImpl(const char* /*msg*/, const Args&... args) {
   // This is similar to the one in c10/util/Exception.h, but does
@@ -25,14 +25,14 @@ inline const char* torchCheckMsgImpl(const char* msg) {
 inline const char* torchCheckMsgImpl(const char* /*msg*/, const char* args) {
   return args;
 }
-} // namespace standalone::c10::detail
+} // namespace executorch::backends::aoti::slim::c10::detail
 
-#define STANDALONE_CHECK_MSG(cond, type, ...)              \
-  (::standalone::c10::detail::torchCheckMsgImpl(           \
-      "Expected " #cond                                    \
-      " to be true, but got false.  "                      \
-      "(Could this error message be improved?  If so, "    \
-      "please report an enhancement request to PyTorch.)", \
+#define STANDALONE_CHECK_MSG(cond, type, ...)                          \
+  (::executorch::backends::aoti::slim::c10::detail::torchCheckMsgImpl( \
+      "Expected " #cond                                                \
+      " to be true, but got false.  "                                  \
+      "(Could this error message be improved?  If so, "                \
+      "please report an enhancement request to PyTorch.)",             \
       ##__VA_ARGS__))
 #define STANDALONE_CHECK(cond, ...)                \
   if (STANDALONE_UNLIKELY_OR_CONST(!(cond))) {     \
@@ -63,8 +63,9 @@ inline const char* torchCheckMsgImpl(const char* /*msg*/, const char* args) {
         ##__VA_ARGS__));                           \
   }
 
-#define WARNING_MESSAGE_STRING(...) \
-  ::standalone::c10::detail::torchCheckMsgImpl(__VA_ARGS__)
+#define WARNING_MESSAGE_STRING(...)                                   \
+  ::executorch::backends::aoti::slim::c10::detail::torchCheckMsgImpl( \
+      __VA_ARGS__)
 
 #ifdef DISABLE_WARN
 #define _STANDALONE_WARN_WITH(...) ((void)0);

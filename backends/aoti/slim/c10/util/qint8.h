@@ -3,7 +3,7 @@
 
 #include <executorch/backends/aoti/slim/c10/macros/Macros.h>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 /**
  * This is the data type for quantized Tensors. Right now we only have
@@ -17,4 +17,4 @@ struct alignas(1) qint8 {
   STANDALONE_HOST_DEVICE explicit qint8(int8_t val) : val_(val) {}
 };
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

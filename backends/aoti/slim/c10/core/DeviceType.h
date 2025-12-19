@@ -15,7 +15,7 @@
 
 #include <executorch/backends/aoti/slim/c10/util/Exception.h>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 enum class DeviceType : int8_t {
   CPU = 0,
   CUDA = 1, // CUDA.
@@ -122,12 +122,13 @@ inline std::ostream& operator<<(std::ostream& stream, DeviceType type) {
   stream << DeviceTypeName(type, /* lower case */ true);
   return stream;
 }
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 namespace std {
 template <>
-struct hash<standalone::c10::DeviceType> {
-  std::size_t operator()(standalone::c10::DeviceType k) const {
+struct hash<executorch::backends::aoti::slim::c10::DeviceType> {
+  std::size_t operator()(
+      executorch::backends::aoti::slim::c10::DeviceType k) const {
     return std::hash<int>()(static_cast<int>(k));
   }
 };

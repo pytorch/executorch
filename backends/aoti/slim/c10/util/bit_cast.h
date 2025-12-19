@@ -11,7 +11,7 @@
 #endif // __has_include(<bit>) && (__cplusplus >= 202002L ||
        // (defined(__cpp_lib_bit_cast) && __cpp_lib_bit_cast >= 201806L))
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 #if STANDALONE_HAVE_STD_BIT_CAST
 using std::bit_cast;
@@ -41,4 +41,4 @@ bit_cast(const From& src) noexcept {
 #endif // STANDALONE_HAVE_STD_BIT_CAST
 #undef STANDALONE_HAVE_STD_BIT_CAST
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

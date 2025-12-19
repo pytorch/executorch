@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <ostream>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 enum class Layout : int8_t {
   Strided,
   Sparse,
@@ -50,4 +50,4 @@ inline std::ostream& operator<<(std::ostream& stream, c10::Layout layout) {
   }
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

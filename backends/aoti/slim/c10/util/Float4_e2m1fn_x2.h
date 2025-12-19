@@ -17,7 +17,7 @@
 ///   sign/exponent/mantissa     | seem : seem
 ///
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 struct alignas(1) Float4_e2m1fn_x2 {
   uint8_t val_;
@@ -25,4 +25,4 @@ struct alignas(1) Float4_e2m1fn_x2 {
   STANDALONE_HOST_DEVICE explicit Float4_e2m1fn_x2(uint8_t val) : val_(val) {}
 };
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

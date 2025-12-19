@@ -25,7 +25,7 @@
 //    Regardless of input tensors format, the output should be in channels_last
 //    format.
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 enum class MemoryFormat : int8_t {
   Contiguous,
   Preserve,
@@ -38,7 +38,7 @@ enum class MemoryFormat : int8_t {
 // the memory format could be preserved, and it was switched to old default
 // behaviour of contiguous
 #define LEGACY_CONTIGUOUS_MEMORY_FORMAT \
-  ::standalone::c10::get_contiguous_memory_format()
+  ::executorch::backends::aoti::slim::c10::get_contiguous_memory_format()
 
 inline MemoryFormat get_contiguous_memory_format() {
   return MemoryFormat::Contiguous;
@@ -288,4 +288,4 @@ inline bool is_channels_last_strides_3d(
   return is_channels_last_strides_3d<int64_t>(sizes, strides);
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

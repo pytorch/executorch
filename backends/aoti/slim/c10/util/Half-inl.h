@@ -31,7 +31,7 @@ STANDALONE_CLANG_DIAGNOSTIC_PUSH()
 STANDALONE_CLANG_DIAGNOSTIC_IGNORE("-Wimplicit-int-float-conversion")
 #endif
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 #if defined(__aarch64__) && !defined(__CUDACC__)
 /// Constructors
@@ -46,7 +46,8 @@ inline STANDALONE_HOST_DEVICE Half::Half(float value)
 #if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
       x(__half_as_short(__float2half(value)))
 #elif defined(__SYCL_DEVICE_ONLY__)
-      x(standalone::c10::bit_cast<uint16_t>(sycl::half(value)))
+      x(executorch::backends::aoti::slim::c10::bit_cast<uint16_t>(
+          sycl::half(value)))
 #elif (defined(CPU_CAPABILITY_AVX2) || defined(CPU_CAPABILITY_AVX512)) && \
     !defined(__APPLE__)
       x(at::vec::float2half_scalar(value))
@@ -62,7 +63,7 @@ inline STANDALONE_HOST_DEVICE Half::operator float() const {
 #if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
   return __half2float(*reinterpret_cast<const __half*>(&x));
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return float(standalone::c10::bit_cast<sycl::half>(x));
+  return float(executorch::backends::aoti::slim::c10::bit_cast<sycl::half>(x));
 #elif (defined(CPU_CAPABILITY_AVX2) || defined(CPU_CAPABILITY_AVX512)) && \
     !defined(__APPLE__)
   return at::vec::half2float_scalar(x);
@@ -127,7 +128,7 @@ inline STANDALONE_HOST_DEVICE Half operator-(const Half& a) {
     defined(__HIP_DEVICE_COMPILE__)
   return __hneg(a);
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return -standalone::c10::bit_cast<sycl::half>(a);
+  return -executorch::backends::aoti::slim::c10::bit_cast<sycl::half>(a);
 #else
   return -static_cast<float>(a);
 #endif
@@ -283,14 +284,14 @@ inline STANDALONE_HOST_DEVICE Half operator/(int64_t a, Half b) {
 }
 
 /// NOTE: we do not define comparisons directly and instead rely on the implicit
-/// conversion from standalone::c10::Half to float.
+/// conversion from executorch::backends::aoti::slim::c10::Half to float.
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 namespace std {
 
 template <>
-class numeric_limits<standalone::c10::Half> {
+class numeric_limits<executorch::backends::aoti::slim::c10::Half> {
  public:
   static constexpr bool is_specialized = true;
   static constexpr bool is_signed = true;
@@ -317,32 +318,41 @@ class numeric_limits<standalone::c10::Half> {
   static constexpr auto traps = numeric_limits<float>::traps;
   static constexpr auto tinyness_before =
       numeric_limits<float>::tinyness_before;
-  static constexpr standalone::c10::Half min() {
-    return standalone::c10::Half(0x0400, standalone::c10::Half::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Half min() {
+    return executorch::backends::aoti::slim::c10::Half(
+        0x0400, executorch::backends::aoti::slim::c10::Half::from_bits());
   }
-  static constexpr standalone::c10::Half lowest() {
-    return standalone::c10::Half(0xFBFF, standalone::c10::Half::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Half lowest() {
+    return executorch::backends::aoti::slim::c10::Half(
+        0xFBFF, executorch::backends::aoti::slim::c10::Half::from_bits());
   }
-  static constexpr standalone::c10::Half max() {
-    return standalone::c10::Half(0x7BFF, standalone::c10::Half::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Half max() {
+    return executorch::backends::aoti::slim::c10::Half(
+        0x7BFF, executorch::backends::aoti::slim::c10::Half::from_bits());
   }
-  static constexpr standalone::c10::Half epsilon() {
-    return standalone::c10::Half(0x1400, standalone::c10::Half::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Half epsilon() {
+    return executorch::backends::aoti::slim::c10::Half(
+        0x1400, executorch::backends::aoti::slim::c10::Half::from_bits());
   }
-  static constexpr standalone::c10::Half round_error() {
-    return standalone::c10::Half(0x3800, standalone::c10::Half::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Half round_error() {
+    return executorch::backends::aoti::slim::c10::Half(
+        0x3800, executorch::backends::aoti::slim::c10::Half::from_bits());
   }
-  static constexpr standalone::c10::Half infinity() {
-    return standalone::c10::Half(0x7C00, standalone::c10::Half::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Half infinity() {
+    return executorch::backends::aoti::slim::c10::Half(
+        0x7C00, executorch::backends::aoti::slim::c10::Half::from_bits());
   }
-  static constexpr standalone::c10::Half quiet_NaN() {
-    return standalone::c10::Half(0x7E00, standalone::c10::Half::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Half quiet_NaN() {
+    return executorch::backends::aoti::slim::c10::Half(
+        0x7E00, executorch::backends::aoti::slim::c10::Half::from_bits());
   }
-  static constexpr standalone::c10::Half signaling_NaN() {
-    return standalone::c10::Half(0x7D00, standalone::c10::Half::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Half signaling_NaN() {
+    return executorch::backends::aoti::slim::c10::Half(
+        0x7D00, executorch::backends::aoti::slim::c10::Half::from_bits());
   }
-  static constexpr standalone::c10::Half denorm_min() {
-    return standalone::c10::Half(0x0001, standalone::c10::Half::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Half denorm_min() {
+    return executorch::backends::aoti::slim::c10::Half(
+        0x0001, executorch::backends::aoti::slim::c10::Half::from_bits());
   }
 };
 

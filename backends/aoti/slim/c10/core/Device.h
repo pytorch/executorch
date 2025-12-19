@@ -17,7 +17,7 @@
 
 // Copied from c10/core/DeviceType.h with some modifications
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 namespace detail {
 enum class DeviceStringParsingState {
   kSTART,
@@ -341,18 +341,21 @@ inline std::ostream& operator<<(std::ostream& stream, const Device& device) {
   stream << device.str();
   return stream;
 }
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 namespace std {
 template <>
-struct hash<standalone::c10::Device> {
-  size_t operator()(standalone::c10::Device d) const noexcept {
+struct hash<executorch::backends::aoti::slim::c10::Device> {
+  size_t operator()(
+      executorch::backends::aoti::slim::c10::Device d) const noexcept {
     // Are you here because this static assert failed?  Make sure you ensure
     // that the bitmasking code below is updated accordingly!
     static_assert(
-        sizeof(standalone::c10::DeviceType) == 1, "DeviceType is not 8-bit");
+        sizeof(executorch::backends::aoti::slim::c10::DeviceType) == 1,
+        "DeviceType is not 8-bit");
     static_assert(
-        sizeof(standalone::c10::DeviceIndex) == 1, "DeviceIndex is not 8-bit");
+        sizeof(executorch::backends::aoti::slim::c10::DeviceIndex) == 1,
+        "DeviceIndex is not 8-bit");
     // Note [Hazard when concatenating signed integers]
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // We must first convert to a same-sized unsigned type, before promoting to

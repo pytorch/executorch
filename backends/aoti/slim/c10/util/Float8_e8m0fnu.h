@@ -27,7 +27,7 @@
 #include <iosfwd>
 #include <ostream>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 namespace detail {
 
@@ -38,7 +38,8 @@ namespace detail {
 inline STANDALONE_HOST_DEVICE uint8_t fp8e8m0fnu_from_fp32_value(float f) {
   // TODO(#146647): maybe rewrite without control flow
 
-  uint32_t f_bits = standalone::c10::detail::fp32_to_bits(f);
+  uint32_t f_bits =
+      executorch::backends::aoti::slim::c10::detail::fp32_to_bits(f);
 
   // extract the exponent
   uint32_t exponent = (f_bits >> 23) & 0b11111111;
@@ -114,6 +115,6 @@ inline std::ostream& operator<<(
   return out;
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 #include <executorch/backends/aoti/slim/c10/util/Float8_e8m0fnu-inl.h> // IWYU pragma: keep

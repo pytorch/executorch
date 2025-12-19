@@ -10,7 +10,7 @@
 
 #define STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE 5
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 // Packed container for TensorImpl sizes and strides.
 // This design improves on the previous approach of using a pair of
@@ -399,4 +399,4 @@ class SizesAndStrides {
   };
 };
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

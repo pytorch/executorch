@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 template <typename T>
 bool _compute_contiguous(ArrayRef<T> sizes, ArrayRef<T> strides, T numel) {
@@ -148,4 +148,4 @@ bool _compute_non_overlapping_and_dense(
   return true;
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

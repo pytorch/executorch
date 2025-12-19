@@ -16,29 +16,35 @@
 #include <executorch/backends/aoti/slim/util/SharedPtr.h>
 #include <executorch/backends/aoti/slim/util/SizeUtil.h>
 
-namespace standalone::slim {
+namespace executorch::backends::aoti::slim {
 using DeleterFn = void (*)(void*);
 
 namespace detail {
 inline void noop(void*) {}
 } // namespace detail
 
-const standalone::c10::Device CPU_DEVICE =
-    standalone::c10::Device(standalone::c10::DeviceType::CPU, 0);
+const executorch::backends::aoti::slim::c10::Device CPU_DEVICE =
+    executorch::backends::aoti::slim::c10::Device(
+        executorch::backends::aoti::slim::c10::DeviceType::CPU,
+        0);
 
-const standalone::c10::Device DEFAULT_CUDA_DEVICE =
-    standalone::c10::Device(standalone::c10::DeviceType::CUDA, 0);
+const executorch::backends::aoti::slim::c10::Device DEFAULT_CUDA_DEVICE =
+    executorch::backends::aoti::slim::c10::Device(
+        executorch::backends::aoti::slim::c10::DeviceType::CUDA,
+        0);
 
-// standalone::c10::Device traits template for device-specific operations
-template <standalone::c10::DeviceType D>
+// executorch::backends::aoti::slim::c10::Device traits template for
+// device-specific operations
+template <executorch::backends::aoti::slim::c10::DeviceType D>
 struct DeviceTraits;
 
 // CPU specialization
 template <>
-struct DeviceTraits<standalone::c10::DeviceType::CPU> {
+struct DeviceTraits<executorch::backends::aoti::slim::c10::DeviceType::CPU> {
   static void* allocate(
       size_t nbytes,
-      const standalone::c10::Device& device = CPU_DEVICE) {
+      const executorch::backends::aoti::slim::c10::Device& device =
+          CPU_DEVICE) {
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
     return malloc(nbytes);
   }
@@ -52,8 +58,8 @@ struct DeviceTraits<standalone::c10::DeviceType::CPU> {
       void* dst,
       const void* src,
       size_t nbytes,
-      const standalone::c10::Device& dst_device,
-      const standalone::c10::Device& src_device) {
+      const executorch::backends::aoti::slim::c10::Device& dst_device,
+      const executorch::backends::aoti::slim::c10::Device& src_device) {
     std::memcpy(dst, src, nbytes);
   }
 };
@@ -61,9 +67,11 @@ struct DeviceTraits<standalone::c10::DeviceType::CPU> {
 // CUDA specialization
 #ifdef USE_CUDA
 template <>
-struct DeviceTraits<standalone::c10::DeviceType::CUDA> {
-  static void* allocate(size_t nbytes, const standalone::c10::Device& device) {
-    standalone::slim::cuda::CUDAGuard guard(device);
+struct DeviceTraits<executorch::backends::aoti::slim::c10::DeviceType::CUDA> {
+  static void* allocate(
+      size_t nbytes,
+      const executorch::backends::aoti::slim::c10::Device& device) {
+    executorch::backends::aoti::slim::cuda::CUDAGuard guard(device);
     void* data = nullptr;
     STANDALONE_CUDA_CHECK(cudaMalloc(&data, nbytes));
     return data;
@@ -77,11 +85,11 @@ struct DeviceTraits<standalone::c10::DeviceType::CUDA> {
       void* dst,
       const void* src,
       size_t nbytes,
-      const standalone::c10::Device& dst_device,
-      const standalone::c10::Device& src_device) {
+      const executorch::backends::aoti::slim::c10::Device& dst_device,
+      const executorch::backends::aoti::slim::c10::Device& src_device) {
     // Determine the direction
     cudaMemcpyKind direction = cudaMemcpyDeviceToDevice;
-    standalone::c10::Device cuda_device =
+    executorch::backends::aoti::slim::c10::Device cuda_device =
         dst_device; // Default to destination device
 
     if (src_device.is_cpu()) {
@@ -98,14 +106,16 @@ struct DeviceTraits<standalone::c10::DeviceType::CUDA> {
           dst_device.index());
     }
     // Set up CUDA context for the appropriate device
-    standalone::slim::cuda::CUDAGuard guard(cuda_device);
+    executorch::backends::aoti::slim::cuda::CUDAGuard guard(cuda_device);
     STANDALONE_CUDA_CHECK(cudaMemcpy(dst, src, nbytes, direction));
   }
 };
 #else
 template <>
-struct DeviceTraits<standalone::c10::DeviceType::CUDA> {
-  static void* allocate(size_t nbytes, const standalone::c10::Device& device) {
+struct DeviceTraits<executorch::backends::aoti::slim::c10::DeviceType::CUDA> {
+  static void* allocate(
+      size_t nbytes,
+      const executorch::backends::aoti::slim::c10::Device& device) {
     STANDALONE_CHECK(false, "Build with USE_CUDA=1 to enable CUDA support");
   }
 
@@ -117,8 +127,8 @@ struct DeviceTraits<standalone::c10::DeviceType::CUDA> {
       void* dst,
       const void* src,
       size_t nbytes,
-      const standalone::c10::Device& dst_device,
-      const standalone::c10::Device& src_device) {
+      const executorch::backends::aoti::slim::c10::Device& dst_device,
+      const executorch::backends::aoti::slim::c10::Device& src_device) {
     STANDALONE_CHECK(false, "Build with USE_CUDA=1 to enable CUDA support");
   }
 };
@@ -129,24 +139,29 @@ struct DeviceTraits<standalone::c10::DeviceType::CUDA> {
 // non-owning.
 class MaybeOwningStorage {
  public:
-  MaybeOwningStorage(const standalone::c10::Device& device, size_t nbytes)
+  MaybeOwningStorage(
+      const executorch::backends::aoti::slim::c10::Device& device,
+      size_t nbytes)
       : device_(device), capacity_(nbytes), is_owning_(true) {
     // Allocating memory here so owning_ has to be true.
     if (device.is_cpu()) {
-      data_ = DeviceTraits<standalone::c10::DeviceType::CPU>::allocate(
-          nbytes, device);
-      deleter_ = DeviceTraits<standalone::c10::DeviceType::CPU>::free;
+      data_ =
+          DeviceTraits<executorch::backends::aoti::slim::c10::DeviceType::CPU>::
+              allocate(nbytes, device);
+      deleter_ = DeviceTraits<
+          executorch::backends::aoti::slim::c10::DeviceType::CPU>::free;
     } else if (device.is_cuda()) {
-      data_ = DeviceTraits<standalone::c10::DeviceType::CUDA>::allocate(
-          nbytes, device);
-      deleter_ = DeviceTraits<standalone::c10::DeviceType::CUDA>::free;
+      data_ = DeviceTraits<executorch::backends::aoti::slim::c10::DeviceType::
+                               CUDA>::allocate(nbytes, device);
+      deleter_ = DeviceTraits<
+          executorch::backends::aoti::slim::c10::DeviceType::CUDA>::free;
     } else {
       STANDALONE_CHECK(false, "Unsupported device type");
     }
   }
 
   MaybeOwningStorage(
-      const standalone::c10::Device& device,
+      const executorch::backends::aoti::slim::c10::Device& device,
       void* data,
       size_t nbytes)
       : device_(device), data_(data), capacity_(nbytes), is_owning_(false) {
@@ -201,7 +216,7 @@ class MaybeOwningStorage {
       void* dst_data_ptr,
       void* src_data_ptr,
       size_t nbytes,
-      const standalone::c10::Device& src_device) {
+      const executorch::backends::aoti::slim::c10::Device& src_device) {
     STANDALONE_CHECK(
         dst_data_ptr, "Storage clone failed: dst_data_ptr can not be nullptr")
     STANDALONE_CHECK(
@@ -221,7 +236,8 @@ class MaybeOwningStorage {
     }
   }
 
-  MaybeOwningStorage clone(const standalone::c10::Device& device) const {
+  MaybeOwningStorage clone(
+      const executorch::backends::aoti::slim::c10::Device& device) const {
     STANDALONE_CHECK(
         data_, "Storage clone failed: source data can not be nullptr")
     // Create a new owning storage with the specified device and same capacity
@@ -230,12 +246,12 @@ class MaybeOwningStorage {
     // Copy the data from the current storage to the new storage
     if (device_.is_cpu() && device.is_cpu()) {
       // CPU to CPU copy
-      DeviceTraits<standalone::c10::DeviceType::CPU>::memcpy(
-          cloned_storage.data_, data_, capacity_, device, device_);
+      DeviceTraits<executorch::backends::aoti::slim::c10::DeviceType::CPU>::
+          memcpy(cloned_storage.data_, data_, capacity_, device, device_);
     } else {
       // At least one of the devices is CUDA
-      DeviceTraits<standalone::c10::DeviceType::CUDA>::memcpy(
-          cloned_storage.data_, data_, capacity_, device, device_);
+      DeviceTraits<executorch::backends::aoti::slim::c10::DeviceType::CUDA>::
+          memcpy(cloned_storage.data_, data_, capacity_, device, device_);
     }
 
     return cloned_storage;
@@ -249,7 +265,7 @@ class MaybeOwningStorage {
     return data_;
   }
 
-  const standalone::c10::Device& device() const {
+  const executorch::backends::aoti::slim::c10::Device& device() const {
     return device_;
   }
 
@@ -286,7 +302,7 @@ class MaybeOwningStorage {
   }
 
  private:
-  standalone::c10::Device device_ = CPU_DEVICE;
+  executorch::backends::aoti::slim::c10::Device device_ = CPU_DEVICE;
   void* data_ = nullptr;
   size_t capacity_ = 0;
   DeleterFn deleter_ = detail::noop;
@@ -296,12 +312,15 @@ class MaybeOwningStorage {
 using Storage = SharedPtr<MaybeOwningStorage>;
 
 inline Storage new_storage(
-    standalone::c10::IntArrayRef sizes,
-    standalone::c10::IntArrayRef strides,
-    standalone::c10::ScalarType dtype,
-    const standalone::c10::Device& device = CPU_DEVICE) {
+    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+    executorch::backends::aoti::slim::c10::IntArrayRef strides,
+    executorch::backends::aoti::slim::c10::ScalarType dtype,
+    const executorch::backends::aoti::slim::c10::Device& device = CPU_DEVICE) {
   size_t nbytes = compute_storage_nbytes(
-      sizes, strides, standalone::c10::elementSize(dtype), 0);
+      sizes,
+      strides,
+      executorch::backends::aoti::slim::c10::elementSize(dtype),
+      0);
   return Storage(new MaybeOwningStorage(device, nbytes));
 }
-} // namespace standalone::slim
+} // namespace executorch::backends::aoti::slim

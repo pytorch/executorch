@@ -3,7 +3,7 @@
 #include <array>
 #include <utility>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 // This helper function creates a constexpr std::array
 // From a compile time list of values, without requiring you to explicitly
@@ -15,4 +15,4 @@ inline constexpr auto array_of(T&&... t) -> std::array<V, sizeof...(T)> {
   return {{std::forward<T>(t)...}};
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
