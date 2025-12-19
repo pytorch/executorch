@@ -6,20 +6,23 @@
 
 #if defined(__CUDA_ARCH__)
 #include <executorch/backends/aoti/slim/c10/cuda/CUDAMathCompat.h>
-#define STANDALONE_COMPAT_COPYSIGN standalone::c10::cuda::compat::copysign
+#define STANDALONE_COMPAT_COPYSIGN \
+  executorch::backends::aoti::slim::c10::cuda::compat::copysign
 // TODO: rocm is not supported yet
 // #elif defined(__HIPCC__)
 // #include <executorch/backends/aoti/slim/hip/HIPMathCompat.h>
-// #define STANDALONE_COMPAT_COPYSIGN standalone::c10::hip::compat::copysign
+// #define STANDALONE_COMPAT_COPYSIGN
+// executorch::backends::aoti::slim::c10::hip::compat::copysign
 #else
 #include <executorch/backends/aoti/slim/c10/util/copysign.h>
-#define STANDALONE_COMPAT_COPYSIGN standalone::c10::copysign
+#define STANDALONE_COMPAT_COPYSIGN \
+  executorch::backends::aoti::slim::c10::copysign
 #endif
 
 // The functions in this file should be header-only as it is used under
 // ABI-compatibility mode.
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 // NOTE: [Floor Division in Python]
 // Python's __floordiv__ operator is more complicated than just floor(a / b).
@@ -61,7 +64,7 @@ inline STANDALONE_HOST_DEVICE scalar_t div_floor_floating(
 template <typename scalar_t>
 inline STANDALONE_HOST_DEVICE scalar_t
 div_floor_integer(scalar_t a, scalar_t b) {
-  if (standalone::c10::signs_differ(a, b)) {
+  if (executorch::backends::aoti::slim::c10::signs_differ(a, b)) {
     // Subtracts one from the results of truncation division if the
     // divisor and dividend have different sign(bit)s and the remainder of
     // the division is nonzero
@@ -102,4 +105,4 @@ inline STANDALONE_HOST_DEVICE scalar_t div_mod(scalar_t a, scalar_t b) {
   return mod;
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

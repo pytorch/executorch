@@ -2,13 +2,13 @@
 
 #include <executorch/backends/aoti/slim/factory/Empty.h>
 
-namespace standalone::slim {
+namespace executorch::backends::aoti::slim {
 inline SlimTensor zeros(
-    standalone::c10::IntArrayRef sizes,
-    standalone::c10::ScalarType dtype,
-    const standalone::c10::Device& device = CPU_DEVICE) {
+    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+    executorch::backends::aoti::slim::c10::ScalarType dtype,
+    const executorch::backends::aoti::slim::c10::Device& device = CPU_DEVICE) {
   SlimTensor tensor = empty(sizes, dtype, device);
-  tensor.fill_(standalone::c10::Scalar(0));
+  tensor.fill_(executorch::backends::aoti::slim::c10::Scalar(0));
   return tensor;
 }
 
@@ -17,11 +17,11 @@ inline SlimTensor zeros_like(const SlimTensor& other) {
 }
 
 inline SlimTensor ones(
-    standalone::c10::IntArrayRef sizes,
-    standalone::c10::ScalarType dtype,
-    const standalone::c10::Device& device = CPU_DEVICE) {
+    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+    executorch::backends::aoti::slim::c10::ScalarType dtype,
+    const executorch::backends::aoti::slim::c10::Device& device = CPU_DEVICE) {
   SlimTensor tensor = empty(sizes, dtype, device);
-  tensor.fill_(standalone::c10::Scalar(1));
+  tensor.fill_(executorch::backends::aoti::slim::c10::Scalar(1));
   return tensor;
 }
 
@@ -29,4 +29,4 @@ inline SlimTensor ones_like(const SlimTensor& other) {
   return ones(other.sizes(), other.dtype(), other.device());
 }
 
-} // namespace standalone::slim
+} // namespace executorch::backends::aoti::slim

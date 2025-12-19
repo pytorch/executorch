@@ -17,19 +17,19 @@ STANDALONE_CLANG_DIAGNOSTIC_IGNORE("-Wimplicit-float-conversion")
 STANDALONE_CLANG_DIAGNOSTIC_IGNORE("-Wfloat-conversion")
 #endif
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
-// standalone::c10::complex is an implementation of complex numbers that aims
-// to work on all devices supported by PyTorch
+// executorch::backends::aoti::slim::c10::complex is an implementation of
+// complex numbers that aims to work on all devices supported by PyTorch
 //
 // Most of the APIs duplicates std::complex
 // Reference: https://en.cppreference.com/w/cpp/numeric/complex
 //
 // [NOTE: Complex Operator Unification]
 // Operators currently use a mix of std::complex, thrust::complex, and
-// standalone::c10::complex internally. The end state is that all operators
-// will use standalone::c10::complex internally.  Until then, there may be
-// some hacks to support all variants.
+// executorch::backends::aoti::slim::c10::complex internally. The end state is
+// that all operators will use executorch::backends::aoti::slim::c10::complex
+// internally.  Until then, there may be some hacks to support all variants.
 //
 //
 // [Note on Constructors]
@@ -89,9 +89,9 @@ namespace standalone::c10 {
 //
 // std::complex has custom literals `i`, `if` and `il` defined in namespace
 // `std::literals::complex_literals`. We define our own custom literals in the
-// namespace `standalone::c10::complex_literals`. Our custom literals does not
-// follow the same behavior as in std::complex, instead, we define _if, _id to
-// construct float/double complex literals.
+// namespace `executorch::backends::aoti::slim::c10::complex_literals`. Our
+// custom literals does not follow the same behavior as in std::complex,
+// instead, we define _if, _id to construct float/double complex literals.
 //
 //
 // [real() and imag()]
@@ -138,9 +138,11 @@ namespace standalone::c10 {
 //
 //
 //
-// TODO(@zasdfgbnm): standalone::c10::complex<standalone::c10::Half> is not
-// currently supported, because:
-//  - lots of members and functions of standalone::c10::Half are not constexpr
+// TODO(@zasdfgbnm):
+// executorch::backends::aoti::slim::c10::complex<executorch::backends::aoti::slim::c10::Half>
+// is not currently supported, because:
+//  - lots of members and functions of
+//  executorch::backends::aoti::slim::c10::Half are not constexpr
 //  - thrust::complex only support float and double
 
 template <typename T>
@@ -166,7 +168,8 @@ struct alignas(sizeof(T) * 2) complex {
 #endif
 
   // Use SFINAE to specialize casting constructor for
-  // standalone::c10::complex<float> and standalone::c10::complex<double>
+  // executorch::backends::aoti::slim::c10::complex<float> and
+  // executorch::backends::aoti::slim::c10::complex<double>
   template <typename U = T>
   STANDALONE_HOST_DEVICE explicit constexpr complex(
       const std::enable_if_t<std::is_same_v<U, float>, complex<double>>& other)
@@ -430,69 +433,69 @@ constexpr complex<T> operator/(const T& lhs, const complex<T>& rhs) {
   return result /= rhs;
 }
 
-// Define operators between integral scalars and standalone::c10::complex.
-// std::complex does not support this when T is a floating-point number. This is
-// useful because it saves a lot of "static_cast" when operate a complex and an
-// integer. This makes the code both less verbose and potentially more
-// efficient.
+// Define operators between integral scalars and
+// executorch::backends::aoti::slim::c10::complex. std::complex does not support
+// this when T is a floating-point number. This is useful because it saves a lot
+// of "static_cast" when operate a complex and an integer. This makes the code
+// both less verbose and potentially more efficient.
 #define COMPLEX_INTEGER_OP_TEMPLATE_CONDITION                 \
   typename std::enable_if_t<                                  \
       std::is_floating_point_v<fT> && std::is_integral_v<iT>, \
       int> = 0
 
 template <typename fT, typename iT, COMPLEX_INTEGER_OP_TEMPLATE_CONDITION>
-constexpr standalone::c10::complex<fT> operator+(
-    const standalone::c10::complex<fT>& a,
+constexpr executorch::backends::aoti::slim::c10::complex<fT> operator+(
+    const executorch::backends::aoti::slim::c10::complex<fT>& a,
     const iT& b) {
   return a + static_cast<fT>(b);
 }
 
 template <typename fT, typename iT, COMPLEX_INTEGER_OP_TEMPLATE_CONDITION>
-constexpr standalone::c10::complex<fT> operator+(
+constexpr executorch::backends::aoti::slim::c10::complex<fT> operator+(
     const iT& a,
-    const standalone::c10::complex<fT>& b) {
+    const executorch::backends::aoti::slim::c10::complex<fT>& b) {
   return static_cast<fT>(a) + b;
 }
 
 template <typename fT, typename iT, COMPLEX_INTEGER_OP_TEMPLATE_CONDITION>
-constexpr standalone::c10::complex<fT> operator-(
-    const standalone::c10::complex<fT>& a,
+constexpr executorch::backends::aoti::slim::c10::complex<fT> operator-(
+    const executorch::backends::aoti::slim::c10::complex<fT>& a,
     const iT& b) {
   return a - static_cast<fT>(b);
 }
 
 template <typename fT, typename iT, COMPLEX_INTEGER_OP_TEMPLATE_CONDITION>
-constexpr standalone::c10::complex<fT> operator-(
+constexpr executorch::backends::aoti::slim::c10::complex<fT> operator-(
     const iT& a,
-    const standalone::c10::complex<fT>& b) {
+    const executorch::backends::aoti::slim::c10::complex<fT>& b) {
   return static_cast<fT>(a) - b;
 }
 
 template <typename fT, typename iT, COMPLEX_INTEGER_OP_TEMPLATE_CONDITION>
-constexpr standalone::c10::complex<fT> operator*(
-    const standalone::c10::complex<fT>& a,
+constexpr executorch::backends::aoti::slim::c10::complex<fT> operator*(
+    const executorch::backends::aoti::slim::c10::complex<fT>& a,
     const iT& b) {
   return a * static_cast<fT>(b);
 }
 
 template <typename fT, typename iT, COMPLEX_INTEGER_OP_TEMPLATE_CONDITION>
-constexpr standalone::c10::complex<fT> operator*(
+constexpr executorch::backends::aoti::slim::c10::complex<fT> operator*(
     const iT& a,
-    const standalone::c10::complex<fT>& b) {
+    const executorch::backends::aoti::slim::c10::complex<fT>& b) {
   return static_cast<fT>(a) * b;
 }
 
 template <typename fT, typename iT, COMPLEX_INTEGER_OP_TEMPLATE_CONDITION>
-constexpr standalone::c10::complex<fT> operator/(
-    const standalone::c10::complex<fT>& a,
+constexpr executorch::backends::aoti::slim::c10::complex<fT> operator/(
+    const executorch::backends::aoti::slim::c10::complex<fT>& a,
     const iT& b) {
   return a / static_cast<fT>(b);
 }
 
 template <typename fT, typename iT, COMPLEX_INTEGER_OP_TEMPLATE_CONDITION>
-constexpr standalone::c10::complex<fT> operator/(
+constexpr executorch::backends::aoti::slim::c10::complex<fT> operator/(
     const iT& a,
-    const standalone::c10::complex<fT>& b) {
+    const executorch::backends::aoti::slim::c10::complex<fT>& b) {
   return static_cast<fT>(a) / b;
 }
 
@@ -545,7 +548,7 @@ std::basic_istream<CharT, Traits>& operator>>(
   return is;
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 // std functions
 //
@@ -554,17 +557,18 @@ std::basic_istream<CharT, Traits>& operator>>(
 namespace std {
 
 template <typename T>
-constexpr T real(const standalone::c10::complex<T>& z) {
+constexpr T real(const executorch::backends::aoti::slim::c10::complex<T>& z) {
   return z.real();
 }
 
 template <typename T>
-constexpr T imag(const standalone::c10::complex<T>& z) {
+constexpr T imag(const executorch::backends::aoti::slim::c10::complex<T>& z) {
   return z.imag();
 }
 
 template <typename T>
-STANDALONE_HOST_DEVICE T abs(const standalone::c10::complex<T>& z) {
+STANDALONE_HOST_DEVICE T
+abs(const executorch::backends::aoti::slim::c10::complex<T>& z) {
 #if defined(__CUDACC__) || defined(__HIPCC__)
   return thrust::abs(static_cast<thrust::complex<T>>(z));
 #else
@@ -579,14 +583,15 @@ STANDALONE_HOST_DEVICE T abs(const standalone::c10::complex<T>& z) {
 #endif
 
 template <typename T>
-STANDALONE_HOST_DEVICE T arg(const standalone::c10::complex<T>& z) {
+STANDALONE_HOST_DEVICE T
+arg(const executorch::backends::aoti::slim::c10::complex<T>& z) {
   return ROCm_Bug(std)::atan2(std::imag(z), std::real(z));
 }
 
 #undef ROCm_Bug
 
 template <typename T>
-constexpr T norm(const standalone::c10::complex<T>& z) {
+constexpr T norm(const executorch::backends::aoti::slim::c10::complex<T>& z) {
   return z.real() * z.real() + z.imag() * z.imag();
 }
 
@@ -596,11 +601,12 @@ constexpr T norm(const standalone::c10::complex<T>& z) {
 //   constexpr std::complex<double> conj( DoubleOrInteger z );
 //   constexpr std::complex<long double> conj( long double z );
 // These are not implemented
-// TODO(@zasdfgbnm): implement them as standalone::c10::conj
+// TODO(@zasdfgbnm): implement them as
+// executorch::backends::aoti::slim::c10::conj
 template <typename T>
-constexpr standalone::c10::complex<T> conj(
-    const standalone::c10::complex<T>& z) {
-  return standalone::c10::complex<T>(z.real(), -z.imag());
+constexpr executorch::backends::aoti::slim::c10::complex<T> conj(
+    const executorch::backends::aoti::slim::c10::complex<T>& z) {
+  return executorch::backends::aoti::slim::c10::complex<T>(z.real(), -z.imag());
 }
 
 // Thrust does not have complex --> complex version of thrust::proj,
@@ -608,11 +614,12 @@ constexpr standalone::c10::complex<T> conj(
 // TODO(@zasdfgbnm): implement it by ourselves
 
 // There is no standalone version of std::polar, because std::polar always
-// returns std::complex. Use standalone::c10::polar instead;
+// returns std::complex. Use executorch::backends::aoti::slim::c10::polar
+// instead;
 
 } // namespace std
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 template <typename T>
 STANDALONE_HOST_DEVICE complex<T> polar(const T& r, const T& theta = T()) {
@@ -639,12 +646,12 @@ struct alignas(4) complex<Half> {
       const Half& imag)
       : real_(real), imag_(imag) {}
   STANDALONE_HOST_DEVICE inline complex(
-      const standalone::c10::complex<float>& value)
+      const executorch::backends::aoti::slim::c10::complex<float>& value)
       : real_(value.real()), imag_(value.imag()) {}
 
   // Conversion operator
-  inline STANDALONE_HOST_DEVICE operator standalone::c10::complex<float>()
-      const {
+  inline STANDALONE_HOST_DEVICE
+  operator executorch::backends::aoti::slim::c10::complex<float>() const {
     return {real_, imag_};
   }
 
@@ -678,7 +685,7 @@ struct alignas(4) complex<Half> {
   }
 };
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 STANDALONE_CLANG_DIAGNOSTIC_POP()
 

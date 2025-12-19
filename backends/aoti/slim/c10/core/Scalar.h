@@ -15,7 +15,7 @@
 
 // Copy-pasted from c10/core/Scalar.h, but dropping SymScalar support
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 /**
  * Scalar represents a 0-dimensional tensor which contains a single element.
@@ -86,22 +86,23 @@ class Scalar {
     v.i = convert<int64_t, bool>(vv);
   }
 
-#define DEFINE_ACCESSOR(type, name)                                   \
-  type to##name() const {                                             \
-    if (Tag::HAS_d == tag) {                                          \
-      return checked_convert<type, double>(v.d, #type);               \
-    } else if (Tag::HAS_z == tag) {                                   \
-      return checked_convert<type, standalone::c10::complex<double>>( \
-          v.z, #type);                                                \
-    }                                                                 \
-    if (Tag::HAS_b == tag) {                                          \
-      return checked_convert<type, bool>(v.i, #type);                 \
-    } else if (Tag::HAS_i == tag) {                                   \
-      return checked_convert<type, int64_t>(v.i, #type);              \
-    } else if (Tag::HAS_u == tag) {                                   \
-      return checked_convert<type, uint64_t>(v.u, #type);             \
-    }                                                                 \
-    STANDALONE_CHECK(false)                                           \
+#define DEFINE_ACCESSOR(type, name)                                            \
+  type to##name() const {                                                      \
+    if (Tag::HAS_d == tag) {                                                   \
+      return checked_convert<type, double>(v.d, #type);                        \
+    } else if (Tag::HAS_z == tag) {                                            \
+      return checked_convert<                                                  \
+          type,                                                                \
+          executorch::backends::aoti::slim::c10::complex<double>>(v.z, #type); \
+    }                                                                          \
+    if (Tag::HAS_b == tag) {                                                   \
+      return checked_convert<type, bool>(v.i, #type);                          \
+    } else if (Tag::HAS_i == tag) {                                            \
+      return checked_convert<type, int64_t>(v.i, #type);                       \
+    } else if (Tag::HAS_u == tag) {                                            \
+      return checked_convert<type, uint64_t>(v.u, #type);                      \
+    }                                                                          \
+    STANDALONE_CHECK(false)                                                    \
   }
 
   // TODO: Support ComplexHalf accessor
@@ -193,8 +194,9 @@ class Scalar {
 
   template <
       typename T,
-      typename std::enable_if_t<!standalone::c10::is_complex<T>::value, int> =
-          0>
+      typename std::enable_if_t<
+          !executorch::backends::aoti::slim::c10::is_complex<T>::value,
+          int> = 0>
   bool equal(T num) const {
     if (isComplex()) {
       auto val = v.z;
@@ -223,7 +225,9 @@ class Scalar {
 
   template <
       typename T,
-      typename std::enable_if_t<standalone::c10::is_complex<T>::value, int> = 0>
+      typename std::enable_if_t<
+          executorch::backends::aoti::slim::c10::is_complex<T>::value,
+          int> = 0>
   bool equal(T num) const {
     if (isComplex()) {
       return v.z == num;
@@ -257,20 +261,20 @@ class Scalar {
     }
   }
 
-  standalone::c10::ScalarType type() const {
+  executorch::backends::aoti::slim::c10::ScalarType type() const {
     if (isComplex()) {
-      return standalone::c10::ScalarType::ComplexDouble;
+      return executorch::backends::aoti::slim::c10::ScalarType::ComplexDouble;
     } else if (isFloatingPoint()) {
-      return standalone::c10::ScalarType::Double;
+      return executorch::backends::aoti::slim::c10::ScalarType::Double;
     } else if (isIntegral(/*includeBool=*/false)) {
       // Represent all integers as long, UNLESS it is unsigned and therefore
       // unrepresentable as long
       if (Tag::HAS_u == tag) {
-        return standalone::c10::ScalarType::UInt64;
+        return executorch::backends::aoti::slim::c10::ScalarType::UInt64;
       }
-      return standalone::c10::ScalarType::Long;
+      return executorch::backends::aoti::slim::c10::ScalarType::Long;
     } else if (isBoolean()) {
-      return standalone::c10::ScalarType::Bool;
+      return executorch::backends::aoti::slim::c10::ScalarType::Bool;
     } else {
       throw std::runtime_error("Unknown scalar type.");
     }
@@ -313,7 +317,7 @@ class Scalar {
     int64_t i;
     // See Note [Meaning of HAS_u]
     uint64_t u;
-    standalone::c10::complex<double> z;
+    executorch::backends::aoti::slim::c10::complex<double> z;
     // NOLINTNEXTLINE(modernize-use-equals-default)
     v_t() {} // default constructor
   } v;
@@ -330,7 +334,8 @@ class Scalar {
   template <
       typename T,
       typename std::enable_if_t<
-          !std::is_integral_v<T> && !standalone::c10::is_complex<T>::value,
+          !std::is_integral_v<T> &&
+              !executorch::backends::aoti::slim::c10::is_complex<T>::value,
           bool>* = nullptr>
   Scalar(T vv, bool) : tag(Tag::HAS_d) {
     v.d = convert<decltype(v.d), T>(vv);
@@ -338,8 +343,9 @@ class Scalar {
 
   template <
       typename T,
-      typename std::enable_if_t<standalone::c10::is_complex<T>::value, bool>* =
-          nullptr>
+      typename std::enable_if_t<
+          executorch::backends::aoti::slim::c10::is_complex<T>::value,
+          bool>* = nullptr>
   Scalar(T vv, bool) : tag(Tag::HAS_z) {
     v.z = convert<decltype(v.z), T>(vv);
   }
@@ -357,4 +363,4 @@ DEFINE_TO(uint32_t, UInt32)
 DEFINE_TO(uint64_t, UInt64)
 #undef DEFINE_TO
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

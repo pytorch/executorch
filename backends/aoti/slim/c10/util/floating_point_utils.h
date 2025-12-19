@@ -4,7 +4,7 @@
 #include <executorch/backends/aoti/slim/c10/util/bit_cast.h>
 #include <cstdint>
 
-namespace standalone::c10::detail {
+namespace executorch::backends::aoti::slim::c10::detail {
 
 STANDALONE_HOST_DEVICE inline float fp32_from_bits(uint32_t w) {
 #if defined(__OPENCL_VERSION__)
@@ -14,7 +14,7 @@ STANDALONE_HOST_DEVICE inline float fp32_from_bits(uint32_t w) {
 #elif defined(__INTEL_COMPILER)
   return _castu32_f32(w);
 #else
-  return standalone::c10::bit_cast<float>(w);
+  return executorch::backends::aoti::slim::c10::bit_cast<float>(w);
 #endif
 }
 
@@ -26,8 +26,8 @@ STANDALONE_HOST_DEVICE inline uint32_t fp32_to_bits(float f) {
 #elif defined(__INTEL_COMPILER)
   return _castf32_u32(f);
 #else
-  return standalone::c10::bit_cast<uint32_t>(f);
+  return executorch::backends::aoti::slim::c10::bit_cast<uint32_t>(f);
 #endif
 }
 
-} // namespace standalone::c10::detail
+} // namespace executorch::backends::aoti::slim::c10::detail

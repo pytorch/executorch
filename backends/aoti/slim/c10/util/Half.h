@@ -61,7 +61,7 @@
 #endif // __x86_64__ || _M_X64 || __i386 || _M_IX86
 #endif // __GNUC__ || __clang__
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 namespace detail {
 
@@ -359,11 +359,11 @@ inline uint16_t fp16_ieee_from_fp32_value(float f) {
 
 #if defined(__aarch64__) && !defined(__CUDACC__)
 inline float16_t fp16_from_bits(uint16_t h) {
-  return standalone::c10::bit_cast<float16_t>(h);
+  return executorch::backends::aoti::slim::c10::bit_cast<float16_t>(h);
 }
 
 inline uint16_t fp16_to_bits(float16_t f) {
-  return standalone::c10::bit_cast<uint16_t>(f);
+  return executorch::backends::aoti::slim::c10::bit_cast<uint16_t>(f);
 }
 
 // According to https://godbolt.org/z/frExdbsWG it would translate to single
@@ -419,6 +419,6 @@ inline std::ostream& operator<<(std::ostream& out, const Half& value) {
   return out;
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 #include <executorch/backends/aoti/slim/c10/util/Half-inl.h> // IWYU pragma: keep

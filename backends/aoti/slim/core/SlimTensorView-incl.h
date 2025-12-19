@@ -6,10 +6,10 @@
 #include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
 #include <executorch/backends/aoti/slim/util/SizeUtil.h>
 
-namespace standalone::slim {
+namespace executorch::backends::aoti::slim {
 inline SlimTensor SlimTensor::as_strided(
-    standalone::c10::IntArrayRef sizes,
-    standalone::c10::IntArrayRef strides,
+    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+    executorch::backends::aoti::slim::c10::IntArrayRef strides,
     int64_t storage_offset) const {
   SlimTensor result = *this;
   result.as_strided_(sizes, strides, storage_offset);
@@ -17,8 +17,8 @@ inline SlimTensor SlimTensor::as_strided(
 }
 
 inline SlimTensor SlimTensor::as_strided_(
-    standalone::c10::IntArrayRef sizes,
-    standalone::c10::IntArrayRef strides,
+    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+    executorch::backends::aoti::slim::c10::IntArrayRef strides,
     int64_t storage_offset) {
   STANDALONE_CHECK(
       sizes.size() == strides.size(),
@@ -44,20 +44,22 @@ inline SlimTensor SlimTensor::as_strided_(
   return *this;
 }
 
-inline SlimTensor SlimTensor::permute(standalone::c10::IntArrayRef dims) const {
+inline SlimTensor SlimTensor::permute(
+    executorch::backends::aoti::slim::c10::IntArrayRef dims) const {
   const size_t ndim = this->dim();
   STANDALONE_CHECK(
       ndim == static_cast<size_t>(dims.size()),
       "permute: dims length must be equal to tensor.dim()")
 
-  standalone::c10::ArrayRef old_sizes = this->sizes();
-  standalone::c10::ArrayRef old_strides = this->strides();
+  executorch::backends::aoti::slim::c10::ArrayRef old_sizes = this->sizes();
+  executorch::backends::aoti::slim::c10::ArrayRef old_strides = this->strides();
   std::vector<int64_t> new_sizes = old_sizes.vec();
   std::vector<int64_t> new_strides = old_strides.vec();
   std::vector<bool> seen_dims(ndim, false);
 
   for (size_t i = 0; i < ndim; i++) {
-    int64_t d = standalone::c10::maybe_wrap_dim(dims[i], ndim);
+    int64_t d =
+        executorch::backends::aoti::slim::c10::maybe_wrap_dim(dims[i], ndim);
     STANDALONE_CHECK(!seen_dims[d], "permute: duplicate dims are not allowed");
     seen_dims[d] = true;
     new_sizes[i] = old_sizes[d];
@@ -82,8 +84,8 @@ inline SlimTensor SlimTensor::transpose(int64_t dim0, int64_t dim1) const {
   }
 
   // Wrap dimensions and swap them
-  dim0 = standalone::c10::maybe_wrap_dim(dim0, ndim);
-  dim1 = standalone::c10::maybe_wrap_dim(dim1, ndim);
+  dim0 = executorch::backends::aoti::slim::c10::maybe_wrap_dim(dim0, ndim);
+  dim1 = executorch::backends::aoti::slim::c10::maybe_wrap_dim(dim1, ndim);
   std::swap(dims[dim0], dims[dim1]);
 
   return permute(dims);
@@ -94,7 +96,7 @@ inline SlimTensor SlimTensor::t() const {
 }
 
 inline SlimTensor SlimTensor::reshape(
-    standalone::c10::IntArrayRef proposed_shape) const {
+    executorch::backends::aoti::slim::c10::IntArrayRef proposed_shape) const {
   std::vector<int64_t> final_shape_vec =
       infer_size(proposed_shape, this->numel());
 
@@ -124,8 +126,9 @@ inline SlimTensor SlimTensor::narrow(int64_t dim, int64_t start, int64_t length)
     const {
   STANDALONE_CHECK(
       this->dim() > 0, "narrow() cannot be applied to a 0-dim tensor.");
-  dim = standalone::c10::maybe_wrap_dim(dim, static_cast<int64_t>(this->dim()));
-  start = standalone::c10::maybe_wrap_dim(
+  dim = executorch::backends::aoti::slim::c10::maybe_wrap_dim(
+      dim, static_cast<int64_t>(this->dim()));
+  start = executorch::backends::aoti::slim::c10::maybe_wrap_dim(
       start, static_cast<int64_t>(this->size(dim)));
 
   STANDALONE_CHECK(length >= 0, "narrow(): length must be non-negative.");
@@ -149,4 +152,4 @@ inline SlimTensor SlimTensor::narrow(int64_t dim, int64_t start, int64_t length)
   return result;
 }
 
-} // namespace standalone::slim
+} // namespace executorch::backends::aoti::slim

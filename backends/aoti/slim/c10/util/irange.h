@@ -9,7 +9,7 @@
 #include <iterator>
 #include <type_traits>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 namespace detail {
 
@@ -48,9 +48,9 @@ struct integer_iterator {
   constexpr bool operator==(const integer_iterator& other) const {
     if constexpr (one_sided) {
       // Range-for loops' end test is `begin != end`, not `begin <
-      // end`. To handle `standalone::c10::irange(n)` where n < 0 (which
-      // should be empty), we just make `begin != end` fail whenever `end` is
-      // negative.
+      // end`. To handle `executorch::backends::aoti::slim::c10::irange(n)`
+      // where n < 0 (which should be empty), we just make `begin != end` fail
+      // whenever `end` is negative.
       return is_negative(other.value) || value == other.value;
     } else {
       return value == other.value;
@@ -120,4 +120,4 @@ constexpr integer_range<Integer, true> irange(Integer end) {
   return {Integer(), end};
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

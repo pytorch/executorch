@@ -20,7 +20,7 @@ STANDALONE_CLANG_DIAGNOSTIC_IGNORE("-Wimplicit-float-conversion")
 STANDALONE_CLANG_DIAGNOSTIC_IGNORE("-Wimplicit-int-float-conversion")
 #endif
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 template <typename dest_t, typename src_t>
 struct needs_real {
@@ -103,66 +103,76 @@ struct static_cast_with_inter_type<uint8_t, src_t> {
 
 template <>
 struct static_cast_with_inter_type<
-    standalone::c10::complex<standalone::c10::Half>,
-    standalone::c10::BFloat16> {
+    executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>,
+    executorch::backends::aoti::slim::c10::BFloat16> {
   STANDALONE_HOST_DEVICE
-  __ubsan_ignore_undefined__ static inline standalone::c10::complex<
-      standalone::c10::Half>
-  apply(standalone::c10::BFloat16 src) {
-    return static_cast<standalone::c10::complex<standalone::c10::Half>>(
-        standalone::c10::complex<float>{src});
+  __ubsan_ignore_undefined__ static inline executorch::backends::aoti::slim::
+      c10::complex<executorch::backends::aoti::slim::c10::Half>
+      apply(executorch::backends::aoti::slim::c10::BFloat16 src) {
+    return static_cast<executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>>(
+        executorch::backends::aoti::slim::c10::complex<float>{src});
   }
 };
 
 template <>
 struct static_cast_with_inter_type<
-    standalone::c10::complex<standalone::c10::Half>,
-    standalone::c10::Float8_e5m2> {
+    executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>,
+    executorch::backends::aoti::slim::c10::Float8_e5m2> {
   STANDALONE_HOST_DEVICE
-  __ubsan_ignore_undefined__ static inline standalone::c10::complex<
-      standalone::c10::Half>
-  apply(standalone::c10::Float8_e5m2 src) {
-    return static_cast<standalone::c10::complex<standalone::c10::Half>>(
-        standalone::c10::complex<float>{src});
+  __ubsan_ignore_undefined__ static inline executorch::backends::aoti::slim::
+      c10::complex<executorch::backends::aoti::slim::c10::Half>
+      apply(executorch::backends::aoti::slim::c10::Float8_e5m2 src) {
+    return static_cast<executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>>(
+        executorch::backends::aoti::slim::c10::complex<float>{src});
   }
 };
 
 template <>
 struct static_cast_with_inter_type<
-    standalone::c10::complex<standalone::c10::Half>,
-    standalone::c10::Float8_e5m2fnuz> {
+    executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>,
+    executorch::backends::aoti::slim::c10::Float8_e5m2fnuz> {
   STANDALONE_HOST_DEVICE
-  __ubsan_ignore_undefined__ static inline standalone::c10::complex<
-      standalone::c10::Half>
-  apply(standalone::c10::Float8_e5m2fnuz src) {
-    return static_cast<standalone::c10::complex<standalone::c10::Half>>(
-        standalone::c10::complex<float>{src});
+  __ubsan_ignore_undefined__ static inline executorch::backends::aoti::slim::
+      c10::complex<executorch::backends::aoti::slim::c10::Half>
+      apply(executorch::backends::aoti::slim::c10::Float8_e5m2fnuz src) {
+    return static_cast<executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>>(
+        executorch::backends::aoti::slim::c10::complex<float>{src});
   }
 };
 
 template <>
 struct static_cast_with_inter_type<
-    standalone::c10::complex<standalone::c10::Half>,
-    standalone::c10::Float8_e4m3fn> {
+    executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>,
+    executorch::backends::aoti::slim::c10::Float8_e4m3fn> {
   STANDALONE_HOST_DEVICE
-  __ubsan_ignore_undefined__ static inline standalone::c10::complex<
-      standalone::c10::Half>
-  apply(standalone::c10::Float8_e4m3fn src) {
-    return static_cast<standalone::c10::complex<standalone::c10::Half>>(
-        standalone::c10::complex<float>{src});
+  __ubsan_ignore_undefined__ static inline executorch::backends::aoti::slim::
+      c10::complex<executorch::backends::aoti::slim::c10::Half>
+      apply(executorch::backends::aoti::slim::c10::Float8_e4m3fn src) {
+    return static_cast<executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>>(
+        executorch::backends::aoti::slim::c10::complex<float>{src});
   }
 };
 
 template <>
 struct static_cast_with_inter_type<
-    standalone::c10::complex<standalone::c10::Half>,
-    standalone::c10::Float8_e4m3fnuz> {
+    executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>,
+    executorch::backends::aoti::slim::c10::Float8_e4m3fnuz> {
   STANDALONE_HOST_DEVICE
-  __ubsan_ignore_undefined__ static inline standalone::c10::complex<
-      standalone::c10::Half>
-  apply(standalone::c10::Float8_e4m3fnuz src) {
-    return static_cast<standalone::c10::complex<standalone::c10::Half>>(
-        standalone::c10::complex<float>{src});
+  __ubsan_ignore_undefined__ static inline executorch::backends::aoti::slim::
+      c10::complex<executorch::backends::aoti::slim::c10::Half>
+      apply(executorch::backends::aoti::slim::c10::Float8_e4m3fnuz src) {
+    return static_cast<executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>>(
+        executorch::backends::aoti::slim::c10::complex<float>{src});
   }
 };
 
@@ -170,40 +180,47 @@ struct static_cast_with_inter_type<
 // based off our apply macros?
 template <>
 struct static_cast_with_inter_type<
-    standalone::c10::complex<standalone::c10::Half>,
-    standalone::c10::Float8_e8m0fnu> {
+    executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>,
+    executorch::backends::aoti::slim::c10::Float8_e8m0fnu> {
   STANDALONE_HOST_DEVICE
-  __ubsan_ignore_undefined__ static inline standalone::c10::complex<
-      standalone::c10::Half>
-  apply(standalone::c10::Float8_e8m0fnu src) {
-    return static_cast<standalone::c10::complex<standalone::c10::Half>>(
-        standalone::c10::complex<float>{src});
+  __ubsan_ignore_undefined__ static inline executorch::backends::aoti::slim::
+      c10::complex<executorch::backends::aoti::slim::c10::Half>
+      apply(executorch::backends::aoti::slim::c10::Float8_e8m0fnu src) {
+    return static_cast<executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>>(
+        executorch::backends::aoti::slim::c10::complex<float>{src});
   }
 };
 
 template <>
 struct static_cast_with_inter_type<
-    standalone::c10::complex<standalone::c10::Half>,
-    standalone::c10::Half> {
+    executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>,
+    executorch::backends::aoti::slim::c10::Half> {
   STANDALONE_HOST_DEVICE
-  __ubsan_ignore_undefined__ static inline standalone::c10::complex<
-      standalone::c10::Half>
-  apply(standalone::c10::Half src) {
-    return static_cast<standalone::c10::complex<standalone::c10::Half>>(
-        standalone::c10::complex<float>{src});
+  __ubsan_ignore_undefined__ static inline executorch::backends::aoti::slim::
+      c10::complex<executorch::backends::aoti::slim::c10::Half>
+      apply(executorch::backends::aoti::slim::c10::Half src) {
+    return static_cast<executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>>(
+        executorch::backends::aoti::slim::c10::complex<float>{src});
   }
 };
 
 template <>
 struct static_cast_with_inter_type<
-    standalone::c10::complex<standalone::c10::Half>,
-    standalone::c10::complex<double>> {
+    executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>,
+    executorch::backends::aoti::slim::c10::complex<double>> {
   STANDALONE_HOST_DEVICE
-  __ubsan_ignore_undefined__ static inline standalone::c10::complex<
-      standalone::c10::Half>
-  apply(standalone::c10::complex<double> src) {
-    return static_cast<standalone::c10::complex<standalone::c10::Half>>(
-        static_cast<standalone::c10::complex<float>>(src));
+  __ubsan_ignore_undefined__ static inline executorch::backends::aoti::slim::
+      c10::complex<executorch::backends::aoti::slim::c10::Half>
+      apply(executorch::backends::aoti::slim::c10::complex<double> src) {
+    return static_cast<executorch::backends::aoti::slim::c10::complex<
+        executorch::backends::aoti::slim::c10::Half>>(
+        static_cast<executorch::backends::aoti::slim::c10::complex<float>>(
+            src));
   }
 };
 
@@ -229,7 +246,7 @@ To checked_convert(From f, const char* name) {
   return convert<To, From>(f);
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 STANDALONE_CLANG_DIAGNOSTIC_POP()
 

@@ -7,7 +7,7 @@
 
 // Different from the original implementation in c10, we don't need
 // to support SymInt here.
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 namespace detail {
 template <typename T>
 T maybe_wrap_dim_slow(T dim, T dim_post_expr, bool wrap_scalar);
@@ -25,7 +25,7 @@ T _maybe_wrap_dim(T dim, T dim_post_expr, bool wrap_scalar = true) {
     return dim;
   }
   // Check edge-cases out-of-line (wrapping scalars and out-of-bounds errors)
-  return standalone::c10::detail::maybe_wrap_dim_slow<T>(
+  return executorch::backends::aoti::slim::c10::detail::maybe_wrap_dim_slow<T>(
       std::move(dim), std::move(dim_post_expr), wrap_scalar);
 }
 
@@ -48,7 +48,7 @@ T maybe_wrap_dim_slow(T dim, T dim_post_expr, bool wrap_scalar) {
         "Dimension specified as ",
         dim,
         " but tensor has no dimensions");
-    return standalone::c10::maybe_wrap_dim(
+    return executorch::backends::aoti::slim::c10::maybe_wrap_dim(
         std::move(dim),
         /*dim_post_expr=*/1,
         /*wrap_scalar=*/false);
@@ -70,4 +70,4 @@ T maybe_wrap_dim_slow(T dim, T dim_post_expr, bool wrap_scalar) {
       false, "should never reach here as dim should be out-of-bounds");
 }
 } // namespace detail
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

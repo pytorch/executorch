@@ -18,15 +18,15 @@
 #include <executorch/backends/aoti/slim/core/Storage.h>
 #include <executorch/backends/aoti/slim/util/SizeUtil.h>
 
-namespace standalone::slim {
+namespace executorch::backends::aoti::slim {
 
 class SlimTensor {
  public:
   SlimTensor(
       Storage&& storage,
-      standalone::c10::IntArrayRef sizes,
-      standalone::c10::IntArrayRef strides,
-      standalone::c10::ScalarType dtype,
+      executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+      executorch::backends::aoti::slim::c10::IntArrayRef strides,
+      executorch::backends::aoti::slim::c10::ScalarType dtype,
       int64_t storage_offset = 0)
       : storage_(std::move(storage)),
         storage_offset_(storage_offset),
@@ -39,7 +39,7 @@ class SlimTensor {
       : storage_(Storage()),
         storage_offset_(0),
         numel_(0),
-        dtype_(standalone::c10::ScalarType::Float),
+        dtype_(executorch::backends::aoti::slim::c10::ScalarType::Float),
         is_contiguous_(true) {
     sizes_and_strides_.set_sizes({0});
     sizes_and_strides_.set_strides({1});
@@ -67,42 +67,42 @@ class SlimTensor {
   }
 
   size_t itemsize() const {
-    return standalone::c10::elementSize(dtype_);
+    return executorch::backends::aoti::slim::c10::elementSize(dtype_);
   }
 
-  standalone::c10::IntArrayRef sizes() const {
+  executorch::backends::aoti::slim::c10::IntArrayRef sizes() const {
     return sizes_and_strides_.sizes_arrayref();
   }
 
   int64_t size(int64_t dim) const {
-    int64_t wrapped_dim =
-        standalone::c10::maybe_wrap_dim(dim, static_cast<int64_t>(this->dim()));
+    int64_t wrapped_dim = executorch::backends::aoti::slim::c10::maybe_wrap_dim(
+        dim, static_cast<int64_t>(this->dim()));
     return sizes_and_strides_.size_at(static_cast<size_t>(wrapped_dim));
   }
 
-  standalone::c10::IntArrayRef strides() const {
+  executorch::backends::aoti::slim::c10::IntArrayRef strides() const {
     return sizes_and_strides_.strides_arrayref();
   }
 
   int64_t stride(int64_t dim) const {
-    int64_t wrapped_dim =
-        standalone::c10::maybe_wrap_dim(dim, static_cast<int64_t>(this->dim()));
+    int64_t wrapped_dim = executorch::backends::aoti::slim::c10::maybe_wrap_dim(
+        dim, static_cast<int64_t>(this->dim()));
     return sizes_and_strides_.stride_at(static_cast<size_t>(wrapped_dim));
   }
 
-  standalone::c10::ScalarType dtype() const {
+  executorch::backends::aoti::slim::c10::ScalarType dtype() const {
     return dtype_;
   }
 
-  const standalone::c10::Device& device() const {
+  const executorch::backends::aoti::slim::c10::Device& device() const {
     return storage_->device();
   }
 
-  standalone::c10::DeviceType device_type() const {
+  executorch::backends::aoti::slim::c10::DeviceType device_type() const {
     return storage_->device().type();
   }
 
-  standalone::c10::DeviceIndex device_index() const {
+  executorch::backends::aoti::slim::c10::DeviceIndex device_index() const {
     return storage_->device().index();
   }
 
@@ -149,8 +149,8 @@ class SlimTensor {
   }
 
   void set_sizes_and_strides(
-      standalone::c10::IntArrayRef sizes,
-      standalone::c10::IntArrayRef strides,
+      executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+      executorch::backends::aoti::slim::c10::IntArrayRef strides,
       std::optional<int64_t> storage_offset = std::nullopt) {
     const int64_t new_dim = static_cast<int64_t>(sizes.size());
     STANDALONE_CHECK(
@@ -175,7 +175,7 @@ class SlimTensor {
           if (dim == new_dim - 1) {
             new_strides[dim] = 1;
           } else {
-            overflowed |= standalone::c10::mul_overflows(
+            overflowed |= executorch::backends::aoti::slim::c10::mul_overflows(
                 new_strides[dim + 1],
                 std::max<int64_t>(new_sizes[dim + 1], 1),
                 &new_strides[dim]);
@@ -195,20 +195,24 @@ class SlimTensor {
     refresh_contiguous();
   }
 
-  void set_sizes_contiguous(standalone::c10::IntArrayRef new_size) {
+  void set_sizes_contiguous(
+      executorch::backends::aoti::slim::c10::IntArrayRef new_size) {
     sizes_and_strides_.set_sizes(new_size);
     refresh_numel();
-    empty_tensor_restride(standalone::c10::MemoryFormat::Contiguous);
+    empty_tensor_restride(
+        executorch::backends::aoti::slim::c10::MemoryFormat::Contiguous);
   }
 
-  void empty_tensor_restride(standalone::c10::MemoryFormat memory_format);
+  void empty_tensor_restride(
+      executorch::backends::aoti::slim::c10::MemoryFormat memory_format);
 
   SlimTensor resize_(
-      standalone::c10::IntArrayRef sizes,
+      executorch::backends::aoti::slim::c10::IntArrayRef sizes,
       std::optional<c10::MemoryFormat> optional_memory_format);
 
   // Conversion operations
-  SlimTensor to(const standalone::c10::Device& device) const {
+  SlimTensor to(
+      const executorch::backends::aoti::slim::c10::Device& device) const {
     if (device == storage_->device()) {
       return *this;
     }
@@ -230,7 +234,7 @@ class SlimTensor {
     return to(DEFAULT_CUDA_DEVICE);
   }
 
-  SlimTensor to(standalone::c10::ScalarType dtype) const {
+  SlimTensor to(executorch::backends::aoti::slim::c10::ScalarType dtype) const {
     STANDALONE_CHECK(false, "TBD: to(dtype)");
   }
 
@@ -252,7 +256,8 @@ class SlimTensor {
 
     // Case 2: At least one tensor is non-contiguous, perform element-wise copy
     // that respects both source and destination strides.
-    const size_t elem_size = standalone::c10::elementSize(dtype_);
+    const size_t elem_size =
+        executorch::backends::aoti::slim::c10::elementSize(dtype_);
     char* dst_data = static_cast<char*>(this->data_ptr());
     const char* src_data = static_cast<const char*>(other.data_ptr());
 
@@ -372,7 +377,8 @@ class SlimTensor {
           }
         } else {
           // Handle non-contiguous tensors by respecting strides
-          const size_t elem_size = standalone::c10::elementSize(this->dtype_);
+          const size_t elem_size =
+              executorch::backends::aoti::slim::c10::elementSize(this->dtype_);
           char* base_data = static_cast<char*>(this->data_ptr());
 
           std::vector<int64_t> counter(this->dim(), 0);
@@ -403,41 +409,43 @@ class SlimTensor {
     };
 
     switch (this->dtype()) {
-      case standalone::c10::ScalarType::Double:
+      case executorch::backends::aoti::slim::c10::ScalarType::Double:
         fill_value(value.to<double>());
         break;
-      case standalone::c10::ScalarType::Float:
+      case executorch::backends::aoti::slim::c10::ScalarType::Float:
         fill_value(value.to<float>());
         break;
-      case standalone::c10::ScalarType::Half:
-        fill_value(value.to<standalone::c10::Half>());
+      case executorch::backends::aoti::slim::c10::ScalarType::Half:
+        fill_value(value.to<executorch::backends::aoti::slim::c10::Half>());
         break;
-      case standalone::c10::ScalarType::BFloat16:
-        fill_value(value.to<standalone::c10::BFloat16>());
+      case executorch::backends::aoti::slim::c10::ScalarType::BFloat16:
+        fill_value(value.to<executorch::backends::aoti::slim::c10::BFloat16>());
         break;
-      case standalone::c10::ScalarType::Long:
+      case executorch::backends::aoti::slim::c10::ScalarType::Long:
         fill_value(value.to<int64_t>());
         break;
-      case standalone::c10::ScalarType::Int:
+      case executorch::backends::aoti::slim::c10::ScalarType::Int:
         fill_value(value.to<int32_t>());
         break;
-      case standalone::c10::ScalarType::Short:
+      case executorch::backends::aoti::slim::c10::ScalarType::Short:
         fill_value(value.to<int16_t>());
         break;
-      case standalone::c10::ScalarType::Char:
+      case executorch::backends::aoti::slim::c10::ScalarType::Char:
         fill_value(value.to<int8_t>());
         break;
-      case standalone::c10::ScalarType::Byte:
+      case executorch::backends::aoti::slim::c10::ScalarType::Byte:
         fill_value(value.to<uint8_t>());
         break;
-      case standalone::c10::ScalarType::Bool:
+      case executorch::backends::aoti::slim::c10::ScalarType::Bool:
         fill_value(value.to<bool>());
         break;
-      case standalone::c10::ScalarType::ComplexFloat:
-        fill_value(value.to<standalone::c10::complex<float>>());
+      case executorch::backends::aoti::slim::c10::ScalarType::ComplexFloat:
+        fill_value(
+            value.to<executorch::backends::aoti::slim::c10::complex<float>>());
         break;
-      case standalone::c10::ScalarType::ComplexDouble:
-        fill_value(value.to<standalone::c10::complex<double>>());
+      case executorch::backends::aoti::slim::c10::ScalarType::ComplexDouble:
+        fill_value(
+            value.to<executorch::backends::aoti::slim::c10::complex<double>>());
         break;
       default:
         STANDALONE_CHECK(false, "fill_: Unsupported dtype");
@@ -452,34 +460,38 @@ class SlimTensor {
 
   SlimTensor clone_contiguous() const {
     std::vector<int64_t> contig_strides =
-        standalone::slim::compute_contiguous_strides(this->sizes());
+        executorch::backends::aoti::slim::compute_contiguous_strides(
+            this->sizes());
     return _clone_impl(
         this->sizes(), contig_strides, this->dtype(), this->device());
   }
 
   // View operations
   SlimTensor as_strided(
-      standalone::c10::IntArrayRef sizes,
-      standalone::c10::IntArrayRef strides,
+      executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+      executorch::backends::aoti::slim::c10::IntArrayRef strides,
       int64_t storage_offset) const;
   SlimTensor as_strided_(
-      standalone::c10::IntArrayRef sizes,
-      standalone::c10::IntArrayRef strides,
+      executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+      executorch::backends::aoti::slim::c10::IntArrayRef strides,
       int64_t storage_offset);
 
-  SlimTensor permute(standalone::c10::IntArrayRef dims) const;
+  SlimTensor permute(
+      executorch::backends::aoti::slim::c10::IntArrayRef dims) const;
 
   // Transpose operations
   SlimTensor transpose() const;
   SlimTensor transpose(int64_t dim0, int64_t dim1) const;
   SlimTensor t() const;
 
-  SlimTensor reshape(standalone::c10::IntArrayRef proposed_shape) const;
+  SlimTensor reshape(
+      executorch::backends::aoti::slim::c10::IntArrayRef proposed_shape) const;
 
   SlimTensor narrow(int64_t dim, int64_t start, int64_t length) const;
 
   // Generic element access returning SlimTensor
-  SlimTensor operator[](standalone::c10::IntArrayRef indices) const {
+  SlimTensor operator[](
+      executorch::backends::aoti::slim::c10::IntArrayRef indices) const {
     STANDALONE_CHECK(
         indices.size() <= this->dim(),
         "Number of indices (",
@@ -494,7 +506,7 @@ class SlimTensor {
       for (size_t i = 0; i < indices.size(); ++i) {
         int64_t idx = indices[i];
         int64_t size = this->size(i);
-        idx = standalone::c10::maybe_wrap_dim(idx, size);
+        idx = executorch::backends::aoti::slim::c10::maybe_wrap_dim(idx, size);
         linear_index += idx * this->stride(i);
       }
       // Create 0-dimensional tensor pointing to the indexed element
@@ -511,7 +523,7 @@ class SlimTensor {
       for (size_t i = 0; i < indices.size(); ++i) {
         int64_t idx = indices[i];
         int64_t size = this->size(i);
-        idx = standalone::c10::maybe_wrap_dim(idx, size);
+        idx = executorch::backends::aoti::slim::c10::maybe_wrap_dim(idx, size);
         offset_adjustment += idx * this->stride(i);
       }
 
@@ -533,41 +545,43 @@ class SlimTensor {
 
   // Convenience overload for single index
   SlimTensor operator[](int64_t index) const {
-    return (*this)[standalone::c10::IntArrayRef{index}];
+    return (*this)[executorch::backends::aoti::slim::c10::IntArrayRef{index}];
   }
 
   // Convenience overloads for common multi-dimensional cases
   SlimTensor operator[](std::initializer_list<int64_t> indices) const {
-    return (*this)[standalone::c10::IntArrayRef(indices)];
+    return (*this)[executorch::backends::aoti::slim::c10::IntArrayRef(indices)];
   }
 
   // Extract scalar value from 0-dimensional tensor
-  standalone::c10::Scalar item() const {
+  executorch::backends::aoti::slim::c10::Scalar item() const {
     switch (this->dtype()) {
-      case standalone::c10::ScalarType::Double:
+      case executorch::backends::aoti::slim::c10::ScalarType::Double:
         return this->item<double>();
-      case standalone::c10::ScalarType::Float:
+      case executorch::backends::aoti::slim::c10::ScalarType::Float:
         return this->item<float>();
-      case standalone::c10::ScalarType::Half:
-        return this->item<standalone::c10::Half>();
-      case standalone::c10::ScalarType::BFloat16:
-        return this->item<standalone::c10::BFloat16>();
-      case standalone::c10::ScalarType::Long:
+      case executorch::backends::aoti::slim::c10::ScalarType::Half:
+        return this->item<executorch::backends::aoti::slim::c10::Half>();
+      case executorch::backends::aoti::slim::c10::ScalarType::BFloat16:
+        return this->item<executorch::backends::aoti::slim::c10::BFloat16>();
+      case executorch::backends::aoti::slim::c10::ScalarType::Long:
         return this->item<int64_t>();
-      case standalone::c10::ScalarType::Int:
+      case executorch::backends::aoti::slim::c10::ScalarType::Int:
         return this->item<int32_t>();
-      case standalone::c10::ScalarType::Short:
+      case executorch::backends::aoti::slim::c10::ScalarType::Short:
         return this->item<int16_t>();
-      case standalone::c10::ScalarType::Char:
+      case executorch::backends::aoti::slim::c10::ScalarType::Char:
         return this->item<int8_t>();
-      case standalone::c10::ScalarType::Byte:
+      case executorch::backends::aoti::slim::c10::ScalarType::Byte:
         return this->item<uint8_t>();
-      case standalone::c10::ScalarType::Bool:
+      case executorch::backends::aoti::slim::c10::ScalarType::Bool:
         return this->item<bool>();
-      case standalone::c10::ScalarType::ComplexFloat:
-        return this->item<standalone::c10::complex<float>>();
-      case standalone::c10::ScalarType::ComplexDouble:
-        return this->item<standalone::c10::complex<double>>();
+      case executorch::backends::aoti::slim::c10::ScalarType::ComplexFloat:
+        return this
+            ->item<executorch::backends::aoti::slim::c10::complex<float>>();
+      case executorch::backends::aoti::slim::c10::ScalarType::ComplexDouble:
+        return this
+            ->item<executorch::backends::aoti::slim::c10::complex<double>>();
       default:
         STANDALONE_CHECK(false, "item(): Unsupported dtype");
     }
@@ -589,10 +603,10 @@ class SlimTensor {
 
  private:
   SlimTensor _clone_impl(
-      standalone::c10::IntArrayRef sizes,
-      standalone::c10::IntArrayRef strides,
-      standalone::c10::ScalarType dtype,
-      const standalone::c10::Device& device) const {
+      executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+      executorch::backends::aoti::slim::c10::IntArrayRef strides,
+      executorch::backends::aoti::slim::c10::ScalarType dtype,
+      const executorch::backends::aoti::slim::c10::Device& device) const {
     Storage storage = new_storage(sizes, strides, dtype, device);
     SlimTensor result =
         SlimTensor(std::move(storage), sizes, strides, dtype, 0);
@@ -605,7 +619,7 @@ class SlimTensor {
   }
 
   bool compute_is_contiguous() const {
-    return standalone::c10::_compute_contiguous<int64_t>(
+    return executorch::backends::aoti::slim::c10::_compute_contiguous<int64_t>(
         sizes_and_strides_.sizes_arrayref(),
         sizes_and_strides_.strides_arrayref(),
         numel_);
@@ -619,19 +633,27 @@ class SlimTensor {
 
   Storage storage_; // device_type_ and device_index_ are stored in storage_
   int64_t storage_offset_{0};
-  standalone::c10::SizesAndStrides sizes_and_strides_;
+  executorch::backends::aoti::slim::c10::SizesAndStrides sizes_and_strides_;
   // If sizes and strides are empty, the numel is 1!!  However, most of the
   // time, we will immediately set sizes to {0} and reset numel to 0.
   // (Can't do that in the default initializers, because there's no way to
   // spell "allocate a one-element array" for strides_).
   size_t numel_{1};
-  standalone::c10::ScalarType dtype_;
+  executorch::backends::aoti::slim::c10::ScalarType dtype_;
   bool is_contiguous_{true};
   // NOLINTNEXTLINE(clang-diagnostic-unused-private-field)
   std::array<int8_t, 6> reserved_{0}; // padding to align to 8 bytes
 };
 
-} // namespace standalone::slim
+} // namespace executorch::backends::aoti::slim
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::backends::aoti::slim::SlimTensor;
+} // namespace executor
+} // namespace torch
 
 #include <executorch/backends/aoti/slim/core/SlimTensorResize-incl.h>
 #include <executorch/backends/aoti/slim/core/SlimTensorView-incl.h>

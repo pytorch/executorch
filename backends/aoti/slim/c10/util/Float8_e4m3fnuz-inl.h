@@ -10,7 +10,7 @@ STANDALONE_CLANG_DIAGNOSTIC_PUSH()
 STANDALONE_CLANG_DIAGNOSTIC_IGNORE("-Wimplicit-int-float-conversion")
 #endif
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 /// Constructors
 
@@ -239,14 +239,15 @@ operator/(int64_t a, Float8_e4m3fnuz b) {
 }
 
 /// NOTE: we do not define comparisons directly and instead rely on the implicit
-/// conversion from standalone::c10::Float8_e4m3fnuz to float.
+/// conversion from executorch::backends::aoti::slim::c10::Float8_e4m3fnuz to
+/// float.
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 namespace std {
 
 template <>
-class numeric_limits<standalone::c10::Float8_e4m3fnuz> {
+class numeric_limits<executorch::backends::aoti::slim::c10::Float8_e4m3fnuz> {
  public:
   static constexpr bool is_specialized = true;
   static constexpr bool is_signed = true;
@@ -272,38 +273,54 @@ class numeric_limits<standalone::c10::Float8_e4m3fnuz> {
   static constexpr auto traps = numeric_limits<float>::traps;
   static constexpr auto tinyness_before = false;
 
-  static constexpr standalone::c10::Float8_e4m3fnuz min() {
-    return standalone::c10::Float8_e4m3fnuz(
-        0x08, standalone::c10::Float8_e4m3fnuz::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e4m3fnuz
+  min() {
+    return executorch::backends::aoti::slim::c10::Float8_e4m3fnuz(
+        0x08,
+        executorch::backends::aoti::slim::c10::Float8_e4m3fnuz::from_bits());
   }
-  static constexpr standalone::c10::Float8_e4m3fnuz lowest() {
-    return standalone::c10::Float8_e4m3fnuz(
-        0xFF, standalone::c10::Float8_e4m3fnuz::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e4m3fnuz
+  lowest() {
+    return executorch::backends::aoti::slim::c10::Float8_e4m3fnuz(
+        0xFF,
+        executorch::backends::aoti::slim::c10::Float8_e4m3fnuz::from_bits());
   }
-  static constexpr standalone::c10::Float8_e4m3fnuz max() {
-    return standalone::c10::Float8_e4m3fnuz(
-        0x7F, standalone::c10::Float8_e4m3fnuz::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e4m3fnuz
+  max() {
+    return executorch::backends::aoti::slim::c10::Float8_e4m3fnuz(
+        0x7F,
+        executorch::backends::aoti::slim::c10::Float8_e4m3fnuz::from_bits());
   }
-  static constexpr standalone::c10::Float8_e4m3fnuz epsilon() {
-    return standalone::c10::Float8_e4m3fnuz(
-        0x28, standalone::c10::Float8_e4m3fnuz::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e4m3fnuz
+  epsilon() {
+    return executorch::backends::aoti::slim::c10::Float8_e4m3fnuz(
+        0x28,
+        executorch::backends::aoti::slim::c10::Float8_e4m3fnuz::from_bits());
   }
-  static constexpr standalone::c10::Float8_e4m3fnuz round_error() {
-    return standalone::c10::Float8_e4m3fnuz(
-        0x38, standalone::c10::Float8_e4m3fnuz::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e4m3fnuz
+  round_error() {
+    return executorch::backends::aoti::slim::c10::Float8_e4m3fnuz(
+        0x38,
+        executorch::backends::aoti::slim::c10::Float8_e4m3fnuz::from_bits());
   }
-  static constexpr standalone::c10::Float8_e4m3fnuz infinity() {
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e4m3fnuz
+  infinity() {
     // NaN (no infinities)
-    return standalone::c10::Float8_e4m3fnuz(
-        0x80, standalone::c10::Float8_e4m3fnuz::from_bits());
+    return executorch::backends::aoti::slim::c10::Float8_e4m3fnuz(
+        0x80,
+        executorch::backends::aoti::slim::c10::Float8_e4m3fnuz::from_bits());
   }
-  static constexpr standalone::c10::Float8_e4m3fnuz quiet_NaN() {
-    return standalone::c10::Float8_e4m3fnuz(
-        0x80, standalone::c10::Float8_e4m3fnuz::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e4m3fnuz
+  quiet_NaN() {
+    return executorch::backends::aoti::slim::c10::Float8_e4m3fnuz(
+        0x80,
+        executorch::backends::aoti::slim::c10::Float8_e4m3fnuz::from_bits());
   }
-  static constexpr standalone::c10::Float8_e4m3fnuz denorm_min() {
-    return standalone::c10::Float8_e4m3fnuz(
-        0x01, standalone::c10::Float8_e4m3fnuz::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e4m3fnuz
+  denorm_min() {
+    return executorch::backends::aoti::slim::c10::Float8_e4m3fnuz(
+        0x01,
+        executorch::backends::aoti::slim::c10::Float8_e4m3fnuz::from_bits());
   }
 };
 

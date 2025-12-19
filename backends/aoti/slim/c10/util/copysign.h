@@ -3,7 +3,7 @@
 #include <executorch/backends/aoti/slim/c10/util/BFloat16.h>
 #include <executorch/backends/aoti/slim/c10/util/Half.h>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 // Note: Explicit implementation of copysign for Half and BFloat16
 // is needed to workaround g++-7/8 crash on aarch64, but also makes
@@ -23,4 +23,4 @@ inline BFloat16 copysign(BFloat16 a, BFloat16 b) {
   return BFloat16((a.x & 0x7fff) | (b.x & 0x8000), BFloat16::from_bits());
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

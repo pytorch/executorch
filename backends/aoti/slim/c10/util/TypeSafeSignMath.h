@@ -13,7 +13,7 @@ STANDALONE_CLANG_DIAGNOSTIC_IGNORE("-Wstring-conversion")
 STANDALONE_CLANG_DIAGNOSTIC_IGNORE("-Wimplicit-int-float-conversion")
 #endif
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 /// Returns false since we cannot have x < 0 if x is unsigned.
 template <typename T>
@@ -33,7 +33,8 @@ inline constexpr bool is_negative(const T& x, std::false_type /*is_unsigned*/) {
 /// NOTE: Will fail on an unsigned custom type
 ///       For the most part it's possible to fix this if
 ///       the custom type has a constexpr constructor.
-///       However, notably, standalone::c10::Half does not :-(
+///       However, notably, executorch::backends::aoti::slim::c10::Half does not
+///       :-(
 template <typename T>
 inline constexpr bool is_negative(const T& x) {
   return is_negative(x, std::is_unsigned<T>());
@@ -55,7 +56,8 @@ inline constexpr int signum(const T& x, std::false_type /*is_unsigned*/) {
 /// NOTE: Will fail on an unsigned custom type
 ///       For the most part it's possible to fix this if
 ///       the custom type has a constexpr constructor.
-///       However, notably, standalone::c10::Half does not :-(
+///       However, notably, executorch::backends::aoti::slim::c10::Half does not
+///       :-(
 template <typename T>
 inline constexpr int signum(const T& x) {
   return signum(x, std::is_unsigned<T>());
@@ -129,13 +131,14 @@ inline constexpr bool less_than_lowest(
 /// NOTE: Will fail on an unsigned custom type
 ///       For the most part it's possible to fix this if
 ///       the custom type has a constexpr constructor.
-///       However, notably, standalone::c10::Half does not :
+///       However, notably, executorch::backends::aoti::slim::c10::Half does not
+///       :
 template <typename Limit, typename T>
 inline constexpr bool less_than_lowest(const T& x) {
   return less_than_lowest<Limit>(
       x, std::is_unsigned<Limit>(), std::is_unsigned<T>());
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 STANDALONE_CLANG_DIAGNOSTIC_POP()

@@ -11,7 +11,7 @@ STANDALONE_CLANG_DIAGNOSTIC_PUSH()
 STANDALONE_CLANG_DIAGNOSTIC_IGNORE("-Wimplicit-int-float-conversion")
 #endif
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 /// Constructors
 
@@ -25,18 +25,20 @@ inline STANDALONE_HOST_DEVICE Float8_e8m0fnu::operator float() const {
 
   // if exponent is zero, need to special case to return 2^-127 instead of zero
   if (x == 0) {
-    return standalone::c10::detail::fp32_from_bits(0x00400000);
+    return executorch::backends::aoti::slim::c10::detail::fp32_from_bits(
+        0x00400000);
   }
 
   // if exponent is NaN, need to special case to return properly encoded NaN
   if (isnan()) {
-    return standalone::c10::detail::fp32_from_bits(0x7f800001);
+    return executorch::backends::aoti::slim::c10::detail::fp32_from_bits(
+        0x7f800001);
   }
 
   // leave sign at 0, set the exponent bits, leave stored mantissa at 0
   uint32_t res = x << 23;
 
-  return standalone::c10::detail::fp32_from_bits(res);
+  return executorch::backends::aoti::slim::c10::detail::fp32_from_bits(res);
 }
 
 /// Special values helper
@@ -46,14 +48,15 @@ inline STANDALONE_HOST_DEVICE bool Float8_e8m0fnu::isnan() const {
 }
 
 /// NOTE: we do not define comparisons directly and instead rely on the implicit
-/// conversion from standalone::c10::Float8_e8m0fnu to float.
+/// conversion from executorch::backends::aoti::slim::c10::Float8_e8m0fnu to
+/// float.
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
 
 namespace std {
 
 template <>
-class numeric_limits<standalone::c10::Float8_e8m0fnu> {
+class numeric_limits<executorch::backends::aoti::slim::c10::Float8_e8m0fnu> {
  public:
   static constexpr bool is_specialized = true;
   static constexpr bool is_signed = false;
@@ -79,37 +82,47 @@ class numeric_limits<standalone::c10::Float8_e8m0fnu> {
   static constexpr auto traps = numeric_limits<float>::traps;
   static constexpr auto tinyness_before = false;
 
-  static constexpr standalone::c10::Float8_e8m0fnu min() {
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e8m0fnu min() {
     // 2^-127
-    return standalone::c10::Float8_e8m0fnu(
-        0b00000000, standalone::c10::Float8_e8m0fnu::from_bits());
+    return executorch::backends::aoti::slim::c10::Float8_e8m0fnu(
+        0b00000000,
+        executorch::backends::aoti::slim::c10::Float8_e8m0fnu::from_bits());
   }
-  static constexpr standalone::c10::Float8_e8m0fnu lowest() {
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e8m0fnu
+  lowest() {
     // 2^-127
-    return standalone::c10::Float8_e8m0fnu(
-        0b00000000, standalone::c10::Float8_e8m0fnu::from_bits());
+    return executorch::backends::aoti::slim::c10::Float8_e8m0fnu(
+        0b00000000,
+        executorch::backends::aoti::slim::c10::Float8_e8m0fnu::from_bits());
   }
-  static constexpr standalone::c10::Float8_e8m0fnu max() {
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e8m0fnu max() {
     // 254 biased, which is 127 unbiased, so 2^127
-    return standalone::c10::Float8_e8m0fnu(
-        0b11111110, standalone::c10::Float8_e8m0fnu::from_bits());
+    return executorch::backends::aoti::slim::c10::Float8_e8m0fnu(
+        0b11111110,
+        executorch::backends::aoti::slim::c10::Float8_e8m0fnu::from_bits());
   }
-  static constexpr standalone::c10::Float8_e8m0fnu epsilon() {
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e8m0fnu
+  epsilon() {
     // according to https://en.cppreference.com/w/cpp/types/numeric_limits, this
     // is "the difference between 1.0 and the next representable value of the
     // given floating-point type". The next representable value is 2.0, so the
     // difference is 1.0 which is 2^0. 0 unbiased is 127 biased.
-    return standalone::c10::Float8_e8m0fnu(
-        0b01111111, standalone::c10::Float8_e8m0fnu::from_bits());
+    return executorch::backends::aoti::slim::c10::Float8_e8m0fnu(
+        0b01111111,
+        executorch::backends::aoti::slim::c10::Float8_e8m0fnu::from_bits());
   }
-  static constexpr standalone::c10::Float8_e8m0fnu round_error() {
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e8m0fnu
+  round_error() {
     // 0.5 in float, which is 2^-1, and -1 + 127 = 126
-    return standalone::c10::Float8_e8m0fnu(
-        0b01111110, standalone::c10::Float8_e8m0fnu::from_bits());
+    return executorch::backends::aoti::slim::c10::Float8_e8m0fnu(
+        0b01111110,
+        executorch::backends::aoti::slim::c10::Float8_e8m0fnu::from_bits());
   }
-  static constexpr standalone::c10::Float8_e8m0fnu quiet_NaN() {
-    return standalone::c10::Float8_e8m0fnu(
-        0b11111111, standalone::c10::Float8_e8m0fnu::from_bits());
+  static constexpr executorch::backends::aoti::slim::c10::Float8_e8m0fnu
+  quiet_NaN() {
+    return executorch::backends::aoti::slim::c10::Float8_e8m0fnu(
+        0b11111111,
+        executorch::backends::aoti::slim::c10::Float8_e8m0fnu::from_bits());
   }
 };
 

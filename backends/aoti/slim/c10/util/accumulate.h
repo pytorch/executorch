@@ -11,7 +11,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 /// Sum of a list of integers; accumulates into the int64_t datatype
 template <
@@ -122,4 +122,4 @@ inline int64_t numelements_between_dim(int k, int l, const C& dims) {
   return multiply_integers(cbegin, cend);
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10

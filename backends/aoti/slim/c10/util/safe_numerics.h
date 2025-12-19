@@ -12,7 +12,7 @@
 #define STANDALONE_HAS_BUILTIN_OVERFLOW() (1)
 #endif
 
-namespace standalone::c10 {
+namespace executorch::backends::aoti::slim::c10 {
 
 STANDALONE_ALWAYS_INLINE bool
 add_overflows(uint64_t a, uint64_t b, uint64_t* out) {
@@ -40,8 +40,8 @@ mul_overflows(uint64_t a, uint64_t b, uint64_t* out) {
   *out = a * b;
   // This test isnt exact, but avoids doing integer division
   return (
-      (standalone::c10::llvm::countLeadingZeros(a) +
-       standalone::c10::llvm::countLeadingZeros(b)) < 64);
+      (executorch::backends::aoti::slim::c10::llvm::countLeadingZeros(a) +
+       executorch::backends::aoti::slim::c10::llvm::countLeadingZeros(b)) < 64);
 #endif
 }
 
@@ -65,7 +65,8 @@ bool safe_multiplies_u64(It first, It last, uint64_t* out) {
   uint64_t prod = 1;
   bool overflow = false;
   for (; first != last; ++first) {
-    overflow |= standalone::c10::mul_overflows(prod, *first, &prod);
+    overflow |= executorch::backends::aoti::slim::c10::mul_overflows(
+        prod, *first, &prod);
   }
   *out = prod;
   return overflow;
@@ -78,7 +79,7 @@ bool safe_multiplies_u64(It first, It last, uint64_t* out) {
     prod *= x;
     // log2(0) isn't valid, so need to track it specially
     is_zero |= (x == 0);
-    prod_log2 += standalone::c10::llvm::Log2_64_Ceil(x);
+    prod_log2 += executorch::backends::aoti::slim::c10::llvm::Log2_64_Ceil(x);
   }
   *out = prod;
   // This test isnt exact, but avoids doing integer division
@@ -91,4 +92,4 @@ bool safe_multiplies_u64(const Container& c, uint64_t* out) {
   return safe_multiplies_u64(c.begin(), c.end(), out);
 }
 
-} // namespace standalone::c10
+} // namespace executorch::backends::aoti::slim::c10
