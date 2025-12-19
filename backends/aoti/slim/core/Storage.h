@@ -10,9 +10,9 @@
 
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
-#include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
 #include <executorch/backends/aoti/slim/util/SharedPtr.h>
 #include <executorch/backends/aoti/slim/util/SizeUtil.h>
+#include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -310,8 +310,8 @@ class MaybeOwningStorage {
 using Storage = SharedPtr<MaybeOwningStorage>;
 
 inline Storage new_storage(
-    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
-    executorch::backends::aoti::slim::c10::IntArrayRef strides,
+    IntArrayRef sizes,
+    IntArrayRef strides,
     executorch::backends::aoti::slim::c10::ScalarType dtype,
     const executorch::backends::aoti::slim::c10::Device& device = CPU_DEVICE) {
   size_t nbytes = compute_storage_nbytes(

@@ -3,12 +3,11 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <stdexcept>
 
-#include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
 #include <executorch/backends/aoti/slim/c10/util/accumulate.h>
 #include <executorch/backends/aoti/slim/c10/util/irange.h>
 #include <executorch/backends/aoti/slim/c10/util/safe_numerics.h>
+#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
 
 namespace executorch::backends::aoti::slim {
 #ifndef STANDALONE_MOBILE
@@ -27,8 +26,7 @@ inline constexpr uint64_t storage_max() {
  * tensor. Catches integer overflow that may occur when a tensor
  * using a sparse layout has multiple dimensions with large sizes.
  */
-inline int64_t safe_compute_numel(
-    executorch::backends::aoti::slim::c10::IntArrayRef sizes) {
+inline int64_t safe_compute_numel(IntArrayRef sizes) {
   uint64_t n = 1;
   bool overflowed =
       executorch::backends::aoti::slim::c10::safe_multiplies_u64(sizes, &n);
@@ -37,8 +35,7 @@ inline int64_t safe_compute_numel(
   return static_cast<int64_t>(n);
 }
 
-inline std::vector<int64_t> safe_compute_contiguous_strides(
-    c10::IntArrayRef sizes) {
+inline std::vector<int64_t> safe_compute_contiguous_strides(IntArrayRef sizes) {
   int64_t ndim = static_cast<int64_t>(sizes.size());
   std::vector<int64_t> strides(ndim);
   if (ndim > 0) {
@@ -60,8 +57,7 @@ inline std::vector<int64_t> safe_compute_contiguous_strides(
 }
 #endif // STANDALONE_MOBILE
 
-inline int64_t compute_numel(
-    executorch::backends::aoti::slim::c10::IntArrayRef sizes) {
+inline int64_t compute_numel(IntArrayRef sizes) {
 #ifndef STANDALONE_MOBILE
   // Use overflow checks if supported by the compiler
   return safe_compute_numel(sizes);
@@ -72,7 +68,7 @@ inline int64_t compute_numel(
 
 // named computeStorageNbytesContiguous in c10
 inline size_t compute_storage_nbytes_contiguous(
-    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+    IntArrayRef sizes,
     size_t itemsize_bytes,
     size_t storage_offset) {
 // Ignore overflow checks on mobile
@@ -95,8 +91,8 @@ inline size_t compute_storage_nbytes_contiguous(
 
 // named computeStorageNbytes in c10
 inline size_t compute_storage_nbytes(
-    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
-    executorch::backends::aoti::slim::c10::IntArrayRef strides,
+    IntArrayRef sizes,
+    IntArrayRef strides,
     size_t itemsize_bytes,
     size_t storage_offset) {
   ET_CHECK_MSG(
@@ -144,7 +140,7 @@ inline size_t compute_storage_nbytes(
 #endif
 }
 
-inline std::vector<int64_t> compute_contiguous_strides(c10::IntArrayRef sizes) {
+inline std::vector<int64_t> compute_contiguous_strides(IntArrayRef sizes) {
 #ifndef STANDALONE_MOBILE
   return safe_compute_contiguous_strides(sizes);
 #else
@@ -165,9 +161,7 @@ inline std::vector<int64_t> compute_contiguous_strides(c10::IntArrayRef sizes) {
 
 // calculates the final concrete shape by also filling in at most one '-1'
 // dimension.
-inline std::vector<int64_t> infer_size(
-    executorch::backends::aoti::slim::c10::IntArrayRef shape,
-    int64_t numel) {
+inline std::vector<int64_t> infer_size(IntArrayRef shape, int64_t numel) {
   int64_t new_size = 1;
   std::optional<int64_t> infer_dim;
   std::vector<int64_t> result_shape;
@@ -215,9 +209,9 @@ inline std::vector<int64_t> infer_size(
 // If so, it returns the new strides
 // If not, it returns an empty optional
 inline std::optional<std::vector<int64_t>> compute_stride(
-    executorch::backends::aoti::slim::c10::IntArrayRef old_sizes,
-    executorch::backends::aoti::slim::c10::IntArrayRef old_strides,
-    executorch::backends::aoti::slim::c10::IntArrayRef new_sizes) {
+    IntArrayRef old_sizes,
+    IntArrayRef old_strides,
+    IntArrayRef new_sizes) {
   if (old_sizes.empty()) {
     return std::vector<int64_t>(new_sizes.size(), 1);
   }
@@ -229,7 +223,7 @@ inline std::optional<std::vector<int64_t>> compute_stride(
   // didn't seem worth it.
   size_t numel = compute_numel(old_sizes);
   if (numel == 0 && old_sizes == new_sizes) {
-    return old_strides.vec();
+    return toVec(old_strides);
   }
 
   int64_t new_sizes_len = static_cast<int64_t>(new_sizes.size());

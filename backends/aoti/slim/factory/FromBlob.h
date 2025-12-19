@@ -1,14 +1,16 @@
 #pragma once
 
-#include <executorch/backends/aoti/slim/factory/Empty.h>
+#include <executorch/backends/aoti/slim/core/SlimTensor.h>
+#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
+#include <executorch/backends/aoti/slim/util/SizeUtil.h>
 
 namespace executorch::backends::aoti::slim {
 
 // The returned SlimTensor does not own the underlying storage
 inline SlimTensor from_blob(
     void* data,
-    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
-    executorch::backends::aoti::slim::c10::IntArrayRef strides,
+    IntArrayRef sizes,
+    IntArrayRef strides,
     executorch::backends::aoti::slim::c10::ScalarType dtype,
     const executorch::backends::aoti::slim::c10::Device& device = CPU_DEVICE,
     int64_t storage_offset = 0) {
@@ -24,13 +26,39 @@ inline SlimTensor from_blob(
 
 inline SlimTensor from_blob(
     void* data,
-    executorch::backends::aoti::slim::c10::IntArrayRef sizes,
+    IntArrayRef sizes,
     executorch::backends::aoti::slim::c10::ScalarType dtype,
     const executorch::backends::aoti::slim::c10::Device& device = CPU_DEVICE,
     int64_t storage_offset = 0) {
   std::vector<int64_t> contig_strides =
       executorch::backends::aoti::slim::compute_contiguous_strides(sizes);
-  return from_blob(data, sizes, contig_strides, dtype, device, storage_offset);
+  return from_blob(
+      data, sizes, makeArrayRef(contig_strides), dtype, device, storage_offset);
+}
+
+inline SlimTensor from_blob(
+    void* data,
+    std::initializer_list<int64_t> sizes,
+    executorch::backends::aoti::slim::c10::ScalarType dtype,
+    const executorch::backends::aoti::slim::c10::Device& device = CPU_DEVICE,
+    int64_t storage_offset = 0) {
+  return from_blob(data, makeArrayRef(sizes), dtype, device, storage_offset);
+}
+
+inline SlimTensor from_blob(
+    void* data,
+    std::initializer_list<int64_t> sizes,
+    std::initializer_list<int64_t> strides,
+    executorch::backends::aoti::slim::c10::ScalarType dtype,
+    const executorch::backends::aoti::slim::c10::Device& device = CPU_DEVICE,
+    int64_t storage_offset = 0) {
+  return from_blob(
+      data,
+      makeArrayRef(sizes),
+      makeArrayRef(strides),
+      dtype,
+      device,
+      storage_offset);
 }
 
 } // namespace executorch::backends::aoti::slim

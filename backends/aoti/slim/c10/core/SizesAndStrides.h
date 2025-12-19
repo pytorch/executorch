@@ -6,12 +6,14 @@
 #include <cstring>
 
 #include <executorch/backends/aoti/slim/c10/macros/Macros.h>
-#include <executorch/backends/aoti/slim/c10/util/ArrayRef.h>
+#include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/platform/assert.h>
 
 #define STANDALONE_SIZES_AND_STRIDES_MAX_INLINE_SIZE 5
 
 namespace executorch::backends::aoti::slim::c10 {
+
+using ::executorch::runtime::IntArrayRef;
 
 // Packed container for TensorImpl sizes and strides.
 // This design improves on the previous approach of using a pair of
