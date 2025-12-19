@@ -161,9 +161,41 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
  * @return Error::Ok on success, appropriate error code on failure:
  *         - Error::InvalidArgument: null pointers or invalid parameters
  */
-AOTITorchError aoti_torch_new_tensor_handle(
-    Tensor* orig_handle,
-    Tensor** new_handle);
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_new_tensor_handle(Tensor* orig_handle, Tensor** new_handle);
+
+/**
+ * Retrieves a boolean value from a 0D boolean tensor.
+ *
+ * This function extracts the scalar boolean value from a tensor that contains
+ * a single boolean element. The tensor can be on either CPU or CUDA device.
+ * For CUDA tensors, the value is copied from device to host memory.
+ *
+ * @param tensor Pointer to a 0D boolean tensor (must not be null)
+ * @param ret_value Output pointer to store the boolean value (must not be null)
+ *
+ * @return Error::Ok on success, appropriate error code on failure:
+ *         - Error::InvalidArgument: null pointers or tensor dtype is not bool
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_bool(Tensor* tensor, bool* ret_value);
+
+/**
+ * Creates a new tensor that shares the same underlying data as the source
+ * tensor.
+ *
+ * This function creates a new tensor view with the same shape, strides, and
+ * dtype as the source tensor, sharing the same underlying memory. The new
+ * tensor handle will be stored in ret_dst.
+ *
+ * @param src The source tensor providing the data and metadata.
+ * @param ret_dst On output, this will point to the new tensor view.
+ *
+ * @return Error::Ok on success, appropriate error code on failure:
+ *         - Error::InvalidArgument: null pointers or memory not tracked
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst);
 
 // Function to clear all tensors from internal storage
 AOTI_SHIM_EXPORT void clear_all_tensors();
