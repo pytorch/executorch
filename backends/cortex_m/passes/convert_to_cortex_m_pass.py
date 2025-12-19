@@ -51,6 +51,24 @@ class ConvertToCortexMPass(XNNPACKPass):
 
         return kernel_sum_offset
 
+    def _get_batch_size_from_conv(self, conv_node: torch.fx.Node):
+        """
+        Extract batch size from convolution node's output shape.
+
+        Returns None if shape metadata is unavailable, which can occur when
+        processing nodes created earlier in the same pass iteration.
+
+        For Conv2d operations, output_batch_size always equals input_batch_size.
+        Conv2d outputs are always 4D (N, C, H, W) in the edge dialect.
+        """
+        try:
+            if "val" in conv_node.meta:
+                output_shape = conv_node.meta["val"].shape
+                return output_shape[0]
+        except (AttributeError, TypeError):
+            pass
+        return None
+
     def _get_linear_replacement(self, node):
         """
          Let
@@ -159,11 +177,26 @@ class ConvertToCortexMPass(XNNPACKPass):
         weight_tensor = get_param_tensor(self.exported_program, weight)
 
         # Detect depthwise convolution:
-        # PyTorch depthwise weight is [out_ch, 1, H, W] where dimension 1 is 1
-        # and groups == input_channels (groups > 1)
-        is_depthwise = weight_tensor.shape[1] == 1 and groups > 1
+        # Depthwise means groups == in_channels, out_channels == K * in_channels
+        # Weight shape is [out_ch, in_ch_per_group, H, W]
+        in_channels = weight_tensor.shape[1] * groups
+        out_channels = weight_tensor.shape[0]
+        is_depthwise = (in_channels == groups) and (out_channels % in_channels == 0)
 
-        if is_depthwise:
+        # Only use DW path if batch_size==1, as CMSIS-NN DW falls back to
+        # unoptimized implementation otherwise.
+        batch_size = self._get_batch_size_from_conv(node)
+
+        # TODO(#16347): It is likely but not certain that the un-optimized
+        # CMSIS-NN DW conv or the one without any SIMD is less efficient that
+        # the corresponding CMSIS-NN conv. We should benchmark and update the
+        # constraints.
+        # optimal_dw_conv_constraints = (batch_size == 1) and (
+        #    (in_channels == out_channels and dilation == [1, 1]) or (in_channels == 1)
+        # )
+        use_depthwise_conv = is_depthwise and (batch_size == 1)
+
+        if use_depthwise_conv:
             # For depthwise: OIHW -> IHWO which gives [1, H, W, C_OUT] for CMSIS-NN
             # PyTorch depthwise weight is [out_ch, 1, H, W], permute to [1, H, W, out_ch]
             weight_permuted = weight_tensor.permute(1, 2, 3, 0).contiguous(
@@ -200,27 +233,16 @@ class ConvertToCortexMPass(XNNPACKPass):
                 torch.tensor(quantized_shifts, dtype=torch.int32),
             )
 
-        if is_depthwise:
+        if use_depthwise_conv:
             # Compute depth_multiplier for depthwise convolution
             # For depthwise: output_channels = input_channels * depth_multiplier
-            # PyTorch depthwise weight is [C_OUT, 1, H, W]
-            output_channels = weight_tensor.shape[0]
-            input_channels = groups  # For depthwise, groups == input_channels
 
-            # CMSIS-NN depthwise convolution only supports batch size of 1
-            input_tensor = get_first_fake_tensor(x)
-            batch_size = input_tensor.shape[0]
-            if batch_size != 1:
+            if out_channels % in_channels != 0:
                 raise ValueError(
-                    f"Depthwise conv: CMSIS-NN only supports batch size 1, got {batch_size}"
+                    f"Depthwise conv: output_channels ({out_channels}) must be "
+                    f"divisible by input_channels ({in_channels})"
                 )
-
-            if output_channels % input_channels != 0:
-                raise ValueError(
-                    f"Depthwise conv: output_channels ({output_channels}) must be "
-                    f"divisible by input_channels ({input_channels})"
-                )
-            depth_multiplier = output_channels // input_channels
+            depth_multiplier = out_channels // in_channels
 
             new_args = (
                 x,

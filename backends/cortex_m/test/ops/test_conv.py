@@ -289,6 +289,27 @@ test_cases = {
             ramp_tensor(0, 10, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
+    "depthwise_conv2d_minimal_spatial": McuTestCase(
+        model=CortexMDepthwiseConv2D(
+            2, 2, 3, padding=1, groups=2
+        ),  # 3x3 kernel on 1x1 input
+        example_inputs=(
+            ramp_tensor(0, 10, (1, 2, 1, 1)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    # Single-channel depthwise convolution tests (in_channels == groups == 1)
+    "depthwise_conv2d_single_channel": McuTestCase(
+        model=CortexMDepthwiseConv2D(1, 1, 3, groups=1),
+        example_inputs=(
+            ramp_tensor(0, 10, (1, 1, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "depthwise_conv2d_single_channel_multiplier": McuTestCase(
+        model=CortexMDepthwiseConv2D(1, 3, 3, groups=1),
+        example_inputs=(
+            ramp_tensor(0, 10, (1, 1, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
 }
 
 

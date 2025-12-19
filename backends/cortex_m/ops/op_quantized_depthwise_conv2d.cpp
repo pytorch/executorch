@@ -227,24 +227,29 @@ Tensor& quantized_depthwise_conv2d_out(
   cmsis_context.buf = nullptr;
   cmsis_context.size = 0;
 
-  const size_t buffer_bytes =
-      static_cast<size_t>(arm_depthwise_conv_wrapper_s8_get_buffer_size(
-          &dw_conv_params, &input_dims, &filter_dims, &output_dims));
-  if (buffer_bytes > 0) {
-    auto buffer_or_error =
-        context.allocate_temp(buffer_bytes, alignof(int16_t));
-    if (!buffer_or_error.ok()) {
-      ET_LOG(
-          Error,
-          "quantized_depthwise_conv2d_out: failed to allocate scratch buffer (%d bytes, error %d)",
-          static_cast<int>(buffer_bytes),
-          static_cast<int>(buffer_or_error.error()));
-      context.fail(buffer_or_error.error());
-      return out;
-    }
-    cmsis_context.buf = buffer_or_error.get();
-    cmsis_context.size = buffer_bytes;
+  const int32_t buffer_bytes = arm_depthwise_conv_wrapper_s8_get_buffer_size(
+      &dw_conv_params, &input_dims, &filter_dims, &output_dims);
+  if (buffer_bytes < 0) {
+    ET_LOG(
+        Error,
+        "quantized_depthwise_conv2d_out: CMSIS-NN buffer size calculation failed");
+    context.fail(Error::Internal);
+    return out;
   }
+
+  auto buffer_or_error = context.allocate_temp(
+      static_cast<size_t>(buffer_bytes), alignof(int16_t));
+  if (!buffer_or_error.ok()) {
+    ET_LOG(
+        Error,
+        "quantized_depthwise_conv2d_out: failed to allocate scratch buffer (%d bytes, error %d)",
+        static_cast<int>(buffer_bytes),
+        static_cast<int>(buffer_or_error.error()));
+    context.fail(buffer_or_error.error());
+    return out;
+  }
+  cmsis_context.buf = buffer_or_error.get();
+  cmsis_context.size = buffer_bytes;
 
   const arm_cmsis_nn_status status = arm_depthwise_conv_wrapper_s8(
       &cmsis_context,
