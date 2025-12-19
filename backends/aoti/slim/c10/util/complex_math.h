@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #if !defined(STANDALONE_INTERNAL_INCLUDE_COMPLEX_REMAINING_H)
 #error \
     "standalone/c10/util/complex_math.h is not meant to be individually included. Include standalone/c10/util/complex.h instead."
