@@ -6,10 +6,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
-from typing import Dict
+from typing import Dict, Sequence
 
 import torch
-
 from executorch.backends.cortex_m.passes.passes_utils import (
     quantize_multiplier_aot,
     SHIFT_INT8,
@@ -18,11 +17,11 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CMSIS_SOFTMAX_SCALE,
     CMSIS_SOFTMAX_ZERO_POINT,
 )
-
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from torch.fx.node import Argument
+from torch.nn.modules.utils import _pair
 
 
 class QuantizedOpFusionPass(ExportPass):
@@ -183,6 +182,137 @@ class QuantizedOpFusionPass(ExportPass):
 
         return exir_ops.edge.cortex_m.softmax.default, new_args
 
+    def _unwrap_argument(self, arg: Argument) -> Argument:
+        if isinstance(arg, ProxyValue):
+            return arg.data
+        return arg
+
+    def _resolve_default(
+        self, raw: Argument, default: Sequence[int] | None
+    ) -> Argument:
+        if raw is None:
+            if default is None:
+                raise RuntimeError("Expected default sequence for normalization")
+            return default
+        return raw
+
+    def _coerce_to_int_list(self, raw: Argument) -> list[int]:
+        if isinstance(raw, ProxyValue):
+            raw = raw.data
+        if isinstance(raw, torch.Tensor):
+            return [int(v) for v in raw.flatten().tolist()]
+        if isinstance(raw, (list, tuple, torch.Size)):
+            return [int(v) for v in raw]
+        if isinstance(raw, (int, bool)):
+            return [int(raw)]
+
+        try:
+            first, second = _pair(raw)
+        except TypeError as err:
+            raise RuntimeError(
+                f"Unsupported argument for pair normalization: {raw}"
+            ) from err
+        return [int(first), int(second)]
+
+    def _normalize_int_pair(
+        self, items: list[int], default: Sequence[int] | None
+    ) -> list[int]:
+        if not items:
+            if default is None:
+                raise RuntimeError("Cannot normalize empty sequence without default")
+            items = [int(v) for v in default]
+
+        if len(items) == 1:
+            return [items[0], items[0]]
+        if len(items) != 2:
+            raise RuntimeError(
+                f"Unsupported sequence length for pair normalization: {items}"
+            )
+        return [items[0], items[1]]
+
+    def _to_int_pair(self, value: Argument, default: Sequence[int] | None) -> list[int]:
+        raw = self._unwrap_argument(value)
+        raw = self._resolve_default(raw, default)
+        items = self._coerce_to_int_list(raw)
+        return self._normalize_int_pair(items, default)
+
+    def _to_bool(self, value: Argument, default: bool) -> bool:
+        raw = self._unwrap_argument(value)
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, int):
+            return bool(raw)
+        if isinstance(raw, torch.Tensor):
+            try:
+                return bool(int(raw.item()))
+            except Exception:
+                return default
+        return default
+
+    def _get_max_pool2d_replacement(self, args, meta):
+        input_qparams = meta["input_qparams"].get(0)
+        cortex_m_meta = meta.data.get("custom", {}).get("cortex_m", {})
+        if input_qparams is None or cortex_m_meta.get(
+            "skip_quantized_max_pool2d", False
+        ):
+            return exir_ops.edge.aten.max_pool2d.default, args
+
+        input_scale = float(input_qparams.scale)
+        input_zero_point = int(input_qparams.zp)
+
+        output_qparams = None
+        if meta.data.get("output_qparams"):
+            output_qparams = meta["output_qparams"].get(0)
+
+        if output_qparams is not None:
+            if getattr(output_qparams, "per_channel", False):
+                return exir_ops.edge.aten.max_pool2d.default, args
+            output_scale = float(output_qparams.scale)
+            output_zero_point = int(output_qparams.zp)
+            activation_min = int(output_qparams.qmin)
+            activation_max = int(output_qparams.qmax)
+            if abs(input_scale - output_scale) > 1e-6:
+                return exir_ops.edge.aten.max_pool2d.default, args
+            if input_zero_point != output_zero_point:
+                return exir_ops.edge.aten.max_pool2d.default, args
+        else:
+            output_zero_point = input_zero_point
+            activation_min = torch.iinfo(torch.int8).min
+            activation_max = torch.iinfo(torch.int8).max
+
+        kernel_size = self._to_int_pair(args[1], None)
+        stride_arg = args[2] if len(args) > 2 else None
+        stride = self._to_int_pair(stride_arg, kernel_size)
+        padding_arg = args[3] if len(args) > 3 else None
+        padding = self._to_int_pair(padding_arg, (0, 0))
+        dilation_arg = args[4] if len(args) > 4 else None
+        dilation = self._to_int_pair(dilation_arg, (1, 1))
+
+        ceil_mode_arg = args[5] if len(args) > 5 else False
+        ceil_mode = self._to_bool(ceil_mode_arg, False)
+
+        if dilation != [1, 1] or ceil_mode:
+            return exir_ops.edge.aten.max_pool2d.default, args
+
+        quantized_op = getattr(exir_ops.edge.cortex_m, "quantized_max_pool2d", None)
+        if quantized_op is None:
+            return exir_ops.edge.aten.max_pool2d.default, args
+
+        new_args = (
+            args[0],
+            kernel_size,
+            stride,
+            padding,
+            dilation,
+            ceil_mode,
+            input_zero_point,
+            output_zero_point,
+            activation_min,
+            activation_max,
+        )
+
+        return quantized_op.default, new_args
+
     def _get_minimum_replacement(self, args, meta):
         if args[0].data.dtype not in (torch.int8, torch.int32):
             return exir_ops.edge.aten.minimum.default, args
@@ -216,8 +346,27 @@ class QuantizedOpFusionPass(ExportPass):
         zero_point = meta["input_qparams"][0].zp
 
         output_mult, output_shift = quantize_multiplier_aot(scale)
+        kernel_size = self._to_int_pair(args[1], None)
+        stride_arg = args[2] if len(args) > 2 else None
+        stride = self._to_int_pair(stride_arg, kernel_size)
+        padding_arg = args[3] if len(args) > 3 else None
+        padding = self._to_int_pair(padding_arg, (0, 0))
+
+        ceil_mode_arg = args[4] if len(args) > 4 else False
+        ceil_mode = self._to_bool(ceil_mode_arg, False)
+        count_include_pad_arg = args[5] if len(args) > 5 else True
+        count_include_pad = self._to_bool(count_include_pad_arg, True)
+        divisor_override = args[6] if len(args) > 6 else None
+        divisor_override_val = self._unwrap_argument(divisor_override)
+
+        if ceil_mode or count_include_pad or divisor_override_val is not None:
+            return exir_ops.edge.aten.avg_pool2d.default, args
+
         args = (
-            *args[0:-2],
+            args[0],
+            kernel_size,
+            stride,
+            padding,
             zero_point,
             output_mult,
             output_shift,
@@ -240,6 +389,8 @@ class QuantizedOpFusionPass(ExportPass):
                 op, args = self._get_mul_replacement(args, meta)
             case exir_ops.edge.aten._softmax.default:
                 op, args = self._get_softmax_replacement(args, meta)
+            case exir_ops.edge.aten.max_pool2d.default:
+                op, args = self._get_max_pool2d_replacement(args, meta)
             case exir_ops.edge.aten.minimum.default:
                 op, args = self._get_minimum_replacement(args, meta)
             case exir_ops.edge.aten.maximum.default:

@@ -27,7 +27,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 # To provide the implementation of the operators
 from torch.library import impl, Library, register_fake
 
-
 # New operator library with a custom namespace to allow fusion etc.
 lib = Library("cortex_m", "DEF")
 
@@ -1071,10 +1070,20 @@ def quantized_avg_pool2d_meta(
     multiplier: int,
     shift: int,
 ) -> torch.Tensor:
-    # Compute output shape as in PyTorch avg_pool2d
+    kernel = _ensure_tuple2(kernel_size)
+    stride_vals = _ensure_tuple2(stride)
+    padding_vals = _ensure_tuple2(padding)
+    dilation_vals = (1, 1)
 
-    output = F.avg_pool2d(input, kernel_size, stride, padding)
-    return torch.empty_like(output, dtype=torch.int8)
+    output_shape = _compute_max_pool2d_output_shape(
+        input.shape, kernel, stride_vals, padding_vals, dilation_vals
+    )
+    return torch.empty(
+        output_shape,
+        dtype=torch.int8,
+        device=input.device,
+        memory_format=torch.channels_last,
+    )
 
 
 @impl(lib, "quantized_avg_pool2d", "CompositeExplicitAutograd")
@@ -1090,15 +1099,161 @@ def quantized_avg_pool2d_impl(
 
     dequant_input = dequantize_per_tensor_cmsis(input, zero_point, multiplier, shift)
 
-    # TODO: implement count_include_pad=True, ceil_mode=True.
+    kernel = _ensure_tuple2(kernel_size)
+    stride_vals = _ensure_tuple2(stride)
+    padding_vals = _ensure_tuple2(padding)
+
+    # TODO: implement count_include_pad=True, ceil_mode=True, dilation != 1.
     result = F.avg_pool2d(
         dequant_input,
-        kernel_size,
-        stride=stride,
-        padding=padding,
+        kernel,
+        stride=stride_vals,
+        padding=padding_vals,
         count_include_pad=False,
         ceil_mode=False,
     )
     result = quantize_per_tensor_cmsis(result, zero_point, multiplier, shift)
     output = torch.clamp(result, -128, 127)
     return output.to(torch.int8)
+
+
+# ===================================================================
+# QUANTIZED MAX POOL2D OPERATION DEFINITION
+# ===================================================================
+
+lib.define(
+    "quantized_max_pool2d("
+    "Tensor input, "
+    "int[] kernel_size, "
+    "int[] stride, "
+    "int[] padding, "
+    "int[] dilation, "
+    "bool ceil_mode, "
+    "int input_zero_point, "
+    "int output_zero_point, "
+    "int activation_min, "
+    "int activation_max"
+    ") -> Tensor"
+)
+
+lib.define(
+    "quantized_max_pool2d.out("
+    "Tensor input, "
+    "int[] kernel_size, "
+    "int[] stride, "
+    "int[] padding, "
+    "int[] dilation, "
+    "bool ceil_mode, "
+    "int input_zero_point, "
+    "int output_zero_point, "
+    "int activation_min, "
+    "int activation_max, "
+    "*, Tensor(a!) out"
+    ") -> Tensor(a!)"
+)
+
+
+def _ensure_tuple2(value: Sequence[int]) -> tuple[int, int]:
+    if len(value) == 1:
+        return (int(value[0]), int(value[0]))
+    if len(value) != 2:
+        raise RuntimeError(f"Expected length-2 sequence, got {value}")
+    return (int(value[0]), int(value[1]))
+
+
+def _compute_max_pool2d_output_shape(
+    input_shape: torch.Size,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+) -> torch.Size:
+    batch = input_shape[0]
+    channels = input_shape[1]
+    in_height = input_shape[2]
+    in_width = input_shape[3]
+
+    kernel_height, kernel_width = kernel_size
+    stride_h, stride_w = stride
+    pad_h, pad_w = padding
+    dilation_h, dilation_w = dilation
+
+    out_height = (
+        in_height + 2 * pad_h - dilation_h * (kernel_height - 1) - 1
+    ) // stride_h + 1
+    out_width = (
+        in_width + 2 * pad_w - dilation_w * (kernel_width - 1) - 1
+    ) // stride_w + 1
+    return torch.Size([batch, channels, out_height, out_width])
+
+
+@register_fake("cortex_m::quantized_max_pool2d")
+def quantized_max_pool2d_meta(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    ceil_mode: bool,
+    input_zero_point: int,
+    output_zero_point: int,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    kernel = _ensure_tuple2(kernel_size)
+    stride_vals = _ensure_tuple2(stride)
+    padding_vals = _ensure_tuple2(padding)
+    dilation_vals = _ensure_tuple2(dilation)
+
+    output_shape = _compute_max_pool2d_output_shape(
+        input.shape, kernel, stride_vals, padding_vals, dilation_vals
+    )
+    return torch.empty(
+        output_shape,
+        dtype=torch.int8,
+        device=input.device,
+        memory_format=torch.channels_last,
+    )
+
+
+@impl(lib, "quantized_max_pool2d", "CompositeExplicitAutograd")
+def quantized_max_pool2d_impl(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    ceil_mode: bool,
+    input_zero_point: int,
+    output_zero_point: int,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    if input.dim() != 4:
+        raise RuntimeError("quantized_max_pool2d expects 4D input tensor")
+
+    if input_zero_point != output_zero_point:
+        raise RuntimeError(
+            "quantized_max_pool2d expects matching input/output zero points"
+        )
+
+    kernel = _ensure_tuple2(kernel_size)
+    stride_vals = _ensure_tuple2(stride)
+    padding_vals = _ensure_tuple2(padding)
+    dilation_vals = _ensure_tuple2(dilation)
+
+    if dilation_vals != (1, 1):
+        raise RuntimeError("quantized_max_pool2d only supports dilation == 1")
+    if ceil_mode:
+        raise RuntimeError("quantized_max_pool2d does not support ceil_mode=True")
+
+    result = F.max_pool2d(
+        input,
+        kernel,
+        stride=stride_vals,
+        padding=padding_vals,
+        dilation=dilation_vals,
+        ceil_mode=ceil_mode,
+    )
+    result = torch.clamp(result, activation_min, activation_max)
+    return result.to(torch.int8).contiguous(memory_format=torch.channels_last)

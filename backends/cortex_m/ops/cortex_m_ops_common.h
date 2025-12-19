@@ -162,6 +162,185 @@ inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
   return tensor1_channels_only || tensor2_channels_only;
 }
 
+inline bool check_int32_within_range(
+    KernelRuntimeContext& context,
+    const char* op_name,
+    int64_t value,
+    const char* value_name,
+    int32_t& out_value) {
+  if (value < std::numeric_limits<int32_t>::min() ||
+      value > std::numeric_limits<int32_t>::max()) {
+    ET_LOG(
+        Error,
+        "%s: %s value (%ld) exceeds int32_t range",
+        op_name,
+        value_name,
+        value);
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+  out_value = static_cast<int32_t>(value);
+  return true;
+}
+
+struct CmsisPool2DConfig {
+  cmsis_nn_pool_params pool_params;
+  cmsis_nn_dims input_dims;
+  cmsis_nn_dims filter_dims;
+  cmsis_nn_dims output_dims;
+};
+
+inline bool prepare_cmsis_pool2d_config(
+    KernelRuntimeContext& context,
+    const char* op_name,
+    const Tensor& input,
+    Tensor& output,
+    const Int64ArrayRef& kernel_size,
+    const Int64ArrayRef& stride,
+    const Int64ArrayRef& padding,
+    const Int64ArrayRef& dilation,
+    bool ceil_mode,
+    int64_t activation_min,
+    int64_t activation_max,
+    CmsisPool2DConfig& config,
+    bool require_channels_last = true,
+    bool allow_ceil_mode = false) {
+  if (input.dim() != 4 || output.dim() != 4) {
+    ET_LOG(Error, "%s: tensors must be 4-D", op_name);
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+
+  if (input.scalar_type() != ScalarType::Char ||
+      output.scalar_type() != ScalarType::Char) {
+    ET_LOG(Error, "%s: tensors must be int8", op_name);
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+
+  if (input.size(0) != output.size(0) || input.size(1) != output.size(1)) {
+    ET_LOG(
+        Error,
+        "%s: batch and channel dimensions must match between input and output",
+        op_name);
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+
+  if (require_channels_last) {
+    if (!is_channels_last_tensor(input) || !is_channels_last_tensor(output)) {
+      ET_LOG(
+          Error, "%s: tensors must use channels_last dimension order", op_name);
+      context.fail(Error::InvalidArgument);
+      return false;
+    }
+  }
+
+  auto check_tuple_len = [&](const Int64ArrayRef& arr,
+                             const char* name) -> bool {
+    if (arr.size() != 2) {
+      ET_LOG(Error, "%s: %s must have length 2", op_name, name);
+      context.fail(Error::InvalidArgument);
+      return false;
+    }
+    return true;
+  };
+
+  if (!check_tuple_len(kernel_size, "kernel_size") ||
+      !check_tuple_len(stride, "stride") ||
+      !check_tuple_len(padding, "padding") ||
+      !check_tuple_len(dilation, "dilation")) {
+    return false;
+  }
+
+  if (!allow_ceil_mode && ceil_mode) {
+    ET_LOG(Error, "%s: ceil_mode=True is not supported", op_name);
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+
+  if (activation_min > activation_max) {
+    ET_LOG(
+        Error,
+        "%s: activation_min (%lld) must be <= activation_max (%lld)",
+        op_name,
+        static_cast<long long>(activation_min),
+        static_cast<long long>(activation_max));
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+
+  int32_t activation_min_i32, activation_max_i32;
+  if (!check_int32_within_range(
+          context,
+          op_name,
+          activation_min,
+          "activation_min",
+          activation_min_i32) ||
+      !check_int32_within_range(
+          context,
+          op_name,
+          activation_max,
+          "activation_max",
+          activation_max_i32)) {
+    return false;
+  }
+
+  int32_t kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, dil_h, dil_w;
+  if (!check_int32_within_range(
+          context, op_name, kernel_size[0], "kernel_size[0]", kernel_h) ||
+      !check_int32_within_range(
+          context, op_name, kernel_size[1], "kernel_size[1]", kernel_w) ||
+      !check_int32_within_range(
+          context, op_name, stride[0], "stride[0]", stride_h) ||
+      !check_int32_within_range(
+          context, op_name, stride[1], "stride[1]", stride_w) ||
+      !check_int32_within_range(
+          context, op_name, padding[0], "padding[0]", pad_h) ||
+      !check_int32_within_range(
+          context, op_name, padding[1], "padding[1]", pad_w) ||
+      !check_int32_within_range(
+          context, op_name, dilation[0], "dilation[0]", dil_h) ||
+      !check_int32_within_range(
+          context, op_name, dilation[1], "dilation[1]", dil_w)) {
+    return false;
+  }
+
+  if (dil_h != 1 || dil_w != 1) {
+    ET_LOG(Error, "%s: dilation other than 1 is unsupported", op_name);
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+
+  int32_t batch, channels, input_h, input_w, output_h, output_w;
+  if (!check_int32_within_range(
+          context, op_name, input.size(0), "input batch", batch) ||
+      !check_int32_within_range(
+          context, op_name, input.size(1), "input channels", channels) ||
+      !check_int32_within_range(
+          context, op_name, input.size(2), "input height", input_h) ||
+      !check_int32_within_range(
+          context, op_name, input.size(3), "input width", input_w) ||
+      !check_int32_within_range(
+          context, op_name, output.size(2), "output height", output_h) ||
+      !check_int32_within_range(
+          context, op_name, output.size(3), "output width", output_w)) {
+    return false;
+  }
+
+  config.input_dims = cmsis_nn_dims{batch, input_h, input_w, channels};
+  config.filter_dims = cmsis_nn_dims{1, kernel_h, kernel_w, 1};
+  config.output_dims = cmsis_nn_dims{batch, output_h, output_w, channels};
+  config.pool_params.padding.h = pad_h;
+  config.pool_params.padding.w = pad_w;
+  config.pool_params.stride.h = stride_h;
+  config.pool_params.stride.w = stride_w;
+  config.pool_params.activation.min = activation_min_i32;
+  config.pool_params.activation.max = activation_max_i32;
+
+  return true;
+}
+
 // Refer to CMSIS-NN 'arm_nn_requantize' implementation for details:
 // https://github.com/ARM-software/CMSIS-NN/blob/main/Include/arm_nnsupportfunctions.h#L1625
 // multiplier: Range {ARM_NN_Q31_MIN + 1, Q32_MAX}

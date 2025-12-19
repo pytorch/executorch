@@ -11,7 +11,6 @@ import torch
 from executorch.backends.arm.test.common import get_u55_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import Serialize
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
-
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import (
@@ -22,7 +21,6 @@ from executorch.backends.test.harness.stages import (
     ToEdge,
     ToExecutorch,
 )
-
 from executorch.exir import EdgeCompileConfig
 
 
@@ -43,6 +41,7 @@ class CortexMToEdge(ToEdge):
                 torch.ops.aten.hardswish_.default,
             ],
             _check_ir_validity=False,
+            _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
         )
         super().__init__(config)
 
