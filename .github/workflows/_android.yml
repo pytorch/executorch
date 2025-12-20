@@ -56,6 +56,7 @@ jobs:
     env:
       ANDROID_NDK_VERSION: r28c
       API_LEVEL: 34
+      EMULATOR_DEVICE_ID: emulator-5554
     steps:
       - name: Setup SSH (Click me for login details)
         uses: pytorch/test-infra/.github/actions/setup-ssh@main
@@ -84,8 +85,13 @@ jobs:
           sudo -E bash .ci/docker/common/install_android.sh
 
           # Move cmdline-tools to the proper structure for SDK manager
-          sudo mkdir -p $ANDROID_HOME/cmdline-tools
-          sudo mv /opt/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+          if [ -d /opt/cmdline-tools ]; then
+            sudo mkdir -p $ANDROID_HOME/cmdline-tools
+            sudo mv /opt/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+          else
+            echo "ERROR: /opt/cmdline-tools not found after installation"
+            exit 1
+          fi
 
           # Install emulator and system images
           sudo yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root="$ANDROID_HOME" "emulator"
@@ -160,7 +166,7 @@ jobs:
           
           # Wait for emulator to boot (up to 15 minutes)
           for i in {1..90}; do
-            boot_completed=$($ANDROID_HOME/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            boot_completed=$($ANDROID_HOME/platform-tools/adb -s ${{ env.EMULATOR_DEVICE_ID }} shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
             if [[ "$boot_completed" == "1" ]]; then
               echo "Emulator booted successfully."
               break
@@ -170,7 +176,7 @@ jobs:
           done
           
           # Verify boot completion
-          boot_status=$($ANDROID_HOME/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+          boot_status=$($ANDROID_HOME/platform-tools/adb -s ${{ env.EMULATOR_DEVICE_ID }} shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
           if [[ "$boot_status" != "1" ]]; then
             echo "ERROR: Emulator failed to boot within timeout"
             exit 1
