@@ -74,12 +74,22 @@ jobs:
           python-version: '3.10'
 
       - name: Install Android dependencies
+        env:
+          ANDROID_HOME: /opt/android/sdk
         shell: bash
         run: |
           set -eux
 
           # Reuse the script that install Android on ET Docker image
           sudo -E bash .ci/docker/common/install_android.sh
+
+          # Move cmdline-tools to the proper structure for SDK manager
+          sudo mkdir -p $ANDROID_HOME/cmdline-tools
+          sudo mv /opt/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+
+          # Install emulator and system images
+          sudo yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root="$ANDROID_HOME" "emulator"
+          sudo yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root="$ANDROID_HOME" "system-images;android-${{ env.API_LEVEL }};default;x86_64"
 
           # After https://github.com/ReactiveCircus/android-emulator-runner/releases/tag/v2.33.0 release,
           # it seems that we need to chown the Android setup to the current user instead of root to
@@ -107,23 +117,76 @@ jobs:
             ~/.android/adb*
           key: avd-${{ env.API_LEVEL }}
 
-      # NB: It takes about 10m to cold boot the emulator here
-      - name: Run Android emulator
+      - name: Create AVD
         env:
           ANDROID_HOME: /opt/android/sdk
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: ${{ env.API_LEVEL }}
-          arch: x86_64
-          script: ./scripts/run_android_emulator.sh
-          # NB: This is to boot the emulator faster following the instructions on
-          # https://github.com/ReactiveCircus/android-emulator-runner. The max number
-          # of cores we can set is 6, any higher number will be reduced to 6.
-          cores: 6
-          ram-size: 16384M
-          heap-size: 12288M
-          force-avd-creation: false
-          disable-animations: true
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          # This is to make sure that the job doesn't fail flakily
-          emulator-boot-timeout: 900
+        shell: bash
+        run: |
+          set -eux
+          # Create AVD if it doesn't exist
+          if [ ! -d "$HOME/.android/avd/test_avd.avd" ]; then
+            echo "Creating AVD"
+            echo "no" | $ANDROID_HOME/cmdline-tools/latest/bin/avdmanager create avd \
+              --force \
+              --name test_avd \
+              --package "system-images;android-${{ env.API_LEVEL }};default;x86_64" \
+              --abi x86_64 \
+              --device "pixel_5"
+          else
+            echo "AVD already exists"
+          fi
+
+      - name: Start Emulator
+        env:
+          ANDROID_HOME: /opt/android/sdk
+        shell: bash
+        run: |
+          set -eux
+          # Start emulator in background with optimized flags
+          $ANDROID_HOME/emulator/emulator \
+            -avd test_avd \
+            -no-snapshot-load \
+            -no-window \
+            -gpu swiftshader_indirect \
+            -no-boot-anim \
+            -noaudio \
+            -camera-back none \
+            -cores 6 \
+            -memory 16384 \
+            -no-snapshot-save &
+          
+          # Start ADB server
+          $ANDROID_HOME/platform-tools/adb start-server
+          
+          # Wait for emulator to boot (up to 15 minutes)
+          for i in {1..90}; do
+            boot_completed=$($ANDROID_HOME/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            if [[ "$boot_completed" == "1" ]]; then
+              echo "Emulator booted successfully."
+              break
+            fi
+            echo "Waiting for emulator to boot... (attempt $i/90)"
+            sleep 10
+          done
+          
+          # Verify boot completion
+          boot_status=$($ANDROID_HOME/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+          if [[ "$boot_status" != "1" ]]; then
+            echo "ERROR: Emulator failed to boot within timeout"
+            exit 1
+          fi
+
+      - name: Check Devices
+        env:
+          ANDROID_HOME: /opt/android/sdk
+        shell: bash
+        run: |
+          set -eux
+          echo "Listing connected devices:"
+          $ANDROID_HOME/platform-tools/adb devices
+
+      - name: Run Android Tests
+        env:
+          ANDROID_HOME: /opt/android/sdk
+        shell: bash
+        run: ./scripts/run_android_emulator.sh
