@@ -106,6 +106,9 @@ def greedy_decode_executorch(
     t = 0
     symbols_on_frame = 0
 
+    # Debug: print first few tokens
+    debug_count = 0
+
     # Scan over the encoder output
     while t < encoder_len:
         f_t = f_proj[:, t : t + 1, :].contiguous()
@@ -128,6 +131,9 @@ def greedy_decode_executorch(
             t += max(dur, 1)
             symbols_on_frame = 0
         else:
+            if debug_count < 20:
+                print(f"Token[{debug_count}]: t={t} k={k} dur={dur}")
+                debug_count += 1
             hypothesis.append(k)
 
             token = torch.tensor([[k]], dtype=torch.long)
@@ -161,6 +167,7 @@ def transcribe_executorch(audio_path: str, model, et_buffer) -> str:
         audio = load_audio(audio_path)
 
         mel, mel_len = model.preprocessor(input_signal=audio, length=torch.tensor([audio.shape[1]]))
+        print(mel.shape)
 
         encoder_method = program.load_method("encoder")
         enc_result = encoder_method.execute([mel, mel_len])
@@ -230,7 +237,8 @@ def export_all(model):
     """Export all components, return dict of ExportedPrograms."""
     programs = {}
 
-    feat_in = getattr(model.encoder, "_feat_in", 80)
+    feat_in = getattr(model.encoder, "_feat_in", 128)
+    print(f"Encoder feat_in: {feat_in}")
     audio_signal = torch.randn(1, feat_in, 100)
     length = torch.tensor([100], dtype=torch.int64)
     programs["encoder"] = export(
@@ -332,6 +340,65 @@ def lower_to_executorch(programs, backend="portable"):
     )
 
 
+def export_preprocessor(model, output_dir: str, backend: str = "portable"):
+    """Export NeMo's preprocessor to ExecuTorch."""
+    
+    class PreprocessorWrapper(torch.nn.Module):
+        def __init__(self, preprocessor):
+            super().__init__()
+            self.preprocessor = preprocessor
+        
+        def forward(self, audio: torch.Tensor) -> torch.Tensor:
+            # audio is 1D: [num_samples]
+            # Add batch dimension and compute length
+            audio_signal = audio.unsqueeze(0)  # [1, num_samples]
+            length = torch.tensor([audio.shape[0]], dtype=torch.int64)
+            
+            mel, mel_len = self.preprocessor(input_signal=audio_signal, length=length)
+            return mel
+    
+    wrapper = PreprocessorWrapper(model.preprocessor)
+    wrapper.eval()
+    
+    # Export with dynamic audio length
+    sample_audio = torch.randn(16000 * 10)  # 10 seconds
+    
+    preprocessor_ep = export(
+        wrapper,
+        (sample_audio,),
+        dynamic_shapes={"audio": {0: Dim("audio_len", min=1600, max=16000 * 600)}},
+        strict=False,
+    )
+    
+    partitioner = []
+    if backend == "xnnpack":
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+        partitioner = [XnnpackPartitioner()]
+    
+    et_prog = to_edge_transform_and_lower(
+        {"forward": preprocessor_ep},
+        partitioner=partitioner,
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+            _skip_dim_order=True,
+        ),
+    )
+    
+    et_preprocessor = et_prog.to_executorch(
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+        ),
+    )
+    
+    pte_path = os.path.join(output_dir, "parakeet_preprocessor.pte")
+    print(f"Saving preprocessor to: {pte_path}")
+    with open(pte_path, "wb") as f:
+        et_preprocessor.write_to_file(f)
+    
+    return pte_path
+
+
 def main():
     import argparse
 
@@ -344,6 +411,16 @@ def main():
         default="portable",
         help="Backend for acceleration",
     )
+    parser.add_argument(
+        "--export-preprocessor",
+        action="store_true",
+        help="Export NeMo's preprocessor to ExecuTorch",
+    )
+    parser.add_argument(
+        "--test-preprocessor",
+        type=str,
+        help="Test exported preprocessor against NeMo's native preprocessor",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -351,10 +428,66 @@ def main():
     print("Loading model...")
     model = load_model()
 
+    if args.test_preprocessor:
+        print("\nTesting preprocessor...")
+        from executorch.runtime import Runtime
+        
+        audio = load_audio(args.test_preprocessor)
+        audio_1d = audio.squeeze(0)  # [num_samples]
+        
+        print(f"Python audio shape: {audio.shape}, first 5 samples: {audio[0, :5].tolist()}")
+        
+        # NeMo's native preprocessor
+        mel_native, mel_len_native = model.preprocessor(
+            input_signal=audio, 
+            length=torch.tensor([audio.shape[1]])
+        )
+        print(f"NeMo mel shape: {mel_native.shape}, mel_len: {mel_len_native.item()}")
+        
+        # Exported preprocessor
+        pte_path = os.path.join(args.output_dir, "parakeet_preprocessor.pte")
+        with open(pte_path, "rb") as f:
+            runtime = Runtime.get()
+            program = runtime.load_program(f.read())
+            method = program.load_method("forward")
+            mel_exported = method.execute([audio_1d])[0]
+        print(f"Exported mel shape: {mel_exported.shape}")
+        
+        # Compare
+        mel_native_np = mel_native.numpy()
+        mel_exported_np = mel_exported.numpy()
+        
+        max_diff = abs(mel_native_np - mel_exported_np).max()
+        mean_diff = abs(mel_native_np - mel_exported_np).mean()
+        print(f"Max diff: {max_diff:.6f}, Mean diff: {mean_diff:.6f}")
+        
+        if max_diff < 1e-4:
+            print("✓ Preprocessors match!")
+        else:
+            print("✗ Preprocessors differ!")
+            # Print first few values
+            print(f"Native [0,0,:5]: {mel_native_np[0,0,:5]}")
+            print(f"Exported [0,0,:5]: {mel_exported_np[0,0,:5]}")
+        return
+
+    if args.export_preprocessor:
+        print("\nExporting preprocessor...")
+        export_preprocessor(model, args.output_dir, args.backend)
+        print("Preprocessor exported!")
+        if not args.audio:
+            return
+
     print("\nExporting components...")
     programs = export_all(model)
 
     et = lower_to_executorch(programs, backend=args.backend)
+
+    # Save the .pte file
+    pte_path = os.path.join(args.output_dir, "parakeet_tdt.pte")
+    print(f"\nSaving ExecuTorch program to: {pte_path}")
+    with open(pte_path, "wb") as f:
+        et.write_to_file(f)
+    print(f"Saved {os.path.getsize(pte_path) / (1024 * 1024):.1f} MB")
 
     if args.audio:
         print("\n" + "=" * 60)
