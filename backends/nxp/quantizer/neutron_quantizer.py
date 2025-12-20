@@ -6,6 +6,7 @@
 
 import torch
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
+    _get_default_passes,
     NeutronAtenPassManager,
 )
 
@@ -17,6 +18,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     AddmmPattern,
     AddTensorPattern,
     AvgPoolPattern,
+    BatchNormPattern,
     CatPattern,
     Conv1dPattern,
     Conv2dPattern,
@@ -245,6 +247,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 OpQuantizer(AddTensorPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(AddmmPattern(self, is_qat=is_qat), static_fc_qconfig),
                 OpQuantizer(AvgPoolPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(BatchNormPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(CatPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(Conv1dPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(Conv2dPattern(self, is_qat=is_qat), static_qconfig),
@@ -293,7 +296,12 @@ class NeutronQuantizer(ComposableQuantizer):
     ) -> torch.fx.GraphModule:
         model.graph.eliminate_dead_code()  # Remove dead code to simplify the graph for the passes.
 
-        model = NeutronAtenPassManager(self.neutron_target_spec)(model).graph_module
+        pass_manager = NeutronAtenPassManager(
+            self.neutron_target_spec,
+            _get_default_passes(self.neutron_target_spec, self.is_qat),
+        )
+
+        model = pass_manager(model).graph_module
 
         model.graph.eliminate_dead_code()  # Remove dead code again, in case it was created by the passes.
 
