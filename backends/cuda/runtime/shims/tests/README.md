@@ -13,13 +13,13 @@ From the ExecuTorch root directory:
 
 ```bash
 # Release build
-cmake --workflow --preset llm-release-cuda
+cmake --workflow llm-release-cuda
 
 # Or debug build (recommended for debugging test failures)
-cmake --workflow --preset llm-debug-cuda
+cmake --workflow llm-debug-cuda
 ```
 
-## Building the Tests
+## Building and Run the Tests
 
 ### Option 1: Using CMake Presets (Recommended)
 
@@ -27,10 +27,10 @@ From this directory (`backends/cuda/runtime/shims/tests/`):
 
 ```bash
 # Release build
-cmake --workflow --preset default
+cmake --workflow default
 
 # Debug build
-cmake --workflow --preset debug
+cmake --workflow debug
 ```
 
 ### Option 2: Manual CMake Commands
@@ -48,37 +48,13 @@ cmake -B cmake-out/backends/cuda/runtime/shims/tests \
 cmake --build cmake-out/backends/cuda/runtime/shims/tests -j$(nproc)
 ```
 
-## Running the Tests
-
-### Run All Tests
-
-```bash
-# Using ctest (from the build directory)
-cd cmake-out/backends/cuda/runtime/shims/tests
-ctest --output-on-failure
-
-# Or using the test preset (from this directory)
-ctest --preset default
-```
-
-### Run a Specific Test
-
-```bash
-# From the build directory
-./test_aoti_torch_create_tensor_from_blob_v2
-./test_aoti_torch_empty_strided
-./test_aoti_torch_delete_tensor_object
-./test_aoti_torch_copy_
-./test_aoti_torch_new_tensor_handle
-./test_aoti_torch_item_bool
-./test_aoti_torch_assign_tensors_out
-```
-
 ### Run Specific Test Cases
 
 Use Google Test filters to run specific test cases:
 
 ```bash
+# From the build directory
+cd cmake-out/backends/cuda/runtime/shims/tests
 # Run only device mismatch tests
 ./test_aoti_torch_create_tensor_from_blob_v2 --gtest_filter="*DeviceMismatch*"
 
@@ -88,19 +64,6 @@ Use Google Test filters to run specific test cases:
 # List all available tests
 ./test_aoti_torch_create_tensor_from_blob_v2 --gtest_list_tests
 ```
-
-## Test Descriptions
-
-| Test File | Description |
-|-----------|-------------|
-| `test_aoti_torch_create_tensor_from_blob_v2` | Tests tensor creation from existing memory blobs, including device type validation |
-| `test_aoti_torch_empty_strided` | Tests creation of uninitialized tensors with specified strides |
-| `test_aoti_torch_delete_tensor_object` | Tests proper tensor deletion and memory management |
-| `test_aoti_torch__reinterpret_tensor` | Tests tensor view reinterpretation with different shapes/strides |
-| `test_aoti_torch_copy_` | Tests tensor copy operations between CPU and CUDA |
-| `test_aoti_torch_new_tensor_handle` | Tests creating new tensor handles that share memory |
-| `test_aoti_torch_item_bool` | Tests extracting boolean values from scalar tensors |
-| `test_aoti_torch_assign_tensors_out` | Tests creating tensor views that share underlying data |
 
 ## Troubleshooting
 
@@ -122,11 +85,10 @@ cmake --workflow --preset llm-release-cuda
 
 For debugging test failures, build with debug mode:
 ```bash
-cmake --workflow --preset debug
+cmake --workflow debug
 ```
 
 Then run with verbose output:
 ```bash
 ./test_aoti_torch_create_tensor_from_blob_v2 --gtest_break_on_failure
 ```
-
