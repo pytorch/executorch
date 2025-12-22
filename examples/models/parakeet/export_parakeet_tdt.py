@@ -436,14 +436,9 @@ def main():
     print(f"Saved {os.path.getsize(pte_path) / (1024 * 1024):.1f} MB")
 
     # Save .ptd data files (e.g., CUDA delegate data)
-    data_files = et.data_files
-    if data_files:
-        print(f"\nSaving {len(data_files)} data file(s)...")
-        for filename, data in data_files.items():
-            ptd_path = os.path.join(args.output_dir, filename)
-            with open(ptd_path, "wb") as f:
-                f.write(data)
-            print(f"  Saved {filename} ({len(data) / (1024 * 1024):.1f} MB)")
+    if et._tensor_data:
+        print(f"\nSaving {len(et._tensor_data)} data file(s)...")
+        et.write_tensor_data_to_file(args.output_dir)
 
     if args.audio:
         print("\n" + "=" * 60)
