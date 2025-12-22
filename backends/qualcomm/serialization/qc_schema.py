@@ -40,7 +40,7 @@ class HtpInfo:
 class QcomChipset(IntEnum):
     UNKNOWN_SM = 0
     SA8295 = 39  # v68
-    SM8350 = 35  # v68
+    SM8350 = 30  # v68
     SM8450 = 36  # v69
     SM8475 = 42  # v69
     SM8550 = 43  # v73
