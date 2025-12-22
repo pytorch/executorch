@@ -114,6 +114,7 @@ Optimize LLM fine-tuning with faster training and reduced VRAM usage, then deplo
 :class-header: bg-secondary text-white
 
 Deploy on-device inference for Ultralytics YOLO models using ExecuTorch.
+
 [Explore →](https://docs.ultralytics.com/integrations/executorch/) • [Blog →](https://www.ultralytics.com/blog/deploy-ultralytics-yolo-models-using-the-executorch-integration)
 :::
 
@@ -121,6 +122,7 @@ Deploy on-device inference for Ultralytics YOLO models using ExecuTorch.
 :class-header: bg-secondary text-white
 
 Build and deploy ML applications on Arm Cortex-M (M55, M85) and Ethos-U NPUs (U55, U65, U85) using ExecuTorch.
+
 [Explore →](https://gitlab.arm.com/artificial-intelligence/ethos-u/ml-embedded-evaluation-kit)
 :::
 
@@ -128,6 +130,7 @@ Build and deploy ML applications on Arm Cortex-M (M55, M85) and Ethos-U NPUs (U5
 :class-header: bg-secondary text-white
 
 Run generative AI on Ensemble E4/E6/E8 MCUs with Arm Ethos-U85 NPU acceleration.
+
 [Learn More →](https://alifsemi.com/press-release/alif-semiconductor-elevates-generative-ai-with-support-for-executorch-runtime/)
 :::
 
@@ -135,6 +138,7 @@ Run generative AI on Ensemble E4/E6/E8 MCUs with Arm Ethos-U85 NPU acceleration.
 :class-header: bg-secondary text-white
 
 Automate PyTorch model deployment to iOS, Android, and edge devices with ExecuTorch-powered SDK.
+
 [Blog →](https://www.digica.com/blog/effortless-edge-deployment-of-ai-models-with-digicas-ai-sdk-feat-executorch.html)
 :::
 
