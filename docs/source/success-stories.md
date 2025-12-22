@@ -107,7 +107,7 @@ PyTorch-native quantization and optimization library for preparing efficient mod
 
 Optimize LLM fine-tuning with faster training and reduced VRAM usage, then deploy efficiently with ExecuTorch.
 
-[Example Model →](https://huggingface.co/metascroy/Qwen3-4B-int8-int4-unsloth)  •  [Blog →](https://docs.unsloth.ai/new/quantization-aware-training-qat) • [Doc →](https://docs.unsloth.ai/new/deploy-llms-phone)
+[Example Model →](https://huggingface.co/metascroy/Qwen3-4B-int8-int4-unsloth) • [Blog →](https://docs.unsloth.ai/new/quantization-aware-training-qat) • [Doc →](https://docs.unsloth.ai/new/deploy-llms-phone)
 :::
 
 :::{grid-item-card} **Ultralytics**
