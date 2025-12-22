@@ -74,7 +74,7 @@ def test_matmul_tosa_FP(test_data: input_t1):
 
 
 @common.parametrize("test_data", MatMulSingleInput.test_data_generators)
-def test_matmul_single_input_tosa_FP(test_data: input_t1):
+def test_matmul_tosa_FP_single_input(test_data: input_t1):
     pipeline = TosaPipelineFP[input_t1](
         MatMulSingleInput(), test_data(), aten_op_mm, exir_op_mm
     )
@@ -82,7 +82,7 @@ def test_matmul_single_input_tosa_FP(test_data: input_t1):
 
 
 @common.parametrize("test_data", MatMulCombo.test_data_generators)
-def test_matmul_combo_tosa_FP(test_data: input_t1):
+def test_matmul_tosa_FP_combo(test_data: input_t1):
     pipeline = TosaPipelineFP[input_t1](
         MatMulCombo(), test_data(), aten_op_mm, exir_op_mm
     )
@@ -98,7 +98,7 @@ def test_matmul_tosa_INT(test_data: input_t1):
 
 
 @common.parametrize("test_data", MatMulSingleInput.test_data_generators)
-def test_matmul_single_input_tosa_INT(test_data: input_t1):
+def test_matmul_tosa_INT_single_input(test_data: input_t1):
     pipeline = TosaPipelineFP[input_t1](
         MatMulSingleInput(),
         test_data(),
@@ -110,7 +110,7 @@ def test_matmul_single_input_tosa_INT(test_data: input_t1):
 
 
 @common.parametrize("test_data", MatMulCombo.test_data_generators)
-def test_matmul_combo_tosa_INT(test_data: input_t1):
+def test_matmul_tosa_INT_combo(test_data: input_t1):
     pipeline = TosaPipelineINT[input_t1](
         MatMulCombo(),
         test_data(),
@@ -142,7 +142,7 @@ def test_matmul_u55_INT(test_data: input_t1):
     },
 )
 @common.XfailIfNoCorstone300
-def test_matmul_single_input_u55_INT(test_data: input_t1):
+def test_matmul_u55_INT_single_input(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
         MatMulSingleInput(),
         test_data(),
@@ -161,7 +161,7 @@ def test_matmul_single_input_u55_INT(test_data: input_t1):
     },
 )
 @common.XfailIfNoCorstone300
-def test_matmul_combo_u55_INT(test_data: input_t1):
+def test_matmul_u55_INT_combo(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
         MatMulCombo(),
         test_data(),
@@ -193,7 +193,7 @@ def test_matmul_u85_INT(test_data: input_t1):
     },
 )
 @common.XfailIfNoCorstone320
-def test_matmul_single_input_u85_INT(test_data: input_t1):
+def test_matmul_u85_INT_single_input(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
         MatMulSingleInput(),
         test_data(),
@@ -212,7 +212,7 @@ def test_matmul_single_input_u85_INT(test_data: input_t1):
     },
 )
 @common.XfailIfNoCorstone320
-def test_matmul_combo_u85_INT(test_data: input_t1):
+def test_matmul_u85_INT_combo(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
         MatMulCombo(),
         test_data(),
@@ -238,7 +238,7 @@ def test_matmul_vgf_no_quant(test_data: input_t1):
 
 @common.parametrize("test_data", MatMulSingleInput.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_single_input_vgf_no_quant(test_data: input_t1):
+def test_matmul_vgf_no_quant_single_input(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         MatMulSingleInput(),
         test_data(),
@@ -251,7 +251,7 @@ def test_matmul_single_input_vgf_no_quant(test_data: input_t1):
 
 @common.parametrize("test_data", MatMulCombo.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_combo_vgf_no_quant(test_data: input_t1):
+def test_matmul_vgf_no_quant_combo(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         MatMulCombo(),
         test_data(),
@@ -277,7 +277,7 @@ def test_matmul_vgf_quant(test_data: input_t1):
 
 @common.parametrize("test_data", MatMulSingleInput.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_single_input_vgf_quant(test_data: input_t1):
+def test_matmul_vgf_quant_single_input(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         MatMulSingleInput(),
         test_data(),
@@ -290,7 +290,7 @@ def test_matmul_single_input_vgf_quant(test_data: input_t1):
 
 @common.parametrize("test_data", MatMulCombo.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_combo_vgf_quant(test_data: input_t1):
+def test_matmul_vgf_quant_combo(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         MatMulCombo(),
         test_data(),

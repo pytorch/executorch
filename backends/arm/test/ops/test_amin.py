@@ -181,7 +181,7 @@ def test_amin_vgf_quant(test_data: Amin.input_t):
 
 @common.parametrize("test_data", Min.test_data)
 @common.SkipIfNoModelConverter
-def test_min_dim_to_amin_vgf_no_quant(test_data: Min.input_t):
+def test_min_dim_vgf_no_quant_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Min.input_t](
         Min(dim),
@@ -194,7 +194,7 @@ def test_min_dim_to_amin_vgf_no_quant(test_data: Min.input_t):
 
 @common.parametrize("test_data", Min.test_data)
 @common.SkipIfNoModelConverter
-def test_min_dim_to_amin_vgf_quant(test_data: Min.input_t):
+def test_min_dim_vgf_quant_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Min.input_t](
         Min(dim),

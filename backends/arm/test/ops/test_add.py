@@ -229,7 +229,7 @@ def test_add_tensor_vgf_quant(test_data: input_t1):
 
 
 @common.parametrize("test_data", Add.test_data)
-def test_add_tensor_16a8w_tosa_INT(test_data: input_t1):
+def test_add_tensor_tosa_INT_16a8w(test_data: input_t1):
     """Test add operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
@@ -251,7 +251,7 @@ def test_add_tensor_16a8w_tosa_INT(test_data: input_t1):
 
 @common.parametrize("test_data", Add.test_data)
 @common.XfailIfNoCorstone300
-def test_add_tensor_16a8w_u55_INT16(test_data: input_t1):
+def test_add_tensor_u55_INT_16a8w(test_data: input_t1):
     """Test add operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
@@ -272,7 +272,7 @@ def test_add_tensor_16a8w_u55_INT16(test_data: input_t1):
 
 @common.parametrize("test_data", Add.test_data)
 @common.XfailIfNoCorstone320
-def test_add_tensor_16a8w_u85_INT16(test_data: input_t1):
+def test_add_tensor_u85_INT_16a8w(test_data: input_t1):
     """Test add operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
