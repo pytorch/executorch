@@ -5,6 +5,9 @@ import torch
 # Import the custom ops to ensure they are registered
 from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
+# Check CUDA availability once at module level
+CUDA_AVAILABLE = torch.cuda.is_available()
+
 
 class TestUpdateCrossAttnCache(unittest.TestCase):
     def test_update_cross_attn_cache(self):
@@ -197,4 +200,80 @@ class TestUpdateCrossAttnCache(unittest.TestCase):
         # The entire cache should match value
         torch.testing.assert_close(
             cache, value, msg="Cache not fully updated when S == S_max"
+        )
+
+    @unittest.skipUnless(CUDA_AVAILABLE, "CUDA not available")
+    def test_alias_and_update_cross_attn_cache_with_cond_triton(self):
+        """Test combining alias and update_cross_attn_cache ops with torch.cond,
+        lowered to Triton on CUDA. True branch uses alias, false branch uses
+        update_cross_attn_cache."""
+
+        # Create CUDA tensors
+        # Value: [B=2, H=1, S=2, D=4]
+        value = torch.randn(2, 1, 2, 4, dtype=torch.float32, device="cuda")
+        # Extra tensor for alias op
+        extra = torch.randn(2, 1, 4, 4, dtype=torch.float32, device="cuda")
+
+        # Define a function that uses different ops in each branch
+        def fn_with_cond(pred, v, extra_tensor, c):
+            def true_fn(v, extra_tensor, cache):
+                # True branch: use alias op only
+                aliased_cache, aliased_extra = torch.ops.executorch.alias(
+                    cache, extra_tensor
+                )
+                # Return sum of aliased tensors (no cache mutation)
+                return aliased_cache + aliased_extra
+
+            def false_fn(v, extra_tensor, cache):
+                # False branch: use update_cross_attn_cache op only
+                updated = torch.ops.executorch.update_cross_attn_cache(v, cache)
+                return updated
+
+            return torch.cond(pred, true_fn, false_fn, (v, extra_tensor, c))
+
+        # Compile the function with Triton backend
+        @torch.compile(backend="inductor")
+        def compiled_fn(pred, v, extra_tensor, c):
+            return fn_with_cond(pred, v, extra_tensor, c)
+
+        # Test with true condition (alias branch)
+        pred_true = torch.tensor(True, device="cuda")
+        cache_true = torch.zeros(2, 1, 4, 4, dtype=torch.float32, device="cuda")
+
+        result_true = compiled_fn(pred_true, value, extra, cache_true)
+
+        # Check that the true branch was executed (alias: cache + extra)
+        expected_true = cache_true + extra
+        torch.testing.assert_close(
+            result_true,
+            expected_true,
+            msg="Result incorrect in true branch (alias) with CUDA/Triton",
+        )
+
+        # Cache should remain unchanged in true branch (alias doesn't mutate)
+        torch.testing.assert_close(
+            cache_true,
+            torch.zeros(2, 1, 4, 4, dtype=torch.float32, device="cuda"),
+            msg="Cache should not be mutated in true branch (alias)",
+        )
+
+        # Test with false condition (update_cross_attn_cache branch)
+        pred_false = torch.tensor(False, device="cuda")
+        cache_false = torch.zeros(2, 1, 4, 4, dtype=torch.float32, device="cuda")
+
+        compiled_fn(pred_false, value, extra, cache_false)
+
+        # Check that the false branch was executed (update_cross_attn_cache)
+        # The cache should be updated with value in the first S positions
+        torch.testing.assert_close(
+            cache_false[:, :, :2, :],
+            value,
+            msg="Cache not updated correctly in false branch with CUDA/Triton",
+        )
+
+        # The rest of the cache should remain zeros
+        torch.testing.assert_close(
+            cache_false[:, :, 2:, :],
+            torch.zeros(2, 1, 2, 4, dtype=torch.float32, device="cuda"),
+            msg="Rest of cache was modified in false branch",
         )
