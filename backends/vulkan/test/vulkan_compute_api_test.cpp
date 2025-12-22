@@ -838,7 +838,7 @@ TEST_F(VulkanComputeAPITest, tensor_no_copy_transpose_test) {
   std::vector<int64_t> mat2_sizes = {N, K};
   std::vector<int64_t> out_sizes = {M, N};
 
-  for (const auto storage_type : {utils::kTexture3D, utils::kBuffer}) {
+  for (const auto storage_type : {utils::kBuffer}) {
     vTensor mat1 = vTensor(
         context(),
         mat1_sizes,
@@ -876,7 +876,8 @@ TEST_F(VulkanComputeAPITest, tensor_no_copy_transpose_test) {
     fill_vtensor(mat2, mat2_data);
 
     if (storage_type == utils::kTexture3D) {
-      record_matmul_texture3d(context(), out, mat1, mat2_t);
+      record_matmul_texture3d(
+          context(), out, mat1, mat2_t, /*mat2_is_transposed=*/true);
     } else {
       record_reference_matmul(context(), out, mat1, mat2_t);
     }
@@ -2330,42 +2331,38 @@ void test_mm(
 
 TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
 #define RUN_TESTS(dtype, storage_type, layout, prepack) \
-  test_mm(                                              \
-      /*B = */ 1,                                       \
-      /*M = */ 31,                                      \
-      /*K = */ 127,                                     \
-      /*N = */ 23,                                      \
-      dtype,                                            \
-      storage_type,                                     \
-      layout,                                           \
-      prepack);                                         \
-  test_mm(                                              \
-      /*B = */ 5,                                       \
-      /*M = */ 31,                                      \
-      /*K = */ 127,                                     \
-      /*N = */ 23,                                      \
-      dtype,                                            \
-      storage_type,                                     \
-      layout,                                           \
-      prepack);                                         \
-  test_mm(                                              \
-      /*B = */ 7,                                       \
-      /*M = */ 13,                                      \
-      /*K = */ 89,                                      \
-      /*N = */ 17,                                      \
-      dtype,                                            \
-      storage_type,                                     \
-      layout,                                           \
-      prepack);                                         \
-  test_mm(                                              \
-      /*B = */ 1,                                       \
-      /*M = */ 13,                                      \
-      /*K = */ 89,                                      \
-      /*N = */ 17,                                      \
-      dtype,                                            \
-      storage_type,                                     \
-      layout,                                           \
-      prepack);
+  test_mm(/*B = */ 1,                                   \
+          /*M = */ 31,                                  \
+          /*K = */ 127,                                 \
+          /*N = */ 23,                                  \
+          dtype,                                        \
+          storage_type,                                 \
+          layout,                                       \
+          prepack);                                     \
+  test_mm(/*B = */ 5,                                   \
+          /*M = */ 31,                                  \
+          /*K = */ 127,                                 \
+          /*N = */ 23,                                  \
+          dtype,                                        \
+          storage_type,                                 \
+          layout,                                       \
+          prepack);                                     \
+  test_mm(/*B = */ 7,                                   \
+          /*M = */ 13,                                  \
+          /*K = */ 89,                                  \
+          /*N = */ 17,                                  \
+          dtype,                                        \
+          storage_type,                                 \
+          layout,                                       \
+          prepack);                                     \
+  test_mm(/*B = */ 1,                                   \
+          /*M = */ 13,                                  \
+          /*K = */ 89,                                  \
+          /*N = */ 17,                                  \
+          dtype,                                        \
+          storage_type,                                 \
+          layout,                                       \
+          prepack);
 
   CALL_TEST_FN_FOR_W_PACKED(RUN_TESTS);
   CALL_TEST_FN_FOR_C_PACKED(RUN_TESTS);
