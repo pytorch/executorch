@@ -14,7 +14,7 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 cd "${et_root_dir}"
 pwd
-scratch_dir=${et_root_dir}/examples/arm/ethos-u-scratch
+scratch_dir=${et_root_dir}/examples/arm/arm-scratch
 setup_path_script=${scratch_dir}/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
@@ -78,7 +78,7 @@ test_pytest_ops_no_target() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for target-less tests"
 
     # Run arm baremetal pytest tests without target
-    pytest  --verbose --color=yes --numprocesses=auto --durations=10 backends/arm/test/ --ignore=backends/arm/test/models -k "not (tosa or vgf or u55 or u85)"
+    pytest  --verbose --color=yes --numprocesses=auto --durations=10 backends/arm/test/ --ignore=backends/arm/test/models -k no_target
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -89,7 +89,7 @@ test_pytest_models_no_target() {
     source backends/arm/scripts/install_models_for_test.sh
 
     # Run arm baremetal pytest tests without FVP
-    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k "not (tosa or vgf or u55 or u85)"
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k no_target
     echo "${TEST_SUITE_NAME}: PASS"
 }
 

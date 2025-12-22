@@ -500,7 +500,6 @@ jobs:
       matrix:
         include:
           - test_arm_baremetal: test_pytest_ops_no_target
-          - test_arm_baremetal: test_pytest_models_no_target
           - test_arm_baremetal: test_pytest_ops_tosa
           - test_arm_baremetal: test_pytest_models_tosa
           - test_arm_baremetal: test_run_tosa

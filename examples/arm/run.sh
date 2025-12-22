@@ -132,8 +132,8 @@ if ! [[ ${pte_placement} == "elf" ]]; then
 fi
 
 # Default Ethos-u tool folder override with --scratch-dir=<FOLDER>
-ethos_u_scratch_dir=$(realpath ${ethos_u_scratch_dir})
-setup_path_script=${ethos_u_scratch_dir}/setup_path.sh
+arm_scratch_dir=$(realpath ${arm_scratch_dir})
+setup_path_script=${arm_scratch_dir}/setup_path.sh
 _setup_msg="please refer to ${script_dir}/setup.sh to properly install necessary tools."
 
 # Set target based variables
@@ -188,7 +188,6 @@ function check_setup () {
     # check if setup_path_script was created, if so source it
     if [[ -f ${setup_path_script} ]]; then
         source $setup_path_script
-        echo $setup_path_script
     else
         echo "Could not find ${setup_path_script} file, ${_setup_msg}"
         return 1
