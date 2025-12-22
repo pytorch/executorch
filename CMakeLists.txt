@@ -817,7 +817,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_CUDA)
-    list(APPEND _dep_libs aoti_cuda)
+    list(APPEND _dep_libs aoti_cuda_backend)
   endif()
 
   # RPATH for _portable_lib.so

@@ -761,7 +761,7 @@ class CustomBuild(build):
             cmake_build_args += ["--target", "selective_build"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
-            cmake_build_args += ["--target", "aoti_cuda"]
+            cmake_build_args += ["--target", "aoti_cuda_backend"]
             cmake_build_args += ["--target", "aoti_common"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
