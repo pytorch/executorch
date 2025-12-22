@@ -152,12 +152,12 @@ Automate PyTorch model deployment to iOS, Android, and edge devices with ExecuTo
 
 - **Voxtral** - Deploy audio-text-input LLM on CPU (via XNNPACK) and on CUDA. [Try →](https://github.com/pytorch/executorch/blob/main/examples/models/voxtral/README.md)
 
-- **Whisper** - Deploy OpenAI's Whisper speech recognition model on CUDA and Metal backends. [Try →](https://github.com/pytorch/executorch/blob/main/examples/models/whisper/README.md)
+- **Whisper** - Deploy OpenAI's Whisper speech recognition model on CUDA and Metal backends. [Try →](https://github.com/pytorch/executorch/blob/main/examples/models/whisper/README.md) <!-- @lint-ignore -->
 
 - **LoRA adapter** - Export two LoRA adapters that share a single foundation weight file, saving memory and disk space. [Try →](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation/cpp/lora_example)
 
 - **OpenVINO from Intel** - Deploy [Yolo12](https://github.com/pytorch/executorch/tree/main/examples/models/yolo12), [Llama](https://github.com/pytorch/executorch/tree/main/examples/openvino/llama), and [Stable Diffusion](https://github.com/pytorch/executorch/tree/main/examples/openvino/stable_diffusion) on [OpenVINO from Intel](https://www.intel.com/content/www/us/en/developer/articles/community/optimizing-executorch-on-ai-pcs.html).
 
-- **Audio Generation** - Generate audio from text prompts using Stable Audio Open Small on Arm CPUs with XNNPACK and KleidiAI. [Try →](https://github.com/Arm-Examples/ML-examples/tree/main/kleidiai-examples/audiogen-et) • [Video →](https://www.youtube.com/watch?v=q2P0ESVxhAY)
+- **Audio Generation** - Generate audio from text prompts using Stable Audio Open Small on Arm CPUs with XNNPACK and KleidiAI. [Try →](https://github.com/Arm-Examples/ML-examples/tree/main/kleidiai-examples/audiogen-et) • [Video →](https://www.youtube.com/watch?v=q2P0ESVxhAY) <!-- @lint-ignore -->
 
 *Want to showcase your demo? [Submit here →](https://github.com/pytorch/executorch/issues)*
