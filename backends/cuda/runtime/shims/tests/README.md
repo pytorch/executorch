@@ -13,10 +13,10 @@ From the ExecuTorch root directory:
 
 ```bash
 # Release build
-cmake --workflow llm-release-cuda
+cmake --workflow --preset llm-release-cuda
 
 # Or debug build (recommended for debugging test failures)
-cmake --workflow llm-debug-cuda
+cmake --workflow --preset llm-debug-cuda
 ```
 
 ## Building and Run the Tests
@@ -27,10 +27,10 @@ From this directory (`backends/cuda/runtime/shims/tests/`):
 
 ```bash
 # Release build
-cmake --workflow default
+cmake --workflow --preset default
 
 # Debug build
-cmake --workflow debug
+cmake --workflow --preset debug
 ```
 
 ### Option 2: Manual CMake Commands
@@ -85,7 +85,7 @@ cmake --workflow --preset llm-release-cuda
 
 For debugging test failures, build with debug mode:
 ```bash
-cmake --workflow debug
+cmake --workflow --preset debug
 ```
 
 Then run with verbose output:
