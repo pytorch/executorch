@@ -250,8 +250,9 @@ def export_all(model):
     preprocessor_wrapper.eval()
     sample_audio = torch.randn(16000 * 10)
     sample_length = torch.tensor([sample_audio.shape[0]], dtype=torch.int64)
-    old_cuda_is_available = torch.cuda.is_available()
-    # The preprocessor definition changes if cuda is available (likely due to making it cuda graphable). Unfortunately that new definition is not supported by export, so we need to stop that from happening.
+    # The preprocessor definition changes if cuda is available (likely due to making it cuda graphable).
+    # Unfortunately that new definition is not supported by export, so we need to stop that from happening.
+    old_cuda_is_available = torch.cuda.is_available
     torch.cuda.is_available = lambda: False
     programs["preprocessor"] = export(
         preprocessor_wrapper,
@@ -262,7 +263,7 @@ def export_all(model):
         },
         strict=False,
     )
-    torch.cuda.is_available = lambda: old_cuda_is_available
+    torch.cuda.is_available = old_cuda_is_available
 
     feat_in = getattr(model.encoder, "_feat_in", 128)
     audio_signal = torch.randn(1, feat_in, 100)
@@ -330,7 +331,7 @@ def export_all(model):
 
 
 def lower_to_executorch(programs, metadata=None, backend="portable"):
-    partitioner = None
+    partitioner = {}
 
     if backend == "xnnpack":
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
@@ -338,7 +339,11 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
         )
 
         print("\nLowering to ExecuTorch with XNNPACK...")
-        partitioner = [XnnpackPartitioner()]
+        for key in programs.keys():
+            if key == "preprocessor":
+                partitioner[key] = []
+            else:
+                partitioner[key] = [XnnpackPartitioner()]
 
     elif backend in ("cuda", "cuda-windows"):
         from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -351,16 +356,21 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
         )
 
         for key, ep in programs.items():
-            programs[key] = ep.run_decompositions(
-                {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
-            )
+            if key != "preprocessor":
+                programs[key] = ep.run_decompositions(
+                    {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
+                )
 
-        partitioner = {}
         for key in programs.keys():
-            compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
-            if backend == "cuda-windows":
-                compile_specs.append(CompileSpec("platform", "windows".encode("utf-8")))
-            partitioner[key] = [CudaPartitioner(compile_specs)]
+            if key == "preprocessor":
+                partitioner[key] = []
+            else:
+                compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
+                if backend == "cuda-windows":
+                    compile_specs.append(
+                        CompileSpec("platform", "windows".encode("utf-8"))
+                    )
+                partitioner[key] = [CudaPartitioner(compile_specs)]
 
     else:
         print("\nLowering to ExecuTorch...")
@@ -397,14 +407,14 @@ def main():
     parser.add_argument(
         "--audio", type=str, help="Path to audio file for transcription test"
     )
-    parser.add_argument("--backend", type=str, default=None, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="portable",
+        choices=["portable", "xnnpack", "cuda", "cuda-windows"],
+        help="Backend for acceleration (default: portable)",
+    )
     args = parser.parse_args()
-
-    if args.backend is not None:
-        print(
-            "Error: --backend is not currently supported. Backend acceleration is still being verified."
-        )
-        sys.exit(1)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -414,7 +424,7 @@ def main():
     print("\nExporting components...")
     programs, metadata = export_all(model)
 
-    et = lower_to_executorch(programs, metadata=metadata)
+    et = lower_to_executorch(programs, metadata=metadata, backend=args.backend)
 
     pte_path = os.path.join(args.output_dir, "parakeet_tdt.pte")
     print(f"\nSaving ExecuTorch program to: {pte_path}")

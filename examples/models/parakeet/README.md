@@ -25,7 +25,10 @@ python export_parakeet_tdt.py --audio /path/to/audio.wav
 | Argument | Description |
 |----------|-------------|
 | `--output-dir` | Output directory for exports (default: `./parakeet_tdt_exports`) |
+| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `cuda`, `cuda-windows` (default: `portable`) |
 | `--audio` | Path to audio file for transcription test |
+
+**Note:** The preprocessor is always lowered with the portable backend regardless of the `--backend` setting.
 
 ## C++ Runner
 
