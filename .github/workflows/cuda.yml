@@ -103,6 +103,8 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
+        # Install requirements
+        bash ./install_requirements.sh
 
         # Build ExecuTorch with CUDA support
         cmake --workflow --preset llm-release-cuda
