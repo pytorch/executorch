@@ -40,6 +40,9 @@ class AOTITorchCreateTensorFromBlobV2Test : public ::testing::Test {
 
     // Clear any remaining tensors from previous tests
     clear_all_tensors();
+
+    // Clear memory tracking map
+    clear_memory_tracking();
   }
 
   void TearDown() override {
@@ -48,6 +51,9 @@ class AOTITorchCreateTensorFromBlobV2Test : public ::testing::Test {
 
     // Clear the global tensor storage using the provided function
     clear_all_tensors();
+
+    // Clear memory tracking map
+    clear_memory_tracking();
 
     // Clean up any allocated memory buffers
     for (void* ptr : cuda_memory_buffers_) {
