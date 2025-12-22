@@ -199,6 +199,9 @@ aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst);
 
 // Function to clear all tensors from internal storage
 AOTI_SHIM_EXPORT void clear_all_tensors();
+
+// Function to clear memory tracking map (for test cleanup)
+AOTI_SHIM_EXPORT void clear_memory_tracking();
 } // extern "C"
 
 } // namespace executorch::backends::cuda

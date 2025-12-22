@@ -39,7 +39,7 @@
     "workflowPresets": [
         {
             "name": "default",
-            "displayName": "Configure and build CUDA Shim Tests",
+            "displayName": "Configure, build, and test CUDA Shim Tests",
             "steps": [
                 {
                     "type": "configure",
@@ -48,12 +48,16 @@
                 {
                     "type": "build",
                     "name": "default"
+                },
+                {
+                    "type": "test",
+                    "name": "default"
                 }
             ]
         },
         {
             "name": "debug",
-            "displayName": "Configure and build CUDA Shim Tests (Debug)",
+            "displayName": "Configure, build, and test CUDA Shim Tests (Debug)",
             "steps": [
                 {
                     "type": "configure",
@@ -61,6 +65,10 @@
                 },
                 {
                     "type": "build",
+                    "name": "debug"
+                },
+                {
+                    "type": "test",
                     "name": "debug"
                 }
             ]
@@ -85,4 +93,3 @@
         }
     ]
 }
-

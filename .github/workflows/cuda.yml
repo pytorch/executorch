@@ -105,12 +105,11 @@ jobs:
         set -eux
 
         # Build ExecuTorch with CUDA support
-        ./install_executorch.sh
+        cmake --workflow llm-release-cuda
 
         # Build and run CUDA shim tests
         pushd backends/cuda/runtime/shims/tests
-        cmake --workflow --preset default
-        ctest --preset default --output-on-failure
+        cmake --workflow default
         popd
 
   export-model-cuda-artifact:

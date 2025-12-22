@@ -201,4 +201,3 @@ TEST_F(AOTITorchItemBoolTest, NonBoolDtype) {
   error = aoti_torch_item_bool(tensor, &result);
   EXPECT_EQ(error, Error::InvalidArgument);
 }
-

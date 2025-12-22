@@ -335,6 +335,11 @@ void clear_all_tensors() {
   ET_LOG(Info, "Cleared all tensors");
 }
 
+void clear_memory_tracking() {
+  memory_to_n_tensor.clear();
+  ET_LOG(Info, "Cleared memory tracking map");
+}
+
 AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
   // Handle null tensor pointer
   ET_CHECK_OR_RETURN_ERROR(

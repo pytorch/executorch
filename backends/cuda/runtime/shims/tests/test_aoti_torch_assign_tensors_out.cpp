@@ -69,7 +69,13 @@ class AOTITorchAssignTensorsOutTest : public ::testing::Test {
     const int64_t* strides_ptr = strides.empty() ? nullptr : strides.data();
 
     AOTITorchError error = aoti_torch_empty_strided(
-        sizes.size(), sizes.data(), strides_ptr, dtype, device_type, 0, &tensor);
+        sizes.size(),
+        sizes.data(),
+        strides_ptr,
+        dtype,
+        device_type,
+        0,
+        &tensor);
 
     return (error == Error::Ok) ? tensor : nullptr;
   }
@@ -192,8 +198,10 @@ TEST_F(AOTITorchAssignTensorsOutTest, StridesPreserved) {
 // Test with CPU tensor
 TEST_F(AOTITorchAssignTensorsOutTest, CPUTensor) {
   std::vector<int64_t> sizes = {2, 3};
-  Tensor* src =
-      create_test_tensor(sizes, static_cast<int32_t>(SupportedDTypes::FLOAT32), static_cast<int32_t>(SupportedDevices::CPU));
+  Tensor* src = create_test_tensor(
+      sizes,
+      static_cast<int32_t>(SupportedDTypes::FLOAT32),
+      static_cast<int32_t>(SupportedDevices::CPU));
   ASSERT_NE(src, nullptr);
 
   Tensor* dst = nullptr;
@@ -231,7 +239,7 @@ TEST_F(AOTITorchAssignTensorsOutTest, DtypePreserved) {
     int32_t src_dtype, dst_dtype;
     aoti_torch_get_dtype(src, &src_dtype);
     aoti_torch_get_dtype(dst, &dst_dtype);
-    EXPECT_EQ(src_dtype, dst_dtype) << "Dtype mismatch for dtype code: " << dtype;
+    EXPECT_EQ(src_dtype, dst_dtype)
+        << "Dtype mismatch for dtype code: " << dtype;
   }
 }
-

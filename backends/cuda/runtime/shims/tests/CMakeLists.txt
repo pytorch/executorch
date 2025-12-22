@@ -12,7 +12,20 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find required packages
 find_package(CUDAToolkit REQUIRED)
-find_package(GTest REQUIRED)
+
+# Fetch GoogleTest
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG v1.14.0
+)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt
+    ON
+    CACHE BOOL "" FORCE
+)
+FetchContent_MakeAvailable(googletest)
 
 # Get EXECUTORCH_ROOT
 if(NOT EXECUTORCH_ROOT)
@@ -40,9 +53,8 @@ foreach(test_name ${CUDA_SHIM_TESTS})
   add_executable(${test_name} ${test_name}.cpp)
 
   target_include_directories(
-    ${test_name}
-    PRIVATE ${EXECUTORCH_ROOT}
-            ${CUDAToolkit_INCLUDE_DIRS}
+    ${test_name} PRIVATE ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}
+                         ${CUDAToolkit_INCLUDE_DIRS}
   )
 
   target_link_libraries(

@@ -42,6 +42,9 @@ class AOTITorchReinterpretTensorTest : public ::testing::Test {
 
     // Clear any remaining tensors from previous tests
     clear_all_tensors();
+
+    // Clear memory tracking map
+    clear_memory_tracking();
   }
 
   void TearDown() override {
@@ -50,6 +53,9 @@ class AOTITorchReinterpretTensorTest : public ::testing::Test {
 
     // Clear the global tensor storage using the provided function
     clear_all_tensors();
+
+    // Clear memory tracking map
+    clear_memory_tracking();
   }
 
   // Helper to calculate number of elements from sizes
