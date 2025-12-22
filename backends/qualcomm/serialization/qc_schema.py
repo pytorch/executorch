@@ -56,7 +56,7 @@ class QcomChipset(IntEnum):
     SAR2230P = 95  # v81
     SA8255 = 52  # v73
     SW6100 = 96  # v81
-    QCM6490 = 35  # v68
+    QCM6490 = 93  # v68
 
 
 @dataclass
