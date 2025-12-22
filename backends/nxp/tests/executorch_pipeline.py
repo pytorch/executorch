@@ -38,7 +38,7 @@ from torch import nn
 from torch.export import export
 from torchao.quantization.pt2e.quantizer import Quantizer
 
-neutron_converter_flavor = "SDK_25_09"
+neutron_converter_flavor = "SDK_25_12"
 neutron_target_spec = NeutronTargetSpec(
     target="imxrt700", neutron_converter_flavor=neutron_converter_flavor
 )
