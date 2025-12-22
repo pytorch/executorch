@@ -198,8 +198,11 @@ def transcribe_eager(audio_path: str, model) -> str:
 def load_model():
     import nemo.collections.asr as nemo_asr
 
-    model = nemo_asr.models.ASRModel.from_pretrained("nvidia/parakeet-tdt-0.6b-v3")
+    model = nemo_asr.models.ASRModel.from_pretrained(
+        "nvidia/parakeet-tdt-0.6b-v3", map_location="cpu"
+    )
     model.eval()
+    model.cpu()
     return model
 
 
@@ -431,6 +434,16 @@ def main():
     with open(pte_path, "wb") as f:
         et.write_to_file(f)
     print(f"Saved {os.path.getsize(pte_path) / (1024 * 1024):.1f} MB")
+
+    # Save .ptd data files (e.g., CUDA delegate data)
+    data_files = et.data_files
+    if data_files:
+        print(f"\nSaving {len(data_files)} data file(s)...")
+        for filename, data in data_files.items():
+            ptd_path = os.path.join(args.output_dir, filename)
+            with open(ptd_path, "wb") as f:
+                f.write(data)
+            print(f"  Saved {filename} ({len(data) / (1024 * 1024):.1f} MB)")
 
     if args.audio:
         print("\n" + "=" * 60)

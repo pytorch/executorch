@@ -29,6 +29,10 @@ DEFINE_string(
     tokenizer_path,
     "tokenizer.json",
     "Path to SentencePiece tokenizer model file.");
+DEFINE_string(
+    data_path,
+    "",
+    "Path to data file (.ptd) for delegate data (optional, required for CUDA).");
 
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
@@ -272,8 +276,15 @@ int main(int argc, char** argv) {
 
   // Load model (which includes the bundled preprocessor)
   ET_LOG(Info, "Loading model from: %s", FLAGS_model_path.c_str());
-  Module model(FLAGS_model_path, Module::LoadMode::Mmap);
-  auto model_load_error = model.load();
+  std::unique_ptr<Module> model;
+  if (!FLAGS_data_path.empty()) {
+    ET_LOG(Info, "Loading data from: %s", FLAGS_data_path.c_str());
+    model = std::make_unique<Module>(
+        FLAGS_model_path, FLAGS_data_path, Module::LoadMode::Mmap);
+  } else {
+    model = std::make_unique<Module>(FLAGS_model_path, Module::LoadMode::Mmap);
+  }
+  auto model_load_error = model->load();
   if (model_load_error != Error::Ok) {
     ET_LOG(Error, "Failed to load model.");
     return 1;
@@ -295,7 +306,7 @@ int main(int argc, char** argv) {
       audio_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
 
   ET_LOG(Info, "Running preprocessor...");
-  auto proc_result = model.execute(
+  auto proc_result = model->execute(
       "preprocessor",
       std::vector<::executorch::runtime::EValue>{
           audio_tensor, audio_len_tensor});
@@ -323,7 +334,7 @@ int main(int argc, char** argv) {
 
   // Run encoder
   ET_LOG(Info, "Running encoder...");
-  auto enc_result = model.execute(
+  auto enc_result = model->execute(
       "encoder", std::vector<::executorch::runtime::EValue>{mel, mel_len});
   if (!enc_result.ok()) {
     ET_LOG(Error, "Encoder forward failed.");
@@ -343,11 +354,11 @@ int main(int argc, char** argv) {
 
   // Query model metadata from constant_methods
   std::vector<::executorch::runtime::EValue> empty_inputs;
-  auto num_rnn_layers_result = model.execute("num_rnn_layers", empty_inputs);
-  auto pred_hidden_result = model.execute("pred_hidden", empty_inputs);
-  auto vocab_size_result = model.execute("vocab_size", empty_inputs);
-  auto blank_id_result = model.execute("blank_id", empty_inputs);
-  auto sample_rate_result = model.execute("sample_rate", empty_inputs);
+  auto num_rnn_layers_result = model->execute("num_rnn_layers", empty_inputs);
+  auto pred_hidden_result = model->execute("pred_hidden", empty_inputs);
+  auto vocab_size_result = model->execute("vocab_size", empty_inputs);
+  auto blank_id_result = model->execute("blank_id", empty_inputs);
+  auto sample_rate_result = model->execute("sample_rate", empty_inputs);
 
   if (!num_rnn_layers_result.ok() || !pred_hidden_result.ok() ||
       !vocab_size_result.ok() || !blank_id_result.ok() ||
@@ -375,7 +386,7 @@ int main(int argc, char** argv) {
 
   ET_LOG(Info, "Running TDT greedy decode...");
   auto tokens = greedy_decode_executorch(
-      model,
+      *model,
       encoded,
       encoded_len,
       blank_id,

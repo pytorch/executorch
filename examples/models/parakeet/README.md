@@ -70,3 +70,4 @@ From the executorch root directory:
 | `--model_path` | Path to Parakeet model (.pte) |
 | `--audio_path` | Path to input audio file (.wav) |
 | `--tokenizer_path` | Path to tokenizer file (default: `tokenizer.json`) |
+| `--data_path` | Path to data file (.ptd) for delegate data (optional, required for CUDA) |
