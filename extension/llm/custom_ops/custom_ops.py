@@ -16,12 +16,6 @@ import torch
 
 from torch.library import impl
 
-from typing import Tuple
-
-from torch._inductor.lowering import lowerings as L, register_lowering
-
-aten = torch.ops.aten
-
 try:
     op = torch.ops.llama.sdpa_with_kv_cache.default
     assert op is not None
@@ -393,83 +387,3 @@ def custom_quantized_sdpa_meta(
     )
 
     return torch.empty(query.size(), dtype=torch.float32, device="meta")
-
-# 1) Define the custom op in the "executorch" namespace with name "alias"
-@torch.library.custom_op("executorch::alias", mutates_args=())
-def custom_alias(x: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    # no copies, just pass-through
-    return x, y
-
-
-# 2) FakeTensor kernel: describes output metadata for compile-time
-@custom_alias.register_fake
-def _(x, y):
-    # For this op, outputs have exactly the same shape/dtype/device as inputs.
-    # We just need *dummy* tensors with that metadata.
-    out_x = torch.empty_like(x)
-    out_y = torch.empty_like(y)
-    return out_x, out_y
-
-
-@register_lowering(torch.ops.executorch.alias.default)
-def lowering_custom_alias(x, y):
-    # x, y here are IR values (Inductor's internal representation).
-    # Alias is logically a no-op – just pass them through.
-    return x, y
-
-
-# Expecting cache shape: (B, H, S_max, D), value shape (B, H, S, D) where S <= S_max
-def _validate_cross_attn_cache_params(value: torch.Tensor, cache: torch.Tensor):
-    torch._assert(value.dim() == 4, "value must be 4D")
-    torch._assert(cache.dim() == 4, "cache must be 4D")
-    # Cache shape: (B, H, S_max, D)
-    # Value shape: (B, H, S, D)
-    torch._assert(
-        value.size(2) <= cache.size(2),
-        f"value sequence length {value.size(2)} exceeds cache size {cache.size(2)}",
-    )
-    torch._assert(value.size(0) == cache.size(0), "batch size mismatch")
-    torch._assert(value.size(1) == cache.size(1), "num heads mismatch")
-    torch._assert(value.size(3) == cache.size(3), "head dim mismatch")
-    torch._assert(value.dtype == cache.dtype, "dtype mismatch")
-
-
-# This is cheating: we delibrately NOT mark `cache` to be mutating so that this
-# custom op can be used in HOP such as `torch.cond`, where `torch.compile` requires
-# no aliasing or mutation in the branches. This is fine because we only care about inference.
-@torch.library.custom_op("executorch::update_cross_attn_cache", mutates_args=[])
-def _update_cross_attn_cache(value: torch.Tensor, cache: torch.Tensor) -> torch.Tensor:
-    # Eager implementation
-    _validate_cross_attn_cache_params(value, cache)
-
-    # Slice the cache to match value's sequence length and copy
-    # cache shape: [B, H, S_max, D]
-    # value shape: [B, H, S, D]
-    cache[:, :, : value.size(2), :].copy_(value)
-    return cache
-
-
-# Register the fake (meta) kernel
-@_update_cross_attn_cache.register_fake
-def _update_cross_attn_cache_fake(
-    value: torch.Tensor, cache: torch.Tensor
-) -> torch.Tensor:
-    _validate_cross_attn_cache_params(value, cache)
-    return torch.empty_like(cache)
-
-
-# Register Inductor lowering
-@register_lowering(torch.ops.executorch.update_cross_attn_cache)
-def _update_cross_attn_cache_lowering(value, cache):
-    # cache shape: [B, H, S_max, D]
-    # value shape: [B, H, S, D]
-
-    # We need to slice the cache along dim 2 (sequence length)
-    # slice(self, dim, start, end, step=1)
-    seq_len = value.get_size()[2]
-    cache_slice = L[aten.slice.Tensor](cache, 2, 0, seq_len, 1)
-
-    # Copy value into the slice
-    L[aten.copy_.default](cache_slice, value)
-
-    return cache
