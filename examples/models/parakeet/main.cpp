@@ -32,8 +32,8 @@ DEFINE_string(
 
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
-using ::executorch::runtime::EValue;
 using ::executorch::runtime::Error;
+using ::executorch::runtime::EValue;
 
 namespace {
 
@@ -67,12 +67,12 @@ std::vector<int64_t> greedy_decode_executorch(
     }
   }
 
-    auto transposed_tensor = from_blob(
-        transposed_data.data(),
-        {static_cast<::executorch::aten::SizesType>(batch),
-         static_cast<::executorch::aten::SizesType>(time_steps),
-         static_cast<::executorch::aten::SizesType>(enc_dim)},
-        ::executorch::aten::ScalarType::Float);
+  auto transposed_tensor = from_blob(
+      transposed_data.data(),
+      {static_cast<::executorch::aten::SizesType>(batch),
+       static_cast<::executorch::aten::SizesType>(time_steps),
+       static_cast<::executorch::aten::SizesType>(enc_dim)},
+      ::executorch::aten::ScalarType::Float);
 
   // Project encoder output
   auto proj_enc_result = model.execute(
@@ -289,15 +289,16 @@ int main(int argc, char** argv) {
       audio_data.data(),
       {static_cast<::executorch::aten::SizesType>(audio_data.size())},
       ::executorch::aten::ScalarType::Float);
-  std::vector<int64_t> audio_len_data = {static_cast<int64_t>(audio_data.size())};
+  std::vector<int64_t> audio_len_data = {
+      static_cast<int64_t>(audio_data.size())};
   auto audio_len_tensor = from_blob(
-      audio_len_data.data(),
-      {1},
-      ::executorch::aten::ScalarType::Long);
+      audio_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
 
   ET_LOG(Info, "Running preprocessor...");
   auto proc_result = model.execute(
-      "preprocessor", std::vector<::executorch::runtime::EValue>{audio_tensor, audio_len_tensor});
+      "preprocessor",
+      std::vector<::executorch::runtime::EValue>{
+          audio_tensor, audio_len_tensor});
   if (!proc_result.ok()) {
     ET_LOG(Error, "Preprocessor forward failed.");
     return 1;
@@ -309,8 +310,8 @@ int main(int argc, char** argv) {
 
   // Create mel_len tensor for encoder
   std::vector<int64_t> mel_len_data = {mel_len_value};
-  auto mel_len = from_blob(
-      mel_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
+  auto mel_len =
+      from_blob(mel_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
 
   ET_LOG(
       Info,
@@ -351,7 +352,9 @@ int main(int argc, char** argv) {
   if (!num_rnn_layers_result.ok() || !pred_hidden_result.ok() ||
       !vocab_size_result.ok() || !blank_id_result.ok() ||
       !sample_rate_result.ok()) {
-    ET_LOG(Error, "Failed to query model metadata. Make sure the model was exported with constant_methods.");
+    ET_LOG(
+        Error,
+        "Failed to query model metadata. Make sure the model was exported with constant_methods.");
     return 1;
   }
 
@@ -387,7 +390,10 @@ int main(int argc, char** argv) {
   auto tokenizer =
       ::executorch::extension::llm::load_tokenizer(FLAGS_tokenizer_path);
   if (!tokenizer || !tokenizer->is_loaded()) {
-    ET_LOG(Error, "Failed to load tokenizer from: %s", FLAGS_tokenizer_path.c_str());
+    ET_LOG(
+        Error,
+        "Failed to load tokenizer from: %s",
+        FLAGS_tokenizer_path.c_str());
     return 1;
   }
 

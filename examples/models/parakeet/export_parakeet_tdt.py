@@ -1,10 +1,13 @@
-#!/usr/bin/env python3
 """Export nvidia/parakeet-tdt-0.6b-v3 components to ExecuTorch."""
 
 import os
 
 import torch
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    to_edge_transform_and_lower,
+)
 from executorch.exir.passes import MemoryPlanningPass
 from torch.export import Dim, export
 
@@ -15,7 +18,7 @@ def load_audio(audio_path: str, sample_rate: int = 16000) -> torch.Tensor:
         import torchaudio
 
         waveform, sr = torchaudio.load(audio_path)
-    except (ImportError, Exception):
+    except Exception:
         from scipy.io import wavfile
 
         sr, data = wavfile.read(audio_path)
@@ -44,7 +47,9 @@ def load_audio(audio_path: str, sample_rate: int = 16000) -> torch.Tensor:
     return waveform
 
 
-def greedy_decode_eager(encoder_output: torch.Tensor, encoder_len: torch.Tensor, model) -> list[int]:
+def greedy_decode_eager(
+    encoder_output: torch.Tensor, encoder_len: torch.Tensor, model
+) -> list[int]:
     hypotheses = model.decoding.rnnt_decoder_predictions_tensor(
         encoder_output=encoder_output,
         encoded_lengths=encoder_len,
@@ -182,7 +187,9 @@ def transcribe_executorch(audio_path: str, model, et_buffer) -> str:
 def transcribe_eager(audio_path: str, model) -> str:
     with torch.no_grad():
         audio = load_audio(audio_path)
-        mel, mel_len = model.preprocessor(input_signal=audio, length=torch.tensor([audio.shape[1]]))
+        mel, mel_len = model.preprocessor(
+            input_signal=audio, length=torch.tensor([audio.shape[1]])
+        )
         encoded, encoded_len = model.encoder(audio_signal=mel, length=mel_len)
         tokens = greedy_decode_eager(encoded, encoded_len, model)
         return model.tokenizer.ids_to_text(tokens)
@@ -228,7 +235,9 @@ class PreprocessorWrapper(torch.nn.Module):
         super().__init__()
         self.preprocessor = preprocessor
 
-    def forward(self, audio: torch.Tensor, length: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, audio: torch.Tensor, length: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         audio_signal = audio.unsqueeze(0)
         mel, mel_len = self.preprocessor(input_signal=audio_signal, length=length)
         return mel, mel_len
@@ -244,7 +253,10 @@ def export_all(model):
     programs["preprocessor"] = export(
         preprocessor_wrapper,
         (sample_audio, sample_length),
-        dynamic_shapes={"audio": {0: Dim("audio_len", min=1600, max=16000 * 600)}, "length": {}},
+        dynamic_shapes={
+            "audio": {0: Dim("audio_len", min=1600, max=16000 * 600)},
+            "length": {},
+        },
         strict=False,
     )
 
@@ -317,22 +329,27 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
     partitioner = None
 
     if backend == "xnnpack":
-        from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
 
         print("\nLowering to ExecuTorch with XNNPACK...")
         partitioner = [XnnpackPartitioner()]
 
     elif backend in ("cuda", "cuda-windows"):
-        from torch._inductor.decomposition import conv1d_to_conv2d
-
         from executorch.backends.cuda.cuda_backend import CudaBackend
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
         from executorch.exir.backend.compile_spec_schema import CompileSpec
+        from torch._inductor.decomposition import conv1d_to_conv2d
 
-        print(f"\nLowering to ExecuTorch with CUDA{' (Windows)' if backend == 'cuda-windows' else ''}...")
+        print(
+            f"\nLowering to ExecuTorch with CUDA{' (Windows)' if backend == 'cuda-windows' else ''}..."
+        )
 
         for key, ep in programs.items():
-            programs[key] = ep.run_decompositions({torch.ops.aten.conv1d.default: conv1d_to_conv2d})
+            programs[key] = ep.run_decompositions(
+                {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
+            )
 
         partitioner = {}
         for key in programs.keys():
@@ -373,12 +390,16 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", default="./parakeet_tdt_exports")
-    parser.add_argument("--audio", type=str, help="Path to audio file for transcription test")
+    parser.add_argument(
+        "--audio", type=str, help="Path to audio file for transcription test"
+    )
     parser.add_argument("--backend", type=str, default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     if args.backend is not None:
-        print("Error: --backend is not currently supported. Backend acceleration is still being verified.")
+        print(
+            "Error: --backend is not currently supported. Backend acceleration is still being verified."
+        )
         sys.exit(1)
 
     os.makedirs(args.output_dir, exist_ok=True)

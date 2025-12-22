@@ -94,7 +94,9 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   endif()
 endif()
 
-target_include_directories(parakeet_runner PUBLIC ${_common_include_directories})
+target_include_directories(
+  parakeet_runner PUBLIC ${_common_include_directories}
+)
 target_link_libraries(parakeet_runner PUBLIC ${link_libraries})
 target_compile_options(parakeet_runner PUBLIC ${_common_compile_options})
 

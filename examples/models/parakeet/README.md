@@ -10,7 +10,7 @@ pip install nemo_toolkit[asr] torchaudio
 
 ## Export
 
-Export the model (portable backend):
+Export the model:
 ```bash
 python export_parakeet_tdt.py
 ```
@@ -25,17 +25,15 @@ python export_parakeet_tdt.py --audio /path/to/audio.wav
 | Argument | Description |
 |----------|-------------|
 | `--output-dir` | Output directory for exports (default: `./parakeet_tdt_exports`) |
-| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `cuda`, `cuda-windows` (default: `portable`) |
 | `--audio` | Path to audio file for transcription test |
 
 ## C++ Runner
 
 ### Building
 
-First, build ExecuTorch with the LLM preset:
+First, build ExecuTorch with the LLM preset from the executorch root directory:
 
 ```bash
-cd executorch
 cmake --workflow --preset llm-release
 ```
 
@@ -46,12 +44,20 @@ cd examples/models/parakeet
 cmake --workflow --preset parakeet-cpu
 ```
 
+Available presets:
+- `parakeet-cpu` - CPU-only build
+- `parakeet-cuda` - CUDA acceleration (Linux/Windows)
+- `parakeet-metal` - Metal acceleration (macOS)
+
 ### Running
+
+From the executorch root directory:
 
 ```bash
 ./cmake-out/examples/models/parakeet/parakeet_runner \
-  --model_path parakeet.pte \
-  --audio_path audio.wav
+  --model_path examples/models/parakeet/parakeet_tdt_exports/parakeet_tdt.pte \
+  --audio_path /path/to/audio.wav \
+  --tokenizer_path examples/models/parakeet/tokenizer.model
 ```
 
 ### Runner Arguments
@@ -60,4 +66,4 @@ cmake --workflow --preset parakeet-cpu
 |----------|-------------|
 | `--model_path` | Path to Parakeet model (.pte) |
 | `--audio_path` | Path to input audio file (.wav) |
-| `--tokenizer_path` | Path to tokenizer file (for token-to-text conversion) |
+| `--tokenizer_path` | Path to tokenizer file (default: `tokenizer.json`) |
