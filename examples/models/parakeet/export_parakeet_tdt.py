@@ -250,6 +250,9 @@ def export_all(model):
     preprocessor_wrapper.eval()
     sample_audio = torch.randn(16000 * 10)
     sample_length = torch.tensor([sample_audio.shape[0]], dtype=torch.int64)
+    old_cuda_is_available = torch.cuda.is_available()
+    # The preprocessor definition changes if cuda is available (likely due to making it cuda graphable). Unfortunately that new definition is not supported by export, so we need to stop that from happening.
+    torch.cuda.is_available = lambda: False
     programs["preprocessor"] = export(
         preprocessor_wrapper,
         (sample_audio, sample_length),
@@ -259,6 +262,7 @@ def export_all(model):
         },
         strict=False,
     )
+    torch.cuda.is_available = lambda: old_cuda_is_available
 
     feat_in = getattr(model.encoder, "_feat_in", 128)
     audio_signal = torch.randn(1, feat_in, 100)
