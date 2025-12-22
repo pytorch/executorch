@@ -15,14 +15,7 @@ Export the model (portable backend):
 python export_parakeet_tdt.py
 ```
 
-Export with a specific backend:
-```bash
-python export_parakeet_tdt.py --backend xnnpack      # CPU acceleration
-python export_parakeet_tdt.py --backend cuda         # CUDA acceleration
-python export_parakeet_tdt.py --backend cuda-windows # CUDA on Windows
-```
-
-Test transcription on an audio file:
+Test transcription on an audio file and compare eager vs lowered results:
 ```bash
 python export_parakeet_tdt.py --audio /path/to/audio.wav
 ```
@@ -53,24 +46,11 @@ cd examples/models/parakeet
 cmake --workflow --preset parakeet-cpu
 ```
 
-For Metal (macOS):
-```bash
-cd examples/models/parakeet
-cmake --workflow --preset parakeet-metal
-```
-
-For CUDA (Linux/Windows):
-```bash
-cd examples/models/parakeet
-cmake --workflow --preset parakeet-cuda
-```
-
 ### Running
 
 ```bash
 ./cmake-out/examples/models/parakeet/parakeet_runner \
   --model_path parakeet.pte \
-  --processor_path preprocessor.pte \
   --audio_path audio.wav
 ```
 
@@ -79,6 +59,5 @@ cmake --workflow --preset parakeet-cuda
 | Argument | Description |
 |----------|-------------|
 | `--model_path` | Path to Parakeet model (.pte) |
-| `--processor_path` | Path to preprocessor .pte for mel spectrogram extraction |
 | `--audio_path` | Path to input audio file (.wav) |
 | `--tokenizer_path` | Path to tokenizer file (for token-to-text conversion) |

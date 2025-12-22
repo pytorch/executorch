@@ -24,10 +24,6 @@
 #include <executorch/runtime/platform/log.h>
 
 DEFINE_string(model_path, "parakeet.pte", "Path to Parakeet model (.pte).");
-DEFINE_string(
-    processor_path,
-    "",
-    "Path to preprocessor .pte for converting raw audio to mel spectrogram.");
 DEFINE_string(audio_path, "", "Path to input audio file (.wav).");
 DEFINE_string(
     tokenizer_path,
@@ -57,7 +53,6 @@ std::vector<int64_t> greedy_decode_executorch(
   int64_t num_token_classes = vocab_size + 1;
 
   // Transpose encoder output from [1, enc_dim, time] to [1, time, enc_dim]
-  // The encoder output shape is [1, 1024, T], we need [1, T, 1024]
   auto enc_sizes = encoder_output.sizes();
   int64_t batch = enc_sizes[0];
   int64_t enc_dim = enc_sizes[1];
@@ -72,12 +67,12 @@ std::vector<int64_t> greedy_decode_executorch(
     }
   }
 
-  auto transposed_tensor = from_blob(
-      transposed_data.data(),
-      {static_cast<::executorch::aten::SizesType>(batch),
-       static_cast<::executorch::aten::SizesType>(time_steps),
-       static_cast<::executorch::aten::SizesType>(enc_dim)},
-      ::executorch::aten::ScalarType::Float);
+    auto transposed_tensor = from_blob(
+        transposed_data.data(),
+        {static_cast<::executorch::aten::SizesType>(batch),
+         static_cast<::executorch::aten::SizesType>(time_steps),
+         static_cast<::executorch::aten::SizesType>(enc_dim)},
+        ::executorch::aten::ScalarType::Float);
 
   // Project encoder output
   auto proj_enc_result = model.execute(
@@ -106,7 +101,7 @@ std::vector<int64_t> greedy_decode_executorch(
        static_cast<::executorch::aten::SizesType>(pred_hidden)},
       ::executorch::aten::ScalarType::Float);
 
-  // Initialize decoder with SOS (zeros)
+  // Initialize decoder state with zeros
   std::vector<float> sos_g_data(1 * 1 * pred_hidden, 0.0f);
   auto sos_g = from_blob(
       sos_g_data.data(),
@@ -129,10 +124,6 @@ std::vector<int64_t> greedy_decode_executorch(
 
   int64_t t = 0;
   int64_t symbols_on_frame = 0;
-
-  // Debug: print first few tokens
-  bool debug = true;
-  int debug_count = 0;
 
   // Scan over encoder output
   while (t < encoder_len) {
@@ -158,7 +149,7 @@ std::vector<int64_t> greedy_decode_executorch(
     auto joint_result = model.execute(
         "joint", std::vector<::executorch::runtime::EValue>{f_t, g_proj});
     if (!joint_result.ok()) {
-      ET_LOG(Error, "joint failed at t=%ld", t);
+      ET_LOG(Error, "joint failed at t=%lld", static_cast<long long>(t));
       return hypothesis;
     }
     auto full_logits = joint_result.get()[0].toTensor();
@@ -187,20 +178,10 @@ std::vector<int64_t> greedy_decode_executorch(
     }
     int64_t dur = DURATIONS[dur_idx];
 
-    // TDT decoding: joint network outputs both token logits and duration
-    // logits.
-    // - If blank: skip forward by predicted duration (min 1 frame)
-    // - If token: emit it, update decoder state, advance by duration.
-    //   Duration=0 means "emit another token on this frame" (up to
-    //   max_symbols_per_step).
     if (k == blank_id) {
       t += std::max(dur, (int64_t)1);
       symbols_on_frame = 0;
     } else {
-      if (debug && debug_count < 20) {
-        ET_LOG(Info, "Token[%d]: t=%ld k=%ld dur=%ld", debug_count, t, k, dur);
-        debug_count++;
-      }
       hypothesis.push_back(k);
 
       // Update decoder state
@@ -289,8 +270,12 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  if (FLAGS_processor_path.empty()) {
-    ET_LOG(Error, "processor_path flag must be provided.");
+  // Load model (which includes the bundled preprocessor)
+  ET_LOG(Info, "Loading model from: %s", FLAGS_model_path.c_str());
+  Module model(FLAGS_model_path, Module::LoadMode::Mmap);
+  auto model_load_error = model.load();
+  if (model_load_error != Error::Ok) {
+    ET_LOG(Error, "Failed to load model.");
     return 1;
   }
 
@@ -299,60 +284,41 @@ int main(int argc, char** argv) {
   std::vector<float> audio_data =
       ::executorch::extension::llm::load_wav_audio_data(FLAGS_audio_path);
   ET_LOG(Info, "Loaded %zu audio samples", audio_data.size());
-  ET_LOG(
-      Info,
-      "First 5 audio samples: %f, %f, %f, %f, %f",
-      audio_data[0],
-      audio_data[1],
-      audio_data[2],
-      audio_data[3],
-      audio_data[4]);
 
-  // Load preprocessor
-  ET_LOG(Info, "Loading preprocessor from: %s", FLAGS_processor_path.c_str());
-  Module processor(FLAGS_processor_path, Module::LoadMode::Mmap);
-  auto proc_load_error = processor.load();
-  if (proc_load_error != Error::Ok) {
-    ET_LOG(Error, "Failed to load preprocessor module.");
-    return 1;
-  }
-
-  // Process audio to mel spectrogram
   auto audio_tensor = from_blob(
       audio_data.data(),
       {static_cast<::executorch::aten::SizesType>(audio_data.size())},
       ::executorch::aten::ScalarType::Float);
+  std::vector<int64_t> audio_len_data = {static_cast<int64_t>(audio_data.size())};
+  auto audio_len_tensor = from_blob(
+      audio_len_data.data(),
+      {1},
+      ::executorch::aten::ScalarType::Long);
 
-  auto proc_result = processor.execute(
-      "forward", std::vector<::executorch::runtime::EValue>{audio_tensor});
+  ET_LOG(Info, "Running preprocessor...");
+  auto proc_result = model.execute(
+      "preprocessor", std::vector<::executorch::runtime::EValue>{audio_tensor, audio_len_tensor});
   if (!proc_result.ok()) {
     ET_LOG(Error, "Preprocessor forward failed.");
     return 1;
   }
   auto& proc_outputs = proc_result.get();
   auto mel = proc_outputs[0].toTensor();
+  auto mel_len_tensor_out = proc_outputs[1].toTensor();
+  int64_t mel_len_value = mel_len_tensor_out.const_data_ptr<int64_t>()[0];
 
-  // Compute mel_len from tensor shape
-  std::vector<int64_t> mel_len_data = {
-      static_cast<int64_t>(mel.sizes()[2])};
+  // Create mel_len tensor for encoder
+  std::vector<int64_t> mel_len_data = {mel_len_value};
   auto mel_len = from_blob(
       mel_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
 
   ET_LOG(
       Info,
-      "Mel spectrogram shape: [%ld, %ld, %ld]",
+      "Mel spectrogram shape: [%ld, %ld, %ld], mel_len: %lld",
       static_cast<long>(mel.sizes()[0]),
       static_cast<long>(mel.sizes()[1]),
-      static_cast<long>(mel.sizes()[2]));
-
-  // Load model
-  ET_LOG(Info, "Loading model from: %s", FLAGS_model_path.c_str());
-  Module model(FLAGS_model_path, Module::LoadMode::Mmap);
-  auto model_load_error = model.load();
-  if (model_load_error != Error::Ok) {
-    ET_LOG(Error, "Failed to load model.");
-    return 1;
-  }
+      static_cast<long>(mel.sizes()[2]),
+      static_cast<long long>(mel_len_value));
 
   // Run encoder
   ET_LOG(Info, "Running encoder...");
@@ -374,12 +340,35 @@ int main(int argc, char** argv) {
       static_cast<long>(encoded.sizes()[2]),
       static_cast<long>(encoded_len));
 
-  // Greedy decode
-  // Parakeet TDT uses vocab_size=8192, blank_id=8192
-  int64_t vocab_size = 8192;
-  int64_t blank_id = vocab_size;
-  int64_t num_rnn_layers = 2;
-  int64_t pred_hidden = 640;
+  // Query model metadata from constant_methods
+  std::vector<::executorch::runtime::EValue> empty_inputs;
+  auto num_rnn_layers_result = model.execute("num_rnn_layers", empty_inputs);
+  auto pred_hidden_result = model.execute("pred_hidden", empty_inputs);
+  auto vocab_size_result = model.execute("vocab_size", empty_inputs);
+  auto blank_id_result = model.execute("blank_id", empty_inputs);
+  auto sample_rate_result = model.execute("sample_rate", empty_inputs);
+
+  if (!num_rnn_layers_result.ok() || !pred_hidden_result.ok() ||
+      !vocab_size_result.ok() || !blank_id_result.ok() ||
+      !sample_rate_result.ok()) {
+    ET_LOG(Error, "Failed to query model metadata. Make sure the model was exported with constant_methods.");
+    return 1;
+  }
+
+  int64_t vocab_size = vocab_size_result.get()[0].toInt();
+  int64_t blank_id = blank_id_result.get()[0].toInt();
+  int64_t num_rnn_layers = num_rnn_layers_result.get()[0].toInt();
+  int64_t pred_hidden = pred_hidden_result.get()[0].toInt();
+  int64_t sample_rate = sample_rate_result.get()[0].toInt();
+
+  ET_LOG(
+      Info,
+      "Model metadata: vocab_size=%lld, blank_id=%lld, num_rnn_layers=%lld, pred_hidden=%lld, sample_rate=%lld",
+      static_cast<long long>(vocab_size),
+      static_cast<long long>(blank_id),
+      static_cast<long long>(num_rnn_layers),
+      static_cast<long long>(pred_hidden),
+      static_cast<long long>(sample_rate));
 
   ET_LOG(Info, "Running TDT greedy decode...");
   auto tokens = greedy_decode_executorch(
@@ -393,7 +382,7 @@ int main(int argc, char** argv) {
 
   ET_LOG(Info, "Decoded %zu tokens", tokens.size());
 
-  // Load tokenizer using the LLM runner helper
+  // Load tokenizer
   ET_LOG(Info, "Loading tokenizer from: %s", FLAGS_tokenizer_path.c_str());
   auto tokenizer =
       ::executorch::extension::llm::load_tokenizer(FLAGS_tokenizer_path);
