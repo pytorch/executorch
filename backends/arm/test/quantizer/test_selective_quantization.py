@@ -136,7 +136,7 @@ mv3.eval()
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 
-def test_mv3_selective_quant_int16():
+def test_mv3_selective_quant_int16_tosa_INT():
     model = mv3
     inputs = (normalize(torch.randn(1, 3, 224, 224)),)
 
@@ -167,7 +167,7 @@ def test_mv3_selective_quant_int16():
     pipeline.run()
 
 
-def test_mv3_selective_quant_float32():
+def test_mv3_selective_quant_float32_tosa_INT():
     model = mv3
     inputs = (normalize(torch.randn(1, 3, 224, 224)),)
 
@@ -191,7 +191,7 @@ def test_mv3_selective_quant_float32():
     pipeline.run()
 
 
-def test_mv3_io_quant():
+def test_mv3_io_quant_tosa_INT():
     model = mv3
     inputs = (normalize(torch.randn(1, 3, 224, 224)),)
 
