@@ -30,6 +30,7 @@ Powers Instagram, WhatsApp, Facebook, and Messenger with real-time on-device AI 
 **Hardware:** Quest 3, Ray-Ban Meta Smart Glasses, Meta Ray-Ban Display
 
 Enables real-time computer vision, hand tracking, voice commands, and translation on power-constrained wearable devices.
+[Read Blog →](https://ai.meta.com/blog/executorch-reality-labs-on-device-ai/)
 :::
 
 :::{grid-item-card} **Liquid AI: Efficient, Flexible On-Device Intelligence**
@@ -106,14 +107,35 @@ PyTorch-native quantization and optimization library for preparing efficient mod
 
 Optimize LLM fine-tuning with faster training and reduced VRAM usage, then deploy efficiently with ExecuTorch.
 
-[Example Model →](https://huggingface.co/metascroy/Qwen3-4B-int8-int4-unsloth)  •  [Blog →](https://docs.unsloth.ai/new/quantization-aware-training-qat)
+[Example Model →](https://huggingface.co/metascroy/Qwen3-4B-int8-int4-unsloth)  •  [Blog →](https://docs.unsloth.ai/new/quantization-aware-training-qat) • [Doc →](https://docs.unsloth.ai/new/deploy-llms-phone)
 :::
 
 :::{grid-item-card} **Ultralytics**
 :class-header: bg-secondary text-white
 
 Deploy on-device inference for Ultralytics YOLO models using ExecuTorch.
-[Explore →](https://docs.ultralytics.com/integrations/executorch/)
+[Explore →](https://docs.ultralytics.com/integrations/executorch/) • [Blog →](https://www.ultralytics.com/blog/deploy-ultralytics-yolo-models-using-the-executorch-integration)
+:::
+
+:::{grid-item-card} **Arm ML Embedded Evaluation Kit**
+:class-header: bg-secondary text-white
+
+Build and deploy ML applications on Arm Cortex-M (M55, M85) and Ethos-U NPUs (U55, U65, U85) using ExecuTorch.
+[Explore →](https://gitlab.arm.com/artificial-intelligence/ethos-u/ml-embedded-evaluation-kit)
+:::
+
+:::{grid-item-card} **Alif Semiconductor Ensemble**
+:class-header: bg-secondary text-white
+
+Run generative AI on Ensemble E4/E6/E8 MCUs with Arm Ethos-U85 NPU acceleration.
+[Learn More →](https://alifsemi.com/press-release/alif-semiconductor-elevates-generative-ai-with-support-for-executorch-runtime/)
+:::
+
+:::{grid-item-card} **Digica AI SDK**
+:class-header: bg-secondary text-white
+
+Automate PyTorch model deployment to iOS, Android, and edge devices with ExecuTorch-powered SDK.
+[Blog →](https://www.digica.com/blog/effortless-edge-deployment-of-ai-models-with-digicas-ai-sdk-feat-executorch.html)
 :::
 
 ::::
@@ -126,8 +148,12 @@ Deploy on-device inference for Ultralytics YOLO models using ExecuTorch.
 
 - **Voxtral** - Deploy audio-text-input LLM on CPU (via XNNPACK) and on CUDA. [Try →](https://github.com/pytorch/executorch/blob/main/examples/models/voxtral/README.md)
 
+- **Whisper** - Deploy OpenAI's Whisper speech recognition model on CUDA and Metal backends. [Try →](https://github.com/pytorch/executorch/blob/main/examples/models/whisper/README.md)
+
 - **LoRA adapter** - Export two LoRA adapters that share a single foundation weight file, saving memory and disk space. [Try →](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation/cpp/lora_example)
 
 - **OpenVINO from Intel** - Deploy [Yolo12](https://github.com/pytorch/executorch/tree/main/examples/models/yolo12), [Llama](https://github.com/pytorch/executorch/tree/main/examples/openvino/llama), and [Stable Diffusion](https://github.com/pytorch/executorch/tree/main/examples/openvino/stable_diffusion) on [OpenVINO from Intel](https://www.intel.com/content/www/us/en/developer/articles/community/optimizing-executorch-on-ai-pcs.html).
+
+- **Audio Generation** - Generate audio from text prompts using Stable Audio Open Small on Arm CPUs with XNNPACK and KleidiAI. [Try →](https://github.com/Arm-Examples/ML-examples/tree/main/kleidiai-examples/audiogen-et) • [Video →](https://www.youtube.com/watch?v=q2P0ESVxhAY)
 
 *Want to showcase your demo? [Submit here →](https://github.com/pytorch/executorch/issues)*

@@ -166,3 +166,7 @@ cmake-out/examples/models/whisper/whisper_runner \
     --processor_path whisper_preprocessor.pte \
     --temperature 0
 ```
+
+## Mobile Demo
+
+For an Android demo app, see the [Whisper Android App](https://github.com/meta-pytorch/executorch-examples/tree/main/whisper/android/WhisperApp) in the executorch-examples repository.
