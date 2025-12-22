@@ -1128,7 +1128,8 @@ document.write(`
 <strong>Meta Quest &amp; Ray-Ban Smart Glasses</strong></div>
 <p class="sd-card-text"><strong>Industry:</strong> AR/VR &amp; Wearables
 <strong>Hardware:</strong> Quest 3, Ray-Ban Meta Smart Glasses, Meta Ray-Ban Display</p>
-<p class="sd-card-text">Enables real-time computer vision, hand tracking, voice commands, and translation on power-constrained wearable devices.</p>
+<p class="sd-card-text">Enables real-time computer vision, hand tracking, voice commands, and translation on power-constrained wearable devices.
+<a class="reference external" href="https://ai.meta.com/blog/executorch-reality-labs-on-device-ai/">Read Blog →</a></p>
 </div>
 </div>
 </div>
@@ -1215,7 +1216,7 @@ document.write(`
 <div class="sd-card-title sd-font-weight-bold docutils">
 <strong>Unsloth</strong></div>
 <p class="sd-card-text">Optimize LLM fine-tuning with faster training and reduced VRAM usage, then deploy efficiently with ExecuTorch.</p>
-<p class="sd-card-text"><a class="reference external" href="https://huggingface.co/metascroy/Qwen3-4B-int8-int4-unsloth">Example Model →</a>  •  <a class="reference external" href="https://docs.unsloth.ai/new/quantization-aware-training-qat">Blog →</a></p>
+<p class="sd-card-text"><a class="reference external" href="https://huggingface.co/metascroy/Qwen3-4B-int8-int4-unsloth">Example Model →</a> • <a class="reference external" href="https://docs.unsloth.ai/new/quantization-aware-training-qat">Blog →</a> • <a class="reference external" href="https://docs.unsloth.ai/new/deploy-llms-phone">Doc →</a></p>
 </div>
 </div>
 </div>
@@ -1224,8 +1225,38 @@ document.write(`
 <div class="sd-card-body docutils">
 <div class="sd-card-title sd-font-weight-bold docutils">
 <strong>Ultralytics</strong></div>
-<p class="sd-card-text">Deploy on-device inference for Ultralytics YOLO models using ExecuTorch.
-<a class="reference external" href="https://docs.ultralytics.com/integrations/executorch/">Explore →</a></p>
+<p class="sd-card-text">Deploy on-device inference for Ultralytics YOLO models using ExecuTorch.</p>
+<p class="sd-card-text"><a class="reference external" href="https://docs.ultralytics.com/integrations/executorch/">Explore →</a> • <a class="reference external" href="https://www.ultralytics.com/blog/deploy-ultralytics-yolo-models-using-the-executorch-integration">Blog →</a></p>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+<strong>Arm ML Embedded Evaluation Kit</strong></div>
+<p class="sd-card-text">Build and deploy ML applications on Arm Cortex-M (M55, M85) and Ethos-U NPUs (U55, U65, U85) using ExecuTorch.</p>
+<p class="sd-card-text"><a class="reference external" href="https://gitlab.arm.com/artificial-intelligence/ethos-u/ml-embedded-evaluation-kit">Explore →</a></p>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+<strong>Alif Semiconductor Ensemble</strong></div>
+<p class="sd-card-text">Run generative AI on Ensemble E4/E6/E8 MCUs with Arm Ethos-U85 NPU acceleration.</p>
+<p class="sd-card-text"><a class="reference external" href="https://alifsemi.com/press-release/alif-semiconductor-elevates-generative-ai-with-support-for-executorch-runtime/">Learn More →</a></p>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+<strong>Digica AI SDK</strong></div>
+<p class="sd-card-text">Automate PyTorch model deployment to iOS, Android, and edge devices with ExecuTorch-powered SDK.</p>
+<p class="sd-card-text"><a class="reference external" href="https://www.digica.com/blog/effortless-edge-deployment-of-ai-models-with-digicas-ai-sdk-feat-executorch.html">Blog →</a></p>
 </div>
 </div>
 </div>
@@ -1238,8 +1269,10 @@ document.write(`
 <ul class="simple">
 <li><p><strong>Text and Multimodal LLM demo mobile apps</strong> - Text (Llama, Qwen3, Phi-4) and multimodal (Gemma3, Voxtral) mobile demo apps. <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm">Try →</a></p></li>
 <li><p><strong>Voxtral</strong> - Deploy audio-text-input LLM on CPU (via XNNPACK) and on CUDA. <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/models/voxtral/README.md">Try →</a></p></li>
+<li><p><strong>Whisper</strong> - Deploy OpenAI’s Whisper speech recognition model on CUDA and Metal backends. <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/models/whisper/README.md">Try →</a> <!-- @lint-ignore --></p></li>
 <li><p><strong>LoRA adapter</strong> - Export two LoRA adapters that share a single foundation weight file, saving memory and disk space. <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation/cpp/lora_example">Try →</a></p></li>
 <li><p><strong>OpenVINO from Intel</strong> - Deploy <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/models/yolo12">Yolo12</a>, <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/openvino/llama">Llama</a>, and <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/openvino/stable_diffusion">Stable Diffusion</a> on <a class="reference external" href="https://www.intel.com/content/www/us/en/developer/articles/community/optimizing-executorch-on-ai-pcs.html">OpenVINO from Intel</a>.</p></li>
+<li><p><strong>Audio Generation</strong> - Generate audio from text prompts using Stable Audio Open Small on Arm CPUs with XNNPACK and KleidiAI. <a class="reference external" href="https://github.com/Arm-Examples/ML-examples/tree/main/kleidiai-examples/audiogen-et">Try →</a> • <a class="reference external" href="https://www.youtube.com/watch?v=q2P0ESVxhAY">Video →</a> <!-- @lint-ignore --></p></li>
 </ul>
 <p><em>Want to showcase your demo? <a class="reference external" href="https://github.com/pytorch/executorch/issues">Submit here →</a></em></p>
 </section>
@@ -1554,7 +1587,7 @@ document.write(`
        "headline": "Success Stories",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/success-stories.html",
-       "articleBody": "Success Stories# Discover how organizations are leveraging ExecuTorch to deploy AI models at scale on edge devices. Featured Success Stories# Meta\u2019s Family of Apps Industry: Social Media \u0026 Messaging Hardware: Android \u0026 iOS Devices Impact: Billions of users, latency reduction Powers Instagram, WhatsApp, Facebook, and Messenger with real-time on-device AI for content ranking, recommendations, and privacy-preserving features at scale. Read Blog \u2192 Meta Quest \u0026 Ray-Ban Smart Glasses Industry: AR/VR \u0026 Wearables Hardware: Quest 3, Ray-Ban Meta Smart Glasses, Meta Ray-Ban Display Enables real-time computer vision, hand tracking, voice commands, and translation on power-constrained wearable devices. Liquid AI: Efficient, Flexible On-Device Intelligence Industry: Artificial Intelligence / Edge Computing Hardware: CPU via PyTorch ExecuTorch Impact: 2\u00d7 faster inference, lower latency, seamless multimodal deployment Liquid AI builds foundation models that make AI work where the cloud can\u2019t. In its LFM2 series, the team uses PyTorch ExecuTorch within the LEAP Edge SDK to deploy high-performance multimodal models efficiently across devices. ExecuTorch provides the flexibility to support custom architectures and processing pipelines while reducing inference latency through graph optimization and caching. Together, they enable faster, more efficient, privacy-preserving AI that runs entirely on the edge. Read Blog \u2192 PrivateMind: Complete Privacy with On-Device AI Industry: Privacy \u0026 Personal Computing Hardware: iOS \u0026 Android Devices Impact: 100% on-device processing PrivateMind delivers a fully private AI assistant using ExecuTorch\u2019s .pte format. Built with React Native ExecuTorch, it supports LLaMA, Qwen, Phi-4, and custom models with offline speech-to-text and PDF chat capabilities. Visit \u2192 NimbleEdge: On-Device Agentic AI Platform Industry: AI Infrastructure Hardware: iOS \u0026 Android Devices Impact: 30% higher TPS on iOS, faster time-to-market with Qwen/Gemma models NimbleEdge successfully integrated ExecuTorch with its open-source DeliteAI platform to enable agentic workflows orchestrated in Python on mobile devices. The extensible ExecuTorch ecosystem allowed implementation of on-device optimization techniques leveraging contextual sparsity. ExecuTorch significantly accelerated the release of \u201cNimbleEdge AI\u201d for iOS, enabling models like Qwen 2.5 with tool calling support and achieving up to 30% higher transactions per second. Visit \u2192 \u2022 Blog \u2192 \u2022 iOS App \u2192 Featured Ecosystem Integrations and Interoperability# Hugging Face Transformers Popular models from Hugging Face easily export to ExecuTorch format for on-device deployment. Learn More \u2192 React Native ExecuTorch Declarative toolkit for running AI models and LLMs in React Native apps with privacy-first, on-device execution. Explore \u2192 \u2022 Blog \u2192 torchao PyTorch-native quantization and optimization library for preparing efficient models for ExecuTorch deployment. Blog \u2192 \u2022 Qwen Example \u2192 \u2022 Phi Example \u2192 Unsloth Optimize LLM fine-tuning with faster training and reduced VRAM usage, then deploy efficiently with ExecuTorch. Example Model \u2192 \u2022 Blog \u2192 Ultralytics Deploy on-device inference for Ultralytics YOLO models using ExecuTorch. Explore \u2192 Featured Demos# Text and Multimodal LLM demo mobile apps - Text (Llama, Qwen3, Phi-4) and multimodal (Gemma3, Voxtral) mobile demo apps. Try \u2192 Voxtral - Deploy audio-text-input LLM on CPU (via XNNPACK) and on CUDA. Try \u2192 LoRA adapter - Export two LoRA adapters that share a single foundation weight file, saving memory and disk space. Try \u2192 OpenVINO from Intel - Deploy Yolo12, Llama, and Stable Diffusion on OpenVINO from Intel. Want to showcase your demo? Submit here \u2192",
+       "articleBody": "Success Stories# Discover how organizations are leveraging ExecuTorch to deploy AI models at scale on edge devices. Featured Success Stories# Meta\u2019s Family of Apps Industry: Social Media \u0026 Messaging Hardware: Android \u0026 iOS Devices Impact: Billions of users, latency reduction Powers Instagram, WhatsApp, Facebook, and Messenger with real-time on-device AI for content ranking, recommendations, and privacy-preserving features at scale. Read Blog \u2192 Meta Quest \u0026 Ray-Ban Smart Glasses Industry: AR/VR \u0026 Wearables Hardware: Quest 3, Ray-Ban Meta Smart Glasses, Meta Ray-Ban Display Enables real-time computer vision, hand tracking, voice commands, and translation on power-constrained wearable devices. Read Blog \u2192 Liquid AI: Efficient, Flexible On-Device Intelligence Industry: Artificial Intelligence / Edge Computing Hardware: CPU via PyTorch ExecuTorch Impact: 2\u00d7 faster inference, lower latency, seamless multimodal deployment Liquid AI builds foundation models that make AI work where the cloud can\u2019t. In its LFM2 series, the team uses PyTorch ExecuTorch within the LEAP Edge SDK to deploy high-performance multimodal models efficiently across devices. ExecuTorch provides the flexibility to support custom architectures and processing pipelines while reducing inference latency through graph optimization and caching. Together, they enable faster, more efficient, privacy-preserving AI that runs entirely on the edge. Read Blog \u2192 PrivateMind: Complete Privacy with On-Device AI Industry: Privacy \u0026 Personal Computing Hardware: iOS \u0026 Android Devices Impact: 100% on-device processing PrivateMind delivers a fully private AI assistant using ExecuTorch\u2019s .pte format. Built with React Native ExecuTorch, it supports LLaMA, Qwen, Phi-4, and custom models with offline speech-to-text and PDF chat capabilities. Visit \u2192 NimbleEdge: On-Device Agentic AI Platform Industry: AI Infrastructure Hardware: iOS \u0026 Android Devices Impact: 30% higher TPS on iOS, faster time-to-market with Qwen/Gemma models NimbleEdge successfully integrated ExecuTorch with its open-source DeliteAI platform to enable agentic workflows orchestrated in Python on mobile devices. The extensible ExecuTorch ecosystem allowed implementation of on-device optimization techniques leveraging contextual sparsity. ExecuTorch significantly accelerated the release of \u201cNimbleEdge AI\u201d for iOS, enabling models like Qwen 2.5 with tool calling support and achieving up to 30% higher transactions per second. Visit \u2192 \u2022 Blog \u2192 \u2022 iOS App \u2192 Featured Ecosystem Integrations and Interoperability# Hugging Face Transformers Popular models from Hugging Face easily export to ExecuTorch format for on-device deployment. Learn More \u2192 React Native ExecuTorch Declarative toolkit for running AI models and LLMs in React Native apps with privacy-first, on-device execution. Explore \u2192 \u2022 Blog \u2192 torchao PyTorch-native quantization and optimization library for preparing efficient models for ExecuTorch deployment. Blog \u2192 \u2022 Qwen Example \u2192 \u2022 Phi Example \u2192 Unsloth Optimize LLM fine-tuning with faster training and reduced VRAM usage, then deploy efficiently with ExecuTorch. Example Model \u2192 \u2022 Blog \u2192 \u2022 Doc \u2192 Ultralytics Deploy on-device inference for Ultralytics YOLO models using ExecuTorch. Explore \u2192 \u2022 Blog \u2192 Arm ML Embedded Evaluation Kit Build and deploy ML applications on Arm Cortex-M (M55, M85) and Ethos-U NPUs (U55, U65, U85) using ExecuTorch. Explore \u2192 Alif Semiconductor Ensemble Run generative AI on Ensemble E4/E6/E8 MCUs with Arm Ethos-U85 NPU acceleration. Learn More \u2192 Digica AI SDK Automate PyTorch model deployment to iOS, Android, and edge devices with ExecuTorch-powered SDK. Blog \u2192 Featured Demos# Text and Multimodal LLM demo mobile apps - Text (Llama, Qwen3, Phi-4) and multimodal (Gemma3, Voxtral) mobile demo apps. Try \u2192 Voxtral - Deploy audio-text-input LLM on CPU (via XNNPACK) and on CUDA. Try \u2192 Whisper - Deploy OpenAI\u2019s Whisper speech recognition model on CUDA and Metal backends. Try \u2192 LoRA adapter - Export two LoRA adapters that share a single foundation weight file, saving memory and disk space. Try \u2192 OpenVINO from Intel - Deploy Yolo12, Llama, and Stable Diffusion on OpenVINO from Intel. Audio Generation - Generate audio from text prompts using Stable Audio Open Small on Arm CPUs with XNNPACK and KleidiAI. Try \u2192 \u2022 Video \u2192 Want to showcase your demo? Submit here \u2192",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
