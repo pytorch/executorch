@@ -342,7 +342,7 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
             partitioner[key] = [CudaPartitioner(compile_specs)]
 
     else:
-        print("\nLowering to ExecuTorch")
+        print("\nLowering to ExecuTorch...")
         partitioner = []
 
     constant_methods = {}
@@ -369,17 +369,17 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
 
 def main():
     import argparse
+    import sys
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", default="./parakeet_tdt_exports")
     parser.add_argument("--audio", type=str, help="Path to audio file for transcription test")
-    parser.add_argument(
-        "--backend",
-        choices=["portable", "xnnpack", "cuda", "cuda-windows"],
-        default="portable",
-        help="Backend for acceleration",
-    )
+    parser.add_argument("--backend", type=str, default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.backend is not None:
+        print("Error: --backend is not currently supported. Backend acceleration is still being verified.")
+        sys.exit(1)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -389,7 +389,7 @@ def main():
     print("\nExporting components...")
     programs, metadata = export_all(model)
 
-    et = lower_to_executorch(programs, metadata=metadata, backend=args.backend)
+    et = lower_to_executorch(programs, metadata=metadata)
 
     pte_path = os.path.join(args.output_dir, "parakeet_tdt.pte")
     print(f"\nSaving ExecuTorch program to: {pte_path}")
