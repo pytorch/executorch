@@ -331,12 +331,10 @@ void clear_all_tensors() {
   // tensors set should now be empty, but ensure it's cleared
   tensors.clear();
 
-  ET_LOG(Info, "Cleared all tensors");
-}
-
-void clear_memory_tracking() {
+  // Clear memory tracking map (includes leftover NOT_OWN entries)
   memory_to_n_tensor.clear();
-  ET_LOG(Info, "Cleared memory tracking map");
+
+  ET_LOG(Info, "Cleared all tensors and memory tracking");
 }
 
 AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
