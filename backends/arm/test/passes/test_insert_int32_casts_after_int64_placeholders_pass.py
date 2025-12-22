@@ -29,7 +29,7 @@ class Int64InputModel(torch.nn.Module):
         )
 
 
-def test_int64_model_tosa_FP():
+def test_insert_int32_casts_after_int64_placeholders_tosa_FP():
     module = Int64InputModel()
     op_checks_before = {
         "executorch_exir_dialects_edge__ops_aten_embedding_default": 1,
@@ -64,7 +64,7 @@ class UpcastToInt64ForIndexCopyInplaceModel(torch.nn.Module):
         )
 
 
-def test_upcast_to_int64_for_index_copy_inplace_tosa_INT():
+def test_insert_int32_casts_after_int64_placeholders_tosa_INT_upcast_for_index_copy_inplace():
     module = UpcastToInt64ForIndexCopyInplaceModel()
     pipeline = TosaPipelineINT[input_t3](
         module,
@@ -96,7 +96,7 @@ class UpcastToInt64ForIndexCopyModel(torch.nn.Module):
         )
 
 
-def test_upcast_to_int64_for_index_copy_tosa_INT():
+def test_insert_int32_casts_after_int64_placeholders_tosa_INT_upcast_for_index_copy():
     module = UpcastToInt64ForIndexCopyModel()
     pipeline = TosaPipelineINT[input_t3](
         module,

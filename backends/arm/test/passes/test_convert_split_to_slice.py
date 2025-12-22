@@ -52,7 +52,7 @@ modules: Dict[str, ModuleWithInputs] = {
 
 
 @common.parametrize("module", modules)
-def test_split_to_slice_tosa_INT(module: ModuleWithInputs) -> None:
+def test_convert_split_to_slice_tosa_INT(module: ModuleWithInputs) -> None:
     nn_module = cast(torch.nn.Module, module)
     pipeline = PassPipeline[input_t](
         nn_module,
