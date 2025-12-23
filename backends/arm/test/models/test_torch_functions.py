@@ -103,7 +103,7 @@ test_parameters = {test[0]: test[1:] for test in module_tests}
         "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
     },
 )
-def test_torch_fns_FP(test_data):
+def test_torch_functions_tosa_FP(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineFP[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=True
@@ -126,14 +126,12 @@ def test_torch_fns_FP(test_data):
     xfails={
         "nonzero": "torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode: Could not guard on data-dependent expression Eq(u4, 0). "
         "Requires dynamic output shape.",
-        "eye": "ValueError: Failed processing buffer placeholder: aten_arange_start_step_1_pre_computed_common. "
-        "Is the original torch function supported?",
         "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
         "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
     },
     strict=True,
 )
-def test_torch_fns_INT(test_data):
+def test_torch_functions_tosa_INT(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineINT[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=True

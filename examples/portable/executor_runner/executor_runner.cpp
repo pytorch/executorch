@@ -19,7 +19,9 @@
  */
 
 #include <cstdint>
+#ifdef ET_BUNDLE_IO_ENABLED
 #include <filesystem>
+#endif // ET_BUNDLE_IO_ENABLED
 #include <fstream>
 #include <iostream>
 #include <memory>

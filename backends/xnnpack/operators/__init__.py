@@ -18,6 +18,7 @@ from . import (  # noqa
     op_clamp,
     op_clone,
     op_conv2d,
+    op_cos,
     op_div,
     op_dynamic_dequantize_ops,
     op_dynamic_quantize_ops,
@@ -56,4 +57,5 @@ from . import (  # noqa
     op_sub,
     op_tanh,
     op_to_copy,
+    op_view_copy,
 )

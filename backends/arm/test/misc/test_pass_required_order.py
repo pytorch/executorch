@@ -8,6 +8,7 @@ from typing import List, Set, Type
 
 import pytest
 from executorch.backends.arm._passes.arm_pass_manager import ArmPass, ArmPassManager
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir.pass_base import ExportPass
 
@@ -30,29 +31,30 @@ class IndependentPass(ArmPass):
 
 def _setup_pass_manager(passes: List[ArmPass] | None = None):
     tosa_spec = TosaSpecification.create_from_string("TOSA-1.00+INT")
-    pass_manager = ArmPassManager(tosa_spec)
+    compile_spec = TosaCompileSpec(tosa_spec)
+    pass_manager = ArmPassManager(compile_spec)
     if passes is not None:
         for p in passes:
             pass_manager.add_pass(p)
     return pass_manager
 
 
-def test_no_passes():
+def test_no_passes_tosa_INT():
     pass_manager = _setup_pass_manager()
     pass_manager.validate_constraints_mandatory()
 
 
-def test_correct_order():
+def test_correct_order_tosa_INT():
     pass_manager = _setup_pass_manager([PassA(), PassB(), PassC()])
     pass_manager.validate_constraints_mandatory()
 
 
-def test_run_pass_twice():
+def test_run_pass_twice_tosa_INT():
     pass_manager = _setup_pass_manager([PassA(), PassB(), PassB(), PassC()])
     pass_manager.validate_constraints_mandatory()
 
 
-def test_independent_pass():
+def test_independent_pass_tosa_INT():
     pass_manager = _setup_pass_manager(
         [
             IndependentPass(),
@@ -67,7 +69,7 @@ def test_independent_pass():
     pass_manager.validate_constraints_mandatory()
 
 
-def test_duplicated_requiring_pass_put_last():
+def test_duplicated_requiring_pass_put_last_tosa_INT():
     error_msg = """The following constraints for passes are not met:
   - PassC must run after PassB
 """
@@ -76,7 +78,7 @@ def test_duplicated_requiring_pass_put_last():
         pass_manager.validate_constraints_mandatory()
 
 
-def test_two_passes_wrong_order():
+def test_two_passes_wrong_order_tosa_INT():
     error_msg = """The following constraints for passes are not met:
   - PassC must run after PassB
 """
@@ -85,7 +87,7 @@ def test_two_passes_wrong_order():
         pass_manager.validate_constraints_mandatory()
 
 
-def test_missing_passes():
+def test_missing_passes_tosa_INT():
     error_msg = """The following constraints for passes are not met:
   - PassC must run after PassA
   - PassC must run after PassB

@@ -76,7 +76,6 @@ class BaseConfig:
             If left empty, the model will either be initialized with random weights
             if it is a Llama model or the weights will be downloaded from HuggingFace
             if it is a non-Llama model.
-        checkpoint_dir: Path to directory containing sharded checkpoint files.
         adapter_checkpoint: Path to the adapter.pt file from torchtune. Used if
             the model has trained LoRA adapters. Must provide
             adapter_config.json.
@@ -87,7 +86,6 @@ class BaseConfig:
             e.g. '"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
         use_lora: Only for use with QAT. Rank of the LoRA adapter, disabled
             if set to 0.
-        fairseq2: For legacy internal use cases, this is safe to ignore.
         preq_mode: Legacy option to specify how prequantized weights are loaded.
             Going forward, ExecuTorch supports loading weights prequantized through
             TorchAo as-is, without any special handling.
@@ -99,13 +97,11 @@ class BaseConfig:
     model_class: ModelType = ModelType.llama3
     params: Optional[str] = None
     checkpoint: Optional[str] = None
-    checkpoint_dir: Optional[str] = None
     adapter_checkpoint: Optional[str] = None
     adapter_config: Optional[str] = None
     tokenizer_path: Optional[str] = None
     metadata: Optional[str] = None
     use_lora: int = 0
-    fairseq2: bool = False
     preq_mode: Optional[PreqMode] = None
     preq_group_size: int = 32
     preq_embedding_quantize: str = "8,0"
@@ -527,8 +523,6 @@ class LlmConfig:
             llm_config.base.params = args.params
         if hasattr(args, "checkpoint"):
             llm_config.base.checkpoint = args.checkpoint
-        if hasattr(args, "checkpoint_dir"):
-            llm_config.base.checkpoint_dir = args.checkpoint_dir
         if hasattr(args, "adapter_checkpoint"):
             llm_config.base.adapter_checkpoint = args.adapter_checkpoint
         if hasattr(args, "adapter_config"):
@@ -539,8 +533,6 @@ class LlmConfig:
             llm_config.base.metadata = args.metadata
         if hasattr(args, "use_lora"):
             llm_config.base.use_lora = args.use_lora
-        if hasattr(args, "fairseq2"):
-            llm_config.base.fairseq2 = args.fairseq2
 
         # PreqMode settings
         if hasattr(args, "preq_mode") and args.preq_mode:

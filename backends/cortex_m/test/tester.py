@@ -39,7 +39,10 @@ class CortexMToEdge(ToEdge):
                 torch.ops.aten.linear.default,
                 torch.ops.aten.hardsigmoid.default,
                 torch.ops.aten.hardsigmoid_.default,
-            ]
+                torch.ops.aten.hardswish.default,
+                torch.ops.aten.hardswish_.default,
+            ],
+            _check_ir_validity=False,
         )
         super().__init__(config)
 

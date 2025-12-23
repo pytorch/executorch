@@ -7,7 +7,8 @@
             "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/whisper",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out"
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
             }
         },
         {
@@ -23,9 +24,23 @@
                 "EXECUTORCH_BUILD_CUDA": "ON"
             },
             "condition": {
-                "lhs": "${hostSystemName}",
-                "type": "equals",
-                "rhs": "Linux"
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        },
+        {
+            "name": "whisper-cuda-debug",
+            "displayName": "Whisper runner (CUDA Debug)",
+            "inherits": ["whisper-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON",
+                "CMAKE_BUILD_TYPE": "Debug"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
             }
         },
         {
@@ -53,6 +68,12 @@
             "name": "whisper-cuda",
             "displayName": "Build Whisper runner (CUDA)",
             "configurePreset": "whisper-cuda",
+            "targets": ["whisper_runner"]
+        },
+        {
+            "name": "whisper-cuda-debug",
+            "displayName": "Build Whisper runner (CUDA Debug)",
+            "configurePreset": "whisper-cuda-debug",
             "targets": ["whisper_runner"]
         },
         {
@@ -88,6 +109,20 @@
                 {
                     "type": "build",
                     "name": "whisper-cuda"
+                }
+            ]
+        },
+        {
+            "name": "whisper-cuda-debug",
+            "displayName": "Configure and build Whisper runner (CUDA Debug)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "whisper-cuda-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "whisper-cuda-debug"
                 }
             ]
         },

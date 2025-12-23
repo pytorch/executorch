@@ -71,18 +71,39 @@ class WhileOneInputOneBufferTwoOutputs(torch.nn.Module):
         return result  # type: ignore
 
 
+class DecreasingOutput(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, value: torch.Tensor) -> torch.Tensor:
+        def cond_fn(value: torch.Tensor) -> torch.Tensor:
+            total = value.sum()
+            return torch.gt(total, torch.full((1,), 60.0)).squeeze()
+
+        def body_fn(value: torch.Tensor) -> Tuple[torch.Tensor]:
+            return (torch.div(value, torch.full((1,), 2.0)),)
+
+        result = torch.ops.higher_order.while_loop(
+            cond_fn,
+            body_fn,
+            (value,),
+            (),
+        )
+        return result[0]  # type: ignore
+
+
 class WhileAdditionalArg(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.register_buffer("threshold", torch.tensor((30.0,)))
+        self.register_buffer("threshold", torch.tensor((300.0,)))
 
     def forward(self, value: torch.Tensor) -> torch.Tensor:
         def cond_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
             total = value.sum()
             return torch.lt(total, limit).squeeze()
 
-        def body_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
-            return torch.add(value, value)
+        def body_fn(value: torch.Tensor, limit: torch.Tensor) -> tuple[torch.Tensor]:
+            return (torch.add(value, value),)
 
         result = torch.ops.higher_order.while_loop(
             cond_fn,
@@ -96,7 +117,7 @@ class WhileAdditionalArg(torch.nn.Module):
 class WhileSingleCapturedOutput(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.register_buffer("threshold", torch.tensor((30.0,)))
+        self.register_buffer("threshold", torch.tensor((200.0,)))
 
     def forward(self, value: torch.Tensor) -> torch.Tensor:
         def cond_fn(value: torch.Tensor, limit: torch.Tensor) -> torch.Tensor:
@@ -121,7 +142,7 @@ def _single_input_case(
     module_factory: Callable[[], torch.nn.Module],
 ) -> Callable[[], Tuple[torch.nn.Module, input_single]]:
     def _create() -> Tuple[torch.nn.Module, input_single]:
-        return module_factory(), (torch.ones(2, 3),)
+        return module_factory(), (torch.ones(2, 3, 4, 6),)
 
     return _create
 
@@ -138,6 +159,7 @@ def _dual_input_case(
 test_cases: dict[str, Callable[[], Tuple[torch.nn.Module, Tuple]]] = {
     "two_in_two_out": _dual_input_case(WhileTwoInputsTwoOutputs),
     "one_in_one_buffer_two_out": _single_input_case(WhileOneInputOneBufferTwoOutputs),
+    "decreasing_output": _single_input_case(DecreasingOutput),
     "additional_arg": _single_input_case(WhileAdditionalArg),
     "two_in_one_captured_out": _single_input_case(WhileSingleCapturedOutput),
 }
@@ -146,10 +168,6 @@ test_cases: dict[str, Callable[[], Tuple[torch.nn.Module, Tuple]]] = {
 @common.parametrize(
     "case",
     test_cases,
-    xfails={
-        "additional_arg": "Support not implemented.",
-        "two_in_one_captured_out": "When only one output is used, the second one is removed, which is not allowed in TOSA.",
-    },
 )
 def test_while_loop_tosa_FP(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
     module, example_inputs = case()
@@ -165,10 +183,6 @@ def test_while_loop_tosa_FP(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
 @common.parametrize(
     "case",
     test_cases,
-    xfails={
-        "additional_arg": "Support not implemented.",
-        "two_in_one_captured_out": "When only one output is used, the second one is removed, which is not allowed in TOSA.",
-    },
 )
 def test_while_loop_tosa_INT(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
     module, example_inputs = case()

@@ -80,6 +80,7 @@ from executorch.exir.verification.verifier import (
     get_aten_verifier,
 )
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
+from torch._export.utils import _detect_fake_mode_from_gm
 from torch._export.verifier import Verifier
 from torch.export import ExportedProgram
 from torch.export._remove_auto_functionalized_pass import (
@@ -333,7 +334,8 @@ def lift_constant_tensor_pass(ep):
     graph_signature = ep.graph_signature
     buffers = list(graph_signature.buffers)
 
-    fake_mode = list(ep.graph.nodes)[0].meta["val"].fake_mode
+    fake_mode = _detect_fake_mode_from_gm(ep.graph_module)
+
     first_user_input = None
     lifted_constants = []
     for node in ep.graph.nodes:
@@ -590,10 +592,13 @@ class ExecutorchProgram:
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
         from executorch.extension.flat_tensor.serialize.serialize import (
+            FlatTensorConfig,
             FlatTensorSerializer,
         )
 
-        self._data_serializer: DataSerializer = FlatTensorSerializer()
+        self._data_serializer: DataSerializer = FlatTensorSerializer(
+            FlatTensorConfig(self._segment_alignment)
+        )
 
     def _get_emitter_output(self) -> EmitterOutput:
         if self._emitter_output is None:
@@ -1849,10 +1854,13 @@ class ExecutorchProgramManager:
 
         # Serialize emitter output, ready to be written to a file.
         from executorch.extension.flat_tensor.serialize.serialize import (
+            FlatTensorConfig,
             FlatTensorSerializer,
         )
 
-        self._data_serializer = FlatTensorSerializer()
+        self._data_serializer = FlatTensorSerializer(
+            FlatTensorConfig(segment_alignment=backend_config.segment_alignment)
+        )
         self._pte_data, self._tensor_data = serialize_for_executorch(
             self._emitter_output,
             backend_config,
