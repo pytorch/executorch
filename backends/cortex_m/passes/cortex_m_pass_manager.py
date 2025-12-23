@@ -15,6 +15,7 @@ from executorch.backends.cortex_m.passes import (
     ClampHardswishPass,
     ConvertToCortexMPass,
     DecomposeHardswishPass,
+    DecomposeMeanPass,
     QuantizedOpFusionPass,
     ReplaceQuantNodesPass,
 )
@@ -43,6 +44,7 @@ class CortexMPassManager(PassManager):
         ScalarsToAttributePass,
         ReplaceScalarWithTensorArgPass,
         ClampHardswishPass,
+        DecomposeMeanPass,
     ]
 
     def __init__(self, exported_program, passes=None):
