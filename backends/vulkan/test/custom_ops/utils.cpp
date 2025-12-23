@@ -1288,7 +1288,7 @@ TestResult execute_test_cases(
     try {
       result = execute_test_case(test_case, warmup_runs, benchmark_runs);
       result.set_operator_name(test_case.operator_name());
-    } catch (const vkcompute::vkapi::ShaderNotSupportedError& e) {
+    } catch (const vkcompute::vkapi::ShaderNotSupportedError&) {
       result = BenchmarkResult(
           test_case.name().empty() ? "unnamed_test_case" : test_case.name(),
           test_case.operator_name());

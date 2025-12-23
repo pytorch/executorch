@@ -149,25 +149,25 @@ def test_select_scatter_u85_INT(test_module: input_t):
 
 @common.SkipIfNoModelConverter
 @common.parametrize("test_module", test_data_suite)
-def test_select_scatter_vgf_FP(test_module: input_t):
+def test_select_scatter_vgf_no_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](
         SelectScatter(),
         test_module(),
         aten_op=SelectScatter.fp_aten_op,
         exir_op=SelectScatter.fp_exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
 @common.parametrize("test_module", test_data_suite)
-def test_select_scatter_vgf_INT(test_module: input_t):
+def test_select_scatter_vgf_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](
         SelectScatter(),
         test_module(),
         aten_op=SelectScatter.int_aten_ops,
         exir_op=SelectScatter.int_exir_ops,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

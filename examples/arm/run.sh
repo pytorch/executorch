@@ -36,13 +36,15 @@ config=""
 memory_mode=""
 pte_placement="elf"
 et_build_root="${et_root_dir}/arm_test"
-ethos_u_scratch_dir=${script_dir}/ethos-u-scratch
+arm_scratch_dir=${script_dir}/arm-scratch
 scratch_dir_set=false
 toolchain=arm-none-eabi-gcc
 select_ops_list="aten::_softmax.out"
 qdq_fusion_op=false
 model_explorer=false
 perf_overlay=false
+visualize_tosa=false
+visualize_pte=false
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -71,10 +73,13 @@ function help() {
     echo "  --memory_mode=<MODE>                   Ethos-U: Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U85 targets"
     echo "  --pte_placement=<elf|ADDR>             Ethos-U: Control if runtime has PTE baked into the elf or if its placed in memory outside of the elf, defaults to ${pte_placement}"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
-    echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
+    echo "  --scratch-dir=<FOLDER>                 Path to your Arm scrach dir if you not using default ${arm_scratch_dir}"
     echo "  --qdq_fusion_op                        Enable QDQ fusion op"
-    echo "  --model_explorer                       Enable model explorer to visualize TOSA graph."
-    echo "  --perf_overlay                         With --model_explorer, include performance data from FVP PMU trace."
+    echo "  --model_explorer                       Enable model explorer to visualize a TOSA or PTE model graph."
+    echo "  --visualize_pte                        With --model_explorer, visualize PTE flatbuffer model and delegates. Cannot be used with --visualize_tosa"
+    echo "                                            NOTE:  If PTE contains an Ethos-U delegate, the Ethos-U subgraph will be visualized if aot_arm_compiler_flags is set with the -i flag to include intermediate tosa files."
+    echo "  --visualize_tosa                       With --model_explorer, visualize TOSA flatbuffer model. Cannot be used with --visualize_pte"
+    echo "  --perf_overlay                         With --model_explorer and --visualize_tosa, include performance data from FVP PMU trace."
     exit 0
 }
 
@@ -101,10 +106,12 @@ for arg in "$@"; do
       --memory_mode=*) memory_mode="${arg#*=}";;
       --pte_placement=*) pte_placement="${arg#*=}";;
       --et_build_root=*) et_build_root="${arg#*=}";;
-      --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
+      --scratch-dir=*) arm_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
       --qdq_fusion_op) qdq_fusion_op=true;;
       --model_explorer) model_explorer=true ;;
       --perf_overlay) perf_overlay=true ;;
+      --visualize_tosa) visualize_tosa=true ;;
+      --visualize_pte) visualize_pte=true ;;
       *)
       ;;
     esac
@@ -124,8 +131,8 @@ if ! [[ ${pte_placement} == "elf" ]]; then
 fi
 
 # Default Ethos-u tool folder override with --scratch-dir=<FOLDER>
-ethos_u_scratch_dir=$(realpath ${ethos_u_scratch_dir})
-setup_path_script=${ethos_u_scratch_dir}/setup_path.sh
+arm_scratch_dir=$(realpath ${arm_scratch_dir})
+setup_path_script=${arm_scratch_dir}/setup_path.sh
 if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
 elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
@@ -341,7 +348,7 @@ for i in "${!test_model[@]}"; do
         fi
 
         set -x
-        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file_or_mem}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
+        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file_or_mem}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${arm_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
 
@@ -351,12 +358,21 @@ for i in "${!test_model[@]}"; do
     fi
 
     if [ "$model_explorer" = true ]; then
-        tosa_flatbuffer_path=$(find ${output_folder} -name "*TOSA*.tosa" | head -n 1)
         perf_flags=""
         if [ "$perf_overlay" = true ]; then
             perf_flags+="--trace ${output_folder}/pmu_trace.gz --tables ${output_folder}/output/out_debug.xml"
         fi
-        python3 ${script_dir}/visualize.py --model_path ${tosa_flatbuffer_path} ${perf_flags}
+
+        visualization_file=""
+        if [ "$visualize_tosa" = true ]; then
+            visualization_file+=" --tosa"
+        fi
+        if [ "$visualize_pte" = true ]; then
+            visualization_file+=" --pte"
+        fi
+
+        me_flags="${visualization_file} ${perf_flags}"
+        python3 ${script_dir}/visualize.py --model_dir ${output_folder} ${me_flags}
     fi
 done
 

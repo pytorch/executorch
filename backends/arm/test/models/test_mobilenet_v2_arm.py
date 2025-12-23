@@ -10,6 +10,7 @@ from typing import Tuple
 import pytest
 
 import torch
+from executorch.backends.arm.quantizer import get_symmetric_quantization_config
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -37,6 +38,14 @@ quant_test_data = {
     "per_channel_quantization=true": True,
     "per_channel_quantization=false": False,
 }
+
+
+def _use_partial_quantizer(pipeline):
+    """Set the pipeline's quantizer to only include Conv2d and ReLU6"""
+    quant_cfg = get_symmetric_quantization_config()
+    pipeline.quantizer.set_global(None)
+    pipeline.quantizer.set_module_type(torch.nn.Conv2d, quant_cfg)
+    pipeline.quantizer.set_module_type(torch.nn.ReLU6, quant_cfg)
 
 
 def test_mv2_tosa_FP():
@@ -139,4 +148,32 @@ def test_mv2_vgf_no_quant():
         use_to_edge_transform_and_lower=True,
         quantize=False,
     )
+    pipeline.run()
+
+
+def test_mv2_tosa_INT_FP_partial_quant():
+    pipeline = TosaPipelineINT[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        tosa_extensions=["FP"],
+        use_to_edge_transform_and_lower=True,
+        atol=0.20,
+    )
+    _use_partial_quantizer(pipeline)
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_mv2_partial_quant_vgf_quant():
+    pipeline = VgfPipeline[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        quantize=True,
+        atol=0.10,
+    )
+    _use_partial_quantizer(pipeline)
     pipeline.run()

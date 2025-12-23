@@ -45,9 +45,7 @@ class TestCLIPTextModelWithProjection:
         "executorch_exir_dialects_edge__ops_aten_index_select_default": 1,
         "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": 1,
         "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_where_self": 1,
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
-        "torch.ops.aten.scalar_tensor.default": 1,
         "torch.ops.higher_order.executorch_call_delegate": 2,
     }
 
@@ -78,7 +76,7 @@ class TestCLIPTextModelWithProjection:
         return text_encoder_model, text_encoder_model_inputs
 
 
-def test_CLIPTextModelWithProjection_tosa_FP():
+def test_clip_text_with_projection_tosa_FP():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )
@@ -101,7 +99,7 @@ def test_CLIPTextModelWithProjection_tosa_FP():
         pipeline.run()
 
 
-def test_CLIPTextModelWithProjection_tosa_INT():
+def test_clip_text_with_projection_tosa_INT():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )
@@ -122,7 +120,7 @@ def test_CLIPTextModelWithProjection_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_CLIPTextModelWithProjection_vgf_no_quant():
+def test_clip_text_with_projection_vgf_no_quant():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )
@@ -149,7 +147,7 @@ def test_CLIPTextModelWithProjection_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_CLIPTextModelWithProjection_vgf_quant():
+def test_clip_text_with_projection_vgf_quant():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )

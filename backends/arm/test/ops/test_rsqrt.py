@@ -85,24 +85,24 @@ def test_rsqrt_u85_INT(test_tensor: torch.Tensor):
 
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
 @common.SkipIfNoModelConverter
-def test_rsqrt_vgf_FP(test_tensor: torch.Tensor):
+def test_rsqrt_vgf_no_quant(test_tensor: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
         Rsqrt(),
         test_tensor(),
         aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
 @common.SkipIfNoModelConverter
-def test_rsqrt_vgf_INT(test_tensor: torch.Tensor):
+def test_rsqrt_vgf_quant(test_tensor: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
         Rsqrt(),
         test_tensor(),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -127,7 +127,7 @@ def test_rsqrt_tosa_INT_a16w8(test_tensor: torch.Tensor):
 @pytest.mark.xfail(
     reason="MLETORCH-707: AssertionError: Output 0 does not match reference output."
 )
-def test_rsqrt_16a8w_u55_INT16(test_tensor: torch.Tensor):
+def test_rsqrt_16a8w_u55_INT(test_tensor: torch.Tensor):
     """Test rsqrt operation with int16 I/O quantization for U55"""
     # Use wider tolerances for int16 I/O quantization on U55
     pipeline = EthosU55PipelineINT[input_t1](
@@ -143,7 +143,7 @@ def test_rsqrt_16a8w_u55_INT16(test_tensor: torch.Tensor):
 
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
 @common.XfailIfNoCorstone320
-def test_rsqrt_16a8w_u85_INT16(test_tensor: torch.Tensor):
+def test_rsqrt_16a8w_u85_INT(test_tensor: torch.Tensor):
     """Test rsqrt operation with int16 I/O quantization for U85"""
     # Use wider tolerances for int16 I/O quantization on U85
     pipeline = EthosU85PipelineINT[input_t1](

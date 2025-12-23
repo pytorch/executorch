@@ -19,6 +19,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/backends/vulkan/runtime/graph/Logging.h>
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 #endif // ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -422,6 +423,13 @@ class GraphBuilder {
         args.push_back(get_fb_id_valueref(static_cast<int>(arg_fb_id)));
       }
 
+#ifdef ET_EVENT_TRACER_ENABLED
+      std::string operator_json =
+          make_operator_json(compute_graph_, op_name, args);
+      set_and_get_current_operator_json(operator_json);
+      get_current_operator_count(true);
+#endif // ET_EVENT_TRACER_ENABLED
+
       auto vkFn = VK_GET_OP_FN(op_name);
       vkFn(*compute_graph_, args);
     }
@@ -431,6 +439,9 @@ class GraphBuilder {
     for (const uint32_t fb_id : *flatbuffer_->output_ids()) {
       const ValueRef ref = get_fb_id_valueref(fb_id);
       if (compute_graph_->val_is_tensor(ref)) {
+#ifdef ET_EVENT_TRACER_ENABLED
+        get_current_operator_count(true);
+#endif // ET_EVENT_TRACER_ENABLED
         compute_graph_->set_output_tensor(
             ref, get_staging_scalar_type_of(fb_id));
       } else {
@@ -694,16 +705,14 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     compute_graph->context()->querypool().extract_results();
     for (const auto& r :
          compute_graph->context()->querypool().get_shader_timestamp_data()) {
-      std::string event_name =
-          r.kernel_name + "_" + std::to_string(r.dispatch_id);
+      std::string event_name = "{" + r.kernel_name +
+          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) + "}";
       event_tracer_log_profiling_delegate(
           event_tracer,
           event_name.c_str(),
           /* delegate_debug_id = */ -1,
           r.start_time_ns,
-          r.end_time_ns,
-          (void*)(&r.metadata),
-          sizeof(r.metadata));
+          r.end_time_ns);
     }
 #endif // ET_EVENT_TRACER_ENABLED
 

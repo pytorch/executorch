@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Callable, List, Optional
+from typing import Any, Callable, cast, List, Optional
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
@@ -21,6 +21,8 @@ from executorch.backends.cortex_m.quantizer.operator_configs import (
     INT8_BINARY_OPS_OPERATOR_CONFIG,
     INT8_CONV_OPERATOR_CONFIG,
     INT8_LINEAR_OPERATOR_CONFIG,
+    INT8_SOFTMAX_OPERATOR_CONFIG,
+    SOFTMAX_OP_PATTERNS,
 )
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     INT8_PER_TENSOR_CONFIG,
@@ -86,6 +88,76 @@ class CortexMQuantizer(ComposableQuantizer):
 
         return not is_channels_last(tensor)
 
+    @staticmethod
+    def _resolve_int(value: Any) -> Optional[int]:
+        """Best-effort conversion of FX node arguments to ints."""
+        if isinstance(value, int):
+            return value
+        if hasattr(value, "item"):
+            try:
+                return int(value.item())  # type: ignore[arg-type]
+            except Exception:
+                return None
+        if hasattr(value, "meta"):
+            meta_val = value.meta.get("val")
+            return CortexMQuantizer._resolve_int(meta_val)
+        return None
+
+    def _extract_dim(self, node: Node) -> Optional[int]:
+        """Return the dim argument from a softmax node when statically known."""
+        dim_arg = None
+        if len(node.args) > 1:
+            dim_arg = node.args[1]
+        elif "dim" in node.kwargs:
+            dim_arg = node.kwargs["dim"]
+
+        if dim_arg is None:
+            return -1
+
+        return self._resolve_int(dim_arg)
+
+    def softmax_memory_format_filter(self, node: Optional[Node]) -> bool:
+        """
+        Return true given the tensor must either
+        - be contiguous (default layout) with softmax dim == last logical dim, or
+        - be channels_last with softmax dim == channel dim.
+        Any other combination is skipped so the op stays in ATen form.
+        """
+        if node is None:
+            return False
+        if [node.target] not in SOFTMAX_OP_PATTERNS:
+            return False
+
+        tensor = get_first_fake_tensor(node)
+        if tensor is None:
+            return True
+
+        dim = self._extract_dim(node)
+        if dim is None:
+            return True
+
+        rank = tensor.dim()
+        if rank == 0:
+            return True
+
+        positive_dim = dim if dim >= 0 else dim + rank
+        if positive_dim < 0 or positive_dim >= rank:
+            return True
+
+        is_channels_last = False
+        if rank == 4:
+            is_channels_last = tensor.is_contiguous(memory_format=torch.channels_last)
+
+        if is_channels_last:
+            channel_dim = 1 if rank >= 2 else rank - 1
+            if positive_dim != channel_dim:
+                return True
+        else:
+            if positive_dim != rank - 1:
+                return True
+
+        return False
+
     def __init__(self) -> None:
         quantizers: List[Quantizer] = [
             OperatorConfigQuantizer(
@@ -94,6 +166,10 @@ class CortexMQuantizer(ComposableQuantizer):
             OperatorConfigQuantizer(INT8_LINEAR_OPERATOR_CONFIG),
             OperatorConfigQuantizer(
                 INT8_CONV_OPERATOR_CONFIG, filter_fn=self.nchw_filter
+            ),
+            OperatorConfigQuantizer(
+                INT8_SOFTMAX_OPERATOR_CONFIG,
+                filter_fn=self.softmax_memory_format_filter,
             ),
             InputQuantizer(INT8_PER_TENSOR_CONFIG),
             OutputQuantizer(INT8_PER_TENSOR_CONFIG),
@@ -315,6 +391,7 @@ class SharedQspecQuantizer(Quantizer):
         # Min/Max/Mean
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
+        torch.ops.aten.avg_pool2d.default,
         # Data shuffling
         torch.ops.aten.permute.default,
         torch.ops.aten.permute_copy.default,
@@ -402,7 +479,20 @@ class SharedQspecQuantizer(Quantizer):
             mark_node_as_annotated(node, input_qspec_map, shared_qspec)
 
     def annotate(self, model: GraphModule) -> None:
+        """
+        Annotate shared quantization spec for supported ops, but skip avg_pool2d
+        when both ceil_mode and count_include_pad are True.
+        """
         for node in model.graph.nodes:
+            # TODO Skip avg_pool2d when ceil_mode=True or count_include_pad=True
+            # CMSIS-NN doesn't directly support this. But, it should be done.
+            if node.target is torch.ops.aten.avg_pool2d.default:
+                ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
+                count_include_pad = (
+                    cast(bool, node.args[5]) if len(node.args) > 5 else True
+                )
+                if ceil_mode or count_include_pad:
+                    continue
             if node.target in self.targets and not self._is_annotated(node):
                 self._annotate_shared_cluster(node)
 

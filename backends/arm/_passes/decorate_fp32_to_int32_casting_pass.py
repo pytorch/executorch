@@ -58,6 +58,14 @@ class DecorateFp32toInt32CastingPass(ArmPass):
         if not (input_dtype == torch.float32 and output_dtype == torch.int32):
             return super().call_operator(op, args, kwargs, meta)
 
+        # For some ops, qparams dtype is inconsistent with fake tensor's dtype.
+        # Skip decorating if the input is quantized and thus not floating point.
+        if (
+            "output_qparams" in input.node.meta
+            and len(input.node.meta["output_qparams"]) > 0
+        ):
+            return super().call_operator(op, args, kwargs, meta)
+
         op_full, op_ge, op_floor, op_ceil, op_where = _get_decorated_ops(op)
 
         zero = super().call_operator(
