@@ -196,6 +196,28 @@ extern "C" WORD32 xa_nn_elm_where_broadcast_4D_f32xf32_f32(
     const unsigned char* __restrict__ p_condition,
     const WORD32* const p_condition_shape);
 
+extern "C" WORD32 xa_nn_im2row_quantized(
+    const WORD8* __restrict__ data_im,
+    const WORD32 in_zero_point,
+    /* input parameters*/
+    const WORD32 channels,
+    const WORD32 height,
+    const WORD32 width,
+    /* output parameters */
+    const WORD32 out_height,
+    const WORD32 out_width,
+    /* convolution parameters */
+    const WORD32 kernel_h,
+    const WORD32 kernel_w,
+    const WORD32 pad_h,
+    const WORD32 pad_w,
+    const WORD32 stride_h,
+    const WORD32 stride_w,
+    const WORD32 dilation_h,
+    const WORD32 dilation_w,
+    WORD8* __restrict__ data_col,
+    WORD32 channels_last);
+
 extern "C" WORD32 xa_nn_reduce_mean_4D_f32_f32(
     FLOAT32* __restrict__ p_out,
     const WORD32* const p_out_shape,

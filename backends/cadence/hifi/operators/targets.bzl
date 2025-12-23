@@ -56,6 +56,7 @@ OPERATORS = [
     "ge",
     "gt",
     "hardtanh",
+    "im2row_out",
     "le",
     "lt",
     "masked_fill",
