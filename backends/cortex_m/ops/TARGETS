@@ -17,7 +17,6 @@ runtime.python_library(
     deps = [
         "fbcode//caffe2:torch",
         "//executorch/backends/cortex_m/passes:passes_utils",
-        "//executorch/backends/cortex_m/quantizer:quantization_configs",
     ],
 )
 
