@@ -190,7 +190,7 @@ def test_llama_vgf_quant():
         pipeline.run()
 
 
-def test_llama_partial_quant_tosa_INT_FP():
+def test_llama_tosa_INT_FP_partial_quant():
     llama_model, llama_inputs, llama_meta = TestLlama().prepare_model()
 
     if llama_model is None or llama_inputs is None:
