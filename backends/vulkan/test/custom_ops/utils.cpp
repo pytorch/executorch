@@ -662,10 +662,9 @@ float collect_gpu_timing_us(ComputeGraph& graph) {
     for (const auto& shader_result : results) {
       if (shader_result.kernel_name.find("nchw_to") == std::string::npos &&
           shader_result.kernel_name.find("to_nchw") == std::string::npos &&
-          shader_result.kernel_name.find(
-              "quantize_and_pack_q8ta_conv2d_input") == std::string::npos &&
-          shader_result.kernel_name.find(
-              "unpack_and_dequantize_q8ta_conv2d_output") ==
+          shader_result.kernel_name.find("quantize_and_pack_4w4c") ==
+              std::string::npos &&
+          shader_result.kernel_name.find("unpack_4w4c_and_dequantize") ==
               std::string::npos) {
         // Calculate duration from start and end times, convert from ns to μs
         uint64_t duration_ns =
@@ -1289,7 +1288,7 @@ TestResult execute_test_cases(
     try {
       result = execute_test_case(test_case, warmup_runs, benchmark_runs);
       result.set_operator_name(test_case.operator_name());
-    } catch (const vkcompute::vkapi::ShaderNotSupportedError& e) {
+    } catch (const vkcompute::vkapi::ShaderNotSupportedError&) {
       result = BenchmarkResult(
           test_case.name().empty() ? "unnamed_test_case" : test_case.name(),
           test_case.operator_name());

@@ -14,7 +14,7 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 cd "${et_root_dir}"
 pwd
-setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
+setup_path_script=${et_root_dir}/examples/arm/arm-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
 
@@ -403,5 +403,16 @@ test_undefinedbehavior_sanitizer() {
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py --build_type=UndefinedSanitizer
     echo "${TEST_SUITE_NAME}: PASS"
 }
+
+test_address_sanitizer() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u executor_runner with ASAN"
+
+    mkdir -p arm_test/test_run
+    # Ethos-U85
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py --build_type=AddressSanitizer
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 
 ${TEST_SUITE}

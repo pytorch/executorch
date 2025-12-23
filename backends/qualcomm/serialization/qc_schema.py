@@ -10,7 +10,7 @@ Please refer to executorch/backends/qualcomm/serialization/schema.fbs for the sc
 
 from dataclasses import dataclass, field
 from enum import IntEnum, unique
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -40,7 +40,7 @@ class HtpInfo:
 class QcomChipset(IntEnum):
     UNKNOWN_SM = 0
     SA8295 = 39  # v68
-    SM8350 = 35  # v68
+    SM8350 = 30  # v68
     SM8450 = 36  # v69
     SM8475 = 42  # v69
     SM8550 = 43  # v73
@@ -55,6 +55,8 @@ class QcomChipset(IntEnum):
     QCS9100 = 77  # v73
     SAR2230P = 95  # v81
     SA8255 = 52  # v73
+    SW6100 = 96  # v81
+    QCM6490 = 93  # v68
 
 
 @dataclass
@@ -80,7 +82,38 @@ _soc_info_table = {
     QcomChipset.SXR2330P: SocInfo(QcomChipset.SXR2330P, HtpInfo(HtpArch.V79, 8)),
     QcomChipset.QCS9100: SocInfo(QcomChipset.QCS9100, HtpInfo(HtpArch.V73, 8)),
     QcomChipset.SAR2230P: SocInfo(QcomChipset.SAR2230P, HtpInfo(HtpArch.V81, 4)),
+    QcomChipset.SW6100: SocInfo(QcomChipset.SW6100, HtpInfo(HtpArch.V81, 4)),
+    QcomChipset.QCM6490: SocInfo(QcomChipset.QCM6490, HtpInfo(HtpArch.V68, 2)),
 }
+
+
+@unique
+class QnnExecuTorchGpuPerformanceMode(IntEnum):
+    kGpuPerfHintHigh = 0
+    kGpuPerfHintNormal = 1
+    kGpuPerfHintLow = 2
+
+
+@unique
+class QnnExecuTorchGpuPrecision(IntEnum):
+    kGpuPrecisionFp32 = 0
+    kGpuPrecisionFp16 = 1
+    kGpuPrecisionHybrid = 2
+    kGpuPrecisionUserProvided = 3
+
+
+@dataclass
+class QnnExecuTorchGpuBackendOptions:
+    performance_mode: QnnExecuTorchGpuPerformanceMode = (
+        QnnExecuTorchGpuPerformanceMode.kGpuPerfHintHigh
+    )
+    precision: QnnExecuTorchGpuPrecision = (
+        QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided
+    )
+    use_memory_optimizations: bool = True
+    use_node_optimizations: bool = True
+    use_queue_recording: bool = True
+    use_weight_sharing: bool = False
 
 
 @unique
@@ -124,7 +157,6 @@ class QnnExecuTorchHtpBackendOptions:
     )
     precision: QnnExecuTorchHtpPrecision = QnnExecuTorchHtpPrecision.kHtpQuantized
     pd_session: QnnExecuTorchHtpPdSession = QnnExecuTorchHtpPdSession.kHtpUnsignedPd
-    skel_library_dir: str = ""
     use_conv_hmx: bool = True
     use_dlbc: bool = False
     use_fold_relu: bool = True
@@ -153,7 +185,8 @@ class QnnExecuTorchProfileLevel(IntEnum):
 @dataclass
 class QnnExecuTorchBackendOptions:
     backend_type: QnnExecuTorchBackendType
-    htp_options: QnnExecuTorchHtpBackendOptions
+    htp_options: Optional[QnnExecuTorchHtpBackendOptions] = None
+    gpu_options: Optional[QnnExecuTorchGpuBackendOptions] = None
 
 
 @unique
@@ -190,7 +223,6 @@ class QnnExecuTorchOpPackageOptions:
 class QnnExecuTorchOptions:
     soc_info: SocInfo
     backend_options: QnnExecuTorchBackendOptions
-    graph_name: List[str] = field(default_factory=lambda: ["forward"])
     library_path: str = ""
     log_level: QnnExecuTorchLogLevel = QnnExecuTorchLogLevel.kLogOff
     online_prepare: bool = False
@@ -203,3 +235,4 @@ class QnnExecuTorchOptions:
     op_package_options: QnnExecuTorchOpPackageOptions = field(
         default_factory=QnnExecuTorchOpPackageOptions
     )
+    use_mha2sha: bool = False

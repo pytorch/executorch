@@ -209,39 +209,31 @@ def test_linear_u85_INT(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_rank1_FP | test_data_rank4_FP)
 @common.SkipIfNoModelConverter
-def test_linear_vgf_FP(test_data: torch.Tensor):
+def test_linear_vgf_no_quant(test_data: torch.Tensor):
     test_data, out_features, has_bias = test_data()
     in_features = test_data.shape[-1]
     pipeline = VgfPipeline[input_t1](
-        Linear(
-            in_features=in_features,
-            out_features=out_features,
-            bias=has_bias,
-        ),
+        Linear(in_features=in_features, out_features=out_features, bias=has_bias),
         (test_data,),
         aten_op=aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
 @common.SkipIfNoModelConverter
-def test_linear_vgf_INT(test_data: torch.Tensor):
+def test_linear_vgf_quant(test_data: torch.Tensor):
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
     pipeline = VgfPipeline[input_t1](
-        Linear(
-            in_features=in_features,
-            out_features=out_features,
-            bias=has_bias,
-        ),
+        Linear(in_features=in_features, out_features=out_features, bias=has_bias),
         (test_data,),
         aten_op=aten_op,
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
+        quantize=True,
     )
     pipeline.run()
 
@@ -327,7 +319,7 @@ for test_name in [
 
 @common.parametrize("test_data", test_data_all_16a8w, xfails=x_fails, skips=x_skips)
 @common.XfailIfNoCorstone300
-def test_linear_16a8w_u55_INT16(test_data: torch.Tensor):
+def test_linear_16a8w_u55_INT(test_data: torch.Tensor):
     """Test linear operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
@@ -357,7 +349,7 @@ def test_linear_16a8w_u55_INT16(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_all_16a8w)
 @common.XfailIfNoCorstone320
-def test_linear_16a8w_u85_INT16(test_data: torch.Tensor):
+def test_linear_16a8w_u85_INT(test_data: torch.Tensor):
     """Test linear operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]

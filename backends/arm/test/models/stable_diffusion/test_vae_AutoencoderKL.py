@@ -52,7 +52,7 @@ class TestAutoencoderKL:
         return auto_encoder_model, auto_encoder_model_inputs
 
 
-def test_AutoencoderKL_tosa_FP():
+def test_vae_tosa_FP():
     auto_encoder_model, auto_encoder_model_inputs = (
         TestAutoencoderKL().prepare_model_and_inputs()
     )
@@ -67,7 +67,7 @@ def test_AutoencoderKL_tosa_FP():
         pipeline.run()
 
 
-def test_AutoencoderKL_tosa_INT():
+def test_vae_tosa_INT():
     auto_encoder_model, auto_encoder_model_inputs = (
         TestAutoencoderKL().prepare_model_and_inputs()
     )
@@ -84,7 +84,7 @@ def test_AutoencoderKL_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_AutoencoderKL_vgf_FP():
+def test_vae_vgf_no_quant():
     auto_encoder_model, auto_encoder_model_inputs = (
         TestAutoencoderKL().prepare_model_and_inputs()
     )
@@ -94,14 +94,14 @@ def test_AutoencoderKL_vgf_FP():
             auto_encoder_model_inputs,
             aten_op=[],
             exir_op=[],
-            tosa_version="TOSA-1.0+FP",
             use_to_edge_transform_and_lower=True,
+            quantize=False,
         )
         pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_AutoencoderKL_vgf_INT():
+def test_vae_vgf_quant():
     auto_encoder_model, auto_encoder_model_inputs = (
         TestAutoencoderKL().prepare_model_and_inputs()
     )
@@ -111,8 +111,8 @@ def test_AutoencoderKL_vgf_INT():
             auto_encoder_model_inputs,
             aten_op=[],
             exir_op=[],
-            tosa_version="TOSA-1.0+INT",
             use_to_edge_transform_and_lower=True,
             atol=1.0,  # TODO: MLETORCH-990 Reduce tolerance of vae(AutoencoderKL) with INT
+            quantize=True,
         )
         pipeline.run()

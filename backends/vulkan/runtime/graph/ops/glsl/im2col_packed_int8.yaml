@@ -10,5 +10,6 @@ im2col_packed_int8:
   generate_variant_forall:
     STORAGE:
       - VALUE: buffer
+      - VALUE: texture3d
   shader_variants:
     - NAME: im2col_packed_int8

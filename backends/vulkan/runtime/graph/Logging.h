@@ -10,6 +10,8 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+
 #include <optional>
 #include <ostream>
 #include <vector>
@@ -42,6 +44,8 @@ inline std::ostream& operator<<(std::ostream& os, const utils::ivec4& v) {
   return utils::operator<<(os, v);
 }
 
+std::ostream& operator<<(std::ostream& os, const std::vector<int64_t>& sizes);
+
 template <typename T>
 inline std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
   os << "[";
@@ -51,5 +55,12 @@ inline std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
   os << "]";
   return os;
 }
+
+std::string make_arg_json(ComputeGraph* const compute_graph, ValueRef arg);
+
+std::string make_operator_json(
+    ComputeGraph* const compute_graph,
+    std::string& op_name,
+    std::vector<ValueRef>& args);
 
 } // namespace vkcompute

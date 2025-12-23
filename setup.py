@@ -759,7 +759,6 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_QNN"):
             cmake_build_args += ["--target", "qnn_executorch_backend"]
             cmake_build_args += ["--target", "PyQnnManagerAdaptor"]
-            cmake_build_args += ["--target", "PyQnnWrapperAdaptor"]
 
         # Set PYTHONPATH to the location of the pip package.
         os.environ["PYTHONPATH"] = (
@@ -859,12 +858,6 @@ setup(
             src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
             src="PyQnnManagerAdaptor.*",
             modpath="executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
-            dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
-        ),
-        BuiltExtension(
-            src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
-            src="PyQnnWrapperAdaptor.*",
-            modpath="executorch.backends.qualcomm.python.PyQnnWrapperAdaptor",
             dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
         ),
     ],

@@ -445,7 +445,7 @@ class Smollm2_135M(LLMModelConfig):
     seq_mse_candidates = 0
     r1 = False
     r2 = False
-    r3 = False
+    r3 = True
     quant_recipe = Smollm2QuantRecipe
 
 

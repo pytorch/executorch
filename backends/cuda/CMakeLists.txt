@@ -28,6 +28,9 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
+# Use dynamic linking for CUDA runtime
+set(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
+
 find_package(CUDAToolkit REQUIRED)
 
 # Use ExecutorTorch's standard way to find PyTorch libraries for AOTI

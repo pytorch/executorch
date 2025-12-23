@@ -2439,14 +2439,21 @@ def transposed_im2row_meta(
     in_zero_point: torch.Tensor,
     channel_last: bool = False,
 ) -> torch.Tensor:
+    """
+    Shape inference for transposed_im2row operation.
+
+    Returns shape: (N, H_out * W_out, K_h * K_w * C_in)
+    """
     if len(input.shape) == 3:
         height_dim = 1 if channel_last else 2
         input = input.unsqueeze(height_dim)
 
     batch_size = input.shape[0]
-    n_input_plane = input.shape[3] if channel_last else input.shape[1]
+    n_input_channels = input.shape[3] if channel_last else input.shape[1]
     input_height = input.shape[1] if channel_last else input.shape[2]
     input_width = input.shape[2] if channel_last else input.shape[3]
+
+    # Calculate output spatial dimensions
     output_height = (
         (input_height - 1) * stride[0]
         - 2 * padding[0]
@@ -2461,9 +2468,11 @@ def transposed_im2row_meta(
         + output_padding[1]
         + 1
     )
-    n_output_plane = n_input_plane * kernel_size[0] * kernel_size[1]
-    output_length = output_height * output_width
-    output_size = torch.Size((batch_size, output_length, n_output_plane))
+
+    # Patch size is kernel_h * kernel_w * in_channels
+    patch_size = kernel_size[0] * kernel_size[1] * n_input_channels
+    num_patches = output_height * output_width
+    output_size = torch.Size((batch_size, num_patches, patch_size))
 
     return input.new_empty(output_size, dtype=input.dtype)
 

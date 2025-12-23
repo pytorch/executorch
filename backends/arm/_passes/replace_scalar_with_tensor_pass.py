@@ -7,6 +7,7 @@
 from typing import Dict, Set, Type, Union
 
 import torch
+from executorch.backends.arm._passes.insert_table_ops import TableOps
 
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.backends.transforms.replace_scalar_with_tensor import (
@@ -64,7 +65,6 @@ _fp_profile_ops: Dict[
     Union[EdgeOpOverload, torch._ops.OpOverload],
 ] = _common_ops | {
     exir_ops.edge.aten.pow.Tensor_Scalar: exir_ops.edge.aten.pow.Tensor_Tensor,
-    torch.ops.aten.pow.Tensor_Scalar: torch.ops.aten.pow.Tensor_Tensor,
 }
 
 _int_profile_ops: Dict[
@@ -101,7 +101,15 @@ class ReplaceScalarWithTensorByProfilePass(ReplaceScalarWithTensorArgPass, ArmPa
             included_ops |= _fp_profile_ops
 
         if included_ops == {}:
-            raise ValueError("Profile must support either INT or FP")
+            raise ValueError("Profile must support at least INT or FP")
+
+        if op in TableOps.included_ops():
+            # Do not handle quantized table ops; forward unchanged.
+            input_qparams = meta.data.get("input_qparams", {})
+            output_qparams = meta.data.get("input_qparams", {})
+            if len(input_qparams) > 0 and len(output_qparams) > 0:
+                # Do not handle; forward unchanged.
+                return ExportPass.call_operator(self, op, args, kwargs, meta)
 
         if op in included_ops:
             # Include this op based on the current profile.

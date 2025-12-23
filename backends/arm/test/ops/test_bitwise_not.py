@@ -90,7 +90,7 @@ def test_bitwise_not_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_bitwise_not_vgf_FP(test_data: Tuple):
+def test_bitwise_not_vgf_no_quant(test_data: Tuple):
     # We don't delegate bitwise_not since it is not supported on the FP profile.
     pipeline = OpNotSupportedPipeline[input_t1](
         BitwiseNot(),
@@ -103,12 +103,12 @@ def test_bitwise_not_vgf_FP(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_bitwise_not_vgf_INT(test_data: Tuple):
+def test_bitwise_not_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         BitwiseNot(),
         (test_data,),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

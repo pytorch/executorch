@@ -26,7 +26,10 @@ class NeutronConverterManager:
     contains NeutronGraph nodes.
     """
 
-    def __init__(self, neutron_converter_flavor: str = "SDK_25_09"):
+    def __init__(
+        self,
+        neutron_converter_flavor: str = "SDK_25_09",
+    ):
 
         neutron_converter_modules = [
             module.name
@@ -76,7 +79,9 @@ class NeutronConverterManager:
         cctx = self.neutron_converter.CompilationContext()
         cctx.targetOpts = self.neutron_converter.getNeutronTarget(target)
         cctx.compilationOpts.minNumOpsPerGraph = 1
-        cctx.compilationOpts.excludeGraphPasses = "MergeTranspose"
+        cctx.compilationOpts.excludeGraphPasses = (
+            "HoistSliceAboveTranspose,MergeTranspose"
+        )
 
         # Try to use multiprocessing for isolation, but fall back to direct execution
         # if the environment doesn't support it (e.g., in sandcastle/build environments)

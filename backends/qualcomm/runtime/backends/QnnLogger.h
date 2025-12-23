@@ -21,18 +21,25 @@ void LoggingCallback(
 class QnnLogger {
  public:
   explicit QnnLogger(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnLog_Callback_t callback,
       QnnExecuTorchLogLevel log_level);
+  QnnLogger(const QnnLogger&) = delete; // Delete copy constructor
+  QnnLogger& operator=(const QnnLogger&) = delete; // Delete assignment operator
   ~QnnLogger();
 
   Qnn_LogHandle_t GetHandle() {
     return handle_;
   }
 
+  QnnExecuTorchLogLevel GetLogLevel() {
+    return log_level_;
+  }
+
  private:
   Qnn_LogHandle_t handle_;
-  const QnnImplementation& implementation_;
+  QnnImplementation* implementation_;
+  QnnExecuTorchLogLevel log_level_;
 };
 } // namespace qnn
 } // namespace backends

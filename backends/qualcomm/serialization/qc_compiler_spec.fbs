@@ -34,7 +34,7 @@ table HtpInfo {
 enum QcomChipset: int {
   UNKNOWN_SM = 0,
   SA8295 = 39,
-  SM8350 = 35,
+  SM8350 = 30,
   SM8450 = 36,
   SM8475 = 42,
   SM8550 = 43,
@@ -49,6 +49,8 @@ enum QcomChipset: int {
   QCS9100 = 77,
   SAR2230P = 95,
   SA8255 = 52,
+  SW6100 = 96,
+  QCM6490 = 93,
 }
 
 /// Indicate the information of the specified SoC.
@@ -58,6 +60,50 @@ table SocInfo {
 
   /// Identifies the htp information of the specified SoC.
   htp_info:HtpInfo;
+}
+
+/// Defines performance modes available for GPU backend.
+enum QnnExecuTorchGpuPerformanceMode: int {
+  kGpuPerfHintHigh = 0,
+  kGpuPerfHintNormal,
+  kGpuPerfHintLow,
+}
+
+/// Defines the optimization levels of the graph tensors that are not input nor
+/// output tensors. This enum controls the trade-off between performance and
+/// accuracy.
+enum QnnExecuTorchGpuPrecision: int {
+  kGpuPrecisionFp32 = 0,
+  kGpuPrecisionFp16,
+  kGpuPrecisionHybrid,
+  kGpuPrecisionUserProvided,
+}
+
+/// Specifies the backend options for the GPU backend.
+table QnnExecuTorchGpuBackendOptions {
+  /// kGpuPerfHintHigh - best inference latency at the expense of power consumption.
+  /// kGpuPerfHintNormal - balanced performance dependent upon power management.
+  /// kGpuPerfHintLow - lowest power consumption at the expense of inference latency.
+  performance_mode:QnnExecuTorchGpuPerformanceMode;
+
+  /// kGpuPrecisionFp32 - best accuracy at the expense of performance.
+  /// kGpuPrecisionFp16 - best performance at the expense of accuracy.
+  /// kGpuPrecisionHybrid - good trade-off between performance and accuracy.
+  /// kGpuPrecisionUserProvided - backend will not optimize NATIVE tensor data types.
+  precision:QnnExecuTorchGpuPrecision;
+
+  /// Backend will share NATIVE tensor memory based upon analysis of the network topology.
+  use_memory_optimizations:bool;
+
+  /// Backend will fuse compatible operations into one operation to improve performance.
+  use_node_optimizations:bool;
+
+  /// Backend will use queue recording to improve performance.
+  use_queue_recording:bool;
+
+  /// When multiple graphs appear inside the same context,
+  /// weights could be reused across all graphs.
+  use_weight_sharing:bool;
 }
 
 /// Defines performance modes available for HTP backend.
@@ -110,10 +156,6 @@ table QnnExecuTorchHtpBackendOptions {
 
   /// Signed or unsigned HTP PD session. The default PD session is unsigned.
   pd_session:QnnExecuTorchHtpPdSession;
-
-  /// Optional parameter specifying the directory of QNN Skel library. Only
-  /// useful for backends which have a Skel library.
-  skel_library_dir:string;
 
   /// With using conv hmx with short depths, we might have better performance,
   /// but convolution that have short depth and/or weights that are not
@@ -171,7 +213,6 @@ enum QnnExecuTorchOpPackagePlatform: int {
   AARCH64_ANDROID,
 }
 
-
 table QnnExecuTorchOpPackageInfo {
   /// The name of the op package.
   op_package_name:string;
@@ -196,7 +237,6 @@ table QnnExecuTorchOpPackageInfo {
   platform:QnnExecuTorchOpPackagePlatform;
 }
 
-
 table QnnExecuTorchOpPackageOptions {
   /// An array of QnnExecuTorchOpPackageInfo structures.
   op_package_infos:[QnnExecuTorchOpPackageInfo];
@@ -209,6 +249,8 @@ table QnnExecuTorchBackendOptions {
   backend_type:QnnExecuTorchBackendType;
 
   htp_options:QnnExecuTorchHtpBackendOptions;
+
+  gpu_options:QnnExecuTorchGpuBackendOptions;
 }
 
 table QnnExecuTorchOptions {
@@ -217,10 +259,6 @@ table QnnExecuTorchOptions {
 
   /// Optional backend specific options for the HTP backend.
   backend_options:QnnExecuTorchBackendOptions;
-
-  /// Optional parameter to create qnn graph if QNN context blob is not given
-  /// It could be a list of names only when doing weight-sharing lowering
-  graph_name:[string];
 
   /// Optional parameter to override the QNN backend library.
   library_path:string;
@@ -244,14 +282,17 @@ table QnnExecuTorchOptions {
   /// Is model from qnn context binary
   is_from_context_binary:bool;
 
-  // Enable this option to record all QNN API calls for debugging purpose
+  /// Enable this option to record all QNN API calls for debugging purpose
   saver:bool;
 
-  // Path to saver output folder
+  /// Path to saver output folder
   saver_output_dir:string;
 
   /// Optional structure to specify op packages loaded and used by the backend.
   op_package_options:QnnExecuTorchOpPackageOptions;
+
+  /// This experimental parameter is used to decide whether to enable multi-head attention to single-head attention pass, aiming to reduce time consumption in AOT and improve performance on HTP.
+  use_mha2sha:bool;
 }
 
 root_type QnnExecuTorchOptions;

@@ -18,6 +18,7 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelLastPreprocess,
 )
 from executorch.backends.nxp.tests.models import MeanDimConvModule, MeanDimLinearModule
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 
@@ -47,14 +48,16 @@ class MeanDimModule(torch.nn.Module):
         pytest.param((1, 4, 8, 8), (3, 2), id="Dim 3, 2."),
     ],
 )
-def test_mean_dim_conv_quant_conversion(mocker, input_shape, dim, keepdim=True):
+def test_mean_dim_conv_quant_conversion(
+    mocker, input_shape, dim, use_qat, keepdim=True
+):
     model = MeanDimConvModule(dim, keepdim)
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
     ep = to_quantized_edge_program(
-        model, input_shape, use_neutron_for_format_conversion=False
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     ).exported_program()
     # Make sure the `mean.dim` was delegated.
     assert not graph_contains_any_of_ops(ep.graph, [exir_ops.edge.aten.mean.dim])
@@ -93,14 +96,16 @@ def test_mean_dim_conv_quant_conversion(mocker, input_shape, dim, keepdim=True):
     ],
 )
 def test_mean_dim_linear_unsupported_quant_conversion(
-    mocker, input_shape, dim, keepdim
+    mocker, input_shape, dim, use_qat, keepdim
 ):
     model = MeanDimLinearModule(dim, keepdim)
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
     nodes = list(edge_program.graph.nodes)
 
     # Last 2 dimensions are not used or keepdim is False, cannot be converted to MeanDim, node is not delegated
@@ -138,14 +143,16 @@ def test_mean_dim_linear_unsupported_quant_conversion(
         pytest.param(True, id="Keep dim."),
     ],
 )
-def test_mean_dim_conv_unsupported_quant_conversion(mocker, input_shape, dim, keepdim):
+def test_mean_dim_conv_unsupported_quant_conversion(
+    mocker, input_shape, dim, use_qat, keepdim
+):
     model = MeanDimConvModule(dim, keepdim)
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
     edge_program = to_quantized_edge_program(
-        model, input_shape, use_neutron_for_format_conversion=False
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     ).exported_program()
     nodes = list(edge_program.graph.nodes)
 
@@ -178,12 +185,16 @@ def test_mean_dim_conv_unsupported_quant_conversion(mocker, input_shape, dim, ke
         pytest.param((1, 2, 3, 8), (-2, -3), id="Dim -2, -3."),
     ],
 )
-def test_mean_dim__formatless__supported(mocker, input_shape, dim, keepdim=True):
+def test_mean_dim__formatless__supported(
+    mocker, input_shape, dim, use_qat, keepdim=True
+):
     model = MeanDimModule(dim, keepdim)
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
-    ep = to_quantized_edge_program(model, input_shape).exported_program()
+    ep = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     # Make sure the `mean.dim` was delegated.
     assert not graph_contains_any_of_ops(ep.graph, [exir_ops.edge.aten.mean.dim])
@@ -211,10 +222,12 @@ def test_mean_dim__formatless__supported(mocker, input_shape, dim, keepdim=True)
         pytest.param((1, 2, 3, 8), (2, 3), id="Dim 2, 3."),
     ],
 )
-def test_mean_dim__formatless__unsupported(input_shape, dim, keepdim=True):
+def test_mean_dim__formatless__unsupported(input_shape, dim, use_qat, keepdim=True):
     model = MeanDimModule(dim, keepdim)
 
-    ep = to_quantized_edge_program(model, input_shape).exported_program()
+    ep = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     # Make sure the `mean.dim` was NOT delegated.
     assert graph_contains_any_of_ops(ep.graph, [exir_ops.edge.aten.mean.dim])
@@ -229,10 +242,14 @@ def test_mean_dim__formatless__unsupported(input_shape, dim, keepdim=True):
         ),
     ],
 )
-def test_mean_dim__formatless__unsupported_channels(input_shape, dim, keepdim=True):
+def test_mean_dim__formatless__unsupported_channels(
+    input_shape, dim, use_qat, keepdim=True
+):
     model = MeanDimModule(dim, keepdim)
 
-    ep = to_quantized_edge_program(model, input_shape).exported_program()
+    ep = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     # Make sure the `mean.dim` was NOT delegated.
     assert graph_contains_any_of_ops(ep.graph, [exir_ops.edge.aten.mean.dim])
@@ -247,13 +264,17 @@ def test_mean_dim__formatless__unsupported_channels(input_shape, dim, keepdim=Tr
         ),
     ],
 )
-def test_mean_dim__channels_first__unsupported_channels(input_shape, dim, keepdim=True):
+def test_mean_dim__channels_first__unsupported_channels(
+    input_shape, dim, use_qat, keepdim=True
+):
     model = MeanDimConvModule(
         dim, keepdim, out_channels=5
     )  # Only multiples of 8 (num_macs) are supported.
 
     # Run conversion
-    ep = to_quantized_edge_program(model, input_shape).exported_program()
+    ep = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     # Make sure the `mean.dim` was NOT delegated.
     assert graph_contains_any_of_ops(ep.graph, [exir_ops.edge.aten.mean.dim])

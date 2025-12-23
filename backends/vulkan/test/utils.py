@@ -27,12 +27,163 @@ from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 from executorch.exir import ExecutorchProgramManager, to_edge_transform_and_lower
+
+from executorch.exir.backend.backend_api import _get_node_list_with_same_tag
+
+from executorch.exir.backend.partitioner import (
+    DelegationSpec,
+    Partitioner,
+    PartitionResult,
+)
+
+from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
+
+from executorch.exir.lowered_backend_module import (
+    create_exported_program_from_submodule,
+    create_submodule_from_nodes,
+)
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten
 from torch.export import export
+
+from torch.export.exported_program import ExportedProgram
+from torch.export.graph_signature import InputKind
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx.passes.operator_support import OperatorSupportBase
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+
+class NodeFlagIsSetChecker(OperatorSupportBase):
+    """
+    Check if a node is marked with a given field in node.meta["custom"]
+    """
+
+    def __init__(self, field: str) -> None:
+        super().__init__()
+        self.field = field
+
+    def check_field(self, node: torch.fx.Node) -> bool:
+        if "custom" not in node.meta:
+            return False
+
+        custom_map = node.meta["custom"]
+        if self.field not in custom_map:
+            return False
+
+        return custom_map[self.field]
+
+    def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
+        if node.op == "placeholder" or node.op == "output":
+            return False
+
+        # Check if the node itself is tagged
+        if self.check_field(node):
+            return True
+
+        # Check if any direct user of this node is tagged
+        for user in node.users:
+            if self.check_field(user):
+                return True
+
+        return False
+
+
+class FlagBasedPartitioner(Partitioner):
+    """
+    Partitioner that partitions based on whether node.meta["custom"][field] is set to
+    True.
+    """
+
+    def __init__(self, field: str) -> None:
+        super().__init__()
+        self.field = field
+        self.delegation_spec = DelegationSpec("custom_partition", [])
+
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        capability_partitioner = CapabilityBasedPartitioner(
+            exported_program.graph_module,
+            NodeFlagIsSetChecker(self.field),
+            allows_single_node_partition=True,
+        )
+        partition_list = capability_partitioner.propose_partitions()
+
+        partition_tags = {}
+        for partition in partition_list:
+            for node in partition.nodes:
+                tag = f"tag{partition.id}"
+                node.meta["delegation_tag"] = tag
+                partition_tags[tag] = self.delegation_spec
+
+        tag_constant_data(exported_program)
+        tag_mutated_buffer(exported_program)
+
+        return PartitionResult(
+            tagged_exported_program=exported_program, partition_tags=partition_tags
+        )
+
+
+def mark_node_range(
+    graph_module: torch.fx.GraphModule,
+    end_idx: int = (2**31 - 1),
+    start_idx: int = 0,
+    field: str = "_in_target_subgraph",
+):
+    call_fn_count = 0
+    for node in graph_module.graph.nodes:
+        if "custom" not in node.meta:
+            node.meta["custom"] = {}
+
+        node.meta["custom"][field] = False
+
+        if node.op != "call_function":
+            continue
+
+        call_fn_count += 1
+        if call_fn_count >= start_idx and call_fn_count < end_idx:
+            node.meta["custom"][field] = True
+
+
+def extract_submodule_program(
+    tagged_graph_module: torch.fx.GraphModule,
+    owning_program: ExportedProgram,
+    field: str = "_in_target_subgraph",
+) -> ExportedProgram:
+    tagged_graph_module_output_node = tagged_graph_module.graph.output_node()
+
+    partitioner = FlagBasedPartitioner(field)
+    partition_result = partitioner.partition(owning_program)
+
+    tag, delegation_spec = next(iter(partition_result.partition_tags.items()))
+    node_list = _get_node_list_with_same_tag(tagged_graph_module, tag, owning_program)
+
+    replace_ctx = tagged_graph_module._set_replace_hook(
+        owning_program.graph_signature.get_replace_hook()
+    )
+    with replace_ctx:
+        submodule, call_module_node = create_submodule_from_nodes(
+            tagged_graph_module, node_list, tag
+        )
+
+    submodule_output_node = submodule.graph.output_node()
+    # Copy the output node meta from the original output node, because
+    # create_submodule_from_nodes doesn't cover the meta field
+    submodule_output_node.meta = tagged_graph_module_output_node.meta
+
+    (
+        submodule_program,
+        _,
+        _,
+    ) = create_exported_program_from_submodule(
+        submodule,
+        owning_program,
+        tag,
+        call_module_node,
+        False,
+    )
+
+    return submodule_program
 
 
 class QuantizationMode(Enum):
@@ -76,7 +227,95 @@ def random_uniform_tensor(shape, low=0.0, high=1.0, device=None, dtype=None):
     if dtype is None:
         dtype = torch.float32
 
+    # Handle integer types using randint
+    if dtype in (
+        torch.int,
+        torch.int8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+        torch.long,
+        torch.short,
+    ):
+        low_int = int(low)
+        high_int = int(high)
+        # randint requires high > low, so ensure at least a range of 1
+        if high_int <= low_int:
+            high_int = low_int + 1
+        return torch.randint(low_int, high_int, shape, device=device, dtype=dtype)
+
+    # Handle unsigned integer types
+    if dtype in (torch.uint8,):
+        low_int = max(0, int(low))
+        high_int = int(high)
+        if high_int <= low_int:
+            high_int = low_int + 1
+        return torch.randint(low_int, high_int, shape, device=device, dtype=dtype)
+
+    # Handle boolean type
+    if dtype == torch.bool:
+        return torch.randint(0, 2, shape, device=device, dtype=torch.int8).bool()
+
+    # Handle floating-point types (float16, float32, float64, bfloat16)
     return torch.empty(shape, device=device, dtype=dtype).uniform_(low, high)
+
+
+def generate_sample_inputs(
+    exported_program: ExportedProgram,
+    low: float = -1.0,
+    high: float = 1.0,
+) -> Tuple[torch.Tensor, ...]:
+    """
+    Analyze the exported program graph to determine input shapes and dtypes,
+    then generate random sample inputs.
+
+    Uses the graph signature to identify only user inputs (excluding parameters,
+    buffers, and other non-input placeholders).
+
+    Args:
+        exported_program: The exported program to analyze
+        low: Lower bound for random uniform values (default: -1.0)
+        high: Upper bound for random uniform values (default: 1.0)
+
+    Returns:
+        Tuple of randomly generated tensors matching the input specs
+    """
+    sample_inputs = []
+
+    # Get the set of user input names by filtering input_specs for USER_INPUT kind
+    user_input_names = set()
+    for spec in exported_program.graph_signature.input_specs:
+        if spec.kind == InputKind.USER_INPUT:
+            if hasattr(spec.arg, "name"):
+                user_input_names.add(spec.arg.name)
+
+    for node in exported_program.graph.nodes:
+        if node.op != "placeholder":
+            continue
+
+        # Only process nodes that are user inputs (not parameters, buffers, etc.)
+        if node.name not in user_input_names:
+            continue
+
+        if "val" in node.meta:
+            val = node.meta["val"]
+            shape = None
+            dtype = None
+
+            if isinstance(val, torch.Tensor):
+                shape = tuple(val.shape)
+                dtype = val.dtype
+            elif hasattr(val, "shape") and hasattr(val, "dtype"):
+                # Handle FakeTensor or similar
+                shape = tuple(val.shape)
+                dtype = val.dtype
+
+            if shape is not None and dtype is not None:
+                tensor = random_uniform_tensor(shape, low=low, high=high, dtype=dtype)
+                sample_inputs.append(tensor)
+
+    inputs_flattened, _ = tree_flatten(sample_inputs)
+    return inputs_flattened
 
 
 def export_model_to_vulkan(
@@ -432,6 +671,49 @@ def lower_module_and_test_output(
     return True
 
 
+def create_bundled_program(
+    executorch_program: ExecutorchProgramManager,
+    sample_inputs: Tuple[torch.Tensor, ...],
+    expected_outputs: List[Any],
+    method_name: str = "forward",
+) -> bytes:
+    """
+    Create a bundled program containing the model and test cases for correctness testing.
+
+    Args:
+        executorch_program: The ExecutorchProgramManager to bundle
+        sample_inputs: Sample inputs for the model
+        expected_outputs: Expected outputs from running the model with sample_inputs
+        method_name: Name of the method to test (default: "forward")
+
+    Returns:
+        Serialized bundled program as bytes
+    """
+    # Flatten sample inputs to match expected format
+    inputs_flattened, _ = tree_flatten(sample_inputs)
+
+    # Create test suite with the sample inputs and expected outputs
+    test_suites = [
+        MethodTestSuite(
+            method_name=method_name,
+            test_cases=[
+                MethodTestCase(
+                    inputs=inputs_flattened,
+                    expected_outputs=expected_outputs,
+                )
+            ],
+        )
+    ]
+
+    # Create bundled program
+    bundled_program = BundledProgram(executorch_program, test_suites)
+
+    # Serialize to flatbuffer
+    bundled_buffer = serialize_from_bundled_program_to_flatbuffer(bundled_program)
+
+    return bundled_buffer
+
+
 def save_bundled_program(
     model: torch.nn.Module,
     sample_inputs: Tuple[torch.Tensor],
@@ -470,27 +752,16 @@ def save_bundled_program(
     # Generate expected outputs by running the model
     expected_outputs = [getattr(model, method_name)(*sample_inputs, **sample_kwargs)]
 
-    # Flatten sample inputs to match expected format
+    # Flatten sample inputs with kwargs to match expected format
     inputs_flattened, _ = tree_flatten((sample_inputs, sample_kwargs))
 
-    # Create test suite with the sample inputs and expected outputs
-    test_suites = [
-        MethodTestSuite(
-            method_name=method_name,
-            test_cases=[
-                MethodTestCase(
-                    inputs=inputs_flattened,
-                    expected_outputs=expected_outputs,
-                )
-            ],
-        )
-    ]
-
     # Create bundled program
-    bp = BundledProgram(et_program, test_suites)
-
-    # Serialize to flatbuffer
-    bp_buffer = serialize_from_bundled_program_to_flatbuffer(bp)
+    bp_buffer = create_bundled_program(
+        et_program,
+        tuple(inputs_flattened),
+        expected_outputs,
+        method_name,
+    )
 
     # Ensure output path has correct extension
     if not output_path.endswith(".bpte"):

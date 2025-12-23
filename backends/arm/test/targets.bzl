@@ -67,6 +67,7 @@ def define_arm_tests():
             deps = [
                 "//executorch/backends/arm/test/tester/fb:arm_tester_fb" if is_fbcode else "//executorch/backends/arm/test:arm_tester",
                 "//executorch/backends/arm/test:conftest",
+                "//executorch/backends/arm/test/misc:dw_convs_shared_weights_module",
                 "//executorch/backends/arm:ethosu",
                 "//executorch/backends/arm/tosa:compile_spec",
                 "//executorch/backends/arm/tosa:partitioner",

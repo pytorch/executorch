@@ -335,6 +335,14 @@ def _match_pattern(
     return left_condition and right_condition
 
 
+_conv_ops = [
+    torch.ops.aten.conv1d.default,
+    torch.ops.aten.conv2d.default,
+    torch.ops.aten.conv2d.padding,
+    torch.ops.aten.conv3d.default,
+    torch.ops.aten.conv3d.padding,
+]
+
 _one_to_one = [
     torch.ops.aten.abs.default,
     torch.ops.aten.ceil.default,
@@ -356,10 +364,12 @@ _one_to_one = [
     torch.ops.aten.hardswish.default,
     torch.ops.aten.hardswish_.default,
     torch.ops.aten.full_like.default,
+    torch.ops.aten.zeros_like.default,
     torch.ops.aten.pow.Tensor_Scalar,
     torch.ops.aten.gelu.default,
     torch.ops.aten.sinh.default,
     torch.ops.aten.atan.default,
+    torch.ops.aten.log1p.default,
     torch.ops.aten.acosh.default,
     torch.ops.aten.sign.default,
     torch.ops.aten.asin.default,
@@ -470,6 +480,12 @@ def get_quant_properties(  # noqa: C901
     weight_qspec = quantization_config.get_weight_qspec()
     output_act_qspec = quantization_config.get_output_act_qspec()
     bias_qspec = quantization_config.get_bias_qspec(node)
+    if output_act_qspec is not None:
+        # Check if output activation qspec is symmetric. In that case
+        # we avoid conv + relu fusion for quantization annotation.
+        is_symmetric = output_act_qspec.qscheme == torch.per_tensor_symmetric
+    else:
+        is_symmetric = False
 
     quant_properties = _OpQuantProperties()
 
@@ -482,17 +498,11 @@ def get_quant_properties(  # noqa: C901
             or n.args[1] == 0
         )
 
-    if _match_pattern(
+    if not is_symmetric and _match_pattern(
         node,
         [
-            [
-                torch.ops.aten.conv1d.default,
-                torch.ops.aten.conv2d.default,
-                torch.ops.aten.conv2d.padding,
-            ],
-            [
-                torch.ops.aten.batch_norm.default,
-            ],
+            _conv_ops,
+            [torch.ops.aten.batch_norm.default],
             [
                 torch.ops.aten.relu.default,
                 torch.ops.aten.relu_.default,
@@ -502,11 +512,7 @@ def get_quant_properties(  # noqa: C901
         ],
         filter_fn=any_or_hardtanh_min_zero,
     ):
-        if node.target in (
-            torch.ops.aten.conv1d.default,
-            torch.ops.aten.conv2d.default,
-            torch.ops.aten.conv2d.padding,
-        ):
+        if node.target in _conv_ops:
             quant_properties.quant_inputs = [
                 _QuantProperty(0, input_act_qspec),
                 _QuantProperty(1, weight_qspec, mark_annotated=True),
@@ -523,21 +529,11 @@ def get_quant_properties(  # noqa: C901
     elif _match_pattern(
         node,
         [
-            [
-                torch.ops.aten.conv1d.default,
-                torch.ops.aten.conv2d.default,
-                torch.ops.aten.conv2d.padding,
-            ],
-            [
-                torch.ops.aten.batch_norm.default,
-            ],
+            _conv_ops,
+            [torch.ops.aten.batch_norm.default],
         ],
     ):
-        if node.target in (
-            torch.ops.aten.conv1d.default,
-            torch.ops.aten.conv2d.default,
-            torch.ops.aten.conv2d.padding,
-        ):
+        if node.target in _conv_ops:
             quant_properties.quant_inputs = [
                 _QuantProperty(0, input_act_qspec),
                 _QuantProperty(1, weight_qspec, mark_annotated=True),
@@ -547,14 +543,12 @@ def get_quant_properties(  # noqa: C901
             torch.ops.aten.batch_norm.default,
         ]:
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
-    elif _match_pattern(
+    elif not is_symmetric and _match_pattern(
         node,
         [
             [
-                torch.ops.aten.conv1d.default,
-                torch.ops.aten.conv2d.default,
+                *_conv_ops,
                 torch.ops.aten.linear.default,
-                torch.ops.aten.conv2d.padding,
             ],
             [
                 torch.ops.aten.relu.default,
@@ -566,10 +560,8 @@ def get_quant_properties(  # noqa: C901
         any_or_hardtanh_min_zero,
     ):
         if node.target in (
-            torch.ops.aten.conv1d.default,
-            torch.ops.aten.conv2d.default,
+            *_conv_ops,
             torch.ops.aten.linear.default,
-            torch.ops.aten.conv2d.padding,
         ):
             quant_properties.quant_inputs = [
                 _QuantProperty(0, input_act_qspec),
@@ -579,10 +571,8 @@ def get_quant_properties(  # noqa: C901
         else:
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
-        torch.ops.aten.conv1d.default,
-        torch.ops.aten.conv2d.default,
+        *_conv_ops,
         torch.ops.aten.linear.default,
-        torch.ops.aten.conv2d.padding,
     ):
         quant_properties.quant_inputs = [
             _QuantProperty(0, input_act_qspec),
@@ -729,6 +719,7 @@ def get_quant_properties(  # noqa: C901
     ):
         submodule_args_pos = -1 if node.target == torch.ops.higher_order.cond else -2
         submodule_args = node.args[submodule_args_pos]
+        output_qspec = output_act_qspec
         if len(submodule_args) > 0:  # type: ignore[arg-type]
             # The way the TOSA backend handles quantized inputs, arrays of input tensors (such as the input to a
             # conditional graph) need shared quantization.
@@ -744,7 +735,14 @@ def get_quant_properties(  # noqa: C901
                     ],
                 )
             ]
-        quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
+            if node.target == torch.ops.higher_order.while_loop:
+                # The output of the while loop body can either re-enter the body, or exit the while loop.
+                # Therefore, A and B in the diagram below need to share the same quantization parameters.
+                # A -> while ( RESCALE -> ... RESCALE -> ) -> B
+                output_qspec = shared_qspec
+
+        quant_properties.quant_output = _QuantProperty(0, output_qspec)
+
     else:
         return None
 

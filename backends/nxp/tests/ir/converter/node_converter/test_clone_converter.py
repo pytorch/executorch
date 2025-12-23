@@ -100,9 +100,15 @@ class TestCloneConverter(unittest.TestCase):
         return node in clone_ops or target_can_be_clone(node)
 
     @parameterized.expand(
-        list(itertools.product([True, False], [(1, 3, 128, 128), (1, 3, 256, 256)]))
+        list(
+            itertools.product(
+                [True, False], [(1, 3, 128, 128), (1, 3, 256, 256)], [True, False]
+            )
+        )
     )
-    def test_conv_dropout_quant(self, inplace_dropout: bool, input_shape: tuple[int]):
+    def test_conv_dropout_quant(
+        self, inplace_dropout: bool, input_shape: tuple[int], use_qat: bool
+    ):
         model = SingleConvBlockWithDropout(
             conv_in_channels=input_shape[1], perform_inplace_dropout=inplace_dropout
         ).eval()
@@ -113,7 +119,10 @@ class TestCloneConverter(unittest.TestCase):
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             quantized_program = to_quantized_edge_program(
-                model, input_shape, use_neutron_for_format_conversion=False
+                model,
+                input_shape,
+                use_qat=use_qat,
+                use_neutron_for_format_conversion=False,
             ).exported_program()
 
             tflite_flatbuffers_model, _ = converter_spy.calls[-1].return_value
@@ -157,7 +166,10 @@ class TestCloneConverter(unittest.TestCase):
         # Clone with inplace=True should not produce clone edge op and vice versa
         assert inplace_dropout ^ has_clone
 
-    def test_clone_pool_view_copy_quant(self, input_shape: tuple[int] = (1, 64, 25, 5)):
+    @parameterized.expand([("QAT", True), ("PTQ", False)])
+    def test_clone_pool_view_copy_quant(
+        self, _, use_qat: bool, input_shape: tuple[int] = (1, 64, 25, 5)
+    ):
         model = KWSFinalBlock(input_shape).eval()
 
         with kgb.spy_on(
@@ -166,7 +178,7 @@ class TestCloneConverter(unittest.TestCase):
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             quantized_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_qat=use_qat
             ).exported_program()
 
             tflite_flatbuffers_model, _ = converter_spy.calls[-1].return_value

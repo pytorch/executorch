@@ -380,6 +380,43 @@ class ExpConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class ViewCopyConfig(GenericNodePartitionerConfig):
+    target_name = "view_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK's static_reshape only supports 1 dynamic dimension.
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        new_shape = node.args[1]
+
+        # Check for symbolic dims. They aren't lowerable to XNNPACK currently.
+        symbolic_dim_indices = [
+            i for i, d in enumerate(new_shape) if not isinstance(d, int)
+        ]
+        if not all(isinstance(n, int) for n in new_shape):
+            why(
+                node,
+                reason=f"Symbolic reshape is not supported. Output shape is {new_shape} and dims at {symbolic_dim_indices} are symbolic.",
+            )
+            return False
+
+        dynamic_dim_indices = [i for i, d in enumerate(new_shape) if d == -1]
+        if len(dynamic_dim_indices) > 1:
+            why(
+                node,
+                reason=f"Only a single inferred dimension is supported. Output shape is {new_shape} and dims {dynamic_dim_indices} are inferred.",
+            )
+            return False
+
+        return True
+
+
 class FloorConfig(GenericNodePartitionerConfig):
     target_name = "floor.default"
 
@@ -665,3 +702,10 @@ class CloneDimOrderConfig(GenericNodePartitionerConfig):
             return False
 
         return True
+
+
+class CosConfig(GenericNodePartitionerConfig):
+    target_name = "cos.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]

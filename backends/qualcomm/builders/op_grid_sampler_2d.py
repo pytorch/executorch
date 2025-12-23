@@ -6,7 +6,7 @@
 import warnings
 from typing import cast, Dict, List
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import numpy as np
 
 import torch
@@ -28,8 +28,8 @@ class GridSample(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         grid_sample_op_list = []
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
@@ -37,7 +37,7 @@ class GridSample(NodeVisitor):
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -47,7 +47,7 @@ class GridSample(NodeVisitor):
             grid_node,
             node,
             grid_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -79,7 +79,7 @@ class GridSample(NodeVisitor):
         grid_dtype = (
             QNN_TENSOR_TYPE_MAP[grid_tensor.dtype]
             if grid_quant_encoding
-            == PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED
+            == PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED
             else QNN_QUANT_TYPE_MAP[
                 (
                     torch.uint16
@@ -92,7 +92,7 @@ class GridSample(NodeVisitor):
         permute_output_tensor = grid_tensor.permute(dims=dims_shape_back)
         transpose_output_tensor_wrapper = self.define_custom_tensor_wrapper(
             node_name=node.name + "_transpose",
-            tensor_type=PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             dtype=grid_dtype,
             quant_encoding=grid_quant_encoding,
             quant_configs=grid_quant_configs,
@@ -104,7 +104,7 @@ class GridSample(NodeVisitor):
 
         permute_order = cast(List[int], dims_shape_back)
         permute_order_shape = [len(permute_order)]
-        transpose_op = PyQnnWrapper.PyQnnOpWrapper(
+        transpose_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpTranspose.op_name,
@@ -113,7 +113,7 @@ class GridSample(NodeVisitor):
         transpose_op.AddOutputTensors([transpose_output_tensor_wrapper])
         transpose_op.AddTensorParam(
             OpTranspose.param_perm,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(permute_order_shape),
             permute_order_shape,
             np.array(permute_order, dtype=np.uint32),
@@ -126,7 +126,7 @@ class GridSample(NodeVisitor):
             node,
             node,
             out_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -134,7 +134,7 @@ class GridSample(NodeVisitor):
         padding_mode = node.args[3] if len(node.args) > 3 else 0
         interpo_mode = node.args[2] if len(node.args) > 2 else 0
 
-        grid_sample_op = PyQnnWrapper.PyQnnOpWrapper(
+        grid_sample_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpGridSample.op_name,
@@ -145,17 +145,17 @@ class GridSample(NodeVisitor):
         grid_sample_op.AddOutputTensors([output_tensor_wrapper])
         grid_sample_op.AddScalarParam(
             OpGridSample.param_align_corners,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {QCOM_DATA: align_corners},
         )
         grid_sample_op.AddScalarParam(
             OpGridSample.param_mode,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(interpo_mode)},
         )
         grid_sample_op.AddScalarParam(
             OpGridSample.param_padding_mode,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(padding_mode)},
         )
         grid_sample_op_list.append(grid_sample_op)

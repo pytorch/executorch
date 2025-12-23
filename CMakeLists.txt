@@ -278,10 +278,16 @@ if(EXECUTORCH_BUILD_TESTS)
 endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
-set(_common_compile_options
-    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+list(APPEND _common_compile_options $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations>
 )
+# Set default CMAKE_POSITION_INDEPENDENT_CODE behavior if ON or not set
+# (default) (and not for MSVC compiler)
+if(NOT DEFINED CMAKE_POSITION_INDEPENDENT_CODE
+   OR CMAKE_POSITION_INDEPENDENT_CODE
+)
+  list(APPEND _common_compile_options $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fPIC>)
+endif()
 
 # Let files say "include <executorch/path/to/header.h>".
 # TODO(#6475): This requires/assumes that the repo lives in a directory named

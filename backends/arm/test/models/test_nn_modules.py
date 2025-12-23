@@ -116,7 +116,7 @@ test_parameters = {str(test[0].__class__.__name__): test for test in module_test
     "test_data",
     test_parameters,
 )
-def test_nn_Modules_FP(test_data):
+def test_nn_modules_tosa_FP(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineFP[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=True
@@ -140,7 +140,7 @@ def test_nn_Modules_FP(test_data):
         "TransformerModule": "AssertionError: Output 0 does not match reference output.",
     },
 )
-def test_nn_Modules_INT(test_data):
+def test_nn_modules_tosa_INT(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineINT[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=True

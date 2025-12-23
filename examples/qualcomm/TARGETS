@@ -39,5 +39,6 @@ runtime.python_library(
     deps = [
         "//executorch/backends/qualcomm/partition:partition",
         "//executorch/backends/qualcomm/quantizer:quantizer",
+        "//executorch/backends/qualcomm/debugger:qnn_intermediate_debugger",
     ],
 )

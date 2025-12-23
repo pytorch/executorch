@@ -89,27 +89,27 @@ def test_t_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_t_vgf_FP(test_data: Tuple):
+def test_t_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         TCopy(),
         test_data(),
         aten_op=TCopy.aten_op,
         exir_op=TCopy.exir_op,
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=False,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_t_vgf_INT(test_data: Tuple):
+def test_t_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         TCopy(),
         test_data(),
         aten_op=TCopy.aten_op,
         exir_op=TCopy.exir_op,
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=False,
+        quantize=True,
     )
     pipeline.run()

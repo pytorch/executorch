@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import cast, Dict, List
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 
@@ -27,15 +27,15 @@ class AMax(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -60,11 +60,11 @@ class AMax(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
-        reduce_max_op = PyQnnWrapper.PyQnnOpWrapper(
+        reduce_max_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpReduceMax.op_name,
@@ -73,7 +73,7 @@ class AMax(NodeVisitor):
         reduce_max_op.AddOutputTensors([output_tensor_wrapper])
         reduce_max_op.AddTensorParam(
             OpReduceMax.param_axes,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(mean_dims_shape),
             mean_dims_shape,
             np.array(mean_dims, dtype=np.uint32),
@@ -83,7 +83,7 @@ class AMax(NodeVisitor):
             keep_dims = cast(bool, node.args[2])
             reduce_max_op.AddScalarParam(
                 OpReduceMax.param_keep_dims,
-                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+                PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
                 {QCOM_DATA: keep_dims},
             )
 

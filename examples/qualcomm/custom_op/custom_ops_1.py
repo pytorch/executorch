@@ -69,16 +69,14 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
     This function is specific for custom op.
     The source_fn of the rewritten nn module turns out to be "my_ops.mul3.default"
     """
-    from executorch.backends.qualcomm.quantizer.annotators import (
-        _is_annotated,
-        QUANT_ANNOTATION_KEY,
-    )
+    from executorch.backends.qualcomm.quantizer.annotators import _is_annotated
 
     from executorch.backends.qualcomm.quantizer.qconfig import (
         get_ptq_per_channel_quant_config,
     )
     from torch.fx import Node
     from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
+    from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
     quantization_config = get_ptq_per_channel_quant_config()
     for node in gm.graph.nodes:
@@ -95,7 +93,7 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
         input_spec = quantization_config.input_activation
         input_qspec_map[input_act] = input_spec
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,

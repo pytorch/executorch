@@ -86,7 +86,7 @@ case "$HF_MODEL" in
     MODEL_NAME="voxtral"
     RUNNER_TARGET="voxtral_runner"
     RUNNER_PATH="voxtral"
-    EXPECTED_OUTPUT="poem"
+    EXPECTED_OUTPUT="existence"
     PREPROCESSOR="voxtral_preprocessor.pte"
     TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main" # @lint-ignore
     TOKENIZER_FILE="tekken.json"
@@ -147,7 +147,8 @@ if [ "$AUDIO_URL" != "" ]; then
   curl -L $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
 elif [[ "$MODEL_NAME" == *whisper* ]]; then
   conda install -y -c conda-forge "ffmpeg<8"
-  pip install datasets soundfile torchcodec
+  pip install datasets soundfile
+  pip install torchcodec==0.10.0.dev20251211 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
 fi
 

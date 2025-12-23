@@ -20,11 +20,11 @@ class SimpleQuantizeModel(torch.nn.Module):
     }
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        return x + torch.max((x + x), (y + y))
+        return x + torch.maximum((x + x), (y + y))
 
 
 @common.parametrize("test_data", SimpleQuantizeModel.test_data)
-def test_fold_qdq_pass_tosa_INT(test_data: input_t) -> None:
+def test_fold_and_annotate_q_params_tosa_INT(test_data: input_t) -> None:
     """
     Tests the FoldAndAnnotateQParamsPass which folds dq/q nodes into
     the node and stores the quantization parameters in meta.

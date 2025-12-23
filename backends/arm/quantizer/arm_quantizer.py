@@ -339,11 +339,13 @@ class TOSAQuantizer(Quantizer):
     def __init__(
         self, compile_spec_or_tosa_spec: TosaSpecification | ArmCompileSpec
     ) -> None:
-
         super().__init__()
+        self.compile_spec: ArmCompileSpec
         if isinstance(compile_spec_or_tosa_spec, TosaSpecification):
-            self.tosa_spec = compile_spec_or_tosa_spec
-            self.compile_spec = None
+            from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+
+            self.compile_spec = TosaCompileSpec(compile_spec_or_tosa_spec)
+            self.tosa_spec = self.compile_spec.tosa_spec
         elif isinstance(compile_spec_or_tosa_spec, ArmCompileSpec):
             self.compile_spec = compile_spec_or_tosa_spec
             self.tosa_spec = self.compile_spec.tosa_spec
@@ -403,8 +405,6 @@ class TOSAQuantizer(Quantizer):
 
         """
         # Validate that quantization_config is provided
-        if quantization_config is None:
-            raise ValueError("quantization_config == None is not supported yet")
         self.module_name_config[module_name] = quantization_config
         return self
 
@@ -434,9 +434,8 @@ class TOSAQuantizer(Quantizer):
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
 
-        return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(
-            graph_module=model
-        )
+        pass_manager = ArmPassManager(self.compile_spec)
+        return pass_manager.transform_for_annotation_pipeline(graph_module=model)
 
     def annotate(self, model: GraphModule) -> GraphModule:
         """Annotate the graph with the configured quantization settings.

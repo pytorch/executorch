@@ -248,7 +248,9 @@ class StaticAttentionTest(unittest.TestCase):
                 )
                 ys.append(y_i)
 
-            self.assertTrue(torch.isclose(ys[-1], expected, rtol=1e-3).all())
+            self.assertTrue(
+                torch.isclose(ys[-1].flatten(), expected.flatten(), rtol=1e-3).all()
+            )
 
         for args in itertools.product(
             ["shift_pointer", "smart_mask"], ["static", "static_mha"]

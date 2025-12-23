@@ -51,6 +51,24 @@ class ConvertToCortexMPass(XNNPACKPass):
 
         return kernel_sum_offset
 
+    def _get_batch_size_from_conv(self, conv_node: torch.fx.Node):
+        """
+        Extract batch size from convolution node's output shape.
+
+        Returns None if shape metadata is unavailable, which can occur when
+        processing nodes created earlier in the same pass iteration.
+
+        For Conv2d operations, output_batch_size always equals input_batch_size.
+        Conv2d outputs are always 4D (N, C, H, W) in the edge dialect.
+        """
+        try:
+            if "val" in conv_node.meta:
+                output_shape = conv_node.meta["val"].shape
+                return output_shape[0]
+        except (AttributeError, TypeError):
+            pass
+        return None
+
     def _get_linear_replacement(self, node):
         """
          Let
@@ -156,11 +174,39 @@ class ConvertToCortexMPass(XNNPACKPass):
             quantized_multipliers.append(quantized_multiplier)
             quantized_shifts.append(quantized_shift)
 
-        # Permute the weight tensor to the OHWI layout expected by CMSIS-NN.
         weight_tensor = get_param_tensor(self.exported_program, weight)
-        weight_permuted = weight_tensor.permute(0, 2, 3, 1).contiguous(
-            memory_format=torch.channels_last
-        )
+
+        # Detect depthwise convolution:
+        # Depthwise means groups == in_channels, out_channels == K * in_channels
+        # Weight shape is [out_ch, in_ch_per_group, H, W]
+        in_channels = weight_tensor.shape[1] * groups
+        out_channels = weight_tensor.shape[0]
+        is_depthwise = (in_channels == groups) and (out_channels % in_channels == 0)
+
+        # Only use DW path if batch_size==1, as CMSIS-NN DW falls back to
+        # unoptimized implementation otherwise.
+        batch_size = self._get_batch_size_from_conv(node)
+
+        # TODO(#16347): It is likely but not certain that the un-optimized
+        # CMSIS-NN DW conv or the one without any SIMD is less efficient that
+        # the corresponding CMSIS-NN conv. We should benchmark and update the
+        # constraints.
+        # optimal_dw_conv_constraints = (batch_size == 1) and (
+        #    (in_channels == out_channels and dilation == [1, 1]) or (in_channels == 1)
+        # )
+        use_depthwise_conv = is_depthwise and (batch_size == 1)
+
+        if use_depthwise_conv:
+            # For depthwise: OIHW -> IHWO which gives [1, H, W, C_OUT] for CMSIS-NN
+            # PyTorch depthwise weight is [out_ch, 1, H, W], permute to [1, H, W, out_ch]
+            weight_permuted = weight_tensor.permute(1, 2, 3, 0).contiguous(
+                memory_format=torch.channels_last
+            )
+        else:
+            # For regular conv: OIHW -> OHWI
+            weight_permuted = weight_tensor.permute(0, 2, 3, 1).contiguous(
+                memory_format=torch.channels_last
+            )
 
         with node.graph.inserting_after(weight):
             weight_nhwc = create_constant_placeholder(
@@ -171,21 +217,66 @@ class ConvertToCortexMPass(XNNPACKPass):
                 weight_permuted,
             )
 
-        new_args = (
-            x,
-            weight_nhwc,
-            bias,
-            stride,
-            padding,
-            dilation,
-            -input_zero_point,
-            output_zero_point,
-            torch.tensor(quantized_multipliers, dtype=torch.int32),
-            torch.tensor(quantized_shifts, dtype=torch.int32),
-            output_qmin,
-            output_qmax,
-        )
-        return exir_ops.edge.cortex_m.quantized_conv2d.default, new_args
+            quantized_multiplier_tensor = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_quantized_multiplier",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_multipliers, dtype=torch.int32),
+            )
+
+            quantized_shift_tensor = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_quantized_shift",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_shifts, dtype=torch.int32),
+            )
+
+        if use_depthwise_conv:
+            # Compute depth_multiplier for depthwise convolution
+            # For depthwise: output_channels = input_channels * depth_multiplier
+
+            if out_channels % in_channels != 0:
+                raise ValueError(
+                    f"Depthwise conv: output_channels ({out_channels}) must be "
+                    f"divisible by input_channels ({in_channels})"
+                )
+            depth_multiplier = out_channels // in_channels
+
+            new_args = (
+                x,
+                weight_nhwc,
+                bias,
+                stride,
+                padding,
+                dilation,
+                depth_multiplier,
+                -input_zero_point,
+                output_zero_point,
+                quantized_multiplier_tensor,
+                quantized_shift_tensor,
+                output_qmin,
+                output_qmax,
+            )
+            return exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default, new_args
+        else:
+            # Use regular convolution operator
+            new_args = (
+                x,
+                weight_nhwc,
+                bias,
+                stride,
+                padding,
+                dilation,
+                -input_zero_point,
+                output_zero_point,
+                quantized_multiplier_tensor,
+                quantized_shift_tensor,
+                output_qmin,
+                output_qmax,
+            )
+            return exir_ops.edge.cortex_m.quantized_conv2d.default, new_args
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False

@@ -25,7 +25,7 @@ class Int32Embedding(torch.nn.Module):
         )
 
 
-def test_int64_model_tosa_FP():
+def test_decompose_embedding_tosa_FP_int32():
     module = Int32Embedding()
     op_checks_before = {
         "executorch_exir_dialects_edge__ops_aten_embedding_default": 1,

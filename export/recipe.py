@@ -11,13 +11,13 @@ from enum import Enum, EnumMeta
 from typing import Callable, List, Optional
 
 import torch
-from executorch.exir import ExportedProgram
+from executorch.exir import EdgeProgramManager, ExportedProgram
 
 from executorch.exir._warnings import experimental
 
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
-from executorch.exir.pass_manager import PassType
+from executorch.exir.pass_manager import PassManager, PassType
 from torchao.core.config import AOBaseConfig
 from torchao.quantization.pt2e.quantizer import Quantizer
 
@@ -119,14 +119,20 @@ class LoweringRecipe:
 
     Attributes:
         partitioners: Optional list of partitioners for model partitioning
-        edge_transform_passes: Optional list of callables that take (method_name: str, exported_program: ExportedProgram) as arguments
-                               and return a list of passes (PassType) to be executed during lowering stages.
+        edge_transform_passes: Optional list of callables that take (method_name: str, exported_program: ExportedProgram)
+                               and return either List[PassType] or PassManager to be applied during edge lowering.
+        edge_manager_transform_passes: Optional list of callables that take EdgeProgramManager as argument
+                                        and return passes to be applied. Applied sequentially after TO_EDGE stage.
         edge_compile_config: Optional edge compilation configuration
     """
 
     partitioners: Optional[List[Partitioner]] = None
     edge_transform_passes: (
-        None | List[Callable[[str, ExportedProgram], List[PassType]]]
+        None | List[Callable[[str, ExportedProgram], List[PassType] | PassManager]]
+    ) = None
+    # pyre-ignore[11]: Type not defined
+    edge_manager_transform_passes: (
+        None | List[Callable[[EdgeProgramManager], List[PassType] | PassManager]]
     ) = None
     # pyre-ignore[11]: Type not defined
     edge_compile_config: Optional[EdgeCompileConfig] = None
