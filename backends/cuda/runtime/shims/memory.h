@@ -167,6 +167,9 @@ AOTITorchError aoti_torch_new_tensor_handle(
 
 // Function to clear all tensors from internal storage
 AOTI_SHIM_EXPORT void clear_all_tensors();
+
+// Function to clear memory tracking map (for test cleanup)
+AOTI_SHIM_EXPORT void clear_memory_tracking();
 } // extern "C"
 
 } // namespace executorch::backends::cuda
