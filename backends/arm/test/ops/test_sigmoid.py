@@ -192,7 +192,7 @@ def test_sigmoid_vgf_quant(test_data: Tuple):
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_add_vgf_no_quant():
+def test_sigmoid_vgf_no_quant_add():
     pipeline = VgfPipeline[input_t1](
         AddSigmoid(),
         (test_data_suite["zeros"](),),
@@ -204,7 +204,7 @@ def test_sigmoid_add_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_add_vgf_quant():
+def test_sigmoid_vgf_quant_add():
     pipeline = VgfPipeline[input_t1](
         AddSigmoid(),
         (test_data_suite["ramp"](),),
@@ -216,7 +216,7 @@ def test_sigmoid_add_vgf_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_add_2_vgf_no_quant():
+def test_sigmoid_vgf_no_quant_add_2():
     pipeline = VgfPipeline[input_t1](
         SigmoidAdd(),
         (test_data_suite["zeros"](),),
@@ -228,7 +228,7 @@ def test_sigmoid_add_2_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_add_2_vgf_quant():
+def test_sigmoid_vgf_quant_add_2():
     pipeline = VgfPipeline[input_t1](
         SigmoidAdd(),
         (test_data_suite["zeros"](),),
@@ -240,7 +240,7 @@ def test_sigmoid_add_2_vgf_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_add_3_vgf_no_quant():
+def test_sigmoid_vgf_no_quant_add_3():
     pipeline = VgfPipeline[input_t1](
         SigmoidAddSigmoid(),
         (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
@@ -252,7 +252,7 @@ def test_sigmoid_add_3_vgf_no_quant():
 
 
 @common.SkipIfNoModelConverter
-def test_sigmoid_add_3_vgf_quant():
+def test_sigmoid_vgf_quant_add_3():
     pipeline = VgfPipeline[input_t1](
         SigmoidAddSigmoid(),
         (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
@@ -315,7 +315,7 @@ def test_sigmoid_16a8w_tosa_INT(test_data: torch.Tensor):
 @pytest.mark.xfail(
     reason="MLETORCH-707: AssertionError: Output 0 does not match reference output."
 )
-def test_sigmoid_16a8w_u55_INT16(test_data: torch.Tensor):
+def test_sigmoid_16a8w_u55_INT(test_data: torch.Tensor):
     """Test sigmoid operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
@@ -339,7 +339,7 @@ def test_sigmoid_16a8w_u55_INT16(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_sigmoid_16a8w_u85_INT16(test_data: torch.Tensor):
+def test_sigmoid_16a8w_u85_INT(test_data: torch.Tensor):
     """Test sigmoid operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 

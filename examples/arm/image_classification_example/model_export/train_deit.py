@@ -105,7 +105,6 @@ if __name__ == "__main__":
         push_to_hub=False,
         load_best_model_at_end=True,
         report_to="none",
-        use_mps_device=torch.backends.mps.is_available(),
     )
 
     accuracy_metric = load_metric("accuracy")

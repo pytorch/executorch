@@ -53,7 +53,7 @@ class AddSigmoidMul(torch.nn.Module):
         return self.sigmoid(x + y) * x
 
 
-def test_mixed_type_lowering():
+def test_mixed_type_lowering_tosa_INT_FP():
     model = AddSigmoidMul()
     input_data = (torch.randn(1, 16, 16, 16), torch.randn(1, 16, 16, 16))
 
