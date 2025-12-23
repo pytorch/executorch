@@ -283,6 +283,15 @@ cpp_test_template = """
 
 {preamble}
 
+at::Tensor make_casted_randint_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    int low = 0,
+    int high = 10) {{
+
+  return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
+}}
+
 at::Tensor make_rand_tensor(
     std::vector<int64_t> sizes,
     at::ScalarType dtype = at::kFloat,
@@ -339,7 +348,7 @@ at::Tensor make_seq_tensor(
   return at::from_blob(values.data(), sizes, at::kFloat).toType(dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor_1d(std::vector<int64_t> indices) {{
+at::Tensor make_index_tensor_1d(std::vector<int32_t> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{static_cast<int64_t>(indices.size())}};
 
@@ -347,14 +356,14 @@ at::Tensor make_index_tensor_1d(std::vector<int64_t> indices) {{
   return at::from_blob(indices.data(), sizes, dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor_2d(std::vector<std::vector<int64_t>> indices) {{
+at::Tensor make_index_tensor_2d(std::vector<std::vector<int32_t>> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{
     static_cast<int64_t>(indices.size()),
     static_cast<int64_t>(indices[0].size())}};
 
   // Flatten indices as from_blob reads garbage otherwise.
-  std::vector<int64_t> acc;
+  std::vector<int32_t> acc;
   for (auto& vec: indices) {{
     acc.insert(acc.end(), vec.begin(), vec.end());
   }}
@@ -363,7 +372,7 @@ at::Tensor make_index_tensor_2d(std::vector<std::vector<int64_t>> indices) {{
   return at::from_blob(acc.data(), sizes, dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor_3d(std::vector<std::vector<std::vector<int64_t>>> indices) {{
+at::Tensor make_index_tensor_3d(std::vector<std::vector<std::vector<int32_t>>> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{
     static_cast<int64_t>(indices.size()),
@@ -371,7 +380,7 @@ at::Tensor make_index_tensor_3d(std::vector<std::vector<std::vector<int64_t>>> i
     static_cast<int64_t>(indices[0][0].size())}};
 
   // Flatten indices as from_blob reads garbage otherwise.
-  std::vector<int64_t> acc;
+  std::vector<int32_t> acc;
   for (auto& v: indices) {{
     for (auto& vv: v) {{
       acc.insert(acc.end(), vv.begin(), vv.end());

@@ -2,15 +2,15 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 float_test_data_suite = {
@@ -53,9 +53,9 @@ class ScalarTensor(torch.nn.Module):
     "test_data",
     int_test_data_suite | float_test_data_suite,
 )
-def test_scalar_tensor_tosa_MI(test_data):  # Note TOSA MI supports all types
+def test_scalar_tensor_tosa_FP(test_data):  # Note TOSA FP supports all types
     scalar, dtype, data = test_data()
-    TosaPipelineMI(
+    TosaPipelineFP(
         ScalarTensor(scalar, dtype),
         tuple(data),
         ScalarTensor.aten_op,
@@ -66,36 +66,70 @@ def test_scalar_tensor_tosa_MI(test_data):  # Note TOSA MI supports all types
     "test_data",
     int_test_data_suite | float_test_data_suite,
 )
-def test_scalar_tensor_tosa_BI(test_data):
+def test_scalar_tensor_tosa_INT(test_data):
     scalar, dtype, data = test_data()
-    pipeline: TosaPipelineBI = TosaPipelineBI(
+    pipeline: TosaPipelineINT = TosaPipelineINT(
         ScalarTensor(scalar, dtype),
         tuple(data),
         ScalarTensor.aten_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
+    # Pop the quantization check stage if it exists as no
+    # quantization nodes will be present for int + fp inputs.
+    if pipeline.has_stage("check.quant_nodes"):
+        pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", float_test_data_suite)
 @common.XfailIfNoCorstone300
-def test_scalar_tensor_u55_BI(test_data):
+def test_scalar_tensor_u55_INT(test_data):
     scalar, dtype, data = test_data()
-    EthosU55PipelineBI(
+    EthosU55PipelineINT(
         ScalarTensor(scalar, dtype),
         tuple(data),
         ScalarTensor.aten_op,
-        run_on_fvp=True,
     ).run()
 
 
 @common.parametrize("test_data", float_test_data_suite)
 @common.XfailIfNoCorstone320
-def test_scalar_tensor_u85_BI(test_data):
+def test_scalar_tensor_u85_INT(test_data):
     scalar, dtype, data = test_data()
-    EthosU85PipelineBI(
+    EthosU85PipelineINT(
         ScalarTensor(scalar, dtype),
         tuple(data),
         ScalarTensor.aten_op,
-        run_on_fvp=True,
     ).run()
+
+
+@common.parametrize("test_data", float_test_data_suite)
+@common.SkipIfNoModelConverter
+def test_scalar_tensor_vgf_no_quant(test_data):
+    scalar, dtype, data = test_data()
+    pipeline = VgfPipeline(
+        ScalarTensor(scalar, dtype),
+        tuple(data),
+        ScalarTensor.aten_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    int_test_data_suite,
+)
+@common.SkipIfNoModelConverter
+def test_scalar_tensor_vgf_quant(test_data):
+    scalar, dtype, data = test_data()
+    pipeline = VgfPipeline(
+        ScalarTensor(scalar, dtype),
+        tuple(data),
+        ScalarTensor.aten_op,
+        quantize=True,
+    )
+    # Pop the quantization check stage if it exists as no
+    # quantization nodes will be present for int + fp inputs.
+    if pipeline.has_stage("check.quant_nodes"):
+        pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()

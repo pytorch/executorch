@@ -1,11 +1,13 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-# pyre-unsafe
+from typing import Set, Type
+
 import torch
 import torch.fx
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
@@ -14,7 +16,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class UnsqueezeBeforeRepeatPass(ExportPass):
+class UnsqueezeBeforeRepeatPass(ArmPass):
     """
     A TOSA TILE op only supports rank(in) == rank(out).
     To support Pytorch's repeat which can also add dimensions,
@@ -28,6 +30,8 @@ class UnsqueezeBeforeRepeatPass(ExportPass):
         view(shape = [1]*num_new_dims + old_shape)
         repeat(multiples)
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified_graph = False

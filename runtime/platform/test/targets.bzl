@@ -84,6 +84,7 @@ def define_common_targets():
             "logging_test.cpp",
         ],
         deps = [
+            ":stub_platform",
             "//executorch/runtime/platform:platform",
         ],
         compiler_flags = [

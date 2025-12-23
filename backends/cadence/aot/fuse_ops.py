@@ -34,12 +34,12 @@ from executorch.backends.cadence.aot.compiler_utils import (
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     register_cadence_pass,
+    RemoveOrReplacePassInterface,
 )
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, ProxyValue
-from executorch.exir.passes import dead_code_elimination_pass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from torch.fx.node import Argument
 from torch.nn.utils.fusion import fuse_conv_bn_weights
@@ -72,11 +72,13 @@ class FuseMMWithAdd(ExportPass):
         fuse it with mm.
         """
         graph = graph_module.graph
-        for node in graph.nodes:
+        for node in graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mm.default
+        ):
             # We want to discover a chain of mm -> add, or mm -> view -> add.
             # Only proceed if the current node is an mm node, and has only one
             # user/successor.
-            if node.target != exir_ops.edge.aten.mm.default or len(node.users) != 1:
+            if len(node.users) != 1:
                 continue
 
             # Our addmm implementation computes (mat1 * mat2 + bias). So the
@@ -128,6 +130,7 @@ class FuseMMWithAdd(ExportPass):
                 mm_arg_shape is None
                 or bias_arg_shape is None
                 or not broadcastable(mm_arg_shape, bias_arg_shape)
+                or len(bias_arg_shape) > 2
             ):
                 continue
 
@@ -451,7 +454,7 @@ class FuseQuantizedBatchNormWithConv(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseCascadedTransposeOrPermuteOps(ExportPass):
+class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
     """
     Fuse a cascaded chain of transpose and permute ops
     """
@@ -461,89 +464,89 @@ class FuseCascadedTransposeOrPermuteOps(ExportPass):
         exir_ops.edge.aten.permute_copy.default,
     }
 
-    # Find a chain of transpose or permute ops, and fuse them into a single permute op.
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return list(self.transpose_or_permute_target)
 
-    def fuse_cascaded_transpose_or_permute_ops(
-        self, graph_module: torch.fx.GraphModule
-    ):
-        graph = graph_module.graph
-        for node in graph.nodes:
-            # We are only interested in permute/transpose ops
-            if node.target not in self.transpose_or_permute_target:
-                continue
-            # Get the cascaded chain of transpose/permute ops starting at node
-            cascaded_transpose_or_permute_ops = get_cascaded_ops(
-                [node], self.transpose_or_permute_target
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # Get the cascaded chain of transpose/permute ops starting at node
+        cascaded_transpose_or_permute_ops = get_cascaded_ops(
+            [node], self.transpose_or_permute_target
+        )
+        # The chain must have more than 1 node
+        if len(cascaded_transpose_or_permute_ops) == 1:
+            return False
+
+        # Get shape from node metadata
+        val = node.meta.get("val")
+        if val is None:
+            return False
+        out_shape = val.shape
+        out_dims = len(out_shape)
+
+        # This is the trivial dimension order
+        dims = list(range(out_dims))
+        # Compute the effect of the chain on dims
+        for tp in cascaded_transpose_or_permute_ops:
+            dims = (
+                get_transposed_dims(tp, dims)
+                if tp.target == exir_ops.edge.aten.transpose_copy.int
+                else get_permuted_dims(tp, dims)
             )
-            # The chain must have more than 1 node
-            if len(cascaded_transpose_or_permute_ops) == 1:
-                continue
 
-            out_shape = get_shape(graph_module, node)
-            assert out_shape is not None
-            out_dims = len(out_shape)
-            # This is the trivial dimension order
-            dims = list(range(out_dims))
-            # Compute the effect of the chain on dims
-            for tp in cascaded_transpose_or_permute_ops:
-                dims = (
-                    get_transposed_dims(tp, dims)
-                    if tp.target == exir_ops.edge.aten.transpose_copy.int
-                    else get_permuted_dims(tp, dims)
+        graph = node.graph
+
+        # In case the permute chain cancelled each other, the final dims will
+        # be the same as the initial order. In that case, the chain was nop.
+        # Otherwise create a new permute op that encompasses the effect of the
+        # chain.
+        if dims == list(range(out_dims)):
+            cascaded_transpose_or_permute_ops[-1].replace_all_uses_with(
+                cast(torch.fx.Node, node.args[0])
+            )
+        else:
+            with graph.inserting_before(cascaded_transpose_or_permute_ops[-1]):
+                new_permute = graph.call_function(
+                    exir_ops.edge.aten.permute_copy.default,
+                    args=(node.args[0], dims),
                 )
+                new_permute.meta = cascaded_transpose_or_permute_ops[-1].meta
+            cascaded_transpose_or_permute_ops[-1].replace_all_uses_with(new_permute)
 
-            # In case the permute chain cancelled each other, the final dims will
-            # be the same as the initial order. In that case, the chain was nop.
-            # Otherwise create a new permute op that encompasses the effect of the
-            # chain.
-            if dims == list(range(out_dims)):
-                cascaded_transpose_or_permute_ops[-1].replace_all_uses_with(
-                    node.args[0]
-                )
-            else:
-                with graph.inserting_before(cascaded_transpose_or_permute_ops[-1]):
-                    new_permute = graph.call_function(
-                        exir_ops.edge.aten.permute_copy.default,
-                        args=(node.args[0], dims),
-                    )
-                cascaded_transpose_or_permute_ops[-1].replace_all_uses_with(new_permute)
+        # Now erase the chain (except the first node which will be handled by the interface)
+        for tp in reversed(cascaded_transpose_or_permute_ops[1:]):
+            graph.erase_node(tp)
 
-            # Now erase the chain
-            for tp in reversed(cascaded_transpose_or_permute_ops):
-                graph.erase_node(tp)
-
-        graph_module.recompile()
-
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        self.fuse_cascaded_transpose_or_permute_ops(graph_module)
-        result = super().call(graph_module)
-        return result
+        # Return True to indicate the first node in the chain should be removed
+        return True
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseCascadedViewOps(ExportPass):
+class FuseCascadedViewOps(RemoveOrReplacePassInterface):
     """
     Fuse a cascaded chain of view ops
     """
 
-    def fuse_cascaded_view_ops(self, graph_module: torch.fx.GraphModule):
-        view_target = exir_ops.edge.aten.view_copy.default
-        for view_node in graph_module.graph.find_nodes(
-            op="call_function", target=view_target, sort=True
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.view_copy.default]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # Check if the input to this view node is also a view node
+        input_view = node.args[0]
+        if not isinstance(input_view, torch.fx.Node):
+            return False
+
+        if (
+            input_view.op != "call_function"
+            or input_view.target != exir_ops.edge.aten.view_copy.default
         ):
-            input_view = view_node.args[0]
-            if input_view.op != "call_function" or input_view.target != view_target:
-                continue
+            return False
 
-            view_node.replace_input_with(input_view, input_view.args[0])
-
-        graph_module.recompile()
-
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        self.fuse_cascaded_view_ops(graph_module)
-        dead_code_elimination_pass(graph_module)
-        result = super().call(graph_module)
-        return result
+        # Replace the input of this view node with the input of the cascaded view
+        # This effectively "skips" the intermediate view node
+        node.replace_input_with(input_view, cast(torch.fx.Node, input_view.args[0]))
+        return True
 
 
 class FuseOpPairsAcrossBranchesPass(ExportPass):
@@ -856,19 +859,32 @@ class FuseMulTensorIntoQuantPass(ExportPass):
     def attempt_fusion(
         self, graph_module: torch.fx.GraphModule, mul_node: torch.fx.Node
     ) -> None:
-        full_nodes = [
-            arg
-            for arg in mul_node.args
-            if isinstance(arg, torch.fx.Node)
-            and arg.target == exir_ops.edge.aten.full.default
-        ]
-
-        if len(full_nodes) != 1 or len(mul_node.users) != 1:
+        if len(mul_node.args) != 2 or len(mul_node.users) != 1:
             return
 
-        full_node = full_nodes[0]
+        first_arg = cast(torch.fx.Node, mul_node.args[0])
+        second_arg = cast(torch.fx.Node, mul_node.args[1])
+
+        input_node = first_arg
+        full_node = second_arg
+        if second_arg.target == exir_ops.edge.aten.full.default:
+            # Most common case, nothing to change.
+            pass
+        elif first_arg.target == exir_ops.edge.aten.full.default:
+            # Input and full nodes are swapped.
+            full_node = first_arg
+            input_node = second_arg
+        else:
+            # Full node is not found, skip.
+            return
+
+        # Ensure that the mul op does not do any broadcasting.
+        if input_node.meta["val"].shape != mul_node.meta["val"].shape:
+            return
+
         mul_user = list(mul_node.users.keys())[0]
 
+        # Ensure only the expected quant ops are using the current mul op.
         if mul_user.target not in {
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.cadence.quantize_per_tensor.default,
@@ -878,33 +894,28 @@ class FuseMulTensorIntoQuantPass(ExportPass):
         quant_node = mul_user
 
         # Calculate the new scale value.
-        prev_scale = quant_node.args[1]
-        assert isinstance(prev_scale, (int, float))
+        old_scale = quant_node.args[1]
+        assert isinstance(old_scale, (int, float))
         mul_scalar = full_node.args[1]
         assert isinstance(mul_scalar, (int, float))
-        new_scale = float(prev_scale) * float(mul_scalar)
+        """ The reason why we divide old scale by the mul value to get a new scale:
+            y = x * mul_scalar
+            q = zp + y / old_scale
+            q = zp + x * mul_scalar / old_scale
+            new_scale = old_scale / mul_scalar
+            q = zp + x / new_scale
+        """
+        new_scale = float(old_scale) / float(mul_scalar)
 
         logging.debug(
             f"Fused {mul_node} and {full_node} into {quant_node}. Updated scale from {quant_node.args[1]} to {new_scale}"
         )
 
-        # Replace the input first
-        quant_node.replace_input_with(
-            cast(torch.fx.Node, quant_node.args[0]),
-            cast(torch.fx.Node, mul_node.args[0]),
-        )
-
-        # Now update the scale in the args
-        new_quant_args = list(quant_node.args)
-        new_quant_args[1] = new_scale
-        quant_node.args = tuple(new_quant_args)
-
-        # Clean up the mul_node
-        mul_node.args = ()
-        mul_node.users = {}
-
-        graph_module.graph.erase_node(mul_node)
-        graph_module.graph.erase_node(full_node)
+        # Update quant node input and scale.
+        old_quant_input = cast(torch.fx.Node, quant_node.args[0])
+        new_quant_input = cast(torch.fx.Node, mul_node.args[0])
+        quant_node.replace_input_with(old_quant_input, new_quant_input)
+        quant_node.update_arg(1, new_scale)
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         for node in graph_module.graph.find_nodes(
@@ -1119,6 +1130,7 @@ class CadenceFuseOpsInGraph:
         FuseCascadedTransposeOrPermuteOps,
         FuseCascadedViewOps,
         FuseQuantDequantToRequantizePass,
+        FuseMulTensorIntoQuantPass,
         FuseMulTensorIntoDequantPass,
         FuseMulScalarIntoDequantPass,
         FuseFullThenReshapePass,

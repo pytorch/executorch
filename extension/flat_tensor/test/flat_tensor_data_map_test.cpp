@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_generated.h>
@@ -17,6 +18,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
+using executorch::extension::BufferDataLoader;
+using executorch::extension::FileDataLoader;
 using executorch::extension::FlatTensorDataMap;
 using executorch::extension::FlatTensorHeader;
 using executorch::runtime::DataLoader;
@@ -24,7 +27,6 @@ using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
 using executorch::runtime::TensorLayout;
-using torch::executor::util::FileDataLoader;
 
 class FlatTensorDataMapTest : public ::testing::Test {
  protected:
@@ -33,8 +35,8 @@ class FlatTensorDataMapTest : public ::testing::Test {
     // first.
     executorch::runtime::runtime_init();
 
-    // Load data map. The eager linear model is defined at:
-    // //executorch/test/models/linear_model.py
+    // Load data map. The eager addmul model is defined at:
+    // //executorch/test/models/export_program.py
     const char* path = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
     Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);
@@ -51,7 +53,7 @@ TEST_F(FlatTensorDataMapTest, LoadFlatTensorDataMap) {
   EXPECT_EQ(data_map.error(), Error::Ok);
 }
 
-TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetMetadata) {
+TEST_F(FlatTensorDataMapTest, GetMetadata) {
   Result<FlatTensorDataMap> data_map =
       FlatTensorDataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
@@ -93,7 +95,7 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetMetadata) {
   EXPECT_EQ(const_c_res.error(), Error::NotFound);
 }
 
-TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetData) {
+TEST_F(FlatTensorDataMapTest, GetData) {
   Result<FlatTensorDataMap> data_map =
       FlatTensorDataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
@@ -114,7 +116,7 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetData) {
   EXPECT_EQ(data_c_res.error(), Error::NotFound);
 }
 
-TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_Keys) {
+TEST_F(FlatTensorDataMapTest, GetKeys) {
   Result<FlatTensorDataMap> data_map =
       FlatTensorDataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
@@ -138,7 +140,7 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_Keys) {
   EXPECT_EQ(key2_res.error(), Error::InvalidArgument);
 }
 
-TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_LoadInto) {
+TEST_F(FlatTensorDataMapTest, LoadInto) {
   Result<FlatTensorDataMap> data_map =
       FlatTensorDataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
@@ -159,4 +161,24 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_LoadInto) {
     EXPECT_EQ(data_a[i], 3.0);
   }
   free(data);
+}
+
+TEST_F(FlatTensorDataMapTest, LoadAndCheckSize) {
+  Result<FlatTensorDataMap> data_map =
+      FlatTensorDataMap::load(data_map_loader_.get());
+  EXPECT_EQ(data_map.error(), Error::Ok);
+
+  // Truncate the file.
+  size_t trunc_size = data_map_loader_->size().get() - 8;
+  Result<FreeableBuffer> truncated_file = data_map_loader_->load(
+      0,
+      trunc_size,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Constant));
+  ASSERT_EQ(truncated_file.error(), Error::Ok);
+
+  BufferDataLoader truncated_loader =
+      BufferDataLoader(truncated_file->data(), trunc_size);
+  Result<FlatTensorDataMap> truncated_program =
+      FlatTensorDataMap::load(&truncated_loader);
+  ASSERT_EQ(truncated_program.error(), Error::InvalidExternalData);
 }

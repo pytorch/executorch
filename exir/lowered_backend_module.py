@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 import torch.utils._pytree as pytree
-from executorch.exir._serialize import _serialize_pte_binary
+from executorch.exir._serialize import _PTEFile, _serialize_pte_binary
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
@@ -66,6 +66,7 @@ class LoweredBackendModule(torch.nn.Module):
     _named_data_store_output: Optional[
         NamedDataStoreOutput
     ]  # Named Data serialized by the backend
+    meta: Optional[Dict[str, Any]]  # Metadata for the lowered module
 
     def __init__(
         self,
@@ -81,6 +82,7 @@ class LoweredBackendModule(torch.nn.Module):
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
         self._named_data_store_output = named_data_store_output
+        self.meta = None
 
     # pyre-ignore
     def __deepcopy__(self, memo: Optional[Dict[int, Any]]) -> "LoweredBackendModule":
@@ -109,7 +111,6 @@ class LoweredBackendModule(torch.nn.Module):
             compile_specs=copy.deepcopy(self._compile_specs, memo),
             named_data_store_output=self._named_data_store_output,
         )
-        # pyre-fixme[16]: `LoweredBackendModule` has no attribute `meta`.
         res.meta = copy.copy(getattr(self, "meta", {}))
         return res
 
@@ -163,12 +164,14 @@ class LoweredBackendModule(torch.nn.Module):
         # TODO(T181463742): avoid calling bytes(..) which incurs large copies.
         out = bytes(
             _serialize_pte_binary(
-                program=self.program(memory_planning=memory_planning),
+                pte_file=_PTEFile(
+                    program=self.program(memory_planning=memory_planning),
+                    named_data=self.named_data_store_output,
+                ),
                 extract_delegate_segments=extract_delegate_segments,
                 segment_alignment=segment_alignment,
                 constant_tensor_alignment=constant_tensor_alignment,
                 delegate_alignment=delegate_alignment,
-                named_data=self.named_data_store_output,
             )
         )
         return out
@@ -233,14 +236,11 @@ class LoweredBackendModule(torch.nn.Module):
             )
         ]
 
-        output_node = [
-            node for node in lowered_exported_program.graph.nodes if node.op == "output"
-        ]
-        assert len(output_node) == 1, "There should be only one output node"
+        output_node = lowered_exported_program.graph.output_node()
 
         # Step 1. Cleaning up the graph before inserting the call_delegate node
         # Remove the original output node
-        lowered_exported_program.graph.erase_node(output_node[0])
+        lowered_exported_program.graph.erase_node(output_node)
 
         # Remove all the everything else except the input
         for node in reversed(lowered_exported_program.graph.nodes):
@@ -269,11 +269,9 @@ class LoweredBackendModule(torch.nn.Module):
         )
         # Get the output list. Since the output node is a tuple of list, like ([aten_mul_tensor, aten_add_tensor],)
         # We add some handling logic to get the list `[aten_mul_tensor, aten_add_tensor]` properly
-        original_output_nodes = [
-            node
-            for node in self._original_exported_program.graph.nodes
-            if node.op == "output"
-        ][0].args[0]
+        original_output_nodes = (
+            self._original_exported_program.graph.output_node().args[0]
+        )
 
         delegate_node.meta["spec"] = tuple(
             [make_spec(node.meta["val"]) for node in original_output_nodes]
@@ -927,11 +925,7 @@ def _unsafe_adjust_original_program(  # noqa: C901
             raise RuntimeError(f"Invalid input spec {input_spec} received")
 
     # Delete buffer mutations from the output which were consumed by the delegate
-    toplevel_output_node = None
-    for node in reversed(original_program.graph.nodes):
-        if node.op == "output":
-            toplevel_output_node = node
-            break
+    toplevel_output_node = original_program.graph.output_node()
 
     assert toplevel_output_node is not None
     assert (

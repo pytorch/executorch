@@ -6,13 +6,15 @@
 
 from typing import Tuple
 
+import pytest
 import torch
-from executorch.backends.arm._passes import InsertCastForOpsWithInt64InputPass
+from executorch.backends.arm._passes import InsertInt32CastsAfterInt64PlaceholdersPass
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -25,10 +27,17 @@ class Embedding(torch.nn.Module):
         return torch.embedding(weights, indices)
 
 
-input_params = Tuple[torch.Tensor, torch.Tensor, torch.dtype]
+class ExpandEmbedding(Embedding):
+    example_inputs = (torch.randn(10, 3), torch.tensor([[1, 2, 3]], dtype=torch.int32))
+
+    def forward(self, weights: torch.Tensor, indices: torch.Tensor):
+        return torch.embedding(weights, indices.expand(2, 3))
 
 
-test_input: dict[input_params] = {
+input_params = Tuple[torch.Tensor, torch.Tensor]
+
+
+test_input: dict[str, input_params] = {
     "test_1": (
         torch.randn(10, 3),
         torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.int32),
@@ -56,29 +65,80 @@ test_input: dict[input_params] = {
 }
 
 
+@pytest.mark.skip(reason="MLETORCH-1274 Improve data type checks during partitioning")
 @common.parametrize("test_input", test_input)
-def test_embedding_tosa_MI(test_input: input_params):
+def test_embedding_tosa_FP(test_input: input_params):
     op = Embedding()
-    pipeline = TosaPipelineMI[input_params](
+    pipeline = TosaPipelineFP[input_params](
         op,
         test_input,
         op.aten_op,
         op.exir_op,
         use_to_edge_transform_and_lower=True,
-        transform_passes=[InsertCastForOpsWithInt64InputPass()],
+        transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
     )
     pipeline.run()
 
 
 @common.parametrize("test_input", test_input)
-def test_embedding_tosa_BI(test_input: input_params):
+def test_embedding_tosa_INT(test_input: input_params):
     op = Embedding()
-    pipeline = TosaPipelineBI[input_params](
+    pipeline = TosaPipelineINT[input_params](
         op,
         test_input,
         op.aten_op,
         op.exir_op,
         use_to_edge_transform_and_lower=True,
+    )
+    pipeline.pop_stage("check.aten")
+    pipeline.pop_stage("check_count.exir")
+
+    pipeline.run()
+
+
+def test_embedding_tosa_INT_expand():
+    op = ExpandEmbedding()
+    pipeline = TosaPipelineINT(
+        op,
+        ExpandEmbedding.example_inputs,
+        ExpandEmbedding.aten_op,
+        ExpandEmbedding.exir_op,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.pop_stage("check.aten")
+    pipeline.pop_stage("check_count.exir")
+
+    pipeline.run()
+
+
+@pytest.mark.skip("reason=MLETORCH-1274 Improve data type checks during partitioning")
+@common.parametrize("test_input", test_input)
+@common.SkipIfNoModelConverter
+def test_embedding_vgf_no_quant(test_input: input_params):
+    op = Embedding()
+    pipeline = VgfPipeline[input_params](
+        op,
+        test_input,
+        op.aten_op,
+        op.exir_op,
+        use_to_edge_transform_and_lower=True,
+        transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_input", test_input)
+@common.SkipIfNoModelConverter
+def test_embedding_vgf_quant(test_input: input_params):
+    op = Embedding()
+    pipeline = VgfPipeline[input_params](
+        op,
+        test_input,
+        op.aten_op,
+        op.exir_op,
+        use_to_edge_transform_and_lower=True,
+        quantize=True,
     )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")

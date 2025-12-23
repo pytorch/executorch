@@ -19,6 +19,7 @@ on:
         required: false
         type: string
         description: Install ExecuTorch in editable mode or not.
+        default: 'false'
       python-version:
         required: false
         type: string
@@ -31,7 +32,7 @@ jobs:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge
+      runner: linux.2xlarge.memory
       docker-image: ${{ inputs.docker-image }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -52,3 +53,31 @@ jobs:
         # This is needed to get the prebuilt PyTorch wheel from S3
         ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
         .ci/scripts/unittest-macos.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
+
+  windows:
+    if: ${{ inputs.build-tool == 'cmake' }}
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    with:
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        conda init powershell
+
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
+
+          .ci/scripts/setup-windows.ps1 -editable "${{ inputs.editable }}"
+          if (\$LASTEXITCODE -ne 0) {
+              Write-Host "Setup failed. Exit code: \$LASTEXITCODE."
+              exit \$LASTEXITCODE
+          }
+
+          .ci/scripts/unittest-windows.ps1 -buildMode "${{ inputs.build-mode }}"
+          if (\$LASTEXITCODE -ne 0) {
+              Write-Host "Unit tests failed. Exit code: \$LASTEXITCODE."
+              exit \$LASTEXITCODE
+          }
+        }"

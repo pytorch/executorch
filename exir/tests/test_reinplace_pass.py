@@ -61,6 +61,15 @@ class TestReinplacePass(unittest.TestCase):
 
         self.assertIsNotNone(index_put_node, "Should find an index_put_ node")
 
+        # Find the copy_ node
+        copy_node = None
+        for node in et.exported_program().graph.nodes:
+            if node.op == "call_function" and "copy_" in str(node.target):
+                copy_node = node
+                break
+
+        self.assertIsNone(copy_node, "Shouldn't find an copy_ node")
+
         e = _load_for_executorch_from_buffer(et.buffer)
         self.assertTrue(
             torch.allclose(

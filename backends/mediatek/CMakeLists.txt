@@ -24,24 +24,27 @@ include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include)
 # targets
 add_library(neuron_backend SHARED)
 target_compile_options(neuron_backend PRIVATE "-frtti" "-fexceptions")
-target_link_libraries(neuron_backend
-    PRIVATE
-    executorch_core
-    android
-    log
+target_link_libraries(
+  neuron_backend PRIVATE executorch_core portable_ops_lib portable_kernels
+                         android log
 )
 target_sources(
   neuron_backend
-  INTERFACE ${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronBackend.h
-            ${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronBufferAllocator.h
-            ${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronExecutor.h
-            ${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronLog.h
-            ${CMAKE_CURRENT_LIST_DIR}/runtime/include/api/APUWareUtilsLib.h
-            ${CMAKE_CURRENT_LIST_DIR}/runtime/include/api/NeuronAdapterShim.h
+  INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronBackend.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronBufferAllocator.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronExecutor.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronLog.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/api/APUWareUtilsLib.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/runtime/include/api/NeuronAdapterShim.h>
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronBackend.cpp
           ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronExecutor.cpp
           ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronBufferAllocator.cpp
 )
-target_link_options_shared_lib(neuron_backend)
+executorch_target_link_options_shared_lib(neuron_backend)
 
-install(TARGETS neuron_backend DESTINATION lib)
+install(
+  TARGETS neuron_backend
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)

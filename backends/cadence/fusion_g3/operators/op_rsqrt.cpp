@@ -10,7 +10,7 @@
 
 #include <xa_nnlib_kernels_api.h>
 
-#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
+#include <executorch/backends/cadence/common/xt_macros.h>
 #include <executorch/kernels/portable/cpu/pattern/pattern.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -20,14 +20,14 @@ using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
 
 namespace {
 
-double rsqrt(double x) {
+template <typename T>
+T rsqrt(T x) {
   return 1.0 / std::sqrt(x);
 }
 
@@ -61,11 +61,10 @@ Tensor& rsqrt_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
     return out;
   } else {
     return torch::executor::native::internal::
-        unary_ufunc_realhbbf16_to_floathbf16(rsqrt, ctx, in, out);
+        unary_ufunc_realhbbf16_to_floathbf16(rsqrt, rsqrt, ctx, in, out);
   }
 }
 
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

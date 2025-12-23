@@ -15,7 +15,17 @@ which "${PYTHON_EXECUTABLE}"
 BASEDIR=$(dirname "$(realpath $0)")
 
 prepare_add() {
+  pushd "${BASEDIR}/../../../"
   python3 -m test.models.export_program --modules "ModuleAdd" --outdir "${BASEDIR}/src/androidTest/resources/"
+  popd
+}
+
+prepare_xor() {
+  pushd "${BASEDIR}/../../training/"
+  python3 -m examples.XOR.export_model  --outdir "${BASEDIR}/src/androidTest/resources/"
+  mv "${BASEDIR}/src/androidTest/resources/xor.pte" "${BASEDIR}/src/androidTest/resources/xor_full.pte"
+  python3 -m examples.XOR.export_model  --outdir "${BASEDIR}/src/androidTest/resources/" --external
+  popd
 }
 
 prepare_tinyllama() {
@@ -43,5 +53,6 @@ prepare_vision() {
 }
 
 prepare_add
+prepare_xor
 prepare_tinyllama
 prepare_vision

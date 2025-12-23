@@ -34,14 +34,13 @@
 //===----------------------------------------------------------------------===//
 
 #pragma once
-#if __cplusplus < 201703L
-#error "This header requires C++17"
-#endif
 
 #include <executorch/extension/kernel_util/meta_programming.h>
 #include <executorch/extension/kernel_util/type_list.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <cstdlib>
 #include <memory>
@@ -60,6 +59,49 @@ namespace extension {
 // This extension has a lot of generic internal names like "size"; use a unique
 // internal namespace to avoid conflicts with other extensions.
 namespace kernel_util_internal {
+
+// Template trait to check if a type is a non-const tensor
+template <class T>
+struct is_nonconst_tensor : std::false_type {};
+
+template <>
+struct is_nonconst_tensor<executorch::aten::Tensor&> : std::true_type {};
+
+// Template trait to check if a type is a non-const tensor
+// Count non-const tensors in a typelist
+template <class TypeList>
+struct count_nonconst_tensors;
+
+template <>
+struct count_nonconst_tensors<typelist<>> {
+  static constexpr size_t value = 0;
+};
+
+template <class T>
+struct count_nonconst_tensors<typelist<T>> {
+  static constexpr size_t value = 0;
+};
+
+template <>
+struct count_nonconst_tensors<typelist<executorch::aten::Tensor&>> {
+  static constexpr size_t value = 1;
+};
+
+template <class Head, class... Tail>
+struct count_nonconst_tensors<typelist<Head, Tail...>> {
+ private:
+  static constexpr size_t tail_tensor_count =
+      count_nonconst_tensors<typelist<Tail...>>::value;
+  static constexpr size_t tail_args_count = sizeof...(Tail);
+  static constexpr bool is_head_a_tensor = is_nonconst_tensor<Head>::value;
+  static constexpr bool all_tail_args_are_tensor =
+      tail_tensor_count == tail_args_count;
+
+ public:
+  static constexpr size_t value = (is_head_a_tensor && all_tail_args_are_tensor)
+      ? tail_tensor_count + 1
+      : tail_tensor_count;
+};
 
 template <class T>
 struct decay_if_not_tensor final {
@@ -110,16 +152,29 @@ struct evalue_to_arg<executorch::aten::ArrayRef<std::optional<T>>> final {
   }
 };
 
-template <class Functor, size_t... evalue_arg_indices, typename... ArgTypes>
+template <
+    class Functor,
+    size_t nonconst_tensors_to_log,
+    size_t... evalue_arg_indices,
+    typename... ArgTypes>
 void call_functor_with_args_from_stack(
-    ::executorch::runtime::KernelRuntimeContext& ctx,
-    executorch::runtime::EValue** stack,
+    executorch::runtime::KernelRuntimeContext& ctx,
+    executorch::runtime::Span<executorch::runtime::EValue*> stack,
     std::index_sequence<evalue_arg_indices...>,
     typelist<ArgTypes...>*) {
+  executorch::runtime::internal::EventTracerProfileOpScope
+      event_tracer_op_scope(ctx.internal_event_tracer(), Functor::func_name_);
+  EXECUTORCH_SCOPE_PROF(Functor::func_name_);
   (*Functor::func_ptr())(
       ctx,
       evalue_to_arg<typename decay_if_not_tensor<ArgTypes>::type>::call(
           *stack[evalue_arg_indices])...);
+  constexpr size_t num_inputs =
+      std::index_sequence<evalue_arg_indices...>::size();
+  for (size_t i = num_inputs - nonconst_tensors_to_log; i < num_inputs; ++i) {
+    executorch::runtime::internal::event_tracer_log_evalue(
+        ctx.internal_event_tracer(), *stack[i]);
+  }
 }
 
 } // namespace kernel_util_internal
@@ -151,14 +206,19 @@ struct WrapUnboxedIntoFunctor {
 
   static void call(
       ::executorch::runtime::KernelRuntimeContext& ctx,
-      executorch::runtime::EValue** stack) {
+      executorch::runtime::Span<executorch::runtime::EValue*> stack) {
     constexpr size_t num_inputs =
         kernel_util_internal::size<ContextRemovedArgsType>::value;
-    return kernel_util_internal::call_functor_with_args_from_stack<FuncType>(
-        ctx,
-        stack,
-        std::make_index_sequence<num_inputs>(),
-        static_cast<ContextRemovedArgsType*>(nullptr));
+    constexpr size_t num_nonconst_tensors =
+        kernel_util_internal::count_nonconst_tensors<
+            ContextRemovedArgsType>::value;
+    static_assert(num_nonconst_tensors == 1, "Invalid number of inputs");
+    return kernel_util_internal::
+        call_functor_with_args_from_stack<FuncType, num_nonconst_tensors>(
+            ctx,
+            stack,
+            std::make_index_sequence<num_inputs>(),
+            static_cast<ContextRemovedArgsType*>(nullptr));
   }
 };
 
@@ -181,11 +241,14 @@ static executorch::runtime::Kernel make_boxed_kernel(
 #define EXECUTORCH_LIBRARY(ns, op_name, func) \
   _EXECUTORCH_LIBRARY_IMPL(ns, op_name, func, ET_UID)
 
-#define _EXECUTORCH_LIBRARY_IMPL(ns, op_name, func, uid) \
-  static auto ET_CONCATENATE(res_##ns##_, uid) =         \
-      ::executorch::runtime::register_kernel(            \
-          ::executorch::extension::make_boxed_kernel(    \
-              #ns "::" op_name, EXECUTORCH_FN(func)))
+#define _EXECUTORCH_LIBRARY_IMPL(ns, op_name, func, uid)           \
+  static constexpr const char ET_CONCATENATE(name_of_op_, uid)[] = \
+      #ns "::" op_name;                                            \
+  static auto ET_CONCATENATE(res_##ns##_, uid) =                   \
+      ::executorch::runtime::register_kernel(                      \
+          ::executorch::extension::make_boxed_kernel(              \
+              #ns "::" op_name,                                    \
+              EXECUTORCH_FN(func, ET_CONCATENATE(name_of_op_, uid))))
 
 namespace torch {
 namespace executor {

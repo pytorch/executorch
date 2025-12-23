@@ -19,16 +19,18 @@ layout(std430) buffer;
 
 #include "indexing_utils.h"
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, "texture3d")}
+${layout_declare_tensor(B, "rw", "t_out", DTYPE, "texture3d")}
 
 $for i in range(NUM_INPUTS):
-  ${layout_declare_tensor(B, "r", "t_in" + str(i + 1), DTYPE, "texture3d")}
+  ${layout_declare_tensor(B, "r", "t_inp" + str(i), DTYPE, "texture3d")}
+
+${layout_declare_tensor(B, "r", "t_concat_offset", "int", "buffer")}
 
 ${layout_declare_ubo(B, "int", "concat_dim")}
 
 $in_metadata = ""
 $for i in range(NUM_INPUTS):
-  $in_metadata += "ivec4 in" + str(i + 1) + "_sizes;\n"
+  $in_metadata += "ivec4 inp" + str(i) + "_sizes;\n"
 
 layout(push_constant) uniform restrict Block {
   ivec4 out_sizes;
@@ -40,90 +42,131 @@ const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
 const lowp int out_packed_dim = unhash_packed_dim(out_layout);
 
 $for i in range(NUM_INPUTS):
-  ${layout_declare_spec_const(C, "int", "in" + str(i+1) + "_layout", "DEFAULT_LAYOUT")}
-  const lowp ivec4 in${i+1}_axis_map = unhash_axis_map(in${i+1}_layout);
-  const lowp int in${i+1}_packed_dim = unhash_packed_dim(in${i+1}_layout);
+  ${layout_declare_spec_const(C, "int", "inp" + str(i) + "_layout", "DEFAULT_LAYOUT")}
+  const lowp ivec4 inp${i}_axis_map = unhash_axis_map(inp${i}_layout);
+  const lowp int inp${i}_packed_dim = unhash_packed_dim(inp${i}_layout);
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-// Check if we can use the fast path (no texel merging required)
-bool can_use_fast_path() {
-  // Fast path is possible when:
-  // 1. The concat dimension is not the packed dimension, or
-  // 2. The concat dimension is the packed dimension but both input tensors have dimensions
-  //    that are multiples of 4 along the packed dimension
-  if (concat_dim != out_packed_dim) {
-    return true;
-  }
+#define NUM_INPUTS ${NUM_INPUTS}
 
-  // Check if all input tensors have dimensions that are multiples of 4 along the packed dimension
-  bool all_concat_dim_size_multiple_of_4 = true;
-  $for i in range(NUM_INPUTS):
-    all_concat_dim_size_multiple_of_4 =
-        all_concat_dim_size_multiple_of_4 &&
-        (in${i+1}_sizes[concat_dim] % 4 == 0);
+#include "concat_utils.glslh"
 
-  return all_concat_dim_size_multiple_of_4;
-}
-
+/*
+ * This shader template concatenates up to NUM_INPUT input tensors to the
+ * output tensor along the concat_dim. Elements from the input tensor will
+ * be inserted along the output's concat_dim starting at concat_offset.
+ *
+ * Each thread is responsible for writing out one output texel. The data
+ * required for the output texel may be read from multiple input texels of one
+ * input tensor.
+ */
 void main() {
-  const ivec3 lpos = ivec3(gl_GlobalInvocationID);
-  ivec4 out_tidx = lpos_to_tidx(lpos, out_sizes, out_axis_map.w, out_packed_dim);
+  const int tid = ivec3(gl_GlobalInvocationID).x;
 
-  if (any(greaterThanEqual(out_tidx, out_sizes))) {
+  // Sum of the sizes of all input tensors along the concat_dim
+  const int concat_numel = total_concat_dim_numel();
+
+  // The 1-3 input tensors are interpreted as one concatenated tensor ("volume")
+  // along the concat_dim for the purposes of tensor indexing. Each thread is
+  // responsible for writing out 4 elements along the packed dim of the output
+  // tensor by reading the source data from the input tensor(s).
+  ivec4 inp_volume_sizes = out_sizes;
+  inp_volume_sizes[concat_dim] = total_concat_dim_numel();
+
+  // Reconstruct inp_volume_texel_sizes from Concat.cpp
+  ivec4 inp_volume_texel_sizes = inp_volume_sizes;
+  inp_volume_texel_sizes[out_packed_dim] = DIV_UP_4(
+      inp_volume_texel_sizes[out_packed_dim]
+  ) + 1;
+
+  // tensor index of the first element that will be read from the input volume
+  ivec4 inp_volume_start_tidx = nchwi_to_tidx(tid, inp_volume_texel_sizes);
+  inp_volume_start_tidx[out_packed_dim] = MUL_4(
+      inp_volume_start_tidx[out_packed_dim]
+  );
+
+  int concat_offset = t_concat_offset[0];
+
+  // tensor index of the first element that will be written to the output tensor
+  ivec4 out_write_start_tidx = inp_volume_start_tidx;
+  out_write_start_tidx[concat_dim] += concat_offset;
+
+  // To write to the the desired output element, we will need to load the texel
+  // to which the element belongs. Calculate the tensor index of the first
+  // element of that texel.
+  ivec4 out_read_start_tidx = out_write_start_tidx;
+  out_read_start_tidx[out_packed_dim] = ALIGN_DOWN_4(
+      out_write_start_tidx[out_packed_dim]);
+
+  // bounds check
+  if (any(greaterThanEqual(out_read_start_tidx, out_sizes))) {
     return;
   }
 
-  if (can_use_fast_path()) {
-    // Fast path: No texel merging required
-    ivec4 in_tidx = out_tidx;
+  ivec3 out_pos = tidx_to_pos(
+      out_read_start_tidx,
+      out_sizes,
+      out_axis_map,
+      out_packed_dim
+  );
 
-    $for i in range(NUM_INPUTS):
-      // For each input tensor, check if the tensor index is within bounds. If
-      // so, read the texel from the input tensor and write it to the output
-      if (in_tidx[concat_dim] < in${i+1}_sizes[concat_dim]) {
-        const ivec3 in_pos = tidx_to_pos(in_tidx, in${i+1}_sizes, in${i+1}_axis_map, in${i+1}_packed_dim);
-        const VEC4_T in_texel = load_texel(t_in${i+1}, in_pos);
-        write_texel_lpos(t_out, lpos, in_texel, out_axis_map);
-        return;
-      }
-      // Otherwise, adjust the index along the concat dimension and try the next
-      // input tensor.
-      else {
-        in_tidx[concat_dim] -= in${i+1}_sizes[concat_dim];
-      }
-  }
-  else {
-    // Slow path: Texel merging required
-    VEC4_T out_texel = VEC4_T(0);
+  VEC4_T out_texel = imageLoad(t_out, out_pos);
 
-    // Process each element in the output texel individually
-    for (int texel_i = 0; texel_i < 4; ++texel_i) {
-      ivec4 curr_out_tidx = out_tidx;
-      curr_out_tidx[out_packed_dim] += texel_i;
+  for (int comp = 0; comp < 4; ++comp) {
+    ivec4 out_tidx = out_read_start_tidx;
+    out_tidx[out_packed_dim] += comp;
 
-      // Skip if we're out of bounds
-      if (curr_out_tidx[out_packed_dim] >= out_sizes[out_packed_dim]) {
-        continue;
-      }
 
-      ivec4 in_tidx = curr_out_tidx;
-      $for i in range(NUM_INPUTS):
-        // For each input tensor, check if the tensor index is within bounds. If
-        // so, read the corresponding texel element from the input tensor and
-        // write it to the output texel.
-        if (in_tidx[concat_dim] < in${i+1}_sizes[concat_dim]) {
-          const ivec4 in_posi = tidx_to_posi(in_tidx, in${i+1}_sizes, in${i+1}_axis_map, in${i+1}_packed_dim);
-          out_texel[texel_i] = load_texel(t_in${i+1}, in_posi.xyz)[in_posi.w];
-          continue;
-        }
-        // Otherwise, adjust the index along the concat dimension and try the
-        // next input tensor.
-        else {
-          in_tidx[concat_dim] -= in${i+1}_sizes[concat_dim];
-        }
+    // It's possible that the current texel element has been written to as part
+    // of the previous input batch; if so, then don't overwrite this texel
+    // element
+    if (out_tidx[concat_dim] < concat_offset) {
+      continue;
     }
 
-    write_texel_lpos(t_out, lpos, out_texel, out_axis_map);
+    // Calculate the tidx of the input volume that corresponds to this output
+    // element
+    ivec4 inp_volume_tidx = out_tidx;
+    inp_volume_tidx[concat_dim] -= concat_offset;
+
+    // go through the list of input tensors, and figure out which input this
+    // output element should be read from.
+    $for i in range(NUM_INPUTS):
+      if (inp_volume_tidx[concat_dim] < inp${i}_sizes[concat_dim]) {
+        // Special fast path case if, for the first output texel element, the
+        // corresponding input element is at the start of the texel it belongs
+        // to. In this case, the input texel can be written as-is to the output
+        // texel. Also require that The entire input texel is valid and does not
+        // contain any padding elements.
+        if (comp == 0 &&
+            out_tidx[out_packed_dim] % 4 == 0 &&
+            inp_volume_tidx[inp${i}_packed_dim] % 4 == 0 &&
+            inp_volume_tidx[inp${i}_packed_dim] + 3 < inp${i}_sizes[inp${i}_packed_dim]) {
+          const ivec3 in_pos = tidx_to_pos(
+              inp_volume_tidx,
+              inp${i}_sizes,
+              inp${i}_axis_map,
+              inp${i}_packed_dim);
+
+          out_texel = texelFetch(t_inp${i}, in_pos, 0);
+          break;
+        }
+
+        // Otherwise, locate the specific input element required
+        const ivec4 in_posi = tidx_to_posi(
+            inp_volume_tidx,
+            inp${i}_sizes,
+            inp${i}_axis_map,
+            inp${i}_packed_dim);
+
+        out_texel[comp] = texelFetch(t_inp${i}, in_posi.xyz, 0)[in_posi.w];
+        continue;
+      }
+      else {
+        inp_volume_tidx[concat_dim] -= inp${i}_sizes[concat_dim];
+      }
   }
+
+  imageStore(t_out, out_pos, out_texel);
 }

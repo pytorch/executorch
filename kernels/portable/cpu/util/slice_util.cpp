@@ -9,6 +9,7 @@
 #include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/slice_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
 #include <cstring>
 
 namespace torch {
@@ -81,7 +82,7 @@ bool check_slice_scatter_args(
     Tensor output) {
   ET_LOG_AND_RETURN_IF_FALSE(input.dim() > 0);
 
-  // Check dim. The dim planed to be selected on shall exist in input
+  // Check dim. The dim planned to be selected on shall exist in input
   ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, input.dim()));
 
   // Input and output tensors should be the same shape and dtype
@@ -97,7 +98,7 @@ bool check_slice_scatter_args(
   // The size of src tensor should follow these rules:
   // - src.size(i) shall equal to input.size(i) if i != dim,
   // - src.size(dim) shall equal to num_values
-  for (const auto d : c10::irange(input.dim() - 1)) {
+  for (const auto d : c10::irange(input.dim())) {
     if (d != dim) {
       ET_LOG_AND_RETURN_IF_FALSE(
           tensors_have_same_size_at_dims(input, d, src, d));
@@ -150,13 +151,39 @@ int64_t adjust_slice_indices(
 }
 
 void compute_slice(
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     int64_t start,
     int64_t length,
     int64_t step,
     Tensor& out) {
+  // No slicing requested.
+  if (length <= 0) {
+    return;
+  }
+
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      dim < in.dim(),
+      InvalidArgument,
+      /* void */,
+      "Requested dim is larger than input tensor dim");
   size_t dim_length = in.size(dim);
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      start >= 0 && length >= 0 && step >= 0,
+      InvalidArgument,
+      /* void */,
+      "Input args should be >= 0.");
+  int64_t requested_slice = start + (length - 1) * step;
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      static_cast<uint64_t>(requested_slice) <
+          static_cast<uint64_t>(dim_length),
+      InvalidArgument,
+      /* void */,
+      "Requested slice is larger than the dim size");
 
   size_t leading_dims = getLeadingDims(in, dim);
   size_t trailing_dims = getTrailingDims(in, dim);
@@ -170,12 +197,50 @@ void compute_slice(
   const char* input_data = in.const_data_ptr<char>();
   char* dest = out.mutable_data_ptr<char>();
 
-  for (const auto i : c10::irange(leading_dims)) {
-    const char* src = input_data + (i * dim_length + start) * length_per_step;
-    for ([[maybe_unused]] const auto j : c10::irange(length)) {
-      memcpy(dest, src, length_per_step);
-      src += step * length_per_step;
-      dest += length_per_step;
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      out.nbytes() >= (length * leading_dims * length_per_step),
+      InvalidArgument,
+      /* void */,
+      "out.nbytes() is smaller than the expected slice size.");
+  // Thresholds for enabling multithreading:
+  // - Minimum number of leading dimensions: 8
+  // - Minimum total elements to copy: 32768 (GRAIN_SIZE)
+  constexpr int64_t MIN_LEADING_DIMS_FOR_MT = 8;
+  constexpr int64_t MIN_ELEMENTS_FOR_MT =
+      executorch::extension::internal::GRAIN_SIZE;
+
+  const int64_t total_elements = leading_dims * length * trailing_dims;
+  const bool use_multithreading = leading_dims >= MIN_LEADING_DIMS_FOR_MT &&
+      total_elements >= MIN_ELEMENTS_FOR_MT;
+
+  if (use_multithreading) {
+    // Use parallel_for to distribute work across leading dimensions
+    // Calculate grain size based on number of elements per leading dimension
+    const int64_t grain_size = MIN_LEADING_DIMS_FOR_MT;
+
+    executorch::extension::parallel_for(
+        0, leading_dims, grain_size, [&](const auto begin, const auto end) {
+          for (const auto i : c10::irange(begin, end)) {
+            const char* src =
+                input_data + (i * dim_length + start) * length_per_step;
+            char* local_dest = dest + i * length * length_per_step;
+            for ([[maybe_unused]] const auto j : c10::irange(length)) {
+              memcpy(local_dest, src, length_per_step);
+              src += step * length_per_step;
+              local_dest += length_per_step;
+            }
+          }
+        });
+  } else {
+    // Single-threaded path for small workloads
+    for (const auto i : c10::irange(leading_dims)) {
+      const char* src = input_data + (i * dim_length + start) * length_per_step;
+      for ([[maybe_unused]] const auto j : c10::irange(length)) {
+        memcpy(dest, src, length_per_step);
+        src += step * length_per_step;
+        dest += length_per_step;
+      }
     }
   }
 }

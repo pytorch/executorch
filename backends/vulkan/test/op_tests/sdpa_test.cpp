@@ -23,6 +23,24 @@
 #include <cassert>
 #include <iostream>
 
+//
+// SDPA Mode Enum
+//
+
+enum class SDPAMode { DECOMPOSED, FUSED, ATTN_WEIGHT_ONLY };
+
+std::ostream& operator<<(std::ostream& os, const SDPAMode& mode) {
+  switch (mode) {
+    case SDPAMode::DECOMPOSED:
+      return os << "DECOMPOSED";
+    case SDPAMode::FUSED:
+      return os << "FUSED";
+    case SDPAMode::ATTN_WEIGHT_ONLY:
+      return os << "ATTN_WEIGHT_ONLY";
+  }
+  return os;
+}
+
 namespace torch {
 namespace executor {
 namespace native {
@@ -74,7 +92,7 @@ at::Tensor sdpa_with_kv_cache_aten(
     const int64_t seq_len,
     // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
-    const std::optional<at::Tensor> attn_mask,
+    const std::optional<at::Tensor>& attn_mask,
     const double dropout_p,
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
@@ -161,10 +179,11 @@ at::Tensor sdpa_reference_impl(
     at::Tensor& value_cache,
     const int64_t start_pos,
     const int64_t seq_len,
-    const std::optional<at::Tensor> __attn_mask_ignored,
+    const std::optional<at::Tensor>& __attn_mask_ignored,
     const double dropout_p,
     const bool is_causal,
-    const std::optional<double> scale) {
+    const std::optional<double> scale,
+    SDPAMode mode = SDPAMode::DECOMPOSED) {
   at::Tensor attn_mask =
       construct_attention_mask(q_projected, key_cache, start_pos);
 
@@ -202,6 +221,10 @@ at::Tensor sdpa_reference_impl(
   float scale_factor = 1.0 / sqrt(q_transposed.size(-1));
   at::Tensor attn_weight = attn_weight_prescale * scale_factor + attn_mask;
 
+  if (mode == SDPAMode::ATTN_WEIGHT_ONLY) {
+    return attn_weight;
+  }
+
   at::Tensor attn_weight_softmax = at::softmax(attn_weight, -1);
   at::Tensor out = at::matmul(attn_weight_softmax, v_transposed);
 
@@ -215,16 +238,13 @@ at::Tensor sdpa_reference_impl(
 void test_reference_sdpa(
     const int start_input_pos,
     const int sequence_len,
-    const int embedding_dim,
+    const int head_dim,
     const int num_heads,
     const int num_kv_heads,
     const int batch_size,
     const int max_seq_len,
     at::ScalarType dtype = at::kFloat) {
-  const int head_dim = embedding_dim / num_heads;
-
   // K and V caches. Need an extra set for the reference implementation
-
   at::Tensor k_cache = at::zeros(
       {batch_size, max_seq_len, num_kv_heads, head_dim},
       at::device(at::kCPU).dtype(dtype));
@@ -265,19 +285,24 @@ void test_reference_sdpa(
 
 void test_vulkan_sdpa(
     const int start_input_pos,
-    const int base_sequence_len,
-    const int embedding_dim,
+    const std::vector<int>& sequence_lens,
+    const int head_dim,
     const int num_heads,
     const int num_kv_heads,
     const int batch_size,
-    const int max_seq_len,
-    const bool dynamic_seq_len = true,
-    at::ScalarType dtype = at::kFloat) {
-  const int head_dim = embedding_dim / num_heads;
+    vkcompute::utils::StorageType storage_type,
+    at::ScalarType dtype = at::kFloat,
+    SDPAMode mode = SDPAMode::DECOMPOSED) {
+  // compute the max sequence length
+  int max_seq_len = start_input_pos;
+  for (int i = 0; i < sequence_lens.size(); ++i) {
+    max_seq_len += sequence_lens[i];
+  }
+  // Add some extra space to the max sequence length
+  max_seq_len += 128;
 
-  const int init_seq_len = dynamic_seq_len ? max_seq_len : base_sequence_len;
+  const int init_seq_len = max_seq_len;
   // K and V caches
-
   at::Tensor k_cache = at::zeros(
       {batch_size, max_seq_len, num_kv_heads, head_dim},
       at::device(at::kCPU).dtype(dtype));
@@ -295,12 +320,14 @@ void test_vulkan_sdpa(
 
   // Get reference output
   at::Tensor out = at::empty_like(q);
+  if (mode == SDPAMode::ATTN_WEIGHT_ONLY) {
+    out = at::empty({batch_size, num_heads, init_seq_len, init_seq_len});
+  }
 
   // Build Vulkan SDPA graph
   using namespace vkcompute;
 
   GraphConfig config;
-  config.set_storage_type_override(utils::kTexture3D);
   ComputeGraph graph(config);
 
   // "Data" variant for vulkan initialization
@@ -319,7 +346,7 @@ void test_vulkan_sdpa(
 
 #define MAKE_INPUT_FOR(x)                    \
   IOValueRef r_##x = graph.add_input_tensor( \
-      x.sizes().vec(), from_at_scalartype(x.scalar_type()));
+      x.sizes().vec(), from_at_scalartype(x.scalar_type()), storage_type);
 
   MAKE_INPUT_FOR(q);
   MAKE_INPUT_FOR(k);
@@ -328,31 +355,95 @@ void test_vulkan_sdpa(
 
   const ValueRef r_input_pos_symint = graph.add_symint(start_input_pos);
   const ValueRef r_out = graph.add_tensor(
-      out.sizes().vec(), from_at_scalartype(out.scalar_type()));
+      out.sizes().vec(), from_at_scalartype(out.scalar_type()), storage_type);
 
-  VK_GET_OP_FN("sdpa_with_kv_cache.default")
-  (graph,
-   {
-       r_q.value,
-       r_k.value,
-       r_v.value,
-       r_k_cache_data,
-       r_v_cache_data,
-       r_input_pos_symint,
-       kDummyValueRef, // sequence_len
-       kDummyValueRef, // attn_mask
-       kDummyValueRef, // dropout_p
-       kDummyValueRef, // is_causal
-       kDummyValueRef, // scale
-       r_out,
-   });
+  switch (mode) {
+    case SDPAMode::DECOMPOSED: {
+      const ValueRef r_k_cache = graph.add_tensor(
+          k_cache_data.sizes().vec(),
+          from_at_scalartype(k_cache_data.scalar_type()),
+          storage_type);
+      const ValueRef r_v_cache = graph.add_tensor(
+          v_cache_data.sizes().vec(),
+          from_at_scalartype(v_cache_data.scalar_type()),
+          storage_type);
+      const ValueRef r_dummy_out = graph.add_tensor(
+          {1}, from_at_scalartype(out.scalar_type()), utils::kBuffer);
+      VK_GET_OP_FN("update_cache.default")
+      (graph,
+       {
+           r_k.value,
+           r_k_cache,
+           r_input_pos_symint,
+           r_dummy_out,
+       });
+      VK_GET_OP_FN("update_cache.default")
+      (graph,
+       {
+           r_v.value,
+           r_v_cache,
+           r_input_pos_symint,
+           r_dummy_out,
+       });
+      VK_GET_OP_FN("llama.custom_sdpa.default")
+      (graph,
+       {
+           r_q.value,
+           r_k_cache,
+           r_v_cache,
+           r_input_pos_symint,
+           kDummyValueRef, // attn_mask
+           kDummyValueRef, // dropout_p
+           kDummyValueRef, // is_causal
+           kDummyValueRef, // scale
+           r_out,
+       });
+    } break;
+    case SDPAMode::FUSED:
+      VK_GET_OP_FN("sdpa_with_kv_cache.default")
+      (graph,
+       {
+           r_q.value,
+           r_k.value,
+           r_v.value,
+           r_k_cache_data,
+           r_v_cache_data,
+           r_input_pos_symint,
+           kDummyValueRef, // sequence_len
+           kDummyValueRef, // attn_mask
+           kDummyValueRef, // dropout_p
+           kDummyValueRef, // is_causal
+           kDummyValueRef, // scale
+           r_out,
+       });
+      break;
+    case SDPAMode::ATTN_WEIGHT_ONLY:
+      VK_GET_OP_FN("testing.compute_attn_weight_with_kv_cache.default")
+      (graph,
+       {
+           r_q.value,
+           r_k.value,
+           r_v.value,
+           r_k_cache_data,
+           r_v_cache_data,
+           r_input_pos_symint,
+           kDummyValueRef, // sequence_len
+           kDummyValueRef, // attn_mask
+           kDummyValueRef, // dropout_p
+           kDummyValueRef, // is_causal
+           kDummyValueRef, // scale
+           r_out,
+       });
+      break;
+    default:
+      VK_THROW("Unsupported SDPA mode");
+  }
 
   ValueRef staging_out = graph.set_output_tensor(r_out);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
-  graph.encode_execute();
 
   //
   // Run model
@@ -366,10 +457,10 @@ void test_vulkan_sdpa(
   graph.copy_from_staging(                            \
       staging_##x, vk_##x.mutable_data_ptr(), vk_##x.numel());
 
-  int seq_len = base_sequence_len;
-  for (int i = 0, input_pos = start_input_pos;
-       input_pos + seq_len < max_seq_len;
-       input_pos += seq_len, i++) {
+  torch::manual_seed(0);
+
+  int input_pos = start_input_pos;
+  for (auto seq_len : sequence_lens) {
     q = at::rand(
         {batch_size, seq_len, num_heads, head_dim},
         at::device(at::kCPU).dtype(dtype));
@@ -379,7 +470,7 @@ void test_vulkan_sdpa(
     v = at::rand_like(k);
 
     at::Tensor reference_out = sdpa_reference_impl(
-        q, k, v, k_cache, v_cache, input_pos, seq_len, {}, 0.0, true, {});
+        q, k, v, k_cache, v_cache, input_pos, seq_len, {}, 0.0, true, {}, mode);
 
     graph.set_symint(r_input_pos_symint, input_pos);
     graph.resize_input(0, q.sizes().vec());
@@ -394,11 +485,74 @@ void test_vulkan_sdpa(
 
     graph.execute();
 
-    out = at::empty_like(q);
+    if (mode == SDPAMode::ATTN_WEIGHT_ONLY) {
+      const int context_len = input_pos + seq_len;
+      const int context_len_align_up4 = (context_len + 3) & ~3;
+      const int seq_len_align_up4 = (seq_len + 3) & ~3;
+
+      out = at::empty(
+          {batch_size, num_heads, seq_len_align_up4, context_len_align_up4},
+          q.options());
+    } else {
+      out = at::empty_like(q);
+    }
     EXTRACT_TENSOR(out);
+
+    if (mode == SDPAMode::ATTN_WEIGHT_ONLY) {
+      // Index vk_out to only include the relevant seq_len and context_len
+      // dimensions
+      int context_len = input_pos + seq_len;
+      vk_out = vk_out.index(
+          {at::indexing::Slice(),
+           at::indexing::Slice(),
+           at::indexing::Slice(0, seq_len),
+           at::indexing::Slice(0, context_len)});
+    }
 
     const bool output_correct = at::allclose(reference_out, vk_out);
     if (!output_correct) {
+      // Print only differing tensor elements side by side for easier comparison
+      auto ref_flat = reference_out.flatten();
+      auto vk_flat = vk_out.flatten();
+      auto numel = ref_flat.numel();
+      std::cout << "While testing " << mode << " mode with " << storage_type
+                << " storage" << std::endl;
+      std::cout << "reference_out\tvk_out\tindex" << std::endl;
+      int first_diff_idx = -1;
+      auto sizes = reference_out.sizes();
+      int d0 = sizes[0], d1 = sizes[1], d2 = sizes[2], d3 = sizes[3];
+      for (int i = 0; i < numel; ++i) {
+        if (std::abs(ref_flat[i].item<double>() - vk_flat[i].item<double>()) >
+            1e-4) {
+          // Compute 4-D index from flat index
+          int i0 = i / (d1 * d2 * d3);
+          int rem0 = i % (d1 * d2 * d3);
+          int i1 = rem0 / (d2 * d3);
+          int rem1 = rem0 % (d2 * d3);
+          int i2 = rem1 / d3;
+          int i3 = rem1 % d3;
+          std::cout << ref_flat[i].item() << "\t" << vk_flat[i].item() << "\t["
+                    << i0 << ", " << i1 << ", " << i2 << ", " << i3 << "]"
+                    << std::endl;
+          if (first_diff_idx == -1) {
+            first_diff_idx = i;
+          }
+          break;
+        }
+      }
+      if (first_diff_idx != -1) {
+        // Compute 4-D index from flat index
+        int i0 = first_diff_idx / (d1 * d2 * d3);
+        int rem0 = first_diff_idx % (d1 * d2 * d3);
+        int i1 = rem0 / (d2 * d3);
+        int rem1 = rem0 % (d2 * d3);
+        int i2 = rem1 / d3;
+        int i3 = rem1 % d3;
+        std::cout << "First difference at flat index " << first_diff_idx
+                  << " which is tensor index [" << i0 << ", " << i1 << ", "
+                  << i2 << ", " << i3 << "]" << std::endl;
+      }
+
       at::Tensor diffs = at::abs(reference_out - vk_out);
 
       std::cout << "Failed at input_pos " << input_pos << " with seq_len "
@@ -415,85 +569,70 @@ void test_vulkan_sdpa(
     }
     ASSERT_TRUE(output_correct);
 
-    if (dynamic_seq_len) {
-      seq_len = base_sequence_len + (i % 3);
-    }
+    input_pos += seq_len;
+  }
+}
+
+void test_vulkan_sdpa(
+    const int start_input_pos,
+    const std::vector<int>& sequence_lens,
+    const int head_dim,
+    const int num_heads,
+    const int num_kv_heads,
+    const int batch_size,
+    at::ScalarType dtype = at::kFloat) {
+  for (SDPAMode mode :
+       {SDPAMode::ATTN_WEIGHT_ONLY, SDPAMode::DECOMPOSED, SDPAMode::FUSED}) {
+    // Test texture
+    test_vulkan_sdpa(
+        start_input_pos,
+        sequence_lens,
+        head_dim,
+        num_heads,
+        num_kv_heads,
+        batch_size,
+        vkcompute::utils::kTexture3D,
+        dtype,
+        mode);
+
+    // Test buffer
+    test_vulkan_sdpa(
+        start_input_pos,
+        sequence_lens,
+        head_dim,
+        num_heads,
+        num_kv_heads,
+        batch_size,
+        vkcompute::utils::kBuffer,
+        dtype,
+        mode);
   }
 }
 
 TEST(VulkanSDPATest, test_sdpa_op_small_params) {
-  const int starting_input_pos = 0;
   const int base_sequence_len = 3;
-  const int embedding_dim = 18;
-  const int num_heads = 6;
-  const int num_kv_heads = 2;
-  const int batch_size = 1;
-  const int max_seq_len = 7;
+  const int num_heads = 8;
+  const int head_dim = 4;
+  const int num_kv_heads = 4;
 
   test_vulkan_sdpa(
-      starting_input_pos,
-      base_sequence_len,
-      embedding_dim,
-      num_heads,
-      num_kv_heads,
-      batch_size,
-      max_seq_len,
-      false);
+      0, {3, 1, 1, 5, 1, 1, 2}, head_dim, num_heads, num_kv_heads, 1);
 }
 
 TEST(VulkanSDPATest, test_sdpa_op_small_params_dynamic) {
-  const int starting_input_pos = 0;
   const int base_sequence_len = 3;
-  const int embedding_dim = 18;
+  const int head_dim = 8;
   const int num_heads = 6;
   const int num_kv_heads = 2;
-  const int batch_size = 1;
-  const int max_seq_len = 12;
 
-  test_vulkan_sdpa(
-      starting_input_pos,
-      base_sequence_len,
-      embedding_dim,
-      num_heads,
-      num_kv_heads,
-      batch_size,
-      max_seq_len);
+  test_vulkan_sdpa(0, {3, 1, 1, 5, 1, 1}, head_dim, num_heads, num_kv_heads, 1);
 }
 
 TEST(VulkanSDPATest, test_sdpa_op_llama3_params_dynamic) {
-  const int starting_input_pos = 0;
-  const int base_sequence_len = 3;
-  const int embedding_dim = 2048;
-  const int num_heads = 32;
+  const int head_dim = 128;
+  const int num_heads = 24;
   const int num_kv_heads = 8;
-  const int batch_size = 1;
-  const int max_seq_len = 128;
 
   test_vulkan_sdpa(
-      starting_input_pos,
-      base_sequence_len,
-      embedding_dim,
-      num_heads,
-      num_kv_heads,
-      batch_size,
-      max_seq_len);
-}
-
-TEST(VulkanSDPATest, test_reference_impl) {
-  const int starting_input_pos = 0;
-  const int base_sequence_len = 3;
-  const int embedding_dim = 2048;
-  const int num_heads = 32;
-  const int num_kv_heads = 8;
-  const int batch_size = 1;
-  const int max_seq_len = 128;
-
-  test_reference_sdpa(
-      starting_input_pos,
-      base_sequence_len,
-      embedding_dim,
-      num_heads,
-      num_kv_heads,
-      batch_size,
-      max_seq_len);
+      0, {111, 1, 1, 1, 57, 1, 1}, head_dim, num_heads, num_kv_heads, 1);
 }

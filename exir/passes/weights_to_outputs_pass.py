@@ -46,12 +46,7 @@ def weights_to_outputs_pass(
     inputs_to_params = gs.inputs_to_parameters
 
     # Get output node
-    output_node = None
-    for node in gm.graph.nodes:
-        if node.op == "output":
-            output_node = node
-            break
-    assert output_node is not None
+    output_node = gm.graph.output_node()
 
     # Get input nodes that are weights with an associated gradient
     placeholder_nodes = [

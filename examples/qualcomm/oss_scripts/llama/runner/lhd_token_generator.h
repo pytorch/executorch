@@ -15,7 +15,8 @@ namespace example {
  * @brief Class for generating the token using decoder and key-value manager
  * with lookahead decoding.
  */
-class LhdTokenGenerator : public TokenGenerator {
+template <typename T>
+class LhdTokenGenerator : public TokenGenerator<T> {
  public:
   struct Metadata {
     int32_t context_len;
@@ -27,39 +28,59 @@ class LhdTokenGenerator : public TokenGenerator {
     int32_t ngram;
     int32_t window;
     int32_t gcap;
+    int sliding_window;
+    CacheMode cache_mode;
   };
   LhdTokenGenerator(
       tokenizers::Tokenizer* tokenizer,
       DecoderRunner* decoder_runner,
-      KVManager* kv_manager,
+      KVManager<T>* kv_manager,
       const std::string& forward_name,
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
       Metadata metadata,
       executorch::llm::Stats* stats)
-      : TokenGenerator(
+      : TokenGenerator<T>(
             tokenizer,
             decoder_runner,
             kv_manager,
             forward_name,
             std::move(eos_ids),
-            TokenGenerator::Metadata{
+            typename TokenGenerator<T>::Metadata{
                 metadata.context_len,
                 metadata.num_heads,
                 metadata.num_layers,
                 metadata.ar_len,
                 metadata.vocab_size,
-                metadata.use_int64_token},
+                metadata.use_int64_token,
+                metadata.sliding_window,
+                metadata.cache_mode},
             stats),
         metadata_(metadata),
-        ngrams_pool_(metadata.vocab_size, metadata.ngram, metadata.gcap),
         lhd_branch_(metadata.ngram - 1, std::vector<int32_t>(metadata.window)),
-        lhd_branch_prev_(metadata.window) {
+        lhd_branch_prev_(metadata.window),
+        ngrams_pool_(metadata.vocab_size, metadata.ngram, metadata.gcap) {
     ET_LOG(
         Info,
         "Use Lookahead decoding: ngram=%d, window=%d, gcap=%d",
         metadata.ngram,
         metadata.window,
         metadata.gcap);
+
+    // initialize position offset
+    position_offset_ = std::vector<int32_t>(metadata.ar_len);
+    int idx = 0;
+    // lookahead branches
+    for (int i = 0; i < metadata.ngram - 1; ++i) {
+      for (int j = 0; j < metadata.window; ++j) {
+        position_offset_[idx++] = i + j;
+      }
+    }
+    // verification branches
+    for (int i = 0; i < metadata.gcap; ++i) {
+      for (int j = 1; j < metadata.ngram; ++j) {
+        position_offset_[idx++] = j;
+      }
+    }
   }
 
   ~LhdTokenGenerator() = default;
@@ -76,7 +97,8 @@ class LhdTokenGenerator : public TokenGenerator {
       std::vector<uint64_t> tokens,
       int64_t start_pos,
       int32_t seq_len,
-      std::function<void(const std::string&)> token_callback) override;
+      std::function<void(const std::string&)> token_callback,
+      bool dump_logits) override;
 
  private:
   /**
@@ -131,6 +153,9 @@ class LhdTokenGenerator : public TokenGenerator {
 
   // verification branch
   std::vector<NgramData> v_branch_;
+
+  // position offset in attention mask
+  std::vector<int32_t> position_offset_;
 
   // n-gram pools
   NgramContainer ngrams_pool_;

@@ -15,14 +15,16 @@ COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
 
 cd "$EXECUTORCH_ROOT_PATH"
 
-mkdir "$COREML_DIR_PATH/runtime/test/models/"
+rm -rf "$COREML_DIR_PATH/runtime/test/models/"
+mkdir -p "$COREML_DIR_PATH/runtime/test/models/"
+
 #Generate models
 cd "$EXECUTORCH_ROOT_PATH"
 
 MODELS=("add" "add_mul" "mul" "mv3")
 for MODEL in "${MODELS[@]}"
 do
-  echo "Executorch: Generating $MODEL model" 
+  echo "Executorch: Generating $MODEL model"
   # TODO: Don't use the script in examples directory.
   python3 -m examples.apple.coreml.scripts.export --model_name "$MODEL" --save_processed_bytes
   mv -f "$MODEL""_coreml_all.pte" "$COREML_DIR_PATH/runtime/test/models"
@@ -36,7 +38,7 @@ COMPILE_MODELS=("add_mul")
 echo "Executorch: Generating compiled model"
 for MODEL in "${COMPILE_MODELS[@]}"
 do
-  echo "Executorch: Generating compiled $MODEL model" 
+  echo "Executorch: Generating compiled $MODEL model"
   python3 -m examples.apple.coreml.scripts.export --model_name "$MODEL" --compile
   mv -f "$MODEL""_compiled_coreml_all.pte" "$COREML_DIR_PATH/runtime/test/models"
 done

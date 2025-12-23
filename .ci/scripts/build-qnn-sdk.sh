@@ -11,12 +11,14 @@ set -o xtrace
 
 build_qnn_backend() {
   echo "Start building qnn backend."
-  export ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-/opt/ndk}
-  export QNN_SDK_ROOT=${QNN_SDK_ROOT:-/tmp/qnn/2.28.0.241029}
+  # Source QNN configuration
+  source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/install_qnn_sdk.sh"
+  setup_android_ndk
+  install_qnn
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
   parallelism=$(( $(nproc) - 1 ))
-  bash backends/qualcomm/scripts/build.sh --skip_aarch64 --job_number ${parallelism} --release
+  bash backends/qualcomm/scripts/build.sh --skip_linux_android --skip_linux_embedded --job_number ${parallelism} --release
 }
 
 set_up_aot() {
@@ -33,15 +35,17 @@ set_up_aot() {
       -DEXECUTORCH_BUILD_DEVTOOLS=ON \
       -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
       -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+      -DEXECUTORCH_BUILD_EXTENSION_EXTENSION_LLM=ON \
+      -DEXECUTORCH_BUILD_EXTENSION_EXTENSION_LLM_RUNNER=ON \
       -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+      -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
       -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
       -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
       -DPYTHON_EXECUTABLE=python3
-  cmake --build $PWD --target "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j$(nproc)
+  cmake --build $PWD --target "PyQnnManagerAdaptor" -j$(nproc)
   # install Python APIs to correct import path
   # The filename might vary depending on your Python and host version.
   cp -f backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
-  cp -f backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
   popd
 
   # Workaround for fbs files in exir/_serialize

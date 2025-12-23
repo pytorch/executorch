@@ -14,10 +14,11 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -28,6 +29,7 @@ class SqueezeDim(torch.nn.Module):
         "squeeze3d_dim_neg_2": lambda: (torch.randn(1, 1, 5), -2),
         "squeeze4d_dim_pos_3": lambda: (torch.randn(1, 2, 3, 1), 3),
         "squeeze4d_dim_neg_2": lambda: (torch.randn(1, 5, 1, 5), -2),
+        "squeeze5d_dim_neg_2": lambda: (torch.randn(1, 1, 5, 1, 5), -2),
     }
 
     def forward(self, x: torch.Tensor, dim: int):
@@ -39,6 +41,7 @@ class SqueezeDims(torch.nn.Module):
         "squeeze3d_dims_0_1": lambda: (torch.randn(1, 1, 5), (0, 1)),
         "squeeze4d_dims_0_neg_1": lambda: (torch.randn(1, 5, 5, 1), (0, -1)),
         "squeeze4d_dims_0_neg_2": lambda: (torch.randn(1, 5, 1, 5), (0, -2)),
+        "squeeze5d_dims_0_neg_2": lambda: (torch.randn(1, 1, 5, 1, 5), (0, -2)),
     }
 
     def forward(self, x: torch.Tensor, dims: tuple[int]):
@@ -50,15 +53,21 @@ class Squeeze(torch.nn.Module):
         "squeeze3d": lambda: (torch.randn(1, 1, 5),),
         "squeeze4d_dims": lambda: (torch.randn(1, 5, 5, 1),),
         "squeeze3d_dims_mix": lambda: (torch.randn(1, 5, 1, 5),),
+        "squeeze4d_dims_mix": lambda: (torch.randn(1, 1, 5, 1, 5),),
     }
 
     def forward(self, x: torch.Tensor):
         return x.squeeze()
 
 
+##############
+## Squeeze ###
+##############
+
+
 @common.parametrize("test_data", Squeeze.test_parameters)
-def test_squeeze_dim_tosa_MI(test_data: Tuple):
-    pipeline = TosaPipelineMI[input_t1](
+def test_squeeze_dim_tosa_FP(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
         Squeeze(),
         test_data(),
         aten_op="torch.ops.aten.squeeze.default",
@@ -68,8 +77,8 @@ def test_squeeze_dim_tosa_MI(test_data: Tuple):
 
 
 @common.parametrize("test_data", Squeeze.test_parameters)
-def test_squeeze_dim_tosa_BI(test_data: Tuple):
-    pipeline = TosaPipelineBI[input_t1](
+def test_squeeze_dim_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
         Squeeze(),
         test_data(),
         aten_op="torch.ops.aten.squeeze.default",
@@ -80,33 +89,62 @@ def test_squeeze_dim_tosa_BI(test_data: Tuple):
 
 @common.parametrize("test_data", Squeeze.test_parameters)
 @common.XfailIfNoCorstone300
-def test_squeeze_dim_u55_BI(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_squeeze_dim_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         Squeeze(),
         test_data(),
         aten_ops="torch.ops.aten.squeeze.default",
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Squeeze.test_parameters)
 @common.XfailIfNoCorstone320
-def test_squeeze_dim_u85_BI(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_squeeze_dim_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
         Squeeze(),
         test_data(),
         aten_ops="torch.ops.aten.squeeze.default",
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
+@common.parametrize("test_data", Squeeze.test_parameters)
+@common.SkipIfNoModelConverter
+def test_squeeze_dim_vgf_no_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Squeeze(),
+        test_data(),
+        "torch.ops.aten.squeeze.default",
+        [],
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Squeeze.test_parameters)
+@common.SkipIfNoModelConverter
+def test_squeeze_dim_vgf_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Squeeze(),
+        test_data(),
+        "torch.ops.aten.squeeze.default",
+        [],
+        quantize=True,
+    )
+    pipeline.run()
+
+
+#################
+## SqueezeDim ###
+#################
+
+
 @common.parametrize("test_data", SqueezeDim.test_parameters)
-def test_squeeze_dim_tosa_MI_2(test_data: Tuple):
-    pipeline = TosaPipelineMI[input_t1](
+def test_squeeze_dim_tosa_FP_2(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
         SqueezeDim(),
         test_data(),
         aten_op="torch.ops.aten.squeeze.dim",
@@ -116,8 +154,8 @@ def test_squeeze_dim_tosa_MI_2(test_data: Tuple):
 
 
 @common.parametrize("test_data", SqueezeDim.test_parameters)
-def test_squeeze_dim_tosa_BI_2(test_data: Tuple):
-    pipeline = TosaPipelineBI[input_t1](
+def test_squeeze_dim_tosa_INT_2(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
         SqueezeDim(),
         test_data(),
         aten_op="torch.ops.aten.squeeze.dim",
@@ -128,33 +166,62 @@ def test_squeeze_dim_tosa_BI_2(test_data: Tuple):
 
 @common.parametrize("test_data", SqueezeDim.test_parameters)
 @common.XfailIfNoCorstone300
-def test_squeeze_dim_u55_BI_2(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_squeeze_dim_u55_INT_2(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         SqueezeDim(),
         test_data(),
         aten_ops="torch.ops.aten.squeeze.dim",
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", SqueezeDim.test_parameters)
 @common.XfailIfNoCorstone320
-def test_squeeze_dim_u85_BI_2(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_squeeze_dim_u85_INT_2(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
         SqueezeDim(),
         test_data(),
         aten_ops="torch.ops.aten.squeeze.dim",
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
+@common.parametrize("test_data", SqueezeDim.test_parameters)
+@common.SkipIfNoModelConverter
+def test_squeeze_dim_vgf_no_quant_2(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SqueezeDim(),
+        test_data(),
+        "torch.ops.aten.squeeze.dim",
+        [],
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", SqueezeDim.test_parameters)
+@common.SkipIfNoModelConverter
+def test_squeeze_dim_vgf_quant_2(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SqueezeDim(),
+        test_data(),
+        "torch.ops.aten.squeeze.dim",
+        [],
+        quantize=True,
+    )
+    pipeline.run()
+
+
+##################
+## SqueezeDims ###
+##################
+
+
 @common.parametrize("test_data", SqueezeDims.test_parameters)
-def test_squeeze_dims_tosa_MI(test_data: Tuple):
-    pipeline = TosaPipelineMI[input_t1](
+def test_squeeze_dims_tosa_FP(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
         SqueezeDims(),
         test_data(),
         aten_op="torch.ops.aten.squeeze.dims",
@@ -164,8 +231,8 @@ def test_squeeze_dims_tosa_MI(test_data: Tuple):
 
 
 @common.parametrize("test_data", SqueezeDims.test_parameters)
-def test_squeeze_dims_tosa_BI(test_data: Tuple):
-    pipeline = TosaPipelineBI[input_t1](
+def test_squeeze_dims_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
         SqueezeDims(),
         test_data(),
         aten_op="torch.ops.aten.squeeze.dims",
@@ -176,25 +243,49 @@ def test_squeeze_dims_tosa_BI(test_data: Tuple):
 
 @common.parametrize("test_data", SqueezeDims.test_parameters)
 @common.XfailIfNoCorstone300
-def test_squeeze_dims_u55_BI(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_squeeze_dims_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         SqueezeDims(),
         test_data(),
         aten_ops="torch.ops.aten.squeeze.dims",
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", SqueezeDims.test_parameters)
 @common.XfailIfNoCorstone320
-def test_squeeze_dims_u85_BI(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_squeeze_dims_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
         SqueezeDims(),
         test_data(),
         aten_ops="torch.ops.aten.squeeze.dims",
         exir_ops=[],
-        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", SqueezeDims.test_parameters)
+@common.SkipIfNoModelConverter
+def test_squeeze_dims_vgf_no_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SqueezeDims(),
+        test_data(),
+        "torch.ops.aten.squeeze.dims",
+        [],
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", SqueezeDims.test_parameters)
+@common.SkipIfNoModelConverter
+def test_squeeze_dims_vgf_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SqueezeDims(),
+        test_data(),
+        "torch.ops.aten.squeeze.dims",
+        [],
+        quantize=True,
     )
     pipeline.run()

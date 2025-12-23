@@ -2,20 +2,24 @@
 Thank you for contributing to Qualcomm AI Engine Direct delegate for ExecuTorch. Reading and following these guidelines will help you quickly get the essentials of implementing operator builder to unblock yourself and land pull requests more efficiently.
 
 ## Sections
-* [References](#references)
-* [Getting Started](#getting-started)
-    * [Identify Unsupported Operator](#identify-unsupported-operator)
-    * [Check Operator Spec](#check-operator-spec)
-    * [Implementation](#implementation)
-    * [Quantizer Annotation](#quantizer-annotation)
-* [Operator Support Status](#operator-support-status)
-* [Issues](#issues)
-* [Pull Requests](#pull-requests)
+- [Contribution for More Operators](#contribution-for-more-operators)
+  - [Sections](#sections)
+  - [References](#references)
+    - [Qualcomm AI Engine Direct](#qualcomm-ai-engine-direct)
+    - [PyTorch](#pytorch)
+  - [Getting Started](#getting-started)
+    - [Identify Unsupported Operator](#identify-unsupported-operator)
+    - [Check Operator Spec](#check-operator-spec)
+    - [Implementation](#implementation)
+    - [Quantizer Annotation](#quantizer-annotation)
+  - [Operator Support Status](#operator-support-status)
+  - [Issues](#issues)
+  - [Pull Requests](#pull-requests)
 
 ## References
 ### Qualcomm AI Engine Direct
-- [Operator Definitions](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/MasterOpDef.html)
-- [Supported Operators in Backends](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/operations.html#backend-supplements)
+- [Operator Definitions](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/MasterOpDef.html)
+- [Supported Operators in Backends](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/operations.html#backend-supplements)
 
 ### PyTorch
 - [torch.nn Operator Definitions](https://pytorch.org/docs/stable/nn.html)
@@ -37,7 +41,7 @@ class MyModel(torch.nn.Module):
 ```
 At the time we try to lower it with Qualcomm backend:
 ```python
-from excutorch.examples.qualcomm.utils import build_executorch_binary
+from executorch.examples.qualcomm.utils import build_executorch_binary
 
 build_executorch_binary(
     model=MyModel(),
@@ -120,9 +124,9 @@ It will provide more hint to the source PyTorch layer where the missing operator
         };
     } Qnn_Param_t;
     ```
-    The name value equals to the parameter name described in [Operator Definitions](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/MasterOpDef.html), there are `epsilon`, `axes` for `LayerNorm` case.<br/>
+    The name value equals to the parameter name described in [Operator Definitions](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/MasterOpDef.html), there are `epsilon`, `axes` for `LayerNorm` case.<br/>
 
-    If you find it hard to correlate missing operator with documentation, this [table](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/SupportedOps.html) might be helpful for searching. In some cases, an exact match may not exist. Consider seeking for a math equivalent approach or notify maintainer for further analysis.
+    If you find it hard to correlate missing operator with documentation, this [table](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/SupportedOps.html) might be helpful for searching. In some cases, an exact match may not exist. Consider seeking for a math equivalent approach or notify maintainer for further analysis.
 
 - **PyTorch**:<br/>
     We could also read the IO spec from [function declaration](https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/layer_norm.cpp) mentioned in [PyTorch Documentation](#pytorch):
@@ -168,7 +172,7 @@ The content should have exact match with literal values mentioned in [Qualcomm A
 Next, create a new file with name in snake case format (e.g. `op_layer_norm.py`) and import required modules (please check comments for getting the ideas of usage):
 ```python
 # pybind interface for invoking QNN APIs
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 # tensors or other numerics will be shipped in numpy format
 import numpy as np
 import torch
@@ -195,8 +199,8 @@ class LayerNormVisitor(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
 ```
 It's mandatory to have `target` member in list form, since there would have multiple targets map to the same implementation. e.g. `aten.leaky_relu.default`, `aten.prelu.default` have similar equations but only differ in negative slope.<br/>
 The `nodes_to_wrappers` is a dictionary maintaining relationship between graph node and its output tensor. `nodes_to_wrappers` acts as an memo for not creating tensor objects to nodes that have already been traversed.<br/>
@@ -210,7 +214,7 @@ Now, we can start to fill in function body step by step:
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
     ```
@@ -221,7 +225,7 @@ Now, we can start to fill in function body step by step:
     - **tensor_source_node**: current graph source node of the tensor
     - **target_build_node**: current node to build, which is important for fixed point mixed-precision to work properly
     - **tensor**: torch tensor emitted by node
-    - **tensor_type**: type compatible with QNN SDK, oftenly use `QNN_TENSOR_TYPE_NATIVE` for intermediate outputs and `QNN_TENSOR_TYPE_STATIC` for constant parameters
+    - **tensor_type**: type compatible with QNN SDK, often use `QNN_TENSOR_TYPE_NATIVE` for intermediate outputs and `QNN_TENSOR_TYPE_STATIC` for constant parameters
     - **nodes_to_wrappers**: dictionary of graph node and its output tensor (note: the tensor here is not a torch tensor but a wrapped object for QNN)
     - **node_name**: (optional) tensor name for user to specify
     - **wrapper_idx**: (optional) defaults to zero if node is not a tuple, otherwise it acts as an indexer to output tensors. e.g. when slicing input tensor into multiple outputs, `wrapper_idx` is necessary for getting correct wrapped tensor object
@@ -234,7 +238,7 @@ Now, we can start to fill in function body step by step:
             weight_node,
             node,
             weight_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
         )
 
@@ -244,7 +248,7 @@ Now, we can start to fill in function body step by step:
             bias_node,
             node,
             bias_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
         )
     ```
@@ -272,15 +276,15 @@ Now, we can start to fill in function body step by step:
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
     ```
-    Althought the input / output activations might map to the graph IOs (a.k.a. user inputs / outputs) with corresponding type   `QNN_TENSOR_TYPE_APP_READ` / `QNN_TENSOR_TYPE_APP_WRITE`. Users are still expected to have `QNN_TENSOR_TYPE_NATIVE` for all nodes' IOs and leave the  detection logic handled inside `define_tensor` method.
+    Although the input / output activations might map to the graph IOs (a.k.a. user inputs / outputs) with corresponding type   `QNN_TENSOR_TYPE_APP_READ` / `QNN_TENSOR_TYPE_APP_WRITE`. Users are still expected to have `QNN_TENSOR_TYPE_NATIVE` for all nodes' IOs and leave the  detection logic handled inside `define_tensor` method.
 
 5. Generate operator object in QNN graph:
     ```python
-        layer_norm_op = PyQnnWrapper.PyQnnOpWrapper(
+        layer_norm_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpLayerNorm.op_name,
@@ -300,12 +304,12 @@ Now, we can start to fill in function body step by step:
     ```python
         layer_norm_op.AddScalarParam(
             OpLayerNorm.param_epsilon,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
             {QCOM_DATA: np.float32(epsilon)},
         )
         layer_norm_op.AddTensorParam(
             OpLayerNorm.param_axes,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(axis_shape),
             axis_shape,
             np.array(axis, dtype=np.uint32),
@@ -326,7 +330,7 @@ Now, we can start to fill in function body step by step:
     - **data_type**: type compatible with QNN SDK, e.g. `QNN_DATATYPE_FLOAT_32`, `QNN_DATATYPE_UINT_32`, etc.
     - **rank**: dimensions of tensor
     - **dims**: shape of tensor
-    - **data**: tesnor data
+    - **data**: tensor data
     - **copy_data**: user should specify to True for constant parameters
 
 8. Last, return operator object for partitioner to conduct validation:
@@ -360,9 +364,14 @@ The operator now should be functional for Qualcomm backends. For operator to wor
 ## Operator Support Status
 Please help update following table if you are contributing new operators:
 
-| Operators | HTP - 77/116 Enabled |
++ &check; = Supported
++ &cross; = Not Supported
++ &#128683; = Deprecated, supported with other QNN Ops
+
+
+| Operators | HTP - 94/116 Enabled |
 |-----------|---------|
-| Argmax | &cross; |
+| Argmax | &check; |
 | Argmin | &check; |
 | BatchNorm | &check; |
 | BatchToSpace | &cross; |
@@ -370,7 +379,7 @@ Please help update following table if you are contributing new operators:
 | ChannelShuffle | &cross; |
 | Concat | &check; |
 | Conv2d | &check; |
-| Conv3d | &cross; |
+| Conv3d | &check; |
 | Convert | &check; |
 | CreateSparse | &cross; |
 | CumulativeSum | &check; |
@@ -381,16 +390,16 @@ Please help update following table if you are contributing new operators:
 | ElementWiseAbs | &check; |
 | ElementWiseAdd | &check; |
 | ElementWiseAnd | &check; |
-| ElementWiseAsin | &cross; |
-| ElementWiseAtan | &cross; |
-| ElementWiseBinary | &cross; |
+| ElementWiseAsin | &check; |
+| ElementWiseAtan | &check; |
+| ElementWiseBinary | &check; |
 | ElementWiseCeil | &check; |
 | ElementWiseCos | &check; |
 | ElementWiseDivide | &check; |
 | ElementWiseEqual | &check; |
 | ElementWiseExp | &check; |
-| ElementWiseFloor | &cross; |
-| ElementWiseFloorDiv | &cross; |
+| ElementWiseFloor | &check; |
+| ElementWiseFloorDiv | &check; |
 | ElementWiseGreater | &check; |
 | ElementWiseGreaterEqual | &check; |
 | ElementWiseLess | &check; |
@@ -405,16 +414,16 @@ Please help update following table if you are contributing new operators:
 | ElementWiseNotEqual | &check; |
 | ElementWiseOr | &check; |
 | ElementWisePower | &check; |
-| ElementWiseRound | &cross; |
+| ElementWiseRound | &check; |
 | ElementWiseRsqrt | &check; |
 | ElementWiseSelect | &check; |
-| ElementWiseSign | &cross; |
+| ElementWiseSign | &check; |
 | ElementWiseSin | &check; |
 | ElementWiseSquaredDifference | &cross; |
 | ElementWiseSquareRoot | &check; |
 | ElementWiseSubtract | &check; |
 | ElementWiseUnary | &cross; |
-| ElementWiseXor | &cross; |
+| ElementWiseXor | &check; |
 | Elu | &check; |
 | ExpandDims | &check; |
 | ExtractGlimpse | &cross; |
@@ -426,7 +435,7 @@ Please help update following table if you are contributing new operators:
 | Gelu | &check; |
 | GetSparseIndices | &cross; |
 | GetSparseValues | &cross; |
-| GridSample | &cross; |
+| GridSample | &check; |
 | GroupNorm | &check; |
 | HardSwish | &check; |
 | InstanceNorm | &check; |
@@ -443,20 +452,20 @@ Please help update following table if you are contributing new operators:
 | Pack | &check; |
 | Pad | &check; |
 | PoolAvg2d | &check; |
-| PoolAvg3d | &cross; |
+| PoolAvg3d | &check; |
 | PoolMax2d | &check; |
 | Prelu | &check; |
 | Quantize | &check; |
 | ReduceMax | &check; |
 | ReduceMean | &check; |
-| ReduceMin | &cross; |
+| ReduceMin | &check; |
 | ReduceSum | &check; |
 | Relu | &check; |
-| Relu1 | &cross; |
-| Relu6 | &cross; |
+| Relu1 | &#128683; |
+| Relu6 | &#128683; |
 | ReluMinMax | &check; |
 | Reshape | &check; |
-| Resize | &cross; |
+| Resize | &check; |
 | ResizeBilinear | &check; |
 | ResizeNearestNeighbor | &check; |
 | RoiAlign | &cross; |
@@ -476,7 +485,7 @@ Please help update following table if you are contributing new operators:
 | TopK | &check; |
 | TransPose | &check; |
 | TransPoseConv2d | &check; |
-| TransPoseConv3d | &cross; |
+| TransPoseConv3d | &check; |
 | Unpack | &check; |
 
 ## Issues

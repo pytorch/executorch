@@ -9,10 +9,11 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU85PipelineBI,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -85,16 +86,16 @@ test_data_scalar = {
 
 
 @common.parametrize("test_module", test_data_tensor)
-def test_ne_tensor_tosa_MI(test_module):
-    pipeline = TosaPipelineMI[input_t](
+def test_ne_tensor_tosa_FP(test_module):
+    pipeline = TosaPipelineFP[input_t](
         test_module, test_module.get_inputs(), NotEqual.aten_op_Tensor, NotEqual.exir_op
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
-def test_ne_scalar_tosa_MI(test_module):
-    pipeline = TosaPipelineMI[input_t](
+def test_ne_scalar_tosa_FP(test_module):
+    pipeline = TosaPipelineFP[input_t](
         test_module,
         test_module.get_inputs(),
         NotEqual.aten_op_Scalar,
@@ -104,16 +105,16 @@ def test_ne_scalar_tosa_MI(test_module):
 
 
 @common.parametrize("test_module", test_data_tensor)
-def test_ne_tensor_tosa_BI(test_module):
-    pipeline = TosaPipelineBI[input_t](
+def test_ne_tensor_tosa_INT(test_module):
+    pipeline = TosaPipelineINT[input_t](
         test_module, test_module.get_inputs(), NotEqual.decomposed_ops, NotEqual.exir_op
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
-def test_ne_scalar_tosa_BI(test_module):
-    pipeline = TosaPipelineBI[input_t](
+def test_ne_scalar_tosa_INT(test_module):
+    pipeline = TosaPipelineINT[input_t](
         test_module, test_module.get_inputs(), NotEqual.decomposed_ops, NotEqual.exir_op
     )
     pipeline.run()
@@ -121,7 +122,7 @@ def test_ne_scalar_tosa_BI(test_module):
 
 @common.parametrize("test_module", test_data_tensor)
 @common.XfailIfNoCorstone300
-def test_ne_tensor_u55_BI(test_module):
+def test_ne_tensor_u55_INT(test_module):
     # EQUAL is not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t](
         test_module,
@@ -138,7 +139,7 @@ def test_ne_tensor_u55_BI(test_module):
 
 @common.parametrize("test_module", test_data_scalar)
 @common.XfailIfNoCorstone300
-def test_ne_scalar_u55_BI(test_module):
+def test_ne_scalar_u55_INT(test_module):
     # Not equal (ne) is decomposed into the TOSA ops EQUAL and LOGICAL_NOT, both of
     # which are unsupported on U55.
     pipeline = OpNotSupportedPipeline[input_t](
@@ -158,19 +159,15 @@ def test_ne_scalar_u55_BI(test_module):
 @common.parametrize(
     "test_module",
     test_data_tensor,
-    xfails={
-        "ne_tensor_rank4_randn": "MLETORCH-517: Batch size > 1 not fully supported",
-    },
     strict=False,
 )
 @common.XfailIfNoCorstone320
-def test_ne_tensor_u85_BI(test_module):
-    pipeline = EthosU85PipelineBI[input_t](
+def test_ne_tensor_u85_INT(test_module):
+    pipeline = EthosU85PipelineINT[input_t](
         test_module,
         test_module.get_inputs(),
         NotEqual.decomposed_ops,
         NotEqual.decomposed_exir_ops,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -179,18 +176,68 @@ def test_ne_tensor_u85_BI(test_module):
     "test_module",
     test_data_scalar,
     xfails={
-        "ne_scalar_rank4_randn": "MLETORCH-517: Batch size > 1 not fully supported",
         "ne_scalar_rank4_randn_1batch": "MLETORCH-847: Boolean ne result unstable on U85",
     },
     strict=False,
 )
 @common.XfailIfNoCorstone320
-def test_ne_scalar_u85_BI(test_module):
-    pipeline = EthosU85PipelineBI[input_t](
+def test_ne_scalar_u85_INT(test_module):
+    pipeline = EthosU85PipelineINT[input_t](
         test_module,
         test_module.get_inputs(),
         NotEqual.decomposed_ops,
         NotEqual.decomposed_exir_ops,
-        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+@common.SkipIfNoModelConverter
+def test_ne_tensor_vgf_no_quant(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module,
+        test_module.get_inputs(),
+        NotEqual.aten_op_Tensor,
+        NotEqual.exir_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+@common.SkipIfNoModelConverter
+def test_ne_tensor_vgf_quant(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module,
+        test_module.get_inputs(),
+        NotEqual.decomposed_ops,
+        NotEqual.exir_op,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.SkipIfNoModelConverter
+def test_ne_scalar_vgf_no_quant(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module,
+        test_module.get_inputs(),
+        NotEqual.aten_op_Scalar,
+        NotEqual.exir_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.SkipIfNoModelConverter
+def test_ne_scalar_vgf_quant(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module,
+        test_module.get_inputs(),
+        NotEqual.decomposed_ops,
+        NotEqual.exir_op,
+        quantize=True,
     )
     pipeline.run()

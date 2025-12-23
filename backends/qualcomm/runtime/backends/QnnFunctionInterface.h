@@ -32,6 +32,7 @@ class QnnInterface {
 
   // --------- QnnBackend ---------
   DEFINE_SHIM_FUNCTION_INTERFACE(backend_create, backendCreate);
+  DEFINE_SHIM_FUNCTION_INTERFACE(backend_get_build_id, backendGetBuildId);
   DEFINE_SHIM_FUNCTION_INTERFACE(backend_free, backendFree);
   DEFINE_SHIM_FUNCTION_INTERFACE(
       backend_register_op_package,
@@ -103,6 +104,9 @@ class QnnInterface {
   }
   const QNN_INTERFACE_VER_TYPE& GetInterfaceVer() const {
     return qnn_interface_->QNN_INTERFACE_VER_NAME;
+  }
+  void Unload() {
+    qnn_interface_ = nullptr;
   }
 
  private:

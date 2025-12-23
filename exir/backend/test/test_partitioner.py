@@ -40,7 +40,7 @@ from executorch.extension.pybindings.portable_lib import (  # @manual=//executor
 )
 from executorch.extension.pytree import tree_flatten
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
-from torch.export import export, export_for_training
+from torch.export import export
 from torch.fx.passes.operator_support import any_chain
 
 
@@ -76,7 +76,7 @@ class TestPartitioner(unittest.TestCase):
 
         mlp = MLP()
         example_inputs = mlp.get_random_inputs()
-        model = export_for_training(mlp, example_inputs, strict=True).module()
+        model = export(mlp, example_inputs, strict=True).module()
         aten = export(model, example_inputs, strict=True)
         spec_key = "path"
         spec_value = "/a/b/c/d"
@@ -137,7 +137,7 @@ class TestPartitioner(unittest.TestCase):
 
         mlp = MLP()
         example_inputs = mlp.get_random_inputs()
-        model = export_for_training(mlp, example_inputs, strict=True).module()
+        model = export(mlp, example_inputs, strict=True).module()
         aten = export(model, example_inputs, strict=True)
         edge = exir.to_edge(aten)
 
@@ -166,7 +166,7 @@ class TestPartitioner(unittest.TestCase):
                         if not is_param(edge_exported_program, node) and not is_buffer(
                             edge_exported_program, node
                         ):
-                            delegation_tag = "tag_" + str(node.meta["debug_handle"])
+                            delegation_tag = "tag_" + str(node.name)
                             node.meta["delegation_tag"] = delegation_tag
                             partition_tags[delegation_tag] = self.delegation_spec
 
@@ -177,7 +177,7 @@ class TestPartitioner(unittest.TestCase):
 
         mlp = MLP()
         example_inputs = mlp.get_random_inputs()
-        model = export_for_training(mlp, example_inputs, strict=True).module()
+        model = export(mlp, example_inputs, strict=True).module()
         edge = exir.to_edge(export(model, example_inputs, strict=True))
 
         with self.assertRaisesRegex(
@@ -229,9 +229,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        model = export_for_training(
-            self.AddConst(), (torch.ones(2, 2),), strict=True
-        ).module()
+        model = export(self.AddConst(), (torch.ones(2, 2),), strict=True).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),), strict=True))
         delegated = edge.to_backend(PartitionerNoTagData())
 
@@ -310,9 +308,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        model = export_for_training(
-            self.AddConst(), (torch.ones(2, 2),), strict=True
-        ).module()
+        model = export(self.AddConst(), (torch.ones(2, 2),), strict=True).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),), strict=True))
         delegated = edge.to_backend(PartitionerTagData())
 
@@ -387,9 +383,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        model = export_for_training(
-            self.AddConst(), (torch.ones(2, 2),), strict=True
-        ).module()
+        model = export(self.AddConst(), (torch.ones(2, 2),), strict=True).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),), strict=True))
         delegated = edge.to_backend(PartitionerTagData())
 
@@ -477,9 +471,7 @@ class TestPartitioner(unittest.TestCase):
                 )
 
         inputs = (torch.ones(2, 2),)
-        model = export_for_training(
-            ReuseConstData(), (torch.ones(2, 2),), strict=True
-        ).module()
+        model = export(ReuseConstData(), (torch.ones(2, 2),), strict=True).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),), strict=True))
         exec_prog = edge.to_backend(PartitionerTagData()).to_executorch()
         executorch_module = _load_for_executorch_from_buffer(exec_prog.buffer)
@@ -539,9 +531,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        model = export_for_training(
-            ReuseConstData(), (torch.ones(2, 2),), strict=True
-        ).module()
+        model = export(ReuseConstData(), (torch.ones(2, 2),), strict=True).module()
         edge = exir.to_edge(export(model, (torch.ones(2, 2),), strict=True))
         with self.assertRaises(RuntimeError) as error:
             _ = edge.to_backend(PartitionerTagData())

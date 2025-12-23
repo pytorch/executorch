@@ -67,6 +67,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   // See if the program size is in the header.
   size_t program_size = 0;
   size_t segment_base_offset = 0;
+  size_t segment_data_size = 0;
   {
     EXECUTORCH_SCOPE_PROF("Program::check_header");
     Result<FreeableBuffer> header = loader->load(
@@ -82,6 +83,24 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
       // The header has the program size.
       program_size = eh->program_size;
       segment_base_offset = eh->segment_base_offset;
+      segment_data_size = eh->segment_data_size;
+
+      // segment_data_size was added in ET 1.0 release. For BC, only check the
+      // expected file size when there are no segments or when segment_data_size
+      // is positive (0-value may indicate no segments)
+      if ((segment_data_size == 0 && segment_base_offset == 0) ||
+          segment_data_size > 0) {
+        size_t expected = segment_base_offset == 0
+            ? program_size
+            : segment_base_offset + segment_data_size;
+        size_t actual = loader->size().get();
+        ET_CHECK_OR_RETURN_ERROR(
+            expected <= actual,
+            InvalidProgram,
+            "File size is too small. Expected file size from extended header is %zu, actual file size from data loader is %zu",
+            expected,
+            actual);
+      }
     } else if (eh.error() == Error::NotFound) {
       // No header; the program consumes the whole file, and there are no
       // segments.
@@ -172,7 +191,18 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   // only offset, the constant segment is empty and does not need to be loaded.
   const auto* constant_segment = flatbuffer_program->constant_segment();
   if (constant_segment != nullptr && constant_segment->offsets() != nullptr &&
-      constant_segment->offsets()->size() > 1) {
+      constant_segment->offsets()->size() > 0) {
+    if (constant_segment->offsets()->size() == 1) {
+      // No constants; the constant segment is empty and does not
+      // need to be loaded.
+      return Program(
+          loader,
+          segment_base_offset,
+          std::move(program_data.get()),
+          flatbuffer_program,
+          /*constant_segment_data=*/FreeableBuffer{},
+          std::move(pte_data_map));
+    }
     // The constant data is inside a separate segment.
     const auto* constant_buffer = flatbuffer_program->constant_buffer();
     ET_CHECK_OR_RETURN_ERROR(
@@ -219,6 +249,16 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   } else {
     // The constant data is stored inside the flatbuffer, so this program does
     // not contain a separate segment for it.
+
+    // NOTE: This branch is deprecated from ExecuTorch 0.7 onwards.
+    // Please regenerate your PTE file to ensure newer ExecuTorch runtimes can
+    // support it. ExecuTorch deprecation policy:
+    // https://docs.pytorch.org/executorch/stable/api-life-cycle.html#deprecation-policy.
+    // For support, contact the PyTorch Edge team or make an issue in:
+    // https://github.com/pytorch/executorch/issues.
+    ET_LOG(
+        Error,
+        "!!DEPRECATED!! This branch is deprecated from ExecuTorch 0.7; re-export this PTE file to ensure support on newer runtimes.");
     return Program(
         loader,
         segment_base_offset,

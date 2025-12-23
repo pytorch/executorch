@@ -7,8 +7,11 @@
 
 set -x
 
-pip install transformers==4.44.2
+pip install sentencepiece accelerate
 
-pip install sentencepiece
+EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
+
+OPTIMUM_ET_VERSION=$(cat "${EXECUTORCH_ROOT}/.ci/docker/ci_commit_pins/optimum-executorch.txt")
+pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
 
 pip list

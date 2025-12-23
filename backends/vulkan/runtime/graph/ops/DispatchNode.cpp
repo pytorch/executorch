@@ -44,6 +44,13 @@ void DispatchNode::encode(ComputeGraph* graph) {
   if (!shader_) {
     return;
   }
+
+  // If any global wg size element is 0, then skip encoding this shader
+  if (global_workgroup_size_[0] == 0 || global_workgroup_size_[1] == 0 ||
+      global_workgroup_size_[2] == 0) {
+    return;
+  }
+
   api::Context* const context = graph->context();
   vkapi::PipelineBarrier pipeline_barrier{};
 
@@ -53,8 +60,21 @@ void DispatchNode::encode(ComputeGraph* graph) {
 
   write_push_constant_data();
 
+#ifdef ET_EVENT_TRACER_ENABLED
+  std::string event_name;
+  if (!operator_json.empty()) {
+    event_name += "\"operator\": {" + operator_json + "}, ";
+  }
+  event_name += "\"kernel_name\": \"" + shader_.kernel_name + "\", ";
+  event_name += "\"operator_id\": " + std::to_string(operator_count);
+#endif
+
   context->report_shader_dispatch_start(
+#ifdef ET_EVENT_TRACER_ENABLED
+      event_name,
+#else
       shader_.kernel_name,
+#endif
       global_workgroup_size_,
       local_workgroup_size_,
       node_id_);
@@ -87,6 +107,23 @@ void DispatchNode::write_push_constant_data() {
         push_constants_offset_,
         kMaxPushConstantSize);
   }
+}
+
+bool DispatchNode::trigger_resize(ComputeGraph* graph) {
+  const bool any_arg_updated = ExecuteNode::trigger_resize(graph);
+
+  if (any_arg_updated) {
+    // If this shader uses push constants, and the tensor metadata associated
+    // with the push constants has changed, then the command buffer needs to be
+    // re-encoded since push constants cannot be updated.
+    for (const auto& push_constant : push_constants_) {
+      if (push_constant.is_tensor_metadata() &&
+          graph->was_value_updated(push_constant.value())) {
+        graph->set_requires_reencode();
+      }
+    }
+  }
+  return any_arg_updated;
 }
 
 } // namespace vkcompute

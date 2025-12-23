@@ -5,21 +5,27 @@ oncall("executorch")
 
 non_fbcode_target(_kind = fb_android_library,
     name = "executorch",
+    required_for_source_only_abi = True,
     srcs = [
         "executorch_android/src/main/java/org/pytorch/executorch/DType.java",
         "executorch_android/src/main/java/org/pytorch/executorch/EValue.java",
         "executorch_android/src/main/java/org/pytorch/executorch/ExecuTorchRuntime.java",
+        "executorch_android/src/main/java/org/pytorch/executorch/ExecutorchRuntimeException.java",
         "executorch_android/src/main/java/org/pytorch/executorch/MethodMetadata.java",
         "executorch_android/src/main/java/org/pytorch/executorch/Module.java",
         "executorch_android/src/main/java/org/pytorch/executorch/Tensor.java",
         "executorch_android/src/main/java/org/pytorch/executorch/annotations/Experimental.java",
+        "executorch_android/src/main/java/org/pytorch/executorch/training/TrainingModule.java",
+        "executorch_android/src/main/java/org/pytorch/executorch/training/SGD.java",
     ],
     autoglob = False,
     language = "JAVA",
     deps = [
         "//fbandroid/java/com/facebook/jni:jni",
         "//fbandroid/libraries/soloader/java/com/facebook/soloader/nativeloader:nativeloader",
-    ],
+    ] + ([
+        "//xplat/executorch/backends/vulkan:vulkan_backend_lib_static",
+    ] if read_config("executorch", "minimal_jni", "false") == "false" else []),
 )
 
 non_fbcode_target(_kind = fb_android_library,

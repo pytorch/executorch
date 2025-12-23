@@ -8,6 +8,7 @@
 
 #include <executorch/kernels/portable/cpu/vec_ops.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
@@ -202,17 +203,42 @@ void choose_qparams_per_token(
     num_tokens *= input.size(i);
   }
   auto token_dim_size = input.size(input.dim() - 1);
-  for (auto i = 0; i < num_tokens; i++) {
-    // vec_minf uses std::min_element. Check if it actually
-    // gets vectorized.
-    float min = torch::executor::vec_minf(x_fp32, token_dim_size);
-    float max = torch::executor::vec_maxf(x_fp32, token_dim_size);
-    double scale;
-    int32_t zero_point;
-    calculate_scale_and_zero_point(min, max, qmin, qmax, scale, zero_point);
-    scale_out.mutable_data_ptr<double>()[i] = scale;
-    zero_point_out.mutable_data_ptr<int64_t>()[i] = zero_point;
-    x_fp32 += token_dim_size;
+
+  const int64_t total_elements = num_tokens * token_dim_size;
+  constexpr int64_t MIN_ELEMENTS_FOR_PARALLEL = 512;
+  const bool use_parallel = total_elements >= MIN_ELEMENTS_FOR_PARALLEL;
+
+  if (use_parallel) {
+    auto* scale_data = scale_out.mutable_data_ptr<double>();
+    auto* zero_point_data = zero_point_out.mutable_data_ptr<int64_t>();
+
+    ::executorch::extension::parallel_for(
+        0, num_tokens, 1, [&](const int64_t begin, const int64_t end) {
+          for (int64_t i = begin; i < end; i++) {
+            const float* token_data = x_fp32 + i * token_dim_size;
+            float min = torch::executor::vec_minf(token_data, token_dim_size);
+            float max = torch::executor::vec_maxf(token_data, token_dim_size);
+            double scale;
+            int32_t zero_point;
+            calculate_scale_and_zero_point(
+                min, max, qmin, qmax, scale, zero_point);
+            scale_data[i] = scale;
+            zero_point_data[i] = zero_point;
+          }
+        });
+  } else {
+    for (auto i = 0; i < num_tokens; i++) {
+      // vec_minf uses std::min_element. Check if it actually
+      // gets vectorized.
+      float min = torch::executor::vec_minf(x_fp32, token_dim_size);
+      float max = torch::executor::vec_maxf(x_fp32, token_dim_size);
+      double scale;
+      int32_t zero_point;
+      calculate_scale_and_zero_point(min, max, qmin, qmax, scale, zero_point);
+      scale_out.mutable_data_ptr<double>()[i] = scale;
+      zero_point_out.mutable_data_ptr<int64_t>()[i] = zero_point;
+      x_fp32 += token_dim_size;
+    }
   }
 }
 } // namespace

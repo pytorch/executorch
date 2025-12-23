@@ -3,14 +3,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import math
 from typing import Any, List
 
-import executorch.backends.arm.tosa_utils as tutils
+import executorch.backends.arm.tosa.utils as tutils
 
 import numpy as np
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -19,8 +19,8 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
 )
-from executorch.backends.arm.tosa_mapping import extract_tensor_meta, TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa.mapping import extract_tensor_meta, TosaArg
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.fx import Node
 
 
@@ -93,136 +93,6 @@ class CommonIndexTensorVisitor(NodeVisitor):
 
 
 @register_node_visitor
-class IndexTensorVisitor_080(CommonIndexTensorVisitor):
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80+MI"),
-        TosaSpecification.create_from_string("TOSA-0.80+BI"),
-    ]
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        """
-        This approach uses the fact that all indexing tensors are incremented
-        simultaneously and they essentially act as a map along the corresponding
-        dimensions of the values tensor.
-        Note: that this does not hold true when slicing or ellipsis ops
-        are involved as such they are not currently not supported.
-
-        As such this approach flattens out the values tensor and
-        constructs a flattened out index obtained by flattening out the
-        index tensors, multiplying them by the relevant stride and accumulating them.
-
-        This approach suffers from the fact that we are taking a number of index tensors of
-        type int32 and applying multiplications and additions.
-
-        If the number of total elements in the values tensor exceeds int32 limits
-        then this approach falls apart.
-        """
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_same_dtype(self.target, [inputs[0], output])
-
-        values, indices = inputs
-        index_nodes = indices.special
-
-        # Broadcast indices
-        broadcasted_tensors = tutils.broadcast_tensors(
-            tosa_graph, index_nodes, self.tosa_spec
-        )
-
-        values_strides = self._calculate_value_strides(values.shape)
-
-        # The indices have already been broadcast to a common shape
-        # in so they are all the same.
-        _, index_dtype, index_shape = self._get_tensor_info(broadcasted_tensors[0])
-
-        N, K, W, C = self._calculate_tosa_vals(index_shape, index_nodes, values.shape)
-
-        gather_idx_shape = [N, W]
-
-        gather_index_name = ""
-        # Flatten out and shift indexes.
-        for i, index_node in enumerate(broadcasted_tensors):
-            index_name, _, _ = self._get_tensor_info(index_node)
-            index_name = index_node.name
-
-            stride_shifted_indices = tosa_graph.addIntermediate(
-                index_shape,
-                index_dtype,
-            )
-
-            # Division by C is necessary when len(indices) < values.rank
-            # When there are dimensions left unindexed that changes the
-            # channels and thus the stride-shift.
-            data = np.full(index_shape, int(values_strides[i] / C))
-            mul_const = tosa_graph.addConst(index_shape, index_dtype, data)
-            attr = ts.TosaSerializerAttribute()
-            attr.MulAttribute(shift=0)
-            tosa_graph.addOperator(
-                ts.TosaOp.Op().MUL,
-                [index_name, mul_const.name],
-                [stride_shifted_indices.name],
-                attr,
-            )
-
-            reshaped_idxs = tosa_graph.addIntermediate(
-                gather_idx_shape,
-                index_dtype,
-            )
-            tutils.build_reshape(
-                tosa_graph,
-                stride_shifted_indices.name,
-                gather_idx_shape,
-                reshaped_idxs.name,
-            )
-
-            # Guarantees that the accumulation tensor is properly
-            # initialized and does not contain junk data.
-            if i == 0:
-                gather_index_name = reshaped_idxs.name
-            else:
-                add_idxs = tosa_graph.addIntermediate(
-                    reshaped_idxs.shape,
-                    reshaped_idxs.dtype,
-                )
-                tosa_graph.addOperator(
-                    ts.TosaOp.Op().ADD,
-                    [gather_index_name, reshaped_idxs.name],
-                    [add_idxs.name],
-                )
-                gather_index_name = add_idxs.name
-
-        gather_vals_shape = [N, K, C]
-        reshaped_input = tosa_graph.addIntermediate(gather_vals_shape, values.dtype)
-        tutils.build_reshape(
-            tosa_graph, values.name, gather_vals_shape, reshaped_input.name
-        )
-
-        gather_out_shape = (N, W, C)
-        gather_out = tosa_graph.addIntermediate(
-            gather_out_shape,
-            output.dtype,
-        )
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().GATHER,
-            [reshaped_input.name, gather_index_name],
-            [gather_out.name],
-            None,
-        )
-
-        output_shape = tutils.tosa_shape(output.shape, output.dim_order)
-        tutils.build_reshape(tosa_graph, gather_out.name, output_shape, output.name)
-
-
-@register_node_visitor
 class IndexTensorVisitor(CommonIndexTensorVisitor):
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
@@ -256,7 +126,6 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
         If the number of total elements in the values tensor exceeds int32 limits
         then this approach falls apart.
         """
-        import serializer.tosa_serializer as ts
 
         validate_same_dtype(self.target, [inputs[0], output])
 
@@ -295,23 +164,28 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
             # channels and thus the stride-shift.
             data = np.full(index_shape, int(values_strides[i] / C))
             mul_const = tosa_graph.addConst(index_shape, index_dtype, data)
-            tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{node.name}_{i}_shift")
-            tosa_graph.addOperator(
-                ts.TosaOp.Op().MUL,
-                [index_name, mul_const.name, f"{node.name}_{i}_shift"],
+            tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{output.name}_{i}_shift")
+            attr = ts.TosaSerializerAttribute()
+            attr.MulAttribute()
+            self._serialize_operator(
+                node,
+                tosa_graph,
+                ts.Op.MUL,
+                [index_name, mul_const.name, f"{output.name}_{i}_shift"],
                 [stride_shifted_indices.name],
+                attr,
             )
 
             reshaped_idxs = tosa_graph.addIntermediate(
                 gather_idx_shape,
                 index_dtype,
             )
-            tutils.build_reshape_tosa_1_0(
+            tutils.build_reshape_tosa(
                 tosa_graph,
                 stride_shifted_indices.name,
                 gather_idx_shape,
                 reshaped_idxs.name,
-                shape_name_override=f"{node.name}_{i}_shape",
+                shape_name_override=f"{output.name}_{i}_shape",
             )
 
             # Guarantees that the accumulation tensor is properly
@@ -323,22 +197,27 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
                     reshaped_idxs.shape,
                     reshaped_idxs.dtype,
                 )
-                tosa_graph.addOperator(
-                    ts.TosaOp.Op().ADD,
+                attr = ts.TosaSerializerAttribute()
+                attr.AddAttribute()
+                self._serialize_operator(
+                    node,
+                    tosa_graph,
+                    ts.Op.ADD,
                     [gather_index_name, reshaped_idxs.name],
                     [add_idxs.name],
+                    attr,
                 )
                 gather_index_name = add_idxs.name
 
         gather_vals_shape = [N, K, C]
         reshaped_input = tosa_graph.addIntermediate(gather_vals_shape, values.dtype)
 
-        tutils.build_reshape_tosa_1_0(
+        tutils.build_reshape_tosa(
             tosa_graph,
             values.name,
             gather_vals_shape,
             reshaped_input.name,
-            shape_name_override=f"{node.name}_index_shape",
+            shape_name_override=f"{output.name}_index_shape",
         )
 
         gather_out_shape = (N, W, C)
@@ -346,19 +225,23 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
             gather_out_shape,
             output.dtype,
         )
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().GATHER,
+        attr = ts.TosaSerializerAttribute()
+        attr.GatherAttribute()
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.Op.GATHER,
             [reshaped_input.name, gather_index_name],
             [gather_out.name],
-            None,
+            attr,
         )
 
         output_shape = tutils.tosa_shape(output.shape, output.dim_order)
 
-        tutils.build_reshape_tosa_1_0(
+        tutils.build_reshape_tosa(
             tosa_graph,
             gather_out.name,
             list(output_shape),
             output.name,
-            shape_name_override=f"{node.name}_output_shape",
+            shape_name_override=f"{output.name}_output_shape",
         )

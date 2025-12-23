@@ -22,14 +22,54 @@ void resize_reduce_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
 
-  int32_t reduce_dim_nchw = graph->extract_scalar<int32_t>(resize_args.at(0));
+  const int32_t reduce_dim_nchw =
+      graph->extract_scalar<int32_t>(resize_args.at(0));
 
-  std::vector<int64_t> new_sizes = in->sizes();
+  std::vector<int64_t> new_sizes = graph->sizes_of(in);
   new_sizes.at(normalize(reduce_dim_nchw, new_sizes.size())) = 1;
-  out->virtual_resize(new_sizes);
+  graph->virtual_resize(out, new_sizes);
+}
+
+void resize_reduce2d_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+
+  // Extract the dimensions to reduce over
+  const std::vector<int64_t> dims_list =
+      graph->extract_int_or_symint_list(resize_args.at(0));
+  int32_t reduce_dim1_nchw = dims_list[0];
+  int32_t reduce_dim2_nchw = dims_list[1];
+
+  std::vector<int64_t> new_sizes = graph->sizes_of(in);
+  new_sizes.at(normalize(reduce_dim1_nchw, new_sizes.size())) = 1;
+  new_sizes.at(normalize(reduce_dim2_nchw, new_sizes.size())) = 1;
+  graph->virtual_resize(out, new_sizes);
+}
+
+void resize_reduce_per_row_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+
+  const bool keepdim = graph->extract_scalar<bool>(resize_args.at(0));
+
+  std::vector<int64_t> new_sizes = graph->sizes_of(in);
+  if (keepdim) {
+    // Per-row reduction always reduces along the last dimension (width)
+    new_sizes.back() = 1;
+  } else {
+    // Remove the last dimension
+    new_sizes.pop_back();
+  }
+  graph->virtual_resize(out, new_sizes);
 }
 
 utils::uvec3 reduce_global_wg_size(
@@ -137,15 +177,178 @@ void add_reduce_node(
       resize_reduce_node));
 }
 
+void add_reduce2d_node(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef dims_ref,
+    const ValueRef out,
+    const std::string& op_name) {
+  VK_CHECK_COND(
+      !graph.is_buffer_storage(in) && !graph.is_buffer_storage(out),
+      "Vulkan reduction only supports texture storage");
+
+  const int64_t ndim = graph.dim_of(in);
+
+  // Extract the two dimensions to reduce over
+  const std::vector<int64_t> dims_list =
+      graph.extract_int_or_symint_list(dims_ref);
+  VK_CHECK_COND(
+      dims_list.size() == 2, "reduce2d requires exactly 2 dimensions");
+
+  int32_t reduce_dim1 = normalize(dims_list[0], ndim);
+  int32_t reduce_dim2 = normalize(dims_list[1], ndim);
+
+  // Convert to WHCN format
+  reduce_dim1 = nchw_dim_to_whcn_dim(reduce_dim1, ndim);
+  reduce_dim2 = nchw_dim_to_whcn_dim(reduce_dim2, ndim);
+
+  // Check that none of the reduction dims are packed
+  VK_CHECK_COND(graph.packed_dim_of(in) != reduce_dim1);
+  VK_CHECK_COND(graph.packed_dim_of(in) != reduce_dim2);
+  VK_CHECK_COND(graph.packed_dim_of(out) != reduce_dim1);
+  VK_CHECK_COND(graph.packed_dim_of(out) != reduce_dim2);
+
+  // Check that the concat dim is not one of the reduction dims
+  if (graph.dim_of(in) == 4 && graph.size_at<int>(0, in) > 1) {
+    VK_CHECK_COND(graph.concat_dim_of(in) != reduce_dim1);
+    VK_CHECK_COND(graph.concat_dim_of(in) != reduce_dim2);
+    VK_CHECK_COND(graph.concat_dim_of(out) != reduce_dim1);
+    VK_CHECK_COND(graph.concat_dim_of(out) != reduce_dim2);
+  }
+
+  std::string kernel_name = op_name + "2d"; // Add "2d" suffix
+  kernel_name.reserve(kShaderNameReserve);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  // Calculate group_dim for specialization constants (use remaining dimension)
+  int32_t group_dim = 0;
+  for (int i = 0; i < 3; i++) {
+    if (i != reduce_dim1 && i != reduce_dim2) {
+      group_dim = i;
+      break;
+    }
+  }
+
+  const ValueRef reduce_dim1_whcn_ref =
+      graph.get_or_add_value_for_int(reduce_dim1);
+  const ValueRef reduce_dim2_whcn_ref =
+      graph.get_or_add_value_for_int(reduce_dim2);
+  const ValueRef group_dim_whcn_ref = graph.get_or_add_value_for_int(group_dim);
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      reduce_global_wg_size,
+      reduce_local_wg_size,
+      // Inputs and Outputs
+      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
+      // Shader params buffers
+      {graph.logical_limits_ubo(in), graph.sizes_ubo(in)},
+      // Push Constants
+      {},
+      // Specialization Constants
+      {graph.packed_dim_of(out), reduce_dim1, reduce_dim2, group_dim},
+      // Resize Args
+      {dims_ref,
+       reduce_dim1_whcn_ref,
+       reduce_dim2_whcn_ref,
+       group_dim_whcn_ref},
+      // Resizing Logic
+      resize_reduce2d_node));
+}
+
+utils::uvec3 reduce_per_row_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+
+  const ValueRef out = args.at(0).refs.at(0);
+  return {1u, utils::safe_downcast<uint32_t>(graph->numel_of(out)), 1u};
+}
+
+utils::uvec3 reduce_per_row_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)global_workgroup_size;
+  (void)args;
+  (void)resize_args;
+
+  uint32_t outputs_per_wg = 1u;
+  uint32_t workers_per_output = 64u;
+
+  return {workers_per_output, outputs_per_wg, 1u};
+}
+
+void add_reduce_per_row_node(
+    ComputeGraph& graph,
+    const ValueRef input,
+    const ValueRef keepdim_ref,
+    const ValueRef output,
+    const std::string& op_name) {
+  std::string kernel_name = op_name + "_per_row";
+  kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(input));
+  add_dtype_suffix(kernel_name, graph.dtype_of(input));
+
+  vkapi::ParamsBindList param_ubos = {
+      graph.meta_ubo(output),
+      graph.meta_ubo(input),
+  };
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      // Global workgroup size function
+      reduce_per_row_global_wg_size,
+      // Local workgroup size function
+      reduce_per_row_local_wg_size,
+      // Inputs and Outputs
+      {{output, vkapi::kWrite}, {input, vkapi::kRead}},
+      // Shader param buffers
+      param_ubos,
+      // Push Constants
+      {},
+      // Specialization Constants
+      {},
+      // Resize Args
+      {keepdim_ref},
+      // Resizing Logic
+      resize_reduce_per_row_node));
+}
+
 #define DEFINE_REDUCE_FN(op_name, out_arg_idx)                           \
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
-    const std::vector<int64_t> dims_list =                               \
-        graph.extract_int_or_symint_list(args[1]);                       \
-    VK_CHECK_COND(dims_list.size() == 1);                                \
-    const int64_t dim_val = dims_list.at(0);                             \
-    const ValueRef dim_ref = graph.get_or_add_value_for_int(dim_val);    \
-    return add_reduce_node(                                              \
-        graph, args[0], dim_ref, args[out_arg_idx], #op_name);           \
+    std::vector<int64_t> dims_list;                                      \
+    if (graph.val_is_not_none(args[1])) {                                \
+      dims_list = graph.extract_int_or_symint_list(args[1]);             \
+    } else if (graph.dim_of(args[0]) == 1) {                             \
+      dims_list = {-1};                                                  \
+    } else {                                                             \
+      VK_THROW("dims_list=None only supported for 1D tensors");          \
+    }                                                                    \
+    if (dims_list.size() == 1) {                                         \
+      int64_t dim_val = dims_list.at(0);                                 \
+      int64_t ndim = graph.dim_of(args[0]);                              \
+      if ((dim_val == -1 || dim_val == ndim - 1) &&                      \
+          graph.is_buffer_storage(args[0])) {                            \
+        return add_reduce_per_row_node(                                  \
+            graph, args[0], args[2], args[out_arg_idx], #op_name);       \
+      }                                                                  \
+      const ValueRef dim_ref = graph.get_or_add_value_for_int(dim_val);  \
+      return add_reduce_node(                                            \
+          graph, args[0], dim_ref, args[out_arg_idx], #op_name);         \
+    }                                                                    \
+    if (dims_list.size() == 2) {                                         \
+      return add_reduce2d_node(                                          \
+          graph, args[0], args[1], args[out_arg_idx], #op_name);         \
+    }                                                                    \
+    VK_CHECK_COND(false, "Only 1 or 2 dimensions supported");            \
   }
 
 DEFINE_REDUCE_FN(sum, 4)

@@ -4,23 +4,34 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
-from typing import Tuple, Union
+from collections.abc import Callable
+from typing import Union
 
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 from executorch.backends.test.harness.stages import StageType
 
 
-input_t1 = Tuple[torch.Tensor]
+LiftedTensorInputs = tuple[torch.Tensor, int]
+LiftedTensorCase = tuple[
+    Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+    LiftedTensorInputs,
+]
+LiftedScalarTensorInputs = tuple[torch.Tensor, ...]
+LiftedScalarTensorCase = tuple[
+    Callable[[torch.Tensor, Union[float, int, torch.Tensor]], torch.Tensor],
+    LiftedScalarTensorInputs,
+    Union[float, int, torch.Tensor],
+]
 
 
 class LiftedTensor(torch.nn.Module):
 
-    test_data = {
+    test_data: dict[str, LiftedTensorCase] = {
         # test_name: (operator, test_data, length)
         "add": (operator.add, (torch.randn(2, 2), 2)),
         "truediv": (operator.truediv, (torch.ones(2, 2), 2)),
@@ -39,7 +50,7 @@ class LiftedTensor(torch.nn.Module):
 
 
 class LiftedScalarTensor(torch.nn.Module):
-    test_data = {
+    test_data: dict[str, LiftedScalarTensorCase] = {
         # test_name: (operator, test_data)
         "add": (operator.add, (torch.randn(2, 2),), 1.0),
         "truediv": (operator.truediv, (torch.randn(4, 2),), 1.0),
@@ -60,14 +71,14 @@ class LiftedScalarTensor(torch.nn.Module):
 
 
 @common.parametrize("test_data", LiftedTensor.test_data)
-def test_partition_lifted_tensor_tosa_MI(test_data: input_t1):
-    op = test_data[0]
-    data = test_data[1:]
+def test_partition_lifted_tensor_tosa_FP(test_data: LiftedTensorCase) -> None:
+    op, inputs = test_data
     module = LiftedTensor(op)
-    pipeline = TosaPipelineMI[input_t1](
+    aten_ops: list[str] = []
+    pipeline = TosaPipelineFP[LiftedTensorInputs](
         module,
-        *data,
-        [],
+        inputs,
+        aten_ops,
         exir_op=[],
         use_to_edge_transform_and_lower=False,
     )
@@ -81,14 +92,14 @@ def test_partition_lifted_tensor_tosa_MI(test_data: input_t1):
 
 
 @common.parametrize("test_data", LiftedTensor.test_data)
-def test_partition_lifted_tensor_tosa_BI(test_data: input_t1):
-    op = test_data[0]
-    data = test_data[1:]
+def test_partition_lifted_tensor_tosa_INT(test_data: LiftedTensorCase) -> None:
+    op, inputs = test_data
     module = LiftedTensor(op)
-    pipeline = TosaPipelineBI[input_t1](
+    aten_ops: list[str] = []
+    pipeline = TosaPipelineINT[LiftedTensorInputs](
         module,
-        *data,
-        [],
+        inputs,
+        aten_ops,
         exir_op=[],
         use_to_edge_transform_and_lower=False,
     )
@@ -102,14 +113,16 @@ def test_partition_lifted_tensor_tosa_BI(test_data: input_t1):
 
 
 @common.parametrize("test_data", LiftedScalarTensor.test_data)
-def test_partition_lifted_scalar_tensor_tosa_MI(test_data: input_t1):
-    op = test_data[0]
-    data = test_data[1:]
-    module = LiftedScalarTensor(op, data[-1])
-    pipeline = TosaPipelineMI[input_t1](
+def test_partition_lifted_scalar_tensor_tosa_FP(
+    test_data: LiftedScalarTensorCase,
+) -> None:
+    op, tensor_inputs, scalar_arg = test_data
+    module = LiftedScalarTensor(op, scalar_arg)
+    aten_ops: list[str] = []
+    pipeline = TosaPipelineFP[LiftedScalarTensorInputs](
         module,
-        data[0],
-        [],
+        tensor_inputs,
+        aten_ops,
         exir_op=[],
         use_to_edge_transform_and_lower=False,
     )
@@ -117,14 +130,16 @@ def test_partition_lifted_scalar_tensor_tosa_MI(test_data: input_t1):
 
 
 @common.parametrize("test_data", LiftedScalarTensor.test_data)
-def test_partition_lifted_scalar_tensor_tosa_BI(test_data: input_t1):
-    op = test_data[0]
-    data = test_data[1:]
-    module = LiftedScalarTensor(op, data[-1])
-    pipeline = TosaPipelineBI[input_t1](
+def test_partition_lifted_scalar_tensor_tosa_INT(
+    test_data: LiftedScalarTensorCase,
+) -> None:
+    op, tensor_inputs, scalar_arg = test_data
+    module = LiftedScalarTensor(op, scalar_arg)
+    aten_ops: list[str] = []
+    pipeline = TosaPipelineINT[LiftedScalarTensorInputs](
         module,
-        data[0],
-        [],
+        tensor_inputs,
+        aten_ops,
         exir_op=[],
         use_to_edge_transform_and_lower=False,
     )

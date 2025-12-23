@@ -12,13 +12,10 @@ Example usage:
     from pathlib import Path
 
     import torch
-    from executorch.runtime import Verification, Runtime, Program, Method
+    from executorch.runtime import Runtime, Program, Method
 
     et_runtime: Runtime = Runtime.get()
-    program: Program = et_runtime.load_program(
-        Path("/tmp/program.pte"),
-        verification=Verification.Minimal,
-    )
+    program: Program = et_runtime.load_program(Path("/tmp/program.pte"))
     print("Program methods:", program.method_names)
     forward: Method = program.load_method("forward")
 
@@ -31,12 +28,84 @@ Example output:
 
 .. code-block:: text
 
-    Program methods: ('forward', 'forward2')
+    Program methods: {'forward'}
     Ran forward((tensor([[1., 1.],
             [1., 1.]]), tensor([[1., 1.],
             [1., 1.]])))
-      outputs: [tensor([[1., 1.],
-            [1., 1.]])]
+      outputs: [tensor([[2., 2.],
+            [2., 2.]])]
+
+Example usage with ETDump generation:
+
+Note: ETDump requires building ExecuTorch with event tracing enabled
+(CMake option ``EXECUTORCH_ENABLE_EVENT_TRACER=ON``).
+
+.. code-block:: python
+
+    from pathlib import Path
+    import os
+
+    import torch
+    from executorch.runtime import Runtime, Program, Method
+
+    # Create program with etdump generation enabled
+    et_runtime: Runtime = Runtime.get()
+    program: Program = et_runtime.load_program(
+        Path("/tmp/program.pte"),
+        enable_etdump=True,
+        debug_buffer_size=int(1e7),  # 10MB buffer to capture all debug info
+    )
+
+    # Load method and execute
+    forward: Method = program.load_method("forward")
+    inputs = (torch.ones(2, 2), torch.ones(2, 2))
+    outputs = forward.execute(inputs)
+
+    # Write etdump result to file
+    etdump_file = "/tmp/etdump_output.etdp"
+    debug_file = "/tmp/debug_output.bin"
+    program.write_etdump_result_to_file(etdump_file, debug_file)
+
+    # Check that files were created
+    print(f"ETDump file created: {os.path.exists(etdump_file)}")
+    print(f"Debug file created: {os.path.exists(debug_file)}")
+    print("Directory contents:", os.listdir("/tmp"))
+
+Example output:
+
+.. code-block:: text
+
+    ETDump file created: True
+    Debug file created: True
+    Directory contents: ['program.pte', 'etdump_output.etdp', 'debug_output.bin']
+
+Example usage with backend and operator introspection:
+
+.. code-block:: python
+
+    from executorch.runtime import Runtime
+
+    runtime = Runtime.get()
+
+    # Check available backends
+    backends = runtime.backend_registry.registered_backend_names
+    print(f"Available backends: {backends}")
+
+    # Check if a specific backend is available
+    if runtime.backend_registry.is_available("XnnpackBackend"):
+        print("XNNPACK backend is available")
+
+    # List all registered operators
+    operators = runtime.operator_registry.operator_names
+    print(f"Number of registered operators: {len(operators)}")
+
+Example output:
+
+.. code-block:: text
+
+    Available backends: ['XnnpackBackend', ...]  # Depends on your build configuration
+    XNNPACK backend is available
+    Number of registered operators: 247  # Depends on linked kernels
 """
 
 import functools
@@ -45,8 +114,9 @@ from types import ModuleType
 from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Set, Union
 
 try:
-    from executorch.extension.pybindings.portable_lib import (
-        ExecuTorchModule,
+    from executorch.extension.pybindings.portable_lib import (  # type: ignore[import-not-found]
+        ExecuTorchMethod,
+        ExecuTorchProgram,
         MethodMeta,
         Verification,
     )
@@ -62,30 +132,31 @@ class Method:
     This can be used to execute the method with inputs.
     """
 
-    def __init__(self, method_name: str, module: ExecuTorchModule) -> None:
-        # TODO: This class should be pybind to the C++ counterpart instead of hosting ExecuTorchModule.
-        self._method_name = method_name
-        self._module = module
+    def __init__(self, method: ExecuTorchMethod) -> None:
+        self._method = method
 
     def execute(self, inputs: Sequence[Any]) -> Sequence[Any]:
         """Executes the method with the given inputs.
 
         Args:
-            inputs: The inputs to the method.
+            inputs: A sequence of input values, typically torch.Tensor objects.
 
         Returns:
-            The outputs of the method.
+            A list of output values, typically torch.Tensor objects.
         """
-        return self._module.run_method(self._method_name, inputs)
+        return self._method(inputs)
 
     @property
     def metadata(self) -> MethodMeta:
         """Gets the metadata for the method.
 
+        The metadata includes information about input and output specifications,
+        such as tensor shapes, data types, and memory requirements.
+
         Returns:
-            The metadata for the method.
+            The MethodMeta object containing method specifications.
         """
-        return self._module.method_meta(self._method_name)
+        return self._method.method_meta()
 
 
 class Program:
@@ -94,23 +165,19 @@ class Program:
     This can be used to load the methods/models defined by the program.
     """
 
-    def __init__(self, module: ExecuTorchModule, data: Optional[bytes]) -> None:
+    def __init__(self, program: ExecuTorchProgram, data: Optional[bytes]) -> None:
         # Hold the data so the program is not freed.
         self._data = data
-        self._module = module
-        self._methods: Dict[str, Method] = {}
-        # ExecuTorchModule already pre-loads all Methods when created, so this
-        # doesn't do any extra work. TODO: Don't load a given Method until
-        # load_method() is called. Create a separate Method instance each time,
-        # to allow multiple independent instances of the same model.
-        for method_name in self._module.method_names():
-            self._methods[method_name] = Method(method_name, self._module)
+        self._program = program
+        self._methods: Dict[str, Optional[Method]] = {}
+        # The names of the methods are preemptively added to the dictionary,
+        # but only map to None until they are loaded.
+        for method_idx in range(self._program.num_methods()):
+            self._methods[self._program.get_method_name(method_idx)] = None
 
     @property
     def method_names(self) -> Set[str]:
-        """
-        Returns method names of the `Program` as a set of strings.
-        """
+        """Returns method names of the Program as a set of strings."""
         return set(self._methods.keys())
 
     def load_method(self, name: str) -> Optional[Method]:
@@ -122,7 +189,34 @@ class Program:
         Returns:
             The loaded method.
         """
-        return self._methods.get(name, None)
+
+        method = self._methods[name]
+        if method is None:
+            method = Method(self._program.load_method(name))
+            self._methods[name] = method
+        return method
+
+    def metadata(self, method_name: str) -> MethodMeta:
+        """Gets the metadata for the specified method without loading it.
+
+        Args:
+            method_name: The name of the method.
+
+        Returns:
+            The metadata for the method, including input/output specifications.
+        """
+        return self._program.method_meta(method_name)
+
+    def write_etdump_result_to_file(
+        self, etdump_path: str, debug_buffer_path: str
+    ) -> None:
+        """Writes the etdump and debug result to a file.
+
+        Args:
+            etdump_path: The path to the etdump file.
+            debug_buffer_path: The path to the debug buffer file.
+        """
+        self._program.write_etdump_result_to_file(etdump_path, debug_buffer_path)
 
 
 class BackendRegistry:
@@ -134,14 +228,17 @@ class BackendRegistry:
 
     @property
     def registered_backend_names(self) -> List[str]:
-        """
-        Returns the names of all registered backends as a list of strings.
-        """
+        """Returns the names of all registered backends as a list of strings."""
         return self._legacy_module._get_registered_backend_names()
 
     def is_available(self, backend_name: str) -> bool:
-        """
-        Returns the names of all registered backends as a list of strings.
+        """Checks if a specific backend is available in the runtime.
+
+        Args:
+            backend_name: The name of the backend to check (e.g., "XnnpackBackend").
+
+        Returns:
+            True if the backend is available, False otherwise.
         """
         return self._legacy_module._is_available(backend_name)
 
@@ -155,9 +252,7 @@ class OperatorRegistry:
 
     @property
     def operator_names(self) -> Set[str]:
-        """
-        Returns the names of all registered operators as a set of strings.
-        """
+        """Returns the names of all registered operators as a set of strings."""
         return set(self._legacy_module._get_operator_names())
 
 
@@ -166,13 +261,17 @@ class Runtime:
 
     This can be used to concurrently load and execute any number of ExecuTorch
     programs and methods.
+
+    Attributes:
+        backend_registry: Registry for querying available hardware backends.
+        operator_registry: Registry for querying available operators/kernels.
     """
 
     @staticmethod
     @functools.lru_cache(maxsize=1)
     def get() -> "Runtime":
         """Gets the Runtime singleton."""
-        import executorch.extension.pybindings.portable_lib as legacy_module
+        import executorch.extension.pybindings.portable_lib as legacy_module  # type: ignore[import-not-found]
 
         return Runtime(legacy_module=legacy_module)
 
@@ -188,39 +287,48 @@ class Runtime:
         data: Union[bytes, bytearray, BinaryIO, Path, str],
         *,
         verification: Verification = Verification.InternalConsistency,
+        enable_etdump: bool = False,
+        debug_buffer_size: int = 0,
     ) -> Program:
         """Loads an ExecuTorch program from a PTE binary.
 
         Args:
-            data: The binary program data to load; typically PTE data.
-            verification: level of program verification to perform.
+            data: The binary program data to load. Can be a file path (str or Path),
+                bytes/bytearray, or a file-like object.
+            verification: Level of program verification to perform (Minimal or InternalConsistency).
+                Default is InternalConsistency.
+            enable_etdump: If True, enables ETDump profiling for runtime performance analysis.
+                Default is False.
+            debug_buffer_size: Size of the debug buffer in bytes for ETDump data.
+                Only used when enable_etdump=True. Default is 0.
 
         Returns:
-            The loaded program.
+            The loaded Program instance.
         """
         if isinstance(data, (Path, str)):
-            m = self._legacy_module._load_for_executorch(
+            p = self._legacy_module._load_program(
                 str(data),
-                enable_etdump=False,
-                debug_buffer_size=0,
+                enable_etdump=enable_etdump,
+                debug_buffer_size=debug_buffer_size,
                 program_verification=verification,
             )
-            return Program(m, data=None)
-        elif isinstance(data, BinaryIO):
-            data_bytes = data.read()
-        elif isinstance(data, bytearray):
-            data_bytes = bytes(data)
+            return Program(p, data=None)
         elif isinstance(data, bytes):
             data_bytes = data
+        elif isinstance(data, bytearray):
+            data_bytes = bytes(data)
+        elif hasattr(data, "read"):
+            # File-like object with read() method
+            data_bytes = data.read()
         else:
             raise TypeError(
                 f"Expected data to be bytes, bytearray, a path to a .pte file, or a file-like object, but got {type(data).__name__}."
             )
-        m = self._legacy_module._load_for_executorch_from_buffer(
+        p = self._legacy_module._load_program_from_buffer(
             data_bytes,
-            enable_etdump=False,
-            debug_buffer_size=0,
+            enable_etdump=enable_etdump,
+            debug_buffer_size=debug_buffer_size,
             program_verification=verification,
         )
 
-        return Program(m, data=data_bytes)
+        return Program(p, data=data_bytes)

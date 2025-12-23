@@ -44,12 +44,12 @@ class GraphBuilder(ExportPass):
         gm = builder.get_graph_module()
     """
 
-    def __init__(self) -> None:
+    def __init__(self, fake_tensor_mode: Optional[FakeTensorMode] = None) -> None:
         self.exporter = ExportPass()
         self.tracer: ExportPass.ExportTracer = self.ExportTracer(
             self, torch.fx.graph.CodeGen()
         )
-        self.fake_tensor_mode = FakeTensorMode(
+        self.fake_tensor_mode: FakeTensorMode = fake_tensor_mode or FakeTensorMode(
             allow_fallback_kernels=False,
             allow_non_fake_inputs=True,
         )
@@ -66,13 +66,13 @@ class GraphBuilder(ExportPass):
     ) -> ProxyValue:
         if not isinstance(fake_tensor, FakeTensor):
             fake_tensor = self.fake_tensor_mode.from_tensor(fake_tensor)
-        logging.info(f"Creating placeholder {target} => {fake_tensor.shape}")
+        logging.debug(f"Creating placeholder {target} => {fake_tensor.shape}")
         placeholder = super().placeholder(target, fake_tensor, NodeMetadata({}))
         return placeholder
 
     # pyre-ignore[14]: Inconsistent override.
     def output(self, results: list[ProxyValue]) -> ProxyValue:
-        logging.info(f"Creating outputs {results}")
+        logging.debug(f"Creating outputs {results}")
         return super().output(results, NodeMetadata({}))
 
     def get_graph_module(self) -> torch.fx.GraphModule:

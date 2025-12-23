@@ -5,19 +5,21 @@
 
 from typing import Tuple
 
-import common
 import pytest
 
 import torch
 
+from executorch.backends.arm.test import common
+
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
-from torchvision import models, transforms
+from torchvision import models, transforms  # type: ignore[import-untyped]
 
 mv3 = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights)
 mv3 = mv3.eval()
@@ -31,16 +33,16 @@ input_t = Tuple[torch.Tensor]
 
 
 @pytest.mark.slow
-def test_mv3_tosa_MI():
-    pipeline = TosaPipelineMI[input_t](
+def test_mv3_tosa_FP():
+    pipeline = TosaPipelineFP[input_t](
         mv3, model_inputs, aten_op=[], exir_op=[], use_to_edge_transform_and_lower=True
     )
     pipeline.run()
 
 
 @pytest.mark.slow
-def test_mv3_tosa_BI():
-    pipeline = TosaPipelineBI[input_t](
+def test_mv3_tosa_INT():
+    pipeline = TosaPipelineINT[input_t](
         mv3,
         model_inputs,
         aten_op=[],
@@ -54,13 +56,12 @@ def test_mv3_tosa_BI():
 
 @pytest.mark.slow
 @common.XfailIfNoCorstone300
-def test_mv3_u55_BI():
-    pipeline = EthosU55PipelineBI[input_t](
+def test_mv3_u55_INT():
+    pipeline = EthosU55PipelineINT[input_t](
         mv3,
         model_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
         atol=0.5,
         qtol=1,
@@ -70,15 +71,43 @@ def test_mv3_u55_BI():
 
 @pytest.mark.slow
 @common.XfailIfNoCorstone320
-def test_mv3_u85_BI():
-    pipeline = EthosU85PipelineBI[input_t](
+def test_mv3_u85_INT():
+    pipeline = EthosU85PipelineINT[input_t](
         mv3,
         model_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
         atol=0.5,
         qtol=1,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@pytest.mark.slow
+def test_mv3_vgf_quant():
+    pipeline = VgfPipeline[input_t](
+        mv3,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        atol=0.5,
+        qtol=1,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_mv3_vgf_no_quant():
+    pipeline = VgfPipeline[input_t](
+        mv3,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()

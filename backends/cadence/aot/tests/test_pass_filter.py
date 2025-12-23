@@ -10,7 +10,7 @@
 import unittest
 from copy import deepcopy
 
-from typing import Callable, Dict
+from typing import Callable, Type
 
 from executorch.backends.cadence.aot import pass_utils
 from executorch.backends.cadence.aot.pass_utils import (
@@ -20,7 +20,7 @@ from executorch.backends.cadence.aot.pass_utils import (
     register_cadence_pass,
 )
 
-from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_base import ExportPass, PassBase
 
 
 class TestBase(unittest.TestCase):
@@ -36,9 +36,9 @@ class TestBase(unittest.TestCase):
         pass_utils.ALL_CADENCE_PASSES = self._all_passes_original
 
     def get_filtered_passes(
-        self, filter_: Callable[[ExportPass], bool]
-    ) -> Dict[ExportPass, CadencePassAttribute]:
-        return {cls: attr for cls, attr in ALL_CADENCE_PASSES.items() if filter_(cls)}
+        self, filter_: Callable[[Type[PassBase]], bool]
+    ) -> dict[Type[PassBase], CadencePassAttribute]:
+        return {c: attr for c, attr in ALL_CADENCE_PASSES.items() if filter_(c)}
 
 
 # Test pass registration

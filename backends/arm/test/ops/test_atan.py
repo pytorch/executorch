@@ -9,10 +9,11 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.atan.default"
@@ -39,8 +40,8 @@ class Atan(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_atan_tosa_MI(test_data: Tuple):
-    pipeline = TosaPipelineMI[input_t1](
+def test_atan_tosa_FP(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
         Atan(),
         (test_data,),
         aten_op=aten_op,
@@ -50,8 +51,8 @@ def test_atan_tosa_MI(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_atan_tosa_BI(test_data: Tuple):
-    pipeline = TosaPipelineBI[input_t1](
+def test_atan_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
         Atan(),
         (test_data,),
         aten_op=aten_op,
@@ -62,8 +63,8 @@ def test_atan_tosa_BI(test_data: Tuple):
 
 @common.XfailIfNoCorstone300
 @common.parametrize("test_data", test_data_suite)
-def test_atan_u55_BI(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_atan_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         Atan(),
         (test_data,),
         aten_ops=aten_op,
@@ -74,11 +75,37 @@ def test_atan_u55_BI(test_data: Tuple):
 
 @common.XfailIfNoCorstone320
 @common.parametrize("test_data", test_data_suite)
-def test_atan_u85_BI(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_atan_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
         Atan(),
         (test_data,),
         aten_ops=aten_op,
         exir_ops=exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_atan_vgf_no_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Atan(),
+        (test_data,),
+        aten_op,
+        exir_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_atan_vgf_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Atan(),
+        (test_data,),
+        aten_op,
+        exir_op,
+        quantize=True,
     )
     pipeline.run()

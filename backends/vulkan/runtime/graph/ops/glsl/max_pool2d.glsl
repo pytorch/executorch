@@ -24,6 +24,8 @@ ${layout_declare_ubo(B, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "pad
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "write_indices", "1")}
+
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
@@ -55,5 +57,7 @@ void main() {
   }
 
   imageStore(t_out, pos, out_texel);
-  imageStore(t_idx, pos, idx_texel);
+  if (write_indices > 0) {
+    imageStore(t_idx, pos, idx_texel);
+  }
 }

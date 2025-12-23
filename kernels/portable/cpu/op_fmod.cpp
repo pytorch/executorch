@@ -138,7 +138,7 @@ Tensor& fmod_Scalar_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::REALHBF16>(
-        [val_b](const auto val_a) {
+        [val_b](const auto& val_a) {
           return executorch::math::fmod(val_a, (decltype(val_a))val_b);
         },
         ctx,

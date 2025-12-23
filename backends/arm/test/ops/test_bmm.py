@@ -13,10 +13,11 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op_bmm = "torch.ops.aten.bmm.default"
@@ -57,31 +58,31 @@ class BMMSingleInput(torch.nn.Module):
 
 
 @common.parametrize("test_data", BMM.test_data_generators)
-def test_bmm_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](BMM(), test_data(), aten_op_bmm, exir_op_bmm)
+def test_bmm_tosa_FP(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](BMM(), test_data(), aten_op_bmm, exir_op_bmm)
     pipeline.run()
 
 
 @pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLETORCH-534)
 @common.parametrize("test_data", BMMSingleInput.test_data_generators)
-def test_bmm_tosa_MI_single_input(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](
+def test_bmm_tosa_FP_single_input(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](
         BMMSingleInput(), test_data(), aten_op_bmm, exir_op_bmm
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", BMM.test_data_generators)
-def test_bmm_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](
+def test_bmm_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
         BMM(), test_data(), aten_op_bmm, exir_op_bmm, qtol=1
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", BMMSingleInput.test_data_generators)
-def test_bmm_tosa_BI_single_input(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](
+def test_bmm_tosa_INT_single_input(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
         BMMSingleInput(), test_data(), aten_op_bmm, exir_op_bmm
     )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
@@ -90,51 +91,103 @@ def test_bmm_tosa_BI_single_input(test_data: input_t1):
 
 @common.parametrize("test_data", BMM.test_data_generators)
 @common.XfailIfNoCorstone300
-def test_bmm_u55_BI(test_data: input_t1):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_bmm_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
         BMM(),
         test_data(),
         aten_op_bmm,
         exir_op_bmm,
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", BMM.test_data_generators)
 @common.XfailIfNoCorstone320
-def test_bmm_u85_BI(test_data: input_t1):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_bmm_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
         BMM(),
         test_data(),
         aten_op_bmm,
         exir_op_bmm,
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", BMMSingleInput.test_data_generators)
 @common.XfailIfNoCorstone300
-def test_bmm_u55_BI_single_input(test_data: input_t1):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_bmm_u55_INT_single_input(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
         BMMSingleInput(),
         test_data(),
         aten_op_bmm,
         exir_op_bmm,
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", BMMSingleInput.test_data_generators)
 @common.XfailIfNoCorstone320
-def test_bmm_u85_BI_single_input(test_data: input_t1):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_bmm_u85_INT_single_input(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
         BMMSingleInput(),
         test_data(),
         aten_op_bmm,
         exir_op_bmm,
-        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", BMM.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_bmm_vgf_no_quant(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        BMM(),
+        test_data(),
+        aten_op_bmm,
+        exir_op_bmm,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    BMMSingleInput.test_data_generators,
+    flakies={"rand_big_1": 3},
+)
+@common.SkipIfNoModelConverter
+def test_bmm_vgf_no_quant_single_input(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        BMMSingleInput(),
+        test_data(),
+        aten_op_bmm,
+        exir_op_bmm,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", BMM.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_bmm_vgf_quant(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        BMM(),
+        test_data(),
+        aten_op_bmm,
+        exir_op_bmm,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", BMMSingleInput.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_bmm_vgf_quant_single_input(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        BMMSingleInput(),
+        test_data(),
+        aten_op_bmm,
+        exir_op_bmm,
+        quantize=True,
     )
     pipeline.run()

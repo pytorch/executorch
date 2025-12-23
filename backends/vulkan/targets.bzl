@@ -19,6 +19,8 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
     default_flags = []
     android_flags = []
 
+    debug_mode = read_config("etvk", "debug", "0") == "1"
+
     if not no_volk:
         for flags in [default_flags, android_flags]:
             flags.append("-DUSE_VULKAN_WRAPPER")
@@ -31,6 +33,10 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
         mac_flags = default_flags
         if link_moltenvk:
             mac_flags = []
+
+        if debug_mode:
+            mac_flags.append("-DETVK_BOOST_STACKTRACE_AVAILABLE")
+            default_flags.append("-DETVK_BOOST_STACKTRACE_AVAILABLE")
 
         VK_API_PREPROCESSOR_FLAGS += select({
             "DEFAULT": default_flags,
@@ -59,7 +65,6 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
         if etvk_default_cache_path != "":
             VK_API_PREPROCESSOR_FLAGS += ["-DETVK_DEFAULT_CACHE_PATH={}".format(etvk_default_cache_path)]
 
-        debug_mode = read_config("etvk", "debug", "0") == "1"
         if debug_mode:
             VK_API_PREPROCESSOR_FLAGS += ["-DVULKAN_DEBUG"]
 
@@ -88,12 +93,15 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
     for target, subpath in spv_filegroups.items():
         glsl_paths.append("$(location {})/{}".format(target, subpath))
 
+    nthreads = read_config("etvk", "shader_compile_nthreads", "-1")
+
     genrule_cmd = (
         "$(exe {}) ".format(gen_vulkan_spv_target) +
         "--glsl-paths {} ".format(" ".join(glsl_paths)) +
         "--output-path $OUT " +
         "--glslc-path=$(exe {}) ".format(glslc_path) +
         "--tmp-dir-path=shader_cache " +
+        "--nthreads {} ".format(nthreads) +
         ("-f " if read_config("etvk", "force_shader_rebuild", "0") == "1" else " ") +
         select({
             "DEFAULT": "",
@@ -136,6 +144,8 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
     )
 
 def define_common_targets(is_fbcode = False):
+    debug_mode = read_config("etvk", "debug", "0") == "1"
+
     runtime.python_library(
         name = "gen_vulkan_spv_lib",
         srcs = [
@@ -185,6 +195,7 @@ def define_common_targets(is_fbcode = False):
         else:
             for deps in [default_deps, android_deps]:
                 deps.append("fbsource//third-party/volk:volk-header")
+                deps.append("fbsource//third-party/volk:volk-implementation")
 
         if is_fbcode:
             VK_API_DEPS += [
@@ -199,6 +210,10 @@ def define_common_targets(is_fbcode = False):
                 mac_deps = [
                     "//third-party/khronos:moltenVK_static"
                 ]
+
+            if debug_mode:
+                mac_deps.append("fbsource//third-party/boost:boost")
+                default_deps.append("fbsource//third-party/boost:boost")
 
             VK_API_DEPS += select({
                 "DEFAULT": default_deps,
@@ -263,6 +278,7 @@ def define_common_targets(is_fbcode = False):
             ],
             exported_deps = [
                 ":vulkan_graph_runtime_shaderlib{}".format(suffix),
+                "//executorch/runtime/backend:interface",
             ],
             define_static_target = True,
             # Static initialization is used to register operators to the global operator registry,
@@ -303,8 +319,8 @@ def define_common_targets(is_fbcode = False):
                 ":vulkan_graph_runtime{}".format(suffix),
                 "//executorch/backends/vulkan/serialization:vk_delegate_schema",
                 "//executorch/runtime/core:event_tracer",
-                "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core/exec_aten/util:tensor_util",
+                "//executorch/runtime/core:named_data_map",
             ],
             define_static_target = True,
             # VulkanBackend.cpp needs to compile with executor as whole
@@ -329,7 +345,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/exir:tensor",
                 "//executorch/exir/backend/canonical_partitioners:config_partitioner_lib",
                 "//executorch/backends/vulkan/serialization:lib",
-            ]
+            ],
         )
 
         runtime.python_library(
@@ -344,6 +360,7 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//caffe2:torch",
+                "//executorch/backends/vulkan/patterns:vulkan_patterns",
             ]
         )
 
@@ -385,6 +402,8 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/transforms:view_copy_to_squeeze_unsqueeze",
                 "//executorch/backends/vulkan/_passes:vulkan_passes",
                 "//executorch/backends/vulkan/serialization:lib",
+                "//executorch/backends/transforms:remove_getitem_op",
+                "//executorch/backends/xnnpack/_passes:xnnpack_passes",
                 "//executorch/exir/backend:backend_details",
             ],
         )

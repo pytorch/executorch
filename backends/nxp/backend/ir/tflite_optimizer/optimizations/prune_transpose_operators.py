@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -24,10 +24,14 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.tensor_rules import (
     TensorIsNotModelOutput,
     TensorsHaveData,
 )
+from executorch.backends.nxp.backend.neutron_operator_support import (
+    transposition_is_supported_on_neutron,
+)
 
 
 class FuseTransposeOperators(BaseOptimization):
-    """Remove some `Transpose` operators in the following pattern.
+    """Remove some `Transpose` operators in the following pattern. This is only done if the resulting permutation is
+         supported on Neutron.
 
               │  'x'
         ┌─────▼─────┐
@@ -61,12 +65,27 @@ class FuseTransposeOperators(BaseOptimization):
         ) in matcher.match_patterns():
             x = tensor_map["x"]
             perm1 = tensor_map["perm1"].tmp_buffer.data
+            combined_perms = []
 
             # Remove the leading transpose.
             for second_transpose in following_transposes:
                 # Combine the permutations for a new permutation of the second `Transpose`.
                 perm2 = second_transpose.tmp_inputs[1].tmp_buffer.data
-                combined_perm = np.array(combine_permutations(perm1, perm2), np.int32)
+                combined_perms.append(
+                    np.array(combine_permutations(perm1, perm2), np.int32)
+                )
+
+            if not all(
+                transposition_is_supported_on_neutron(
+                    x.shape.vector, list(perm), self.neutron_target_spec
+                )
+                for perm in combined_perms
+            ):
+                continue  # Avoid creating an unsupported permutation.
+
+            for second_transpose, combined_perm in zip(
+                following_transposes, combined_perms
+            ):
                 second_transpose.tmp_inputs[1] = self._builder.create_tensor_for_data(
                     combined_perm, "perm"
                 )

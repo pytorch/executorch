@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime", "is_arvr_mode")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def get_preprocessor_flags(is_fbcode):
     flags = ["-DSTANDALONE_TORCH_HEADER"]
@@ -46,7 +46,9 @@ def get_sleef_deps():
                 "fbsource//third-party/sleef:sleef",
             ],
         }),
-        "ovr_config//os:windows": [],
+        "ovr_config//os:windows": [
+                "fbsource//third-party/sleef:sleef",
+        ],
     })
 
 def define_common_targets():
@@ -76,11 +78,11 @@ def define_common_targets():
             ] if not runtime.is_oss else [],
         }),
         xplat_exported_deps = [
-            "//xplat/caffe2:aten_header",
-            "//xplat/caffe2/c10:c10_headers",
+            "fbsource//xplat/caffe2:aten_header",
+            "fbsource//xplat/caffe2/c10:c10_headers",
         ] + select({
-            "DEFAULT": ["//xplat/caffe2:generated_aten_config_header"],
-            "ovr_config//build_mode:arvr_mode": ["//xplat/caffe2:ovrsource_aten_Config.h"],
+            "DEFAULT": ["fbsource//xplat/caffe2:generated_aten_config_header"],
+            "ovr_config//build_mode:arvr_mode": ["fbsource//xplat/caffe2:ovrsource_aten_Config.h"],
         }) + get_sleef_deps(),
         fbcode_exported_deps = ([
             "//caffe2:aten-headers-cpu",
@@ -112,7 +114,9 @@ def define_common_targets():
                 "util/complex_utils.h",
                 "util/floating_point_utils.h",
                 "util/irange.h",
+                "util/llvmMathExtras.h",
                 "util/overflows.h",
+                "util/safe_numerics.h",
             ],
             exported_preprocessor_flags = [
                 "-DC10_USING_CUSTOM_GENERATED_MACROS",
@@ -125,7 +129,7 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
-                "//executorch/runtime/core/portable_type/c10/torch/standalone:torch_standalone_headers",
+                "//executorch/runtime/core/portable_type/c10/torch/headeronly:torch_headeronly",
             ] + select({
                 "DEFAULT": [],
                 # Half-inl.h depends on vec_half.h from ATen, but only when building for x86.

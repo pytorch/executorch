@@ -207,6 +207,26 @@
     - arg_meta: null
       kernel_name: torch::executor::bitwise_xor_Tensor_out
 
+- func: bitwise_left_shift.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_left_shift_Tensor_out
+
+- func: bitwise_left_shift.Tensor_Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_left_shift_Tensor_Scalar_out
+
+- func: bitwise_right_shift.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_right_shift_Tensor_out
+
+- func: bitwise_right_shift.Tensor_Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_right_shift_Tensor_Scalar_out
+
 - op: bmm.out
   kernels:
     - arg_meta: null
@@ -426,6 +446,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::glu_out
+
+- op: grid_sampler_2d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::grid_sampler_2d_out
 
 - op: gt.Scalar_out
   kernels:
@@ -965,6 +990,11 @@
     - arg_meta: null
       kernel_name: torch::executor::upsample_bilinear2d_vec_out
 
+- op: _upsample_bilinear2d_aa.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_upsample_bilinear2d_aa_out
+
 - op: upsample_nearest2d.vec_out
   kernels:
     - arg_meta: null
@@ -1009,3 +1039,8 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::_to_dim_order_copy_out
+
+- func: dim_order_ops::_clone_dim_order.out(Tensor self, *, bool non_blocking=False, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_clone_dim_order_out

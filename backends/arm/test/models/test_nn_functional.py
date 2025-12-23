@@ -22,8 +22,8 @@ from typing import Callable
 import torch
 from executorch.backends.arm.test.common import parametrize
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -81,17 +81,13 @@ input_t = tuple[torch.Tensor]
 @parametrize(
     "test_data",
     module_tests,
-    xfails={
-        "affine_grid": "Int64 input. Partition handling fails since arange int64 output is split between 2 partitions.",
-    },
 )
-def test_nn_functional_MI(test_data):
+def test_nn_functional_tosa_FP(test_data):
     module, inputs = test_data
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=False
     )
     pipeline.pop_stage("check.aten")
-    pipeline.dump_artifact("to_edge")
     pipeline.pop_stage("check_count.exir")
     try:
         pipeline.run()
@@ -103,23 +99,21 @@ def test_nn_functional_MI(test_data):
             raise e
 
 
-x_fails = {
-    "normalize": "MLETORCH-852: Support aten.index_put.default",
-    "unfold": "Int64 input && MLETORCH-827: Support aten.index.Tensor",
-    "fold": "Int64 input && MLETORCH-827: Support aten.index_put.default",
-}
-
-
-@parametrize("test_data", module_tests, x_fails, strict=False)
-def test_nn_functional_BI(test_data):
+@parametrize(
+    "test_data",
+    module_tests,
+)
+def test_nn_functional_tosa_INT(test_data):
     module, inputs = test_data
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=True
     )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
-    pipeline.pop_stage("check.quant_nodes")
-    pipeline.pop_stage("check_not.quant_nodes")
+    if pipeline.has_stage("check.quant_nodes"):
+        pipeline.pop_stage("check.quant_nodes")
+    if pipeline.has_stage("check_not.quant_nodes"):
+        pipeline.pop_stage("check_not.quant_nodes")
     try:
         pipeline.run()
     except RuntimeError as e:

@@ -9,7 +9,7 @@
 import collections
 import itertools
 import logging
-from typing import Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Iterable, Optional, Sequence, TypeAlias
 
 import torch
 from executorch.backends.cadence.aot.memory_constraints import MemConstraints
@@ -19,10 +19,15 @@ from executorch.backends.cadence.aot.memory_planning_algo import (
     MemoryPlanningAlgo,
     MemoryPlanningState,
 )
-from executorch.backends.cadence.aot.utils import MemoryConfig
+from executorch.backends.cadence.aot.utils import (
+    MemoryConfig,
+    MemoryPlanningAlgoFailure,
+)
 
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir.memory_planning import collect_specs_from_nodes, Verifier
+from executorch.exir.pass_base import PassBase
+from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.tensor import TensorSpec
 from tabulate import tabulate
@@ -52,13 +57,18 @@ def collect_specs_from_graph_module(
 class PositionBasedGreedyWithHierarchy(MemoryPlanningAlgo):
     """Greedily place tensor in the fastest memory available."""
 
-    def plan_spec(self, spec: TensorSpec, state: MemoryPlanningState) -> None:
+    def plan_spec(
+        self,
+        spec: TensorSpec,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
+    ) -> None:
         """
         Greedily place the spec in the first memory that can fit it.
         """
         for spec.mem_id in range(1, self.get_num_memories()):
             spec.mem_offset = 0
-            while self.is_valid_placement(spec) and (
+            while self.is_valid_placement(spec, placement_constraints) and (
                 overlapped := state.get_overlapping_spec(spec)
             ):
                 # Found an overlapping spec, so we need to adjust the offset = end of the overlapping spec + alignment.
@@ -67,20 +77,20 @@ class PositionBasedGreedyWithHierarchy(MemoryPlanningAlgo):
                     self.get_alignment(spec.mem_id),
                 )
 
-            if self.is_valid_placement(spec):
+            if self.is_valid_placement(spec, placement_constraints):
                 # Found a valid `spec.mem_offset` which is both valid and has no overlap.
                 state.place_spec(spec)
                 break
 
     def plan(
         self,
-        specs: Set[TensorSpec],
+        specs: Iterable[TensorSpec],
         graph_module: torch.fx.GraphModule,
         graph_signature: ExportGraphSignature,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
         extra_padding: int = 0,
-        prev_state: Optional[MemoryPlanningState] = None,
-    ) -> MemoryPlanningState:
-        state = prev_state or MemoryPlanningState(self.memory_config)
+    ) -> None:
 
         # Iterate over all the specs in sorted order
         for spec in sorted(
@@ -88,21 +98,29 @@ class PositionBasedGreedyWithHierarchy(MemoryPlanningAlgo):
             key=lambda spec: spec.allocated_memory,
             reverse=True,
         ):
-            self.plan_spec(spec, state)
+            self.plan_spec(spec, state, placement_constraints)
             if not state.is_placed(spec):
-                raise MemoryError(f"Cannot fit {spec} in any memory hierarchy")
-
-        return state
+                raise MemoryPlanningAlgoFailure(
+                    f"Cannot fit {spec} {spec.allocated_memory=} in any memory hierarchy for {self.memory_config}"
+                )
 
 
 class GreedyWithHeuristic(MemoryPlanningAlgo):
     """Greedy tensor placement with the heuristics from arxiv.org/pdf/2001.03288.pdf."""
 
-    def plan_spec(self, spec: TensorSpec, state: MemoryPlanningState) -> None:
+    def plan_spec(
+        self,
+        spec: TensorSpec,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
+    ) -> None:
         """
         Greedily place the spec in the first memory that can fit it.
         """
         for spec.mem_id in range(1, self.get_num_memories()):
+            if placement_constraints.is_mem_id_in_blocklist(spec, spec.mem_id):
+                # Skip placement for blocked memory id.
+                continue
             prev_offset, smallest_gap = 0, float("inf")
             for allocated_spec in state.allocated_buffers[spec.mem_id]:
                 if not Verifier.lifetime_overlap(spec, allocated_spec):
@@ -128,11 +146,11 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
                 )
             if spec.mem_offset is None:
                 spec.mem_offset = prev_offset
-                if not self.is_valid_placement(spec):
-                    spec.mem_offset = None
-                    continue
-                else:
-                    spec.mem_offset = prev_offset
+
+            if not self.is_valid_placement(spec, placement_constraints):
+                # Skip placement for invalid memory id.
+                spec.mem_offset = None
+                continue
 
             state.place_spec(spec)
             # A data structure used for maintaining the tensor order
@@ -142,17 +160,16 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
 
     def plan(
         self,
-        specs: set[TensorSpec],
+        specs: Iterable[TensorSpec],
         graph_module: torch.fx.GraphModule,
         graph_signature: ExportGraphSignature,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
         extra_padding: int = 0,
-        prev_state: Optional[MemoryPlanningState] = None,
-    ) -> MemoryPlanningState:
+    ) -> None:
         """Plan memory allocation for the given tensor specs."""
         # We do not use the `alignment` parameter and instead use the per-memory alignment
         # constraints from `memory_config`.
-
-        state = prev_state or MemoryPlanningState(self.memory_config)
 
         # Iterate over all the specs in sorted order
         for spec in sorted(
@@ -160,15 +177,15 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
             key=lambda spec: spec.allocated_memory,
             reverse=True,
         ):
-            self.plan_spec(spec, state)
+            self.plan_spec(spec, state, placement_constraints)
             if not state.is_placed(spec):
-                raise MemoryError(f"Cannot fit {spec} in any memory hierarchy")
+                raise MemoryPlanningAlgoFailure(
+                    f"Cannot fit {spec} in any memory hierarchy for {self.memory_config}"
+                )
 
         logging.debug(
             f"greedy by size for offset calculation with hierarchy returns bufsizes: {state.bufsizes}"
         )
-
-        return state
 
 
 def find_peak_memory_usages_per_memory(
@@ -177,7 +194,7 @@ def find_peak_memory_usages_per_memory(
     alloc_graph_input: bool,
     alloc_graph_output: bool,
     mem_constraints: Optional[MemConstraints] = None,
-) -> List[int]:
+) -> list[int]:
     """
     Given a GraphModule with a memory plan, find the peak memory usages for each memory
     in the memory hierarchy.
@@ -216,7 +233,7 @@ def find_peak_memory_usage(
     alloc_graph_input: bool,
     alloc_graph_output: bool,
     mem_constraints: Optional[MemConstraints] = None,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """
     Given a GraphModule with a memory plan, find the peak usage over time across all
     memories in the memory hierarchy. The resulting peak memory usage should be:
@@ -344,6 +361,35 @@ def print_memory_planning_info(
     )
 
 
+class SimplifyIdmaOpsPass(PassBase):
+    """Replace idma_load and idma_store with idma_copy."""
+
+    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:
+        modified = False
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.cadence.idma_load.out
+        ):
+            modified = True
+            node.target = torch.ops.cadence.idma_copy.out
+            node.args = (node.args[0], *node.args[2:])
+
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.cadence.idma_store.out
+        ):
+            modified = True
+            node.target = torch.ops.cadence.idma_copy.out
+
+        graph_module.graph.eliminate_dead_code()
+        graph_module.recompile()
+        return PassResult(graph_module, modified)
+
+
+ConstraintGenPassType: TypeAlias = Callable[
+    [MemConstraints],
+    Callable[[torch.fx.GraphModule], Optional[PassResult]],
+]
+
+
 class CadenceMemoryPlanning:
     def __init__(
         self,
@@ -377,22 +423,18 @@ class CadenceMemoryPlanning:
     ) -> list[MemoryPlanningAlgo]:
         return [
             PositionBasedGreedyWithHierarchy(
-                memory_config,
-                MemConstraints(
-                    opt_level=opt_level,
-                    alloc_graph_input=alloc_graph_input,
-                    alloc_graph_output=alloc_graph_output,
-                ),
-                additional_constraint_gen_passes,
+                memory_config=memory_config,
+                opt_level=opt_level,
+                alloc_graph_input=alloc_graph_input,
+                alloc_graph_output=alloc_graph_output,
+                additional_constraint_gen_passes=additional_constraint_gen_passes,
             ),
             GreedyWithHeuristic(
-                memory_config,
-                MemConstraints(
-                    opt_level=opt_level,
-                    alloc_graph_input=alloc_graph_input,
-                    alloc_graph_output=alloc_graph_output,
-                ),
-                additional_constraint_gen_passes,
+                memory_config=memory_config,
+                opt_level=opt_level,
+                alloc_graph_input=alloc_graph_input,
+                alloc_graph_output=alloc_graph_output,
+                additional_constraint_gen_passes=additional_constraint_gen_passes,
             ),
         ]
 
@@ -412,10 +454,16 @@ class CadenceMemoryPlanning:
         # True.
         mem_planning = MemoryPlanningPass(
             self.algo,
-            allow_lifetime_and_storage_overlap=(self.opt_level >= 2),
+            # Always allow lifetime and storage overlap.
+            # At opt level 0, we need overlap for idma wait.
+            allow_lifetime_and_storage_overlap=True,
             alloc_graph_input=self.alloc_graph_input,
             alloc_graph_output=self.alloc_graph_output,
         )
         mem_planning.run(graph_module, graph_signature)
+
+        graph_module = PassManager(passes=[SimplifyIdmaOpsPass()])(
+            graph_module
+        ).graph_module
 
         return PassResult(graph_module, True)

@@ -20,6 +20,8 @@
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
+#include <executorch/backends/cadence/common/xt_macros.h>
+
 using executorch::aten::RuntimeContext;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
@@ -43,7 +45,6 @@ using torch::executor::native::utils::promote_type_with_scalar;
 using torch::executor::native::utils::scalar_to;
 using torch::executor::native::utils::SupportedTensorDtypes;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -248,8 +249,15 @@ Tensor& clamp_Tensor_out(
               ctx, p_scratch != nullptr, MemoryAllocationFailed, out);
 
           const FLOAT32* p_brd_cond = (const FLOAT32*)p_scratch;
-          xa_nn_broadcast_32_32(
-              (WORD32*)p_brd_cond, out_shape, (WORD32*)inp_data, inp_shape, 4);
+          XT_KERNEL_CHECK(
+              ctx,
+              out,
+              xa_nn_broadcast_32_32,
+              (WORD32*)p_brd_cond,
+              out_shape,
+              (WORD32*)inp_data,
+              inp_shape,
+              4);
 
           for (int i = 0; i < 4; i++) {
             inp_shape[i] = out_shape[i];
@@ -322,16 +330,6 @@ Tensor& clamp_Tensor_out(
   return out;
 }
 
-Tensor& clamp_tensor_out(
-    RuntimeContext& ctx,
-    const Tensor& in,
-    const std::optional<Tensor>& min_opt,
-    const std::optional<Tensor>& max_opt,
-    Tensor& out) {
-  return clamp_Tensor_out(ctx, in, min_opt, max_opt, out);
-}
-
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

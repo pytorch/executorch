@@ -2,8 +2,7 @@
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
+# LICENSE file in the root directory of this source tree.)
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -35,4 +34,33 @@ def define_common_targets():
             "//executorch/extension/llm/runner:runner_lib",
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
+    )
+
+    runtime.cxx_test(
+        name = "test_multimodal_input",
+        srcs = ["test_multimodal_input.cpp"],
+        deps = [
+            "//executorch/extension/llm/runner:multimodal_runner_lib",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "test_util",
+        srcs = ["test_util.cpp"],
+        deps = [
+            "//executorch/extension/llm/runner:stats",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/runtime/core:core",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "test_wav_loader",
+        srcs = ["test_wav_loader.cpp"],
+        deps = [
+            "//executorch/extension/testing_util:temp_file",
+            "//executorch/extension/llm/runner:multimodal_runner_lib",
+            "//executorch/runtime/platform:platform",
+        ],
+        platforms = ["CXX", "ANDROID"],
     )

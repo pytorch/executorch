@@ -98,7 +98,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
     Args:
         name: The name of the target; e.g., "op_add"
         deps: List of deps for the target.
-        android_deps: List of fbandroid_platform_deps for the target.
+        android_deps: List of deps for Android platform.
         aten_target: If True, define a "<name>_aten" target that uses
             `:kernel_types_aten`, compatible with host PyTorch. If False, define
             a "<name>" target that uses `:kernel_types`, compatible with the
@@ -123,7 +123,6 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
             "//executorch/kernels/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        fbandroid_platform_deps = android_deps,
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
         compiler_flags = select({
@@ -142,7 +141,10 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         ) + get_compiler_optimization_flags(),
         deps = [
             "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
-        ] + deps,
+        ] + deps + select({
+            "ovr_config//os:android": android_deps,
+            "DEFAULT": [],
+        }),
         # WARNING: using a deprecated API to avoid being built into a shared
         # library. In the case of dynamically loading so library we don't want
         # it to depend on other so libraries because that way we have to
@@ -246,6 +248,7 @@ ATEN_OPS = (
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -255,6 +258,7 @@ ATEN_OPS = (
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -278,12 +282,14 @@ ATEN_OPS = (
     op_target(
         name = "op_argmax",
         deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(
         name = "op_argmin",
         deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -361,6 +367,26 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_bitwise_xor",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+        ],
+    ),
+    op_target(
+        name = "op_bitwise_left_shift",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+        ],
+    ),
+    op_target(
+        name = "op_bitwise_right_shift",
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/pattern:bitwise_op",
@@ -625,6 +651,13 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+            name = "op_grid_sampler_2d",
+            deps = [
+                "//executorch/kernels/portable/cpu/util:grid_sampler_2d_util",
+                "//executorch/runtime/core/exec_aten/util:tensor_util",
+            ],
+        ),
+    op_target(
         name = "op_gt",
         deps = [
             ":scalar_utils",
@@ -806,6 +839,7 @@ ATEN_OPS = (
     op_target(
         name = "op_max",
         deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -843,6 +877,7 @@ ATEN_OPS = (
     op_target(
         name = "op_min",
         deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -1019,6 +1054,7 @@ ATEN_OPS = (
         name = "op_relu",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(
@@ -1129,6 +1165,7 @@ ATEN_OPS = (
         name = "op_sign",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(
@@ -1192,7 +1229,7 @@ ATEN_OPS = (
     op_target(
         name = "op_stack",
         deps = [
-            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+            "//executorch/kernels/portable/cpu/util:stack_util",
         ],
     ),
     op_target(
@@ -1236,6 +1273,9 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_topk",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
+        ]
     ),
     op_target(
         name = "op_transpose_copy",
@@ -1273,6 +1313,12 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_upsample_bilinear2d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:upsample_util",
+        ],
+    ),
+    op_target(
+        name = "op_upsample_bilinear2d_aa",
         deps = [
             "//executorch/kernels/portable/cpu/util:upsample_util",
         ],
@@ -1325,7 +1371,13 @@ ATEN_OPS = (
         name = "op__to_dim_order_copy",
         deps = [
             ":scalar_utils",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op__clone_dim_order",
+        deps = [
+            ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
@@ -1343,9 +1395,6 @@ ATEN_OPS = (
 CUSTOM_OPS = (
     op_target(
         name = "op_allclose",
-    ),
-    op_target(
-        name = "op_linear_scratch_example",
     ),
 )
 

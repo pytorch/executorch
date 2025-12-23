@@ -4,11 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
+
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 edge_ops = (exir_ops.edge.aten.leaky_relu.default,)
 torch_ops = (torch.ops.aten.leaky_relu.default,)
@@ -45,6 +47,8 @@ class DecomposeLeakyReLUPass(ArmPass):
         %op4 = mul(%op3,%op2)
         %op5 = add(%op1,%op4)
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_ops + torch_ops):

@@ -36,25 +36,13 @@ build_android_native_library() {
 
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
-    -DANDROID_ABI="${ANDROID_ABI}" \
+    --preset "android-${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-26 \
-    -DBUILD_TESTING=OFF \
-    -DEXECUTORCH_PAL_DEFAULT=android \
-    -DEXECUTORCH_ENABLE_LOGGING=ON \
-    -DEXECUTORCH_BUILD_DEVTOOLS=ON \
     -DEXECUTORCH_ENABLE_EVENT_TRACER="${EXECUTORCH_ANDROID_PROFILING:-OFF}" \
-    -DEXECUTORCH_LOG_LEVEL=Info \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM="${EXECUTORCH_BUILD_EXTENSION_LLM:-ON}" \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER="${EXECUTORCH_BUILD_EXTENSION_LLM:-ON}" \
     -DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON \
-    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM="${EXECUTORCH_BUILD_EXTENSION_LLM:-ON}" \
+    -DEXECUTORCH_BUILD_LLAMA_JNI="${EXECUTORCH_BUILD_EXTENSION_LLM:-ON}" \
     -DEXECUTORCH_BUILD_NEURON="${EXECUTORCH_BUILD_NEURON}" \
     -DNEURON_BUFFER_ALLOCATOR_LIB="${NEURON_BUFFER_ALLOCATOR_LIB}" \
     -DEXECUTORCH_BUILD_QNN="${EXECUTORCH_BUILD_QNN}" \
@@ -71,25 +59,6 @@ build_android_native_library() {
   fi
   cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
 
-  cmake extension/android \
-    -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
-    -DANDROID_ABI="${ANDROID_ABI}" \
-    -DANDROID_PLATFORM=android-26 \
-    -DBUILD_TESTING=OFF \
-    -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
-    -DEXECUTORCH_ENABLE_LOGGING=ON \
-    -DEXECUTORCH_LOG_LEVEL=Info \
-    -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
-    -DEXECUTORCH_ANDROID_PROFILING="${EXECUTORCH_ANDROID_PROFILING:-OFF}" \
-    -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM="${EXECUTORCH_BUILD_EXTENSION_LLM:-ON}" \
-    -DEXECUTORCH_BUILD_LLAMA_JNI="${EXECUTORCH_BUILD_EXTENSION_LLM:-ON}" \
-    -DSUPPORT_REGEX_LOOKAHEAD=ON \
-    -DCMAKE_BUILD_TYPE="${EXECUTORCH_CMAKE_BUILD_TYPE}" \
-    -B"${CMAKE_OUT}"/extension/android
-
-  cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
-
   # Copy artifacts to ABI specific directory
   local SO_STAGE_DIR="cmake-out-android-so/${ANDROID_ABI}"
   mkdir -p ${SO_STAGE_DIR}
@@ -97,15 +66,7 @@ build_android_native_library() {
 
   # Copy QNN related so library
   if [ -n "$QNN_SDK_ROOT" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
-    cp "${CMAKE_OUT}"/lib/libqnn_executorch_backend.so ${SO_STAGE_DIR}
-    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtp.so ${SO_STAGE_DIR}
-    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnSystem.so ${SO_STAGE_DIR}
-    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtpV69Stub.so ${SO_STAGE_DIR}
-    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtpV73Stub.so ${SO_STAGE_DIR}
-    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtpV75Stub.so ${SO_STAGE_DIR}
-    cp "${QNN_SDK_ROOT}"/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so ${SO_STAGE_DIR}
-    cp "${QNN_SDK_ROOT}"/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so ${SO_STAGE_DIR}
-    cp "${QNN_SDK_ROOT}"/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so ${SO_STAGE_DIR}
+    cp "${CMAKE_OUT}"/lib/executorch/backends/qualcomm/libqnn_executorch_backend.so ${SO_STAGE_DIR}
   fi
 
   # Copy MTK related so library

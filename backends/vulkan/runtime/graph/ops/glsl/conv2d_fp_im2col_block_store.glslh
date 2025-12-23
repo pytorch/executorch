@@ -1,0 +1,68 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_FP_IM2COL_BLOCK_STORE
+#define CONV2D_FP_IM2COL_BLOCK_STORE
+
+/*
+ * Defines utilities to store data for a 4x4 im2col output matrix block computed
+ * from matrix multiplication to an output image.
+ *
+ * Requires:
+ * - t_output to be defined in the shader layout, representing the texture of
+ *   the output image
+ */
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "indexing.glslh"
+#include "conv2d_common.glslh"
+#include "conv2d_fp_im2col_block.glslh"
+#include "linear_fp_output_tile.glslh"
+
+// TODO: implement buffer support
+void write_output_texel(const VEC4_T out_texel, const TensorIndex4D tidx) {
+  // Assume batch size is 1
+  imageStore(
+      t_output, ivec3(tidx.data.x, tidx.data.y, div_4(tidx.data.z)), out_texel);
+}
+
+void write_im2col_tile_as_image(
+    const FPOutTile tile,
+    const int n4_start,
+    const int m_start) {
+  Im2ColMatrixIdx im2col_tidx;
+  im2col_tidx.col = mul_4(n4_start);
+  im2col_tidx.row = m_start;
+#if TILE_K4 == 1
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    TensorIndex4D output_tidx;
+    im2col_tidx_to_output_tidx(output_tidx, im2col_tidx);
+
+    if (any(greaterThanEqual(output_tidx.data, output_sizes))) {
+      continue;
+    }
+    write_output_texel(tile.data[m][0], output_tidx);
+    im2col_tidx.row++;
+  }
+
+#else
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+      TensorIndex4D output_tidx;
+      im2col_tidx_to_output_tidx(output_tidx, im2col_tidx);
+
+      write_output_texel(tile.data[m][k4], output_tidx);
+      im2col_tidx.row++;
+    }
+  }
+
+#endif
+}
+
+#endif // CONV2D_FP_IM2COL_BLOCK_STORE

@@ -54,7 +54,7 @@ WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(WORD8 * __restrict__ p_out,
               XT_LSX2IP(x2, inp2, 2*sizeof(FLOAT32));
               
               //y = XT_SUB_SX2(x2, x1);
-              xtbool2 check = xtfloatx2_LE_xtfloatx2(x2, x1);
+              xtbool2 check = XT_OLE_SX2(x2, x1);
               
               uint8_t val = AE_MOVAB2(check);
               
@@ -79,7 +79,7 @@ WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(WORD8 * __restrict__ p_out,
             XT_LASX2IP(x2, inp2_a, inp2);
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_LE_xtfloatx2(x2, x1);
+            xtbool2 check = XT_OLE_SX2(x2, x1);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -117,7 +117,7 @@ WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(WORD8 * __restrict__ p_out,
               XT_LSX2IP(x2, inp2, 2*sizeof(FLOAT32));
               
               //y = XT_SUB_SX2(x2, x1);
-              xtbool2 check = xtfloatx2_LT_xtfloatx2(x2, x1);
+              xtbool2 check = XT_OLT_SX2(x2, x1);
               
               uint8_t val = AE_MOVAB2(check);
               
@@ -142,7 +142,7 @@ WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(WORD8 * __restrict__ p_out,
             XT_LASX2IP(x2, inp2_a, inp2);
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_LT_xtfloatx2(x2, x1);
+            xtbool2 check = XT_OLT_SX2(x2, x1);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -180,7 +180,7 @@ WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(WORD8 * __restrict__ p_out,
               XT_LSX2IP(x2, inp2, 2*sizeof(FLOAT32));
               
               //y = XT_SUB_SX2(x1, x2);
-              xtbool2 check = xtfloatx2_LE_xtfloatx2(x1, x2);
+              xtbool2 check = XT_OLE_SX2(x1, x2);
               
               uint8_t val = AE_MOVAB2(check);
               
@@ -205,7 +205,7 @@ WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(WORD8 * __restrict__ p_out,
             XT_LASX2IP(x2, inp2_a, inp2);
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_LE_xtfloatx2(x1, x2);
+            xtbool2 check = XT_OLE_SX2(x1, x2);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -243,7 +243,7 @@ WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(WORD8 * __restrict__ p_out,
               XT_LSX2IP(x2, inp2, 2*sizeof(FLOAT32));
               
               //y = XT_SUB_SX2(x1, x2);
-              xtbool2 check = xtfloatx2_LT_xtfloatx2(x1, x2);
+              xtbool2 check = XT_OLT_SX2(x1, x2);
               
               uint8_t val = AE_MOVAB2(check);
               
@@ -268,7 +268,7 @@ WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(WORD8 * __restrict__ p_out,
             XT_LASX2IP(x2, inp2_a, inp2);
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_LT_xtfloatx2(x1, x2);
+            xtbool2 check = XT_OLT_SX2(x1, x2);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -306,7 +306,7 @@ WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(WORD8 * __restrict__ p_out,
               XT_LSX2IP(x2, inp2, 2*sizeof(FLOAT32));
               
               //y = XT_SUB_SX2(x2, x1);
-              xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+              xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
               
               uint8_t val = AE_MOVAB2(check);
               
@@ -331,7 +331,7 @@ WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(WORD8 * __restrict__ p_out,
             XT_LASX2IP(x2, inp2_a, inp2);
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+            xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -370,7 +370,7 @@ WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(WORD8 * __restrict__ p_out,
               XT_LSX2IP(x2, inp2, 2*sizeof(FLOAT32));
               
               //y = XT_SUB_SX2(x2, x1);
-              xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+              xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
               
               ae_int32x2 store = AE_ZERO32();
               AE_MOVF32X2(store, ones, check);
@@ -393,7 +393,7 @@ WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(WORD8 * __restrict__ p_out,
             XT_LASX2IP(x2, inp2_a, inp2);
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+            xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
             
             ae_int32x2 store = AE_ZERO32();
             AE_MOVF32X2(store, ones, check);
@@ -477,7 +477,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LSX2IP(x2, p_b, 2*sizeof(FLOAT32));
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_LE_xtfloatx2(x1, x2);
+            xtbool2 check = XT_OLE_SX2(x1, x2);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -499,7 +499,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LASX2IP(x2, vinp2, p_b);
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_LE_xtfloatx2(x1, x2);
+            xtbool2 check = XT_OLE_SX2(x1, x2);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -535,7 +535,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LSX2IP(x2, p_b, 2*sizeof(FLOAT32));
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_LT_xtfloatx2(x1, x2);
+            xtbool2 check = XT_OLT_SX2(x1, x2);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -557,7 +557,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LASX2IP(x2, vinp2, p_b);
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_LT_xtfloatx2(x1, x2);
+            xtbool2 check = XT_OLT_SX2(x1, x2);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -593,7 +593,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LSX2IP(x2, p_b, 2*sizeof(FLOAT32));
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_LE_xtfloatx2(x2, x1);
+            xtbool2 check = XT_OLE_SX2(x2, x1);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -615,7 +615,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LASX2IP(x2, vinp2, p_b);
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_LE_xtfloatx2(x2, x1);
+            xtbool2 check = XT_OLE_SX2(x2, x1);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -651,7 +651,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LSX2IP(x2, p_b, 2*sizeof(FLOAT32));
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_LT_xtfloatx2(x2, x1);
+            xtbool2 check = XT_OLT_SX2(x2, x1);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -673,7 +673,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LASX2IP(x2, vinp2, p_b);
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_LT_xtfloatx2(x2, x1);
+            xtbool2 check = XT_OLT_SX2(x2, x1);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -709,7 +709,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LSX2IP(x2, p_b, 2*sizeof(FLOAT32));
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+            xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -731,7 +731,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LASX2IP(x2, vinp2, p_b);
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+            xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -768,7 +768,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LSX2IP(x2, p_b, 2*sizeof(FLOAT32));
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+            xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
             
             ae_int32x2 store = AE_ZERO32();
             AE_MOVF32X2(store, ones, check);
@@ -788,7 +788,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LASX2IP(x2, vinp2, p_b);
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+            xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
             
             ae_int32x2 store = AE_ZERO32();
             AE_MOVF32X2(store, ones, check);
@@ -833,7 +833,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LSX2IP(x2, p_b, 2*sizeof(FLOAT32));
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_LE_xtfloatx2(x2, x1);
+            xtbool2 check = XT_OLE_SX2(x2, x1);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -856,7 +856,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LASX2IP(x2, vinp2, p_b);
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_LE_xtfloatx2(x2, x1);
+            xtbool2 check = XT_OLE_SX2(x2, x1);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -892,7 +892,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LSX2IP(x2, p_b, 2*sizeof(FLOAT32));
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_LT_xtfloatx2(x2, x1);
+            xtbool2 check = XT_OLT_SX2(x2, x1);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -915,7 +915,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LASX2IP(x2, vinp2, p_b);
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_LT_xtfloatx2(x2, x1);
+            xtbool2 check = XT_OLT_SX2(x2, x1);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -951,7 +951,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LSX2IP(x2, p_b, 2*sizeof(FLOAT32));
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_LE_xtfloatx2(x1, x2);
+            xtbool2 check = XT_OLE_SX2(x1, x2);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -974,7 +974,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LASX2IP(x2, vinp2, p_b);
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_LE_xtfloatx2(x1, x2);
+            xtbool2 check = XT_OLE_SX2(x1, x2);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -1010,7 +1010,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LSX2IP(x2, p_b, 2*sizeof(FLOAT32));
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_LT_xtfloatx2(x1, x2);
+            xtbool2 check = XT_OLT_SX2(x1, x2);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -1033,7 +1033,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LASX2IP(x2, vinp2, p_b);
             
             //y = XT_SUB_SX2(x1, x2);
-            xtbool2 check = xtfloatx2_LT_xtfloatx2(x1, x2);
+            xtbool2 check = XT_OLT_SX2(x1, x2);
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -1069,7 +1069,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LSX2IP(x2, p_b, 2*sizeof(FLOAT32));
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+            xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -1092,7 +1092,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LASX2IP(x2, vinp2, p_b);
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+            xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
             
             uint8_t val = AE_MOVAB2(check);
             
@@ -1129,7 +1129,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LSX2IP(x2, p_b, 2*sizeof(FLOAT32));
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+            xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
             
             ae_int32x2 store = AE_ZERO32();
             AE_MOVF32X2(store, ones, check);
@@ -1150,7 +1150,7 @@ static void internal_elm_greater_lesser_equal_broadcast_2D_f32xf32_f32(UWORD8 * 
             XT_LASX2IP(x2, vinp2, p_b);
             
             //y = XT_SUB_SX2(x2, x1);
-            xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+            xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
             
             ae_int32x2 store = AE_ZERO32();
             AE_MOVF32X2(store, ones, check);
@@ -1212,7 +1212,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           //y = XT_SUB_SX2(x1, x2);
           
-          xtbool2 check = xtfloatx2_LE_xtfloatx2(x1, x2);
+          xtbool2 check = XT_OLE_SX2(x1, x2);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1232,7 +1232,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LASX2IP(x1, inp1_a, p_a);
           //y = XT_SUB_SX2(x1, x2);
           
-          xtbool2 check = xtfloatx2_LE_xtfloatx2(x1, x2);
+          xtbool2 check = XT_OLE_SX2(x1, x2);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1266,7 +1266,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           //y = XT_SUB_SX2(x1, x2);
           
-          xtbool2 check = xtfloatx2_LT_xtfloatx2(x1, x2);
+          xtbool2 check = XT_OLT_SX2(x1, x2);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1286,7 +1286,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LASX2IP(x1, inp1_a, p_a);
           //y = XT_SUB_SX2(x1, x2);
           
-          xtbool2 check = xtfloatx2_LT_xtfloatx2(x1, x2);
+          xtbool2 check = XT_OLT_SX2(x1, x2);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1320,7 +1320,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           //y = XT_SUB_SX2(x2, x1);
           
-          xtbool2 check = xtfloatx2_LE_xtfloatx2(x2, x1);
+          xtbool2 check = XT_OLE_SX2(x2, x1);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1340,7 +1340,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LASX2IP(x1, inp1_a, p_a);
           //y = XT_SUB_SX2(x2, x1);
           
-          xtbool2 check = xtfloatx2_LE_xtfloatx2(x2, x1);
+          xtbool2 check = XT_OLE_SX2(x2, x1);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1374,7 +1374,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           //y = XT_SUB_SX2(x2, x1);
           
-          xtbool2 check = xtfloatx2_LT_xtfloatx2(x2, x1);
+          xtbool2 check = XT_OLT_SX2(x2, x1);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1394,7 +1394,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LASX2IP(x1, inp1_a, p_a);
           //y = XT_SUB_SX2(x2, x1);
           
-          xtbool2 check = xtfloatx2_LT_xtfloatx2(x2, x1);
+          xtbool2 check = XT_OLT_SX2(x2, x1);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1428,7 +1428,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           //y = XT_SUB_SX2(x1, x2);
           
-          xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+          xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1448,7 +1448,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LASX2IP(x1, inp1_a, p_a);
           //y = XT_SUB_SX2(x1, x2);
           
-          xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+          xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1483,7 +1483,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           //y = XT_SUB_SX2(x1, x2);
           
-          xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+          xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
           
           ae_int32x2 store = AE_ZERO32();
           AE_MOVF32X2(store, ones, check);
@@ -1501,7 +1501,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LASX2IP(x1, inp1_a, p_a);
           //y = XT_SUB_SX2(x1, x2);
           
-          xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+          xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
           
           ae_int32x2 store = AE_ZERO32();
           AE_MOVF32X2(store, ones, check);
@@ -1537,7 +1537,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           //y = XT_SUB_SX2(x2, x1);
           
-          xtbool2 check = xtfloatx2_LE_xtfloatx2(x2, x1);
+          xtbool2 check = XT_OLE_SX2(x2, x1);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1558,7 +1558,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LASX2IP(x1, inp1_a, p_a);
           //y = XT_SUB_SX2(x2, x1);
           
-          xtbool2 check = xtfloatx2_LE_xtfloatx2(x2, x1);
+          xtbool2 check = XT_OLE_SX2(x2, x1);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1592,7 +1592,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           //y = XT_SUB_SX2(x2, x1);
           
-          xtbool2 check = xtfloatx2_LT_xtfloatx2(x2, x1);
+          xtbool2 check = XT_OLT_SX2(x2, x1);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1613,7 +1613,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LASX2IP(x1, inp1_a, p_a);
           //y = XT_SUB_SX2(x2, x1);
           
-          xtbool2 check = xtfloatx2_LT_xtfloatx2(x2, x1);
+          xtbool2 check = XT_OLT_SX2(x2, x1);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1647,7 +1647,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           //y = XT_SUB_SX2(x1, x2);
           
-          xtbool2 check = xtfloatx2_LE_xtfloatx2(x1, x2);
+          xtbool2 check = XT_OLE_SX2(x1, x2);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1668,7 +1668,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LASX2IP(x1, inp1_a, p_a);
           //y = XT_SUB_SX2(x1, x2);
           
-          xtbool2 check = xtfloatx2_LE_xtfloatx2(x1, x2);
+          xtbool2 check = XT_OLE_SX2(x1, x2);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1702,7 +1702,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           //y = XT_SUB_SX2(x1, x2);
           
-          xtbool2 check = xtfloatx2_LT_xtfloatx2(x1, x2);
+          xtbool2 check = XT_OLT_SX2(x1, x2);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1723,7 +1723,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LASX2IP(x1, inp1_a, p_a);
           //y = XT_SUB_SX2(x1, x2);
           
-        xtbool2 check = xtfloatx2_LT_xtfloatx2(x1, x2);
+        xtbool2 check = XT_OLT_SX2(x1, x2);
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1757,7 +1757,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LSX2IP(x1, p_a, 2 * sizeof(FLOAT32));
           //y = XT_SUB_SX2(x2, x1);
           
-          xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+          xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
           
           uint8_t val = AE_MOVAB2(check);
           
@@ -1778,7 +1778,7 @@ static void internal_elm_greater_lesser_equal_broadcast_f32xf32_f32(UWORD8 * __r
           XT_LASX2IP(x1, inp1_a, p_a);
           //y = XT_SUB_SX2(x2, x1);
           
-          xtbool2 check = xtfloatx2_EQ_xtfloatx2(x1, x2);
+          xtbool2 check = AE_EQ32(XT_AE_MOVINT32X2_FROMXTFLOATX2(x1), XT_AE_MOVINT32X2_FROMXTFLOATX2(x2));
           
           uint8_t val = AE_MOVAB2(check);
           

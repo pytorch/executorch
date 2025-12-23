@@ -212,8 +212,25 @@ class Adapter final {
 #endif /* VK_KHR_shader_float16_int8 */
   }
 
+  inline bool supports_int8_dot_product() {
+#ifdef VK_KHR_shader_integer_dot_product
+    return physical_device_.shader_int_dot_product_features
+               .shaderIntegerDotProduct == VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_integer_dot_product */
+  }
+
   inline bool supports_int16_shader_types() {
     return physical_device_.supports_int16_shader_types;
+  }
+
+  inline bool supports_int64_shader_types() {
+    return physical_device_.supports_int64_shader_types;
+  }
+
+  inline bool supports_float64_shader_types() {
+    return physical_device_.supports_float64_shader_types;
   }
 
   inline bool has_full_float16_buffers_support() {
@@ -242,8 +259,12 @@ class Adapter final {
 
   // Command Buffer Submission
 
-  void
-  submit_cmd(const Queue&, VkCommandBuffer, VkFence fence = VK_NULL_HANDLE);
+  void submit_cmd(
+      const Queue&,
+      VkCommandBuffer,
+      VkFence fence = VK_NULL_HANDLE,
+      VkSemaphore wait_semaphore = VK_NULL_HANDLE,
+      VkSemaphore signal_semaphore = VK_NULL_HANDLE);
 
   std::string stringize() const;
   friend std::ostream& operator<<(std::ostream&, const Adapter&);

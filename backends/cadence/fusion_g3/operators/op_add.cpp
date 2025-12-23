@@ -10,7 +10,7 @@
 
 #include <xa_nnlib_kernels_api.h>
 
-#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
+#include <executorch/backends/cadence/common/xt_macros.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
@@ -24,7 +24,6 @@ using ::executorch::runtime::canCast;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -163,7 +162,7 @@ Tensor& add_out(
     float alpha_val;
     torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
 
-    if ((a.numel() == 1) && (alpha_val == 1.0)) {
+    if ((a.numel() == 1) && (alpha_val == 1.0f)) {
       XT_KERNEL_CHECK(
           ctx,
           out,
@@ -368,4 +367,3 @@ Tensor& add_scalar_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

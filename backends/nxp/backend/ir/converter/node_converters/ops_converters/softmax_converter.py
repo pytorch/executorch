@@ -1,23 +1,36 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from executorch.backends.nxp.backend.custom_delegation_options import (
+    CustomDelegationOptions,
+)
 from executorch.backends.nxp.backend.edge_helper import input_rank
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     softmax_options,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
 
 class SoftmaxConverter(NodeConverter):
-    supported_targets = []
+    @staticmethod
+    def _is_supported_on_target(
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        return False
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         # The IR only supports the `dim` as the last dimension. But that depends on the format of the input tensor,
         #  which is only known after the `Partitioner` has divided the model. So if the input shape can be channels

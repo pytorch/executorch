@@ -44,10 +44,12 @@ def define_common_targets():
                 [
                     "*.cpp",
                     "backends/*.cpp",
-                    "backends/irbackend/*.cpp",
-                    "backends/htpbackend/*.cpp",
-                ] + (["backends/htpbackend/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/htpbackend/aarch64/*.cpp"]) + (
-                    ["backends/irbackend/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/irbackend/aarch64/*.cpp"]
+                    "backends/gpu/*.cpp",
+                    "backends/htp/*.cpp",
+                    "backends/ir/*.cpp",
+                ] + (["backends/gpu/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/gpu/aarch64/*.cpp"]) + (
+                    ["backends/htp/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/htp/aarch64/*.cpp"]) + (
+                    ["backends/ir/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/ir/aarch64/*.cpp"]
                 ),
                 exclude = ["Logging.cpp"],
             ),
@@ -55,8 +57,9 @@ def define_common_targets():
                 [
                     "*.h",
                     "backends/*.h",
-                    "backends/irbackend/*.h",
-                    "backends/htpbackend/*.h",
+                    "backends/gpu/*.h",
+                    "backends/htp/*.h",
+                    "backends/ir/*.h",
                 ],
                 exclude = ["Logging.h"],
             ),
@@ -73,13 +76,12 @@ def define_common_targets():
                 "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
                 ":logging",
                 "//executorch/backends/qualcomm:schema",
-                "//executorch/backends/qualcomm/aot/ir:qcir_utils",
                 "//executorch/backends/qualcomm/aot/wrappers:wrappers",
-                "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core:core",
                 "//executorch/extension/tensor:tensor",
             ],
             exported_deps = [
+                "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util",
                 "//executorch/runtime/core:event_tracer",
             ],

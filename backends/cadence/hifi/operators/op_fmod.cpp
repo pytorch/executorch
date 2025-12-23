@@ -8,12 +8,12 @@
 
 #include <cmath>
 
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-
-#include "kernels.h"
 
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
@@ -33,7 +33,6 @@ using torch::executor::native::utils::extract_scalar;
 using torch::executor::native::utils::get_scalar_dtype;
 using torch::executor::native::utils::promote_type_with_scalar;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -176,21 +175,36 @@ Tensor& fmod_Tensor_out(
 
   auto div_by_zero_error = false;
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, op_name, CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, op_name, CTYPE_B, [&]() {
-      using CTYPE_IN =
-          typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
-      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-      ET_SWITCH_REAL_TYPES(out_type, ctx, op_name, CTYPE_OUT, [&]() {
-        FmodInner<
-            !std::is_same<CTYPE_IN, bool>::value &&
-                can_cast<CTYPE_IN, CTYPE_OUT>::value,
-            CTYPE_A,
-            CTYPE_B,
-            CTYPE_IN,
-            CTYPE_OUT>::run(a, b, out, div_by_zero_error);
-      });
-    });
+  // Compute Dtype
+  ScalarType compute_type =
+      torch::executor::native::utils::get_compute_type(common_type);
+  if (compute_type != ScalarType::Float) {
+    compute_type = ScalarType::Double;
+  }
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    torch::executor::native::utils::apply_bitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        torch::executor::native::utils::SupportedTensorDtypes::REALHBF16>(
+        [&div_by_zero_error](
+            const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+          // TODO: rewrite this to be vectorization-capable?
+          CTYPE_COMPUTE value = 0;
+          if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::value) {
+            if (val_b == 0) {
+              div_by_zero_error = true;
+              return value;
+            }
+          }
+          value = std::fmod(val_a, val_b);
+          return value;
+        },
+        ctx,
+        a,
+        torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+        b,
+        torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+        out);
   });
 
   ET_KERNEL_CHECK_MSG(
@@ -218,6 +232,9 @@ Tensor& fmod_Scalar_out(
       out,
       "Failed to resize output tensor.");
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "fmod.Scalar_out";
+
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = get_scalar_dtype(b);
   ScalarType common_type = promote_type_with_scalar(a_type, b);
@@ -228,12 +245,11 @@ Tensor& fmod_Scalar_out(
   // Check for integer division by zero
   if (isIntegralType(common_type, /*includeBool=*/true)) {
     auto is_zero = false;
-    ET_SWITCH_REAL_TYPES_AND(
-        Bool, b_type, ctx, "fmod.Scalar_out", CTYPE_B, [&]() {
-          CTYPE_B val_b = 0;
-          extract_scalar(b, &val_b);
-          is_zero = (val_b == 0);
-        });
+    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, op_name, CTYPE_B, [&]() {
+      CTYPE_B val_b = 0;
+      extract_scalar(b, &val_b);
+      is_zero = (val_b == 0);
+    });
 
     ET_KERNEL_CHECK_MSG(
         ctx,
@@ -242,39 +258,31 @@ Tensor& fmod_Scalar_out(
         out,
         "Fmod operation encountered integer division by zero");
   }
+  // Compute Dtype
+  ScalarType compute_type =
+      torch::executor::native::utils::get_compute_type(common_type);
+  if (compute_type != ScalarType::Float) {
+    compute_type = ScalarType::Double;
+  }
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, a_type, ctx, "fmod.Scalar_out", CTYPE_A, [&]() {
-        ET_SWITCH_SCALAR_OBJ_TYPES(
-            b_type, ctx, "fmod.Scalar_out", CTYPE_B, [&]() {
-              CTYPE_B val_b = 0;
-              extract_scalar(b, &val_b);
-              ET_SWITCH_REAL_TYPES(
-                  common_type, ctx, "fmod.Scalar_out", CTYPE_IN, [&]() {
-                    ET_SWITCH_REAL_TYPES(
-                        out_type, ctx, "fmod.Scalar_out", CTYPE_OUT, [&]() {
-                          apply_unary_map_fn(
-                              [val_b](const CTYPE_A val_a) {
-                                CTYPE_IN a_casted =
-                                    static_cast<CTYPE_IN>(val_a);
-                                CTYPE_IN b_casted =
-                                    static_cast<CTYPE_IN>(val_b);
-                                CTYPE_IN value = std::fmod(a_casted, b_casted);
-
-                                return static_cast<CTYPE_OUT>(value);
-                              },
-                              a.const_data_ptr<CTYPE_A>(),
-                              out.mutable_data_ptr<CTYPE_OUT>(),
-                              out.numel());
-                        });
-                  });
-            });
-      });
-
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    const CTYPE_COMPUTE val_b =
+        torch::executor::native::utils::scalar_to<CTYPE_COMPUTE>(b);
+    torch::executor::native::utils::apply_unitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        torch::executor::native::utils::SupportedTensorDtypes::REALHBF16>(
+        [val_b](const auto val_a) {
+          return executorch::math::fmod(val_a, (decltype(val_a))val_b);
+        },
+        ctx,
+        a,
+        torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+        out);
+  });
   return out;
 }
 
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

@@ -55,9 +55,22 @@
  */
 
 #define ET_NORETURN [[noreturn]]
+
+// Inline/NoInline
+#if defined(_MSC_VER)
+#define ET_NOINLINE __declspec(noinline)
+#define ET_INLINE __forceinline
+#else
 #define ET_NOINLINE __attribute__((noinline))
 #define ET_INLINE __attribute__((always_inline)) inline
-#define ET_INLINE_ATTRIBUTE __attribute__((always_inline))
+#endif
+
+// Restrict
+#if defined(_MSC_VER)
+#define ET_RESTRICT __restrict
+#else
+#define ET_RESTRICT __restrict__
+#endif
 
 #if defined(__GNUC__)
 
@@ -148,9 +161,11 @@
 
 // As of G3 RJ-2024.3 toolchain, zu format specifier is not supported for Xtensa
 #if defined(__XTENSA__)
-#define ET_PRIsize_t "lu"
+#define ET_PRIsize_t "u"
+#define ET_PRIssize_t "d"
 #else
 #define ET_PRIsize_t "zu"
+#define ET_PRIssize_t "zd"
 #endif
 
 // Whether the compiler supports GNU statement expressions.

@@ -7,12 +7,13 @@
 from typing import Tuple
 
 import torch
-from torchao.quantization.pt2e import MappingType, PerBlock
+from torchao.quantization.pt2e import FakeQuantize, MappingType, PerBlock
 from torchao.quantization.pt2e._affine_quantization import (
     _get_reduction_params,
     AffineQuantizedMinMaxObserver,
     choose_qparams_affine_with_min_max,
 )
+from torchao.quantization.quant_primitives import _fake_quantize_affine
 
 
 class PerBlockParamObserver(AffineQuantizedMinMaxObserver):
@@ -34,13 +35,15 @@ class PerBlockParamObserver(AffineQuantizedMinMaxObserver):
             eps=eps,
             **kwargs,
         )
+        self.dtype = dtype
         self.block_size = block_size
         # TODO: expand this when QNN starts to support more configurations
         self.bitwidth_of_scale = 4
-        self.quant_scales_dtype = torch.uint8
+        self.num_steps = 2**self.bitwidth_of_scale
+        self.calibrated = False
 
     def forward(self, input: torch.Tensor):
-        if input.numel() == 0:
+        if input.numel() == 0 or self.calibrated:
             return input
 
         input_detached = input.detach()
@@ -66,13 +69,14 @@ class PerBlockParamObserver(AffineQuantizedMinMaxObserver):
             self.min_val.copy_(min_val)
             self.max_val.copy_(max_val)
 
+        self.calibrated = True
         return input
 
     def calculate_qparams(self) -> Tuple[torch.Tensor, torch.Tensor]:
         assert hasattr(self, "min_val") and hasattr(
             self, "max_val"
         ), "Expecting the observer has min_val and max_val, please run the observer before calling calculate_qparams"
-        scales, offsets = choose_qparams_affine_with_min_max(
+        return choose_qparams_affine_with_min_max(
             self.min_val,
             self.max_val,
             self.mapping_type,
@@ -86,16 +90,56 @@ class PerBlockParamObserver(AffineQuantizedMinMaxObserver):
             self.preserve_zero,
             self.zero_point_domain,
         )
-        num_channels = scales.shape[0]
-        num_steps = 2**self.bitwidth_of_scale
-        for ch in range(num_channels):
-            max_scale = scales[ch].reshape(1, -1).amax(dim=-1) / num_steps
-            q_scales = torch.clamp(
-                input=scales[ch] / max_scale,
-                min=torch.iinfo(self.quant_scales_dtype).min,
-                max=torch.iinfo(self.quant_scales_dtype).max,
-            ).to(self.quant_scales_dtype)
-            # compensate the error from double quantization
-            scales[ch] = q_scales * max_scale
 
-        return scales, offsets
+
+class PerBlockParamFakeQuantize(FakeQuantize):
+    def __init__(
+        self,
+        dtype: torch.dtype = torch.int8,
+        block_size: torch.Size = None,
+        quant_min: int = None,
+        quant_max: int = None,
+        eps: float = torch.finfo(torch.float32).eps,  # noqa: B008
+        **kwargs,
+    ):
+        super().__init__()
+        assert (
+            block_size is not None
+        ), "block_size must be provided for per-block quantization"
+
+        self.activation_post_process = PerBlockParamObserver(
+            dtype=dtype,
+            block_size=block_size,
+            quant_min=quant_min,
+            quant_max=quant_max,
+            eps=eps,
+            **kwargs,
+        )
+        self.dtype = dtype
+        self.block_size = block_size
+        self.quant_min = quant_min if quant_min is not None else torch.iinfo(dtype).min
+        self.quant_max = quant_max if quant_max is not None else torch.iinfo(dtype).max
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.numel() == 0:
+            return x
+
+        self.activation_post_process(x)
+        scale, zero_point = self.activation_post_process.calculate_qparams()
+
+        return _fake_quantize_affine(
+            x,
+            self.block_size,
+            scale,
+            zero_point,
+            quant_dtype=self.dtype,
+            quant_min=self.quant_min,
+            quant_max=self.quant_max,
+        )
+
+    def calculate_qparams(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.activation_post_process.calculate_qparams()
+
+    def convert(self, model, observer_node):
+        self.activation_post_process.convert(model, observer_node)

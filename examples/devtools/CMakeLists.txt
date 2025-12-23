@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -37,8 +38,8 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,
 # etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
-target_link_options_shared_lib(executorch)
-target_link_options_shared_lib(portable_ops_lib)
+executorch_target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(portable_ops_lib)
 
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
@@ -47,7 +48,9 @@ find_package(
 )
 
 add_executable(example_runner example_runner/example_runner.cpp)
-target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
+target_compile_options(
+  executorch INTERFACE -DET_EVENT_TRACER_ENABLED -DET_BUNDLE_IO_ENABLED
+)
 
 target_include_directories(
   etdump INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../devtools/include
@@ -65,6 +68,10 @@ target_link_libraries(
   portable_kernels
 )
 
+if(EXECUTORCH_BUILD_VULKAN)
+  target_link_libraries(example_runner vulkan_backend)
+endif()
+
 if(EXECUTORCH_BUILD_COREML)
   find_library(ACCELERATE_FRAMEWORK Accelerate)
   find_library(COREML_FRAMEWORK CoreML)
@@ -81,12 +88,10 @@ if(EXECUTORCH_BUILD_COREML)
     NO_DEFAULT_PATH
   )
 
-  target_link_libraries(
-    example_runner "-Wl,-force_load" coremldelegate
-  )
+  target_link_libraries(example_runner "-Wl,-force_load" coremldelegate)
 
   target_link_libraries(
-    example_runner ${PROTOBUF_LITE} ${ACCELERATE_FRAMEWORK}
-    ${COREML_FRAMEWORK} ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
+    example_runner ${PROTOBUF_LITE} ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
+    ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
   )
 endif()

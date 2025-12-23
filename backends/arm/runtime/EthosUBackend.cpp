@@ -10,6 +10,11 @@
  * ethos-u-core-driver for hardware interaction.
  */
 
+// Workaround for runtime/core/portable_type/c10/c10/util/Float16-math.h
+#if defined(__GNUC__) && defined(__ZEPHYR__)
+#pragma GCC diagnostic ignored "-Wdouble-promotion"
+#endif
+
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -70,6 +75,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 #define ETHOSU_NUM_BASE_ADDRS 3
 
@@ -140,7 +146,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* input_handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
 #if defined(ET_EVENT_TRACER_ENABLED)
     EventTracer* event_tracer = context.event_tracer();
     EventTracerEntry event_tracer_local_scope;
@@ -191,8 +197,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // Use a temporary allocator for the intermediate tensors of the
     // computation. The allocator is released in runtime/executor/method.cpp at
     // the end of the execution of the Ethos-U custom delegate
-    char* ethosu_scratch =
-        static_cast<char*>(temp_allocator->allocate(handles.scratch_data_size));
+    // Ethos-U driver requires 16 bit alignment.
+    char* ethosu_scratch = static_cast<char*>(
+        temp_allocator->allocate(handles.scratch_data_size, 16UL));
     if (ethosu_scratch == nullptr) {
       ET_LOG(
           Error,
@@ -247,21 +254,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
             handles.inputs->io[i].elem_size);
         return Error::InvalidProgram;
       }
-      supported = executorch::runtime::is_contiguous_dim_order(
-          tensor_in.dim_order().data(), tensor_in.dim());
-      if (!supported) {
-        ET_LOG(
-            Error,
-            "Input %d expected contiguous dim_order, but got non-contiguous dim_order",
-            i);
-        return Error::InvalidProgram;
-      }
 
       // Select a compatible copy routine including checking for input layouts
       // which require permutation.
-      bool permuted_input_shape;
-      ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
-          i, tensor_in, &handles.inputs->io[i], &permuted_input_shape));
       bool both_int = tensor_in.scalar_type() == ScalarType::Int &&
           handles.inputs->io[i].elem_size == 4;
       bool both_char = tensor_in.scalar_type() == ScalarType::Char &&
@@ -271,19 +266,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       bool both_bool = tensor_in.scalar_type() == ScalarType::Bool &&
           (handles.inputs->io[i].elem_size == 1);
 
-      // Select a compatible copy routine
-      if ((both_char || both_bool) && permuted_input_shape) {
-        EXECUTORCH_PROF_SCOPE(
-            event_tracer,
-            "+EthosUBackend::execute()handles.input.permute_CHW_to_HWC()");
-        // permuted byte copy CHW to HWC
-        permute_CHW_to_HWC(
-            tensor_in.mutable_data_ptr<char>(),
-            scratch_addr,
-            tensor_in.size(1),
-            tensor_in.size(2),
-            tensor_in.size(3));
-      } else if (both_char || both_int || both_short || both_bool) {
+      if (both_char || both_int || both_short || both_bool) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
         // Sizes match and elt size matches so memcpy
@@ -295,18 +278,16 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         ET_LOG(Error, "No matching input copy routine");
         return Error::InvalidProgram;
       }
-      if (!permuted_input_shape) {
-        calculate_dimensions(
-            tensor_in, &handles.inputs->io[i], &tensor_count, &io_count);
-        if (tensor_count != io_count) {
-          ET_LOG(Error, "Input tensor sizes do not match");
-          ET_LOG(
-              Error,
-              "Program expects %d elements but got %d",
-              io_count,
-              tensor_count);
-          return Error::InvalidProgram;
-        }
+      calculate_dimensions(
+          tensor_in, &handles.inputs->io[i], &tensor_count, &io_count);
+      if (tensor_count != io_count) {
+        ET_LOG(Error, "Input tensor sizes do not match");
+        ET_LOG(
+            Error,
+            "Program expects %d elements but got %d",
+            io_count,
+            tensor_count);
+        return Error::InvalidProgram;
       }
     }
 
@@ -350,7 +331,8 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       ET_LOG(Error, "Ethos-U invocation failed error (%d)", result);
       return Error::InvalidProgram;
     }
-    int tensor_dim = 0, io_dim = 0;
+    size_t tensor_bytes_total = 0;
+    size_t io_bytes_total = 0;
     // Write outputs from scratch into EValue pointers
     for (int i = 0; i < handles.outputs->count; i++) {
       int tensor_count = 1, io_count = 1;
@@ -362,30 +344,17 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       calculate_dimensions(
           tensor_out, &handles.outputs->io[i], &tensor_count, &io_count);
 
-      // At times the topological order of the outputs may change.
-      // Lets instead ensure that the sum of dimensions match.
-      tensor_dim = tensor_dim + tensor_count;
-      io_dim = io_dim + io_count;
+      size_t tensor_bytes = tensor_out.nbytes();
+      size_t io_bytes = static_cast<size_t>(io_count) *
+          static_cast<size_t>(handles.outputs->io[i].elem_size);
 
-      bool permuted_output_shape;
-      ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
-          i, tensor_out, &handles.outputs->io[i], &permuted_output_shape));
-
-      if ((tensor_out.scalar_type() == ScalarType::Char ||
-           tensor_out.scalar_type() == ScalarType::Bool) &&
-          permuted_output_shape) {
-        EXECUTORCH_PROF_SCOPE(
-            event_tracer,
-            "+EthosUBackend::execute()handles.output.permute_HWC_to_CHW()");
-
-        const char* output_address = static_cast<const char*>(output_addr);
-
-        permute_HWC_to_CHW(
-            output_address,
-            tensor_out.mutable_data_ptr<char>(),
-            tensor_out.size(1),
-            tensor_out.size(2),
-            tensor_out.size(3));
+      if (tensor_bytes != io_bytes) {
+        Error status = copy_with_layout_adjustment(
+            handles.outputs->io[i], i, output_addr, tensor_out, tensor_bytes);
+        if (status != Error::Ok) {
+          return status;
+        }
+        io_bytes_total += tensor_bytes;
       } else {
         EXECUTORCH_PROF_SCOPE(
             event_tracer, "+EthosUBackend::execute()handles.output.memcpy()");
@@ -393,13 +362,21 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         memcpy(
             tensor_out.mutable_data_ptr<char>(),
             static_cast<const char*>(output_addr),
-            tensor_out.nbytes());
+            tensor_bytes);
+        io_bytes_total += io_bytes;
       }
+
+      // At times the topological order of the outputs may change.
+      // Lets instead ensure that the sum of output bytes match.
+      tensor_bytes_total += tensor_bytes;
     }
-    if (tensor_dim != io_dim) {
+    if (tensor_bytes_total != io_bytes_total) {
       ET_LOG(Error, "Total output tensor sizes do not match");
       ET_LOG(
-          Error, "Program expects size of %d but got %d", tensor_dim, io_dim);
+          Error,
+          "Program expects %zu bytes but got %zu",
+          io_bytes_total,
+          tensor_bytes_total);
       return Error::InvalidProgram;
     }
     return Error::Ok;
@@ -410,6 +387,147 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
   }
 
  private:
+  // Copies Vela output into the ExecuTorch tensor, adjusting for padding or
+  // packed layouts produced by the delegate.
+  Error copy_with_layout_adjustment(
+      const VelaIO& output_io,
+      int output_index,
+      const char* src,
+      executorch::aten::Tensor& tensor_out,
+      size_t tensor_bytes) const {
+    const int elem_size = output_io.elem_size;
+    if (elem_size == 0) {
+      ET_LOG(
+          Error, "Ethos-U output %d reports zero element size", output_index);
+      return Error::InvalidProgram;
+    }
+
+    size_t chunk_count = 1;
+    for (int dim = 0; dim < shapeDim - 1; ++dim) {
+      const int vela_dim = output_io.shape[dim];
+      chunk_count *= static_cast<size_t>(vela_dim == 0 ? 1 : vela_dim);
+    }
+    const int last_dim = output_io.shape[shapeDim - 1];
+    const size_t vela_chunk_elems =
+        static_cast<size_t>(last_dim == 0 ? 1 : last_dim);
+    const size_t vela_chunk_size =
+        vela_chunk_elems * static_cast<size_t>(elem_size);
+
+    if (tensor_bytes % chunk_count != 0) {
+      ET_LOG(
+          Error,
+          "Ethos-U output %d tensor bytes %zu not divisible by chunk count %zu",
+          output_index,
+          tensor_bytes,
+          chunk_count);
+      return Error::InvalidProgram;
+    }
+
+    const size_t chunk_size = tensor_bytes / chunk_count;
+
+    // If Vela writes fewer bytes than the tensor expects we may need to
+    // expand 4-bit data to 8-bit. Ethos-U outputs may be
+    // packed 4-bit values but ExecuTorch tensors are at least 8-bit.
+    if (vela_chunk_size < chunk_size) {
+      if (chunk_size % vela_chunk_size != 0) {
+        ET_LOG(
+            Error,
+            "Ethos-U output %d chunk bytes %zu not divisible by vela chunk bytes %zu",
+            output_index,
+            chunk_size,
+            vela_chunk_size);
+        return Error::InvalidProgram;
+      }
+
+      const size_t expand_factor = chunk_size / vela_chunk_size;
+      if (expand_factor == 2 && elem_size == 1 &&
+          tensor_out.scalar_type() == ScalarType::Char) {
+        return unpack_chunks_4bit_to_int8(
+            reinterpret_cast<const uint8_t*>(src),
+            tensor_out.mutable_data_ptr<int8_t>(),
+            chunk_count,
+            chunk_size,
+            vela_chunk_size);
+      }
+
+      ET_LOG(
+          Error,
+          "Ethos-U output %d expansion factor %zu with element size %d not supported",
+          output_index,
+          expand_factor,
+          elem_size);
+      return Error::InvalidProgram;
+    }
+
+    return strip_delegate_padding(
+        src,
+        tensor_out.mutable_data_ptr<char>(),
+        chunk_count,
+        chunk_size,
+        vela_chunk_size);
+  }
+
+  Error unpack_chunks_4bit_to_int8(
+      const uint8_t* src,
+      int8_t* dest,
+      size_t chunk_count,
+      size_t dest_chunk_size,
+      size_t src_chunk_size) const {
+    const uint8_t* chunk_src = src;
+    int8_t* chunk_dest = dest;
+    for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
+      unpack_single_chunk_4bit_to_int8(chunk_src, chunk_dest, src_chunk_size);
+      chunk_src += src_chunk_size;
+      chunk_dest += dest_chunk_size;
+    }
+    return Error::Ok;
+  }
+
+  void unpack_single_chunk_4bit_to_int8(
+      const uint8_t* src,
+      int8_t* dest,
+      size_t chunk_size) const {
+    for (size_t byte_idx = 0; byte_idx < chunk_size; ++byte_idx) {
+      const uint8_t packed = src[byte_idx];
+      int8_t low = static_cast<int8_t>(packed & 0x0F);
+      int8_t high = static_cast<int8_t>((packed >> 4) & 0x0F);
+      if (low >= 8) {
+        low -= 16;
+      }
+      if (high >= 8) {
+        high -= 16;
+      }
+      dest[2 * byte_idx] = low;
+      dest[2 * byte_idx + 1] = high;
+    }
+  }
+
+  Error strip_delegate_padding(
+      const char* src,
+      char* dest,
+      size_t chunk_count,
+      size_t dest_chunk_size,
+      size_t src_chunk_size) const {
+    if (dest_chunk_size > src_chunk_size) {
+      ET_LOG(
+          Error,
+          "dest chunk size %zu must not exceed src chunk size %zu",
+          dest_chunk_size,
+          src_chunk_size);
+      return Error::InvalidProgram;
+    }
+    if (src == nullptr || dest == nullptr) {
+      ET_LOG(Error, "Ethos-U padded copy received null buffer");
+      return Error::InvalidState;
+    }
+    for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
+      memcpy(dest, src, dest_chunk_size);
+      src += src_chunk_size;
+      dest += dest_chunk_size;
+    }
+    return Error::Ok;
+  }
+
   void calculate_dimensions(
       const executorch::aten::Tensor tensor,
       VelaIO* io,
@@ -419,57 +537,41 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       *tensor_count = *tensor_count * tensor.size(i);
     }
 
-    // The VelaIO type has a shape of fixed size 4
-    for (int i = 0; i < 4; i++) {
+    // The VelaIO type has a shape of fixed size 6
+    for (int i = 0; i < shapeDim; i++) {
       *io_count = *io_count * io->shape[i];
-    }
-  }
-
-  Error check_requires_permute(
-      int index,
-      const executorch::aten::Tensor tensor,
-      VelaIO* io,
-      bool* is_permuted) const {
-    bool permuted_shape = false;
-
-    if (tensor.dim() == 4) {
-      // special case for NHWC workaround in AOT; as the compilation has
-      // permuted to channel last in an undetectable way, we assume here
-      // that the application has similarly permuted any input/output tensors.
-      permuted_shape = tensor.size(0) == io->shape[0] &&
-          tensor.size(1) == io->shape[3] && tensor.size(2) == io->shape[1] &&
-          tensor.size(3) == io->shape[2];
-      if (permuted_shape) {
-        ET_LOG(Debug, "Tensor input/output %d will be permuted", index);
-      }
-    }
-    *is_permuted = permuted_shape;
-    return Error::Ok;
-  }
-
-  void permute_CHW_to_HWC(const char* input, char* output, int C, int H, int W)
-      const {
-    for (int i = 0; i != H * W; ++i) {
-      for (int j = 0; j < C; ++j) {
-        output[i * C + j] = input[i + j * W * H];
-      }
-    }
-  }
-
-  void permute_HWC_to_CHW(const char* input, char* output, int C, int H, int W)
-      const {
-    for (int i = 0; i != H * W; ++i) {
-      for (int j = 0; j < C; ++j) {
-        output[i + j * W * H] = input[i * C + j];
-      }
     }
   }
 };
 
 namespace {
-auto backend = EthosUBackend();
-Backend backend_id{"EthosUBackend", &backend};
-static auto registered = register_backend(backend_id);
+auto EthosUBackend_backend = EthosUBackend();
+Backend EthosUBackend_id{"EthosUBackend", &EthosUBackend_backend};
+static executorch::runtime::Error EthosUBackend_registered =
+    register_backend(EthosUBackend_id);
+
+#ifdef __ZEPHYR__
+/**
+ * This function serves as a linker force-include mechanism to ensure the
+ * EthosU backend module gets properly linked into the final executable,
+ * even when it might otherwise be optimized out by the linker due to
+ * linker options that remove unused code or data for example
+ * if you link with --gc-sections
+ * This function can be called from your runner to force the inclusion of
+ * the EthosU backend module. As a bonus it will return the status of the
+ * backend registration, so you can also check if the registration was
+ * successful.
+ */
+
+// Warning: This should not be considered to be an API and might get removed
+// without notice in a future release if a better way to solve this is
+// implemented.
+extern "C" executorch::runtime::Error
+executorch_delegate_EthosUBackend_registered() {
+  return EthosUBackend_registered;
+}
+#endif
+
 } // namespace
 
 } // namespace arm

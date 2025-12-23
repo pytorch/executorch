@@ -85,7 +85,7 @@ inline void dtype_specialized_elementwise_fn_impl(
   static_assert(
       (std::is_same_v<Args, std::pair<const Tensor*, SupportedTensorDtypes>> &&
        ...));
-  constexpr auto kNumInputs = sizeof...(inputs);
+  static constexpr auto kNumInputs = sizeof...(inputs);
   // All inputs must be of type CTYPE_COMPUTE.
   ET_DCHECK(
       ((inputs.first->scalar_type() ==
@@ -119,9 +119,9 @@ inline void dtype_specialized_elementwise_fn_impl(
           // small-sized tests will test whether using Vectorized broke our
           // lambda.
 #ifndef NDEBUG
-              std::array<Vec, kNumInputs> loaded_inputs;
+              std::array<Vec, kNumInputs> loaded_inputs{};
 #else // NDEBUG
-              std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs;
+              std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
 #endif // NDEBUG
               for (const auto input_idx : c10::irange(kNumInputs)) {
                 loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
@@ -136,7 +136,7 @@ inline void dtype_specialized_elementwise_fn_impl(
             // Main vectorized loop.
             for (auto idx = vectorized_begin; idx < vectorized_end;
                  idx += Vec::size()) {
-              std::array<Vec, kNumInputs> loaded_vec_inputs;
+              std::array<Vec, kNumInputs> loaded_vec_inputs{};
               for (const auto input_idx : c10::irange(kNumInputs)) {
                 loaded_vec_inputs[input_idx] =
                     Vec::loadu(&inputs_data_ptrs[input_idx][idx]);
@@ -148,9 +148,9 @@ inline void dtype_specialized_elementwise_fn_impl(
             // Scalar epilogue.
             for (const auto idx : c10::irange(vectorized_end, end)) {
 #ifndef NDEBUG
-              std::array<Vec, kNumInputs> loaded_inputs;
+              std::array<Vec, kNumInputs> loaded_inputs{};
 #else // NDEBUG
-              std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs;
+              std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
 #endif // NDEBUG
               for (const auto input_idx : c10::irange(kNumInputs)) {
                 loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
@@ -184,7 +184,7 @@ inline void dtype_specialized_elementwise_fn_impl(
         begin_it += begin;
         for (; (*begin_it)[0] < end; ++begin_it) {
           const auto& indexes = *begin_it;
-          std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs;
+          std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
           for (const auto idx : c10::irange(kNumInputs)) {
             loaded_inputs[idx] = inputs_data_ptrs[idx][indexes[idx + 1]];
           }
@@ -193,9 +193,8 @@ inline void dtype_specialized_elementwise_fn_impl(
       });
 }
 
-template <typename CTYPE_COMPUTE, typename Op, typename... Args>
+template <typename CTYPE_COMPUTE, typename... Args>
 inline bool validate_elementwise_fn_inputs(
-    const Op& compute_fun,
     KernelRuntimeContext& ctx,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes,
@@ -230,7 +229,7 @@ inline void apply_elementwise_fn_generic_impl(
     const Tensor& out,
     SupportedTensorDtypes out_dtypes,
     Args... inputs) {
-  constexpr auto kNumInputs = sizeof...(inputs);
+  static constexpr auto kNumInputs = sizeof...(inputs);
 
   struct InputInfo {
     load_to_compute_fn<CTYPE_COMPUTE> load_to_compute;
@@ -239,14 +238,14 @@ inline void apply_elementwise_fn_generic_impl(
   };
   std::array<InputInfo, kNumInputs> inputs_info = {(InputInfo{
       internal::get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
-          *inputs.first, inputs.second),
+          ctx, *inputs.first, inputs.second),
       reinterpret_cast<const char*>(inputs.first->const_data_ptr()),
       inputs.first->element_size(),
   })...};
 
   const auto store_compute_to_out =
       internal::get_store_compute_to_tensor_fn<CTYPE_COMPUTE, op_name>(
-          out, out_dtypes);
+          ctx, out, out_dtypes);
   char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
   const auto out_element_size = out.element_size();
 
@@ -262,7 +261,7 @@ inline void apply_elementwise_fn_generic_impl(
         begin_it += begin;
         for (; (*begin_it)[0] < end; ++begin_it) {
           const auto& indexes = *begin_it;
-          std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs;
+          std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
           for (const auto idx : c10::irange(kNumInputs)) {
             const auto& input_info = inputs_info[idx];
             loaded_inputs[idx] = input_info.load_to_compute(
@@ -288,7 +287,7 @@ inline void apply_elementwise_fn_runtime_out_dtypes(
     SupportedTensorDtypes out_dtypes,
     Args... inputs) {
   const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMPUTE>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
+      ctx, out, out_dtypes, inputs...);
   if (!inputs_valid) {
     return;
   }
@@ -313,18 +312,19 @@ inline void apply_elementwise_fn(
     const Tensor& out,
     Args... inputs) {
   const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMPUTE>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
+      ctx, out, out_dtypes, inputs...);
   if (!inputs_valid) {
     return;
   }
 
   constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMPUTE>::value;
-  if constexpr (should_include_kernel_dtype(op_name, compute_type)) {
+  constexpr ScalarType out_specialized_scalar_type =
+      specialized_output_scalar_type<CTYPE_COMPUTE>(out_dtypes);
+  if constexpr (should_include_kernel_dtype(
+                    op_name, out_specialized_scalar_type)) {
     const bool all_inputs_compute_dtype =
         ((inputs.first->scalar_type() == compute_type) && ...);
 
-    constexpr ScalarType out_specialized_scalar_type =
-        specialized_output_scalar_type<CTYPE_COMPUTE>(out_dtypes);
     if (all_inputs_compute_dtype &&
         out.scalar_type() == out_specialized_scalar_type) {
       using CTYPE_OUT =

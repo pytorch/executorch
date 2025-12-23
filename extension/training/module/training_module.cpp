@@ -13,9 +13,19 @@ namespace extension {
 namespace training {
 
 namespace {
-std::string gradients_method_prefix = "__et_training_gradients_index_";
-std::string parameters_method_prefix = "__et_training_parameters_index_";
-std::string fqn_method_prefix = "__et_training_fqn_";
+
+std::string make_parameters_method_name(const std::string& method_name) {
+  return "__et_training_parameters_index_" + method_name;
+}
+
+std::string make_gradients_method_name(const std::string& method_name) {
+  return "__et_training_gradients_index_" + method_name;
+}
+
+std::string make_fqn_method_name(const std::string& method_name) {
+  return "__et_training_fqn_" + method_name;
+}
+
 } // namespace
 
 runtime::Result<std::vector<runtime::EValue>>
@@ -24,7 +34,7 @@ TrainingModule::execute_forward_backward(
     const std::vector<runtime::EValue>& input) {
   // Find where the user outputs end.
   const std::string gradients_method_name =
-      gradients_method_prefix + method_name;
+      make_gradients_method_name(method_name);
   auto res = executorch::extension::Module::execute(gradients_method_name);
   if (!res.ok()) {
     return res.error();
@@ -32,7 +42,7 @@ TrainingModule::execute_forward_backward(
   uint64_t grad_start = res.get()[0].toInt();
 
   const std::string parameters_method_name =
-      parameters_method_prefix + method_name;
+      make_parameters_method_name(method_name);
   // get params start.
   auto param_res =
       executorch::extension::Module::execute(parameters_method_name);
@@ -66,7 +76,7 @@ TrainingModule::execute_forward_backward(
     auto& gradients_map = method_named_gradients_.at(method_name);
 
     // Get names if we havent seen this method before.
-    const std::string fqn_method_name = fqn_method_prefix + method_name;
+    const std::string fqn_method_name = make_fqn_method_name(method_name);
     auto fqn_res = executorch::extension::Module::execute(fqn_method_name);
     if (!fqn_res.ok()) {
       return fqn_res.error();
@@ -92,9 +102,9 @@ TrainingModule::named_parameters(const std::string& method_name) {
   // If we haven't seen this method before, populate the dict.
   if (method_named_parameters_.find(method_name) ==
       method_named_parameters_.end()) {
-    const std::string fqn_method_name = fqn_method_prefix + method_name;
+    const std::string fqn_method_name = make_fqn_method_name(method_name);
     const std::string parameters_method_name =
-        parameters_method_prefix + method_name;
+        make_parameters_method_name(method_name);
 
     method_named_parameters_.insert({method_name, {}});
 
@@ -142,6 +152,42 @@ TrainingModule::named_gradients(const std::string& method_name) {
     return executorch::runtime::Error::InvalidArgument;
   }
   return method_named_gradients_.at(method_name);
+}
+
+runtime::Result<const std::map<std::string_view, executorch::aten::Tensor>>
+TrainingModule::named_attributes(const std::string& method_name) {
+  // If we haven't seen this method before, populate the dict.
+  if (method_named_attributes_.find(method_name) ==
+      method_named_attributes_.end()) {
+    method_named_attributes_.insert({method_name, {}});
+
+    // get method metadata
+    auto meta_res = method_meta(method_name);
+    if (!meta_res.ok()) {
+      return meta_res.error();
+    }
+    // get method
+    auto e = load_method(method_name);
+    if (e != runtime::Error::Ok) {
+      return e;
+    }
+    auto& method = methods_.at(method_name).method;
+    // get tensor by name
+    for (int idx = 0; idx < meta_res->num_attributes(); idx++) {
+      const auto tensor_res = meta_res->attribute_tensor_meta(idx);
+      if (!tensor_res.ok()) {
+        return tensor_res.error();
+      }
+      const auto tensorName = tensor_res.get().name();
+      const auto attribute_res = method->get_attribute(tensorName);
+      if (!attribute_res.ok()) {
+        return attribute_res.error();
+      }
+      method_named_attributes_.at(method_name)
+          .insert({tensorName, attribute_res.get()});
+    }
+  }
+  return method_named_attributes_.at(method_name);
 }
 
 } // namespace training

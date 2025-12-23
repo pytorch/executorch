@@ -7,6 +7,7 @@
 import json
 import logging
 import os
+
 import warnings
 from multiprocessing.connection import Client
 
@@ -24,7 +25,7 @@ from executorch.examples.qualcomm.utils import (
 )
 from PIL import Image
 from torchvision import datasets
-from transformers import AutoModelForImageClassification, MobileViTFeatureExtractor
+from transformers import AutoImageProcessor, AutoModelForImageClassification
 
 
 def get_imagenet_dataset(dataset_path, data_size, shuffle=True):
@@ -37,22 +38,19 @@ def get_imagenet_dataset(dataset_path, data_size, shuffle=True):
         )
 
     # prepare input data
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     data_loader = get_data_loader()
-    feature_extractor = MobileViTFeatureExtractor.from_pretrained(
-        "apple/mobilevit-xx-small"
-    )
+    image_processor = AutoImageProcessor.from_pretrained("apple/mobilevit-xx-small")
     for index, data in enumerate(data_loader.dataset.imgs):
         if index >= data_size:
             break
         data_path, target = data
         image = Image.open(data_path).convert("RGB")
-        feature = feature_extractor(images=image, return_tensors="pt")
+        feature = image_processor(images=image, return_tensors="pt")
         inputs.append((feature["pixel_values"],))
         targets.append(torch.tensor(target))
-        input_list += f"input_{index}_0.raw\n"
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def main(args):
@@ -66,12 +64,6 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     data_num = 100
     if args.ci:
         inputs = [(torch.rand(1, 3, 256, 256),)]
@@ -79,7 +71,7 @@ def main(args):
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_imagenet_dataset(
+        inputs, targets = get_imagenet_dataset(
             dataset_path=f"{args.dataset}",
             data_size=data_num,
         )
@@ -117,8 +109,9 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -170,6 +163,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

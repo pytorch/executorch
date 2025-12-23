@@ -4,7 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from typing import List, Optional, Type
+
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 
@@ -21,12 +25,13 @@ from executorch.backends.xnnpack._passes.convert_to_upsample_bilinear2d import (
 )
 from executorch.backends.xnnpack._passes.decompose_cat import DecomposeConcatenate
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
-from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
-)
+from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
 from executorch.backends.xnnpack._passes.prelu_reshape_pass import PReLUReshapePass
-from executorch.backends.xnnpack._passes.tag_implicit_q_dq_pass import (
-    TagImplicitQDqPass,
+from executorch.backends.xnnpack._passes.propagate_custom_meta_pass import (
+    PropagateCustomMetaPass,
+)
+from executorch.backends.xnnpack._passes.remove_redundant_copy_pass import (
+    RemoveRedundantCopyPass,
 )
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 
@@ -39,6 +44,11 @@ from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
 
 from torch.export import ExportedProgram
+
+
+class XNNPACKRemoveCloneOpsTransform(RemoveCloneOpsTransform):
+    def __init__(self):
+        super().__init__(preserve_input_output_copies=True)
 
 
 class XNNPACKPassManager:
@@ -57,20 +67,22 @@ class XNNPACKPassManager:
         if not passes:
             # All the XNNPACK passes
             self.passes = [
+                XNNPACKRemoveCloneOpsTransform,
                 # TODO - remove this pass once we have a better support for dim_order ops lowering
                 DimOrderOpsRevertPass,
                 ConvertToUpsampleBilinear2d,
                 ConvertToLinearPass,
+                PropagateCustomMetaPass,
                 ConvertToSDPAPass,
                 ConstPropPass,
-                FuseBatchNormWithConvPass,
+                FuseBatchNormPass,
                 FuseActivationPass,
                 DecomposeConcatenate,
                 RemoveGetItemPass,
                 Conv1dUnsqueezePass,
                 PReLUReshapePass,
                 ChannelsLastTaggedReshapePass,
-                TagImplicitQDqPass,
+                RemoveRedundantCopyPass,
             ]
         else:
             self.passes = passes

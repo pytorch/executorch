@@ -4,11 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# This tool supports the QC internal QA pipeline by quantizing, compiling,
+# and executing models under various configuration flags.
+
 import argparse
 import importlib
 import logging
 import os
 import re
+import shutil
 from pathlib import Path
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
@@ -34,15 +38,13 @@ from executorch.backends.qualcomm.utils.utils import (
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.examples.qualcomm.qaihub_scripts.utils.utils import preprocess_binary
-from executorch.examples.qualcomm.utils import (
-    make_output_dir,
-    make_quantizer,
-    SimpleADB,
-)
+from executorch.examples.qualcomm.utils import make_quantizer, SimpleADB
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization import pt2e
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+INPUT_ORDER = "input_order"
 
 
 def get_logger():
@@ -74,6 +76,7 @@ def get_io_info(pte_path, compiler_specs):
                 "offset": encoding.data["offset"].tolist(),
                 "axis": encoding.axis,
             }
+
             info[category].append(
                 {
                     "name": tensor.GetName(),
@@ -106,6 +109,26 @@ def get_io_info(pte_path, compiler_specs):
     return tensor_info
 
 
+class InputListParser:
+    def __init__(self, input_list):
+        self.input_list = input_list
+
+    def __iter__(self):
+        with open(self.input_list, "r") as f:
+            for line in re.split(r"\r?\n", f.read()):
+                if not line:
+                    continue
+                split_line = line.strip().split(" ")
+                inputs = {}
+                if ":=" in line:
+                    for input_assignment in split_line:
+                        name, path = input_assignment.split(":=")
+                        inputs[name] = torch.load(path, weights_only=True)
+                else:
+                    inputs = [torch.load(t, weights_only=True) for t in split_line]
+                yield inputs
+
+
 def quantize(args):
     logger = get_logger()
 
@@ -131,15 +154,21 @@ def quantize(args):
     ep_prepared = prepare_pt2e(ep.module(), quantizer)
     logger.info(f"perform calibration on {args.artifact}")
     # step 2: perform calibration
-    with open(args.input_list, "r") as f:
-        for line in f.read().split("\n")[:-1]:
-            inputs = [torch.load(t, weights_only=True) for t in line.split(" ")]
-            ep_prepared(*inputs)
+    input_list_parser = InputListParser(args.input_list)
+    graph_input_names = [
+        spec.arg.name
+        for spec in ep.graph_signature.input_specs
+        if spec.kind.name == "USER_INPUT"
+    ]
+    for inputs in input_list_parser:
+        if isinstance(inputs, dict):
+            inputs = [inputs[name] for name in graph_input_names]
+        ep_prepared(*inputs)
     # step 3: use convert_pt2e to fix encodings of QDQ pairs
     logger.info(f"saving calibrated model for {args.artifact}")
     ep_converted = convert_pt2e(ep_prepared)
     ep_quantized = torch.export.export(ep_converted, tuple(inputs))
-    make_output_dir(args.output_folder)
+    os.makedirs(args.output_folder, exist_ok=True)
     torch.export.save(
         ep_quantized, f"{args.output_folder}/{Path(args.artifact).stem}_quantized.pt2"
     )
@@ -155,7 +184,7 @@ def compile(args):
     )
 
     file_name, extension = Path(args.artifact).stem, Path(args.artifact).suffix
-    make_output_dir(args.output_folder)
+    os.makedirs(args.output_folder, exist_ok=True)
     # setup compiler spec dedicated to QNN HTP backend
     backend_options = generate_htp_compiler_spec(use_fp16=True)
     # setup general compiler spec for QNN
@@ -201,12 +230,13 @@ def compile(args):
 
         for user_pass in user_passes:
             passes[user_pass][QCOM_PASS_ACTIVATE_KEY] = True
-
+        input_order = {INPUT_ORDER: ep.graph_signature.user_inputs}
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
             module=ep.module(),
             inputs=sample_inputs,
             compiler_specs=compiler_specs,
             passes_job=passes,
+            constant_methods=input_order,
         )
         # step 2: write pte files and store final graph
         logger.info(f"exporting {file_name}.pte")
@@ -227,17 +257,31 @@ def execute(args):
 
     pte_name = Path(args.artifact).stem
 
+    # get input order
+    from executorch.runtime import Runtime, Verification
+
+    et_runtime = Runtime.get()
+    program = et_runtime.load_program(
+        args.artifact,
+        verification=Verification.Minimal,
+    )
+    input_order_func = program.load_method(INPUT_ORDER)
+    input_order = input_order_func.execute([])
+
     # load input files
     logger.info("loading user inputs")
-    user_inputs, input_list = [], ""
-    with open(args.input_list, "r") as f:
-        for line in f.read().split("\n")[:-1]:
-            inputs, input_names = [], ""
-            for data in line.split(" "):
-                input_names += f"{Path(data).stem}.raw "
-                inputs.append(torch.load(data, weights_only=True))
+    input_list_parser = InputListParser(args.input_list)
+    user_inputs = []
+    for inputs in input_list_parser:
+        if isinstance(inputs, dict):
+            ordered_inputs = []
+            # since io_info is dict and it is ordered in python
+            # we use it to reorder input assignments here
+            for name in input_order:
+                ordered_inputs.append(inputs[name])
+            user_inputs.append(ordered_inputs)
+        else:
             user_inputs.append(inputs)
-            input_list += input_names.strip() + "\n"
 
     logger.info("retrieving graph I/O")
     # setup compiler spec dedicated to QNN HTP backend
@@ -248,7 +292,6 @@ def execute(args):
         backend_options=backend_options,
     )
     io_info = get_io_info(args.artifact, compiler_specs)
-
     logger.info("preparing ADB connection")
     # leverage SimpleADB for e2e inference
     adb = SimpleADB(
@@ -260,13 +303,19 @@ def execute(args):
         soc_model=args.model,
         host_id=args.host,
         shared_buffer=args.shared_buffer,
+        target=args.target,
     )
 
     logger.info("pushing QNN libraries & other artifacts")
-    adb.push(inputs=user_inputs, input_list=input_list)
+
+    adb.push(inputs=user_inputs)
 
     logger.info("starting inference")
     adb.execute()
+
+    tmp_dir = f"{args.output_folder}/tmp_outputs"
+    os.makedirs(tmp_dir, exist_ok=True)
+    os.makedirs(args.output_folder, exist_ok=True)
 
     def post_process():
         torch_to_numpy_dtype_dict = {
@@ -283,11 +332,14 @@ def execute(args):
             torch.complex128: np.dtype("complex128"),
         }
         output_info = io_info["outputs"]
-        output_folder = f"{args.output_folder}/outputs"
-        for _, f in enumerate(os.listdir(output_folder)):
-            filename = os.path.join(output_folder, f)
-            match_res = re.match(r".*([0-9]+)_([0-9]+)\.raw$", filename)
+        tmp_output_folder = f"{tmp_dir}/outputs"
+        for _, f in enumerate(os.listdir(tmp_output_folder)):
+            filename = os.path.join(tmp_output_folder, f)
+            match_res = re.match(r".*output_([0-9]+)_([0-9]+)\.raw$", filename)
             data_index, output_index = int(match_res.group(1)), int(match_res.group(2))
+
+            output_result_folder = f"{args.output_folder}/Result_{data_index}"
+            os.makedirs(output_result_folder, exist_ok=True)
             output = np.fromfile(
                 filename,
                 dtype=eval(
@@ -297,13 +349,11 @@ def execute(args):
             output = torch.from_numpy(
                 output.reshape(output_info[output_index]["shape"])
             )
-            torch.save(
-                output, f"{args.output_folder}/output_{data_index}_{output_index}.pt"
-            )
+            torch.save(output, f"{output_result_folder}/output_{output_index}.pt")
 
     logger.info("collecting output data")
-    make_output_dir(args.output_folder)
-    adb.pull(args.output_folder, post_process)
+    adb.pull(tmp_dir, post_process)
+    shutil.rmtree(tmp_dir)
     logger.info(f"execution finished, please check {args.output_folder} for results")
 
 
@@ -415,9 +465,7 @@ def main():
         "--pass_job",
         nargs="+",
         type=str,
-        help=(
-            'Add extra passes for model lowering. e.g. "ExpandBroadcastTensorShape".'
-        ),
+        help=('Add extra passes for model lowering. e.g. "TagQuantIO".'),
     )
     sub_compile.add_argument(
         "--shared_buffer",
@@ -485,6 +533,18 @@ def main():
         "--host",
         type=str,
         help="Gateway hostname.",
+    )
+    sub_execute.add_argument(
+        "-t",
+        "--target",
+        help="Target platform for deployment",
+        choices=[
+            "aarch64-android",
+            "aarch64-oe-linux-gcc9.3",
+            "aarch64-oe-linux-gcc11.2",
+        ],
+        default="aarch64-android",
+        type=str,
     )
     sub_execute.add_argument(
         "--shared_buffer",

@@ -31,7 +31,6 @@ def define_common_targets():
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
             "//executorch/backends/qualcomm/runtime:logging",
             "//executorch/backends/qualcomm:schema",
-            "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
             "fbsource//third-party/pybind11:pybind11",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
@@ -46,39 +45,6 @@ def define_common_targets():
         ],
     )
 
-
-    runtime.cxx_python_extension(
-        name = "PyQnnWrapperAdaptor",
-        srcs = [
-            "PyQnnWrapperAdaptor.cpp",
-        ],
-        headers = [
-            "PyQnnWrapperAdaptor.h",
-        ],
-        base_module = "executorch.backends.qualcomm.python",
-        preprocessor_flags = [
-            "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(PYTHON_MODULE_NAME),
-        ],
-        deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/backends/qualcomm/aot/python:python_lib",
-            "//executorch/backends/qualcomm/aot/wrappers:wrappers",
-            "//executorch/backends/qualcomm/runtime:logging",
-            "//executorch/backends/qualcomm:schema",
-            "//executorch/backends/qualcomm/aot/ir:qcir_utils",
-            "//executorch/backends/qualcomm/runtime:runtime",
-            "fbsource//third-party/pybind11:pybind11",
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
-        ],
-        external_deps = [
-            "libtorch_python",
-        ],
-        use_static_deps = True,
-        visibility = [
-            "//executorch/backends/qualcomm/...",
-        ],
-    )
 
     runtime.cxx_library(
         name = "python_lib",
@@ -94,7 +60,6 @@ def define_common_targets():
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
             "//executorch/backends/qualcomm/runtime:logging",
             "//executorch/backends/qualcomm:schema",
-            "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
             "fbsource//third-party/pybind11:pybind11",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),

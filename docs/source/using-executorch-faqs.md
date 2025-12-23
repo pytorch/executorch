@@ -14,6 +14,13 @@ sudo apt install python<version>-dev
 ```
 if you are using Ubuntu, or use an equivalent install command.
 
+### ModuleNotFoundError: No module named 'pytorch_tokenizers'
+
+The `pytorch_tokenizers` package is required for LLM export functionality. Install it from the ExecuTorch source code:
+```
+pip install -e ./extension/llm/tokenizers/
+```
+
 ## Export
 
 ### Missing out variants: { _ }
@@ -41,7 +48,7 @@ Thread count can be set with the following function. Ensure this is done prior t
 ::executorch::extension::threadpool::get_threadpool()->_unsafe_reset_threadpool(num_threads);
 ```
 
-For a deeper investgiation into model performance, ExecuTorch supports operator-level performance profiling. See [Using the ExecuTorch Developer Tools to Profile a Model](devtools-integration-tutorial.md) for more information.
+For a deeper investigation into model performance, ExecuTorch supports operator-level performance profiling. See [Using the ExecuTorch Developer Tools to Profile a Model](devtools-integration-tutorial.md) for more information.
 
 ### Missing Logs
 

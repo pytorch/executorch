@@ -19,13 +19,16 @@ endif()
 list(TRANSFORM _extension_tensor__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(extension_tensor ${_extension_tensor__srcs})
 target_link_libraries(extension_tensor executorch_core)
-target_include_directories(extension_tensor PUBLIC ${EXECUTORCH_ROOT}/..)
+target_include_directories(
+  extension_tensor PUBLIC ${_common_include_directories}
+)
 target_compile_options(extension_tensor PUBLIC ${_common_compile_options})
 
 # Install libraries
 install(
   TARGETS extension_tensor
-  DESTINATION lib
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

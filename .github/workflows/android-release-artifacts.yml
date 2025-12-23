@@ -15,13 +15,11 @@ on:
         type: choice
         options:
           - "xnnpack"
-          - "vulkan+xnnpack"
+          - "vulkan"
+          - "qnn"
+          - "all"
   schedule:
     - cron: 0 10 * * *
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   check-if-aar-exists:
@@ -33,12 +31,13 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ inputs.version }}"
+          FLAVOR="${{ inputs.flavor }}"
           if [ -z "$VERSION" ]; then
             echo "No version name specified. Will create a snapshot AAR"
             exit 0
           fi
-          if curl -I "https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}/executorch.aar" | grep "200 OK"; then
-            echo "AAR already exists at https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}/executorch.aar"
+          if curl -I "https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}-${FLAVOR}/executorch.aar" | grep "200 OK"; then
+            echo "AAR already exists at https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}-${FLAVOR}/executorch.aar"
             echo "Will skip build/upload"
             exit 1
           fi
@@ -47,16 +46,14 @@ jobs:
     name: build-aar
     needs: check-if-aar-exists
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.7
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     secrets: inherit
     permissions:
       id-token: write
       contents: read
     with:
       secrets-env: EXECUTORCH_MAVEN_SIGNING_KEYID EXECUTORCH_MAVEN_SIGNING_PASSWORD EXECUTORCH_MAVEN_CENTRAL_PASSWORD EXECUTORCH_MAVEN_CENTRAL_USERNAME EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS
-      # As this job has access to Maven credential, run this on a fresh ephemeral runner
-      runner: ephemeral.linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12-android
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.sha }}
       timeout: 90
@@ -85,15 +82,34 @@ jobs:
 
         echo -n "$SECRET_EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS" | base64 -d > /tmp/secring.gpg
 
+        GRADLE_ARGS=""
+
         # Update the version name in build.gradle in case of maven publish
         VERSION="${{ inputs.version }}"
         if [ ! -z "$VERSION" ]; then
-          sed -i "s/\(coordinates(\"org.pytorch\", \"executorch-android\", \"\)\([0-9]\+.[0-9]\+.[0-9]\+\)\(\")\)/\1$VERSION\3/" extension/android/executorch_android/build.gradle
+          GRADLE_ARGS+=" -DexecuTorchVersion=${VERSION}"
         fi
 
         FLAVOR="${{ inputs.flavor }}"
-        if [[ "$FLAVOR" == "vulkan+xnnpack" ]]; then
+        if [ ! -z "$FLAVOR" ]; then
+          GRADLE_ARGS+=" -Dflavor=${FLAVOR}"
+        fi
+
+        if [[ "$FLAVOR" == "vulkan" || "$FLAVOR" == "all" || -z "$FLAVOR" ]]; then
+          curl -O https://sdk.lunarg.com/sdk/download/1.4.321.1/linux/vulkansdk-linux-x86_64-1.4.321.1.tar.xz
+          tar xf vulkansdk-linux-x86_64-1.4.321.1.tar.xz -C /tmp
+          export PATH="/tmp/1.4.321.1/x86_64/bin:$PATH"
           export EXECUTORCH_BUILD_VULKAN=ON
+        fi
+
+        if [[ "$FLAVOR" == "qnn" || "$FLAVOR" == "all" ]]; then
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+          PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+          export EXECUTORCH_BUILD_QNN=ON
+          source backends/qualcomm/scripts/qnn_config.sh
+          export QNN_SDK_ROOT="/tmp/qnn/${QNN_VERSION}"
+          export ANDROID_ABIS=arm64-v8a
+          GRADLE_ARGS+=" -DqnnVersion=2.37.0"
         fi
 
         # Build AAR Package
@@ -108,7 +124,7 @@ jobs:
         # Publish to maven staging
         UPLOAD_TO_MAVEN="${{ inputs.upload_to_maven }}"
         if [[ "$UPLOAD_TO_MAVEN" == "true" ]]; then
-          (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:publishToMavenCentral)
+          (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew  ${GRADLE_ARGS} :executorch_android:publishToMavenCentral)
         fi
 
   upload-release-aar:
@@ -134,8 +150,12 @@ jobs:
           pip install awscli==1.32.18
           AWS_CMD="aws s3 cp"
           VERSION="${{ inputs.version }}"
+          FLAVOR="${{ inputs.flavor }}"
           if [ -z "$VERSION" ]; then
             VERSION="snapshot-$(date +"%Y%m%d")"
           fi
-          ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION}/executorch.aar --acl public-read
-          ${AWS_CMD} executorch.aar.sha256sums s3://ossci-android/executorch/release/${VERSION}/executorch.aar.sha256sums --acl public-read
+          if [ -z "$FLAVOR" ]; then
+            FLAVOR="xnnpack"
+          fi
+          ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION}-${FLAVOR}/executorch.aar --acl public-read
+          ${AWS_CMD} executorch.aar.sha256sums s3://ossci-android/executorch/release/${VERSION}-${FLAVOR}/executorch.aar.sha256sums --acl public-read

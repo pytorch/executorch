@@ -21,8 +21,6 @@ using Tensor = executorch::aten::Tensor;
 Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
-  ET_KERNEL_CHECK(
-      ctx, in.scalar_type() != ScalarType::Bool, InvalidArgument, out);
   ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
 
   ET_KERNEL_CHECK(
@@ -49,7 +47,7 @@ Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::FLOATHBF16>(
-        [](const auto val_in) {
+        [](const auto& val_in) {
           const auto one = static_cast<decltype(val_in)>(1.0);
           auto out_val = one / (one + executorch::math::exp(-val_in));
           return out_val;

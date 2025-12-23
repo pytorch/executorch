@@ -13,17 +13,26 @@ from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
+    CanonicalizeConv,
     ConvertBmmToMatmul,
-    ConvertConv1dToConv2d,
+    ConvertLinearToConv2d,
+    ConvertMhaToSha,
     ConvertSquareToPow,
     DecomposeAny,
+    DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
+    DecomposeFloorDivide,
+    DecomposeGlu,
     DecomposeLinalgVectorNorm,
+    DecomposeMaxPool3d,
+    DecomposeMinMaxDim,
     DecomposeRoll,
     DecomposeSilu,
+    DecomposeThreshold,
+    DecomposeTriu,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
@@ -33,6 +42,7 @@ from executorch.backends.qualcomm._passes import (
     I64toI32,
     InsertIOQDQ,
     InsertRequantize,
+    InsertReshapeForReduceOps,
     LayoutTransform,
     LiftConstantScalarOperands,
     RecomposePixelUnshuffle,
@@ -81,16 +91,17 @@ def get_capture_program_passes():
         (AnnotateStack, True),
         (AnnotateUnbind, True),
         (ConvertBmmToMatmul, False),
-        (ConvertConv1dToConv2d, True),
         (DecomposeAny, True),
         (DecomposeColIm, True),
-        (ExpandBroadcastTensorShape, False),
+        (DecomposeMinMaxDim, True),
+        (ExpandBroadcastTensorShape, True),
         (FixedLinearKeepDim, True),
         (FoldQDQ, True),
         (I64toI32, True),
         (LayoutTransform, True),
+        (DecomposeMaxPool3d, True),
         (RecomposePixelUnshuffle, True),
-        (RecomposeRmsNorm, False),
+        (RecomposeRmsNorm, True),
         (Remove0DTensor, True),
         (RemoveRedundancy, True),
         (TagQuantIO, False),
@@ -188,37 +199,61 @@ class QnnPassManager(PassManager):
         self.add_pass(RemoveRedundancy(quantization_capture=True))
         self.add_pass(ReduceDynamicRange())
         self.add_pass(RecomposePixelUnshuffle(quantization_capture=True))
+        self.add_pass(RecomposeRmsNorm(quantization_capture=True))
         self.add_pass(ReplaceArangeArgs())
+        self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
+        self.add_pass(DecomposeMaxPool3d(quantization_capture=True))
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
+        self.add_pass(DecomposeThreshold())
+        self.add_pass(DecomposeTriu())
         self.add_pass(DecomposeWrapWithAutocast())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
+        self.add_pass(DecomposeGlu())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(ReplaceInfValues())
         self.add_pass(LiftConstantScalarOperands())
+        self.add_pass(InsertReshapeForReduceOps())
         return self._transform(graph_module)
 
-    def transform_for_export_pipeline(self, exported_program: ExportedProgram):
+    def transform_for_export_pipeline(
+        self, exported_program: ExportedProgram, convert_linear_to_conv2d: bool = False
+    ):
+        self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
+        self.add_pass(DecomposeThreshold())
+        self.add_pass(DecomposeTriu())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeExpM1())
+        # DecomposeFloorDivide does not apply to the annotation pipeline,
+        # since the CPU QDQ model would reduce accuracy.
+        # We keep div and floor operations in floating-point to maintain precision.
+        # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
+        self.add_pass(DecomposeFloorDivide())
         self.add_pass(DecomposeWrapWithAutocast())
         # this pass will rewrite state_dict, it needs to be accomplished before
         # to_edge_transform_and_lower
-        self.add_pass(ConvertConv1dToConv2d(exported_program))
+        self.add_pass(CanonicalizeConv(exported_program))
+        if convert_linear_to_conv2d:
+            self.add_pass(ConvertLinearToConv2d(exported_program))
         self.add_pass(ConvertSquareToPow())
         self.add_pass(LiftConstantScalarOperands())
+        self.add_pass(InsertReshapeForReduceOps())
         self._transform(exported_program.graph_module)
         ep = lift_constant_tensor_pass(exported_program)
         return ep
 
-    def transform_for_preprocess_pipeline(self, exported_program: ExportedProgram):
+    def transform_for_preprocess_pipeline(
+        self, exported_program: ExportedProgram, use_mha2sha=False
+    ):
         self.add_pass(FoldQDQ(exported_program, force_fold=True))
+        if use_mha2sha:
+            self.add_pass(ConvertMhaToSha(exported_program))
         self.add_pass(InsertRequantize())
         self.add_pass(InsertIOQDQ(exported_program))
         self.add_pass(LayoutTransform(exported_program, insert_permute=True))

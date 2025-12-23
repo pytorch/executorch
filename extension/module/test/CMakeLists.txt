@@ -23,12 +23,14 @@ add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
+  COMMAND ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
+          "ModuleAdd" --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
-    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAdd"
-    --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
-  COMMAND
-    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul"
-    --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
+    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
+    "ModuleAddMul,ModuleLinear" --external-constants --outdir
+    "${CMAKE_CURRENT_BINARY_DIR}"
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 
@@ -37,12 +39,16 @@ add_custom_target(
   DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
 )
 
 set(test_env
     "ET_MODULE_ADD_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
     "ET_MODULE_ADD_MUL_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
     "ET_MODULE_ADD_MUL_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
+    "ET_MODULE_LINEAR_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
+    "ET_MODULE_LINEAR_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
 )
 
 et_cxx_test(
@@ -60,8 +66,4 @@ et_cxx_test(
 add_dependencies(extension_module_test generated_module_test_files)
 set_property(TEST extension_module_test PROPERTY ENVIRONMENT ${test_env})
 
-set_property(
-  TEST extension_module_test
-  PROPERTY ENVIRONMENT
-           "${test_env}"
-)
+set_property(TEST extension_module_test PROPERTY ENVIRONMENT "${test_env}")

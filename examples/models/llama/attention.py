@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, Tuple, Type, TypedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
@@ -19,6 +20,7 @@ class ForwardOptions(TypedDict, total=False):
     freqs_sin_override: Optional[torch.Tensor]
     in_cache_state: Optional[Any]
     out_cache_state: Optional[Any]
+    last_valid_token_pos: Optional[torch.LongTensor]
 
 
 class Attention(nn.Module, ABC):
@@ -324,7 +326,21 @@ class RingKVCache(KVCache):
 
 @register_attention("mha")
 class AttentionMHA(Attention):
-    def __init__(self, args: ModelArgs, layer_id: int, rope: Rope):
+    def __init__(
+        self,
+        args: ModelArgs,
+        layer_id: int,
+        rope: Rope,
+        **_kwargs: Any,
+    ):
+        """
+        Multi-head attention layer.
+
+        Args:
+            args (ModelArgs): Model configuration parameters.
+            layer_id (int): Layer index.
+            rope (Rope): Rotary position embedding module.
+        """
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
@@ -349,16 +365,63 @@ class AttentionMHA(Attention):
             self.q_norm_fn = RMSNorm(q_norm_dim, eps=args.norm_eps)
             self.k_norm_fn = RMSNorm(k_norm_dim, eps=args.norm_eps)
 
-        self.wq = nn.Linear(
-            self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
+        self.wq = (
+            LoRALinear(
+                in_dim=args.dim,
+                out_dim=args.n_heads * args.head_dim,
+                rank=args.r,
+                alpha=args.lora_alpha,
+                dropout=0.0,
+                use_bias=args.attention_qkv_bias,
+            )
+            if args.target_modules is not None and "q_proj" in args.target_modules
+            else nn.Linear(
+                self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
+            )
         )
-        self.wk = nn.Linear(
-            self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
+        self.wk = (
+            LoRALinear(
+                in_dim=args.dim,
+                out_dim=args.n_kv_heads * args.head_dim,
+                rank=args.r,
+                alpha=args.lora_alpha,
+                dropout=0.0,
+                use_bias=args.attention_qkv_bias,
+            )
+            if args.target_modules is not None and "k_proj" in args.target_modules
+            else nn.Linear(
+                self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
+            )
         )
-        self.wv = nn.Linear(
-            self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
+        self.wv = (
+            LoRALinear(
+                in_dim=args.dim,
+                out_dim=args.n_kv_heads * args.head_dim,
+                rank=args.r,
+                alpha=args.lora_alpha,
+                dropout=0.0,
+                use_bias=args.attention_qkv_bias,
+            )
+            if args.target_modules is not None and "v_proj" in args.target_modules
+            else nn.Linear(
+                self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
+            )
         )
-        self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
+        self.wo = (
+            LoRALinear(
+                in_dim=args.n_heads * args.head_dim,
+                out_dim=args.dim,
+                rank=args.r,
+                alpha=args.lora_alpha,
+                dropout=0.0,
+                use_bias=args.attention_qkv_bias,
+            )
+            if args.target_modules is not None
+            and (
+                "output_proj" in args.target_modules or "o_proj" in args.target_modules
+            )
+            else nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
+        )
 
         self.layer_id = layer_id
 
@@ -456,3 +519,18 @@ class AttentionMHA(Attention):
         output = self.wo(output)
 
         return output, None
+
+
+@register_attention("skip")
+class AttentionSkip(Attention):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+        **kwargs: ForwardOptions,
+    ) -> Tuple[torch.Tensor, Optional[Any]]:
+        return x, None

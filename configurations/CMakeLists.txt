@@ -44,7 +44,9 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
 
   # optimized_native_cpu_ops_lib: Register optimized op kernels into the runtime
   if(TARGET optimized_portable_kernels)
-    set(_optimized_native_cpu_ops_lib_portable_kernels_lib optimized_portable_kernels)
+    set(_optimized_native_cpu_ops_lib_portable_kernels_lib
+        optimized_portable_kernels
+    )
   else()
     set(_optimized_native_cpu_ops_lib_portable_kernels_lib portable_kernels)
   endif()
@@ -58,5 +60,9 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     executorch_core
   )
 
-  install(TARGETS optimized_native_cpu_ops_lib DESTINATION lib)
+  install(
+    TARGETS optimized_native_cpu_ops_lib
+    EXPORT ExecuTorchTargets
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
 endif()

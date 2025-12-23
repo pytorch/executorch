@@ -48,22 +48,33 @@ prepare_artifacts_upload() {
   fi
 }
 
+
 build_cmake_executor_runner() {
   local backend_string_select="${1:-}"
   echo "Building executor_runner"
   rm -rf ${CMAKE_OUTPUT_DIR}
   mkdir ${CMAKE_OUTPUT_DIR}
+  # Common options:
+  COMMON="-DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE"
   if [[ "$backend_string_select" == "XNNPACK" ]]; then
     echo "Backend $backend_string_select selected"
-    (cd ${CMAKE_OUTPUT_DIR} \
-      && cmake -DCMAKE_BUILD_TYPE=Release \
+    cmake -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+        ${COMMON} \
+        -B${CMAKE_OUTPUT_DIR} .
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4
+  elif [[ "$backend_string_select" == "CUDA" ]]; then
+    echo "Backend $backend_string_select selected"
+    cmake -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_CUDA=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+        ${COMMON} \
+        -B${CMAKE_OUTPUT_DIR} .
     cmake --build ${CMAKE_OUTPUT_DIR} -j4
   else
     cmake -DCMAKE_BUILD_TYPE=Debug \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        ${COMMON} \
         -B${CMAKE_OUTPUT_DIR} .
     cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
   fi
@@ -97,7 +108,7 @@ test_model() {
     bash examples/models/llava/install_requirements.sh
     STRICT="--no-strict"
   fi
-  if [[ "${MODEL_NAME}" == "qwen2_5" ]]; then
+  if [[ "${MODEL_NAME}" == "qwen2_5_1_5b" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
       # Test export_llm script: python3 -m extension.llm.export.export_llm.
@@ -131,13 +142,13 @@ test_model_with_xnnpack() {
     return 0
   fi
 
-  # Delegation
+  # Delegation and test with pybindings
   if [[ ${WITH_QUANTIZATION} == true ]]; then
     SUFFIX="q8"
-    "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --quantize
+    "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --quantize --test_after_export
   else
     SUFFIX="fp32"
-    "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate
+    "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --test_after_export
   fi
 
   OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_${SUFFIX}.pte"
@@ -166,36 +177,63 @@ test_model_with_qnn() {
   export PYTHONPATH=$EXECUTORCH_ROOT/..
 
   EXTRA_FLAGS=""
+  # Ordered by the folder name, then alphabetically by the model name
+  # Following models are inside examples/qualcomm/scripts folder
   if [[ "${MODEL_NAME}" == "dl3" ]]; then
     EXPORT_SCRIPT=deeplab_v3
-  elif [[ "${MODEL_NAME}" == "mv3" ]]; then
-    EXPORT_SCRIPT=mobilenet_v3
-  elif [[ "${MODEL_NAME}" == "mv2" ]]; then
-    EXPORT_SCRIPT=mobilenet_v2
-  elif [[ "${MODEL_NAME}" == "ic4" ]]; then
-    EXPORT_SCRIPT=inception_v4
+  elif [[ "${MODEL_NAME}" == "edsr" ]]; then
+    EXPORT_SCRIPT=edsr
+    # Additional deps for edsr
+    pip install piq
   elif [[ "${MODEL_NAME}" == "ic3" ]]; then
     EXPORT_SCRIPT=inception_v3
-  elif [[ "${MODEL_NAME}" == "vit" ]]; then
-    EXPORT_SCRIPT=torchvision_vit
+  elif [[ "${MODEL_NAME}" == "ic4" ]]; then
+    EXPORT_SCRIPT=inception_v4
   elif [[ "${MODEL_NAME}" == "mb" ]]; then
     EXPORT_SCRIPT=mobilebert_fine_tune
     EXTRA_FLAGS="--num_epochs 1"
     pip install scikit-learn
+  elif [[ "${MODEL_NAME}" == "mv2" ]]; then
+    EXPORT_SCRIPT=mobilenet_v2
+  elif [[ "${MODEL_NAME}" == "mv3" ]]; then
+    EXPORT_SCRIPT=mobilenet_v3
+  elif [[ "${MODEL_NAME}" == "vit" ]]; then
+    EXPORT_SCRIPT=torchvision_vit
   elif [[ "${MODEL_NAME}" == "w2l" ]]; then
     EXPORT_SCRIPT=wav2letter
   elif [[ "${MODEL_NAME}" == "edsr" ]]; then
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
     pip install piq
+  # Following models are inside examples/qualcomm/oss_scripts folder
   elif [[ "${MODEL_NAME}" == "albert" ]]; then
     EXPORT_SCRIPT=albert
   elif [[ "${MODEL_NAME}" == "bert" ]]; then
     EXPORT_SCRIPT=bert
+  elif [[ "${MODEL_NAME}" == "conv_former" ]]; then
+    EXPORT_SCRIPT=conv_former
+  elif [[ "${MODEL_NAME}" == "cvt" ]]; then
+    EXPORT_SCRIPT=cvt
   elif [[ "${MODEL_NAME}" == "distilbert" ]]; then
     EXPORT_SCRIPT=distilbert
+  elif [[ "${MODEL_NAME}" == "dit" ]]; then
+    EXPORT_SCRIPT=dit
+  elif [[ "${MODEL_NAME}" == "efficientnet" ]]; then
+    EXPORT_SCRIPT=efficientnet
   elif [[ "${MODEL_NAME}" == "eurobert" ]]; then
     EXPORT_SCRIPT=eurobert
+  elif [[ "${MODEL_NAME}" == "focalnet" ]]; then
+    EXPORT_SCRIPT=focalnet
+  elif [[ "${MODEL_NAME}" == "mobilevit_v1" ]]; then
+    EXPORT_SCRIPT=mobilevit_v1
+  elif [[ "${MODEL_NAME}" == "mobilevit_v2" ]]; then
+    EXPORT_SCRIPT=mobilevit_v2
+  elif [[ "${MODEL_NAME}" == "pvt" ]]; then
+    EXPORT_SCRIPT=pvt
+  elif [[ "${MODEL_NAME}" == "roberta" ]]; then
+    EXPORT_SCRIPT=roberta
+  elif [[ "${MODEL_NAME}" == "swin" ]]; then
+    EXPORT_SCRIPT=swin_transformer
   else
     echo "Unsupported model $MODEL_NAME"
     exit 1
@@ -210,10 +248,13 @@ test_model_with_qnn() {
     "dl3"|"mv3"|"mv2"|"ic4"|"ic3"|"vit"|"mb"|"w2l")
         SCRIPT_FOLDER=scripts
         ;;
-    "albert"|"bert"|"distilbert")
+    "cvt"|"dit"|"focalnet"|"mobilevit_v2"|"pvt"|"swin")
+        SCRIPT_FOLDER=oss_scripts
+        ;;
+    "albert"|"bert"|"conv_former"|"distilbert"|"roberta"|"efficientnet"|"mobilevit_v1")
         pip install evaluate
         SCRIPT_FOLDER=oss_scripts
-        # Bert models running in 16bit will encounter op validation fail on some operations,
+        # 16bit models will encounter op validation fail on some operations,
         # which requires CHIPSET >= SM8550.
         QNN_CHIPSET=SM8550
         ;;
@@ -232,21 +273,24 @@ test_model_with_qnn() {
 # @param should_test If true, build and test the model using the coreml_executor_runner.
 test_model_with_coreml() {
   local should_test="$1"
+  local test_with_pybindings="$2"
+  local dtype="$3"
 
   if [[ "${BUILD_TOOL}" != "cmake" ]]; then
     echo "coreml only supports cmake."
     exit 1
   fi
 
-  DTYPE=float16
+  RUN_WITH_PYBINDINGS=""
+  if [[ "${test_with_pybindings}" == true ]]; then
+    echo \"Running with pybindings\"
+    export RUN_WITH_PYBINDINGS="--run_with_pybindings"
+  fi
 
-  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision "${DTYPE}" --use_partitioner
+  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision ${dtype} --use_partitioner ${RUN_WITH_PYBINDINGS}
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
 
   if [ -n "$EXPORTED_MODEL" ]; then
-    EXPORTED_MODEL_WITH_DTYPE="${EXPORTED_MODEL%.pte}_${DTYPE}.pte"
-    mv "$EXPORTED_MODEL" "$EXPORTED_MODEL_WITH_DTYPE"
-    EXPORTED_MODEL="$EXPORTED_MODEL_WITH_DTYPE"
     echo "OK exported model: $EXPORTED_MODEL"
   else
     echo "[error] failed to export model: no .pte file found"
@@ -287,6 +331,13 @@ test_model_with_mediatek() {
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "*.pte" -print -quit)
 }
 
+test_model_with_cuda() {
+  # Export a basic .pte and .ptd, then run the model.
+  "${PYTHON_EXECUTABLE}" -m examples.cuda.scripts.export --model_name="${MODEL_NAME}" --output_dir "./"
+  build_cmake_executor_runner "CUDA"
+  ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./${MODEL_NAME}.pte" --data_path "./aoti_cuda_blob.ptd"
+}
+
 
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
@@ -303,7 +354,15 @@ elif [[ "${BACKEND}" == *"coreml"* ]]; then
   if [[ "${BACKEND}" == *"test"* ]]; then
     should_test_coreml=true
   fi
-  test_model_with_coreml "${should_test_coreml}"
+  test_with_pybindings=false
+  if [[ "${BACKEND}" == *"pybind"* ]]; then
+    test_with_pybindings=true
+  fi
+  dtype=float16
+  if [[ "${BACKEND}" == *"float32"* ]]; then
+    dtype=float32
+  fi
+  test_model_with_coreml "${should_test_coreml}" "${test_with_pybindings}" "${dtype}"
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
@@ -328,6 +387,12 @@ elif [[ "${BACKEND}" == *"xnnpack"* ]]; then
 elif [[ "${BACKEND}" == "mediatek" ]]; then
   echo "Testing ${MODEL_NAME} with mediatek..."
   test_model_with_mediatek
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
+elif [[ "${BACKEND}" == "cuda" ]]; then
+  echo "Testing ${MODEL_NAME} with cuda..."
+  test_model_with_cuda
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi

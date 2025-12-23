@@ -62,11 +62,11 @@ from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
 from executorch.runtime import Runtime
-
-from functorch.experimental import control_flow
 from torch import nn
 
-from torch.export import Dim, export, export_for_training
+from torch._higher_order_ops import cond as torch_cond, map as torch_map
+
+from torch.export import Dim, export
 from torch.export.experimental import _export_forward_backward
 
 
@@ -674,7 +674,7 @@ class TestEmit(unittest.TestCase):
                 def false_fn(y: torch.Tensor) -> torch.Tensor:
                     return torch.mm(y, y)
 
-                ret = control_flow.cond(pred, true_fn, false_fn, [x])
+                ret = torch_cond(pred, true_fn, false_fn, [x])
                 return ret
 
         module = to_edge(
@@ -708,7 +708,7 @@ class TestEmit(unittest.TestCase):
                 def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
                     return x + y
 
-                return control_flow.map(map_fn, x, y)
+                return torch_map(map_fn, x, y)
 
         f = Foo()
 
@@ -781,7 +781,7 @@ class TestEmit(unittest.TestCase):
                 def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
                     return x + y
 
-                return control_flow.map(map_fn, x, y)
+                return torch_map(map_fn, x, y)
 
         f = Foo()
 
@@ -798,7 +798,7 @@ class TestEmit(unittest.TestCase):
                 def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
                     return x + y
 
-                return control_flow.map(map_fn, x, y)
+                return torch_map(map_fn, x, y)
 
         f = Foo()
 
@@ -811,6 +811,323 @@ class TestEmit(unittest.TestCase):
         loaded_model = _load_for_executorch_from_buffer(buffer)
         outputs = loaded_model(inputs)[0]
         torch.allclose(outputs, f(*inputs))
+
+    def test_emit_scan_basic(self) -> None:
+        """Test basic scan emission: verifies instruction structure for cumulative sum."""
+        from torch._higher_order_ops.scan import scan
+
+        class ScanCumSum(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return scan(combine_fn, init, xs)
+
+        f = ScanCumSum()
+        # Use contiguous tensor to avoid stride=0 issue
+        inputs = (torch.arange(15).float().reshape(5, 3),)
+
+        module = to_edge(
+            export(f, inputs, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        program = module.to_executorch().executorch_program
+
+        op_table = program.execution_plan[0].operators
+        instructions = program.execution_plan[0].chains[0].instructions
+
+        # Collect all operator names in the program
+        op_names = [op.name for op in op_table]
+
+        # Verify the key operators are present for scan:
+        # 1. sym_size - to get scan length
+        self.assertIn(
+            "aten::sym_size", op_names, "Should have sym_size for scan length"
+        )
+
+        # 2. copy_ - for carry initialization and carry updates
+        self.assertIn("aten::copy_", op_names, "Should have copy_ for carry handling")
+
+        # 3. select_copy - to slice xs
+        self.assertIn(
+            "aten::select_copy", op_names, "Should have select_copy for xs slicing"
+        )
+
+        # 4. et_copy_index - to accumulate y outputs
+        self.assertIn(
+            "executorch_prim::et_copy_index",
+            op_names,
+            "Should have et_copy_index for y accumulation",
+        )
+
+        # 5. Loop control: add, eq for iteration control
+        self.assertIn(
+            "executorch_prim::add", op_names, "Should have add for iter increment"
+        )
+        self.assertIn(
+            "executorch_prim::eq", op_names, "Should have eq for completion check"
+        )
+
+        # 6. sub - to reset iter_idx for re-runs
+        self.assertIn(
+            "executorch_prim::sub", op_names, "Should have sub to reset iterator"
+        )
+
+        # 7. Should have JumpFalseCall for loop back
+        jump_false_found = False
+        for instr in instructions:
+            if isinstance(instr.instr_args, JumpFalseCall):
+                jump_false_found = True
+                break
+        self.assertTrue(jump_false_found, "Should have JumpFalseCall for loop control")
+
+        # 8. Verify we have the body operations (add from combine_fn)
+        self.assertIn("aten::add", op_names, "Should have add from combine_fn body")
+
+    def test_run_emit_scan_cumsum(self) -> None:
+        """Test scan execution correctness: cumulative sum."""
+        from torch._higher_order_ops.scan import scan
+
+        class ScanCumSum(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return scan(combine_fn, init, xs)
+
+        f = ScanCumSum()
+        # Use contiguous tensor to avoid stride=0 issue
+        inputs = (torch.arange(15).float().reshape(5, 3),)
+
+        module = to_edge(
+            export(f, inputs, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        et = module.to_executorch()
+        et.dump_executorch_program(False)
+        buffer = et.buffer
+        loaded_model = _load_for_executorch_from_buffer(buffer)
+
+        # Run through executorch
+        et_outputs = loaded_model(inputs)
+
+        # Run through eager PyTorch
+        eager_outputs = f(*inputs)
+
+        # Compare final carry
+        self.assertTrue(
+            torch.allclose(et_outputs[0], eager_outputs[0]),
+            f"Final carry mismatch: {et_outputs[0]} vs {eager_outputs[0]}",
+        )
+
+        # Compare stacked outputs
+        self.assertTrue(
+            torch.allclose(et_outputs[1], eager_outputs[1]),
+            f"Stacked outputs mismatch: {et_outputs[1]} vs {eager_outputs[1]}",
+        )
+
+    def test_emit_scan_add_mul(self) -> None:
+        """Test scan with add operation in combine_fn."""
+        from torch._higher_order_ops.scan import scan
+
+        class ScanAddMul(torch.nn.Module):
+            def forward(
+                self, xs: torch.Tensor, y: torch.Tensor
+            ) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    # Multiply carry by 2 and add x
+                    new_carry = carry * 2 + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return scan(combine_fn, init, xs)
+
+        f = ScanAddMul()
+        inputs = (torch.ones(4, 3), torch.ones(3))
+
+        module = to_edge(
+            export(f, inputs, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        program = module.to_executorch().executorch_program
+
+        # Verify we have the expected operators
+        op_names = [op.name for op in program.execution_plan[0].operators]
+
+        # Should have mul and add operations from the combine_fn body
+        self.assertIn("aten::mul", op_names)
+        self.assertIn("aten::add", op_names)
+
+        # Should have scan control flow operators
+        self.assertIn("aten::sym_size", op_names)
+        self.assertIn("aten::select_copy", op_names)
+        self.assertIn("executorch_prim::et_copy_index", op_names)
+
+    def test_emit_scan_gru(self) -> None:
+        """Test scan with a simple GRU-like computation."""
+        from torch._higher_order_ops.scan import scan
+
+        class SimpleGRU(torch.nn.Module):
+            """Simple single-layer unidirectional GRU using scan."""
+
+            def __init__(self, input_size: int, hidden_size: int):
+                super().__init__()
+                self.input_size = input_size
+                self.hidden_size = hidden_size
+
+                # GRU gates: reset, update, new
+                self.weight_ih = torch.nn.Parameter(
+                    torch.randn(3 * hidden_size, input_size), requires_grad=False
+                )
+                self.weight_hh = torch.nn.Parameter(
+                    torch.randn(3 * hidden_size, hidden_size), requires_grad=False
+                )
+                self.bias_ih = torch.nn.Parameter(
+                    torch.randn(3 * hidden_size), requires_grad=False
+                )
+                self.bias_hh = torch.nn.Parameter(
+                    torch.randn(3 * hidden_size), requires_grad=False
+                )
+
+            def forward(
+                self, x: torch.Tensor, h0: torch.Tensor
+            ) -> Tuple[torch.Tensor, torch.Tensor]:
+                """
+                Args:
+                    x: Input tensor of shape [seq_len, batch, input_size]
+                    h0: Initial hidden state of shape [batch, hidden_size]
+                Returns:
+                    output: Output tensor of shape [seq_len, batch, hidden_size]
+                    h_n: Final hidden state of shape [batch, hidden_size]
+                """
+                weight_ih = self.weight_ih
+                weight_hh = self.weight_hh
+                bias_ih = self.bias_ih
+                bias_hh = self.bias_hh
+
+                def gru_cell(
+                    h: torch.Tensor, x_t: torch.Tensor
+                ) -> Tuple[torch.Tensor, torch.Tensor]:
+                    # Compute gates
+                    gates_ih = torch.nn.functional.linear(x_t, weight_ih, bias_ih)
+                    gates_hh = torch.nn.functional.linear(h, weight_hh, bias_hh)
+
+                    # Split into reset, update, new gates
+                    r_ih, z_ih, n_ih = gates_ih.chunk(3, dim=-1)
+                    r_hh, z_hh, n_hh = gates_hh.chunk(3, dim=-1)
+
+                    r = torch.sigmoid(r_ih + r_hh)
+                    z = torch.sigmoid(z_ih + z_hh)
+                    n = torch.tanh(n_ih + r * n_hh)
+
+                    h_new = (1 - z) * n + z * h
+                    return h_new, h_new.clone()
+
+                final_h, outputs = scan(gru_cell, h0, x)
+                return outputs, final_h
+
+        # Create model and inputs
+        input_size = 4
+        hidden_size = 8
+        seq_len = 5
+        batch_size = 2
+
+        model = SimpleGRU(input_size, hidden_size)
+        x = torch.randn(seq_len, batch_size, input_size)
+        h0 = torch.randn(batch_size, hidden_size)
+        inputs = (x, h0)
+
+        # Run through eager PyTorch
+        eager_outputs = model(*inputs)
+
+        # Export and convert to edge
+        module = to_edge(
+            export(model, inputs, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        et = module.to_executorch()
+        program = et.executorch_program
+
+        # Verify the program has expected operators
+        op_names = [op.name for op in program.execution_plan[0].operators]
+
+        # Should have scan control flow operators
+        self.assertIn("aten::sym_size", op_names)
+        self.assertIn("aten::select_copy", op_names)
+        self.assertIn("executorch_prim::et_copy_index", op_names)
+
+        # Verify we can load the program
+        buffer = et.buffer
+        loaded_model = _load_for_executorch_from_buffer(buffer)
+
+        # Run through executorch
+        et_outputs = loaded_model(inputs)
+
+        # Compare outputs (with tolerance for floating point)
+        self.assertTrue(
+            torch.allclose(et_outputs[0], eager_outputs[0], atol=1e-5),
+            f"Output mismatch: {et_outputs[0]} vs {eager_outputs[0]}",
+        )
+        self.assertTrue(
+            torch.allclose(et_outputs[1], eager_outputs[1], atol=1e-5),
+            f"Final hidden state mismatch: {et_outputs[1]} vs {eager_outputs[1]}",
+        )
+
+    def test_run_emit_scan_dynamic_shape(self) -> None:
+        """Test scan execution with dynamic sequence length."""
+        from torch._higher_order_ops.scan import scan
+
+        class ScanCumSum(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return scan(combine_fn, init, xs)
+
+        f = ScanCumSum()
+
+        upper_bound_inputs = (torch.arange(24).float().reshape(8, 3),)
+
+        seq_dim = Dim("seq", max=8)
+        dynamic_shapes = {"xs": {0: seq_dim}}
+
+        module = to_edge(
+            export(f, upper_bound_inputs, dynamic_shapes=dynamic_shapes, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        et = module.to_executorch(
+            config=exir.ExecutorchBackendConfig(
+                sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+            )
+        )
+        et.dump_executorch_program(True)
+        buffer = et.buffer
+        loaded_model = _load_for_executorch_from_buffer(buffer)
+
+        test_cases = [
+            (torch.arange(15).float().reshape(5, 3),),  # seq_len=5
+            (torch.arange(9).float().reshape(3, 3),),  # seq_len=3
+            (torch.arange(21).float().reshape(7, 3),),  # seq_len=7
+        ]
+
+        for test_inputs in test_cases:
+            et_outputs = loaded_model(test_inputs)
+            eager_outputs = f(*test_inputs)
+
+            self.assertTrue(
+                torch.allclose(et_outputs[0], eager_outputs[0]),
+                f"Final carry mismatch for shape {test_inputs[0].shape}: {et_outputs[0]} vs {eager_outputs[0]}",
+            )
+            self.assertTrue(
+                torch.allclose(et_outputs[1], eager_outputs[1]),
+                f"Stacked outputs mismatch for shape {test_inputs[0].shape}: {et_outputs[1]} vs {eager_outputs[1]}",
+            )
 
     def test_dim_order(self) -> None:
         class SimpleLinear(torch.nn.Module):
@@ -1600,7 +1917,6 @@ class TestEmit(unittest.TestCase):
 
         model = to_edge(export(MutableStateModule(), (torch.zeros(1),), strict=True))
         model = model.to_executorch()
-        model.dump_executorch_program(True)
         self.assertTrue(
             model.executorch_program.execution_plan[0].values[0].val.allocation_info
             is not None
@@ -1665,9 +1981,10 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(values[5].val, Double(double_val=float("-inf")))
 
         # Confirm that we can also deserialize the model with infinity in it.
-        pte_data = deserialize_pte_binary(model.buffer)
+        deserialize = deserialize_pte_binary(model.buffer)
         self.assertEqual(
-            pte_data.execution_plan, model.executorch_program.execution_plan
+            deserialize.program.execution_plan,
+            model.executorch_program.execution_plan,
         )
 
     def test_mutate_input_tensor(self) -> None:
@@ -1716,8 +2033,114 @@ class TestEmit(unittest.TestCase):
         external_map = emitter_output.external_constant_map[
             "_default_external_constant"
         ]
+        self.assertEqual(len(external_map), 2)
         self.assertEqual(external_map["linear.weight"], 0)
         self.assertEqual(external_map["linear.bias"], 1)
+
+    def test_constant_tagged_tensors_custom(self) -> None:
+        class LinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(5, 5)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        model = to_edge(
+            export(LinearModule(), (torch.ones(5, 5),), strict=True)
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                external_constants=lambda x: (
+                    "linear_weight" if "weight" in x.name else None
+                ),
+            )
+        )
+        emitter_output = model._emitter_output
+        # constant_buffer contains placeholder and linear bias.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 2)
+        # external constant buffer contains linear weight.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 1)
+        # The lambda saves all constants to the key 'linear_weight'.
+        external_map = emitter_output.external_constant_map["linear_weight"]
+        self.assertEqual(len(external_map), 1)
+        self.assertEqual(external_map["linear.weight"], 0)
+
+    def test_constant_tagged_tensor_dedup(self) -> None:
+        class ConstantModule(nn.Module):
+            def __init__(self):
+                super().__init__()
+                constant = torch.tensor([1.0, 2.0, 3.0])
+
+                # Register the same value with two different names as persistent buffers
+                self.register_buffer("c0", constant.clone(), persistent=True)
+                self.register_buffer("c1", constant.clone(), persistent=True)
+
+            def forward(self, x):
+                return x + self.c0 + self.c1
+
+        model = to_edge(
+            export(ConstantModule(), (torch.ones(1, 3),), strict=True)
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                external_constants=True,
+            )
+        )
+        emitter_output = model._emitter_output
+        # constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # only one item in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 1)
+        # Setting external_constants=True, saves all constants to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(len(external_map), 2)
+        self.assertEqual(external_map["c0"], 0)
+        self.assertEqual(external_map["c1"], 0)
+
+    def test_constant_tagged_tensor_dedup_2(self) -> None:
+        class ConstantModule(nn.Module):
+            def __init__(self):
+                super().__init__()
+                constant0_4 = torch.tensor([1.0, 2.0, 3.0])
+                constant4_5 = torch.tensor([2.0, 3.0, 4.0])
+
+                # Register the same value with two different names as persistent buffers
+                self.register_buffer("c0", constant0_4.clone(), persistent=True)
+                self.register_buffer("c1", constant0_4.clone(), persistent=True)
+                self.register_buffer("c2", constant0_4.clone(), persistent=True)
+                self.register_buffer("c3", constant0_4.clone(), persistent=True)
+                self.register_buffer("c4", constant4_5.clone(), persistent=True)
+                self.register_buffer("c5", constant4_5.clone(), persistent=True)
+
+            def forward(self, x):
+                return x + self.c0 + self.c1 + self.c2 + self.c3 + self.c4 + self.c5
+
+        model = to_edge(
+            export(ConstantModule(), (torch.ones(1, 3),), strict=True)
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                external_constants=True,
+            )
+        )
+        emitter_output = model._emitter_output
+        # constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # Two items in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 2)
+        # Setting external_constants=True, saves all constants to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(len(external_map), 6)
+        self.assertEqual(external_map["c0"], 0)
+        self.assertEqual(external_map["c1"], 0)
+        self.assertEqual(external_map["c2"], 0)
+        self.assertEqual(external_map["c3"], 0)
+        self.assertEqual(external_map["c4"], 1)
+        self.assertEqual(external_map["c5"], 1)
 
     def test_delegate_deduplicate(self) -> None:
         class SharedModule(torch.nn.Module):
@@ -1751,8 +2174,8 @@ class TestEmit(unittest.TestCase):
         module_1(*example_inputs)
         module_2(*example_inputs)
 
-        ep1 = export_for_training(module_1, example_inputs, strict=True)
-        ep2 = export_for_training(module_2, example_inputs, strict=True)
+        ep1 = export(module_1, example_inputs, strict=True)
+        ep2 = export(module_2, example_inputs, strict=True)
 
         edge_program_manager = exir.to_edge(
             {"forward1": ep1, "forward2": ep2},
@@ -1769,6 +2192,60 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(
             len(edge_program_manager.executorch_program.backend_delegate_data), 1
         )
+
+    def test_delegate_deduplicate_with_different_compile_specs(self) -> None:
+        class LowerableSubModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        lowered = LowerableSubModel()
+        example_input = (torch.ones(1),)
+
+        lowered_edge = to_edge(export(lowered, example_input))
+
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+        compile_specs1 = [CompileSpec("config", b"fast")]
+        compile_specs2 = [CompileSpec("config", b"small")]
+        lowered_module1 = to_backend(
+            "BackendWithCompilerDemo", lowered_edge.exported_program(), compile_specs1
+        )
+        lowered_module2 = to_backend(
+            "BackendWithCompilerDemo", lowered_edge.exported_program(), compile_specs2
+        )
+
+        class CompositeModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowerable1 = lowered_module1
+                self.lowerable2 = lowered_module2
+
+            def forward(self, x):
+                a = self.lowerable1(x)
+                b = self.lowerable2(a)
+                return a, b
+
+        composite_model = CompositeModel()
+        model_inputs = (torch.ones(1),)
+        edge_prog = to_edge(export(composite_model, model_inputs)).to_executorch()
+
+        exported_program = edge_prog.exported_program()
+        program = emit_program({"method1": exported_program}, False).program
+        self.assertEqual(len(program.execution_plan), 1)
+
+        plan = program.execution_plan[0]
+        # Two delegates that point to the same blob.
+        self.assertEqual(len(plan.delegates), 2)
+        self.assertEqual(plan.delegates[0].processed.index, 0)
+        self.assertEqual(plan.delegates[1].processed.index, 0)
+        # Compile specs are different.
+        self.assertEqual(plan.delegates[0].compile_specs, compile_specs1)
+        self.assertEqual(plan.delegates[1].compile_specs, compile_specs2)
+        # Only one delegate blob in the backend_delegate_data.
+        self.assertEqual(len(program.backend_delegate_data), 1)
 
     def test_constant_tagged_mutable_tensors(self) -> None:
         class Net(nn.Module):
@@ -1794,7 +2271,6 @@ class TestEmit(unittest.TestCase):
         net = TrainingNet(Net())
 
         # Captures the forward graph. The graph will look similar to the model definition now.
-        # Will move to export_for_training soon which is the api planned to be supported in the long term.
         ep = export(
             net, (torch.randn(1, 2), torch.ones(1, dtype=torch.int64)), strict=True
         )
@@ -1875,3 +2351,55 @@ class TestEmit(unittest.TestCase):
                     ),
                 )
             )
+
+    def test_emit_sym_min_max(self) -> None:
+        class SymMaxModel(nn.Module):
+            def __init__(self, test_min=False):
+                super().__init__()
+                self.test_min = test_min
+
+            def forward(self, x):
+                # Get size of 0th dimension - this creates sym_size op
+                batch_size = x.shape[0]
+                # Compute max of batch_size and 10 - this should create sym_max op
+                if self.test_min:
+                    out_size = min(batch_size, 10)
+                else:
+                    out_size = max(batch_size, 10)
+                # Create a 1D tensor of zeros with the computed size
+                result = torch.zeros(out_size, dtype=x.dtype, device=x.device)
+                return result
+
+        for validate_min in [True, False]:
+            model = SymMaxModel(test_min=validate_min)
+            test_inputs = [
+                torch.randn(5, 3),  # should output zeros(10) for max zeros(5) for min
+                torch.randn(15, 3),  # should output zeros(15) for max zeros(10) for min
+                torch.randn(10, 3),  # should output zeros(10) for max zeros(10) for min
+            ]
+            model.eval()
+            reference_outputs = []
+            with torch.no_grad():
+                for _, inp in enumerate(test_inputs):
+                    output = model(inp)
+                    reference_outputs.append(output)
+
+            batch_dim = Dim("batch", min=1, max=20)
+            dynamic_shapes = {"x": {0: batch_dim}}  # 0th dimension is dynamic
+            exported_program = torch.export.export(
+                model, (test_inputs[0],), dynamic_shapes=dynamic_shapes
+            )
+            edge_program = to_edge(
+                exported_program,
+                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            )
+            et_program = edge_program.to_executorch()
+            program_buffer = et_program.buffer
+            et_module = _load_for_executorch_from_buffer(program_buffer)
+            for _, (inp, expected) in enumerate(zip(test_inputs, reference_outputs)):
+                # Execute with ExecuTorch
+                et_output = et_module.forward([inp])
+                et_result = et_output[0]  # Get first output
+                # Compare results
+                self.assertTrue(expected.shape == et_result.shape)
+                self.assertTrue(torch.allclose(expected, et_result))

@@ -3,24 +3,28 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import logging
+from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import is_buffer
+from torch.export import ExportedProgram
 
 logger = logging.getLogger(__name__)
 
 
-class CastInt64BuffersToInt32Pass(ExportPass):
+class CastInt64BuffersToInt32Pass(ArmPass):
     """
     Cast int64 buffers to int32 if the int64 data is in int32 range.
     """
 
-    def __init__(self, exported_program: torch.export.ExportedProgram):
-        super(CastInt64BuffersToInt32Pass, self).__init__()
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
+    def __init__(self, exported_program: ExportedProgram):
+        super().__init__()
         self.exported_program = exported_program
 
     def _assert_within_int32(self, tensor: torch.Tensor, node: torch.fx.Node):
@@ -37,6 +41,8 @@ class CastInt64BuffersToInt32Pass(ExportPass):
         for node in graph_module.graph.nodes:
             if len(node.users) == 0:
                 continue
+            if "val" not in node.meta:
+                continue
             fake_tensor = node.meta["val"]
             if not isinstance(fake_tensor, torch._subclasses.fake_tensor.FakeTensor):
                 continue
@@ -47,7 +53,7 @@ class CastInt64BuffersToInt32Pass(ExportPass):
                 buffer_name = self.exported_program.graph_signature.inputs_to_buffers[
                     node.name
                 ]
-                buffer = self.exported_program.state_dict[node.name]
+                buffer = self.exported_program.state_dict[buffer_name]
                 self._assert_within_int32(buffer, node)
                 logger.warning(
                     f"Casting buffer {node.name} from torch.int64 to torch.int32"

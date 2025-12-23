@@ -9,10 +9,11 @@ from typing import List, Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU85PipelineBI,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -122,9 +123,9 @@ test_data = {
 
 
 @common.parametrize("test_data", test_data)
-def test_any_tosa_MI(test_data: input_t1):
+def test_any_tosa_FP(test_data: input_t1):
     op, test_input = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         op,
         test_input(),
         op.aten_op,
@@ -137,9 +138,9 @@ def test_any_tosa_MI(test_data: input_t1):
 
 
 @common.parametrize("test_data", test_data)
-def test_any_tosa_BI(test_data: input_t1):
+def test_any_tosa_INT(test_data: input_t1):
     op, test_input = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         op,
         test_input(),
         op.aten_op,
@@ -148,13 +149,11 @@ def test_any_tosa_BI(test_data: input_t1):
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data)
-def test_any_u55_BI(test_data: input_t1):
+def test_any_u55_INT(test_data: input_t1):
     # Tests that we don't delegate these ops since they are not supported on U55.
     op, test_input = test_data()
     pipeline = OpNotSupportedPipeline[input_t1](
@@ -169,18 +168,43 @@ def test_any_u55_BI(test_data: input_t1):
 
 @common.parametrize("test_data", test_data)
 @common.XfailIfNoCorstone320
-def test_any_u85_BI(test_data: input_t1):
+def test_any_u85_INT(test_data: input_t1):
     op, test_input = test_data()
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         op,
         test_input(),
         op.aten_op,
         op.exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,
     )
-    pipeline.pop_stage("quantize")
-    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data)
+@common.SkipIfNoModelConverter
+def test_any_vgf_no_quant(test_data: input_t1):
+    op, data_fn = test_data()
+    pipeline = VgfPipeline[input_t1](
+        op,
+        data_fn(),
+        op.aten_op,
+        op.exir_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data)
+@common.SkipIfNoModelConverter
+def test_any_vgf_quant(test_data: input_t1):
+    op, data_fn = test_data()
+    pipeline = VgfPipeline[input_t1](
+        op,
+        data_fn(),
+        op.aten_op,
+        op.exir_op,
+        quantize=True,
+    )
     pipeline.run()

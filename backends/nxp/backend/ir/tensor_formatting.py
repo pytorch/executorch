@@ -1,13 +1,12 @@
-#
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2024 NXP
+# Copyright 2023-2025 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
 #
 from enum import Enum
 
-from executorch.backends.nxp.backend.node_format_inference import NodeFormat
+from executorch.backends.nxp.backend.node_format import NodeFormat
 
 
 class TensorFormat(Enum):
@@ -26,7 +25,7 @@ class TensorFormat(Enum):
     TRANSPOSE_CONV_2D_WEIGHT_FORMAT = 13
 
     # No special format (matrices, vectors, shapes etc.). All tensors with the FORMATLESS format MUST have EXACTLY
-    #  the same shape and data in the TFLite model and in the ONNX model.
+    #  the same shape and data in the NeutronIR model and in the ExecuTorch model.
     FORMATLESS = 20
 
     NONE = 30  # Format has not been identified
@@ -39,8 +38,10 @@ class TensorFormat(Enum):
 
     @staticmethod
     def from_node_format(node_format: NodeFormat):
-        if node_format.is_channels_first():
-            return TensorFormat.CHANNELS_LAST
+        if node_format == NodeFormat.CHANNELS_FIRST:
+            return TensorFormat.CHANNELS_LAST  # Format is swapped.
+        elif node_format == NodeFormat.CHANNELS_LAST:
+            return TensorFormat.CHANNELS_FIRST  # Format is swapped.
         elif node_format == NodeFormat.FORMATLESS:
             return TensorFormat.FORMATLESS
         else:
@@ -48,8 +49,21 @@ class TensorFormat(Enum):
 
     def to_node_format(self):
         if self == TensorFormat.CHANNELS_LAST:
-            return NodeFormat.CHANNELS_FIRST
+            return NodeFormat.CHANNELS_FIRST  # Format is swapped.
         elif self == TensorFormat.FORMATLESS:
             return NodeFormat.FORMATLESS
+        elif self == TensorFormat.CHANNELS_FIRST:
+            return NodeFormat.CHANNELS_LAST  # Format is swapped.
         else:
             return NodeFormat.NONE
+
+    def to_equal_node_format(self):
+        match self:
+            case TensorFormat.CHANNELS_FIRST:
+                return NodeFormat.CHANNELS_FIRST
+            case TensorFormat.CHANNELS_LAST:
+                return NodeFormat.CHANNELS_LAST
+            case TensorFormat.FORMATLESS:
+                return NodeFormat.FORMATLESS
+            case _:
+                return NodeFormat.NONE

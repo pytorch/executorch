@@ -126,6 +126,10 @@ def _(
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map
             }
+            if preprocess_result._delegate_info_meta is not None:
+                lowered_module.meta["_delegate_info_meta"] = (
+                    preprocess_result._delegate_info_meta
+                )
             return lowered_module
     raise NotImplementedError(f"Backend {backend_id} was not found.")
 
@@ -235,7 +239,9 @@ def _insert_lowered_submodule(
             call_submodule_node.kwargs,
         )
         call_delegate_node.meta["debug_handle"] = generate_debug_handle(owning_program)
-        call_delegate_node.meta["val"] = submodule_output_node.meta["val"]
+        call_delegate_node.meta["val"] = [
+            out_arg.meta["val"] for out_arg in submodule_output_node.args[0]
+        ]
         call_submodule_node.replace_all_uses_with(call_delegate_node)
         owning_graph_module.graph.erase_node(call_submodule_node)
     if is_submodule:
@@ -288,12 +294,8 @@ def _partition_and_lower_one_graph_module(
                 tagged_graph_module, node_list, tag
             )
 
-        tagged_graph_module_output_node = [
-            node for node in tagged_graph_module.graph.nodes if node.op == "output"
-        ][0]
-        submodule_output_node = [
-            node for node in submodule.graph.nodes if node.op == "output"
-        ][0]
+        tagged_graph_module_output_node = tagged_graph_module.graph.output_node()
+        submodule_output_node = submodule.graph.output_node()
         # Copy the output node meta from the original output node, because
         # create_submodule_from_nodes doesn't cover the meta field
         submodule_output_node.meta = tagged_graph_module_output_node.meta
@@ -476,15 +478,9 @@ def _create_partitions_in_graph_module(
                 tagged_graph_module, node_list, tag
             )
 
-        tagged_graph_module_output_node = [
-            node for node in tagged_graph_module.graph.nodes if node.op == "output"
-        ][0]
-        submodule_output_node = [
-            node for node in submodule.graph.nodes if node.op == "output"
-        ][0]
+        submodule_output_node = submodule.graph.output_node()
         # Copy the output node meta from the original output node, because
         # create_submodule_from_nodes doesn't cover the meta field
-        submodule_output_node.meta = tagged_graph_module_output_node.meta
         logging.debug(f"Partitioned graph module: {tagged_graph_module}")
         (
             submodule_program,
@@ -618,6 +614,11 @@ def lower_all_submodules_to_backend(
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map,
             }
+            if preprocess_result._delegate_info_meta is not None:
+                assert lowered_module.meta is not None
+                lowered_module.meta["_delegate_info_meta"] = (
+                    preprocess_result._delegate_info_meta
+                )
             is_submodule = call_submodule_node.meta["is_submodule"]
             toplevel_input_specs_to_delete = call_submodule_node.meta[
                 "toplevel_input_specs_to_delete"

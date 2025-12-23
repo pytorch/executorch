@@ -173,13 +173,6 @@ def build_args_parser():
     )
 
     parser.add_argument(
-        "--pre_gen_pte",
-        help="folder path to pre-compiled ptes",
-        default=None,
-        type=str,
-    )
-
-    parser.add_argument(
         "--fix_latents",
         help="Enable this option to fix the latents in the unet diffuse step.",
         action="store_true",
@@ -255,16 +248,15 @@ def inference(args, compiler_specs, pte_files):
         host_id=args.host,
         soc_model=args.model,
         runner="examples/qualcomm/qaihub_scripts/stable_diffusion/qaihub_stable_diffusion_runner",
+        target=args.target,
     )
 
     input_unet = ()
-    input_list_unet = ""
 
-    for i, t in enumerate(scheduler.timesteps):
+    for t in scheduler.timesteps:
         time_emb = get_quant_data(
             encoding, get_time_embedding(t, time_embedding), "unet", 1
         )
-        input_list_unet += f"input_{i}_0.raw\n"
         input_unet = input_unet + (time_emb,)
 
     qnn_executor_runner_args = [
@@ -333,7 +325,7 @@ def inference(args, compiler_specs, pte_files):
         files.append(os.path.join(args.artifact, "latents.raw"))
 
     if not args.skip_push:
-        adb.push(inputs=input_unet, input_list=input_list_unet, files=files)
+        adb.push(inputs=input_unet, files=files)
     adb.execute(custom_runner_cmd=qnn_executor_runner_args)
 
     output_image = []

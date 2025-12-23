@@ -38,38 +38,26 @@ add_library(openvino_backend STATIC .)
 target_compile_options(openvino_backend PRIVATE -frtti -fexceptions)
 
 # Include Executorch directories
-target_include_directories(openvino_backend PUBLIC ${COMMON_INCLUDE_DIRS})
+target_include_directories(openvino_backend PRIVATE ${COMMON_INCLUDE_DIRS})
 
 # Link OpenVINO and ExecuteTorch core libraries
-target_link_libraries(openvino_backend PRIVATE openvino::runtime executorch_core)
+target_link_libraries(
+  openvino_backend PRIVATE openvino::runtime executorch_core
+)
 
 # Add source files for OpenVINO backend
-target_sources(openvino_backend PRIVATE ${CMAKE_CURRENT_LIST_DIR}/runtime/OpenvinoBackend.cpp)
+target_sources(
+  openvino_backend
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/runtime/OpenvinoBackend.cpp
+)
 
-target_link_options_shared_lib(openvino_backend)
-
-if(EXECUTORCH_BUILD_OPENVINO_EXECUTOR_RUNNER)
-    # Build executor runner binary for openvino backend
-    list(APPEND openvino_executor_runner_libs openvino_backend executorch)
-    
-    set(_openvino_executor_runner__srcs
-        ${EXECUTORCH_ROOT}/examples/portable/executor_runner/executor_runner.cpp
-        ${EXECUTORCH_ROOT}/extension/data_loader/file_data_loader.cpp
-        ${EXECUTORCH_ROOT}/extension/evalue_util/print_evalue.cpp
-        ${EXECUTORCH_ROOT}/extension/runner_util/inputs.cpp
-        ${EXECUTORCH_ROOT}/extension/runner_util/inputs_portable.cpp
-        )
-    add_executable(openvino_executor_runner ${_openvino_executor_runner__srcs})
-    
-    list(APPEND openvino_executor_runner_libs)
-    
-    target_link_libraries(
-      openvino_executor_runner gflags portable_ops_lib ${openvino_executor_runner_libs}
-    )
-    target_compile_options(openvino_executor_runner PUBLIC ${_common_compile_options})
-endif()
-
-
+executorch_target_link_options_shared_lib(openvino_backend)
 
 # Install OpenVINO backend library to the lib directory
-install(TARGETS openvino_backend DESTINATION lib)
+install(
+  TARGETS openvino_backend
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  INCLUDES
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)

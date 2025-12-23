@@ -9,6 +9,8 @@ on:
       - examples/**/*
       - pyproject.toml
       - setup.py
+    tags:
+      - ciflow/binaries/*
   push:
     branches:
       - nightly
@@ -30,7 +32,7 @@ jobs:
       test-infra-ref: main
       with-cuda: disabled
       with-rocm: disabled
-      python-versions: '["3.10", "3.11", "3.12"]'
+      python-versions: '["3.10", "3.11", "3.12", "3.13"]'
 
   build:
     needs: generate-matrix
@@ -61,7 +63,7 @@ jobs:
       post-script: ${{ matrix.post-script }}
       package-name: ${{ matrix.package-name }}
       # Meta's macOS runners do not have Xcode, so use GitHub's runners.
-      runner-type: macos-latest-xlarge
+      runner-type: macos-14-xlarge
       setup-miniconda: true
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}

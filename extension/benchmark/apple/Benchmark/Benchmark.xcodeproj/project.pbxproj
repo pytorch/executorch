@@ -7,12 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		032A73CA2CAFBA8600932D36 /* LLaMATests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 032A73C82CAFBA8600932D36 /* LLaMATests.mm */; };
-		032A74182CAFBB7800932D36 /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73DB2CAFBB7800932D36 /* text_decoder_runner.cpp */; };
-		032A741D2CAFBB7800932D36 /* text_prefiller.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73DD2CAFBB7800932D36 /* text_prefiller.cpp */; };
-		032A741F2CAFBB7800932D36 /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73E62CAFBB7800932D36 /* sampler.cpp */; };
-		032A74232CAFC1B300932D36 /* runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A74222CAFC1B300932D36 /* runner.cpp */; };
-		032A74262CAFC34800932D36 /* llama_tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A74252CAFC34800932D36 /* llama_tiktoken.cpp */; };
+		0314AE3A2E2AAEE700DDE821 /* executorch_llm in Frameworks */ = {isa = PBXBuildFile; productRef = 0314AE392E2AAEE700DDE821 /* executorch_llm */; };
+		032A73CA2CAFBA8600932D36 /* LLMTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 032A73C82CAFBA8600932D36 /* LLMTests.mm */; };
 		0351D9D72CAFC9A200607121 /* Resources in Resources */ = {isa = PBXBuildFile; fileRef = 03C7FA322C8AA24200E6E9AE /* Resources */; };
 		03B0118E2CAC567900054791 /* DynamicTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B0118C2CAC567900054791 /* DynamicTestCase.m */; };
 		03B011912CAD114E00054791 /* ResourceTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B011902CAD114E00054791 /* ResourceTestCase.m */; };
@@ -23,22 +19,9 @@
 		03F181502D7262FC0058BDF9 /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1814F2D7262FC0058BDF9 /* backend_mps */; };
 		03F181522D7262FC0058BDF9 /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181512D7262FC0058BDF9 /* backend_xnnpack */; };
 		03F181542D7262FC0058BDF9 /* executorch in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181532D7262FC0058BDF9 /* executorch */; };
-		03F181562D7262FC0058BDF9 /* kernels_custom in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181552D7262FC0058BDF9 /* kernels_custom */; };
+		03F181562D7262FC0058BDF9 /* kernels_llm in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181552D7262FC0058BDF9 /* kernels_llm */; };
 		03F181582D7262FC0058BDF9 /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181572D7262FC0058BDF9 /* kernels_optimized */; };
 		03F1815C2D7262FC0058BDF9 /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1815B2D7262FC0058BDF9 /* kernels_quantized */; };
-		30AA4B602DC0766800B1BE50 /* pcre2_regex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30AA4B5A2DC0766800B1BE50 /* pcre2_regex.cpp */; };
-		30AA4B612DC0766800B1BE50 /* regex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30AA4B5D2DC0766800B1BE50 /* regex.cpp */; };
-		30AA4B622DC0766800B1BE50 /* hf_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30AA4B592DC0766800B1BE50 /* hf_tokenizer.cpp */; };
-		30AA4B632DC0766800B1BE50 /* token_decoder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30AA4B5F2DC0766800B1BE50 /* token_decoder.cpp */; };
-		30AA4B642DC0766800B1BE50 /* std_regex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30AA4B5E2DC0766800B1BE50 /* std_regex.cpp */; };
-		30AA4B652DC0766800B1BE50 /* pre_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30AA4B5B2DC0766800B1BE50 /* pre_tokenizer.cpp */; };
-		30AA4B662DC0766800B1BE50 /* re2_regex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30AA4B5C2DC0766800B1BE50 /* re2_regex.cpp */; };
-		3C6ABD332DFA27DE0015DE55 /* regex_lookahead.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3C6ABD322DFA27DE0015DE55 /* regex_lookahead.cpp */; };
-		F22E9E1A2DF2CBB900EC5425 /* text_llm_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F22E9E192DF2CBB900EC5425 /* text_llm_runner.cpp */; };
-		F292B01D2D88AF3500BE6839 /* bpe_tokenizer_base.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B0162D88AF3500BE6839 /* bpe_tokenizer_base.cpp */; };
-		F292B0202D88AF3500BE6839 /* llama2c_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B0172D88AF3500BE6839 /* llama2c_tokenizer.cpp */; };
-		F292B0212D88AF3500BE6839 /* tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B01A2D88AF3500BE6839 /* tiktoken.cpp */; };
-		F2E1B5172E03AC19002C9718 /* sentencepiece.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F2E1B5162E03AC19002C9718 /* sentencepiece.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,29 +35,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		032A73C82CAFBA8600932D36 /* LLaMATests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LLaMATests.mm; sourceTree = "<group>"; };
-		032A73D42CAFBB7800932D36 /* image.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = image.h; sourceTree = "<group>"; };
-		032A73D52CAFBB7800932D36 /* image_prefiller.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = image_prefiller.h; sourceTree = "<group>"; };
-		032A73D62CAFBB7800932D36 /* multimodal_runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = multimodal_runner.h; sourceTree = "<group>"; };
-		032A73D72CAFBB7800932D36 /* stats.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = stats.h; sourceTree = "<group>"; };
-		032A73DA2CAFBB7800932D36 /* text_decoder_runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = text_decoder_runner.h; sourceTree = "<group>"; };
-		032A73DB2CAFBB7800932D36 /* text_decoder_runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = text_decoder_runner.cpp; sourceTree = "<group>"; };
-		032A73DC2CAFBB7800932D36 /* text_prefiller.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = text_prefiller.h; sourceTree = "<group>"; };
-		032A73DD2CAFBB7800932D36 /* text_prefiller.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = text_prefiller.cpp; sourceTree = "<group>"; };
-		032A73DE2CAFBB7800932D36 /* text_token_generator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = text_token_generator.h; sourceTree = "<group>"; };
-		032A73DF2CAFBB7800932D36 /* util.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = util.h; sourceTree = "<group>"; };
-		032A73E52CAFBB7800932D36 /* sampler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sampler.h; sourceTree = "<group>"; };
-		032A73E62CAFBB7800932D36 /* sampler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = sampler.cpp; sourceTree = "<group>"; };
-		032A74212CAFC1B300932D36 /* runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../../examples/models/llama/runner/runner.h; sourceTree = SOURCE_ROOT; };
-		032A74222CAFC1B300932D36 /* runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../../examples/models/llama/runner/runner.cpp; sourceTree = SOURCE_ROOT; };
-		032A74242CAFC34800932D36 /* llama_tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llama_tiktoken.h; path = ../../../../examples/models/llama/tokenizer/llama_tiktoken.h; sourceTree = SOURCE_ROOT; };
-		032A74252CAFC34800932D36 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama_tiktoken.cpp; path = ../../../../examples/models/llama/tokenizer/llama_tiktoken.cpp; sourceTree = SOURCE_ROOT; };
+		032A73C82CAFBA8600932D36 /* LLMTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LLMTests.mm; sourceTree = "<group>"; };
 		037C96A02C8A570B00B3DF38 /* Tests.xctestplan */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = Tests.xctestplan; sourceTree = "<group>"; };
 		03B0118B2CAC567900054791 /* DynamicTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DynamicTestCase.h; sourceTree = "<group>"; };
 		03B0118C2CAC567900054791 /* DynamicTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DynamicTestCase.m; sourceTree = "<group>"; };
 		03B0118F2CAD114E00054791 /* ResourceTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ResourceTestCase.h; sourceTree = "<group>"; };
 		03B011902CAD114E00054791 /* ResourceTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ResourceTestCase.m; sourceTree = "<group>"; };
-		03B019502C8A80D30044D558 /* Tests.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Tests.xcconfig; sourceTree = "<group>"; };
 		03B2D3642C8A515A0046936E /* Benchmark.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Benchmark.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		03B2D3672C8A515A0046936E /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		03B2D36D2C8A515B0046936E /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
@@ -82,36 +48,6 @@
 		03B2D3792C8A515C0046936E /* GenericTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GenericTests.mm; sourceTree = "<group>"; };
 		03C7FA322C8AA24200E6E9AE /* Resources */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources; sourceTree = SOURCE_ROOT; };
 		03E7E6782CBDC1C900205E71 /* CoreMLTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = CoreMLTests.mm; sourceTree = "<group>"; };
-		30593C332DC02ED100AB308C /* regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = regex.h; sourceTree = "<group>"; };
-		30593C342DC02EDD00AB308C /* re2_regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = re2_regex.h; sourceTree = "<group>"; };
-		30593C3D2DC02FD400AB308C /* pcre2_regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pcre2_regex.h; sourceTree = "<group>"; };
-		30593C3E2DC02FD400AB308C /* std_regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = std_regex.h; sourceTree = "<group>"; };
-		30AA4B552DC0756E00B1BE50 /* hf_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = hf_tokenizer.h; sourceTree = "<group>"; };
-		30AA4B562DC075CE00B1BE50 /* pre_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pre_tokenizer.h; sourceTree = "<group>"; };
-		30AA4B572DC0760200B1BE50 /* token_decoder.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = token_decoder.h; sourceTree = "<group>"; };
-		30AA4B582DC0760C00B1BE50 /* string_integer_map.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = string_integer_map.h; sourceTree = "<group>"; };
-		30AA4B592DC0766800B1BE50 /* hf_tokenizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = hf_tokenizer.cpp; path = src/hf_tokenizer.cpp; sourceTree = "<group>"; };
-		30AA4B5A2DC0766800B1BE50 /* pcre2_regex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = pcre2_regex.cpp; path = src/pcre2_regex.cpp; sourceTree = "<group>"; };
-		30AA4B5B2DC0766800B1BE50 /* pre_tokenizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = pre_tokenizer.cpp; path = src/pre_tokenizer.cpp; sourceTree = "<group>"; };
-		30AA4B5C2DC0766800B1BE50 /* re2_regex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = re2_regex.cpp; path = src/re2_regex.cpp; sourceTree = "<group>"; };
-		30AA4B5D2DC0766800B1BE50 /* regex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = regex.cpp; path = src/regex.cpp; sourceTree = "<group>"; };
-		30AA4B5E2DC0766800B1BE50 /* std_regex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = std_regex.cpp; path = src/std_regex.cpp; sourceTree = "<group>"; };
-		30AA4B5F2DC0766800B1BE50 /* token_decoder.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = token_decoder.cpp; path = src/token_decoder.cpp; sourceTree = "<group>"; };
-		3C6ABD322DFA27DE0015DE55 /* regex_lookahead.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = regex_lookahead.cpp; path = src/regex_lookahead.cpp; sourceTree = "<group>"; };
-		F22E9E182DF2CBB900EC5425 /* text_llm_runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = text_llm_runner.h; sourceTree = "<group>"; };
-		F22E9E192DF2CBB900EC5425 /* text_llm_runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = text_llm_runner.cpp; sourceTree = "<group>"; };
-		F292B0162D88AF3500BE6839 /* bpe_tokenizer_base.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = bpe_tokenizer_base.cpp; path = src/bpe_tokenizer_base.cpp; sourceTree = "<group>"; };
-		F292B0172D88AF3500BE6839 /* llama2c_tokenizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama2c_tokenizer.cpp; path = src/llama2c_tokenizer.cpp; sourceTree = "<group>"; };
-		F292B01A2D88AF3500BE6839 /* tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = tiktoken.cpp; path = src/tiktoken.cpp; sourceTree = "<group>"; };
-		F292B0222D88AF4800BE6839 /* base64.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = base64.h; sourceTree = "<group>"; };
-		F292B0232D88AF4800BE6839 /* bpe_tokenizer_base.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bpe_tokenizer_base.h; sourceTree = "<group>"; };
-		F292B0242D88AF4800BE6839 /* error.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = error.h; sourceTree = "<group>"; };
-		F292B0262D88AF4800BE6839 /* llama2c_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = llama2c_tokenizer.h; sourceTree = "<group>"; };
-		F292B0272D88AF4800BE6839 /* log.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = log.h; sourceTree = "<group>"; };
-		F292B0292D88AF4800BE6839 /* result.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = result.h; sourceTree = "<group>"; };
-		F292B02B2D88AF4800BE6839 /* tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tiktoken.h; sourceTree = "<group>"; };
-		F292B02D2D88AF4800BE6839 /* tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tokenizer.h; sourceTree = "<group>"; };
-		F2E1B5162E03AC19002C9718 /* sentencepiece.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = sentencepiece.cpp; path = src/sentencepiece.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -127,11 +63,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				03F181542D7262FC0058BDF9 /* executorch in Frameworks */,
+				0314AE3A2E2AAEE700DDE821 /* executorch_llm in Frameworks */,
 				03F1815C2D7262FC0058BDF9 /* kernels_quantized in Frameworks */,
 				03F181502D7262FC0058BDF9 /* backend_mps in Frameworks */,
 				03F1814E2D7262FC0058BDF9 /* backend_coreml in Frameworks */,
 				03F181522D7262FC0058BDF9 /* backend_xnnpack in Frameworks */,
-				03F181562D7262FC0058BDF9 /* kernels_custom in Frameworks */,
+				03F181562D7262FC0058BDF9 /* kernels_llm in Frameworks */,
 				03F181582D7262FC0058BDF9 /* kernels_optimized in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -139,71 +76,13 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		032A73C92CAFBA8600932D36 /* LLaMA */ = {
+		032A73C92CAFBA8600932D36 /* LLM */ = {
 			isa = PBXGroup;
 			children = (
-				032A73E02CAFBB7800932D36 /* runner */,
-				032A73E92CAFBB7800932D36 /* sampler */,
-				032A74022CAFBB7800932D36 /* tokenizers */,
-				032A73C82CAFBA8600932D36 /* LLaMATests.mm */,
+				032A73C82CAFBA8600932D36 /* LLMTests.mm */,
 			);
-			path = LLaMA;
+			path = LLM;
 			sourceTree = "<group>";
-		};
-		032A73E02CAFBB7800932D36 /* runner */ = {
-			isa = PBXGroup;
-			children = (
-				F22E9E182DF2CBB900EC5425 /* text_llm_runner.h */,
-				F22E9E192DF2CBB900EC5425 /* text_llm_runner.cpp */,
-				032A73D42CAFBB7800932D36 /* image.h */,
-				032A73D52CAFBB7800932D36 /* image_prefiller.h */,
-				032A73D62CAFBB7800932D36 /* multimodal_runner.h */,
-				032A74212CAFC1B300932D36 /* runner.h */,
-				032A74222CAFC1B300932D36 /* runner.cpp */,
-				032A73D72CAFBB7800932D36 /* stats.h */,
-				032A73DA2CAFBB7800932D36 /* text_decoder_runner.h */,
-				032A73DB2CAFBB7800932D36 /* text_decoder_runner.cpp */,
-				032A73DC2CAFBB7800932D36 /* text_prefiller.h */,
-				032A73DD2CAFBB7800932D36 /* text_prefiller.cpp */,
-				032A73DE2CAFBB7800932D36 /* text_token_generator.h */,
-				032A73DF2CAFBB7800932D36 /* util.h */,
-			);
-			name = runner;
-			path = ../../../llm/runner;
-			sourceTree = SOURCE_ROOT;
-		};
-		032A73E92CAFBB7800932D36 /* sampler */ = {
-			isa = PBXGroup;
-			children = (
-				032A73E52CAFBB7800932D36 /* sampler.h */,
-				032A73E62CAFBB7800932D36 /* sampler.cpp */,
-			);
-			name = sampler;
-			path = ../../../llm/sampler;
-			sourceTree = SOURCE_ROOT;
-		};
-		032A74022CAFBB7800932D36 /* tokenizers */ = {
-			isa = PBXGroup;
-			children = (
-				F2E1B5162E03AC19002C9718 /* sentencepiece.cpp */,
-				3C6ABD322DFA27DE0015DE55 /* regex_lookahead.cpp */,
-				30AA4B592DC0766800B1BE50 /* hf_tokenizer.cpp */,
-				30AA4B5A2DC0766800B1BE50 /* pcre2_regex.cpp */,
-				30AA4B5B2DC0766800B1BE50 /* pre_tokenizer.cpp */,
-				30AA4B5C2DC0766800B1BE50 /* re2_regex.cpp */,
-				30AA4B5D2DC0766800B1BE50 /* regex.cpp */,
-				30AA4B5E2DC0766800B1BE50 /* std_regex.cpp */,
-				30AA4B5F2DC0766800B1BE50 /* token_decoder.cpp */,
-				F292B0302D88AF4800BE6839 /* include */,
-				F292B0162D88AF3500BE6839 /* bpe_tokenizer_base.cpp */,
-				032A74252CAFC34800932D36 /* llama_tiktoken.cpp */,
-				F292B0172D88AF3500BE6839 /* llama2c_tokenizer.cpp */,
-				F292B01A2D88AF3500BE6839 /* tiktoken.cpp */,
-				032A74242CAFC34800932D36 /* llama_tiktoken.h */,
-			);
-			name = tokenizers;
-			path = ../../../llm/tokenizers;
-			sourceTree = SOURCE_ROOT;
 		};
 		03B0118D2CAC567900054791 /* TestUtils */ = {
 			isa = PBXGroup;
@@ -248,53 +127,13 @@
 		03B2D3782C8A515C0046936E /* Tests */ = {
 			isa = PBXGroup;
 			children = (
-				032A73C92CAFBA8600932D36 /* LLaMA */,
+				032A73C92CAFBA8600932D36 /* LLM */,
 				03E7E6782CBDC1C900205E71 /* CoreMLTests.mm */,
 				03B2D3792C8A515C0046936E /* GenericTests.mm */,
-				03B019502C8A80D30044D558 /* Tests.xcconfig */,
 				037C96A02C8A570B00B3DF38 /* Tests.xctestplan */,
 			);
 			path = Tests;
 			sourceTree = SOURCE_ROOT;
-		};
-		F292B02E2D88AF4800BE6839 /* tokenizers */ = {
-			isa = PBXGroup;
-			children = (
-				30AA4B582DC0760C00B1BE50 /* string_integer_map.h */,
-				30AA4B572DC0760200B1BE50 /* token_decoder.h */,
-				30AA4B562DC075CE00B1BE50 /* pre_tokenizer.h */,
-				30AA4B552DC0756E00B1BE50 /* hf_tokenizer.h */,
-				F292B0222D88AF4800BE6839 /* base64.h */,
-				F292B0232D88AF4800BE6839 /* bpe_tokenizer_base.h */,
-				F292B0242D88AF4800BE6839 /* error.h */,
-				F292B0262D88AF4800BE6839 /* llama2c_tokenizer.h */,
-				F292B0272D88AF4800BE6839 /* log.h */,
-				30593C3D2DC02FD400AB308C /* pcre2_regex.h */,
-				30593C342DC02EDD00AB308C /* re2_regex.h */,
-				30593C332DC02ED100AB308C /* regex.h */,
-				F292B0292D88AF4800BE6839 /* result.h */,
-				30593C3E2DC02FD400AB308C /* std_regex.h */,
-				F292B02B2D88AF4800BE6839 /* tiktoken.h */,
-				F292B02D2D88AF4800BE6839 /* tokenizer.h */,
-			);
-			path = tokenizers;
-			sourceTree = "<group>";
-		};
-		F292B02F2D88AF4800BE6839 /* pytorch */ = {
-			isa = PBXGroup;
-			children = (
-				F292B02E2D88AF4800BE6839 /* tokenizers */,
-			);
-			path = pytorch;
-			sourceTree = "<group>";
-		};
-		F292B0302D88AF4800BE6839 /* include */ = {
-			isa = PBXGroup;
-			children = (
-				F292B02F2D88AF4800BE6839 /* pytorch */,
-			);
-			path = include;
-			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
@@ -319,7 +158,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 03B2D38C2C8A515C0046936E /* Build configuration list for PBXNativeTarget "Tests" */;
 			buildPhases = (
-				032A74202CAFBE6200932D36 /* Build Cmake Dependencies */,
 				03B2D3712C8A515C0046936E /* Sources */,
 				03B2D3722C8A515C0046936E /* Frameworks */,
 				0351D9D62CAFC99C00607121 /* Resources */,
@@ -386,27 +224,6 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
-/* Begin PBXShellScriptBuildPhase section */
-		032A74202CAFBE6200932D36 /* Build Cmake Dependencies */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Build Cmake Dependencies";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"Cmake not found, please install Cmake. \\n1. Download Cmake.app from https://cmake.org/download with version > 3.19. \\n2. Install it to Applications/ folder and run sudo /Applications/CMake.app/Contents/bin/cmake-gui --install to install CMake commandline tools.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"12.0\"\nfi\n\ncmake_build() {\n    local src_dir target do_install=0\n    local extra_args=()\n    local build_dir\n    # Parse arguments\n    src_dir=\"$1\"\n    shift\n    target=\"$1\"\n    if [[ \"$target\" == \"install\" ]]; then\n        # Usage: cmake_build <src_dir> install [extra_args...]\n        do_install=1\n        shift\n    else\n        # Usage: cmake_build <src_dir> <target> [install] [extra_args...]\n        shift\n        if [[ \"$1\" == \"install\" ]]; then\n            do_install=1\n            shift\n        fi\n    fi\n    # Collect any remaining arguments as extra_args\n    extra_args=(\"$@\")\n    build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n    mkdir -p \"$build_dir\" || { echo \"Failed to create build dir\"; return 1; }\n    pushd \"$build_dir\" > /dev/null || { echo \"Failed to enter build dir\"; return 1; }\n    # Platform-specific CMake args\n    if [[ \"$PLATFORM\" == \"MAC_ARM64\" ]]; then\n        extra_args+=(-DCMAKE_INSTALL_BUNDLEDIR=\"${CMAKE_DIR}/bin\")\n        extra_args+=(-DCMAKE_MACOSX_BUNDLE=OFF)\n    fi\n    # Configure\n    cmake -G Xcode \\\n        -DCMAKE_BUILD_TYPE=\"Release\" \\\n        -DCMAKE_CXX_STANDARD=17 \\\n        -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n        -DPLATFORM=\"$PLATFORM\" \\\n        -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n        -DCMAKE_INSTALL_PREFIX=\"$CMAKE_DIR\" \\\n        \"${extra_args[@]}\" \\\n        \"$src_dir\" || { echo \"CMake configure failed\"; popd > /dev/null; return 1; }\n    # Build\n    cmake --build . --config \"Release\" --target $target\n    # Install if requested\n    if [[ $do_install -eq 1 ]]; then\n        cmake --install . --prefix \"$CMAKE_DIR\" || echo \"Ignoring install failures\"\n    fi\n}\n\ncmake_build \"$SRCROOT/../../../llm/tokenizers/third-party/abseil-cpp\" \"install\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../../llm/tokenizers/third-party/re2\" \"install\"\n\ncmake_build \"$SRCROOT/../../../llm/tokenizers/third-party/pcre2\" \"install\" \\\n    -DPCRE2_BUILD_PCRE2_8=ON \\\n    -DPCRE2_BUILD_PCRE2_16=OFF \\\n    -DPCRE2_BUILD_PCRE2_32=OFF \\\n    -DPCRE2_BUILD_TESTS=OFF \\\n    -DPCRE2_BUILD_PCRE2GREP=OFF \\\n    -DPCRE2_BUILD_PCRE2TEST=OFF \\\n    -DPCRE2_BUILD_PCRE2GPERF=OFF \\\n    -DPCRE2_BUILD_DOCS=OFF \\\n    -DPCRE2_BUILD_LIBPCRE2_PDB=OFF \\\n    -DSUPPORT_REGEX_LOOKAHEAD=ON\n    \ncmake_build \"$SRCROOT/../../../llm/tokenizers/third-party/sentencepiece\" \"sentencepiece-static sentencepiece_train-static\" \"install\" \\\n    -DSPM_ENABLE_SHARED=OFF \\\n    -DSPM_BUILD_TEST=OFF \\\n    -DCMAKE_SYSTEM_NAME=\"iOS\"\n    \ncmake_build \"$SRCROOT/../../../llm/tokenizers/third-party/llama.cpp-unicode\" \"install\"\n    \n# Include the single header for json.\nmkdir -p \"$CMAKE_DIR/include/nlohmann\"\ncp \"$SRCROOT/../../../llm/tokenizers/third-party/json/single_include/nlohmann/json.hpp\" \"$CMAKE_DIR/include/nlohmann/json.hpp\"\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
-
 /* Begin PBXSourcesBuildPhase section */
 		03B2D3602C8A515A0046936E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -420,29 +237,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F22E9E1A2DF2CBB900EC5425 /* text_llm_runner.cpp in Sources */,
 				03B0118E2CAC567900054791 /* DynamicTestCase.m in Sources */,
-				032A74182CAFBB7800932D36 /* text_decoder_runner.cpp in Sources */,
-				032A741D2CAFBB7800932D36 /* text_prefiller.cpp in Sources */,
-				032A741F2CAFBB7800932D36 /* sampler.cpp in Sources */,
 				03B011912CAD114E00054791 /* ResourceTestCase.m in Sources */,
-				F292B01D2D88AF3500BE6839 /* bpe_tokenizer_base.cpp in Sources */,
-				F292B0202D88AF3500BE6839 /* llama2c_tokenizer.cpp in Sources */,
-				F292B0212D88AF3500BE6839 /* tiktoken.cpp in Sources */,
-				F2E1B5172E03AC19002C9718 /* sentencepiece.cpp in Sources */,
 				03E7E6792CBDCAE900205E71 /* CoreMLTests.mm in Sources */,
-				032A74232CAFC1B300932D36 /* runner.cpp in Sources */,
 				03B2D37A2C8A515C0046936E /* GenericTests.mm in Sources */,
-				30AA4B602DC0766800B1BE50 /* pcre2_regex.cpp in Sources */,
-				30AA4B612DC0766800B1BE50 /* regex.cpp in Sources */,
-				30AA4B622DC0766800B1BE50 /* hf_tokenizer.cpp in Sources */,
-				30AA4B632DC0766800B1BE50 /* token_decoder.cpp in Sources */,
-				30AA4B642DC0766800B1BE50 /* std_regex.cpp in Sources */,
-				30AA4B652DC0766800B1BE50 /* pre_tokenizer.cpp in Sources */,
-				30AA4B662DC0766800B1BE50 /* re2_regex.cpp in Sources */,
-				032A73CA2CAFBA8600932D36 /* LLaMATests.mm in Sources */,
-				3C6ABD332DFA27DE0015DE55 /* regex_lookahead.cpp in Sources */,
-				032A74262CAFC34800932D36 /* llama_tiktoken.cpp in Sources */,
+				032A73CA2CAFBA8600932D36 /* LLMTests.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -637,7 +436,6 @@
 		};
 		03B2D38D2C8A515C0046936E /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 03B019502C8A80D30044D558 /* Tests.xcconfig */;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -649,6 +447,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_CODE_SIGN_FLAGS = "--deep";
+				OTHER_LDFLAGS = "-all_load";
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.BenchmarkTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
@@ -664,7 +463,6 @@
 		};
 		03B2D38E2C8A515C0046936E /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 03B019502C8A80D30044D558 /* Tests.xcconfig */;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -676,6 +474,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_CODE_SIGN_FLAGS = "--deep";
+				OTHER_LDFLAGS = "-all_load";
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.BenchmarkTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
@@ -729,6 +528,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		0314AE392E2AAEE700DDE821 /* executorch_llm */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = executorch_llm;
+		};
 		03F1814D2D7262FC0058BDF9 /* backend_coreml */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = backend_coreml;
@@ -745,9 +548,9 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = executorch;
 		};
-		03F181552D7262FC0058BDF9 /* kernels_custom */ = {
+		03F181552D7262FC0058BDF9 /* kernels_llm */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = kernels_custom;
+			productName = kernels_llm;
 		};
 		03F181572D7262FC0058BDF9 /* kernels_optimized */ = {
 			isa = XCSwiftPackageProductDependency;

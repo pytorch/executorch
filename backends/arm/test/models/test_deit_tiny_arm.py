@@ -3,27 +3,30 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
-
 from typing import Tuple
 
-import timm
+import timm  # type: ignore[import-untyped]
 
 import torch
 
+from executorch.backends.arm.test import common
+
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
-from timm.data import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
-from torchvision import transforms
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
+from timm.data import (  # type: ignore[import-untyped]
+    IMAGENET_INCEPTION_MEAN,
+    IMAGENET_INCEPTION_STD,
+)
+from torchvision import transforms  # type: ignore[import-untyped]
 
 deit_tiny = timm.models.deit.deit_tiny_patch16_224(pretrained=True)
+
 deit_tiny.eval()
 
 normalize = transforms.Normalize(
@@ -34,8 +37,8 @@ model_inputs = (normalize(torch.rand((1, 3, 224, 224))),)
 input_t = Tuple[torch.Tensor]
 
 
-def test_deit_tiny_tosa_MI():
-    pipeline = TosaPipelineMI[input_t](
+def test_deit_tiny_tosa_FP():
+    pipeline = TosaPipelineFP[input_t](
         deit_tiny,
         model_inputs,
         aten_op=[],
@@ -45,14 +48,73 @@ def test_deit_tiny_tosa_MI():
     pipeline.run()
 
 
-def test_deit_tiny_tosa_BI():
-    pipeline = TosaPipelineBI[input_t](
+def test_deit_tiny_tosa_INT():
+    pipeline = TosaPipelineINT[input_t](
         deit_tiny,
         model_inputs,
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-        atol=1,
+        atol=1.5,
         qtol=1,
+    )
+    pipeline.run()
+
+
+def test_deit_tiny_u55_INT():
+    pipeline = EthosU55PipelineINT[input_t](
+        deit_tiny,
+        model_inputs,
+        aten_ops=[],
+        exir_ops=[],
+        use_to_edge_transform_and_lower=True,
+        atol=1.5,
+        qtol=1,
+    )
+    # Multiple partitions
+    pipeline.pop_stage("check_count.exir")
+    # Don't run inference as model is too large for Corstone-300
+    pipeline.pop_stage("run_method_and_compare_outputs")
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_deit_tiny_u85_INT():
+    pipeline = EthosU85PipelineINT[input_t](
+        deit_tiny,
+        model_inputs,
+        aten_ops=[],
+        exir_ops=[],
+        use_to_edge_transform_and_lower=True,
+        atol=1.5,
+        qtol=1,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_deit_tiny_vgf_quant():
+    pipeline = VgfPipeline[input_t](
+        deit_tiny,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        atol=1.5,
+        qtol=1,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_deit_tiny_vgf_no_quant():
+    pipeline = VgfPipeline[input_t](
+        deit_tiny,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()

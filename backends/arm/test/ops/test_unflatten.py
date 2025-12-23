@@ -9,8 +9,11 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = tuple[torch.Tensor]
@@ -29,15 +32,17 @@ class Unflatten(torch.nn.Module):
         return torch.unflatten(x, self.dim, self.sizes)
 
     test_data: dict[str, test_data_t] = {
-        "randn_4d": (lambda: (Unflatten(1, (2, 2)), (torch.randn(3, 4, 5, 1),))),
-        "rand_3d": (lambda: (Unflatten(1, (-1, 2)), (torch.rand(3, 4, 4),))),
+        "rand_3d_batch3": (lambda: (Unflatten(1, (-1, 2)), (torch.rand(3, 4, 4),))),
+        "rand_3d_batch1": (lambda: (Unflatten(1, (-1, 2)), (torch.rand(1, 4, 4),))),
+        "randn_4d_dim1": (lambda: (Unflatten(1, (2, 2)), (torch.randn(3, 4, 5, 1),))),
+        "randn_4d_dim3": (lambda: (Unflatten(3, (2, 2)), (torch.randn(1, 1, 5, 4),))),
     }
 
 
 @common.parametrize("test_data", Unflatten.test_data)
-def test_unflatten_int_tosa_MI(test_data: test_data_t):
+def test_unflatten_int_tosa_FP(test_data: test_data_t):
     module, inputs = test_data()
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         module,
         inputs,
         Unflatten.aten_op,
@@ -46,11 +51,57 @@ def test_unflatten_int_tosa_MI(test_data: test_data_t):
 
 
 @common.parametrize("test_data", Unflatten.test_data)
-def test_unflatten_int_tosa_BI(test_data: test_data_t):
+def test_unflatten_int_tosa_INT(test_data: test_data_t):
     module, inputs = test_data()
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](module, inputs, Unflatten.aten_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", Unflatten.test_data, strict=False)
+@common.XfailIfNoCorstone300
+def test_unflatten_int_u55_INT(test_data: test_data_t):
+    module, inputs = test_data()
+    pipeline = EthosU55PipelineINT[input_t](
         module,
         inputs,
         Unflatten.aten_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Unflatten.test_data, strict=False)
+@common.XfailIfNoCorstone320
+def test_unflatten_int_u85_INT(test_data: test_data_t):
+    module, inputs = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        module,
+        inputs,
+        Unflatten.aten_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Unflatten.test_data)
+@common.SkipIfNoModelConverter
+def test_unflatten_int_vgf_no_quant(test_data: test_data_t):
+    module, inputs = test_data()
+    pipeline = VgfPipeline[input_t](
+        module,
+        inputs,
+        Unflatten.aten_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Unflatten.test_data)
+@common.SkipIfNoModelConverter
+def test_unflatten_int_vgf_quant(test_data: test_data_t):
+    module, inputs = test_data()
+    pipeline = VgfPipeline[input_t](
+        module,
+        inputs,
+        Unflatten.aten_op,
+        quantize=True,
     )
     pipeline.run()

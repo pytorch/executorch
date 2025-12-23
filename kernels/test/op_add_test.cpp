@@ -89,6 +89,45 @@ class OpAddOutKernelTest : public OperatorTest {
 #undef ENUMERATE_TEST_ENTRY
   }
 
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_add_complex_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    // Both inputs have the same shape
+    Tensor x_0 = tf.make({2}, {CTYPE(1, 2.1), CTYPE(3.1, 4)});
+    Tensor y_0 = tf.make({2}, {CTYPE(5.2, 6.3), CTYPE(7, 8.9)});
+    // Destination for the sum.
+    Tensor out = tf.full({2}, CTYPE{0, 0});
+    // Add two tensors.
+    op_add_out(
+        x_0,
+        y_0,
+        /*alpha=*/1,
+        out);
+    Tensor expected_0 = tf.make({2}, {CTYPE(6.2, 8.4), CTYPE(10.1, 12.9)});
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_EQ(out, expected_0);
+
+    // Other tensor has numel() = 1
+    Tensor y_1 = tf.make({1}, {CTYPE(2, 3)});
+    // Add two tensors.
+    op_add_out(
+        x_0,
+        y_1,
+        /*alpha=*/2,
+        out);
+    Tensor expected_1 = tf.make({2}, {CTYPE(5, 8.1), CTYPE(7.1, 10)});
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_EQ(out, expected_1);
+  }
+
+  void test_add_enumerate_complex_types() {
+#define RUN_COMPLEX_TEST(ctype, dtype) \
+  test_add_complex_dtype<ctype, ScalarType::dtype>();
+    ET_FORALL_COMPLEXH_TYPES(RUN_COMPLEX_TEST);
+#undef RUN_COMPLEX_TEST
+  }
+
   // Common testing for adding two floating point Tensors.
   template <ScalarType DTYPE>
   void test_floating_point_add_out() {
@@ -291,6 +330,10 @@ class OpAddScalarOutKernelTest : public OperatorTest {
  */
 TEST_F(OpAddOutKernelTest, AllRealDtypesSupported) {
   test_add_enumerate_a_types();
+}
+
+TEST_F(OpAddOutKernelTest, ComplexTensors) {
+  test_add_enumerate_complex_types();
 }
 
 TEST_F(OpAddOutKernelTest, FloatTensors) {
@@ -546,6 +589,18 @@ TEST_F(OpAddOutKernelTest, BroadcastNDTest) {
   test_broadcast_last_dim<ScalarType::Float>();
   test_broadcast_last_dim<ScalarType::Half>();
   test_broadcast_last_dim<ScalarType::BFloat16>();
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastBToA) {
+  TensorFactory<ScalarType::Float> tf_a;
+  Tensor a = tf_a.make({1, 3}, /*data=*/{1, 2, 3});
+  Tensor b = tf_a.make({1, 1, 3}, /*data=*/{3.2, 1.3, 5.5});
+  // Destination for output of add.
+  Tensor out = tf_a.zeros({1, 1, 3});
+
+  // Check that it matches the expected output.
+  Tensor expected = tf_a.make({1, 1, 3}, /*data=*/{4.2, 3.3, 8.5});
+  EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
 }
 
 //

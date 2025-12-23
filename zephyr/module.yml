@@ -1,0 +1,8 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
+
+name: executorch
+build:
+  cmake: zephyr
+  kconfig: zephyr/Kconfig

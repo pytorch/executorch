@@ -3,11 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Any, List
 
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -18,7 +19,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def permutation_vector_to_matrix(permutation_vector: list[int]) -> torch.Tensor:
@@ -95,56 +96,10 @@ def transform_permutation_vector(permutation_vector: list[int], dim_order: list[
 
 
 @register_node_visitor
-class PermuteVisitor_0_80(NodeVisitor):
-    target = "aten.permute_copy.default"
-
-    tosa_specs = NodeVisitor.tosa_specs_0_80
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: torch.fx.Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [inputs[0], output], ts)
-        validate_valid_dtype(
-            self.target,
-            [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
-            output.tosa_spec,
-        )
-
-        # The permutation vector describes a permutation P in default Pytorch dim_order.
-        # For rank 4, the default dim_order NCHW.
-        # E.g. (2,3,0,1) -> permute (n,c,h,w) to (w,c,n,h)
-        permutation_vector = inputs[1].special
-
-        if output.dim_order != tuple(range(len(output.dim_order))):
-            # the permutation vector can't be used directly if we are not in NCHW dim_order.
-            # Transform to dim_order.
-            permutation_vector = transform_permutation_vector(
-                permutation_vector, output.dim_order
-            )
-
-        attr = ts.TosaSerializerAttribute()
-        attr.TransposeAttribute(permutation_vector)
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().TRANSPOSE, [inputs[0].name], [output.name], attr
-        )
-
-
-@register_node_visitor
 class PermuteVisitor(NodeVisitor):
     target = "aten.permute_copy.default"
 
-    tosa_specs = NodeVisitor.tosa_specs_1_00
+    tosa_specs = NodeVisitor.tosa_specs
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -156,14 +111,18 @@ class PermuteVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            [
+                ts.DType.BOOL,
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+                ts.DType.FP32,
+            ],
             output.tosa_spec,
         )
 
@@ -181,6 +140,11 @@ class PermuteVisitor(NodeVisitor):
 
         attr = ts.TosaSerializerAttribute()
         attr.TransposeAttribute(permutation_vector)
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().TRANSPOSE, [inputs[0].name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.Op.TRANSPOSE,
+            [inputs[0].name],
+            [output.name],
+            attr,
         )

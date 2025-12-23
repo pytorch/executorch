@@ -10,7 +10,7 @@
 
 #include <xa_nnlib_kernels_api.h>
 
-#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
+#include <executorch/backends/cadence/common/xt_macros.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -23,7 +23,6 @@ using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
 using std::optional;
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -192,4 +191,3 @@ Tensor& mean_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

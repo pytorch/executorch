@@ -26,10 +26,10 @@ function(announce_configured_options NAME)
   endif()
 endfunction()
 
-
 # Print the configured options.
 function(print_configured_options)
   get_property(_options GLOBAL PROPERTY _announce_configured_options)
+  list(SORT _options)
 
   set(_longest_name_length 0)
   foreach(_option IN LISTS _options)
@@ -57,7 +57,6 @@ function(print_configured_options)
   message(STATUS "--------------------------")
 endfunction()
 
-
 # Enforce option names to always start with EXECUTORCH.
 function(enforce_executorch_option_name NAME)
   if(NOT "${NAME}" MATCHES "^EXECUTORCH_")
@@ -65,32 +64,44 @@ function(enforce_executorch_option_name NAME)
   endif()
 endfunction()
 
-
-# Define an overridable option.
-#   1) If the option is already defined in the process, then store that in cache
-#   2) If the option is NOT set, then store the default value in cache
+# Define an overridable option. 1) If the option is already defined in the
+# process, then store that in cache 2) If the option is NOT set, then store the
+# default value in cache
 macro(define_overridable_option NAME DESCRIPTION VALUE_TYPE DEFAULT_VALUE)
   enforce_executorch_option_name(${NAME})
 
-  if(NOT "${VALUE_TYPE}" STREQUAL "STRING" AND NOT "${VALUE_TYPE}" STREQUAL "BOOL")
-    message(FATAL_ERROR "Invalid option (${NAME}) value type '${VALUE_TYPE}', must be either STRING or BOOL")
+  if(NOT "${VALUE_TYPE}" STREQUAL "STRING" AND NOT "${VALUE_TYPE}" STREQUAL
+                                               "BOOL"
+  )
+    message(
+      FATAL_ERROR
+        "Invalid option (${NAME}) value type '${VALUE_TYPE}', must be either STRING or BOOL"
+    )
   endif()
 
   if(DEFINED ${NAME} AND NOT DEFINED CACHE{${NAME}})
-    set(${NAME} ${${NAME}} CACHE ${VALUE_TYPE} ${DESCRIPTION} FORCE)
+    set(${NAME}
+        ${${NAME}}
+        CACHE ${VALUE_TYPE} ${DESCRIPTION} FORCE
+    )
   else()
-    set(${NAME} ${DEFAULT_VALUE} CACHE ${VALUE_TYPE} ${DESCRIPTION})
+    set(${NAME}
+        ${DEFAULT_VALUE}
+        CACHE ${VALUE_TYPE} ${DESCRIPTION}
+    )
   endif()
 
   announce_configured_options(${NAME})
 endmacro()
 
-
 # Set an overridable option.
 macro(set_overridable_option NAME VALUE)
   # If the user has explitily set the option, do not override it.
   if(NOT DEFINED ${NAME})
-    set(${NAME} ${VALUE} CACHE STRING "")
+    set(${NAME}
+        ${VALUE}
+        CACHE STRING ""
+    )
   endif()
 endmacro()
 
@@ -105,16 +116,9 @@ macro(load_build_preset)
   # try to determine a preset file.
 endmacro()
 
-
 # Check if the required options are set.
 function(check_required_options_on)
-  cmake_parse_arguments(
-    ARG
-    ""
-    "IF_ON"
-    "REQUIRES"
-    ${ARGN}
-  )
+  cmake_parse_arguments(ARG "" "IF_ON" "REQUIRES" ${ARGN})
 
   if(${${ARG_IF_ON}})
     foreach(required ${ARG_REQUIRES})
@@ -125,16 +129,9 @@ function(check_required_options_on)
   endif()
 endfunction()
 
-
 # Check if flags conflict with each other.
 function(check_conflicting_options_on)
-  cmake_parse_arguments(
-    ARG
-    ""
-    "IF_ON"
-    "CONFLICTS_WITH"
-    ${ARGN}
-  )
+  cmake_parse_arguments(ARG "" "IF_ON" "CONFLICTS_WITH" ${ARGN})
 
   if(${${ARG_IF_ON}})
     foreach(conflict ${ARG_CONFLICTS_WITH})

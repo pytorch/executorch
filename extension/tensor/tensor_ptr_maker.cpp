@@ -89,7 +89,14 @@ TensorPtr random_strided(
       empty_strided(std::move(sizes), std::move(strides), type, dynamism);
   std::default_random_engine gen{std::random_device{}()};
 
-  ET_SWITCH_REALHBBF16_TYPES(type, nullptr, "random_strided", CTYPE, [&] {
+  // Create a minimal context for error handling in ET_SWITCH
+  struct {
+    [[noreturn]] void fail(torch::executor::Error /* error */) {
+      ET_CHECK_MSG(false, "Unsupported dtype in random_strided");
+    }
+  } ctx;
+
+  ET_SWITCH_REALHBBF16_AND_UINT_TYPES(type, ctx, "random_strided", CTYPE, [&] {
     std::generate_n(tensor->mutable_data_ptr<CTYPE>(), tensor->numel(), [&]() {
       return static_cast<CTYPE>(distribution(gen));
     });
@@ -124,7 +131,14 @@ TensorPtr full_strided(
     executorch::aten::TensorShapeDynamism dynamism) {
   auto tensor =
       empty_strided(std::move(sizes), std::move(strides), type, dynamism);
-  ET_SWITCH_REALHBBF16_TYPES(type, nullptr, "full_strided", CTYPE, [&] {
+  // Create a minimal context for error handling in ET_SWITCH
+  struct {
+    [[noreturn]] void fail(torch::executor::Error /* error */) {
+      ET_CHECK_MSG(false, "Unsupported data type in full_strided");
+    }
+  } ctx;
+
+  ET_SWITCH_REALHBBF16_AND_UINT_TYPES(type, ctx, "full_strided", CTYPE, [&] {
     CTYPE value;
     ET_EXTRACT_SCALAR(fill_value, value);
     std::fill(

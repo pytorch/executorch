@@ -7,6 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		03F814712E729261002D91CC /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814702E729261002D91CC /* backend_coreml */; };
+		03F814732E729261002D91CC /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814722E729261002D91CC /* backend_mps */; };
+		03F814752E729261002D91CC /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814742E729261002D91CC /* backend_xnnpack */; };
+		03F814772E729261002D91CC /* executorch_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814762E729261002D91CC /* executorch_debug */; };
+		03F814792E729261002D91CC /* executorch_llm_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814782E729261002D91CC /* executorch_llm_debug */; };
+		03F8147B2E729261002D91CC /* kernels_llm in Frameworks */ = {isa = PBXBuildFile; productRef = 03F8147A2E729261002D91CC /* kernels_llm */; };
+		03F8147D2E729261002D91CC /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F8147C2E729261002D91CC /* kernels_optimized */; };
+		03F8147F2E729261002D91CC /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F8147E2E729261002D91CC /* kernels_quantized */; };
+		03F814812E729261002D91CC /* kernels_torchao in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814802E729261002D91CC /* kernels_torchao */; };
 		13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB01A68108700A75B9A /* AppDelegate.mm */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
@@ -16,49 +25,8 @@
 		96905EF65AED1B983A6B3ABC /* libPods-rnllama.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 58EEBF8E8E6FB1BC6CAF49B5 /* libPods-rnllama.a */; };
 		B18059E884C0ABDD17F3DC3D /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC715A2D49A985799AEE119 /* ExpoModulesProvider.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		E931C6482CFAF07E00DA599B /* LlamaRunner.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E931C6412CFAF07E00DA599B /* LlamaRunner.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		E931C64E2CFAF09400DA599B /* executorch in Frameworks */ = {isa = PBXBuildFile; productRef = E931C64D2CFAF09400DA599B /* executorch */; };
 		E931C67F2CFAF17500DA599B /* LlamaBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = E931C67E2CFAF17500DA599B /* LlamaBridge.mm */; };
-		E931C6822CFAF38500DA599B /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = E931C6812CFAF38500DA599B /* backend_coreml */; };
-		E931C6842CFAF38A00DA599B /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = E931C6832CFAF38A00DA599B /* backend_mps */; };
-		E931C6862CFAF39500DA599B /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = E931C6852CFAF39500DA599B /* backend_xnnpack */; };
-		E931C6882CFAF39A00DA599B /* kernels_custom in Frameworks */ = {isa = PBXBuildFile; productRef = E931C6872CFAF39A00DA599B /* kernels_custom */; };
-		E931C68A2CFAF3A500DA599B /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = E931C6892CFAF3A500DA599B /* kernels_optimized */; };
-		E931C68C2CFAF3AC00DA599B /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = E931C68B2CFAF3AC00DA599B /* kernels_portable */; };
-		E931C68E2CFAF3B200DA599B /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = E931C68D2CFAF3B200DA599B /* kernels_quantized */; };
-		E931C6A72CFBD70E00DA599B /* LLaMARunner.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C6A42CFBD70E00DA599B /* LLaMARunner.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		E931C6A82CFBD70E00DA599B /* LLaMARunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = E931C6A52CFBD70E00DA599B /* LLaMARunner.mm */; };
-		E931C6F62CFBD7FF00DA599B /* runner.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C6ED2CFBD7FF00DA599B /* runner.h */; };
-		E931C6F72CFBD7FF00DA599B /* llava_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C6EE2CFBD7FF00DA599B /* llava_runner.h */; };
-		E931C6F82CFBD7FF00DA599B /* text_prefiller.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E931C6EF2CFBD7FF00DA599B /* text_prefiller.cpp */; };
-		E931C6F92CFBD7FF00DA599B /* text_decoder_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C6F02CFBD7FF00DA599B /* text_decoder_runner.h */; };
-		E931C6FA2CFBD7FF00DA599B /* util.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C6F12CFBD7FF00DA599B /* util.h */; };
-		E931C6FB2CFBD7FF00DA599B /* llava_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E931C6F22CFBD7FF00DA599B /* llava_runner.cpp */; };
-		E931C6FC2CFBD7FF00DA599B /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E931C6F32CFBD7FF00DA599B /* text_decoder_runner.cpp */; };
-		E931C6FD2CFBD7FF00DA599B /* text_prefiller.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C6F42CFBD7FF00DA599B /* text_prefiller.h */; };
-		E931C6FE2CFBD7FF00DA599B /* runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E931C6F52CFBD7FF00DA599B /* runner.cpp */; };
-		E931C7012CFBD80A00DA599B /* sampler.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C6FF2CFBD80A00DA599B /* sampler.h */; };
-		E931C7022CFBD80A00DA599B /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E931C7002CFBD80A00DA599B /* sampler.cpp */; };
-		E931C70B2CFBD81E00DA599B /* tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C7032CFBD81E00DA599B /* tokenizer.h */; };
-		E931C70C2CFBD81E00DA599B /* llama_tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E931C7042CFBD81E00DA599B /* llama_tiktoken.cpp */; };
-		E931C70D2CFBD81E00DA599B /* base64.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C7052CFBD81E00DA599B /* base64.h */; };
-		E931C70E2CFBD81E00DA599B /* bpe_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E931C7062CFBD81E00DA599B /* bpe_tokenizer.cpp */; };
-		E931C70F2CFBD81E00DA599B /* bpe_tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C7072CFBD81E00DA599B /* bpe_tokenizer.h */; };
-		E931C7102CFBD81E00DA599B /* tiktoken.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C7082CFBD81E00DA599B /* tiktoken.h */; };
-		E931C7112CFBD81E00DA599B /* llama_tiktoken.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C7092CFBD81E00DA599B /* llama_tiktoken.h */; };
-		E931C7122CFBD81E00DA599B /* tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E931C70A2CFBD81E00DA599B /* tiktoken.cpp */; };
-		E931C7142CFBDED800DA599B /* LlamaRunner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E931C6412CFAF07E00DA599B /* LlamaRunner.framework */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		E931C6452CFAF07E00DA599B /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = E931C6402CFAF07E00DA599B;
-			remoteInfo = LlamaRunner;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		E931C64C2CFAF07E00DA599B /* Embed Frameworks */ = {
@@ -67,7 +35,6 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				E931C6482CFAF07E00DA599B /* LlamaRunner.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -89,31 +56,8 @@
 		9D82BBB95CF44897A58D7662 /* rnllama-Bridging-Header.h */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.c.h; name = "rnllama-Bridging-Header.h"; path = "rnllama/rnllama-Bridging-Header.h"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = rnllama/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		E931C6412CFAF07E00DA599B /* LlamaRunner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LlamaRunner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		E931C67D2CFAF16000DA599B /* LlamaBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LlamaBridge.h; sourceTree = "<group>"; };
 		E931C67E2CFAF17500DA599B /* LlamaBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LlamaBridge.mm; sourceTree = "<group>"; };
-		E931C6A42CFBD70E00DA599B /* LLaMARunner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = LLaMARunner.h; sourceTree = "<group>"; };
-		E931C6A52CFBD70E00DA599B /* LLaMARunner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = LLaMARunner.mm; sourceTree = "<group>"; };
-		E931C6ED2CFBD7FF00DA599B /* runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../examples/models/llama/runner/runner.h; sourceTree = "<group>"; };
-		E931C6EE2CFBD7FF00DA599B /* llava_runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = llava_runner.h; path = ../../../examples/models/llava/runner/llava_runner.h; sourceTree = "<group>"; };
-		E931C6EF2CFBD7FF00DA599B /* text_prefiller.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = text_prefiller.cpp; sourceTree = "<group>"; };
-		E931C6F02CFBD7FF00DA599B /* text_decoder_runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = text_decoder_runner.h; sourceTree = "<group>"; };
-		E931C6F12CFBD7FF00DA599B /* util.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = util.h; sourceTree = "<group>"; };
-		E931C6F22CFBD7FF00DA599B /* llava_runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = llava_runner.cpp; path = ../../../examples/models/llava/runner/llava_runner.cpp; sourceTree = "<group>"; };
-		E931C6F32CFBD7FF00DA599B /* text_decoder_runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = text_decoder_runner.cpp; sourceTree = "<group>"; };
-		E931C6F42CFBD7FF00DA599B /* text_prefiller.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = text_prefiller.h; sourceTree = "<group>"; };
-		E931C6F52CFBD7FF00DA599B /* runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../examples/models/llama/runner/runner.cpp; sourceTree = "<group>"; };
-		E931C6FF2CFBD80A00DA599B /* sampler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = sampler.h; sourceTree = "<group>"; };
-		E931C7002CFBD80A00DA599B /* sampler.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = sampler.cpp; sourceTree = "<group>"; };
-		E931C7032CFBD81E00DA599B /* tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = tokenizer.h; path = ../../../../extension/llm/tokenizer/tokenizer.h; sourceTree = "<group>"; };
-		E931C7042CFBD81E00DA599B /* llama_tiktoken.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = llama_tiktoken.cpp; sourceTree = "<group>"; };
-		E931C7052CFBD81E00DA599B /* base64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = base64.h; path = ../../../../extension/llm/tokenizer/base64.h; sourceTree = "<group>"; };
-		E931C7062CFBD81E00DA599B /* bpe_tokenizer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = bpe_tokenizer.cpp; path = ../../../../extension/llm/tokenizer/bpe_tokenizer.cpp; sourceTree = "<group>"; };
-		E931C7072CFBD81E00DA599B /* bpe_tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = bpe_tokenizer.h; path = ../../../../extension/llm/tokenizer/bpe_tokenizer.h; sourceTree = "<group>"; };
-		E931C7082CFBD81E00DA599B /* tiktoken.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = tiktoken.h; path = ../../../../extension/llm/tokenizer/tiktoken.h; sourceTree = "<group>"; };
-		E931C7092CFBD81E00DA599B /* llama_tiktoken.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = llama_tiktoken.h; sourceTree = "<group>"; };
-		E931C70A2CFBD81E00DA599B /* tiktoken.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = tiktoken.cpp; path = ../../../../extension/llm/tokenizer/tiktoken.cpp; sourceTree = "<group>"; };
-		E931C7132CFBDABF00DA599B /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		FAC715A2D49A985799AEE119 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-rnllama/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -123,23 +67,16 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E931C7142CFBDED800DA599B /* LlamaRunner.framework in Frameworks */,
+				03F814792E729261002D91CC /* executorch_llm_debug in Frameworks */,
+				03F8147F2E729261002D91CC /* kernels_quantized in Frameworks */,
+				03F8147D2E729261002D91CC /* kernels_optimized in Frameworks */,
+				03F814772E729261002D91CC /* executorch_debug in Frameworks */,
 				96905EF65AED1B983A6B3ABC /* libPods-rnllama.a in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E931C63E2CFAF07E00DA599B /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				E931C64E2CFAF09400DA599B /* executorch in Frameworks */,
-				E931C68E2CFAF3B200DA599B /* kernels_quantized in Frameworks */,
-				E931C6862CFAF39500DA599B /* backend_xnnpack in Frameworks */,
-				E931C6842CFAF38A00DA599B /* backend_mps in Frameworks */,
-				E931C6822CFAF38500DA599B /* backend_coreml in Frameworks */,
-				E931C6882CFAF39A00DA599B /* kernels_custom in Frameworks */,
-				E931C68C2CFAF3AC00DA599B /* kernels_portable in Frameworks */,
-				E931C68A2CFAF3A500DA599B /* kernels_optimized in Frameworks */,
+				03F814752E729261002D91CC /* backend_xnnpack in Frameworks */,
+				03F814812E729261002D91CC /* kernels_torchao in Frameworks */,
+				03F814732E729261002D91CC /* backend_mps in Frameworks */,
+				03F8147B2E729261002D91CC /* kernels_llm in Frameworks */,
+				03F814712E729261002D91CC /* backend_coreml in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -184,10 +121,8 @@
 		83CBB9F61A601CBA00E9B192 = {
 			isa = PBXGroup;
 			children = (
-				E931C7132CFBDABF00DA599B /* Release.xcconfig */,
 				13B07FAE1A68108700A75B9A /* rnllama */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
-				E931C6422CFAF07E00DA599B /* LlamaRunner */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				D65327D7A22EEC0BE12398D9 /* Pods */,
@@ -202,7 +137,6 @@
 			isa = PBXGroup;
 			children = (
 				13B07F961A680F5B00A75B9A /* rnllama.app */,
-				E931C6412CFAF07E00DA599B /* LlamaRunner.framework */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -241,101 +175,7 @@
 			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
-		E931C6422CFAF07E00DA599B /* LlamaRunner */ = {
-			isa = PBXGroup;
-			children = (
-				E931C6A12CFBD6D100DA599B /* LlamaRunner */,
-			);
-			path = LlamaRunner;
-			sourceTree = "<group>";
-		};
-		E931C6A12CFBD6D100DA599B /* LlamaRunner */ = {
-			isa = PBXGroup;
-			children = (
-				E931C6E22CFBD77E00DA599B /* tokenizer */,
-				E931C6CE2CFBD77500DA599B /* sampler */,
-				E931C6B72CFBD74400DA599B /* runner */,
-				E931C6A62CFBD70E00DA599B /* Exported */,
-			);
-			path = LlamaRunner;
-			sourceTree = "<group>";
-		};
-		E931C6A62CFBD70E00DA599B /* Exported */ = {
-			isa = PBXGroup;
-			children = (
-				E931C6A42CFBD70E00DA599B /* LLaMARunner.h */,
-				E931C6A52CFBD70E00DA599B /* LLaMARunner.mm */,
-			);
-			name = Exported;
-			path = ../../../../../apple_ios/LLaMA/LLaMARunner/LLaMARunner/Exported;
-			sourceTree = "<group>";
-		};
-		E931C6B72CFBD74400DA599B /* runner */ = {
-			isa = PBXGroup;
-			children = (
-				E931C6F22CFBD7FF00DA599B /* llava_runner.cpp */,
-				E931C6EE2CFBD7FF00DA599B /* llava_runner.h */,
-				E931C6F52CFBD7FF00DA599B /* runner.cpp */,
-				E931C6ED2CFBD7FF00DA599B /* runner.h */,
-				E931C6F32CFBD7FF00DA599B /* text_decoder_runner.cpp */,
-				E931C6F02CFBD7FF00DA599B /* text_decoder_runner.h */,
-				E931C6EF2CFBD7FF00DA599B /* text_prefiller.cpp */,
-				E931C6F42CFBD7FF00DA599B /* text_prefiller.h */,
-				E931C6F12CFBD7FF00DA599B /* util.h */,
-			);
-			name = runner;
-			path = ../../../../../../../extension/llm/runner;
-			sourceTree = "<group>";
-		};
-		E931C6CE2CFBD77500DA599B /* sampler */ = {
-			isa = PBXGroup;
-			children = (
-				E931C7002CFBD80A00DA599B /* sampler.cpp */,
-				E931C6FF2CFBD80A00DA599B /* sampler.h */,
-			);
-			name = sampler;
-			path = ../../../../../../../extension/llm/sampler;
-			sourceTree = "<group>";
-		};
-		E931C6E22CFBD77E00DA599B /* tokenizer */ = {
-			isa = PBXGroup;
-			children = (
-				E931C7052CFBD81E00DA599B /* base64.h */,
-				E931C7062CFBD81E00DA599B /* bpe_tokenizer.cpp */,
-				E931C7072CFBD81E00DA599B /* bpe_tokenizer.h */,
-				E931C7042CFBD81E00DA599B /* llama_tiktoken.cpp */,
-				E931C7092CFBD81E00DA599B /* llama_tiktoken.h */,
-				E931C70A2CFBD81E00DA599B /* tiktoken.cpp */,
-				E931C7082CFBD81E00DA599B /* tiktoken.h */,
-				E931C7032CFBD81E00DA599B /* tokenizer.h */,
-			);
-			name = tokenizer;
-			path = ../../../../../../models/llama/tokenizer;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
-
-/* Begin PBXHeadersBuildPhase section */
-		E931C63C2CFAF07E00DA599B /* Headers */ = {
-			isa = PBXHeadersBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				E931C6FA2CFBD7FF00DA599B /* util.h in Headers */,
-				E931C6F62CFBD7FF00DA599B /* runner.h in Headers */,
-				E931C70D2CFBD81E00DA599B /* base64.h in Headers */,
-				E931C6F72CFBD7FF00DA599B /* llava_runner.h in Headers */,
-				E931C7012CFBD80A00DA599B /* sampler.h in Headers */,
-				E931C70B2CFBD81E00DA599B /* tokenizer.h in Headers */,
-				E931C6FD2CFBD7FF00DA599B /* text_prefiller.h in Headers */,
-				E931C6F92CFBD7FF00DA599B /* text_decoder_runner.h in Headers */,
-				E931C70F2CFBD81E00DA599B /* bpe_tokenizer.h in Headers */,
-				E931C7112CFBD81E00DA599B /* llama_tiktoken.h in Headers */,
-				E931C6A72CFBD70E00DA599B /* LLaMARunner.h in Headers */,
-				E931C7102CFBD81E00DA599B /* tiktoken.h in Headers */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
 		13B07F861A680F5B00A75B9A /* rnllama */ = {
@@ -355,41 +195,11 @@
 			buildRules = (
 			);
 			dependencies = (
-				E931C6462CFAF07E00DA599B /* PBXTargetDependency */,
 			);
 			name = rnllama;
 			productName = rnllama;
 			productReference = 13B07F961A680F5B00A75B9A /* rnllama.app */;
 			productType = "com.apple.product-type.application";
-		};
-		E931C6402CFAF07E00DA599B /* LlamaRunner */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = E931C6492CFAF07E00DA599B /* Build configuration list for PBXNativeTarget "LlamaRunner" */;
-			buildPhases = (
-				E931C6802CFAF1CA00DA599B /* Cmake build */,
-				E931C63C2CFAF07E00DA599B /* Headers */,
-				E931C63D2CFAF07E00DA599B /* Sources */,
-				E931C63E2CFAF07E00DA599B /* Frameworks */,
-				E931C63F2CFAF07E00DA599B /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = LlamaRunner;
-			packageProductDependencies = (
-				E931C64D2CFAF09400DA599B /* executorch */,
-				E931C6812CFAF38500DA599B /* backend_coreml */,
-				E931C6832CFAF38A00DA599B /* backend_mps */,
-				E931C6852CFAF39500DA599B /* backend_xnnpack */,
-				E931C6872CFAF39A00DA599B /* kernels_custom */,
-				E931C6892CFAF3A500DA599B /* kernels_optimized */,
-				E931C68B2CFAF3AC00DA599B /* kernels_portable */,
-				E931C68D2CFAF3B200DA599B /* kernels_quantized */,
-			);
-			productName = LlamaRunner;
-			productReference = E931C6412CFAF07E00DA599B /* LlamaRunner.framework */;
-			productType = "com.apple.product-type.framework";
 		};
 /* End PBXNativeTarget section */
 
@@ -403,9 +213,6 @@
 						LastSwiftMigration = 1250;
 						ProvisioningStyle = Automatic;
 					};
-					E931C6402CFAF07E00DA599B = {
-						CreatedOnToolsVersion = 15.3;
-					};
 				};
 			};
 			buildConfigurationList = 83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "rnllama" */;
@@ -418,14 +225,13 @@
 			);
 			mainGroup = 83CBB9F61A601CBA00E9B192;
 			packageReferences = (
-				E931C62F2CFAF06100DA599B /* XCRemoteSwiftPackageReference "executorch" */,
+				03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */,
 			);
 			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				13B07F861A680F5B00A75B9A /* rnllama */,
-				E931C6402CFAF07E00DA599B /* LlamaRunner */,
 			);
 		};
 /* End PBXProject section */
@@ -439,13 +245,6 @@
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				44EEE829B2A504897630F9D1 /* PrivacyInfo.xcprivacy in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E931C63F2CFAF07E00DA599B /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -541,24 +340,6 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-rnllama/Pods-rnllama-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		E931C6802CFAF1CA00DA599B /* Cmake build */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Cmake build";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"cmake not found, please install cmake. \\n1. Download Cmake.app from https://cmake.org/download with version > 3.19. \\n2. Install it to Applications/ folder and run sudo /Applications/CMake.app/Contents/bin/cmake-gui --install to install CMake commandline tools.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"12.0\"\nfi\n\ncmake_build() {\n    local src_dir=$1\n    shift\n    local extra_args=(\"$@\")\n    local build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n\n    mkdir -p \"$build_dir\" && cd \"$build_dir\"\n    cmake -G Xcode \\\n          -DCMAKE_BUILD_TYPE=\"Release\" \\\n          -DCMAKE_CXX_STANDARD=17 \\\n          -DCMAKE_TOOLCHAIN_FILE=\"$PROJECT_DIR/../../../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n          -DPLATFORM=\"$PLATFORM\" \\\n          -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n          \"${extra_args[@]}\" \\\n          \"$src_dir\"\n    cmake --build . --config \"Release\"\n    cmake --install . --prefix \"$CMAKE_DIR\"\n}\n\ncmake_build \"$PROJECT_DIR/../../../../../extension/llm/third-party/abseil-cpp\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n    \ncmake_build \"$PROJECT_DIR/../../../../../extension/llm/third-party/re2\" \\\n    -DCMAKE_PREFIX_PATH=\"$CMAKE_DIR/lib/cmake/absl\"\n    \ncmake_build \"$PROJECT_DIR/../../../../../extension/llm/third-party/sentencepiece\" \\\n    -DSPM_ENABLE_SHARED=OFF\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n\n\n\n";
-		};
 		F7CCCCE770493310D0125117 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -593,31 +374,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		E931C63D2CFAF07E00DA599B /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				E931C6F82CFBD7FF00DA599B /* text_prefiller.cpp in Sources */,
-				E931C7122CFBD81E00DA599B /* tiktoken.cpp in Sources */,
-				E931C6FB2CFBD7FF00DA599B /* llava_runner.cpp in Sources */,
-				E931C7022CFBD80A00DA599B /* sampler.cpp in Sources */,
-				E931C70E2CFBD81E00DA599B /* bpe_tokenizer.cpp in Sources */,
-				E931C6FE2CFBD7FF00DA599B /* runner.cpp in Sources */,
-				E931C70C2CFBD81E00DA599B /* llama_tiktoken.cpp in Sources */,
-				E931C6A82CFBD70E00DA599B /* LLaMARunner.mm in Sources */,
-				E931C6FC2CFBD7FF00DA599B /* text_decoder_runner.cpp in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		E931C6462CFAF07E00DA599B /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = E931C6402CFAF07E00DA599B /* LlamaRunner */;
-			targetProxy = E931C6452CFAF07E00DA599B /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
@@ -724,6 +481,7 @@
 				COPY_PHASE_STRIP = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -746,7 +504,6 @@
 				);
 				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
 				MTL_ENABLE_DEBUG_INFO = YES;
-				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = "$(inherited)  ";
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
@@ -787,6 +544,7 @@
 				COPY_PHASE_STRIP = YES;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -807,106 +565,6 @@
 				SDKROOT = iphoneos;
 				USE_HERMES = true;
 				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
-		E931C64A2CFAF07E00DA599B /* Debug */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = E931C7132CFBDABF00DA599B /* Release.xcconfig */;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEFINES_MODULE = YES;
-				DEVELOPMENT_TEAM = "";
-				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 1;
-				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				ENABLE_MODULE_VERIFIER = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.4;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.0;
-				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
-				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
-				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
-				MTL_FAST_MATH = YES;
-				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.hietalajulius.LlamaRunner;
-				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
-				SKIP_INSTALL = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				VERSIONING_SYSTEM = "apple-generic";
-				VERSION_INFO_PREFIX = "";
-			};
-			name = Debug;
-		};
-		E931C64B2CFAF07E00DA599B /* Release */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = E931C7132CFBDABF00DA599B /* Release.xcconfig */;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEFINES_MODULE = YES;
-				DEVELOPMENT_TEAM = "";
-				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 1;
-				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				ENABLE_MODULE_VERIFIER = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.4;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.0;
-				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
-				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
-				MTL_FAST_MATH = YES;
-				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.hietalajulius.LlamaRunner;
-				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
-				SKIP_INSTALL = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				VERSIONING_SYSTEM = "apple-generic";
-				VERSION_INFO_PREFIX = "";
 			};
 			name = Release;
 		};
@@ -931,68 +589,64 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		E931C6492CFAF07E00DA599B /* Build configuration list for PBXNativeTarget "LlamaRunner" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				E931C64A2CFAF07E00DA599B /* Debug */,
-				E931C64B2CFAF07E00DA599B /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		E931C62F2CFAF06100DA599B /* XCRemoteSwiftPackageReference "executorch" */ = {
+		03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/pytorch/executorch.git";
+			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = "swiftpm-0.7.0.20250401";
+				branch = "swiftpm-0.8.0.20250909";
 				kind = branch;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		E931C64D2CFAF09400DA599B /* executorch */ = {
+		03F814702E729261002D91CC /* backend_coreml */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = E931C62F2CFAF06100DA599B /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = executorch;
-		};
-		E931C6812CFAF38500DA599B /* backend_coreml */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = E931C62F2CFAF06100DA599B /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = backend_coreml;
 		};
-		E931C6832CFAF38A00DA599B /* backend_mps */ = {
+		03F814722E729261002D91CC /* backend_mps */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = E931C62F2CFAF06100DA599B /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = backend_mps;
 		};
-		E931C6852CFAF39500DA599B /* backend_xnnpack */ = {
+		03F814742E729261002D91CC /* backend_xnnpack */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = E931C62F2CFAF06100DA599B /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = backend_xnnpack;
 		};
-		E931C6872CFAF39A00DA599B /* kernels_custom */ = {
+		03F814762E729261002D91CC /* executorch_debug */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = E931C62F2CFAF06100DA599B /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_custom;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = executorch_debug;
 		};
-		E931C6892CFAF3A500DA599B /* kernels_optimized */ = {
+		03F814782E729261002D91CC /* executorch_llm_debug */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = E931C62F2CFAF06100DA599B /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = executorch_llm_debug;
+		};
+		03F8147A2E729261002D91CC /* kernels_llm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_llm;
+		};
+		03F8147C2E729261002D91CC /* kernels_optimized */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = kernels_optimized;
 		};
-		E931C68B2CFAF3AC00DA599B /* kernels_portable */ = {
+		03F8147E2E729261002D91CC /* kernels_quantized */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = E931C62F2CFAF06100DA599B /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_portable;
-		};
-		E931C68D2CFAF3B200DA599B /* kernels_quantized */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = E931C62F2CFAF06100DA599B /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = kernels_quantized;
+		};
+		03F814802E729261002D91CC /* kernels_torchao */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_torchao;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

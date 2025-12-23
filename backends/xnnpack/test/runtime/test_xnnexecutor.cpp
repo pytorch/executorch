@@ -14,10 +14,11 @@
 using executorch::backends::xnnpack::delegate::XNNExecutor;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
+using executorch::runtime::Span;
 using executorch::runtime::testing::TensorFactory;
 
 TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
-  XNNExecutor executor;
+  XNNExecutor executor({});
   xnn_subgraph_t subgraph = nullptr;
   xnn_runtime_t rt = nullptr;
   et_pal_init();
@@ -90,6 +91,7 @@ TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
   EValue input_ev(input_tensor);
   EValue output_ev(output_tensor);
   std::array<EValue*, 2> args = {&input_ev, &output_ev};
+  Span<EValue*> stack_args(args.data(), 2);
   // Check for invalid number of dimensions should fail without stack overflow.
-  EXPECT_EQ(executor.prepare_args(args.data()), Error::InvalidArgument);
+  EXPECT_EQ(executor.prepare_args(stack_args), Error::InvalidArgument);
 }

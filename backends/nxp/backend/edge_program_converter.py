@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,29 +10,43 @@ from executorch.backends.nxp.backend.ir.conversion_context import ConversionCont
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import (
     AtenModelBuilderDirector,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
+)
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
 from torch.fx import Node
 from torch.nn.parameter import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
-from executorch.backends.nxp.backend.node_format_inference import (
-    NodeFormat,
-    NodeFormatInference,
-)
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from executorch.backends.nxp.backend.node_format import NodeFormat, NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
 
 # noinspection PyProtectedMember
 functions_converters = {
+    exir_ops.edge.aten.abs.default: AbsConverter,  # noqa F405
+    exir_ops.edge.aten._adaptive_avg_pool2d.default: AdaptiveAvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.addmm.default: AddMMConverter,  # noqa F405
+    exir_ops.edge.aten.add.Tensor: AddTensorConverter,  # noqa F405
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
+    exir_ops.edge.aten.cat.default: CatConverter,  # noqa F405
+    exir_ops.edge.aten.clone.default: CloneConverter,  # noqa F405
+    exir_ops.edge.dim_order_ops._clone_dim_order.default: CloneConverter,  # noqa F405
     exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,  # noqa F405
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
+    exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
     exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,  # noqa F405
+    exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
+    exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
+    exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
+    exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
+    exir_ops.edge.aten.tanh.default: TanhConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
+    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
 }
 
 
@@ -42,24 +56,34 @@ class EdgeProgramToIRConverter:
     """
 
     _default_conversion_config = ConversionConfig()
+    _default_target_spec = NeutronTargetSpec("imxrt700", "SDK_25_09")
+    _default_delegation_options = CustomDelegationOptions()
 
     def convert_program(
         self,
         edge_program: ExportedProgram,
-        conversion_config=_default_conversion_config,
-    ) -> (bytes, dict):
+        conversion_config: ConversionConfig = _default_conversion_config,
+        neutron_target_spec: NeutronTargetSpec = _default_target_spec,
+        custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
+    ) -> (bytes, dict[str, NodeFormat]):
         """
         Convert ExportedProgram in Edge dialect to IR (TFLite flatbuffers) as bytes.
 
         :param edge_program: Converter ExportedProgram.
         :param conversion_config: ConversionConfig instance.
+        :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
+        :param custom_delegation_options: Custom user options which affect node delegation.
         :return: TFLite flatbuffers as bytes.
         """
-        node_formats = NodeFormatInference(edge_program).identify_node_formats()
         parameters_mapping = self.map_inputs_to_parameters(edge_program)
+        dim_order_map = self.map_nodes_to_dim_order(edge_program)
 
         cc = self.build_conversion_context(
-            parameters_mapping, node_formats, conversion_config
+            parameters_mapping,
+            dim_order_map,
+            neutron_target_spec,
+            conversion_config,
+            custom_delegation_options,
         )
 
         # Program conversion
@@ -67,13 +91,16 @@ class EdgeProgramToIRConverter:
         self._convert_qdq_cluster_q_dq_nodes(edge_program.graph.nodes, cc)
         self._process_nodes(edge_program.graph.nodes, cc)
 
-        # Assign output
-        io_formats = cc.tflite_builder.assign_model_io_to_subgraph_and_get_io_formats(
-            edge_program.graph_signature
-        )
+        # Assign the model its inputs and outputs.
+        cc.tflite_builder.assign_model_io_to_subgraph(edge_program.graph_signature)
+
+        # Apply optimizations and finalize the model.
+        internal_tflite_model = cc.tflite_builder.finish()
+
+        # Extract the formats of the model's inputs and outputs.
+        io_formats = cc.tflite_builder.get_io_formats(edge_program.graph_signature)
 
         # TFLite model generation
-        internal_tflite_model = cc.tflite_builder.finish()
         flatbuffers_builder = flatbuffers.Builder()
         internal_tflite_model.gen_tflite(flatbuffers_builder)
 
@@ -83,7 +110,7 @@ class EdgeProgramToIRConverter:
     def append_placeholders_and_tensors(nodes: list[Node], context: ConversionContext):
         for node in nodes:
             if node.op == "placeholder":
-                node_format = context.node_formats[node]
+                node_format = node.meta[NXP_NODE_FORMAT]
 
                 if node.name in context.parameters_mapping:
                     # Node is placeholder and has data -> append as static tensor with data
@@ -96,7 +123,7 @@ class EdgeProgramToIRConverter:
                     context.tflite_builder.append_as_fake_tensor(node, node_format)
             elif node.op == "call_function":
                 # Node is call function -> append only output as a tensor
-                node_format = context.node_formats[node]
+                node_format = node.meta[NXP_NODE_FORMAT]
                 context.tflite_builder.append_as_fake_tensor(node, node_format)
             elif node.op == "output":
                 # Nothing to do
@@ -116,6 +143,7 @@ class EdgeProgramToIRConverter:
 
         qdq_related_functions = [
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         ]
 
@@ -151,20 +179,44 @@ class EdgeProgramToIRConverter:
         return result_map
 
     @staticmethod
+    def map_nodes_to_dim_order(edge_program: ExportedProgram) -> dict[str, Parameter]:
+        """
+        Create mapping between node names and their dim-orders.
+
+        :param edge_program: EdgeProgram instance.
+        :return: Mapping from node name to dim-order.
+        """
+
+        return {
+            n.name: val.dim_order()
+            for n in edge_program.graph.nodes
+            if hasattr(val := n.meta.get("val", None), "dim_order")
+        }
+
+    @staticmethod
     def build_conversion_context(
         parameters_mapping: dict,
-        node_formats: dict[Node, NodeFormat],
+        dim_order_map: dict[str, ...],
+        neutron_target_spec: NeutronTargetSpec,
         conversion_config: ConversionConfig = _default_conversion_config,
+        custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
     ) -> ConversionContext:
         tflite_builder = AtenModelBuilderDirector(
-            3, "TFLite from EdgeProgram", conversion_config
+            3,
+            "TFLite from EdgeProgram",
+            neutron_target_spec,
+            dim_order_map,
+            conversion_config,
         )
 
         # Add "sentinel" buffer (defined in schema.fbs)
         tflite_builder.build_empty_buffer()
 
         context = ConversionContext(
-            tflite_builder, conversion_config, parameters_mapping, node_formats
+            tflite_builder,
+            conversion_config,
+            parameters_mapping,
+            custom_delegation_options,
         )
 
         return context
@@ -180,7 +232,8 @@ class EdgeProgramToIRConverter:
         :param conversion_context: ConversionContext instance.
         """
         qdq_q_ops_converters = {
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: QDQDequantizeConverter,  # noqa F405
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: QDQPerTensorDequantizeConverter,  # noqa F405
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: QDQPerChannelDequantizeConverter,  # noqa F405
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: QDQQuantizeConverter,  # noqa F405
         }
 

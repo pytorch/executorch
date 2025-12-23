@@ -15,7 +15,11 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
 )
-from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
+from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dequant,
+    is_quant,
+    tag_as_implicit_q_dq,
+)
 from executorch.backends.xnnpack.utils.utils import get_input_node
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
@@ -54,10 +58,12 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
 
             quantized_deps.extend(node.all_input_nodes)
 
-            # check if quantized pattern has fused activation
+            # ensure the node has only one user to enforce quantized pattern
+            # (dq -> node -> fused act (optional) -> q)
             if len(node.users) != 1:
                 return deps
 
+            # check if quantized pattern has fused activation
             node_output = list(node.users)[0]
             if (
                 node_output.op == "call_function"
@@ -72,6 +78,15 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
                 # Expected node --> fused_act (optional) --> dequant
                 return deps
 
+            # Tag input nodes (dq nodes) as implicit q/dq nodes
+            for dq_input in node.all_input_nodes:
+                if is_dequant(dq_input):
+                    tag_as_implicit_q_dq(dq_input)
+
+            # Tag node_output (q node) as an implicit q/dq node
+            if is_quant(node_output):
+                tag_as_implicit_q_dq(node_output)
+
             quantized_deps.append(node_output)
 
         return deps + quantized_deps
@@ -83,12 +98,22 @@ class QuantizedPerTensorConfig(GenericNodePartitionerConfig):
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.STATIC_QUANT]
 
+    def get_node_and_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        return [node]
+
 
 class DeQuantizedPerTensorConfig(GenericNodePartitionerConfig):
     target_name = "dequantize_per_tensor.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.STATIC_QUANT]
+
+    def get_node_and_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        return [node]
 
 
 class HardtanhConfig(GenericNodePartitionerConfig):
@@ -355,6 +380,43 @@ class ExpConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class ViewCopyConfig(GenericNodePartitionerConfig):
+    target_name = "view_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK's static_reshape only supports 1 dynamic dimension.
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        new_shape = node.args[1]
+
+        # Check for symbolic dims. They aren't lowerable to XNNPACK currently.
+        symbolic_dim_indices = [
+            i for i, d in enumerate(new_shape) if not isinstance(d, int)
+        ]
+        if not all(isinstance(n, int) for n in new_shape):
+            why(
+                node,
+                reason=f"Symbolic reshape is not supported. Output shape is {new_shape} and dims at {symbolic_dim_indices} are symbolic.",
+            )
+            return False
+
+        dynamic_dim_indices = [i for i, d in enumerate(new_shape) if d == -1]
+        if len(dynamic_dim_indices) > 1:
+            why(
+                node,
+                reason=f"Only a single inferred dimension is supported. Output shape is {new_shape} and dims {dynamic_dim_indices} are inferred.",
+            )
+            return False
+
+        return True
+
+
 class FloorConfig(GenericNodePartitionerConfig):
     target_name = "floor.default"
 
@@ -374,6 +436,9 @@ class HardswishConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.hardswish.default
 
 
 class LeakyReLUConfig(GenericNodePartitionerConfig):
@@ -395,6 +460,35 @@ class TanhConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
+    target_name = "_to_dim_order_copy.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Only support dim order conversion partitioning, not DType conversions
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        # Get input node and compare dtypes
+        input_node = get_input_node(node, 0)
+        input_dtype = input_node.meta["val"].dtype
+        output_dtype = node.meta["val"].dtype
+
+        # Return False if doing dtype conversion
+        if input_dtype != output_dtype:
+            why(
+                node,
+                reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
+            )
+            return False
+
+        return True
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
 class MeanDimConfig(GenericNodePartitionerConfig):
@@ -532,6 +626,21 @@ class ReciprocalSquareRootConfig(GenericNodePartitionerConfig):
 class ConstantPadConfig(GenericNodePartitionerConfig):
     target_name = "constant_pad_nd.default"
 
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK does not support cropping with negative padding sizes.
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        # Check for negative padding values
+        padding = cast(List[int], node.args[1])
+        if any(p < 0 for p in padding):
+            why(node, reason="XNNPACK does not support negative padding values")
+            return False
+
+        return True
+
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
 
@@ -561,6 +670,42 @@ class BMMConfig(GenericNodePartitionerConfig):
     """
 
     target_name = "bmm.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class SinConfig(GenericNodePartitionerConfig):
+    target_name = "sin.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class CloneDimOrderConfig(GenericNodePartitionerConfig):
+    target_name = "_clone_dim_order.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        # Only partition no-op _clone_dim_order nodes (output dim order = input).
+        # We can relax this in the future.
+        # This is also a conservative check and doesn't consider ambiguity.
+        dim_order = node.kwargs.get("dim_order", None)
+        input_meta = node.args[0].meta["val"]
+        if dim_order is not None and list(input_meta.dim_order()) != dim_order:
+            why(node, reason="Only dim-order preserving clones are supported.")
+            return False
+
+        return True
+
+
+class CosConfig(GenericNodePartitionerConfig):
+    target_name = "cos.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]

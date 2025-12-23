@@ -41,6 +41,7 @@ from executorch.exir.serde.schema import (
 )
 from torch._export.verifier import load_verifier
 from torch.fx.experimental import symbolic_shapes
+from torch.fx.traceback import NodeSource
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -88,6 +89,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
         if node.target is memory.alloc:
             ex_node = schema.Node(
+                name=node.name,
                 target="memory.alloc",
                 inputs=self.serialize_alloc_inputs(node.args),
                 outputs=self.serialize_arbitrary_outputs(node),
@@ -98,6 +100,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         elif isinstance(node.target, EdgeOpOverload):
             assert node.target._op is not None
             ex_node = schema.Node(
+                name=node.name,
                 target=self.serialize_operator(node.target),
                 # pyre-ignore Undefined attribute [16]: Item `typing.Callable` of
                 # `typing.Union[typing.Callable[..., typing.Any], str]` has no attribute `_op`.
@@ -110,6 +113,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             return
         elif node.target is delegate.executorch_call_delegate:
             ex_node = schema.Node(
+                name=node.name,
                 target=self.serialize_operator(node.target),
                 inputs=self.serialize_call_delegate_inputs(node.args),
                 outputs=self.serialize_arbitrary_outputs(node),
@@ -141,7 +145,23 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             debug_handle = node.meta["debug_handle"]
             meta["debug_handle"] = str(debug_handle)
 
+        if "from_node" in node.meta:
+            from_node = node.meta["from_node"]
+            # Serialize from_node as JSON since it's a complex nested structure
+            meta["from_node"] = json.dumps(self._make_from_node_json_acceptable(from_node))
+
         return meta
+
+    def _make_from_node_json_acceptable(self, from_node: Optional[List[NodeSource]]):
+        """
+        Serialize from_node metadata from a list of NodeSource objects to a list of dictionaries.
+        """
+        if from_node is None:
+            return None
+
+        json_acceptable_from_node = [node_source.to_dict() for node_source in from_node if isinstance(node_source, NodeSource)]
+
+        return json_acceptable_from_node
 
     def serialize_alloc_inputs(
         self, inputs  # pyre-ignore
@@ -354,6 +374,11 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
         )
 
 
+_KNOWN_FUNCTIONS_MAP = {
+    "executorch.exir.memory.view": exir.memory.view,
+}
+
+
 class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
     def deserialize_operator(self, serialized_target: str) -> str:
         def find_operator(module: _DialectNamespace, serialized_target: str) -> str:
@@ -430,19 +455,23 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             fx_node.meta.update(self.deserialize_metadata(serialized_node.metadata))
             return
         elif isinstance(target, str):
-            # Create a dummy fake op if the target does not exist
-            # because we cannot create a call_function node w/o a
-            # callable target
-            log.warning(
-                f"Could not find operator {target}. Returning fake operator."
-            )  # noqa: G004
+            # Special handling for known functions, which are serialized as a
+            # string but are still somewhat expected in serialized graphs.
+            if target in _KNOWN_FUNCTIONS_MAP:
+                target = _KNOWN_FUNCTIONS_MAP[target]
+            else:
+                # Otherwise, create a dummy fake op if the target does not exist
+                # because we cannot create a call_function node w/o a callable
+                # target
+                log.warning(
+                    f"Could not find operator {target}. Returning fake operator."
+                )  # noqa: G004
+                # pyre-ignore
+                def fake_op(x):
+                    raise NotImplementedError("Fake op is not meant to be run.")
 
-            # pyre-ignore
-            def fake_op(x):
-                raise NotImplementedError("Fake op is not meant to be run.")
-
-            fake_op.__name__ = target
-            target = fake_op
+                fake_op.__name__ = target
+                target = fake_op
 
             args = self.deserialize_inputs_no_schema(serialized_node)
             fx_node = self.graph.create_node("call_function", target, args, None, None)
@@ -473,7 +502,21 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         if debug_handle := metadata.get("debug_handle"):
             res["debug_handle"] = int(debug_handle)
 
+        if from_node_str := metadata.get("from_node"):
+            res["from_node"] = self._deserialize_from_node(json.loads(from_node_str))
+
         return res
+
+    def _deserialize_from_node(self, from_node_data: Optional[List[Dict[str, Any]]]) -> Optional[List[NodeSource]]:
+        """
+        Recursively deserialize from_node metadata from JSON data.
+        """
+        if from_node_data is None:
+            return None
+
+        assert isinstance(from_node_data, list)
+
+        return [NodeSource._from_dict(fn_dict) for fn_dict in from_node_data]
 
     # pyre-ignore
     def deserialize_alloc_inputs(self, serialized_inputs: List[schema.NamedArgument]):
@@ -563,8 +606,10 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             named_data_store = None
         else:
             named_data_store = export_serialize._dict_to_dataclass(NamedDataStoreOutput, json.loads(serialized_lowered_module.named_data_store))
+            new_buffers = []
             for buffer in named_data_store.buffers:
-                buffer.buffer = base64.b64decode(buffer.buffer.encode("ascii"))
+                new_buffers.append(base64.b64decode(buffer.encode("ascii")))
+            named_data_store.buffers = new_buffers
 
         lowered_module = ExirLoweredBackendModule(
             original_module,

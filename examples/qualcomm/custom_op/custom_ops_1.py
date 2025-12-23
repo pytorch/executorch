@@ -69,16 +69,14 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
     This function is specific for custom op.
     The source_fn of the rewritten nn module turns out to be "my_ops.mul3.default"
     """
-    from executorch.backends.qualcomm.quantizer.annotators import (
-        _is_annotated,
-        QUANT_ANNOTATION_KEY,
-    )
+    from executorch.backends.qualcomm.quantizer.annotators import _is_annotated
 
     from executorch.backends.qualcomm.quantizer.qconfig import (
         get_ptq_per_channel_quant_config,
     )
     from torch.fx import Node
     from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
+    from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
     quantization_config = get_ptq_per_channel_quant_config()
     for node in gm.graph.nodes:
@@ -95,20 +93,11 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
         input_spec = quantization_config.input_activation
         input_qspec_map[input_act] = input_spec
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
         )
-
-
-def create_device_inputs(example_inputs):
-    input_list = ""
-    for idx, _ in enumerate(example_inputs):
-        input_name = f"input_0_{idx}.raw"
-        input_list += input_name + " "
-    input_list = input_list.strip() + "\n"
-    return input_list
 
 
 def _run(cmd, cwd=None):
@@ -189,12 +178,6 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     quant_dtype = QuantDtype.use_8a8w
     if args.use_fp16:
         quant_dtype = None
@@ -204,7 +187,6 @@ def main(args):
     sample_input = (torch.ones(1, 32, 28, 28),)
     workspace = f"/data/local/tmp/executorch/{pte_filename}"
 
-    input_list = create_device_inputs(sample_input)
     soc_info = _soc_info_table[getattr(QcomChipset, args.model)]
 
     op_package_options, op_package_paths = prepare_op_package(
@@ -237,8 +219,7 @@ def main(args):
 
     if args.enable_x86_64:
         input_list_filename = "input_list.txt"
-        input_list = f"{args.artifact}/{input_list}"
-        generate_inputs(args.artifact, input_list_filename, sample_input, input_list)
+        generate_inputs(args.artifact, input_list_filename, sample_input)
         qnn_sdk = os.getenv("QNN_SDK_ROOT")
         assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
         target = "x86_64-linux-clang"
@@ -275,8 +256,10 @@ def main(args):
             device_id=args.device,
             host_id=args.host,
             soc_model=args.model,
+            shared_buffer=args.shared_buffer,
+            target=args.target,
         )
-        adb.push(inputs=sample_input, input_list=input_list, files=op_package_paths)
+        adb.push(inputs=sample_input, files=op_package_paths)
         adb.execute()
         adb.pull(output_path=args.artifact)
 
@@ -342,6 +325,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
 
     try:
         main(args)

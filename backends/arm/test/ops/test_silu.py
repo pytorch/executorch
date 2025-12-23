@@ -11,10 +11,11 @@ from typing import Optional, Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -40,74 +41,134 @@ class Silu(torch.nn.Module):
         "op_silu_rank4_large_randn": lambda: 200 * torch.randn(1, 10, 25, 20) + 1,
     }
 
-    aten_op_MI = "torch.ops.aten.silu.default"
-    aten_op_inplace_MI = "torch.ops.aten.silu_.default"
-    aten_op_BI = ["torch.ops.aten.sigmoid.default", "torch.ops.aten.mul.Tensor"]
+    aten_op_FP = "torch.ops.aten.silu.default"
+    aten_op_inplace_FP = "torch.ops.aten.silu_.default"
+    aten_op_INT = ["torch.ops.aten.sigmoid.default", "torch.ops.aten.mul.Tensor"]
 
 
 @common.parametrize("test_data", Silu.test_data)
-def test_silu_tosa_MI(test_data: input_t):
+def test_silu_tosa_FP(test_data: input_t):
     silu_data = (test_data(), False)
-    pipeline = TosaPipelineMI[input_t](Silu(), silu_data, Silu.aten_op_MI)
+    pipeline = TosaPipelineFP[input_t](Silu(), silu_data, Silu.aten_op_FP)
     pipeline.run()
 
 
 @common.parametrize("test_data", Silu.test_data)
-def test_silu_tosa_MI_inplace(test_data: input_t):
+def test_silu_tosa_FP_inplace(test_data: input_t):
     silu_data = (test_data(), True)
-    pipeline = TosaPipelineMI[input_t](Silu(), silu_data, Silu.aten_op_inplace_MI)
+    pipeline = TosaPipelineFP[input_t](Silu(), silu_data, Silu.aten_op_inplace_FP)
     pipeline.run()
 
 
 @common.parametrize("test_data", Silu.test_data)
-def test_silu_tosa_BI(test_data: input_t):
+def test_silu_tosa_INT(test_data: input_t):
     silu_data = (test_data(), False)
-    pipeline = TosaPipelineBI[input_t](Silu(), silu_data, Silu.aten_op_BI)
+    pipeline = TosaPipelineINT[input_t](Silu(), silu_data, Silu.aten_op_INT)
     pipeline.run()
 
 
 @common.parametrize("test_data", Silu.test_data)
-def test_silu_tosa_BI_inplace(test_data: input_t):
+def test_silu_tosa_INT_inplace(test_data: input_t):
     silu_data = (test_data(), True)
-    pipeline = TosaPipelineBI[input_t](Silu(), silu_data, Silu.aten_op_BI)
+    pipeline = TosaPipelineINT[input_t](Silu(), silu_data, Silu.aten_op_INT)
     pipeline.run()
 
 
 @common.parametrize("test_data", Silu.test_data)
 @common.XfailIfNoCorstone300
-def test_silu_u55_BI(test_data: input_t):
+def test_silu_u55_INT(test_data: input_t):
     silu_data = (test_data(), False)
-    pipeline = EthosU55PipelineBI[input_t](
-        Silu(), silu_data, Silu.aten_op_BI, run_on_fvp=True
+    pipeline = EthosU55PipelineINT[input_t](
+        Silu(),
+        silu_data,
+        Silu.aten_op_INT,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Silu.test_data)
 @common.XfailIfNoCorstone300
-def test_silu_u55_BI_inplace(test_data: input_t):
+def test_silu_u55_INT_inplace(test_data: input_t):
     silu_data = (test_data(), True)
-    pipeline = EthosU55PipelineBI[input_t](
-        Silu(), silu_data, Silu.aten_op_BI, run_on_fvp=True
+    pipeline = EthosU55PipelineINT[input_t](
+        Silu(),
+        silu_data,
+        Silu.aten_op_INT,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Silu.test_data)
 @common.XfailIfNoCorstone320
-def test_silu_u85_BI(test_data: input_t):
+def test_silu_u85_INT(test_data: input_t):
     silu_data = (test_data(), False)
-    pipeline = EthosU85PipelineBI[input_t](
-        Silu(), silu_data, Silu.aten_op_BI, run_on_fvp=True
+    pipeline = EthosU85PipelineINT[input_t](
+        Silu(),
+        silu_data,
+        Silu.aten_op_INT,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Silu.test_data)
 @common.XfailIfNoCorstone320
-def test_silu_u85_BI_inplace(test_data: input_t):
+def test_silu_u85_INT_inplace(test_data: input_t):
     silu_data = (test_data(), True)
-    pipeline = EthosU85PipelineBI[input_t](
-        Silu(), silu_data, Silu.aten_op_BI, run_on_fvp=True
+    pipeline = EthosU85PipelineINT[input_t](
+        Silu(),
+        silu_data,
+        Silu.aten_op_INT,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Silu.test_data)
+@common.SkipIfNoModelConverter
+def test_silu_vgf_no_quant(test_data: input_t):
+    silu_data = (test_data(), False)
+    pipeline = VgfPipeline[input_t](
+        Silu(),
+        silu_data,
+        Silu.aten_op_FP,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Silu.test_data)
+@common.SkipIfNoModelConverter
+def test_silu_vgf_no_quant_inplace(test_data: input_t):
+    silu_data = (test_data(), True)
+    pipeline = VgfPipeline[input_t](
+        Silu(),
+        silu_data,
+        Silu.aten_op_inplace_FP,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Silu.test_data)
+@common.SkipIfNoModelConverter
+def test_silu_vgf_quant(test_data: input_t):
+    silu_data = (test_data(), False)
+    pipeline = VgfPipeline[input_t](
+        Silu(),
+        silu_data,
+        Silu.aten_op_INT,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Silu.test_data)
+@common.SkipIfNoModelConverter
+def test_silu_vgf_quant_inplace(test_data: input_t):
+    silu_data = (test_data(), True)
+    pipeline = VgfPipeline[input_t](
+        Silu(),
+        silu_data,
+        Silu.aten_op_INT,
+        quantize=True,
     )
     pipeline.run()

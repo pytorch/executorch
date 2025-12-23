@@ -2,48 +2,44 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Provide validation helpers for operator inputs and dtypes.
+
+Use these utilities to validate input counts, ensure dtype consistency, check
+allowed dtypes, and compute pooling padding adjustments.
+
+"""
 
 from math import ceil, floor
 from typing import Any, List, Optional
 
-from executorch.backends.arm.operators.node_visitor import NodeVisitor
+from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
 
 
 def validate_num_inputs(op_name: str, inputs: List[Any], expected: int | List[int]):
-    """
-    Validates the number of inputs provided to an operation against expected values.
+    """Validate the number of inputs against expected values.
 
-    This function checks whether the length of the input list matches the expected
-    number(s) of inputs.
+    This function checks whether the length of the input list matches the
+    expected number(s) of inputs.
 
-    Parameters:
-    -----------
-    op_name : str
-        The name of the operation for which the inputs are being validated.
-        Used in the error message to provide context.
-
-    inputs : List[TosaArg]
-        A list of inputs to be validated, where each input is assumed to be an
-        instance of `TosaArg`.
-
-    expected : int or List[int]
-        The expected number of inputs. Can be either an integer or a list of integers.
+    Args:
+        op_name (str): The name of the operation for which the inputs are being
+            validated. Used in the error message to provide context.
+        inputs (List[TosaArg]): A list of inputs to be validated, where each
+            input is assumed to be an instance of ``TosaArg``.
+        expected (int | List[int]): The expected number of inputs. Can be either
+            an integer or a list of integers.
 
     Raises:
-    -------
-    ValueError
-        If the number of inputs does not match the expected value(s), a `ValueError` is
-        raised with a message indicating the operation name and the mismatch in expected
-        versus provided number of inputs.
+        ValueError: If the number of inputs does not match the expected
+            value(s); the message indicates the operation name and the mismatch
+            in expected versus provided counts.
 
     Example:
-    --------
-    # Example usage:
-    from executorch.backends.arm.operators.operator_validation_utils import (
-        validate_num_inputs,
-    )
+        from executorch.backends.arm.operators.operator_validation_utils import \
+            validate_num_inputs
 
-    validate_num_inputs(self.target, inputs, [3, 4])
+        validate_num_inputs(self.target, inputs, [3, 4])
+
     """
     if isinstance(expected, int):
         expected = [expected]
@@ -56,39 +52,28 @@ def validate_num_inputs(op_name: str, inputs: List[Any], expected: int | List[in
 
 
 def validate_same_dtype(op_name: str, tensors: List[Any], ts: Optional[Any] = None):
-    """
-    Validates that all given tensors have the same dtype attribute.
+    """Validate that all given tensors have the same dtype.
 
-    This function checks whether all items in the `tensors` list have the same
-    `dtype` as the first item.
+    This function checks whether all items in the ``tensors`` list have the
+    same ``dtype`` as the first item.
 
-    Parameters:
-    -----------
-    op_name : str
-        The name of the operation for which the dtype validation is being performed.
-        Used in the error message to provide context.
-
-    tensors : List[Any]
-        A list of tensors to be validated, each is assumed to have a `dtype` attribute.
-
-    ts: Optional[Any]
-        TOSA serializer. Not required but only to get clearer error messages.
+    Args:
+        op_name (str): The name of the operation for which the dtype validation
+            is being performed. Used in the error message to provide context.
+        tensors (List[Any]): A list of tensors to be validated, each assumed to
+            have a ``dtype`` attribute.
+        ts (Optional[Any]): TOSA serializer (optional) to improve readability of
+            dtype names in error messages.
 
     Raises:
-    -------
-    ValueError
-        If the dtype of any item in the list does not match the dtype of the first item,
-        a `ValueError` is raised with a message indicating the operation name and the
-        mismatch in dtypes.
+        ValueError: If the dtype of any item in the list does not match the
+            dtype of the first item, or if the list is empty.
 
     Example:
-    --------
-    # Example usage:
-    from executorch.backends.arm.operators.operator_validation_utils import (
-        validate_same_dtype,
-    )
+        from executorch.backends.arm.operators.operator_validation_utils import \
+            validate_same_dtype
 
-    validate_same_dtype(self.target, [input1, input2, output])
+        validate_same_dtype(self.target, [input1, input2, output])
 
     """
     if not tensors:
@@ -98,71 +83,54 @@ def validate_same_dtype(op_name: str, tensors: List[Any], ts: Optional[Any] = No
 
     # Get dtype of the first tensor to reference for comparison
     reference_dtype = tensors[0].dtype
+    reference_dtype_name = str(reference_dtype)
 
     for tensor in tensors:
-        ref_dtype_name = (
-            ts.DTypeNames[reference_dtype] if ts is not None else str(reference_dtype)
-        )
-        inconsistent_dtype_name = (
-            ts.DTypeNames[tensor.dtype] if ts is not None else str(tensor.dtype)
-        )
         if tensor.dtype != reference_dtype:
+            inconsistent_dtype_name = str(tensor.dtype)
             raise ValueError(
-                f"{op_name}: Expected all tensors to have dtype {ref_dtype_name}, but "
-                f"found inconsistent dtype {inconsistent_dtype_name}."
+                f"{op_name}: Expected all tensors to have dtype {reference_dtype_name}, "
+                f"but found inconsistent dtype {inconsistent_dtype_name}."
             )
 
 
 def validate_valid_dtype(
     op_name: str, tensors: Any | List[Any], valid_dtypes: Any | List[Any], tosa_spec
 ):
-    """
-    Validates that one or more tensors have dtypes within a set of allowed dtypes.
+    """Validate that one or more tensors have allowed dtypes.
 
-    This function checks whether the `dtype` attribute of the provided tensor(s) is one
-    of the valid dtype values. It supports checking a single tensor or a list of
-    tensors.
+    This function checks whether the ``dtype`` attribute of the provided
+    tensor(s) is one of the valid dtype values. It supports checking a single
+    tensor or a list of tensors.
 
-    Parameters:
-    -----------
-    op_name : str
-        The name of the operation performing the validation.
-    tensors : Any or List[Any]
-        A tensor or list of tensors (each assumed to have `dtype` and `name` attributes)
-        whose dtype will be validated.
-    valid_dtypes : Any or List[Any]
-        A dtype enum or list of dtype enums representing allowed dtype values.
-    tosa_spec : Any
-        A TosaSpecification instance indicating which TOSA version is targeted. This
-        determines which serializer to use for dtype name resolution.
+    Args:
+        op_name (str): The name of the operation performing the validation.
+        tensors (Any | List[Any]): A tensor or list of tensors (each assumed to
+            have ``dtype`` and ``name`` attributes) whose dtype will be
+            validated.
+        valid_dtypes (Any | List[Any]): A dtype enum or list of dtype enums
+            representing allowed dtype values.
+        tosa_spec (Any): A TosaSpecification instance indicating which TOSA
+            version is targeted. This determines which serializer to use for
+            dtype name resolution.
 
     Raises:
-    -------
-    ValueError
-        If no tensors are provided, or if any tensor has a dtype not in `valid_dtypes`.
+        ValueError: If no tensors are provided, or if any tensor has a dtype not
+            in ``valid_dtypes``.
 
     Example:
-    --------
-    # Example usage:
-    from executorch.backends.arm.operators.operator_validation_utils import (
-        validate_valid_dtype,
-    )
-
-    import serializer.tosa_serializer as ts
-
-    validate_valid_dtype(
-        self.target,
-        [*inputs, output],
-        [ts.DType.INT8, ts.DType.INT32],
-        output.tosa_spec,
-    )
-
-    """
-    if tosa_spec in NodeVisitor.tosa_specs_0_80:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts
-    else:
+        from executorch.backends.arm.operators.operator_validation_utils import \
+            validate_valid_dtype
         import serializer.tosa_serializer as ts
 
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.INT32],
+            output.tosa_spec,
+        )
+
+    """
     if not tensors:
         raise ValueError(
             f"{op_name}: Input tensor list is empty, cannot validate dtypes"
@@ -176,46 +144,51 @@ def validate_valid_dtype(
 
     for tensor in tensors:
         if tensor.dtype not in valid_dtypes:
+            valid_names = [str(dtype) for dtype in valid_dtypes]
+            got_name = str(tensor.dtype)
             raise ValueError(
                 f"Expected tensor {tensor.name} in {op_name} to have one of the "
-                f"following dtypes: {[ts.DTypeNames[i] for i in valid_dtypes]}, "
-                f"got: {ts.DTypeNames[tensor.dtype]}"
+                f"following dtypes: {valid_names}, got: {got_name}"
             )
+
+
+def validate_cf_extension(op_name: str, tosa_spec: TosaSpecification) -> None:
+    """Ensure that the requested control-flow operator is supported by the active TOSA spec."""
+    if not isinstance(tosa_spec, Tosa_1_00):
+        raise ValueError(
+            f"Got TOSA version {tosa_spec.version}, that does not support extensions."
+        )
+    if not tosa_spec.support_extension("cf"):
+        raise ValueError(
+            f"Trying to lower {op_name}, but TOSA specification {tosa_spec} does not "
+            "support the cf extension."
+        )
 
 
 def adjust_pooling_pad_if_needed(
     input_size: int, kernel_size: int, stride: int, pad: int, ceil_mode: bool
 ) -> int:
+    """Compute the post padding needed for pooling.
+
+    ATen pooling uses a single symmetric ``pad`` per dimension and rounds the
+    output size up or down depending on ``ceil_mode``. TOSA requires distinct
+    pre- and post-padding values that satisfy:
+
+        output_size == (input_size + pre_pad + post_pad - kernel_size) / stride + 1
+
+    This function returns the required ``post_pad`` given a symmetric ``pad``.
+
+    Args:
+        input_size (int): Input size.
+        kernel_size (int): Kernel size.
+        stride (int): Stride size.
+        pad (int): Symmetric padding specified by ATen.
+        ceil_mode (bool): Use ceil when computing output size.
+
+    Returns:
+        int: Post-padding to satisfy the TOSA formula.
+
     """
-    The Aten pooling ops has one value 'pad' per dimension to specify padding, but they
-    do not require input and output sizes to match up perfectly. Instead, the output
-    size is rounded up or down depending on ceil_mode, and padding at the end of the
-    input is automatically added or removed. TOSA on the other hand specifies two
-    padding values, one for pre-padding and one for post-padding, and these must satisfy
-
-        output_size = (input_size + pre_pad + post_pad - kernel_size) / stride + 1
-
-    This function returns the post_pad value required to satisfy the above condition.
-
-    Parameters:
-    -----------
-    input_size : int
-        The size of the input to the operator.
-
-    kernel_size : int
-        The size of the kernel.
-
-    stride : int
-        The size of the stride.
-
-    pad : int
-        The amount of padding.
-
-    Output:
-    -------
-    An int, giving the post-padding to use for the
-    """
-
     if ceil_mode:
         output_size = ceil((input_size - kernel_size + 2 * pad) / stride) + 1
     else:

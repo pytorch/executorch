@@ -14,10 +14,11 @@ using executorch::runtime::Result;
 using executorch::runtime::TensorInfo;
 
 namespace example {
-TokenGenerator::TokenGenerator(
+template <typename T>
+TokenGenerator<T>::TokenGenerator(
     tokenizers::Tokenizer* tokenizer,
     DecoderRunner* decoder_runner,
-    KVManager* kv_manager,
+    KVManager<T>* kv_manager,
     const std::string& method_name,
     std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
     Metadata metadata,
@@ -27,8 +28,8 @@ TokenGenerator::TokenGenerator(
       kv_manager_(kv_manager),
       method_name_(method_name),
       eos_ids_(std::move(eos_ids)),
-      metadata_(metadata),
-      stats_(stats) {
+      stats_(stats),
+      metadata_(metadata) {
   k_cache_in_.resize(metadata_.num_layers);
   v_cache_in_.resize(metadata_.num_layers);
   k_cache_out_.resize(metadata_.num_layers);
@@ -39,15 +40,35 @@ TokenGenerator::TokenGenerator(
   input_pos_.size = metadata_.ar_len * sizeof(int32_t);
   attention_mask_.size =
       metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
+
+  switch (metadata_.cache_mode) {
+    case CacheMode::StaticCahce:
+      attention_mask_.size =
+          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
+      window_attention_mask_.size = 0;
+      break;
+    case CacheMode::HybridCache:
+      attention_mask_.size =
+          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
+      window_attention_mask_.size =
+          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
+      break;
+    default:
+      ET_CHECK_MSG(false, "Unsupported llama cache mode");
+      break;
+  }
+
   logits_.size = metadata_.ar_len * metadata_.vocab_size * sizeof(uint16_t);
 }
-void TokenGenerator::init_io(
+template <typename T>
+void TokenGenerator<T>::init_io(
     IMemAlloc* buffer_manager,
     Result<MethodMeta> method_meta) {
+  size_t idx = 0;
   input_tensors_.reserve(method_meta->num_inputs());
   output_tensors_.reserve(method_meta->num_outputs());
   // [I]: input_tokens
-  Result<TensorInfo> input_toks = method_meta->input_tensor_meta(0);
+  Result<TensorInfo> input_toks = method_meta->input_tensor_meta(idx++);
   input_toks_.data =
       reinterpret_cast<int64_t*>(buffer_manager->allocate(input_toks_.size));
   input_toks_.tensor = std::make_unique<TensorImpl>(
@@ -61,7 +82,7 @@ void TokenGenerator::init_io(
       input_toks_.data, input_toks_.size, input_toks.get());
 
   // [I]: attention_mask
-  Result<TensorInfo> attention_mask = method_meta->input_tensor_meta(1);
+  Result<TensorInfo> attention_mask = method_meta->input_tensor_meta(idx++);
   attention_mask_.data = reinterpret_cast<uint16_t*>(
       buffer_manager->allocate(attention_mask_.size));
   attention_mask_.tensor = std::make_unique<TensorImpl>(
@@ -75,8 +96,29 @@ void TokenGenerator::init_io(
   buffer_manager->add_memory_info(
       attention_mask_.data, attention_mask_.size, attention_mask.get());
 
+  // [I]: sliding window attention_mask
+  if (metadata_.cache_mode == CacheMode::HybridCache) {
+    Result<TensorInfo> window_attention_mask =
+        method_meta->input_tensor_meta(idx++);
+    window_attention_mask_.data = reinterpret_cast<uint16_t*>(
+        buffer_manager->allocate(window_attention_mask_.size));
+    window_attention_mask_.tensor = std::make_unique<TensorImpl>(
+        window_attention_mask->scalar_type(),
+        window_attention_mask->sizes().size(),
+        const_cast<TensorImpl::SizesType*>(
+            window_attention_mask->sizes().data()),
+        window_attention_mask_.data,
+        const_cast<TensorImpl::DimOrderType*>(
+            window_attention_mask->dim_order().data()));
+    input_tensors_.emplace_back(window_attention_mask_.tensor.get());
+    buffer_manager->add_memory_info(
+        window_attention_mask_.data,
+        window_attention_mask_.size,
+        window_attention_mask.get());
+  }
+
   // [I]: input_pos
-  Result<TensorInfo> input_pos = method_meta->input_tensor_meta(2);
+  Result<TensorInfo> input_pos = method_meta->input_tensor_meta(idx++);
   input_pos_.data =
       reinterpret_cast<int32_t*>(buffer_manager->allocate(input_pos_.size));
   input_pos_.tensor = std::make_unique<TensorImpl>(
@@ -90,30 +132,27 @@ void TokenGenerator::init_io(
       input_pos_.data, input_pos_.size, input_pos.get());
 
   // [I] kv_cache
-  int index = 3; // bypass input_tokens, atten_mask, input_pos
+  size_t index = idx; // bypass input_tokens, atten_mask, input_pos
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
-    std::vector<std::vector<std::unique_ptr<TensorImpl>>>& cache =
+    std::vector<std::unique_ptr<TensorImpl>>& cache =
         (cache_group == 0 ? k_cache_in_ : v_cache_in_);
-    std::vector<std::vector<KVCache>> cache_ptrs = (cache_group == 0)
+    std::vector<KVCache<T>> cache_ptrs = (cache_group == 0)
         ? kv_manager_->get_k_cache_()
         : kv_manager_->get_v_cache_();
-    for (int layer = 0; layer < metadata_.num_layers; ++layer) {
-      for (int head = 0; head < metadata_.num_heads; ++head, ++index) {
-        Result<TensorInfo> kv_cache = method_meta->input_tensor_meta(index);
+    for (int layer = 0; layer < metadata_.num_layers; ++layer, ++index) {
+      Result<TensorInfo> kv_cache = method_meta->input_tensor_meta(index);
 
-        uint8_t* cache_ptr = cache_ptrs[layer][head].buffer;
+      T* cache_ptr = cache_ptrs[layer].buffer;
 
-        cache[layer].emplace_back(std::make_unique<TensorImpl>(
-            kv_cache->scalar_type(),
-            kv_cache->sizes().size(),
-            const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
-            cache_ptr,
-            const_cast<TensorImpl::DimOrderType*>(
-                kv_cache->dim_order().data())));
-        input_tensors_.emplace_back(cache[layer][head].get());
-        buffer_manager->add_memory_info(
-            cache_ptr, cache[layer][head]->nbytes(), kv_cache.get());
-      }
+      cache[layer] = std::make_unique<TensorImpl>(
+          kv_cache->scalar_type(),
+          kv_cache->sizes().size(),
+          const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
+          cache_ptr,
+          const_cast<TensorImpl::DimOrderType*>(kv_cache->dim_order().data()));
+      input_tensors_.emplace_back(cache[layer].get());
+      buffer_manager->add_memory_info(
+          cache_ptr, cache[layer]->nbytes(), kv_cache.get());
     }
   }
 
@@ -133,26 +172,23 @@ void TokenGenerator::init_io(
   // [O] kv_cache
   index = 1;
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
-    std::vector<std::vector<std::unique_ptr<TensorImpl>>>& cache =
+    std::vector<std::unique_ptr<TensorImpl>>& cache =
         (cache_group == 0 ? k_cache_out_ : v_cache_out_);
-    std::vector<std::vector<KVCache>> cache_ptrs = (cache_group == 0)
+    std::vector<KVCache<T>> cache_ptrs = (cache_group == 0)
         ? kv_manager_->get_k_cache_()
         : kv_manager_->get_v_cache_();
-    for (int layer = 0; layer < metadata_.num_layers; ++layer) {
-      for (int head = 0; head < metadata_.num_heads; ++head, ++index) {
-        Result<TensorInfo> kv_cache = method_meta->output_tensor_meta(index);
-        uint8_t* cache_ptr = cache_ptrs[layer][head].output_buffer;
-        cache[layer].emplace_back(std::make_unique<TensorImpl>(
-            kv_cache->scalar_type(),
-            kv_cache->sizes().size(),
-            const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
-            cache_ptr,
-            const_cast<TensorImpl::DimOrderType*>(
-                kv_cache->dim_order().data())));
-        output_tensors_.emplace_back(cache[layer][head].get());
-        buffer_manager->add_memory_info(
-            cache_ptr, cache[layer][head]->nbytes(), kv_cache.get());
-      }
+    for (int layer = 0; layer < metadata_.num_layers; ++layer, ++index) {
+      Result<TensorInfo> kv_cache = method_meta->output_tensor_meta(index);
+      T* cache_ptr = cache_ptrs[layer].output_buffer;
+      cache[layer] = std::make_unique<TensorImpl>(
+          kv_cache->scalar_type(),
+          kv_cache->sizes().size(),
+          const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
+          cache_ptr,
+          const_cast<TensorImpl::DimOrderType*>(kv_cache->dim_order().data()));
+      output_tensors_.emplace_back(cache[layer].get());
+      buffer_manager->add_memory_info(
+          cache_ptr, cache[layer]->nbytes(), kv_cache.get());
     }
   }
   // Prepare the vector of EValue to run inference
@@ -162,8 +198,14 @@ void TokenGenerator::init_io(
   }
 }
 
+template <typename T>
+const std::vector<uint16_t>& TokenGenerator<T>::get_all_logits() {
+  return token_all_logits_;
+}
+
 // This function only considers the case where token_generator_ar_len equals 1.
-void TokenGenerator::prepare_io(uint64_t cur_token, int64_t start_pos) {
+template <typename T>
+void TokenGenerator<T>::prepare_io(uint64_t cur_token, int64_t start_pos) {
   // update input_tok
   *input_toks_.data =
       metadata_.use_int64_token ? cur_token : static_cast<int32_t>(cur_token);
@@ -171,11 +213,13 @@ void TokenGenerator::prepare_io(uint64_t cur_token, int64_t start_pos) {
   *input_pos_.data = static_cast<int32_t>(start_pos);
 }
 
-Result<int64_t> TokenGenerator::generate(
+template <typename T>
+Result<int64_t> TokenGenerator<T>::generate(
     std::vector<uint64_t> tokens,
     int64_t start_pos,
     int32_t seq_len,
-    std::function<void(const std::string&)> token_callback) {
+    std::function<void(const std::string&)> token_callback,
+    bool dump_logits) {
   ET_CHECK_MSG(
       !tokens.empty(), "Token generation loop shouldn't take empty tokens");
   int64_t pos = start_pos; // position in the sequence
@@ -187,9 +231,20 @@ Result<int64_t> TokenGenerator::generate(
   kv_manager_->rearrange_cache(metadata_.ar_len);
   std::vector<int32_t> attention_map(metadata_.ar_len);
   std::iota(attention_map.begin(), attention_map.end(), -1);
+
   // Initialize attention mask with current position
   kv_manager_->init_attention_mask(
       attention_mask_.data, attention_map, metadata_.ar_len, pos);
+  // Initialize window attention mask with current position
+  if (metadata_.cache_mode == CacheMode::HybridCache) {
+    kv_manager_->init_attention_mask(
+        window_attention_mask_.data,
+        attention_map,
+        metadata_.ar_len,
+        pos,
+        metadata_.sliding_window);
+  }
+
   // Initialize the output of the module
   ET_CHECK_MSG(
       decoder_runner_->set_outputs(method_name_, output_tensors_) ==
@@ -200,26 +255,15 @@ Result<int64_t> TokenGenerator::generate(
   while (pos < seq_len - 1) {
     // Fill in the token and position data
     prepare_io(cur_token, pos);
-    // Only update data pointer of the cache to the tensor for SHIFT_POINTER
-    // mode
-    bool updated = kv_manager_->update_cache_tensor(
-        k_cache_in_,
-        k_cache_out_,
-        v_cache_in_,
-        v_cache_out_,
-        metadata_.ar_len,
-        pos);
-    // Only update the output of module for SHIFT_POINTER mode
-    if (updated) {
-      // Update the output of the module
-      ET_CHECK_MSG(
-          decoder_runner_->set_outputs(method_name_, output_tensors_) ==
-              executorch::runtime::Error::Ok,
-          "Failed to set output tensor for module %s",
-          method_name_.c_str());
-    }
+
     // Run inference
     auto logits_res = decoder_runner_->step(method_name_, inputs_);
+    if (dump_logits) {
+      token_all_logits_.insert(
+          token_all_logits_.end(),
+          logits_.data,
+          logits_.data + metadata_.ar_len * metadata_.vocab_size);
+    }
     ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
     executorch::aten::Tensor& logits_tensor = logits_res.get();
 
@@ -235,6 +279,14 @@ Result<int64_t> TokenGenerator::generate(
     // Update attention mask with current position
     kv_manager_->update_attention_mask(
         attention_mask_.data, metadata_.ar_len, pos, metadata_.ar_len);
+    if (metadata_.cache_mode == CacheMode::HybridCache) {
+      kv_manager_->update_attention_mask(
+          window_attention_mask_.data,
+          metadata_.ar_len,
+          pos,
+          metadata_.ar_len,
+          metadata_.sliding_window);
+    }
     pos++;
 
     // print the token as string, decode it with the Tokenizer object
@@ -248,6 +300,34 @@ Result<int64_t> TokenGenerator::generate(
       break;
     }
   }
+
+  // Check if generation was truncated due to seq_len limit (no EOS token)
+  if (eos_ids_->count(cur_token) == 0 && pos >= seq_len - 1) {
+    printf("\n");
+    ET_LOG(
+        Info,
+        "Warning: Generation stopped at seq_len limit (%d) without reaching EOS token. Response may be incomplete.",
+        seq_len);
+    if (seq_len >= metadata_.context_len) {
+      ET_LOG(
+          Info,
+          "- seq_len (%d) already equals compiled max_seq_len (%d). Consider recompiling with larger --max_seq_len.",
+          seq_len,
+          metadata_.context_len);
+    } else {
+      ET_LOG(
+          Info,
+          "- seq_len (%d) is less than compiled max_seq_len (%d). Consider increasing --seq_len (up to %d).",
+          seq_len,
+          metadata_.context_len,
+          metadata_.context_len);
+    }
+  }
+
   return pos - start_pos;
 }
+// Explicit instantiations
+template class TokenGenerator<uint16_t>;
+template class TokenGenerator<uint8_t>;
+
 } // namespace example

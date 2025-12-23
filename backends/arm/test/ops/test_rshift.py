@@ -10,18 +10,19 @@ from executorch.backends.arm.test.common import (
     XfailIfNoCorstone320,
 )
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 scalar_input_t = tuple[torch.Tensor, int]
 
 
 class RshiftScalar(torch.nn.Module):
-    torch_op_MI = "torch.ops.aten.__rshift__.Scalar"
-    torch_op_BI = "torch.ops.aten.bitwise_right_shift.Tensor"
+    torch_op_FP = "torch.ops.aten.__rshift__.Scalar"
+    torch_op_INT = "torch.ops.aten.bitwise_right_shift.Tensor"
     exir_op = "executorch_exir_dialects_edge__ops_aten_bitwise_right_shift_Tensor"
     test_data = {
         "randint_neg_100_int8": lambda: (
@@ -67,39 +68,41 @@ class RshiftTensor(torch.nn.Module):
         return x.bitwise_right_shift(shift)
 
 
+##################
+## RshiftScalar ##
+##################
+
+
 @common.parametrize("test_data", RshiftScalar.test_data)
-def test_rshift_scalar_tosa_MI_scalar(test_data):
-    TosaPipelineMI[scalar_input_t](
+def test_bitwise_right_shift_scalar_tosa_FP(test_data):
+    TosaPipelineFP[scalar_input_t](
         RshiftScalar(),
         test_data(),
-        RshiftScalar.torch_op_MI,
+        RshiftScalar.torch_op_FP,
         RshiftScalar.exir_op,
     ).run()
 
 
 @common.parametrize("test_data", RshiftScalar.test_data)
-def test_bitwise_right_shift_tensor_tosa_BI_scalar(test_data):
-    pipeline = TosaPipelineBI[scalar_input_t](
+def test_bitwise_right_shift_scalar_tosa_INT(test_data):
+    pipeline = TosaPipelineINT[scalar_input_t](
         RshiftScalar(),
         test_data(),
-        RshiftScalar.torch_op_BI,
+        RshiftScalar.torch_op_INT,
         RshiftScalar.exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", RshiftScalar.test_data)
-@XfailIfNoCorstone300
-def test_bitwise_right_shift_tensor_u55_BI_scalar(test_data):
-    pipeline = EthosU55PipelineBI[scalar_input_t](
+@common.XfailIfNoCorstone300
+def test_bitwise_right_shift_scalar_u55_INT(test_data):
+    pipeline = EthosU55PipelineINT[scalar_input_t](
         RshiftScalar(),
         test_data(),
-        RshiftScalar.torch_op_BI,
+        RshiftScalar.torch_op_INT,
         RshiftScalar.exir_op,
-        run_on_fvp=True,
     )
-    pipeline.pop_stage("check.quant_nodes")
 
     # Forced rounding in U55 HW causes off-by-one errors.
     pipeline.change_args("run_method_and_compare_outputs", inputs=test_data(), atol=1)
@@ -107,22 +110,51 @@ def test_bitwise_right_shift_tensor_u55_BI_scalar(test_data):
 
 
 @common.parametrize("test_data", RshiftScalar.test_data)
-@XfailIfNoCorstone320
-def test_bitwise_right_shift_tensor_u85_BI_scalar(test_data):
-    pipeline = EthosU85PipelineBI[scalar_input_t](
+@common.XfailIfNoCorstone320
+def test_bitwise_right_shift_scalar_u85_INT(test_data):
+    pipeline = EthosU85PipelineINT[scalar_input_t](
         RshiftScalar(),
         test_data(),
-        RshiftScalar.torch_op_BI,
+        RshiftScalar.torch_op_INT,
         RshiftScalar.exir_op,
-        run_on_fvp=True,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
+@common.parametrize("test_data", RshiftScalar.test_data)
+@common.SkipIfNoModelConverter
+def test_bitwise_right_shift_scalar_vgf_no_quant(test_data):
+    pipeline = VgfPipeline[scalar_input_t](
+        RshiftScalar(),
+        test_data(),
+        RshiftScalar.torch_op_FP,
+        RshiftScalar.exir_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", RshiftScalar.test_data)
+@common.SkipIfNoModelConverter
+def test_bitwise_right_shift_scalar_vgf_quant(test_data):
+    pipeline = VgfPipeline[scalar_input_t](
+        RshiftScalar(),
+        test_data(),
+        RshiftScalar.torch_op_INT,
+        RshiftScalar.exir_op,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+##################
+## RshiftTensor ##
+##################
+
+
 @common.parametrize("test_data", RshiftTensor.test_data)
-def test_rshift_scalar_tosa_MI(test_data):
-    TosaPipelineMI[scalar_input_t](
+def test_bitwise_right_shift_tensor_tosa_FP(test_data):
+    TosaPipelineFP[scalar_input_t](
         RshiftTensor(),
         test_data(),
         RshiftTensor.torch_op,
@@ -131,28 +163,25 @@ def test_rshift_scalar_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", RshiftTensor.test_data)
-def test_bitwise_right_shift_tensor_tosa_BI(test_data):
-    pipeline = TosaPipelineBI[scalar_input_t](
+def test_bitwise_right_shift_tensor_tosa_INT(test_data):
+    pipeline = TosaPipelineINT[scalar_input_t](
         RshiftTensor(),
         test_data(),
         RshiftTensor.torch_op,
         RshiftTensor.exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", RshiftTensor.test_data)
 @XfailIfNoCorstone300
-def test_bitwise_right_shift_tensor_u55_BI(test_data):
-    pipeline = EthosU55PipelineBI[scalar_input_t](
+def test_bitwise_right_shift_tensor_u55_INT(test_data):
+    pipeline = EthosU55PipelineINT[scalar_input_t](
         RshiftTensor(),
         test_data(),
         RshiftTensor.torch_op,
         RshiftTensor.exir_op,
-        run_on_fvp=True,
     )
-    pipeline.pop_stage("check.quant_nodes")
 
     # Forced rounding in U55 HW causes off-by-one errors.
     pipeline.change_args("run_method_and_compare_outputs", inputs=test_data(), atol=1)
@@ -161,13 +190,37 @@ def test_bitwise_right_shift_tensor_u55_BI(test_data):
 
 @common.parametrize("test_data", RshiftTensor.test_data)
 @XfailIfNoCorstone320
-def test_bitwise_right_shift_tensor_u85_BI(test_data):
-    pipeline = EthosU85PipelineBI[scalar_input_t](
+def test_bitwise_right_shift_tensor_u85_INT(test_data):
+    pipeline = EthosU85PipelineINT[scalar_input_t](
         RshiftTensor(),
         test_data(),
         RshiftTensor.torch_op,
         RshiftTensor.exir_op,
-        run_on_fvp=True,
     )
-    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.parametrize("test_data", RshiftTensor.test_data)
+@common.SkipIfNoModelConverter
+def test_bitwise_right_shift_tensor_vgf_no_quant(test_data):
+    pipeline = VgfPipeline[tensor_input_t](
+        RshiftTensor(),
+        test_data(),
+        RshiftTensor.torch_op,
+        RshiftTensor.exir_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", RshiftTensor.test_data)
+@common.SkipIfNoModelConverter
+def test_bitwise_right_shift_tensor_vgf_quant(test_data):
+    pipeline = VgfPipeline[tensor_input_t](
+        RshiftTensor(),
+        test_data(),
+        RshiftTensor.torch_op,
+        RshiftTensor.exir_op,
+        quantize=True,
+    )
     pipeline.run()

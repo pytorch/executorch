@@ -17,7 +17,6 @@ on:
       - scripts/build_apple_llm_demo.sh
       - scripts/create_frameworks.sh
       - .ci/scripts/test_ios_ci.sh
-      - examples/demo-apps/apple_ios/**
       - extension/apple/**
       - extension/benchmark/apple/**
       - extension/module/**
@@ -39,8 +38,21 @@ jobs:
         id: set_version
         shell: bash
         run: |
-          VERSION="0.7.0.$(TZ='PST8PDT' date +%Y%m%d)"
+          VERSION="1.1.0.$(TZ='PST8PDT' date +%Y%m%d)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Guardrail
+        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
+        shell: bash
+        run: |
+          VERSION="${{ steps.set_version.outputs.version }}"
+          BRANCH="swiftpm-${VERSION}"
+
+          if git ls-remote --exit-code "https://github.com/${{ github.repository }}" "refs/heads/${BRANCH}" > /dev/null 2>&1; then
+            echo "Branch '${BRANCH}' already exists!"
+            echo "Aborting workflow to prevent overwriting S3 binaries. The branch existence indicates this version was already published with specific checksums."
+            echo "Please delete the remote branch '${BRANCH}' and re-run this workflow."
+            exit 1
+          fi
 
   build-demo-ios:
     name: build-demo-ios
@@ -49,7 +61,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
-      runner: macos-latest-xlarge
+      runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -136,7 +148,7 @@ jobs:
     needs: set-version
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
-      runner: macos-latest-xlarge
+      runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -149,12 +161,14 @@ jobs:
         VERSION="${{ needs.set-version.outputs.version }}"
         FRAMEWORKS=(
           "executorch"
+          "executorch_llm"
           "backend_coreml"
           "backend_mps"
           "backend_xnnpack"
-          "kernels_custom"
+          "kernels_llm"
           "kernels_optimized"
           "kernels_quantized"
+          "kernels_torchao"
           "threadpool"
         )
 
@@ -274,7 +288,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
-      runner: macos-latest-xlarge
+      runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

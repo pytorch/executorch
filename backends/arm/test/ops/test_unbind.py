@@ -9,8 +9,9 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = tuple[torch.Tensor]
@@ -34,9 +35,9 @@ class Unbind(torch.nn.Module):
 
 
 @common.parametrize("test_data", Unbind.test_data)
-def test_unbind_int_tosa_MI(test_data: test_data_t):
+def test_unbind_int_tosa_FP(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         Unbind(*init_data),
         input_data(),
         Unbind.aten_op,
@@ -45,11 +46,37 @@ def test_unbind_int_tosa_MI(test_data: test_data_t):
 
 
 @common.parametrize("test_data", Unbind.test_data)
-def test_unbind_int_tosa_BI(test_data: test_data_t):
+def test_unbind_int_tosa_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         Unbind(*init_data),
         input_data(),
         Unbind.aten_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Unbind.test_data)
+@common.SkipIfNoModelConverter
+def test_unbind_int_vgf_no_quant(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        Unbind(*init_data),
+        input_data(),
+        Unbind.aten_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Unbind.test_data)
+@common.SkipIfNoModelConverter
+def test_unbind_int_vgf_quant(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        Unbind(*init_data),
+        input_data(),
+        Unbind.aten_op,
+        quantize=True,
     )
     pipeline.run()

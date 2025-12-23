@@ -1,195 +1,226 @@
-# ExecuTorch Arm/TOSA Delegate
+# ExecuTorch Arm&reg; Backend
 
-This subtree contains the Arm(R) Delegate implementation for ExecuTorch.
+This subtree contains the Arm&reg; Backend implementation for ExecuTorch.
+It supports multiple targets using a common infrastructure, that lowers
+PyTorch models to a TOSA representation. This representation is used to
+deploy to the following targets:
 
-This delegate is structured to, over time, support a number of different Arm devices
-through an AoT flow which targets multiple Arm IP using the TOSA standard.
+- **Arm&reg; Ethos&trade;-U55/65/85** - Compiled using the Ethos-U Vela compiler.
+- **VGF Format, for ML extensions for Vulkan®** – a format containing SPIR-V™ ML operators for Vulkan-capable devices.
 
-The expected flow is:
- * torch.nn.module -> TOSA -> command_stream for fully AoT flows e.g. embedded.
- * torch.nn.module -> TOSA for flows supporting a JiT compilation step.
+The backend provides an ahead-of-time (AOT) flow, that produces a PTE file for your
+chosen target. The AOT flow supports the following development operating systems:
 
-Current backend support is being developed for TOSA to Ethos(TM)-U55/65/85 via the
-ethos-u-vela compilation stack. which follows the fully AoT flow.
+- Linux aarch64
+- Linux x86_64
+- macOS&trade; with Apple&reg; Silicon
 
-## Layout
+In addition, the following deployment paths are supported by this backend:
 
-Export:
-- `ethosu_backend.py` - Main entrypoint for the EthosUBackend. For more information see the section on
-[Arm Backend Architecture](#arm-backend-architecture). For examples of use see `executorch/examples/arm`.
-- `tosa_mapping.py` - utilities for mapping edge dialect to TOSA
-- `tosa_quant_utils.py` - utilities for mapping quantization information to TOSA encoding
+- Bare metal build of a reference runtime for Arm&reg; Cortex&reg;-M with Ethos-U acceleration:
+  - Full testing is available in tree using Corstone&trade; Fixed Virtual Platforms (FVP).
+- Linux target support for VGF capable targets, using the executor_runner.
 
-Operators:
-- `node_visitor.py` - Base class for edge operator lowering
-- `op_*.py` - Edge operator lowering/serialization to TOSA
+More information on TOSA can be found here: https://www.mlplatform.org/tosa/tosa_spec.html.
 
-Passes:
-- `arm_pass_manager.py` - Pass manager. Will decide which passes need to be applied depending on the compile_spec.
-- `*_pass.py` - Compiler passes derived from ExportPass
+## Directory Layout
 
-Quantization:
-- `arm_quantizer.py` - Quantizers for Arm backend. Contains the EthosUQuantizer which inherits from the TOSAQuantizer
-- `arm_quantizer_utils.py` - Utilities for quantization
+Below is an overview of the key folder and files in this directory:
 
-Runtime:
-- `runtime/ArmEthosUBackend.cpp` - The Arm backend implementation of the ExecuTorch runtime backend (BackendInterface) for Ethos-U
+```
+backends/arm/
+│
+├── _passes/                       # Graph transformation passes
+│   ├── arm_pass_manager.py        # Defines ordering of graph transformations
+│   └── *_pass.py                  # Graph transformation implementation
+│
+├── common/                        # Common functionality used across the backend
+│
+├── debug/                         # Debugging schema and functionality
+│
+├── ethosu/                        # Implementations of EthosUPartitioner and EthosUBackend
+│
+├── operator_support/              # Checks if operators can be partitioned
+│
+├── operators/                     # ATen → TOSA serialization
+│   ├── node_visitor.py            # Defines base class for ATen → TOSA node visitors
+│   └── op_*.py                    # Lowering implementations for individual operators
+│
+├── quantizer/                     # Quantization-related logic
+│   ├── arm_quantizer.py           # EthosUQuantizer and VGFQuantizer definitions
+│   └── quantization_annotator.py  # Defines how operators are annotated for quantization
+│
+├── runtime/                       # Backends for running inference on target devices
+│   ├── ArmEthosUBackend.cpp
+│   └── VGFBackend.cpp
+│
+├── scripts/                       # Auxiliary build, dependency installation and utility scripts
+│
+├── test/                          # Unit tests for the backend
+│   ├── ops/                       # Operator level unit tests
+│   ├── models/                    # Model level unit tests
+│   └── tester/                    # Testing harnesses and utilities
+│
+├── third-party/                   # External dependencies
+│
+├── tosa/                          # Shared TOSA backend implementation and dialect
+│
+└── vgf/                           # Implementations of VgfPartitioner and VgfBackend
+```
 
-Other:
-- `third-party/` - Dependencies on other code - in particular the TOSA serialization_lib for compiling to TOSA and the ethos-u-core-driver for the bare-metal backend supporting Ethos-U
-- `test/` - Unit test and test support functions
+## Building
+
+The Arm backend can be built using the following command:
+
+```
+./install_executorch.sh
+```
+
+One of the following commands should also be run once to gather the necessary dependencies for your chosen target(s):
+
+For the Ethos-U target:
+
+```
+./examples/arm/setup.sh --i-agree-to-the-contained-eula
+```
+
+For the VGF target:
+
+```
+./examples/arm/setup.sh --disable-ethos-u-deps --enable-mlsdk-deps
+```
+
+For both Ethos-U & VGF targets:
+
+```
+./examples/arm/setup.sh --i-agree-to-the-contained-eula --enable-mlsdk-deps
+```
+
+**NOTE:** While developing, it can be convenient to use`./install_executorch.sh --editable`, which creates an editable installation of ExecuTorch.
 
 ## Testing
 
-After a setup you can run unit tests with the test_arm_baremetal.sh script.
+There are two approaches for running the tests for the Arm backend. This section will explain these two approaches:
 
-To run the pytests suite run
+### Using test_arm_baremetal.sh
 
-```
-backends/arm/test/test_arm_baremetal.sh test_pytest
-```
+The backend provides a script `backends/arm/test/test_arm_baremetal.sh`, which is used in the `trunk` CI workflow.
+This approach is useful for checking your change against this workflow on your own machine.
+These scripts also install the necessary dependencies to run the tests.
+Below is an overview of some of the testing options this script provides:
 
-To run the unit test suite with Corstone3x0 FVP simulator support use
+| Command                                        | Description                                  |
+| ---------------------------------------------- | -------------------------------------------- |
+| `test_arm_baremetal.sh test_pytest`            | Runs all unit tests.                         |
+| `test_arm_baremetal.sh test_pytest_ethosu_fvp` | Same as `test_pytest` but uses Corstone FVP. |
+| `test_arm_baremetal.sh test_run_ethosu_fvp`    | Runs some models with Corstone FVP.          |
+| `test_arm_baremetal.sh test_full_ethosu_fvp`   | Runs E2E model tests on Corstone FVP.        |
+| `test_arm_baremetal.sh test_pytest_vkml`       | Runs all unit tests with Vulkan ML.          |
+| `test_arm_baremetal.sh test_full_vkml`         | Run E2E models test with Vulkan ML.          |
 
-```
-backends/arm/test/test_arm_baremetal.sh test_pytest_ethosu_fvp
-```
+For more information, please refer to the `backends/arm/test/test_arm_baremetal.sh` script.
 
-You can test to run some models with the full fvp test flow
+### Using pytest
 
-```
-backends/arm/test/test_arm_baremetal.sh test_full_ethosu_fvp
-```
+The Arm backend uses `pytest` to run the unit test suite in `backends/arm/test`.
+This option offers flexibility, allowing a specific test or a particular subset of the testsuite to be run.
+Below provides some examples of how to use it:
 
-## Unit tests
-This is the structure of the test directory
+- To run all the unit tests run the following command:
 
-```
-test                            #  Root test folder
-├── misc                        #  Testing of debug features
-├── models                      #  Full model tests
-├── ops                         #  Single op tests
-├── passes                      #  Compiler passes tests
-├── tester                      #  Arm Tester class
-├── tosautil                    #  Utility functions for TOSA artifacts
-├ common.py                     #  Common functions and definitions used by many tests
-├ setup_testing.sh              #  Script to prepare testing for using the Corstone 3x0 FVP
-├ test_arm_baremetal.sh         #  Help script to trigger testing
-```
+  ```
+  pytest -v -n auto backends/arm/test/
+  ```
 
-Some example commands to run these tests follow. Run a single test:
+- To run a specific test in a file:
 
-```
-pytest -c /dev/null -v -n auto backends/arm/test/ops/test_add.py -k test_add2_tosa_BI
-```
+  ```
+  pytest -v backends/arm/test/ops/test_add.py -k test_add_tensor_tosa_INT_3
+  ```
 
-Or discover and run many tests:
+#### Testing Dependencies
 
-```
-pytest -c /dev/null -v -n auto backends/arm/test/ops/
-```
+Some tests, with `u55`, `u85` and `vgf` in the name require external dependencies to run if you use `pytest`:
 
+- When a test contains `u55` or `u85`, you must run the following to setup the executor_runner:
+  ```
+  ./backends/arm/scripts/build_executorch.sh
+  ./backends/arm/test/setup_testing.sh
+  ```
+- When a test contains `vgf`, you must run the following to install the ML SDK:
+  ```
+  ./backends/arm/scripts/build_executorch.sh
+  ./backends/arm/test/setup_testing_vkml.sh
+  ```
 
-You can run tests using Corstone3x0 simulators to see how it would work on something more target like
-first you need to build and prepare some used target libs
+In addition, some model tests in the Arm backend require third-party libraries or packages.
+To run these tests, you need to install the required dependencies by running the script `examples/arm/setup.sh` with the flag `--setup-test-dependency`.
 
-```
-examples/arm/run.sh --model_name=add --build_only
-backends/arm/test/setup_testing.sh
-```
+Please note that installing model test dependencies is a standalone process. When using the `--setup-test-dependency` flag,
+the script will install only the necessary dependencies for model tests, skipping all other setup procedures.
 
-The you can run the tests with
+## Using pre-commit
 
-```
-pytest -c /dev/null -v -n auto backends/arm/test
-```
-
-## Passes
-
-With the default passes in the Arm Ethos-U backend, assuming the model lowers fully to the
-Ethos-U, the exported program is composed of a Quantize node, Ethos-U custom delegate
-and a Dequantize node. In some circumstances, you may want to feed quantized input to the Neural
-Network straight away, e.g. if you have a camera sensor outputting (u)int8 data and keep all the
-arithmetic of the application in the int8 domain. For these cases, you can apply the
-`exir/passes/quantize_io_pass.py`. See the unit test in `executorch/backends/arm/
-test/passes/test_ioquantization_pass.py`for an example how to feed quantized inputs and
-obtain quantized outputs.
-
-
-### Code coverage
-
-To get code coverage:
+A pre-commit script is available in the backend to help developers. Follow the steps below to enable it:
 
 ```
-coverage run --source=<SRC> --rcfile=backends/arm/test/.coveragerc -m pytest \
---config-file=/dev/null backends/arm/test/
+cp backends/arm/scripts/pre-commit .git/hooks/
 ```
 
-All files in `SRC` and its child directories will be analysed for code coverage,
-unless explicitly exluded in the .coveragerc file. If using venv this might be
-under `env/lib/python<VERSION_NUMBER>/site-packages/executorch/`. To get the
-absolute path, run:
+## Notes on model specific and optional passes
 
-```
-python -c "import executorch; print(executorch.__path__)"
-```
+The current TOSA version does not support int64. However, int64 is commonly used in many models. In order to lower the operators with int64 inputs and/or outputs to TOSA, a few passes have been developed to handle the int64-related issues. The main idea behind these passes is to replace the uses of int64 with int32 where feasible.
 
-This contains a list of paths where the source directory is located. Pick the
-one that is located in `env/lib`. If that does not work try the others. Add
-`backends/arm` to the path in `--source` to only get code coverage for the Arm
-backend.
+- For floating-point models, these passes need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter.
+- For quantized models, these transformations will be automatically handled during annotation before the export stage.
 
-### A note on unit tests
+List of model specific and optional passes:
 
-There are currently 3 ways we unit test our code.
-1. TOSA main inference. These tests are using non-quantized data and ops. Edge IR representation of the module is lowered to a TOSA flatbuffer, which is tested for numerical correcteness using the ```tosa_reference_model``` tool.
-2. TOSA base inference. Same as above, but data and ops are quantized.
-3. Ethos-U55. These tests use quantized data and ops (aka TOSA base inference). Edge IR is lowered to a TOSA flatbuffer, which is fed into the Vela compiler. Theses tests are functional tests and do not test numerical correctness, since that should be guaranteed by TOSA.
+- ConvertInt64ConstOpsToInt32Pass
+  - Functionalities:
+    - Rewrites constant-producing ops that output int64 to instead output int32, when values are within int32 bounds.
+  - Supported Ops:
+    - `torch.full`, `torch.arange`, `torch.eye`, `torch.linspace`, `torch.tensor`
+  - Example usage:
+    - backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
+    - backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
 
-In order to distinguise between the different tests, the following suffixes have been added to the respective test case.
-* ```_MI``` for main inference
-* ```_BI``` for base inference
-* ```_U55_BI``` for base inference on U55
+- ConvertInt64OutputOpsToInt32Pass
+  - Overview:
+    - Rewrites or removes operations that produce int64 outputs, converting them to int32 where possible.
+    - Overflow checks are applied selectively; for ops without such checks, users need to ensure values fit within the int32 range.
+  - Functionalities:
+    1. Handling casting to int64:
+       - (1) int32 -> int64:
+         - Removes the cast and redirect uses of int64 to int32
+       - (2) other types -> int64:
+         - Rewrites the cast to other types -> int32
+       - Supported Ops:
+         - torch.ops.aten.to.\[dtype|dtype_layout\]
+         - exir_ops.edge.dim_order_ops.\_to_dim_order_copy.default
+    2. Post-process argmax outputs:
+       - Inserts an int64->int32 cast after the argmax operations that produce int64 outputs:
+       - Supported Ops:
+         - torch.ops.aten.argmax.default
+         - exir_ops.edge.aten.argmax.default
+  - Example usage:
+    - (Functionality 1) backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
+    - (Functionality 2) backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
+
+- InsertInt32CastsAfterInt64PlaceholdersPass
+  - Functionalities:
+    - Inserts an int64 -> int32 cast immediately after each int64 placeholder (graph input).
+    - Redirects all uses of each int64 placeholder to its int32 cast output.
+    - Inserts local int32 -> int64 casts at call sites where an operator requires int64 inputs, e.g. `torch.nn.functional.one_hot`
+  - Pass ordering:
+    - When used with `ConvertInt64ConstOpsToInt32Pass` and `ConvertInt64OutputOpsToInt32Pass`, run this pass last.
+    - Rationale: Those passes may cause retracing to re-infer some int64 placeholders as int32. Running this pass last casts only inputs that remain int64, minimizing inserted casts.
+  - Example usage:
+    - backends/arm/test/models/test_llama.py
+    - backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
+    - backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
 
 ## Help & Improvements
-If you have problems or questions, or have suggestions for ways to make
-implementation and testing better, please reach out to the Arm team developing this delegate, or
-create an issue on [github](https://www.github.com/pytorch/executorch/issues).
 
-# Arm Backend Architecture
-
-The broad principle with the Arm backend implemention for ExecuTorch is to support multiple Arm devices and device configurations through a largely Homogeneous flow with maximal sharing of class logic.
-The EthosUBackend is currently the one user facing API that target the Ethos-U55 and Ethos-U85 hardware IP. It is using the TOSABackend under the hood to share code and functionality, but also to separate testing possibilities to the TOSA flow itself.
-
-In practice for compilation, this means that the flow goes via [Arm TOSA](https://www.mlplatform.org/tosa/tosa_spec.html) to produce a common IR and quantization behaviour compatible with our various IP, and typically, device-specific backends to further lower to a device specific binary which can happen ahead of time (within the Python development flow) or at runtime (during a JIT compilation stage).
-
-In practice for the runtime, this means we will share common runtime backend functionality, with the aim for features like debugging to be available through common tooling.
-
-
-## Arm Backend Status and Maturity
-
-The Arm EthosU Backend should be considered a prototype quality at this point, likely subject to significant change and improvement, and with a limited coverage of functionality. We are actively developing this codebase.
-
-## Current flows
-
-The EthosUBackend has a two stage process,
-- Compile to TOSA to rationalise the graph into known hardware support profiles. Currently this is to v0.80 TOSA BI with specific concern to a subset which gives support on Ethos-U55 and Ethos-U85, the target of the initial prototype efforts. This calls into the TOSABackend.
-- Lower via the ethos-u-vela compilation flow which takes TOSA v0.80 as an input and produces a low level commandstream for the hardware which is then passed via the delegate to the ethos-u-core-driver for direct execution.
-
-The EthosUPartitioner is currenly used to ensure the operations converted are Ethos-U compatible, but will be extended to offer spec-correct TOSA Base inference and TOSA Main Inference generation in future.
-
-There is also a generic TOSABackend with accompanying TOSAPartitioner and TOSAQuantizer, which are used by the EthosUBackend and friends. The Arm TOSA Backend can be used by it's own to verify the lowering to the TOSA representation of the model (refer to the unit tests in backends/arm/test which uses the TOSA backend in the test suites).
-
-### Controlling compilation
-
-It is possible to control the compilation flow to aid in development and debug of both networks and the code itself.
-
-Configuration of the EthosUBackend export flow is controlled by CompileSpec information (essentially used as compilation flags) to determine which of these outputs is produced. In particular this allows for use of the tosa_reference_model to run intermediate output to check for correctness and quantization accuracy without a full loop via hardware implemntation.
-
-As this is in active development see the EthosUBackend for accurate information on [compilation flags](https://github.com/pytorch/executorch/blob/29f6dc9353e90951ed3fae3c57ae416de0520067/backends/arm/arm_backend.py#L319-L324)
-
-## Model specific and optional passes
-The current TOSA version does not support int64. For LLMs for example LLama, often aten.emedding is the first operator and it requires int64 indicies.
-In order to lower this to TOSA and int64->int32 cast need to be injected. This pass need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter. See example in: backends/arm/test/models/test_llama.py.
-By doing this aten.embedding will be decomposed into to aten.index_select which can handle int32 indices.
-Note that this additional step is only needed for pure float models. With quantization this is automatically handled during annotation before the export stage.
+If you have problems or questions, or have suggestions for ways to improve the Arm backend, please reach out
+to the Arm team developing this backend, or create an issue on [here](https://www.github.com/pytorch/executorch/issues) and add the "partner: arm" label.

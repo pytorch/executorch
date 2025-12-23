@@ -6,8 +6,6 @@ on:
     branches:
       - main
       - release/*
-    paths:
-      - .github/workflows/build-presets.yml
   workflow_dispatch:
 
 concurrency:
@@ -20,11 +18,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [macos, ios, ios-simulator, pybind, llm]
+        preset: [macos, ios, ios-simulator, pybind, profiling, llm]
     with:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      runner: macos-latest-xlarge
+      runner: macos-14-xlarge
       python-version: 3.12
       submodules: recursive
       timeout: 90
@@ -34,6 +32,45 @@ jobs:
         ${CONDA_RUN} cmake --preset ${{ matrix.preset }}
         ${CONDA_RUN} cmake --build cmake-out -j$(( $(sysctl -n hw.ncpu) - 1 ))
 
+  zephyr:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [zephyr]
+    with:
+      job-name: build
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
+      submodules: recursive
+      timeout: 90
+      script: |
+        set -eux
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        ./install_requirements.sh > /dev/null
+
+        # Download toolchain
+        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
+        toolchain_dir="arm-zephyr-eabi"
+        curl --output "${toolchain_dir}.tar.xz" -L "${toolchain_url}"
+
+        # Verify download
+        echo "93128be0235cf5cf5f1ee561aa6eac5f  ${toolchain_dir}.tar.xz" > arm-zephyr-eabi.md5
+        md5sum -c --strict arm-zephyr-eabi.md5
+
+        # Extract and install to PATH
+        tar xf "${toolchain_dir}.tar.xz"
+        rm -f "${toolchain_dir}.tar.xz"
+        toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
+        export PATH=$PATH:${toolchain_bin_path}
+
+        # Build Arm Zephyr Preset
+        cmake --preset ${{ matrix.preset }}
+        cmake --build cmake-out -j$(( $(nproc) - 1 ))
   linux:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     strategy:
@@ -54,7 +91,7 @@ jobs:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: ${{ matrix.runner }}
-      docker-image: ${{ matrix.docker-image }}
+      docker-image: ci-image:${{ matrix.docker-image }}
       submodules: recursive
       timeout: 90
       script: |
@@ -72,7 +109,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [pybind]
+        preset: [pybind, windows]
     with:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -82,14 +119,24 @@ jobs:
         set -eux
         conda init powershell
         powershell -Command "& {
-          \$ErrorActionPreference = 'Stop'
           Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
 
           conda create --yes --quiet -n et python=3.12
           conda activate et
-
           python install_requirements.py
-          cmake --preset ${{ matrix.preset }}
+
+          cmake --preset ${{ matrix.preset }} -T ClangCL
+          if (\$LASTEXITCODE -ne 0) {
+            Write-Host "CMake configuration was unsuccessful. Exit code: \$LASTEXITCODE."
+            exit \$LASTEXITCODE
+          }
+
           \$numCores = [System.Environment]::GetEnvironmentVariable('NUMBER_OF_PROCESSORS') - 1
           cmake --build cmake-out -j \$numCores
+          if (\$LASTEXITCODE -ne 0) {
+            Write-Host "CMake build was unsuccessful. Exit code: \$LASTEXITCODE."
+            exit \$LASTEXITCODE
+          }
         }"

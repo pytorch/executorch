@@ -23,7 +23,6 @@ from .utils.utils import capture_graph_for_xnnpack
 # XNNPACK Backend
 from .xnnpack_preprocess import XnnpackBackend
 
-
 __all__ = [
     "XnnpackDynamicallyQuantizedPartitioner",
     "XnnpackPartitioner",

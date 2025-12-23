@@ -13,11 +13,6 @@ from typing import Callable, List
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes import ExpandBroadcastTensorShape
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
-from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
 from executorch.examples.qualcomm.oss_scripts.efficientSAM.source_transformation import (
     replace_maskdecoder_with_custom_op,
     replace_pos_emb_with_custom_op,
@@ -97,19 +92,13 @@ def get_dataset(dataset_path, data_size=1):
     dataloader = DataLoader(dataset)
 
     # prepare input data
-    inputs, input_list = [], ""
+    inputs = []
     for index, data in enumerate(dataloader):
         if index >= data_size:
             break
         inputs.append(tuple(data))
-        num_feature = len(data)
-        for idx, _ in enumerate(data):
-            input_name = f"input_{index}_{idx}.raw"
-            input_list += input_name + " " if idx < num_feature - 1 else input_name
 
-        input_list = input_list + "\n"
-
-    return inputs, input_list
+    return inputs
 
 
 def source_transform(
@@ -226,7 +215,7 @@ def main(args):
     os.makedirs(args.artifact, exist_ok=True)
 
     data_size = 1
-    inputs, input_list = get_dataset(args.dataset, data_size)
+    inputs = get_dataset(args.dataset, data_size)
     assert args.pretrained_weight, "Checkpoint params can't be empty"
 
     # Get the EfficientSAM model.
@@ -242,8 +231,6 @@ def main(args):
     pte_filename = "efficientSAM_qnn"
 
     # lower to QNN
-    passes_job = get_capture_program_passes()
-    passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
     build_executorch_binary(
         model,
         inputs[0],
@@ -252,7 +239,6 @@ def main(args):
         dataset=inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        passes_job=passes_job,
         shared_buffer=args.shared_buffer,
     )
 
@@ -270,8 +256,10 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -317,6 +305,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "-p",
         "--pretrained_weight",
         help="Path to ESAM checkpoint, such as ./efficient_sam_vitt.pt or ./efficient_sam_vits.pt.zip",
         type=str,
@@ -343,6 +332,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

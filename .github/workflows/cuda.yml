@@ -1,0 +1,213 @@
+# Test ExecuTorch CUDA Build Compatibility
+# This workflow tests whether ExecuTorch can be successfully built with CUDA support
+# across different CUDA versions (12.6, 12.8, 12.9) using the command:
+#   ./install_executorch.sh
+#
+# Note: ExecuTorch automatically detects the system CUDA version using nvcc and
+# installs the appropriate PyTorch wheel. No manual CUDA/PyTorch installation needed.
+
+name: Test CUDA Builds
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/*
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: false
+
+jobs:
+  test-cuda-builds:
+    strategy:
+      fail-fast: false
+      matrix:
+        cuda-version: ["12.6", "12.8", "12.9", "13.0"]
+
+    name: test-executorch-cuda-build-${{ matrix.cuda-version }}
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: ${{ matrix.cuda-version }}
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        # Test ExecuTorch CUDA build - ExecuTorch will automatically detect CUDA version
+        # and install the appropriate PyTorch wheel
+        source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
+
+  # This job will fail if any of the CUDA versions fail
+  check-all-cuda-builds:
+    needs: test-cuda-builds
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check if all CUDA builds succeeded
+        run: |
+          if [[ "${{ needs.test-cuda-builds.result }}" != "success" ]]; then
+            echo "ERROR: One or more ExecuTorch CUDA builds failed!"
+            echo "CUDA build results: ${{ needs.test-cuda-builds.result }}"
+            exit 1
+          else
+            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 12.8, 12.9) completed successfully!"
+          fi
+
+  test-models-cuda:
+    name: test-models-cuda
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [linear, add, add_mul, resnet18, conv1d, sdpa]
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+        PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
+
+  test-cuda-shims:
+    name: test-cuda-shims
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        # Install requirements
+        bash ./install_requirements.sh
+
+        # Build ExecuTorch with CUDA support
+        cmake --workflow --preset llm-release-cuda
+
+        # Build and run CUDA shim tests
+        pushd backends/cuda/runtime/shims/tests
+        cmake --workflow --preset default
+        popd
+
+  export-model-cuda-artifact:
+    name: export-model-cuda-artifact
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "openai"
+            name: "whisper-small"
+          - repo: "openai"
+            name: "whisper-large-v3-turbo"
+          - repo: "google"
+            name: "gemma-3-4b-it"
+        quant:
+          - "non-quantized"
+          - "quantized-int4-tile-packed"
+          - "quantized-int4-weight-only"
+        exclude:
+          # TODO: enable int4-weight-only on gemma3.
+          - model:
+              repo: "google"
+              name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
+    with:
+      timeout: 90
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch"
+        ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Setup Huggingface"
+        pip install -U "huggingface_hub[cli]<1.0" accelerate
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        echo "::endgroup::"
+
+        source .ci/scripts/export_model_artifact.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+
+  test-model-cuda-e2e:
+    name: test-model-cuda-e2e
+    needs: export-model-cuda-artifact
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "openai"
+            name: "whisper-small"
+          - repo: "openai"
+            name: "whisper-large-v3-turbo"
+          - repo: "google"
+            name: "gemma-3-4b-it"
+        quant:
+          - "non-quantized"
+          - "quantized-int4-tile-packed"
+          - "quantized-int4-weight-only"
+        exclude:
+          # TODO: enable int4-weight-only on gemma3.
+          - model:
+              repo: "google"
+              name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        source .ci/scripts/test_model_e2e.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"

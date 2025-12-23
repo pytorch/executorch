@@ -3,10 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -16,8 +15,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
 
@@ -43,5 +42,8 @@ class SinVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
         )
-
-        tosa_graph.addOperator(ts.TosaOp.Op().SIN, [inputs[0].name], [output.name])
+        attr = ts.TosaSerializerAttribute()
+        attr.SinAttribute()
+        self._serialize_operator(
+            node, tosa_graph, ts.Op.SIN, [inputs[0].name], [output.name], attr
+        )

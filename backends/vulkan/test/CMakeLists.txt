@@ -35,10 +35,11 @@ if(TARGET vulkan_backend)
     set(PYTHON_EXECUTABLE python3)
   endif()
 
-  # Include this file to access target_link_options_shared_lib This is required
-  # to provide access to target_link_options_shared_lib which allows libraries
-  # to be linked with the --whole-archive flag. This is required for libraries
-  # that perform dynamic registration via static initialization.
+  # Include this file to access executorch_target_link_options_shared_lib This
+  # is required to provide access to executorch_target_link_options_shared_lib
+  # which allows libraries to be linked with the --whole-archive flag. This is
+  # required for libraries that perform dynamic registration via static
+  # initialization.
   include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
   include(../cmake/ShaderLibrary.cmake)
@@ -75,15 +76,15 @@ if(TARGET vulkan_backend)
       ${CMAKE_CURRENT_SOURCE_DIR}/vulkan_compute_api_test.cpp
   )
 
-  target_link_options_shared_lib(vulkan_backend)
+  executorch_target_link_options_shared_lib(vulkan_backend)
 
   add_executable(
     vulkan_compute_api_test ${COMPUTE_API_TEST_CPP} ${TEST_UTILS_CPP}
   )
   target_include_directories(vulkan_compute_api_test PRIVATE ${COMMON_INCLUDES})
   target_link_libraries(
-    vulkan_compute_api_test PRIVATE GTest::gtest_main vulkan_backend executorch_core
-                                    test_shaderlib
+    vulkan_compute_api_test PRIVATE GTest::gtest_main vulkan_backend
+                                    executorch_core test_shaderlib
   )
   target_compile_options(vulkan_compute_api_test PRIVATE ${VULKAN_CXX_FLAGS})
 

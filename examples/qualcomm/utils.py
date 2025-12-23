@@ -6,21 +6,26 @@
 
 # TODO: reenable pyre after fixing the issues
 # pyre-ignore-all-errors
-
 import argparse
+import csv
+import inspect
 import os
+import random
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-
 import torch
 import torchao
+import transformers
+from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
+    QNNIntermediateDebugger,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import (
     ModuleQConfig,
     QnnQuantizer,
@@ -28,6 +33,7 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
 )
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
+    QnnExecuTorchBackendType,
     QnnExecuTorchOpPackageOptions,
 )
 from executorch.backends.qualcomm.utils.utils import (
@@ -36,6 +42,7 @@ from executorch.backends.qualcomm.utils.utils import (
     get_soc_to_arch_map,
     to_edge_transform_and_lower_to_qnn,
 )
+from executorch.exir.backend.utils import get_delegates
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization.pt2e import MovingAverageMinMaxObserver
@@ -61,8 +68,9 @@ class SimpleADB:
         error_only (bool): Redirect stdio and leave error messages only
         shared_buffer (bool): Apply zero-copy mechanism in runtime
         runner (str): Runtime executor binary
-        expected_input_shape (Tuple[torch.Size]): input shape of dynamic graph
-        expected_output_shape (Tuple[torch.Size]): output shape of dynamic graph
+        target (str): Target toolchain name
+        expected_input_shape (Tuple[torch.Size]): Input shape of dynamic graph
+        expected_output_shape (Tuple[torch.Size]): Output shape of dynamic graph
     """
 
     def __init__(
@@ -78,6 +86,8 @@ class SimpleADB:
         shared_buffer=False,
         dump_intermediate_outputs=False,
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
+        target="aarch64-android",
+        backend=QnnExecuTorchBackendType.kHtpBackend,
         expected_input_shape=None,
         expected_output_shape=None,
     ):
@@ -97,60 +107,80 @@ class SimpleADB:
         self.error_only = error_only
         self.shared_buffer = shared_buffer
         self.runner = runner
+        self.target = target
+        self.backend = backend
         self.expected_input_shape = expected_input_shape
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
 
-    def _adb(self, cmd):
+    def _adb(self, cmd, output_callback: Optional[Callable[[str], None]] = None):
         if not self.host_id:
             cmds = ["adb", "-s", self.device_id]
         else:
             cmds = ["adb", "-H", self.host_id, "-s", self.device_id]
         cmds.extend(cmd)
 
-        subprocess.run(
-            cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
-        )
+        if output_callback:
+            result = subprocess.run(
+                cmds, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            output_callback(result)
+        else:
+            subprocess.run(
+                cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
+            )
 
-    def push(self, inputs=None, input_list=None, files=None):
-        self._adb(["shell", f"rm -rf {self.workspace}"])
-        self._adb(["shell", f"mkdir -p {self.workspace}"])
+    def push(self, inputs=None, input_list=None, files=None, init_env=True):
+        artifacts = []
+        if init_env:
+            self._adb(["shell", f"rm -rf {self.workspace}"])
+            self._adb(["shell", f"mkdir -p {self.workspace}"])
 
         # necessary artifacts
-        artifacts = [
-            *self.pte_path,
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
-            (
-                f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
-                f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
-            ),
-            (
-                f"{self.qnn_sdk}/lib/aarch64-android/"
-                f"libQnnHtpV{self.htp_arch}Stub.so"
-            ),
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
-            f"{self.build_path}/{self.runner}",
-            f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
-        ]
-        input_list_file, input_files = generate_inputs(
-            self.working_dir, self.input_list_filename, inputs, input_list
+        artifacts = {
+            QnnExecuTorchBackendType.kHtpBackend: [
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtp.so",
+                (
+                    f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
+                    f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
+                ),
+                (
+                    f"{self.qnn_sdk}/lib/{self.target}/"
+                    f"libQnnHtpV{self.htp_arch}Stub.so"
+                ),
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpPrepare.so",
+            ],
+            QnnExecuTorchBackendType.kGpuBackend: [
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnGpu.so",
+            ],
+        }[self.backend]
+
+        artifacts.extend(
+            [
+                *self.pte_path,
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
+                f"{self.build_path}/{self.runner}",
+                f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
+            ]
         )
-
-        if input_list_file is not None:
-            # prepare input list
-            artifacts.append(input_list_file)
-
-        for artifact in artifacts:
-            self._adb(["push", artifact, self.workspace])
-
-        # input data
-        for file_name in input_files:
-            self._adb(["push", file_name, self.workspace])
-
-        # dynamic shape related
         with tempfile.TemporaryDirectory() as tmp_dir:
+            input_list_file, input_files = generate_inputs(
+                tmp_dir, self.input_list_filename, inputs
+            )
+
+            if input_list_file is not None:
+                # prepare input list
+                artifacts.append(input_list_file)
+
+            for artifact in artifacts:
+                self._adb(["push", artifact, self.workspace])
+
+            # input data
+            for file_name in input_files:
+                self._adb(["push", file_name, self.workspace])
+
+            # dynamic shape related
             if self.expected_input_shape and self.expected_output_shape:
                 shape_info = {
                     "input_shape": self.expected_input_shape,
@@ -168,7 +198,12 @@ class SimpleADB:
             for file_name in files:
                 self._adb(["push", file_name, self.workspace])
 
-    def execute(self, custom_runner_cmd=None, method_index=0):
+    def execute(
+        self,
+        custom_runner_cmd=None,
+        method_index=0,
+        output_callback: Optional[Callable[[str], None]] = None,
+    ):
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
@@ -200,8 +235,9 @@ class SimpleADB:
             )
         else:
             qnn_executor_runner_cmds = custom_runner_cmd
-
-        self._adb(["shell", f"{qnn_executor_runner_cmds}"])
+        self._adb(
+            ["shell", f"{qnn_executor_runner_cmds}"], output_callback=output_callback
+        )
 
     def pull(self, output_path, callback=None):
         self._adb(["pull", "-a", self.output_folder, output_path])
@@ -284,6 +320,74 @@ def make_quantizer(
     return quantizer
 
 
+def replace_module_with_custom_class(
+    model: torch.nn.Module,
+    target_class: torch.nn.Module,
+    custom_class: torch.nn.Module,
+    strict: bool = False,
+    extra_custom_kwargs: Optional[Dict] = None,
+):
+    """
+    Recursively replaces all instances of `target_class` in `model` with `custom_class`.
+
+    Args:
+        model (torch.nn.Module): The root module to search within.
+        target_class (type): The class to be replaced.
+        custom_class (type): The class to replace with.
+        strict (bool): Whether to strictly enforce that the keys in `state_dict` match the model.
+        extra_custom_kwargs: Extra keyword arguments to override or extend the constructor args.
+
+    Example:
+        >>> class MyDecoder(Decoder):
+        ...     def __init__(self, ...)
+        ...         super().__init__()
+        ...         freqs_cos, freqs_sin = precompute_freqs_cis(...)
+        ...         self.register_buffer("freqs_cos", freqs_cos)
+        ...         self.register_buffer("freqs_sin", freqs_sin)
+        ...
+        ...     def forward(self, x):
+        ...         ....
+        >>> model = Decoder()
+        >>> replace_module_with_custom_class(model, Decoder, MyDecoder)
+    """
+
+    def extract_init_args_from_instance(instance):
+        init_signature = inspect.signature(instance.__init__)
+        init_params = [
+            param
+            for param in init_signature.parameters.values()
+            if param.name != "self"
+        ]
+
+        extracted_args = {}
+        for param in init_params:
+            name = param.name
+            if hasattr(instance, name):
+                extracted_args[name] = getattr(instance, name)
+            elif param.default is not inspect.Parameter.empty:
+                extracted_args[name] = param.default
+
+        return extracted_args
+
+    if extra_custom_kwargs is None:
+        extra_custom_kwargs = {}
+
+    for name, child in model.named_children():
+        if isinstance(child, target_class):
+            state_dict = child.state_dict()
+
+            original_args = extract_init_args_from_instance(child)
+            new_module = custom_class(**{**original_args, **extra_custom_kwargs})
+            new_module.load_state_dict(state_dict, strict=strict)
+            new_module.eval()
+
+            setattr(model, name, new_module)
+        else:
+            replace_module_with_custom_class(
+                child, target_class, custom_class, strict, extra_custom_kwargs
+            )
+
+
 # TODO: refactor to support different backends
 def build_executorch_binary(
     model,  # noqa: B006
@@ -298,7 +402,9 @@ def build_executorch_binary(
     shared_buffer=False,
     metadata=None,
     dump_intermediate_outputs=False,
+    qnn_intermediate_debugger: QNNIntermediateDebugger = None,
     passes_job=None,
+    passes_dependency=None,
     qat_training_data=None,
     online_prepare=False,
     optrace=False,
@@ -321,6 +427,7 @@ def build_executorch_binary(
         metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
         dump_intermediate_outputs (bool, optional): Enables dumping model intermediate outputs.
         passes_job (OrderedDict, optional): Custom passes job in capture_program, users can enable/disable specific passes or modify their attributes.
+        passes_dependency (Dict, optional): A dictionary mapping each pass to its corresponding list of dependencies.
         qat_training_data (List[torch.Tensor], optional): A dataset for quantization aware training(QAT). Typically is a pair of tensors, such as [features, ground truth].
         online_prepare (bool, optional): Compose QNN graph on device if set to True.
         optrace (bool, optional): Enable optrace mode for performance analysis if set to True.
@@ -331,7 +438,7 @@ def build_executorch_binary(
         None: The function writes the output to a specified .pte file.
     """
     backend_options = generate_htp_compiler_spec(
-        use_fp16=False if quant_dtype else True
+        use_fp16=False if quant_dtype is not None else True
     )
     compile_spec = generate_qnn_executorch_compiler_spec(
         soc_model=getattr(QcomChipset, soc_model),
@@ -364,6 +471,7 @@ def build_executorch_binary(
             compile_spec,
             constant_methods=metadata,
             passes_job=passes_job,
+            dep_table=passes_dependency,
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
         )
@@ -377,6 +485,19 @@ def build_executorch_binary(
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
         )
+
+    if qnn_intermediate_debugger:
+        lowered_module_nodes = get_delegates(edge_prog_mgr.exported_program().graph)
+        assert (
+            len(lowered_module_nodes) == 1
+        ), "Graph with partitions are currently unsupported."
+
+        lowered_module_node = lowered_module_nodes[0]
+        lower_module = getattr(
+            edge_prog_mgr.exported_program().graph_module, lowered_module_node.name
+        )
+        edge_module = lower_module.original_module.module()
+        qnn_intermediate_debugger.set_edge_module(edge_module=edge_module)
 
     executorch_config = ExecutorchBackendConfig(
         # For shared buffer, user must pass the memory address
@@ -452,6 +573,32 @@ def class_agnostic_mIoU(predictions, targets):
     return total_iou / len(predictions)
 
 
+def evaluate_squad(predicted_texts: List[str], target_texts: List[str]):
+    import evaluate
+
+    squad_metric = evaluate.load("squad")
+
+    predictions = []
+    references = []
+
+    for i, (pred, target) in enumerate(zip(predicted_texts, target_texts)):
+        predictions.append({"id": str(i), "prediction_text": pred.strip()})
+        references.append(
+            {
+                "id": str(i),
+                "answers": {
+                    "text": [target.strip()],
+                    "answer_start": [0],  # answer_start could be dummy
+                },
+            }
+        )
+
+    results = squad_metric.compute(predictions=predictions, references=references)
+    results["f1"] /= 100
+    results["exact_match"] /= 100
+    return results
+
+
 def get_imagenet_dataset(
     dataset_path, data_size, image_shape, crop_size=None, shuffle=True
 ):
@@ -475,7 +622,7 @@ def get_imagenet_dataset(
         )
 
     # prepare input data
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     data_loader = get_data_loader()
     for index, data in enumerate(data_loader):
         if index >= data_size:
@@ -483,20 +630,14 @@ def get_imagenet_dataset(
         feature, target = data
         inputs.append((feature,))
         targets.append(target)
-        input_list += f"input_{index}_0.raw\n"
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffle=True):
-    import random
-
-    import transformers
-
-    from torch.utils.data import Dataset
 
     def get_data_loader():
-        class MaskedSentencesDataset(Dataset):
+        class MaskedSentencesDataset(torch.utils.data.Dataset):
             def __init__(self, dataset_path, tokenizer, data_size) -> None:
                 self.data_size = data_size
                 self.dataset = self._get_val_dataset(dataset_path, data_size, tokenizer)
@@ -530,10 +671,9 @@ def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffl
         )
 
     # prepare input data
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     data_loader = get_data_loader()
-    for _, data in enumerate(data_loader):
-        index = len(inputs)
+    for data in data_loader:
         if len(inputs) >= data_size:
             break
         input_ids = data[0]
@@ -545,9 +685,109 @@ def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffl
             continue
         inputs.append((input_ids, attention_mask))
         targets.append(target)
-        input_list += f"input_{index}_0.raw input_{index}_1.raw\n"
 
-    return inputs, targets, input_list
+    return inputs, targets
+
+
+def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
+    dataset_path,
+    tokenizer,
+    data_size,
+    max_hidden_seq_length=384,
+    shuffle=True,
+):
+
+    def get_data_loader(max_hidden_seq_length):
+        class SquadSeq2SeqDataset(torch.utils.data.Dataset):
+            def __init__(
+                self,
+                dataset_path,
+                tokenizer,
+                data_size,
+                max_hidden_seq_length,
+            ):
+                self.max_hidden_seq_length = max_hidden_seq_length
+                self.tokenizer = tokenizer
+                self.samples = self._load_and_process(dataset_path, data_size)
+
+            def _load_and_process(self, path, max_samples):
+                with open(path, "r", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    rows = list(reader)
+                if shuffle:
+                    random.shuffle(rows)
+                samples = []
+                for row in rows:
+                    question = row["question"].strip()
+                    context = row["context"].strip()
+                    answer = row["answer"].strip()
+                    if not question or not context or not answer:
+                        continue
+                    input_text = f"question: {question} context: {context}"
+                    target_text = answer
+                    samples.append((input_text, target_text))
+                    if len(samples) >= max_samples:
+                        break
+                return samples
+
+            def __len__(self):
+                return len(self.samples)
+
+            def __getitem__(self, idx):
+                input_text, target_text = self.samples[idx]
+                model_input = tokenizer(
+                    input_text,
+                    truncation=True,
+                    padding="max_length",
+                    max_length=self.max_hidden_seq_length,
+                    return_tensors="pt",
+                )
+
+                label = tokenizer(
+                    target_text,
+                    truncation=True,
+                    padding="max_length",
+                    max_length=64,
+                    return_tensors="pt",
+                )
+                return {
+                    "input_ids": model_input["input_ids"].squeeze(0),
+                    "attention_mask": model_input["attention_mask"].squeeze(0),
+                    "decoder_input_ids": torch.tensor([0], dtype=torch.long),
+                    "labels": label["input_ids"].squeeze(0),
+                }
+
+        dataset = SquadSeq2SeqDataset(
+            dataset_path, tokenizer, data_size, max_hidden_seq_length
+        )
+        collator = transformers.DataCollatorForSeq2Seq(tokenizer)
+        return torch.utils.data.DataLoader(
+            dataset, batch_size=1, shuffle=shuffle, collate_fn=collator
+        )
+
+    inputs, targets = [], []
+    data_loader = get_data_loader(max_hidden_seq_length)
+    for batch in data_loader:
+        if len(inputs) >= data_size:
+            break
+        input_ids = batch["input_ids"]
+        attention_mask = batch["attention_mask"]
+        decoder_input_ids = batch["decoder_input_ids"]
+        labels = batch["labels"][0]
+
+        if (labels != -100).sum().item() == 0:
+            continue
+
+        inputs.append(
+            (
+                input_ids.to(torch.long),
+                attention_mask.to(torch.long),
+                decoder_input_ids,
+            )
+        )
+        targets.append(labels)
+
+    return inputs, targets
 
 
 def setup_common_args_and_variables():
@@ -601,7 +841,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-S",
         "--skip_delegate_node_ids",
-        help="If specified, skip delegation for the specified node based on node ids. Node ids should be seperated by comma. e.g., aten_relu_default_10,aten_relu_default_2",
+        help="If specified, skip delegation for the specified node based on node ids. Node ids should be separated by comma. e.g., aten_relu_default_10,aten_relu_default_2",
         default=None,
         type=str,
     )
@@ -609,7 +849,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-f",
         "--skip_delegate_node_ops",
-        help="If specified, skip delegation for the specified op. Node ops should be seperated by comma. e.g., aten.add.Tensor,aten.relu.default",
+        help="If specified, skip delegation for the specified op. Node ops should be separated by comma. e.g., aten.add.Tensor,aten.relu.default",
         default=None,
         type=str,
     )
@@ -644,6 +884,7 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
+        "-D",
         "--dump_intermediate_outputs",
         help="If specified, enable dump intermediate outputs",
         action="store_true",
@@ -664,11 +905,49 @@ def setup_common_args_and_variables():
         default=False,
     )
 
+    parser.add_argument(
+        "--seed",
+        help="Set the seed for generating random numbers in both torch and random.",
+        type=int,
+    )
+
+    parser.add_argument(
+        "-t",
+        "--target",
+        help="Target platform for deployment",
+        choices=[
+            "aarch64-android",
+            "aarch64-oe-linux-gcc9.3",
+            "aarch64-oe-linux-gcc11.2",
+        ],
+        default="aarch64-android",
+        type=str,
+    )
+
+    parser.add_argument(
+        "--pre_gen_pte",
+        help="Run the pre-generated pte in the given directory.",
+        type=str,
+    )
+
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
     if "QNN_SDK_ROOT" not in os.environ:
         raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
+
+    def validate(args):
+        if not args.compile_only and args.device is None:
+            raise RuntimeError(
+                "device serial is required if not compile only. "
+                "Please specify a device serial by -s/--device argument."
+            )
+        if args.seed:
+            torch.manual_seed(args.seed)
+            np.random.seed(args.seed)
+            random.seed(args.seed)
+
+    parser.set_defaults(validate=validate)
 
     return parser
 
@@ -688,25 +967,39 @@ def parse_skip_delegation_node(args):
     return skip_node_id_set, skip_node_op_set
 
 
-def generate_inputs(dest_path: str, file_name: str, inputs=None, input_list=None):
+def generate_inputs(dest_path: str, file_name: str, inputs=None):
     input_list_file = None
     input_files = []
 
-    # Prepare input list
-    if input_list is not None:
-        input_list_file = f"{dest_path}/{file_name}"
-        with open(input_list_file, "w") as f:
-            f.write(input_list)
-            f.flush()
+    def prepare_input_file(tensor, fd, index, sub_index):
+        # transform torch.Tensor to raw file
+        input_file_name = f"input_{index}_{sub_index}.raw"
+        input_file_path = f"{dest_path}/{input_file_name}"
+        if not isinstance(tensor, torch.Tensor):
+            tensor = torch.tensor(tensor)
+        tensor.detach().numpy().tofile(input_file_path)
+        input_files.append(input_file_path)
+        # prepare input_list
+        if sub_index > 0:
+            fd.write(" ")
+        fd.write(input_file_name)
 
     # Prepare input data
     if inputs is not None:
-        for idx, data in enumerate(inputs):
-            for i, d in enumerate(data):
-                file_name = f"{dest_path}/input_{idx}_{i}.raw"
-                if not isinstance(d, torch.Tensor):
-                    d = torch.tensor(d)
-                d.detach().numpy().tofile(file_name)
-                input_files.append(file_name)
+        input_list_file = f"{dest_path}/{file_name}"
+
+        with open(input_list_file, "w") as f:
+            for idx, data in enumerate(inputs):
+                sub_index = 0
+                for d in data:
+                    if isinstance(d, (list, tuple)):
+                        for sub_d in d:
+                            prepare_input_file(sub_d, f, idx, sub_index)
+                            sub_index += 1
+                    else:
+                        prepare_input_file(d, f, idx, sub_index)
+                        sub_index += 1
+
+                f.write("\n")
 
     return input_list_file, input_files

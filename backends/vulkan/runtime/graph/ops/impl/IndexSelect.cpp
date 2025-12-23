@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
@@ -18,12 +19,13 @@
 namespace vkcompute {
 
 void check_index_select_args(
-    const api::vTensor& in,
-    const api::vTensor& idx,
-    const api::vTensor& out) {
-  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
-  VK_CHECK_COND(check_packed_dim_is(idx, WHCN::kChannelsDim));
-  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef idx,
+    const ValueRef out) {
+  VK_CHECK_COND(graph.packed_dim_of(in) == WHCN::kChannelsDim);
+  VK_CHECK_COND(graph.packed_dim_of(idx) == WHCN::kChannelsDim);
+  VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kChannelsDim);
 }
 
 void add_index_select_channel_node(
@@ -31,23 +33,19 @@ void add_index_select_channel_node(
     ValueRef in,
     ValueRef idx,
     ValueRef out) {
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_idx = graph.get_tensor(idx);
-  vTensorPtr t_out = graph.get_tensor(out);
-
-  check_index_select_args(*t_in, *t_idx, *t_out);
+  check_index_select_args(graph, in, idx, out);
 
   std::string kernel_name = "index_select_channel";
   kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       {{out, vkapi::kWrite}, {{in, idx}, vkapi::kRead}},
-      {t_out->sizes_ubo(), t_in->sizes_ubo()},
+      {graph.sizes_ubo(out), graph.sizes_ubo(in)},
       // Push Constants
       {},
       // Specialization Constants
@@ -64,14 +62,16 @@ struct IndexSelectParams final {
 };
 
 IndexSelectParams create_index_select_params(
+    ComputeGraph& graph,
     const int64_t dim_idx,
-    const api::vTensor& in) {
+    const ValueRef in) {
   if (dim_idx == kWidth4D) {
     return {0, 1};
   } else if (dim_idx == kHeight4D) {
     return {1, 1};
   } else if (dim_idx == kBatch4D) {
-    int64_t n_channels = dim_at(in.sizes(), kChannel4D);
+    const std::vector<int64_t> in_sizes = graph.sizes_of(in);
+    int64_t n_channels = dim_at(in_sizes, kChannel4D);
     int64_t stride = utils::div_up_4(n_channels);
     return {2, static_cast<int32_t>(stride)};
   } else {
@@ -85,25 +85,21 @@ void add_index_select_node(
     const int64_t dim_idx,
     ValueRef idx,
     ValueRef out) {
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_idx = graph.get_tensor(idx);
-  vTensorPtr t_out = graph.get_tensor(out);
+  check_index_select_args(graph, in, idx, out);
 
-  check_index_select_args(*t_in, *t_idx, *t_out);
-
-  IndexSelectParams params = create_index_select_params(dim_idx, *t_in);
+  IndexSelectParams params = create_index_select_params(graph, dim_idx, in);
 
   std::string kernel_name = "index_select";
   kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       {{out, vkapi::kWrite}, {{in, idx}, vkapi::kRead}},
-      {t_out->sizes_ubo(), graph.create_params_buffer(params)},
+      {graph.sizes_ubo(out), graph.create_params_buffer(params)},
       // Push Constants
       {},
       // Specialization Constants
@@ -115,10 +111,12 @@ void add_index_select_node(
 }
 
 int64_t get_dim_idx(ComputeGraph& graph, ValueRef in, ValueRef dim_ref) {
-  vTensorPtr t_in = graph.get_tensor(in);
   int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
-  dim = normalize(dim, t_in->dim());
-  return normalize_to_dim_index(*t_in, dim);
+  const int64_t ndim = graph.dim_of(in);
+  dim = normalize(dim, ndim);
+
+  // Convert to DimIndex - this replicates normalize_to_dim_index logic
+  return dim < 0 ? dim : dim - ndim;
 }
 
 void index_select(ComputeGraph& graph, const std::vector<ValueRef>& args) {

@@ -7,6 +7,7 @@
  * @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
  */
 
+#include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -18,13 +19,14 @@
 using namespace ::testing;
 using executorch::extension::Module;
 using executorch::extension::TensorPtr;
+using executorch::extension::llm::IOManager;
 using executorch::extension::llm::TextDecoderRunner;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::Result;
 using executorch::runtime::testing::TensorFactory;
 
-// Mock Module class for testing
+namespace {
 class MockModule : public Module {
  public:
   MockModule() : Module("") {}
@@ -34,11 +36,15 @@ class TextDecoderRunnerTest : public Test {
  protected:
   void SetUp() override {
     mock_module_ = std::make_unique<MockModule>();
-    runner_ = std::make_unique<TextDecoderRunner>(mock_module_.get());
+    io_manager_ =
+        std::make_unique<executorch::extension::llm::IOManager>(*mock_module_);
+    runner_ = std::make_unique<TextDecoderRunner>(
+        mock_module_.get(), io_manager_.get());
   }
 
   std::unique_ptr<MockModule> mock_module_;
   std::unique_ptr<TextDecoderRunner> runner_;
+  std::unique_ptr<IOManager> io_manager_;
 };
 
 // Test logits_to_token() method with Float tensor
@@ -150,15 +156,17 @@ TEST_F(TextDecoderRunnerTest, StepWithAllModels) {
 
     // Load the model
     auto module = std::make_unique<Module>(model_path);
+
     auto load_result = module->load();
     if (load_result != Error::Ok) {
       ADD_FAILURE() << "Failed to load model " << model_name << " from "
                     << model_path << " with error: " << (int)load_result;
       continue;
     }
-
+    auto io_manager =
+        std::make_unique<executorch::extension::llm::IOManager>(*module);
     // Create TextDecoderRunner
-    TextDecoderRunner runner(module.get());
+    TextDecoderRunner runner(module.get(), io_manager.get());
     auto runner_load_result = runner.load();
     ASSERT_EQ(runner_load_result, Error::Ok)
         << "Failed to load runner for " << model_name;
@@ -197,3 +205,5 @@ TEST_F(TextDecoderRunnerTest, StepWithAllModels) {
   ASSERT_TRUE(any_model_tested)
       << "No models were tested despite environment variables being set";
 }
+
+} // namespace

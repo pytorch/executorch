@@ -19,7 +19,7 @@ namespace ET_RUNTIME_NAMESPACE {
 /**
  * Describes the layout of a tensor.
  */
-class ET_EXPERIMENTAL TensorLayout final {
+class TensorLayout final {
  public:
   TensorLayout() = delete;
 

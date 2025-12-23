@@ -13,19 +13,42 @@ from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_conv_pass import (
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
     FuseBatchNormWithLinearPass,
 )
+from executorch.backends.nxp.aten_passes.fuse_linear_and_add_pass import (
+    FuseLinearAndAddPass,
+)
+from executorch.backends.nxp.aten_passes.move_activation_before_concat import (
+    MoveActivationBeforeConcat,
+)
+from executorch.backends.nxp.aten_passes.remove_nodes_with_known_outputs import (
+    RemoveNodesWithKnownOutputs,
+)
+from executorch.backends.nxp.aten_passes.split_group_convolution import (
+    SplitGroupConvolution,
+)
+from executorch.backends.nxp.aten_passes.split_gru_based_on_num_layers import (
+    SplitGRUBasedOnNumLayers,
+)
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.exir.pass_manager import PassManager
 from torch import nn
 from torch.fx.passes.infra.pass_base import PassResult
 
-PassType = list[type[Callable[[torch.fx.GraphModule], PassResult]]]
+PassType = type[Callable[[torch.fx.GraphModule], PassResult]]
 
 
 class NeutronAtenPassManager(PassManager):
 
-    def __init__(self, passes: list[PassType] = None):
+    def __init__(
+        self, neutron_target_spec: NeutronTargetSpec, passes: list[PassType] = None
+    ):
         passes: list[PassType] = passes or [
             FuseBatchNormWithConvPass(),
             FuseBatchNormWithLinearPass(),
+            SplitGroupConvolution(),
+            SplitGRUBasedOnNumLayers(),
+            RemoveNodesWithKnownOutputs(),
+            FuseLinearAndAddPass(),
+            MoveActivationBeforeConcat(neutron_target_spec),
         ]
 
         super().__init__(passes)

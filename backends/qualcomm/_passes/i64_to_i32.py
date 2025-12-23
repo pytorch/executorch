@@ -26,6 +26,7 @@ class I64toI32(ExportPass):
     """
 
     I64_OPS = {
+        exir_ops.edge.aten.argmax.default,
         exir_ops.edge.aten.argmin.default,
         exir_ops.edge.aten.arange.start_step,
         exir_ops.edge.aten.cumsum.default,

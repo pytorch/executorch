@@ -80,15 +80,27 @@ TensorPtr make_tensor_ptr(
     }
   }
   std::vector<executorch::aten::StridesType> computed_strides(dim);
+
   auto error = runtime::dim_order_to_stride(
       sizes.data(), dim_order.data(), dim, computed_strides.data());
   ET_CHECK_MSG(error == runtime::Error::Ok, "Failed to compute strides.");
 
   if (!strides.empty()) {
-    ET_CHECK_MSG(computed_strides == strides, "Invalid strides provided.");
-  } else {
-    strides = std::move(computed_strides);
+    for (size_t i = 0; i < dim; i++) {
+      ET_CHECK_MSG(
+          strides[i] == computed_strides[i] || sizes[i] == 1,
+          "invalid strides for dim %zu: %" ET_PRI_SIZES_AND_STRIDES
+          "!= %" ET_PRI_SIZES_AND_STRIDES
+          " while its size is %" ET_PRI_SIZES_AND_STRIDES " != 1",
+          i,
+          strides[i],
+          computed_strides[i],
+          sizes[i]);
+    }
   }
+
+  strides = std::move(computed_strides);
+
 #ifndef USE_ATEN_LIB
   executorch::aten::TensorImpl tensor_impl(
       type,
@@ -136,10 +148,10 @@ TensorPtr make_tensor_ptr(
     executorch::aten::ScalarType type,
     executorch::aten::TensorShapeDynamism dynamism) {
   ET_CHECK_MSG(
-      data.size() >=
+      data.size() ==
           executorch::aten::compute_numel(sizes.data(), sizes.size()) *
               executorch::aten::elementSize(type),
-      "Data size is smaller than required by sizes and scalar type.");
+      "Data size does not match tensor size.");
   auto data_ptr = data.data();
   return make_tensor_ptr(
       std::move(sizes),
@@ -152,7 +164,9 @@ TensorPtr make_tensor_ptr(
       [data = std::move(data)](void*) {});
 }
 
-TensorPtr clone_tensor_ptr(const executorch::aten::Tensor& tensor) {
+TensorPtr clone_tensor_ptr(
+    const executorch::aten::Tensor& tensor,
+    executorch::aten::ScalarType type) {
   std::vector<executorch::aten::SizesType> sizes(
       tensor.sizes().begin(), tensor.sizes().end());
   std::vector<executorch::aten::DimOrderType> dim_order{
@@ -166,23 +180,63 @@ TensorPtr clone_tensor_ptr(const executorch::aten::Tensor& tensor) {
 #ifndef USE_ATEN_LIB
   dynamism = tensor.shape_dynamism();
 #endif // USE_ATEN_LIB
-  return tensor.const_data_ptr()
-      ? make_tensor_ptr(
-            std::move(sizes),
-            std::vector<uint8_t>(
-                (uint8_t*)tensor.const_data_ptr(),
-                (uint8_t*)tensor.const_data_ptr() + tensor.nbytes()),
-            std::move(dim_order),
-            std::move(strides),
-            tensor.scalar_type(),
-            dynamism)
-      : make_tensor_ptr(
-            std::move(sizes),
-            nullptr,
-            std::move(dim_order),
-            std::move(strides),
-            tensor.scalar_type(),
-            dynamism);
+  const auto* tensor_data = tensor.const_data_ptr();
+  if (!tensor_data) {
+    return make_tensor_ptr(
+        std::move(sizes),
+        nullptr,
+        std::move(dim_order),
+        std::move(strides),
+        type,
+        dynamism);
+  }
+  const auto tensor_type = tensor.scalar_type();
+  if (tensor_type == type) {
+    return make_tensor_ptr(
+        std::move(sizes),
+        std::vector<uint8_t>(
+            (uint8_t*)tensor_data, (uint8_t*)tensor_data + tensor.nbytes()),
+        std::move(dim_order),
+        std::move(strides),
+        tensor_type,
+        dynamism);
+  }
+  ET_CHECK_MSG(
+      runtime::canCast(tensor_type, type),
+      "Cannot cast tensor type to desired type.");
+  const auto tensor_numel = static_cast<size_t>(tensor.numel());
+  std::vector<uint8_t> data(tensor_numel * aten::elementSize(type));
+
+  // Create a minimal context for error handling in ET_SWITCH
+  struct {
+    [[noreturn]] void fail(torch::executor::Error /* error */) {
+      ET_CHECK_MSG(false, "Unsupported dtype in clone_tensor_ptr");
+    }
+  } ctx;
+
+  ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
+      tensor_type, ctx, "clone_tensor_ptr_from", CTYPE_FROM, [&] {
+        const CTYPE_FROM* tensor_data_ptr =
+            static_cast<const CTYPE_FROM*>(tensor_data);
+        ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
+            type, ctx, "clone_tensor_ptr_to", CTYPE_TO, [&] {
+              CTYPE_TO* data_ptr = reinterpret_cast<CTYPE_TO*>(data.data());
+              std::transform(
+                  tensor_data_ptr,
+                  tensor_data_ptr + tensor_numel,
+                  data_ptr,
+                  [](const CTYPE_FROM& val) {
+                    return static_cast<CTYPE_TO>(val);
+                  });
+            });
+      });
+  return make_tensor_ptr(
+      std::move(sizes),
+      std::move(data),
+      std::move(dim_order),
+      std::move(strides),
+      type,
+      dynamism);
 }
 
 runtime::Error resize_tensor_ptr(

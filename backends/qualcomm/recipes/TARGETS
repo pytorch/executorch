@@ -1,0 +1,54 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "qnn_recipes",
+    srcs = [
+        "__init__.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//executorch/export:recipe_registry",
+        ":qnn_recipe_provider",
+        ":qnn_recipe_types",
+    ],
+)
+
+runtime.python_library(
+    name = "qnn_recipe_provider",
+    srcs = [
+        "qnn_recipe_provider.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/export:lib",
+        "//executorch/runtime:runtime",  # @manual
+        "//executorch/backends/qualcomm/partition:partition",
+        "//executorch/backends/qualcomm/serialization:serialization",
+        "//executorch/backends/qualcomm/utils:utils",
+        "//executorch/backends/qualcomm/_passes:passes",
+        ":qnn_recipe_types",
+    ],
+)
+
+runtime.python_library(
+    name = "qnn_recipe_types",
+    srcs = [
+        "qnn_recipe_types.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//executorch/export:lib",
+    ],
+)

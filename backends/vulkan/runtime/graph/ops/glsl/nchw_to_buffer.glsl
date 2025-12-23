@@ -4,46 +4,44 @@
 
 #define T ${buffer_scalar_type(DTYPE)}
 
-#include "indexing_utils.h"
-
 ${define_required_extensions(DTYPE)}
+${define_required_extensions(BUF_DTYPE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "r", "nchw_in", DTYPE, STORAGE)}
+#include "indexing.glslh"
 
-$if USE_PUSH_CONST:
-  layout(push_constant) uniform restrict Block {
-    ivec4 out_sizes;
-    ivec4 out_strides;
-    int numel;
-  };
-$else:
-  ${layout_declare_ubo(B, "ivec4", "out_sizes")}
-  ${layout_declare_ubo(B, "ivec4", "out_strides")}
-  ${layout_declare_ubo(B, "int", "numel")}
+${layout_declare_tensor(B, "w", "t_outp", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "nchw_in", BUF_DTYPE, STORAGE)}
+
+${layout_declare_ubo(B, "BufferMetadata", "outp")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_DIM_ORDER")}
-const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
+// This constant is unused in this shader but is kept so that the signature is
+// consistent with nchw_to_image.
+${layout_declare_spec_const(C, "int", "unused", "0")}
 ${layout_declare_spec_const(C, "int", "transpose_hw", "0")}
 
 void main() {
-  int out_bufi = int(gl_GlobalInvocationID.x);
-  if (out_bufi >= numel) {
+  const uint outp_bufi = int(gl_GlobalInvocationID.x);
+  if (outp_bufi >= numel(outp)) {
     return;
   }
 
-  ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_dim_order);
+  TensorIndex outp_tidx = linear_idx_to_tensor_idx(outp, outp_bufi);
+  uint nchwi;
 
-  ivec4 sizes = out_sizes;
   if (transpose_hw == 1) {
-    sizes.xy = sizes.yx;
-    out_tidx.xy = out_tidx.yx;
+    BufferMetadata transposed_meta = outp;
+    transposed_meta.sizes[0].xy = transposed_meta.sizes[0].yx;
+    outp_tidx.data[0].xy = outp_tidx.data[0].yx;
+    nchwi = tensor_idx_to_contiguous_idx(transposed_meta, outp_tidx);
   }
-  const int in_nchwi = tidx_to_nchwi(out_tidx, sizes);
+  // Normal case
+  else {
+    nchwi = tensor_idx_to_contiguous_idx(outp, outp_tidx);
+  }
 
-  t_out[out_bufi] = nchw_in[in_nchwi];
+  t_outp[outp_bufi] = T(nchw_in[nchwi]);
 }

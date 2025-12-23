@@ -23,6 +23,7 @@ using executorch::runtime::Kernel;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::register_kernels;
 using executorch::runtime::registry_has_op_function;
+using executorch::runtime::Span;
 
 class OperatorRegistryMaxKernelNumTest : public ::testing::Test {
  public:
@@ -33,7 +34,8 @@ class OperatorRegistryMaxKernelNumTest : public ::testing::Test {
 
 // Register one kernel when max_kernel_num=1; success
 TEST_F(OperatorRegistryMaxKernelNumTest, RegisterOneOp) {
-  Kernel kernels[] = {Kernel("foo", [](KernelRuntimeContext&, EValue**) {})};
+  Kernel kernels[] = {
+      Kernel("foo", [](KernelRuntimeContext&, Span<EValue*>) {})};
   auto s1 = register_kernels({kernels});
   EXPECT_EQ(s1, Error::Ok);
   EXPECT_FALSE(registry_has_op_function("fpp"));
@@ -43,8 +45,8 @@ TEST_F(OperatorRegistryMaxKernelNumTest, RegisterOneOp) {
 // Register two kernels when max_kernel_num=1; fail
 TEST_F(OperatorRegistryMaxKernelNumTest, RegisterTwoOpsFail) {
   Kernel kernels[] = {
-      Kernel("foo1", [](KernelRuntimeContext&, EValue**) {}),
-      Kernel("foo2", [](KernelRuntimeContext&, EValue**) {})};
+      Kernel("foo1", [](KernelRuntimeContext&, Span<EValue*>) {}),
+      Kernel("foo2", [](KernelRuntimeContext&, Span<EValue*>) {})};
   ET_EXPECT_DEATH(
       { (void)register_kernels({kernels}); },
       "The total number of kernels to be registered is larger than the limit 1");

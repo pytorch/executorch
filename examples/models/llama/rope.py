@@ -9,7 +9,7 @@
 
 import math
 from functools import partial
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import torch
 from executorch.examples.models.llama.model_args import ModelArgs
@@ -47,9 +47,10 @@ def precompute_freqs_cis(
     use_scaled: bool = False,
     scale_factor: Optional[int] = None,
     high_freq_factor: int = 4,
+    device: Union[str, torch.device] = "cpu",
 ):
     freqs = 1.0 / (
-        theta ** (torch.arange(0, dim, 2, device="cpu")[: (dim // 2)].float() / dim)
+        theta ** (torch.arange(0, dim, 2, device=device)[: (dim // 2)].float() / dim)
     )
     t = torch.arange(end, device=freqs.device)  # pyre-ignore
     if use_scaled:
@@ -137,7 +138,11 @@ class RotaryEmbedding(torch.nn.Module):
 # and https://github.com/huggingface/transformers/blob/main/src/transformers/modeling_rope_utils.py#L242.
 # Current only support non-long rope.
 def hf_precompute_freqs_cis(
-    dim: int, end: int, theta: float, partial_rotary_factor: float = 1.0
+    dim: int,
+    end: int,
+    theta: float,
+    partial_rotary_factor: float = 1.0,
+    device: Union[str, torch.device] = "cpu",
 ):
     # Partial rotary embeddings.
     dim = int(dim * partial_rotary_factor)
@@ -145,7 +150,7 @@ def hf_precompute_freqs_cis(
     # Short factor scaling.
     freqs = 1.0 / (
         theta
-        ** (torch.arange(0, dim, 2, device="cpu", dtype=torch.int64).float() / dim)
+        ** (torch.arange(0, dim, 2, device=device, dtype=torch.int64).float() / dim)
     )
     # TODO: support long factor scaling.
 
@@ -235,6 +240,7 @@ class Rope(torch.nn.Module):
             self.precompute_freqs_cis = partial(
                 hf_precompute_freqs_cis,
                 partial_rotary_factor=self.params.partial_rotary_factor,
+                device=getattr(self.params, "device", "cpu"),
             )
             self.apply_rotary_emb = hf_apply_rotary_emb
         else:
@@ -243,6 +249,7 @@ class Rope(torch.nn.Module):
                 use_scaled=self.params.use_scaled_rope,
                 scale_factor=self.params.rope_scale_factor,
                 high_freq_factor=self.params.high_freq_factor,
+                device=getattr(self.params, "device", "cpu"),
             )
             self.apply_rotary_emb = RotaryEmbedding()
 
@@ -306,3 +313,15 @@ class Rope(torch.nn.Module):
             freqs_cos = self.freqs_cos[:seq_len]
             freqs_sin = self.freqs_sin[:seq_len]
         return freqs_cos, freqs_sin
+
+    def get_freqs_using_indices(self, indices: torch.Tensor):
+        """
+        Get the precomputed frequencies for given input indices.
+
+        Args:
+            indices (torch.Tensor): The input indices tensor.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: The precomputed frequencies for given input indices.
+        """
+        return self.freqs_cos[indices], self.freqs_sin[indices]

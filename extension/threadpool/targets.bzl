@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "THREADPOOL_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -8,11 +9,9 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    _THREADPOOL_SRCS = [
-        "thread_parallel.cpp",
-        "threadpool.cpp",
-        "threadpool_guard.cpp",
-    ] + (["fb/threadpool_use_n_threads.cpp"] if not runtime.is_oss else [])
+    _THREADPOOL_SRCS = THREADPOOL_SRCS + (
+        ["fb/threadpool_use_n_threads.cpp"] if not runtime.is_oss else []
+    )
 
     _THREADPOOL_HEADERS = [
         "threadpool.h",
@@ -23,6 +22,7 @@ def define_common_targets():
         name = "threadpool_lib",
         srcs = _THREADPOOL_SRCS,
         deps = [
+            ":cpuinfo_utils",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],

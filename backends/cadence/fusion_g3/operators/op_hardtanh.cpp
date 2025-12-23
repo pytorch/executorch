@@ -11,7 +11,7 @@
 
 #include <xa_nnlib_kernels_api.h>
 
-#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
+#include <executorch/backends/cadence/common/xt_macros.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/math_util.h>
@@ -25,7 +25,6 @@ using ::executorch::runtime::KernelRuntimeContext;
 using ::torch::executor::native::utils::extract_scalar;
 using ::torch::executor::native::utils::get_scalar_dtype;
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -113,4 +112,3 @@ Tensor& hardtanh_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

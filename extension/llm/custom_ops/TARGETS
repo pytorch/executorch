@@ -29,6 +29,7 @@ runtime.python_test(
     ],
     preload_deps = [
         ":custom_ops_aot_lib",
+        ":custom_ops_aot_py",
     ],
     deps = [
         "//caffe2:torch",
@@ -59,5 +60,6 @@ runtime.python_test(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/extension/pybindings:portable_lib",
     ],
 )

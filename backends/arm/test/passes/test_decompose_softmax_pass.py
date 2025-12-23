@@ -22,7 +22,7 @@ class Softmax(torch.nn.Module):
         super(Softmax, self).__init__()
         self.softmax = torch.nn.Softmax(dim=1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.softmax(x)
         return x
 
@@ -39,7 +39,7 @@ class SoftmaxLog(torch.nn.Module):
         super(SoftmaxLog, self).__init__()
         self.softmax = torch.nn.LogSoftmax(dim=1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.softmax(x)
         return x
 
@@ -47,7 +47,7 @@ class SoftmaxLog(torch.nn.Module):
         return (torch.rand(2, 3),)
 
 
-def test_softmax_basic_tosa_MI():
+def test_decompose_softmax_tosa_FP_basic():
     module = Softmax()
     pipeline = PassPipeline[input_t](
         module,
@@ -74,7 +74,7 @@ def test_softmax_basic_tosa_MI():
     pipeline.run()
 
 
-def test_softmax_log_tosa_MI():
+def test_decompose_softmax_tosa_FP_log():
     module = SoftmaxLog()
     pipeline = PassPipeline[input_t](
         module,

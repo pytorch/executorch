@@ -6,13 +6,21 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
-
+#include <memory>
 #include "QnnInterface.h"
 namespace executorch {
 namespace backends {
 namespace qnn {
 
 using executorch::runtime::Error;
+
+struct DlCloser {
+  int operator()(void* handle) {
+    if (handle == nullptr)
+      return 0;
+    return dlclose(handle);
+  }
+};
 
 Error QnnImplementation::InitBackend(
     void* const lib_handle,
@@ -34,51 +42,39 @@ Error QnnImplementation::InitBackend(
   return Error::Ok;
 }
 
-// instantiate static members
-// NOLINTNEXTLINE(fuchsia-statically-constructed-objects)
-std::unordered_map<std::string, QnnImplementation::BackendIdType>
-    QnnImplementation::lib_path_to_backend_id_;
-// NOLINTNEXTLINE(fuchsia-statically-constructed-objects)
-std::unordered_map<QnnImplementation::BackendIdType, const QnnInterface_t*>
-    QnnImplementation::loaded_backend_;
-// NOLINTNEXTLINE(fuchsia-statically-constructed-objects)
-std::unordered_map<QnnImplementation::BackendIdType, void*>
-    QnnImplementation::loaded_lib_handle_;
-// NOLINTNEXTLINE(fuchsia-statically-constructed-objects)
-std::mutex QnnImplementation::be_init_mutex_;
+QnnImplementation::~QnnImplementation() {
+  Unload();
+}
 
-Error QnnImplementation::StartBackend(
+const QnnInterface_t* QnnImplementation::StartBackend(
     const std::string& lib_path,
     const QnnSaver_Config_t** saver_config) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-  // RTLD_GLOBAL is needed on x86 as HTP op package has a requirement for the
-  // symbols in backend to be visible. Using RTLD_LOCAL on Android to allow full
-  // unloading of HTP backend shared library on dlclose() as RTLD_GLOBAL isn't
-  // letting it happen.
-  void* lib_handle = nullptr;
-#if defined(__ANDROID__)
-  lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
-#else
-  lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
-#endif
+  // If the library is already loaded, return the handle.
+  std::unique_ptr<void, DlCloser> lib_handle(
+      dlopen(lib_path.c_str(), RTLD_NOW | RTLD_NOLOAD));
+  if (!lib_handle) {
+    lib_handle = std::unique_ptr<void, DlCloser>(
+        dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL));
+  }
   if (lib_handle == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Cannot Open QNN library %s, with error: %s",
         lib_path.c_str(),
         dlerror());
-    return Error::Internal;
+    return nullptr;
   }
 
   // load get_provider function
   auto get_providers = loadQnnFunction<QnnInterfaceGetProvidersFn*>(
-      lib_handle, "QnnInterface_getProviders");
+      lib_handle.get(), "QnnInterface_getProviders");
 
   if (get_providers == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "QnnImplementation::Load Cannot load symbol "
         "QnnInterface_getProviders : %s",
         dlerror());
-    return Error::Internal;
+    return nullptr;
   }
 
   // Get QnnInterface Providers
@@ -90,7 +86,7 @@ Error QnnImplementation::StartBackend(
     QNN_EXECUTORCH_LOG_ERROR(
         "Qnn Interface failed to get providers. Error %d",
         QNN_GET_ERROR_CODE(error));
-    return Error::Internal;
+    return nullptr;
   }
 
   if (num_providers != required_num_providers_) {
@@ -99,115 +95,47 @@ Error QnnImplementation::StartBackend(
         "%d instead of required %d",
         num_providers,
         required_num_providers_);
-    return Error::Internal;
+    return nullptr;
   }
-
-  BackendIdType backend_id = provider_list[0]->backendId;
-
-  // store everything
-  lib_path_to_backend_id_[lib_path] = backend_id;
-
-  // we use lib_path as the first unique key.
-  // Users can get wrong like, he or she assigns
-  //   library_path=libQnnHtp_1.so
-  //   library_path=libQnnHtp_2.so
-  // for different QnnBackend instances.
-  // So we warning out here.
-  if (loaded_backend_.count(backend_id) > 0) {
-    QNN_EXECUTORCH_LOG_WARN(
-        "lib_path %s is loaded, but backend %d "
-        "already exists. Overwriting previous loaded backend...",
-        lib_path.c_str(),
-        backend_id);
-  }
-  loaded_backend_[backend_id] = provider_list[0];
-
-  if (loaded_lib_handle_.count(backend_id) > 0) {
-    QNN_EXECUTORCH_LOG_WARN("closing %pK...", loaded_lib_handle_[backend_id]);
-
-    int dlclose_error = dlclose(loaded_lib_handle_[backend_id]);
-    if (dlclose_error != 0) {
-      QNN_EXECUTORCH_LOG_WARN(
-          "Sadly, fail to close %pK with error %s",
-          loaded_lib_handle_[backend_id],
-          dlerror());
-    }
-  }
-  loaded_lib_handle_[backend_id] = lib_handle;
 
   // Saver backend need initialization.
-  Error be_init_st = InitBackend(loaded_lib_handle_[backend_id], saver_config);
+  Error be_init_st = InitBackend(lib_handle.get(), saver_config);
 
   if (be_init_st != Error::Ok) {
-    // backend init fails. clear things
-    lib_path_to_backend_id_.erase(lib_path);
-    loaded_backend_.erase(backend_id);
-
-    int dlclose_error = dlclose(loaded_lib_handle_[backend_id]);
-    if (dlclose_error != 0) {
-      QNN_EXECUTORCH_LOG_WARN(
-          "fail to close %pK after backend-init "
-          "failure, with error %s",
-          loaded_lib_handle_[backend_id],
-          dlerror());
-    }
-
-    loaded_lib_handle_.erase(backend_id);
-    return be_init_st;
+    return nullptr;
   }
 
+  // hold the lib_handle
+  lib_handle_ = lib_handle.release();
+  return provider_list[0];
+}
+
+Error QnnImplementation::Unload() {
+  qnn_interface_.Unload();
+
+  if (lib_handle_ == nullptr) {
+    return Error::Ok;
+  }
+
+  int dlclose_error = dlclose(lib_handle_);
+  if (dlclose_error != 0) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Fail to close QNN backend %s with error %s",
+        lib_path_.c_str(),
+        dlerror());
+    return Error::Internal;
+  }
+  lib_handle_ = nullptr;
   return Error::Ok;
 }
 
-Error QnnImplementation::TerminateAllBackends() {
-  Error ret_status = Error::Ok;
-
-  loaded_backend_.clear();
-
-  for (auto& it : loaded_lib_handle_) {
-    int dlclose_error = dlclose(it.second);
-    if (dlclose_error != 0) {
-      QNN_EXECUTORCH_LOG_ERROR(
-          "Fail to close QNN backend %d with error %s", it.first, dlerror());
-      ret_status = Error::Internal;
-    }
-  }
-  loaded_lib_handle_.clear();
-  lib_path_to_backend_id_.clear();
-
-  return ret_status;
-}
-
 Error QnnImplementation::Load(const QnnSaver_Config_t** saver_config) {
-  BackendIdType backend_id = QNN_BACKEND_ID_NULL;
-  {
-    const std::lock_guard<std::mutex> lock(be_init_mutex_);
-
-    if (lib_path_to_backend_id_.count(lib_path_) == 0) {
-      Error st = StartBackend(lib_path_, saver_config);
-      ET_CHECK_OR_RETURN_ERROR(
-          st == Error::Ok, Internal, "Fail to start backend");
-    }
-
-    // Get backend ID
-    backend_id = lib_path_to_backend_id_[lib_path_];
-
-    // really don't expect.
-    if (loaded_backend_.count(backend_id) == 0 ||
-        loaded_lib_handle_.count(backend_id) == 0) {
-      QNN_EXECUTORCH_LOG_ERROR(
-          "library %s is loaded but "
-          "loaded backend count=%zu, "
-          "loaded lib_handle count=%zu",
-          lib_path_.c_str(),
-          loaded_backend_.count(backend_id),
-          loaded_lib_handle_.count(backend_id));
-      return Error::Internal;
-    }
-  } // be_init_mutex_ release.
+  const QnnInterface_t* p_qnn_intf = StartBackend(lib_path_, saver_config);
+  ET_CHECK_OR_RETURN_ERROR(
+      p_qnn_intf != nullptr, Internal, "Fail to start backend");
 
   // Connect QnnInterface
-  qnn_interface_.SetQnnInterface(loaded_backend_[backend_id]);
+  qnn_interface_.SetQnnInterface(p_qnn_intf);
 
   return Error::Ok;
 }

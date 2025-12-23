@@ -12,7 +12,7 @@ from typing import List, Optional
 
 import torch
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
+    get_symmetric_quantization_config as get_symmetric_quantization_config_xnnpack,
     XNNPACKQuantizer,
 )
 
@@ -108,7 +108,7 @@ def get_pt2e_quantizers(
                     "Need to specify shared library path to register quantized ops (and their out variants) into EXIR.\n"
                     "Follow the following steps to build the needed lib via cmake.\n"
                     "Then from root executorch dir do the following:\n"
-                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON ..) && cmake --build . -j16\n"
+                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON ..) && cmake --build . -j16\n"
                     'To find the location of the lib: find cmake-out -name "libquantized_ops_aot_lib*"\n'
                     "Then specify the said library via -s <path to libquantized_ops_aot_lib.so\n"
                 )
@@ -127,11 +127,11 @@ def get_pt2e_quantizers(
                 "At the moment only per channel weight quantization is supported."
             )
         if quant_params.quantize_linear.is_qc4:
-            operator_config_dynamic = get_symmetric_quantization_config(
+            operator_config_dynamic = get_symmetric_quantization_config_xnnpack(
                 is_per_channel=True, is_dynamic=True, weight_qmin=-8, weight_qmax=7
             )
         else:
-            operator_config_dynamic = get_symmetric_quantization_config(
+            operator_config_dynamic = get_symmetric_quantization_config_xnnpack(
                 is_per_channel=True, is_dynamic=True
             )
         dynamic_quantizer.set_global(operator_config_dynamic)
@@ -192,7 +192,7 @@ def get_qnn_quantizer(
             act_observer=MinMaxObserver,
         )
     elif quant_config == "16a4w":
-        quant_dtype = QuantDtype.use_16a16w  # pyre-fixme[16]
+        quant_dtype = QuantDtype.use_16a4w  # pyre-fixme[16]
         qnn_quantizer.set_default_quant_config(
             quant_dtype,
             is_qat=is_qat,
@@ -213,6 +213,47 @@ def get_qnn_quantizer(
     qnn_quantizer.add_custom_quant_annotations(custom_annotations)
 
     return qnn_quantizer, quant_dtype
+
+
+def get_ov_quantizer(
+    pt2e_quantize: str,
+    group_size: int = 128,
+):
+    try:
+        from executorch.backends.openvino.quantizer import (
+            OpenVINOQuantizer,
+            QuantizationMode,
+        )
+    except ImportError:
+        raise ImportError("Please install nncf via backends/openvino/requirements.txt")
+
+    backend, quant_config = pt2e_quantize.split("_")
+    assert (
+        backend == "openvino"
+    ), f"The quantization config is for backend {backend} instead of openvino."
+    assert (
+        group_size
+    ), "Group Size None is Not Supported. It should be set to -1 for per-channel."
+
+    quantization_params = {}
+
+    if quant_config == "4wo":
+        quantization_params["mode"] = QuantizationMode.INT4WO_SYM
+        quantization_params["group_size"] = group_size
+        quantization_params["ratio"] = 1
+
+    elif quant_config == "8wo":
+        quantization_params["mode"] = QuantizationMode.INT8WO_ASYM
+        quantization_params["group_size"] = -1
+        quantization_params["ratio"] = None
+
+    else:
+        raise AssertionError(
+            f"No support for quant type {quant_config}. Support 8a4w, 8a8w only."
+        )
+    ov_quantizer = OpenVINOQuantizer(**quantization_params)
+
+    return ov_quantizer
 
 
 def get_coreml_quantizer(pt2e_quantize: str):
@@ -247,13 +288,13 @@ def get_coreml_quantizer(pt2e_quantize: str):
         raise NotImplementedError("4-bit Core ML quantizer is still under development")
 
     elif pt2e_quantize == "coreml_baseline_8a_c8w":
-        config = get_symmetric_quantization_config(
+        config = get_symmetric_quantization_config_xnnpack(
             is_per_channel=True, is_dynamic=False
         )
         quantizer = XNNPACKQuantizer().set_global(config)
 
     elif pt2e_quantize == "coreml_baseline_8a_c4w":
-        config = get_symmetric_quantization_config(
+        config = get_symmetric_quantization_config_xnnpack(
             is_per_channel=True, is_dynamic=False, weight_qmin=-8, weight_qmax=7
         )
         quantizer = XNNPACKQuantizer().set_global(config)
@@ -266,12 +307,14 @@ def get_coreml_quantizer(pt2e_quantize: str):
 
 def get_vulkan_quantizer(pt2e_quantize: str):
     from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
-        get_linear_weight_only_qcs_xnn_qconfig,
+        get_symmetric_quantization_config as get_symmetric_quantization_config_vulkan,
         VulkanQuantizer,
     )
 
     if pt2e_quantize == "vulkan_8w":
-        config = get_linear_weight_only_qcs_xnn_qconfig(8)
+        config = get_symmetric_quantization_config_vulkan(
+            is_dynamic=False, weight_bits=8
+        )
     else:
         raise ValueError(f"Unsupported Vulkan quantizer specification {pt2e_quantize}")
 

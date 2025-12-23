@@ -12,10 +12,11 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 from executorch.examples.models import deeplab_v3
@@ -31,8 +32,8 @@ class TestDl3:
     dl3 = dl3.get_eager_model()
 
 
-def test_dl3_tosa_MI():
-    pipeline = TosaPipelineMI[input_t](
+def test_dl3_tosa_FP():
+    pipeline = TosaPipelineFP[input_t](
         TestDl3.dl3,
         TestDl3.model_example_inputs,
         aten_op=[],
@@ -44,8 +45,8 @@ def test_dl3_tosa_MI():
     pipeline.run()
 
 
-def test_dl3_tosa_BI():
-    pipeline = TosaPipelineBI[input_t](
+def test_dl3_tosa_INT():
+    pipeline = TosaPipelineINT[input_t](
         TestDl3.dl3,
         TestDl3.model_example_inputs,
         aten_op=[],
@@ -59,13 +60,12 @@ def test_dl3_tosa_BI():
 
 @common.XfailIfNoCorstone300
 @pytest.mark.skip(reason="upsample_bilinear2d operator is not supported on U55")
-def test_dl3_u55_BI():
-    pipeline = EthosU55PipelineBI[input_t](
+def test_dl3_u55_INT():
+    pipeline = EthosU55PipelineINT[input_t](
         TestDl3.dl3,
         TestDl3.model_example_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.change_args(
         "run_method_and_compare_outputs", rtol=1.0, atol=1.0
@@ -75,15 +75,44 @@ def test_dl3_u55_BI():
 
 @common.XfailIfNoCorstone320
 @pytest.mark.skip(reason="Runs out of memory on U85")
-def test_dl3_u85_BI():
-    pipeline = EthosU85PipelineBI[input_t](
+def test_dl3_u85_INT():
+    pipeline = EthosU85PipelineINT[input_t](
         TestDl3.dl3,
         TestDl3.model_example_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.change_args(
         "run_method_and_compare_outputs", rtol=1.0, atol=1.0
     )  # TODO: MLETORCH-1036 decrease tolerance
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_dl3_vgf_quant():
+    pipeline = VgfPipeline[input_t](
+        TestDl3.dl3,
+        TestDl3.model_example_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        run_on_vulkan_runtime=True,
+        quantize=True,
+    )
+    pipeline.change_args(
+        "run_method_and_compare_outputs", rtol=0.1, atol=0.1
+    )  # TODO: MLETORCH-1036 decrease tolerance
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_dl3_vgf_no_quant():
+    pipeline = VgfPipeline[input_t](
+        TestDl3.dl3,
+        TestDl3.model_example_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        quantize=False,
+    )
     pipeline.run()

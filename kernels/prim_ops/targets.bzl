@@ -7,16 +7,35 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+    # Define the filegroup once outside the loop since it doesn't vary by aten mode
+    runtime.filegroup(
+        name = "prim_ops_sources",
+        srcs = ["register_prim_ops.cpp"],
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+    )
+
+    runtime.filegroup(
+        name = "selective_build_prim_ops.h",
+        srcs = ["selective_build_prim_ops.h"],
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+    )
+
     for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
 
         runtime.cxx_library(
             name = "et_copy_index" + aten_suffix,
             srcs = ["et_copy_index.cpp"],
-            visibility = [],  # Private
+            # To allow for selective prim ops to depend on this library.
+            # Used by selective_build.bzl
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
             exported_headers = ["et_copy_index.h"],
             deps = [
                 "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
+                "//executorch/runtime/core:core",
             ],
             exported_deps = [
                 "//executorch/runtime/core:evalue" + aten_suffix,
@@ -27,10 +46,16 @@ def define_common_targets():
         runtime.cxx_library(
             name = "et_view" + aten_suffix,
             srcs = ["et_view.cpp"],
-            visibility = [],  # Private
+            # To allow for selective prim ops to depend on this library.
+            # Used by selective_build.bzl
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
             exported_headers = ["et_view.h"],
             deps = [
                 "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
+                "//executorch/runtime/core:core",
             ],
             exported_deps = [
                 "//executorch/runtime/core:evalue" + aten_suffix,

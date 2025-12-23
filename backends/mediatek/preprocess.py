@@ -4,14 +4,16 @@
 # except in compliance with the License. See the license file in the root
 # directory of this source tree for more details.
 
+import collections
 import contextlib
 import struct
 
-from typing import final, List
+from typing import Dict, final, List
 
 import mtk_converter
 import mtk_neuron
 import torch
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     ExportedProgram,
@@ -20,8 +22,11 @@ from executorch.exir.backend.backend_details import (
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 SKIP_COMPILE_SPEC_KEYS = {"ImportForever"}
+EXTRACT_SHARED_BLOB_KEY = "ExtractSharedBlobKey"
+HEADER_SIZE = 13
+HEADER_VERSION = 1
 REQUIRED_COMPILE_SPEC_KEYS = {"platform-config"}
-SUPPORTED_PLATFORM_CONFIGS = {"mt6989", "mt6991"}
+SUPPORTED_PLATFORM_CONFIGS = {"mt6989", "mt6991", "mt6993"}
 
 
 def assert_default_dim_order(edge_graph_module: torch.fx.GraphModule) -> None:
@@ -39,6 +44,21 @@ def assert_default_dim_order(edge_graph_module: torch.fx.GraphModule) -> None:
                     f"Expecting dim_order: {default_dim_order}, but got "
                     f"{node.meta['val'].dim_order()} for a placeholder node {node}."
                 )
+
+
+def _pack_header(num_inputs, num_outputs, model_bytes_size):
+    header_bytes = struct.pack(
+        "<BIII", HEADER_VERSION, num_inputs, num_outputs, model_bytes_size
+    )
+    assert len(header_bytes) == HEADER_SIZE
+    return header_bytes
+
+
+def _unpack_header(header_bytes):
+    assert len(header_bytes) == HEADER_SIZE
+    version, num_inputs, num_outputs, buffer_size = struct.unpack("<BIII", header_bytes)
+    assert version == HEADER_VERSION
+    return num_inputs, num_outputs, buffer_size
 
 
 @final
@@ -90,8 +110,14 @@ class NeuropilotBackend(BackendDetails):
 
         compile_options = ["--relax-fp32", "--opt=3"]
         for spec in module_compile_spec:
+            # Special compile spec handling
             if spec.key in SKIP_COMPILE_SPEC_KEYS:
                 continue
+            if spec.key == EXTRACT_SHARED_BLOB_KEY:
+                compile_options.append("--dla-opt=0")
+                continue
+
+            # General compile spec handling
             if spec.value == b"":
                 compile_options.append(f"--{spec.key}")
             else:
@@ -112,5 +138,77 @@ class NeuropilotBackend(BackendDetails):
 
         num_inputs = len(input_names)
         num_outputs = len(output_names)
-        header = struct.pack("<BIII", 1, num_inputs, num_outputs, len(model_bytes))
-        return PreprocessResult(processed_bytes=bytes(header + model_bytes))
+        header_bytes = _pack_header(num_inputs, num_outputs, len(model_bytes))
+        return PreprocessResult(processed_bytes=bytes(header_bytes + model_bytes))
+
+    @classmethod
+    def preprocess_multimethod(
+        cls,
+        edge_programs: Dict[str, List[ExportedProgram]],
+        compile_specs: Dict[str, List[List[CompileSpec]]],
+    ) -> Dict[str, list[PreprocessResult]]:
+
+        # Follow the default behavior of `preprocess_multimethod`
+        preprocess_results = {}
+        for method_name, programs in edge_programs.items():
+            assert (
+                method_name in compile_specs
+            ), f"Error: missing compile specs for {method_name}"
+            compile_specs_for_method = compile_specs[method_name]
+            assert len(compile_specs_for_method) == len(
+                programs
+            ), f"Error: method {method_name} has {len(programs)} partitions but only {len(compile_specs_for_method)}"
+            results_for_method = []
+            for program, compile_spec_for_program in zip(
+                programs, compile_specs_for_method
+            ):
+                preprocess_result = cls.preprocess(program, compile_spec_for_program)
+                results_for_method.append(preprocess_result)
+
+            preprocess_results[method_name] = results_for_method
+
+        # Try extract shared data blob if necessary
+        infos_dict = collections.defaultdict(list)
+        models_dict = collections.defaultdict(list)
+        result_dict = collections.defaultdict(list)
+        for method_name, method_results in preprocess_results.items():
+            for idx, result in enumerate(method_results):
+                shared_blob_key = None
+                for spec in compile_specs[method_name][idx]:
+                    if spec.key == EXTRACT_SHARED_BLOB_KEY:
+                        shared_blob_key = spec.value.decode("utf-8")
+
+                if shared_blob_key is None:
+                    continue
+
+                header_bytes = result.processed_bytes[:HEADER_SIZE]
+                model_bytes = result.processed_bytes[HEADER_SIZE:]
+                num_inputs, num_outputs, model_bytes_size = _unpack_header(header_bytes)
+                assert len(model_bytes) == model_bytes_size
+                infos_dict[shared_blob_key].append((num_inputs, num_outputs))
+                models_dict[shared_blob_key].append(model_bytes)
+                result_dict[shared_blob_key].append(result)
+
+        data_store_output_dict = {}
+        for key, models in models_dict.items():
+            ndm = NamedDataStore()
+            blob, new_models = mtk_neuron.extract_shared_data(
+                models, options="-e union"
+            )
+            ndm.add_named_data(key, bytes(blob))
+            data_store_output_dict[key] = ndm.get_named_data_store_output()
+            models.clear()
+            models.extend(new_models)
+
+        for key, data_store_output in data_store_output_dict.items():
+            for idx, (model_info, model_bytes) in enumerate(
+                zip(infos_dict[key], models_dict[key])
+            ):
+                num_inputs, num_outputs = model_info
+                header_bytes = _pack_header(num_inputs, num_outputs, len(model_bytes))
+                result_dict[key][idx].data_store_output = data_store_output
+                result_dict[key][idx].processed_bytes = bytes(
+                    header_bytes + model_bytes
+                )
+
+        return preprocess_results

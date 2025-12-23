@@ -1,0 +1,48 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_INT8_OUTPUT_TILE_STORE
+#define CONV2D_INT8_OUTPUT_TILE_STORE
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "conv2d_common.glslh"
+#include "linear_int8_output_tile.glslh"
+
+void store_packed_int8_output_tile(
+    const Int8OutTile int8_tile,
+    Conv2dBlockIndex block_idx,
+    const Conv2dBlockExtents block_extents) {
+#ifdef PACKED_INT8_OUTPUT_BUFFER
+  [[unroll]] for (int m4 = 0; m4 < TILE_M4; m4++) {
+    int buffer_idx = block_idx.data.y * block_extents.data_xz +
+        (block_idx.data.x + m4) * block_extents.data.z + block_idx.data.z;
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; n4++) {
+      if (block_idx.data.x + m4 < block_extents.data.x &&
+          block_idx.data.z + n4 < block_extents.data.z) {
+        t_packed_int8_output[buffer_idx++] = int8_tile.data[m4][n4];
+      }
+    }
+  }
+#else
+  [[unroll]] for (int m4 = 0; m4 < TILE_M4; m4++) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; n4++) {
+      if (block_idx.data.x + m4 < block_extents.data.x &&
+          block_idx.data.z + n4 < block_extents.data.z) {
+        const ivec3 idx_offset = ivec3(m4, 0, n4);
+        imageStore(
+            t_packed_int8_output,
+            block_idx.data + idx_offset,
+            int8_tile.data[m4][n4]);
+      }
+    }
+  }
+#endif
+}
+
+#endif // CONV2D_INT8_OUTPUT_TILE_STORE

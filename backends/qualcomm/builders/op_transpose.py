@@ -6,7 +6,7 @@
 
 from typing import cast, Dict, List
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
@@ -27,8 +27,8 @@ class TransposeVisitor(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         permute_node = input_node if QCOM_INSERTED_PERMUTE in node.meta else node
         input_tensor = self.get_tensor(input_node, permute_node)
@@ -36,12 +36,14 @@ class TransposeVisitor(NodeVisitor):
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
         # permutation
         permute_order = cast(List[int], node.args[1])
+        # to prevent negative values
+        permute_order = [x % len(permute_order) for x in permute_order]
         permute_order_shape = [len(permute_order)]
 
         output_tensor = input_tensor.permute(permute_order)
@@ -49,11 +51,11 @@ class TransposeVisitor(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
-        transpose_op = PyQnnWrapper.PyQnnOpWrapper(
+        transpose_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpTranspose.op_name,
@@ -65,7 +67,7 @@ class TransposeVisitor(NodeVisitor):
 
         transpose_op.AddTensorParam(
             OpTranspose.param_perm,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(permute_order_shape),
             permute_order_shape,
             np.array(permute_order, dtype=np.uint32),

@@ -7,8 +7,10 @@
 
 set -exu
 
-IMAGE_NAME="$1"
+FULL_IMAGE_NAME="$1"
 shift
+
+IMAGE_NAME=$(echo "${FULL_IMAGE_NAME}" | sed 's/ci-image://')
 
 echo "Building ${IMAGE_NAME} Docker image"
 
@@ -21,9 +23,14 @@ MINICONDA_VERSION=23.10.0-1
 BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
 case "${IMAGE_NAME}" in
-  executorch-ubuntu-22.04-gcc9)
+  executorch-ubuntu-22.04-gcc11)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    ;;
+  executorch-ubuntu-22.04-gcc9-nopytorch)
     LINTRUNNER=""
     GCC_VERSION=9
+    SKIP_PYTORCH=yes
     ;;
   executorch-ubuntu-22.04-clang12)
     LINTRUNNER=""
@@ -41,6 +48,10 @@ case "${IMAGE_NAME}" in
     ARM_SDK=yes
     CLANG_VERSION=12
     ;;
+  executorch-ubuntu-22.04-zephyr-sdk)
+    ZEPHYR_SDK=yes
+    GCC_VERSION=11
+    ;;
   executorch-ubuntu-22.04-qnn-sdk)
     QNN_SDK=yes
     CLANG_VERSION=12
@@ -48,13 +59,13 @@ case "${IMAGE_NAME}" in
   executorch-ubuntu-22.04-mediatek-sdk)
     MEDIATEK_SDK=yes
     CLANG_VERSION=12
-    ANDROID_NDK_VERSION=r27b
+    ANDROID_NDK_VERSION=r28c
     ;;
   executorch-ubuntu-22.04-clang12-android)
     LINTRUNNER=""
     CLANG_VERSION=12
     # From https://developer.android.com/ndk/downloads
-    ANDROID_NDK_VERSION=r27b
+    ANDROID_NDK_VERSION=r28c
     ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
@@ -85,9 +96,11 @@ docker build \
   --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
   --build-arg "ARM_SDK=${ARM_SDK:-}" \
+  --build-arg "ZEPHYR_SDK=${ZEPHYR_SDK:-}" \
   --build-arg "QNN_SDK=${QNN_SDK:-}" \
   --build-arg "MEDIATEK_SDK=${MEDIATEK_SDK:-}" \
   --build-arg "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION:-}" \
+  --build-arg "SKIP_PYTORCH=${SKIP_PYTORCH:-}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .

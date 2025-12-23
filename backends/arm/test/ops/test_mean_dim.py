@@ -4,14 +4,16 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+from typing import Callable
 
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = tuple[torch.Tensor]
@@ -37,8 +39,8 @@ class AdaptiveAveragePool2d(torch.nn.Module):
 
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
-def test_adaptive_avg_pool2d_tosa_MI(test_data):
-    TosaPipelineMI[input_t](
+def test_adaptive_avg_pool2d_tosa_FP(test_data):
+    TosaPipelineFP[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
@@ -47,8 +49,8 @@ def test_adaptive_avg_pool2d_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
-def test_adaptive_avg_pool2d_tosa_BI(test_data):
-    TosaPipelineBI[input_t](
+def test_adaptive_avg_pool2d_tosa_INT(test_data):
+    TosaPipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
@@ -59,35 +61,60 @@ def test_adaptive_avg_pool2d_tosa_BI(test_data):
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
 @common.XfailIfNoCorstone300
-def test_adaptive_avg_pool2d_u55_BI(test_data):
-    EthosU55PipelineBI[input_t](
+def test_adaptive_avg_pool2d_u55_INT(test_data):
+    EthosU55PipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     ).run()
 
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
 @common.XfailIfNoCorstone320
-def test_adaptive_avg_pool2d_u85_BI(test_data):
-    EthosU85PipelineBI[input_t](
+def test_adaptive_avg_pool2d_u85_INT(test_data):
+    EthosU85PipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     ).run()
+
+
+@common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_no_quant(test_data):
+    pipeline = VgfPipeline[input_t](
+        AdaptiveAveragePool2d(),
+        test_data(),
+        AdaptiveAveragePool2d.aten_op,
+        AdaptiveAveragePool2d.exir_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_quant(test_data):
+    pipeline = VgfPipeline[input_t](
+        AdaptiveAveragePool2d(),
+        test_data(),
+        AdaptiveAveragePool2d.aten_op,
+        AdaptiveAveragePool2d.exir_op,
+        symmetric_io_quantization=True,
+        quantize=True,
+    )
+    pipeline.run()
 
 
 class MeanDim(torch.nn.Module):
     test_data_suite: dict[str, tuple] = {
         "rank_1_keepdim": lambda: (
             torch.rand(7),
-            (0),
+            0,
             True,
         ),
         "rank_2_keepdim": lambda: (
@@ -138,6 +165,11 @@ class MeanDim(torch.nn.Module):
         "rand_0123_keepdim": lambda: (
             torch.rand(1, 5, 7, 3),
             (0, 1, 2, 3),
+            True,
+        ),
+        "rand_none_keepdim": lambda: (
+            torch.rand(1, 5, 7, 3),
+            None,
             True,
         ),
         "rank_1": lambda: (
@@ -195,6 +227,26 @@ class MeanDim(torch.nn.Module):
             (-4, -3, -2, -1),
             False,
         ),
+        "rank5_01234": lambda: (
+            torch.rand(1, 1, 7, 3, 2),
+            (-5, -4, -3, -2, -1),
+            False,
+        ),
+        "rank5_234": lambda: (
+            torch.rand(1, 1, 7, 3, 2),
+            (-3, -2, -1),
+            False,
+        ),
+        "rank5_12": lambda: (
+            torch.rand(1, 1, 7, 3, 2),
+            (1, 2),
+            False,
+        ),
+        "rank5_2": lambda: (
+            torch.rand(1, 4, 7, 3, 2),
+            (2),
+            False,
+        ),
         "u55_avg_pool_not_supported": lambda: (
             torch.rand(1, 1, 1, 257),
             (0, 1, 2, 3),
@@ -214,9 +266,9 @@ class MeanDim(torch.nn.Module):
 
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
-def test_mean_dim_tosa_MI(test_data):
+def test_mean_dim_tosa_FP(test_data):
     test_data, dim, keep_dim = test_data()
-    TosaPipelineMI[input_t](
+    TosaPipelineFP[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
         MeanDim.torch_op,
@@ -225,9 +277,9 @@ def test_mean_dim_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
-def test_mean_dim_tosa_BI(test_data):
+def test_mean_dim_tosa_INT(test_data):
     test_data, dim, keep_dim = test_data()
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
@@ -238,13 +290,12 @@ def test_mean_dim_tosa_BI(test_data):
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
 @common.XfailIfNoCorstone300
-def test_mean_dim_u55_BI(test_data):
+def test_mean_dim_u55_INT(test_data):
     test_data, dim, keep_dim = test_data()
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.add_stage_after(
@@ -258,13 +309,80 @@ def test_mean_dim_u55_BI(test_data):
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
 @common.XfailIfNoCorstone320
-def test_mean_dim_u85_BI(test_data):
+def test_mean_dim_u85_INT(test_data):
     test_data, dim, keep_dim = test_data()
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
-        run_on_fvp=True,
+        symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDim.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_mean_dim_vgf_no_quant(test_data):
+    test_data_val, dim, keep_dim = test_data()
+    pipeline = VgfPipeline[input_t](
+        MeanDim(dim, keep_dim),
+        (test_data_val,),
+        MeanDim.torch_op,
+        MeanDim.exir_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDim.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_mean_dim_vgf_quant(test_data):
+    test_data_val, dim, keep_dim = test_data()
+    pipeline = VgfPipeline[input_t](
+        MeanDim(dim, keep_dim),
+        (test_data_val,),
+        [],
+        symmetric_io_quantization=True,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+mean_input_t = tuple[torch.Tensor, bool]
+
+
+class MeanDefault(torch.nn.Module):
+    def forward(self, tensor: torch.Tensor, keepdim: bool):
+        return tensor.mean()
+
+    test_data_suite: dict[str, Callable[[], mean_input_t]] = {
+        "rank1": lambda: (
+            torch.rand(
+                1,
+            ),
+            False,
+        ),
+        "rank2": lambda: (torch.rand(5, 5), True),
+        "rank4": lambda: (torch.rand(5, 1, 10, 1), False),
+    }
+
+
+@common.parametrize("test_data", MeanDefault.test_data_suite)
+def test_mean_tosa_FP(test_data):
+    pipeline = TosaPipelineFP[mean_input_t](
+        MeanDefault(),
+        test_data(),
+        [],  # Might be sum, avgpool, or both
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDefault.test_data_suite)
+def test_mean_tosa_INT(test_data):
+    pipeline = TosaPipelineINT[mean_input_t](
+        MeanDefault(),
+        test_data(),
+        [],  # Might be sum, avgpool, or both
         symmetric_io_quantization=True,
     )
     pipeline.run()

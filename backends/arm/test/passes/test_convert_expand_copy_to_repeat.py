@@ -20,17 +20,17 @@ class Expand(torch.nn.Module):
     Basic expand model using torch.Tensor.expand function
     """
 
-    def __init__(self):
-        super(Expand, self).__init__()
+    def __init__(self) -> None:
+        super().__init__()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x.expand(3, 4)
 
     def get_inputs(self) -> input_t:
         return (torch.rand(3, 1),)
 
 
-def test_expand_to_repeat_tosa_BI():
+def test_convert_expand_copy_to_repeat_tosa_INT() -> None:
     module = Expand()
     pipeline = PassPipeline[input_t](
         module,

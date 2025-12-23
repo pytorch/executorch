@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/pattern/comparison_op.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
@@ -23,12 +24,11 @@ using executorch::runtime::promoteTypes;
 using torch::executor::Error;
 using torch::executor::resize_to_broadcast_target_size;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
 
-Tensor& gt_tensor_out(
+Tensor& gt_Tensor_out(
     RuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
@@ -44,7 +44,8 @@ Tensor& gt_tensor_out(
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  constexpr auto name = "gt.Tensor_out";
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char name[] = "gt.Tensor_out";
   constexpr int kNnlibMaxDim = 4; /*fallback if broadcast and dim > 4 */
 
   int a_dim = a.dim(), b_dim = b.dim(), out_dim = out.dim();
@@ -111,32 +112,11 @@ Tensor& gt_tensor_out(
     return out;
   }
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, name, CTYPE_B, [&]() {
-      using CTYPE_IN =
-          typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
-      ET_DCHECK(
-          CppTypeToScalarType<CTYPE_IN>::value == promoteTypes(a_type, b_type));
-      ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, name, CTYPE_OUT, [&]() {
-        torch::executor::
-            apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-                [](const CTYPE_A val_a, const CTYPE_B val_b) {
-                  CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                  CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                  bool value = a_casted > b_casted;
-                  return static_cast<CTYPE_OUT>(value);
-                },
-                a,
-                b,
-                out);
-      });
-    });
-  });
-
-  return out;
+  return torch::executor::native::internal::
+      comparison_tensor_out<std::greater, name>(ctx, a, b, out);
 }
 
-Tensor& gt_scalar_out(
+Tensor& gt_Scalar_out(
     RuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
@@ -151,39 +131,13 @@ Tensor& gt_scalar_out(
       out,
       "Failed to resize output tensor.");
 
-  constexpr auto name = "gt.Scalar_out";
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char name[] = "gt.Scalar_out";
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = torch::executor::native::utils::get_scalar_dtype(b);
-  ScalarType common_type =
-      torch::executor::native::utils::promote_type_with_scalar(a_type, b);
-  ScalarType out_type = out.scalar_type();
-
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(Bool, common_type, ctx, name, CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, name, CTYPE_OUT, [&]() {
-          CTYPE_B val_b = 0;
-          torch::executor::native::utils::extract_scalar(b, &val_b);
-          torch::executor::apply_unary_map_fn(
-              [val_b](const CTYPE_A val_a) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                bool value = a_casted > b_casted;
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a.const_data_ptr<CTYPE_A>(),
-              out.mutable_data_ptr<CTYPE_OUT>(),
-              out.numel());
-        });
-      });
-    });
-  });
-
-  return out;
+  return torch::executor::native::internal::
+      comparison_scalar_out<std::greater, name>(ctx, a, b, out);
 }
 
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

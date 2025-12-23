@@ -2,12 +2,21 @@ transfer_texture:
   parameter_names_with_default_values:
     DTYPE: float
     OP_NAME: select
+    UBO_PARAMS: False
   generate_variant_forall:
     DTYPE:
       - VALUE: half
       - VALUE: float
+      - VALUE: int32
+      - VALUE: uint8
   shader_variants:
     - NAME: select_texture3d
       OP_NAME: select
     - NAME: slice_texture3d
       OP_NAME: slice
+    - NAME: select_ubo_texture3d
+      OP_NAME: select
+      UBO_PARAMS: True
+    - NAME: slice_ubo_texture3d
+      OP_NAME: slice
+      UBO_PARAMS: True

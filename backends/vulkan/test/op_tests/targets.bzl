@@ -178,40 +178,19 @@ def define_common_targets(is_fbcode = False):
         ]
     )
     define_test_targets(
-        "quantize_test",
-        extra_deps = [
-            ":test_utils",
-            "//executorch/kernels/quantized/cpu:op_quantize",
-            "//executorch/extension/tensor:tensor",
-            "//executorch/extension/aten_util:aten_bridge",
-        ]
-    )
-    define_test_targets(
-        "dequantize_test",
-        extra_deps = [
-            ":test_utils",
-            "//executorch/kernels/quantized/cpu:op_dequantize",
-            "//executorch/extension/tensor:tensor",
-            "//executorch/extension/aten_util:aten_bridge",
-        ]
-    )
-    define_test_targets(
-        "choose_qparams_test",
-        extra_deps = [
-            ":test_utils",
-            "//executorch/kernels/quantized/cpu:op_choose_qparams",
-            "//executorch/extension/tensor:tensor",
-            "//executorch/extension/aten_util:aten_bridge",
-        ]
-    )
-    define_test_targets(
-        "linear_weight_int4_test",
+        "quantized_linear_test",
         extra_deps = [
             ":test_utils",
         ]
     )
     define_test_targets(
         "rotary_embedding_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "quantize_affine_test",
         extra_deps = [
             ":test_utils",
         ]

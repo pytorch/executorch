@@ -38,8 +38,11 @@ EXECUTORCH_COMMON_CMAKE_ARGS="                      \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON      \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON      \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON        \
+        -DEXECUTORCH_BUILD_KERNELS_LLM=ON        \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON     \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON     \
         -DEXECUTORCH_BUILD_XNNPACK=ON               \
@@ -69,7 +72,7 @@ LLAVA_COMMON_CMAKE_ARGS="                        \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -DCMAKE_INSTALL_PREFIX=${BUILD_DIR}      \
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}   \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON     \
+        -DEXECUTORCH_BUILD_KERNELS_LLM=ON     \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON  \
         -DEXECUTORCH_BUILD_XNNPACK=ON"
 
@@ -105,7 +108,7 @@ cmake_build_llava_runner_for_android() {
 # only export the one without custom op for now since it's
 export_llava() {
     echo "Starting to export Llava. This will take about 6 mins"
-    $PYTHON_EXECUTABLE -m executorch.examples.models.llava.export_llava --pte-name llava.pte --with-artifacts
+    $PYTHON_EXECUTABLE -m executorch.examples.models.llava.export_llava --pte-name llava.pte --with-artifacts --max-context-len 768
 }
 
 # Download a new image
@@ -147,7 +150,7 @@ run_and_verify() {
 
     # verify result.txt
     RESULT=$(cat result.txt)
-    EXPECTED_PREFIX="ASSISTANT: image captures a basketball game in progress, with"
+    EXPECTED_PREFIX="ASSISTANT: The image captures a basketball game in progress, with"
 
     if [[ "${RESULT}" == *"${EXPECTED_PREFIX}"* ]]; then
         echo "Expected result prefix: ${EXPECTED_PREFIX}"

@@ -33,7 +33,7 @@ except:
     package_path = Path(__file__).parent.resolve()
     logging.info(f"Looking for libcustom_ops_aot_lib.so in {package_path}")
 
-    libs = list(package_path.glob("**/libcustom_ops_aot_lib.*"))
+    libs = list(package_path.glob("**/*custom_ops_aot_lib.*"))
 
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
@@ -207,8 +207,8 @@ def _validate_update_cache_params(
             1
         ), f"Start position {start_pos} must be less than sequence length {cache.size(1)}"
 
-        torch._check((start_pos + seq_len) < cache.size(1))
-        assert (start_pos + seq_len) < cache.size(
+        torch._check((start_pos + seq_len) <= cache.size(1))
+        assert (start_pos + seq_len) <= cache.size(
             1
         ), f"Start position  + length = {start_pos + seq_len} must be less than sequence length {cache.size(1)}"
 

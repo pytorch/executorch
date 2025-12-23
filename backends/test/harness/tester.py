@@ -1,9 +1,15 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import random
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 
+from executorch.backends.test.harness.error_statistics import ErrorStatistics
 from executorch.backends.test.harness.stages import (
     Export,
     Partition,
@@ -33,12 +39,12 @@ class Tester:
         self,
         module: torch.nn.Module,
         example_inputs: Tuple[torch.Tensor],
-        stage_classes: Dict[StageType, Type],
+        stage_classes: Dict[StageType, Callable] | None = None,
         dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         module.eval()
 
-        self.stage_classes = stage_classes
+        self.stage_classes = stage_classes or Tester.default_stage_classes()
         self.original_module = module
         self.example_inputs = example_inputs
         self.dynamic_shapes = dynamic_shapes
@@ -61,6 +67,7 @@ class Tester:
             StageType.RUN_PASSES: [
                 StageType.PARTITION,
                 StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
             ],
             # TODO Make this Stage optional
             StageType.PARTITION: [StageType.TO_EXECUTORCH],
@@ -81,7 +88,7 @@ class Tester:
         self.stage_output = None
 
     @staticmethod
-    def default_stage_classes() -> Dict[StageType, Type]:
+    def default_stage_classes() -> Dict[StageType, Callable]:
         """
         Returns a map of StageType to default Stage implementation.
         """
@@ -182,10 +189,10 @@ class Tester:
         assert stage_type in self.stages
         self.stages[stage_type] = stage
 
-    def _run_stage(self, stage_instance, inputs=None):
+    def _run_stage(self, stage_instance, inputs=None, *args, **kwargs):
         assert isinstance(stage_instance, Stage)
         prev_stage_artifact = self._pre(stage_instance)
-        stage_instance.run(prev_stage_artifact, inputs=inputs)
+        stage_instance.run(prev_stage_artifact, inputs=inputs, *args, **kwargs)  # noqa
         self._post(stage_instance)
         return self
 
@@ -212,11 +219,14 @@ class Tester:
         return res
 
     def to_edge_transform_and_lower(
-        self, to_edge_and_transform_stage: Optional[ToEdgeTransformAndLower] = None
+        self,
+        to_edge_and_transform_stage: Optional[ToEdgeTransformAndLower] = None,
+        generate_etrecord: bool = False,
     ):
         return self._run_stage(
             to_edge_and_transform_stage
-            or self._get_default_stage(StageType.TO_EDGE_TRANSFORM_AND_LOWER)
+            or self._get_default_stage(StageType.TO_EDGE_TRANSFORM_AND_LOWER),
+            generate_etrecord=generate_etrecord,
         )
 
     def run_passes(self, run_passes_stage: Optional[RunPasses] = None):
@@ -302,17 +312,15 @@ class Tester:
         atol=1e-03,
         rtol=1e-03,
         qtol=0,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
         number_of_runs = 1 if inputs is not None else num_runs
         reference_stage = self.stages[StageType.EXPORT]
 
         stage = stage or self.cur
 
-        print(f"Comparing Stage {stage} with Stage {reference_stage}")
-        for run_iteration in range(number_of_runs):
+        for _ in range(number_of_runs):
             inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
-            input_shapes = [generated_input.shape for generated_input in inputs_to_run]
-            print(f"Run {run_iteration} with input shapes: {input_shapes}")
 
             # Reference output (and quantization scale)
             (
@@ -325,13 +333,25 @@ class Tester:
             # Output from running artifact at stage
             stage_output = self.stages[stage].run_artifact(inputs_to_run)
             self._compare_outputs(
-                reference_output, stage_output, quantization_scale, atol, rtol, qtol
+                reference_output,
+                stage_output,
+                quantization_scale,
+                atol,
+                rtol,
+                qtol,
+                statistics_callback,
             )
 
         return self
 
     @staticmethod
-    def _assert_outputs_equal(model_output, ref_output, atol=1e-03, rtol=1e-03):
+    def _assert_outputs_equal(
+        model_output,
+        ref_output,
+        atol=1e-03,
+        rtol=1e-03,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
+    ):
         """
         Helper testing function that asserts that the model output and the reference output
         are equal with some tolerance. Due to numerical differences between eager mode and
@@ -346,6 +366,11 @@ class Tester:
         for i in range(len(model_output)):
             model = model_output[i]
             ref = ref_output[i]
+
+            error_stats = ErrorStatistics.from_tensors(model, ref)
+            if statistics_callback is not None:
+                statistics_callback(error_stats)
+
             assert (
                 ref.shape == model.shape
             ), f"Output {i} shape {model.shape} does not match reference output shape {ref.shape}"
@@ -361,15 +386,16 @@ class Tester:
                     ref,
                     atol=atol,
                     rtol=rtol,
+                    equal_nan=True,
                 ), (
                     f"Output {i} does not match reference output.\n"
                     f"\tGiven atol: {atol}, rtol: {rtol}.\n"
                     f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
-                    f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref))}.\n"
+                    f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref).to(torch.double))}.\n"
                     f"\t-- Model vs. Reference --\n"
                     f"\t Numel: {model.numel()}, {ref.numel()}\n"
                     f"\tMedian: {model.median()}, {ref.median()}\n"
-                    f"\t  Mean: {model.mean()}, {ref.mean()}\n"
+                    f"\t  Mean: {model.to(torch.double).mean()}, {ref.to(torch.double).mean()}\n"
                     f"\t   Max: {model.max()}, {ref.max()}\n"
                     f"\t   Min: {model.min()}, {ref.min()}\n"
                 )
@@ -382,6 +408,7 @@ class Tester:
         atol=1e-03,
         rtol=1e-03,
         qtol=0,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
         """
         Compares the original of the original nn module with the output of the generated artifact.
@@ -391,6 +418,8 @@ class Tester:
         # Wrap both outputs as tuple, since executor output is always a tuple even if single tensor
         if isinstance(reference_output, torch.Tensor):
             reference_output = (reference_output,)
+        elif isinstance(reference_output, OrderedDict):
+            reference_output = tuple(reference_output.values())
         if isinstance(stage_output, torch.Tensor):
             stage_output = (stage_output,)
 
@@ -404,6 +433,7 @@ class Tester:
             reference_output,
             atol=atol,
             rtol=rtol,
+            statistics_callback=statistics_callback,
         )
 
     @staticmethod
@@ -416,12 +446,7 @@ class Tester:
         """
 
         # Locate the output node.
-        output_node = None
-        for node in program.graph.nodes:
-            if node.op == "output":
-                output_node = node
-                break
-        assert output_node is not None
+        output_node = program.graph.output_node()
 
         # Look for a dequantization node in the output node args. Returned values are found in the first
         # argument of the output node.

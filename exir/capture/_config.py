@@ -6,7 +6,7 @@
 
 # pyre-unsafe
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 
 import torch
 
@@ -39,13 +39,17 @@ class EdgeCompileConfig:
     _check_ir_validity: bool = True
     # TODO(larryliu): remove this
     _use_edge_ops: bool = True
+    # TODO(gasoonjia): remove this
+    _skip_dim_order: bool = False
     # Allow core ATen ops check to be skipped for certain ops, but continue with the rest of the checks.
+    # Note: only use this for core ATen ops that are missing decompositions. This is temporary,
+    # enabling verification on the rest of the program until decomposition coverage is improved.
     _core_aten_ops_exception_list: List[torch._ops.OpOverload] = field(
         default_factory=list
     )
-    _skip_type_promotion: bool = False
-    # TODO(gasoonjia): remove this
-    _skip_dim_order: bool = False
+    # Allow ops to be preserved in the graph, i.e., prevent them from being decomposed.
+    # These may be core or non-core ATen ops; custom ops should not be here.
+    preserve_ops: List[torch.torch._ops.OpOverload] = field(default_factory=list)
 
 
 @compatibility(is_backward_compatible=False)
@@ -90,9 +94,14 @@ class ExecutorchBackendConfig:
     # Moreover, static views will be elided from the ExecuTorch graph
     remove_view_copy: bool = True
 
-    # If set to true, all constant tensors will be stored in a separate file,
-    # external to the PTE file.
-    external_constants: bool = False
+    # Bool: if True, all constant tensors will be stored in a separate file. If False,
+    #       all constant tensors will be stored in the PTE file.
+    # Callable: a function from torch.fx.Node to Optional[str]. This will be called for each
+    #       placeholder (constant tensor) node, and if it returns a string, that node will be
+    #       tagged with the string. If None, the constant tensor is stored in the PTE file.
+    #       Otherwise, it is stored in a file named by the string. E.g., a function
+    #       lambda x: "model_weights" will save all constants into a file "model_weights.ptd".
+    external_constants: Union[bool, Callable[[torch.fx.Node], Optional[str]]] = False
 
     # If set to true, all trainable weights will be stored in a separate file,
     # external to the PTE file.

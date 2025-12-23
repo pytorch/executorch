@@ -26,11 +26,15 @@ class ModuleTest : public ::testing::Test {
     model_path_ = std::getenv("ET_MODULE_ADD_PATH");
     add_mul_path_ = std::getenv("ET_MODULE_ADD_MUL_PROGRAM_PATH");
     add_mul_data_path_ = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
+    linear_path_ = std::getenv("ET_MODULE_LINEAR_PROGRAM_PATH");
+    linear_data_path_ = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
   }
 
   static inline std::string model_path_;
   static inline std::string add_mul_path_;
   static inline std::string add_mul_data_path_;
+  static inline std::string linear_path_;
+  static inline std::string linear_data_path_;
 };
 
 TEST_F(ModuleTest, TestLoad) {
@@ -87,6 +91,25 @@ TEST_F(ModuleTest, TestLoadMethod) {
   EXPECT_FALSE(module.is_method_loaded("forward"));
   const auto error = module.load_method("forward");
   EXPECT_EQ(error, Error::Ok);
+  EXPECT_TRUE(module.is_method_loaded("forward"));
+  EXPECT_TRUE(module.is_loaded());
+}
+
+TEST_F(ModuleTest, TestUnloadMethod) {
+  Module module(model_path_);
+
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+  const auto errorLoad = module.load_method("forward");
+  EXPECT_EQ(errorLoad, Error::Ok);
+  EXPECT_TRUE(module.is_method_loaded("forward"));
+  // Unload method
+  EXPECT_TRUE(module.unload_method("forward"));
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+  // Try unload method again
+  EXPECT_FALSE(module.unload_method("forward"));
+  // Load method again
+  const auto errorReload = module.load_method("forward");
+  EXPECT_EQ(errorReload, Error::Ok);
   EXPECT_TRUE(module.is_method_loaded("forward"));
   EXPECT_TRUE(module.is_loaded());
 }
@@ -248,7 +271,7 @@ TEST_F(ModuleTest, TestForward) {
   EXPECT_TENSOR_CLOSE(result->at(0).toTensor(), *expected.get());
 
   auto tensor2 = make_tensor_ptr({2, 2}, {2.f, 3.f, 4.f, 5.f});
-  const auto result2 = module->forward({tensor2, tensor2});
+  const auto result2 = module->forward({tensor2, tensor2, 1.0});
   EXPECT_EQ(result2.error(), Error::Ok);
 
   const auto expected2 = make_tensor_ptr({2, 2}, {4.f, 6.f, 8.f, 10.f});
@@ -458,6 +481,51 @@ TEST_F(ModuleTest, TestSetOutputInvalidType) {
   EXPECT_NE(module.set_output(EValue()), Error::Ok);
 }
 
+TEST_F(ModuleTest, TestSetOutputsCountMismatch) {
+  Module module(model_path_);
+
+  EXPECT_NE(module.set_outputs(std::vector<EValue>{}), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestSetOutputsInvalidType) {
+  Module module(model_path_);
+
+  EXPECT_NE(module.set_outputs({EValue()}), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestSetOutputsMemoryPlanned) {
+  Module module(model_path_);
+
+  EXPECT_NE(module.set_outputs({empty({1})}), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestGetOutputAndGetOutputs) {
+  Module module(model_path_);
+
+  auto tensor = make_tensor_ptr({2, 2}, {1.f, 2.f, 3.f, 4.f});
+
+  ASSERT_EQ(module.forward({tensor, tensor, 1.0}).error(), Error::Ok);
+
+  const auto single = module.get_output();
+  EXPECT_EQ(single.error(), Error::Ok);
+  const auto expected = make_tensor_ptr({2, 2}, {2.f, 4.f, 6.f, 8.f});
+  EXPECT_TENSOR_CLOSE(single->toTensor(), *expected.get());
+
+  const auto all = module.get_outputs();
+  EXPECT_EQ(all.error(), Error::Ok);
+  ASSERT_EQ(all->size(), 1);
+  EXPECT_TENSOR_CLOSE(all->at(0).toTensor(), *expected.get());
+}
+
+TEST_F(ModuleTest, TestGetOutputInvalidIndex) {
+  Module module(model_path_);
+
+  ASSERT_EQ(module.load_method("forward"), Error::Ok);
+
+  const auto bad = module.get_output("forward", 99);
+  EXPECT_NE(bad.error(), Error::Ok);
+}
+
 TEST_F(ModuleTest, TestPTD) {
   Module module(add_mul_path_, add_mul_data_path_);
 
@@ -465,4 +533,24 @@ TEST_F(ModuleTest, TestPTD) {
 
   auto tensor = make_tensor_ptr({2, 2}, {2.f, 3.f, 4.f, 2.f});
   ASSERT_EQ(module.forward(tensor).error(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestPTD_Multiple) {
+  std::vector<std::string> data_files = {add_mul_data_path_, linear_data_path_};
+
+  // Create module with add mul.
+  Module module_add_mul(add_mul_path_, data_files);
+  ASSERT_EQ(module_add_mul.load_method("forward"), Error::Ok);
+  auto tensor = make_tensor_ptr({2, 2}, {2.f, 3.f, 4.f, 2.f});
+  ASSERT_EQ(module_add_mul.forward(tensor).error(), Error::Ok);
+
+  // Confirm that the data_file is not std::move'd away.
+  ASSERT_EQ(std::strcmp(data_files[0].c_str(), add_mul_data_path_.c_str()), 0);
+  ASSERT_EQ(std::strcmp(data_files[1].c_str(), linear_data_path_.c_str()), 0);
+
+  // Create module with linear.
+  Module module_linear(linear_path_, data_files);
+  ASSERT_EQ(module_linear.load_method("forward"), Error::Ok);
+  auto tensor2 = make_tensor_ptr({3}, {2.f, 3.f, 4.f});
+  ASSERT_EQ(module_linear.forward(tensor2).error(), Error::Ok);
 }

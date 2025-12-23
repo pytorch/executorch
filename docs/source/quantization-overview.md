@@ -1,38 +1,73 @@
 # Quantization Overview
-Quantization is a process that reduces the precision of computations and lowers memory footprint in the model. To learn more, please visit the [ExecuTorch concepts page](concepts.md#quantization). This is particularly useful for edge devices including wearables, embedded devices and microcontrollers, which typically have limited resources such as processing power, memory, and battery life. By using quantization, we can make our models more efficient and enable them to run effectively on these devices.
 
-In terms of flow, quantization happens early in the ExecuTorch stack:
+Quantization is a technique that reduces the precision of numbers used in a model’s computations and stored weights—typically from 32-bit floats to 8-bit integers. This reduces the model’s memory footprint, speeds up inference, and lowers power consumption, often with minimal loss in accuracy.
 
-![ExecuTorch Entry Points](_static/img/executorch-entry-points.png)
+Quantization is especially important for deploying models on edge devices such as wearables, embedded systems, and microcontrollers, which often have limited compute, memory, and battery capacity. By quantizing models, we can make them significantly more efficient and suitable for these resource-constrained environments.
 
-A more detailed workflow can be found in the [ExecuTorch tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial).
 
-Quantization is usually tied to execution backends that have quantized operators implemented. Thus each backend is opinionated about how the model should be quantized, expressed in a backend specific ``Quantizer`` class. ``Quantizer`` provides API for modeling users in terms of how they want their model to be quantized and also passes on the user intention to quantization workflow.
+# Quantization in ExecuTorch
+ExecuTorch uses [torchao](https://github.com/pytorch/ao/tree/main/torchao) as its quantization library. This integration allows ExecuTorch to leverage PyTorch-native tools for preparing, calibrating, and converting quantized models.
 
-Backend developers will need to implement their own ``Quantizer`` to express how different operators or operator patterns are quantized in their backend. This is accomplished via [Annotation API](https://pytorch.org/tutorials/prototype/pt2e_quantizer.html) provided by quantization workflow. Since ``Quantizer`` is also user facing, it will expose specific APIs for modeling users to configure how they want the model to be quantized. Each backend should provide their own API documentation for their ``Quantizer``.
 
-Modeling users will use the ``Quantizer`` specific to their target backend to quantize their model, e.g. ``XNNPACKQuantizer``.
+Quantization in ExecuTorch is backend-specific. Each backend defines how models should be quantized based on its hardware capabilities. Most ExecuTorch backends use the torchao [PT2E quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) flow, which works on models exported with torch.export and enables quantization that is tailored for each backend.
 
-For an example quantization flow with ``XNNPACKQuantizer``, more documentation and tutorials, please see ``Performing Quantization`` section in [ExecuTorch tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial).
+The PT2E quantization workflow has three main steps:
 
-## Source Quantization: Int8DynActInt4WeightQuantizer
+1. Configure a backend-specific quantizer.
+2. Prepare, calibrate, convert, and evaluate the quantized model in PyTorch
+3. Lower the model to the target backend
 
-In addition to export based quantization (described above), ExecuTorch wants to highlight source based quantizations, accomplished via [torchao](https://github.com/pytorch/ao). Unlike export based quantization, source based quantization directly modifies the model prior to export. One specific example is `Int8DynActInt4WeightQuantizer`.
+## 1. Configure a Backend-Specific Quantizer
 
-This scheme represents 4-bit weight quantization with 8-bit dynamic quantization of activation during inference.
+Each backend provides its own quantizer (e.g., XNNPACKQuantizer, CoreMLQuantizer) that defines how quantization should be applied to a model in a way that is compatible with the target hardware.
+These quantizers usually support configs that allow users to specify quantization options such as:
 
-Imported with ``from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer``, this class uses a quantization instance constructed with a specified dtype precision and groupsize, to mutate a provided ``nn.Module``.
+* Precision (e.g., 8-bit or 4-bit)
+* Quantization type (e.g., dynamic, static, or weight-only quantization)
+* Granularity (e.g., per-tensor, per-channel)
 
+Not all quantization options are supported by all backends. Consult backend-specific guides for supported quantization modes and configuration, and how to initialize the backend-specific PT2E quantizer:
+
+* [XNNPACK quantization](backends/xnnpack/xnnpack-quantization.md)
+* [CoreML quantization](backends/coreml/coreml-quantization.md)
+* [QNN quantization](backends-qualcomm.md#step-2-optional-quantize-your-model)
+
+
+
+## 2. Quantize and evaluate the model
+
+After the backend specific quantizer is defined, the PT2E quantization flow is the same for all backends.  A generic example is provided below, but specific examples are given in backend documentation:
+
+```python
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+training_gm = torch.export.export(model, sample_inputs).module()
+
+# Prepare the model for quantization using the backend-specific quantizer instance
+prepared_model = prepare_pt2e(training_gm, quantizer)
+
+
+# Calibrate the model on representative data
+for sample in calibration_data:
+	prepared_model(sample)
+
+# Convert the calibrated model to a quantized model
+quantized_model = convert_pt2e(prepared_model)
 ```
-# Source Quant
-from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
-model = Int8DynActInt4WeightQuantizer(precision=torch_dtype, groupsize=group_size).quantize(model)
+The quantized_model is a PyTorch model like any other, and can be evaluated on different tasks for accuracy.
+Tasks specific benchmarks are the recommended way to evaluate your quantized model, but as crude alternative you can compare to outputs with the original model using generic error metrics like SQNR:
 
-# Export to ExecuTorch
-from executorch.exir import to_edge
-from torch.export import export
-
-exported_model = export(model, ...)
-et_program = to_edge(exported_model, ...).to_executorch(...)
+```python
+from torchao.quantization.utils import compute_error
+out_reference = model(sample)
+out_quantized = quantized_model(sample)
+sqnr = compute_error(out_reference, out_quantized) # SQNR error
 ```
+
+Note that numerics on device can differ those in PyTorch even for unquantized models, and accuracy evaluation can also be done with pybindings or on device.
+
+
+## 3. Lower the model
+
+The final step is to lower the quantized_model to the desired backend, as you would an unquantized one.  See [backend-specific pages](backends-overview.md) for lowering information.

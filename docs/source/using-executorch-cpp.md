@@ -32,15 +32,15 @@ if (result.ok()) {
 
 For more information on the Module class, see [Running an ExecuTorch Model Using the Module Extension in C++](extension-module.md). For information on high-level tensor APIs, see [Managing Tensor Memory in C++](extension-tensor.md).
 
-For complete examples of building and running a C++ application using the Module API, refer to our [examples GitHub repository](https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/cpp).
+For complete examples of building and running a C++ application using the Module API, refer to our [examples GitHub repository](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2/cpp).
 
 ## Low-Level APIs
 
-Running a model using the low-level runtime APIs allows for a high-degree of control over memory allocation, placement, and loading. This allows for advanced use cases, such as placing allocations in specific memory banks or loading a model without a file system. For an end to end example using the low-level runtime APIs, see [Running an ExecuTorch Model in C++ Tutorial](running-a-model-cpp-tutorial.md).
+Running a model using the low-level runtime APIs allows for a high-degree of control over memory allocation, placement, and loading. This allows for advanced use cases, such as placing allocations in specific memory banks or loading a model without a file system. For an end to end example using the low-level runtime APIs, see [Detailed C++ Runtime APIs Tutorial](running-a-model-cpp-tutorial.md).
 
 ## Building with CMake
 
-ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the `EXECUTORCH_BUILD_EXTENSION_MODULE` and `EXECUTORCH_BUILD_EXTENSION_TENSOR` CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the `executorch` target as a CMake dependency, along with `extension_module_static` and `extension_tensor`, if desired.
+ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the `EXECUTORCH_BUILD_EXTENSION_MODULE` and `EXECUTORCH_BUILD_EXTENSION_TENSOR` CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the `executorch` target as a CMake dependency, along with `executorch_backends`, `executorch_extensions`, and `extension_kernels`, to link all configured backends, extensions, and kernels.
 
 ```
 # CMakeLists.txt
@@ -49,10 +49,9 @@ add_subdirectory("executorch")
 target_link_libraries(
     my_target
     PRIVATE executorch
-    extension_module_static
-    extension_tensor
-    optimized_native_cpu_ops_lib
-    xnnpack_backend)
+    executorch::backends
+    executorch::extensions
+    executorch::kernels)
 ```
 
 See [Building from Source](using-executorch-building-from-source.md) for more information on the CMake build process.
@@ -70,7 +69,7 @@ The runner source code can be found in the ExecuTorch repo under [examples/porta
 
 ## Next Steps
 
-- [Runtime API Reference](executorch-runtime-api-reference.md) for documentation on the available C++ runtime APIs.
+- [Runtime API Reference](executorch-runtime-api-reference.rst) for documentation on the available C++ runtime APIs.
 - [Running an ExecuTorch Model Using the Module Extension in C++](extension-module.md) for information on the high-level Module API.
 - [Managing Tensor Memory in C++](extension-tensor.md) for information on high-level tensor APIs.
 - [Running an ExecuTorch Model in C++ Tutorial](running-a-model-cpp-tutorial.md) for information on the low-level runtime APIs.
