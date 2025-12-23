@@ -226,9 +226,10 @@ class TagMemoryMetaPass(ExportPass):
         """
         arg_node = op_node.args[arg_i]
 
-        # For non-tensor arguments, return ANY_STORAGE
+        # For non-tensor arguments, return ALL_STORAGES_REPSET so that the respset does
+        # not appear to be empty.
         if not utils.is_tensor_arg_node(arg_node):
-            return utils.ANY_STORAGE
+            return utils.ALL_STORAGES_REPSET
 
         # Special case for cat - use the first tensor in the list as representative
         if isinstance(arg_node, list):
@@ -368,7 +369,7 @@ class TagMemoryMetaPass(ExportPass):
 
         arg_repset = op_repsets.get_arg_repset(arg_i)
         if arg_repset.is_constrained():
-            return arg_repset
+            return
 
         arg_node = op_repsets.op_node.args[arg_i]
 
@@ -378,6 +379,20 @@ class TagMemoryMetaPass(ExportPass):
         arg_repset = self.trace_node_users_to_constrain_repset(arg_node, arg_repset)
         op_repsets.try_constrain_with_arg_repset(arg_i, arg_repset)
 
+    def constrain_op_out_repset(self, op_repsets: utils.OpRepSets) -> None:
+        """
+        Similar to the `constrain_op_arg_repset` function, but for the output repset of
+        the operator.
+        """
+        out_repset = op_repsets.get_out_repset(0)
+        if out_repset.is_constrained():
+            return
+
+        op_node = op_repsets.op_node
+        out_respset = self.trace_node_users_to_constrain_repset(op_node, out_repset)
+
+        op_repsets.try_constrain_with_out_repset(out_respset)
+
     def constrain_op_repsets(self, op_repsets: utils.OpRepSets) -> None:
         # For most ops, constraining the argument repsets will also contrain the output
         # repset due to OpRepSets maintaining synchronization rules.
@@ -385,14 +400,12 @@ class TagMemoryMetaPass(ExportPass):
             if utils.is_tensor_arg_node(op_repsets.op_node.args[i]):
                 self.constrain_op_arg_repset(i, op_repsets)
 
-        # TODO(ssjia): For most ops, inputs and outputs must be synchronized, so there
-        # is no need to constrain output repsets explicitly. Currently, the exceptions
-        # (i.e. choose qparams) already define constrined repsets for the output, so
-        # there is again no need to explicitly constrain the outputs. If an operator
-        # appears later on that does not sync input and output representations, and
-        # defines ambiguous repsets for the output tensor(s), then we will need to add
-        # additional logic to this function to constrain the output repsets separately
-        # from the input repsets.
+        # However, some operators do not sync input and output representations and also
+        # define ambiguous repsets for the output tensor(s). In those cases we will need
+        # to execute additional logic to constrain the output repsets separately from
+        # the input repsets.
+        if not op_repsets.sync_primary_io_repr and op_repsets.sync_outs_repr:
+            self.constrain_op_out_repset(op_repsets)
 
     def set_op_node_tensor_reprs(
         self, graph_module: torch.fx.GraphModule, op_node: torch.fx.Node

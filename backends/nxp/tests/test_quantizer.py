@@ -5,6 +5,7 @@
 
 # Tests for NeutronQuantizer.
 
+import itertools
 from copy import deepcopy
 
 import executorch.backends.nxp.tests.executorch_pipeline as executorch_pipeline
@@ -29,9 +30,17 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelLastPreprocess,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.export import ExportedProgram
+from torch.export import export, ExportedProgram
 from torch.fx import GraphModule
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e import (
+    move_exported_model_to_eval,
+    move_exported_model_to_train,
+)
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 
 fuse_activation_ops = [
     exir_ops.edge.aten.addmm.default,
@@ -44,16 +53,45 @@ fuse_activation_ops = [
 ]
 
 
+# Permutation of all supported combinations of:
+# <activation>, <is_inplace>, <use_qat>
+all_activation_cases = list(
+    itertools.product(
+        ["relu", "relu6", "tanh"],
+        [True, False],
+        [True, False],
+    )
+) + [
+    ("sigmoid", False, True),
+    ("sigmoid", False, False),
+]
+
+
+@pytest.fixture(autouse=True)
+def reseed_model_per_test_run():
+    torch.manual_seed(23)
+
+
+def _prepare_for_quantization(exported_model, is_qat: bool = False):
+    if is_qat:
+        return prepare_qat_pt2e(
+            exported_model.module(), NeutronQuantizer(neutron_target_spec, is_qat=True)
+        )
+    else:
+        return prepare_pt2e(
+            exported_model.module(), NeutronQuantizer(neutron_target_spec)
+        )
+
+
 def test_quantizer_conv2d():
     model = models.Conv2dModule()
     model.eval()
 
     example_input = (torch.ones(1, 4, 32, 32),)
-    quantizer = NeutronQuantizer(neutron_target_spec)
-    graph_module = torch.export.export(model, example_input, strict=True).module()
+    exported_model = torch.export.export(model, example_input, strict=True)
 
     # noinspection PyTypeChecker
-    m = prepare_pt2e(graph_module, quantizer)
+    m = _prepare_for_quantization(exported_model)
     m(*example_input)
     m = convert_pt2e(m)
 
@@ -87,11 +125,10 @@ def test_quantizer_linear():
     model.eval()
 
     example_input = (torch.ones(10, 32),)
-    quantizer = NeutronQuantizer(neutron_target_spec)
-    graph_module = torch.export.export(model, example_input, strict=True).module()
+    exported_model = torch.export.export(model, example_input, strict=True)
 
     # noinspection PyTypeChecker
-    m = prepare_pt2e(graph_module, quantizer)
+    m = _prepare_for_quantization(exported_model)
     m(*example_input)
     m = convert_pt2e(m)
 
@@ -123,11 +160,10 @@ def test_quantizer_maxpool2d():
     model.eval()
 
     example_input = (torch.ones(1, 8, 32, 32),)
-    quantizer = NeutronQuantizer(neutron_target_spec)
-    graph_module = torch.export.export(model, example_input, strict=True).module()
+    exported_model = torch.export.export(model, example_input, strict=True)
 
     # noinspection PyTypeChecker
-    m = prepare_pt2e(graph_module, quantizer)
+    m = _prepare_for_quantization(exported_model)
     m(*example_input)
     m = convert_pt2e(m)
 
@@ -158,11 +194,10 @@ def test_quantizer_softmax():
     model.eval()
 
     example_input = (torch.ones(1, 10),)
-    quantizer = NeutronQuantizer(neutron_target_spec)
-    graph_module = torch.export.export(model, example_input, strict=True).module()
+    exported_model = torch.export.export(model, example_input, strict=True)
 
     # noinspection PyTypeChecker
-    m = prepare_pt2e(graph_module, quantizer)
+    m = _prepare_for_quantization(exported_model)
     m(*example_input)
     m = convert_pt2e(m)
 
@@ -192,11 +227,10 @@ def test_quantizer_single_maxpool2d():
     model.eval()
 
     example_input = (torch.ones(1, 4, 32, 32),)
-    quantizer = NeutronQuantizer(neutron_target_spec)
-    graph_module = torch.export.export(model, example_input, strict=True).module()
+    exported_model = torch.export.export(model, example_input, strict=True)
 
     # noinspection PyTypeChecker
-    m = prepare_pt2e(graph_module, quantizer)
+    m = _prepare_for_quantization(exported_model)
     m(*example_input)
     m = convert_pt2e(m)
 
@@ -214,11 +248,10 @@ def test_quantizer_conv2d_relu():
     model.eval()
 
     example_input = (torch.ones(1, 4, 32, 32),)
-    quantizer = NeutronQuantizer(neutron_target_spec)
-    graph_module = torch.export.export(model, example_input, strict=True).module()
+    exported_model = torch.export.export(model, example_input, strict=True)
 
     # noinspection PyTypeChecker
-    m = prepare_pt2e(graph_module, quantizer)
+    m = _prepare_for_quantization(exported_model)
     m(*example_input)
     m = convert_pt2e(m)
 
@@ -241,11 +274,10 @@ def test_quantizer_conv2d_avg_pool2d():
     model.eval()
 
     example_input = (torch.ones(1, 4, 16, 16),)
-    quantizer = NeutronQuantizer(neutron_target_spec)
-    graph_module = torch.export.export(model, example_input, strict=True).module()
+    exported_model = torch.export.export(model, example_input, strict=True)
 
     # noinspection PyTypeChecker
-    m = prepare_pt2e(graph_module, quantizer)
+    m = _prepare_for_quantization(exported_model)
     m(*example_input)
     m = convert_pt2e(m)
 
@@ -269,11 +301,10 @@ def test_quantizer_conv2d_permute():
     model.eval()
 
     example_input = (torch.ones(1, 4, 16, 16),)
-    quantizer = NeutronQuantizer(neutron_target_spec)
-    graph_module = torch.export.export(model, example_input, strict=True).module()
+    exported_model = torch.export.export(model, example_input, strict=True)
 
     # noinspection PyTypeChecker
-    m = prepare_pt2e(graph_module, quantizer)
+    m = _prepare_for_quantization(exported_model)
     m(*example_input)
     m = convert_pt2e(m)
 
@@ -301,11 +332,10 @@ def test_multiple_shared_spec_ops_in_row():
     model.eval()
 
     example_input = (torch.ones(1, 3, 64, 64),)
-    quantizer = NeutronQuantizer(neutron_target_spec)
-    graph_module = torch.export.export(model, example_input, strict=True).module()
+    exported_model = torch.export.export(model, example_input, strict=True)
 
     # noinspection PyTypeChecker
-    m = prepare_pt2e(graph_module, quantizer)
+    m = _prepare_for_quantization(exported_model)
     m(*example_input)
     m = convert_pt2e(m)
 
@@ -362,21 +392,10 @@ def test_quantizers_order_invariance():
     assert all(n == n_reversed for n, n_reversed in zip(nodes, nodes_reversed))
 
 
-@pytest.mark.parametrize(
-    "activation, inplace",
-    [
-        ("relu", True),
-        ("relu", False),
-        ("relu6", True),
-        ("relu6", False),
-        ("tanh", True),
-        ("tanh", False),
-        ("sigmoid", False),
-    ],
-)
-def test_quantizer__linear_w_activation(mocker, activation, inplace):
+@pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
+def test_quantizer__linear_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "_quantize_model")
+    quantizer_spy = mocker.spy(executorch_pipeline, "calibrate_and_quantize")
 
     input_shape = (1, 4)
     model = models.LinearActivationModule(
@@ -386,7 +405,9 @@ def test_quantizer__linear_w_activation(mocker, activation, inplace):
         mode="linear",
     )
 
-    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     # Make sure that all nodes were delegated.
     assert not graph_contains_any_of_ops(
@@ -418,28 +439,19 @@ def test_quantizer__linear_w_activation(mocker, activation, inplace):
     )
 
 
-@pytest.mark.parametrize(
-    "activation, inplace",
-    [
-        ("relu", True),
-        ("relu", False),
-        ("relu6", True),
-        ("relu6", False),
-        ("tanh", True),
-        ("tanh", False),
-        ("sigmoid", False),
-    ],
-)
-def test_quantizer__addmm_w_activation(mocker, activation, inplace):
+@pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
+def test_quantizer__addmm_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "_quantize_model")
+    quantizer_spy = mocker.spy(executorch_pipeline, "calibrate_and_quantize")
 
     input_shape = (1, 4)
     model = models.LinearActivationModule(
         activation=activation, inplace=inplace, in_channels=input_shape[1], mode="addmm"
     )
 
-    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     # Make sure that all nodes were delegated.
     assert not graph_contains_any_of_ops(
@@ -471,28 +483,19 @@ def test_quantizer__addmm_w_activation(mocker, activation, inplace):
     )
 
 
-@pytest.mark.parametrize(
-    "activation, inplace",
-    [
-        ("relu", True),
-        ("relu", False),
-        ("relu6", True),
-        ("relu6", False),
-        ("tanh", True),
-        ("tanh", False),
-        ("sigmoid", False),
-    ],
-)
-def test_quantizer__mm_w_activation(mocker, activation, inplace):
+@pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
+def test_quantizer__mm_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "_quantize_model")
+    quantizer_spy = mocker.spy(executorch_pipeline, "calibrate_and_quantize")
 
     input_shape = (1, 4)
     model = models.LinearActivationModule(
         activation=activation, inplace=inplace, in_channels=input_shape[1], mode="mm"
     )
 
-    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     # Make sure that all nodes were delegated.
     assert not graph_contains_any_of_ops(
@@ -524,28 +527,19 @@ def test_quantizer__mm_w_activation(mocker, activation, inplace):
     )
 
 
-@pytest.mark.parametrize(
-    "activation, inplace",
-    [
-        ("relu", True),
-        ("relu", False),
-        ("relu6", True),
-        ("relu6", False),
-        ("tanh", True),
-        ("tanh", False),
-        ("sigmoid", False),
-    ],
-)
-def test_quantizer__conv_w_activation(mocker, activation, inplace):
+@pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
+def test_quantizer__conv_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "_quantize_model")
+    quantizer_spy = mocker.spy(executorch_pipeline, "calibrate_and_quantize")
 
     input_shape = (1, 4, 8, 8)
     model = models.ConvActivationModule(
         activation=activation, inplace=inplace, in_channels=input_shape[1]
     )
 
-    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     # Make sure that all nodes were delegated.
     assert not graph_contains_any_of_ops(
@@ -578,4 +572,67 @@ def test_quantizer__conv_w_activation(mocker, activation, inplace):
         tflite_input_preprocess=ToChannelLastPreprocess(),
         tflite_output_preprocess=ToChannelFirstPreprocess(),
         atol=1.0,
+    )
+
+
+def test_qat_train(loss_tolerance: float = 0.02):
+    def evaluate(model, inputs, gts):
+        with torch.no_grad():
+            test_outputs = model(inputs)
+            loss = torch.nn.functional.mse_loss(test_outputs, gts)
+            return loss
+
+    def train_step(model, optimizer):
+        optimizer.zero_grad()
+        batch = torch.randn(100, 1).clamp(-1, 1)
+        outputs = model(batch)
+        loss = torch.nn.functional.mse_loss(outputs, torch.sin(batch))
+        loss.backward()
+        optimizer.step()
+
+    model = models.MLP()
+    model.train()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
+    for _ in range(100):
+        train_step(model, optimizer)
+
+    test_inputs = torch.randn(20, 1).clamp(-1, 1)
+
+    model.eval()
+    eval_loss = evaluate(model, test_inputs, torch.sin(test_inputs))
+
+    exported_model = export(model, (torch.randn(1, 1),), strict=True)
+    prepared_model = _prepare_for_quantization(exported_model, is_qat=True)
+
+    prepared_model = move_exported_model_to_train(prepared_model)
+    for _ in range(30):
+        train_step(prepared_model, optimizer)
+    prepared_model = move_exported_model_to_eval(prepared_model)
+
+    quantized_model = convert_pt2e(prepared_model)
+
+    test_inputs = torch.randn(100, 1).clamp(-1, 1)
+
+    quant_eval_loss = evaluate(quantized_model, test_inputs, torch.sin(test_inputs))
+
+    assert (quant_eval_loss - eval_loss) < loss_tolerance
+
+
+def test_qat_produces_same_graph_as_ptq():
+    model = models.MiniConvNetWithRegressionHead()
+    model.eval()
+    exported_model = export(model, ((torch.randn(1, 3, 32, 32),)), strict=True)
+
+    qat_prepared_model = _prepare_for_quantization(exported_model, is_qat=True)
+    qat_quantized_model = convert_pt2e(qat_prepared_model)
+
+    ptq_prepared_model = _prepare_for_quantization(exported_model, is_qat=False)
+    ptq_quantized_model = convert_pt2e(ptq_prepared_model)
+
+    assert all(
+        ptqn.target == qatn.target
+        for qatn, ptqn in zip(
+            qat_quantized_model.graph.nodes, ptq_quantized_model.graph.nodes
+        )
     )

@@ -24,7 +24,6 @@ from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.fx import Node
 
 
-@register_node_visitor
 class CommonIndexTensorVisitor(NodeVisitor):
     target = "aten.index.Tensor"
 
@@ -181,7 +180,7 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
                 gather_idx_shape,
                 index_dtype,
             )
-            tutils.build_reshape_tosa_1_0(
+            tutils.build_reshape_tosa(
                 tosa_graph,
                 stride_shifted_indices.name,
                 gather_idx_shape,
@@ -213,7 +212,7 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
         gather_vals_shape = [N, K, C]
         reshaped_input = tosa_graph.addIntermediate(gather_vals_shape, values.dtype)
 
-        tutils.build_reshape_tosa_1_0(
+        tutils.build_reshape_tosa(
             tosa_graph,
             values.name,
             gather_vals_shape,
@@ -239,7 +238,7 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
 
         output_shape = tutils.tosa_shape(output.shape, output.dim_order)
 
-        tutils.build_reshape_tosa_1_0(
+        tutils.build_reshape_tosa(
             tosa_graph,
             gather_out.name,
             list(output_shape),

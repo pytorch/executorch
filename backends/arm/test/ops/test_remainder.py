@@ -24,7 +24,12 @@ def _nonzero_float_tensor(*shape: int) -> torch.Tensor:
 class Remainder(torch.nn.Module):
     input_t = Tuple[torch.Tensor | float, torch.Tensor | float]
 
-    test_cases = {
+    aten_op_tensor = "torch.ops.aten.remainder.Tensor"
+    exir_op_tensor = "executorch_exir_dialects_edge__ops_aten_remainder_Tensor"
+    aten_op_scalar = "torch.ops.aten.remainder.Scalar"
+    exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_remainder_Scalar"
+
+    test_cases_tensor = {
         "rank2_tensors": lambda: (
             torch.randn(2, 3) * 7,
             _nonzero_float_tensor(2, 3),
@@ -37,9 +42,16 @@ class Remainder(torch.nn.Module):
             torch.randn(4, 5, 1),
             _nonzero_float_tensor(1, 5, 6),
         ),
-        "scalar_rhs": lambda: (
+    }
+
+    test_cases_scalar = {
+        "scalar_pos": lambda: (
             torch.randn(1, 2, 3, 4),
             0.25,
+        ),
+        "scalar_neg": lambda: (
+            torch.randn(3, 4),
+            -0.25,
         ),
     }
 
@@ -47,34 +59,32 @@ class Remainder(torch.nn.Module):
         return torch.remainder(x, y)
 
 
-def _get_aten_op(test_data: Remainder.input_t):
-    if any(isinstance(x, float) for x in test_data):
-        return "torch.ops.aten.remainder.Scalar"
-    else:
-        return "torch.ops.aten.remainder.Tensor"
-
-
-def _get_exir_op(test_data: Remainder.input_t):
-    if isinstance(test_data[1], float):
-        return "executorch_exir_dialects_edge__ops_aten_remainder_Scalar"
-    else:
-        return "executorch_exir_dialects_edge__ops_aten_remainder_Tensor"
-
-
-@common.parametrize("test_data", Remainder.test_cases)
-def test_remainder_tosa_FP(test_data):
+@common.parametrize("test_data", Remainder.test_cases_tensor)
+def test_remainder_tensor_tosa_FP(test_data):
     data = test_data()
     pipeline = TosaPipelineFP[Remainder.input_t](
         Remainder(),
         data,
-        _get_aten_op(data),
-        _get_exir_op(data),
+        Remainder.aten_op_tensor,
+        Remainder.exir_op_tensor,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Remainder.test_cases)
-def test_remainder_tosa_INT(test_data):
+@common.parametrize("test_data", Remainder.test_cases_scalar)
+def test_remainder_scalar_tosa_FP(test_data):
+    data = test_data()
+    pipeline = TosaPipelineFP[Remainder.input_t](
+        Remainder(),
+        data,
+        Remainder.aten_op_scalar,
+        Remainder.exir_op_scalar,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Remainder.test_cases_tensor)
+def test_remainder_tensor_tosa_INT(test_data):
     pipeline = TosaPipelineINT[Remainder.input_t](
         Remainder(),
         test_data(),
@@ -83,9 +93,19 @@ def test_remainder_tosa_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", Remainder.test_cases)
+@common.parametrize("test_data", Remainder.test_cases_scalar)
+def test_remainder_scalar_tosa_INT(test_data):
+    pipeline = TosaPipelineINT[Remainder.input_t](
+        Remainder(),
+        test_data(),
+        [],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Remainder.test_cases_tensor)
 @common.XfailIfNoCorstone300
-def test_remainder_u55_INT(test_data):
+def test_remainder_tensor_u55_INT(test_data):
     pipeline = EthosU55PipelineINT[Remainder.input_t](
         Remainder(),
         test_data(),
@@ -94,9 +114,20 @@ def test_remainder_u55_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", Remainder.test_cases)
+@common.parametrize("test_data", Remainder.test_cases_scalar)
+@common.XfailIfNoCorstone300
+def test_remainder_scalar_u55_INT(test_data):
+    pipeline = EthosU55PipelineINT[Remainder.input_t](
+        Remainder(),
+        test_data(),
+        [],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Remainder.test_cases_tensor)
 @common.XfailIfNoCorstone320
-def test_remainder_u85_INT(test_data):
+def test_remainder_tensor_u85_INT(test_data):
     pipeline = EthosU85PipelineINT[Remainder.input_t](
         Remainder(),
         test_data(),
@@ -105,27 +136,64 @@ def test_remainder_u85_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", Remainder.test_cases)
-@common.SkipIfNoModelConverter
-def test_remainder_vgf_FP(test_data):
-    data = test_data()
-    pipeline = VgfPipeline[Remainder.input_t](
+@common.parametrize("test_data", Remainder.test_cases_scalar)
+@common.XfailIfNoCorstone320
+def test_remainder_scalar_u85_INT(test_data):
+    pipeline = EthosU85PipelineINT[Remainder.input_t](
         Remainder(),
-        data,
-        _get_aten_op(data),
-        _get_exir_op(data),
-        tosa_version="TOSA-1.0+FP",
+        test_data(),
+        [],
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Remainder.test_cases)
+@common.parametrize("test_data", Remainder.test_cases_tensor)
 @common.SkipIfNoModelConverter
-def test_remainder_vgf_INT(test_data):
+def test_remainder_tensor_vgf_no_quant(test_data):
+    data = test_data()
+    pipeline = VgfPipeline[Remainder.input_t](
+        Remainder(),
+        data,
+        Remainder.aten_op_tensor,
+        Remainder.exir_op_tensor,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Remainder.test_cases_scalar)
+@common.SkipIfNoModelConverter
+def test_remainder_scalar_vgf_no_quant(test_data):
+    data = test_data()
+    pipeline = VgfPipeline[Remainder.input_t](
+        Remainder(),
+        data,
+        Remainder.aten_op_scalar,
+        Remainder.exir_op_scalar,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Remainder.test_cases_tensor)
+@common.SkipIfNoModelConverter
+def test_remainder_tensor_vgf_quant(test_data):
     pipeline = VgfPipeline[Remainder.input_t](
         Remainder(),
         test_data(),
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Remainder.test_cases_scalar)
+@common.SkipIfNoModelConverter
+def test_remainder_scalar_vgf_quant(test_data):
+    pipeline = VgfPipeline[Remainder.input_t](
+        Remainder(),
+        test_data(),
+        [],
+        quantize=True,
     )
     pipeline.run()

@@ -23,6 +23,47 @@ get_filename_component(
   _common_include_directories "${EXECUTORCH_SOURCE_DIR}/.." ABSOLUTE
 )
 
+# We only download QNN SDK when we build pip wheel for ExecuTorch. Please don't
+# change this code unless you know what you are doing.
+if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+  set(_qnn_default_sdk_dir "${CMAKE_CURRENT_BINARY_DIR}/sdk/qnn")
+
+  if(EXISTS "${_qnn_default_sdk_dir}" AND EXISTS "${_qnn_default_sdk_dir}/lib")
+    message(STATUS "Found cached Qualcomm SDK at ${_qnn_default_sdk_dir}")
+    set(QNN_SDK_ROOT
+        ${_qnn_default_sdk_dir}
+        CACHE PATH "Qualcomm SDK root directory" FORCE
+    )
+  else()
+    message(STATUS "Downloading Qualcomm SDK")
+    execute_process(
+      COMMAND
+        ${PYTHON_EXECUTABLE}
+        ${EXECUTORCH_SOURCE_DIR}/backends/qualcomm/scripts/download_qnn_sdk.py
+        --dst-folder ${_qnn_default_sdk_dir} --print-sdk-path
+      WORKING_DIRECTORY ${EXECUTORCH_SOURCE_DIR}
+      RESULT_VARIABLE _qnn_sdk_download_result
+      OUTPUT_VARIABLE _qnn_sdk_download_output
+      ERROR_VARIABLE _qnn_sdk_download_error
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(NOT _qnn_sdk_download_result EQUAL 0 OR _qnn_sdk_download_output
+                                               STREQUAL ""
+    )
+      message(
+        FATAL_ERROR
+          "Failed to download Qualcomm SDK. stdout: ${_qnn_sdk_download_output}\n"
+          "stderr: ${_qnn_sdk_download_error}"
+      )
+    endif()
+    set(QNN_SDK_ROOT
+        ${_qnn_sdk_download_output}
+        CACHE PATH "Qualcomm SDK root directory" FORCE
+    )
+  endif()
+  set(ENV{QNN_SDK_ROOT} ${QNN_SDK_ROOT})
+endif()
+
 if(NOT DEFINED QNN_SDK_ROOT)
   message(
     FATAL_ERROR
@@ -109,6 +150,7 @@ add_library(qnn_executorch_backend SHARED)
 add_library(qnn_executorch_header INTERFACE)
 add_library(qnn_executorch_logging STATIC)
 add_library(qnn_factory STATIC)
+add_library(qnn_backend_unified_registry STATIC)
 add_library(qnn_function_interface INTERFACE)
 add_library(qnn_graph STATIC)
 add_library(qnn_implementation STATIC)
@@ -172,13 +214,30 @@ target_link_libraries(
 )
 
 target_link_libraries(
-  qnn_dlc_manager PRIVATE qnn_factory qnn_backend qnn_device qnn_context
-                          qnn_graph qnn_mem_manager
+  qnn_backend_unified_registry PRIVATE qnn_schema qnn_backend qnn_device
+                                       qnn_implementation
 )
 
 target_link_libraries(
-  qnn_manager PRIVATE qnn_factory wrappers qnn_schema utils shared_buffer
-                      qnn_dlc_manager
+  qnn_dlc_manager
+  PRIVATE qnn_factory
+          qnn_backend_unified_registry
+          qnn_backend
+          qnn_device
+          qnn_context
+          qnn_graph
+          qnn_mem_manager
+)
+
+target_link_libraries(
+  qnn_manager
+  PRIVATE qnn_factory
+          qnn_backend_unified_registry
+          wrappers
+          qnn_schema
+          utils
+          shared_buffer
+          qnn_dlc_manager
 )
 target_link_libraries(
   qnn_executorch_backend
@@ -214,7 +273,9 @@ add_subdirectory(
 install(
   TARGETS qnn_executorch_backend
   EXPORT ExecuTorchTargets
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
+  RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
 )
 
 # QNN pybind
@@ -224,14 +285,10 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     ${CMAKE_CURRENT_BINARY_DIR}/pybind11
   )
   add_library(PyQnnManagerAdaptor MODULE)
-  add_library(PyQnnWrapperAdaptor MODULE)
   # PyQnnManager containing a pybind type triggers the warning because pybind11
   # code internally forces hidden visibility.
   set_target_properties(
     PyQnnManagerAdaptor PROPERTIES CXX_VISIBILITY_PRESET hidden
-  )
-  set_target_properties(
-    PyQnnWrapperAdaptor PROPERTIES CXX_VISIBILITY_PRESET hidden
   )
 
   target_link_libraries(
@@ -244,18 +301,14 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
             executorch
             extension_tensor
             qnn_backend_options
-  )
-  target_link_libraries(
-    PyQnnWrapperAdaptor PRIVATE pybind11::module pybind11::lto wrappers
-                                qnn_executorch_logging qnn_executorch_header
+            wrappers
+            qnn_executorch_logging
   )
 
   pybind11_extension(PyQnnManagerAdaptor)
-  pybind11_extension(PyQnnWrapperAdaptor)
   if(NOT MSVC AND NOT ${CMAKE_BUILD_TYPE} MATCHES RelWithDebInfo)
     # Strip unnecessary sections of the binary
     pybind11_strip(PyQnnManagerAdaptor)
-    pybind11_strip(PyQnnWrapperAdaptor)
   endif()
 
   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -266,13 +319,18 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     target_compile_options(
       PyQnnManagerAdaptor PUBLIC ${_pybind_compile_options}
     )
-    target_compile_options(
-      PyQnnWrapperAdaptor PUBLIC ${_pybind_compile_options}
-    )
   endif()
 
   add_subdirectory(
     ${QNN_EXECUTORCH_ROOT_DIR}/aot/python
     ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/python
+  )
+
+  install(
+    TARGETS PyQnnManagerAdaptor
+    LIBRARY
+      DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm/python
+    RUNTIME
+      DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm/python
   )
 endif()

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from . import (  # noqa
     node_visitor,
     op_abs,
@@ -14,7 +16,9 @@ from . import (  # noqa
     op_cat,
     op_ceiling,
     op_clamp,
+    op_clone,
     op_conv2d,
+    op_cos,
     op_div,
     op_dynamic_dequantize_ops,
     op_dynamic_quantize_ops,
@@ -53,4 +57,5 @@ from . import (  # noqa
     op_sub,
     op_tanh,
     op_to_copy,
+    op_view_copy,
 )

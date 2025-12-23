@@ -10,7 +10,9 @@ from typing import Tuple
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export import export
 
 
@@ -24,16 +26,27 @@ class TestCudaExport(unittest.TestCase):
             self.skipTest("CUDA is not available")
 
     def _export_to_cuda_with_lower(
-        self, module: torch.nn.Module, inputs: Tuple[torch.Tensor, ...]
+        self,
+        module: torch.nn.Module,
+        inputs: Tuple[torch.Tensor, ...],
+        compile_specs: list[CompileSpec] | None = None,
     ) -> None:
-        """Helper method to export a module to CUDA backend using to_edge_transform_and_lower."""
+        """Helper method to export a module to CUDA backend using to_edge_transform_and_lower.
+
+        Args:
+            module: The torch.nn.Module to export
+            inputs: The example inputs for the module
+            compile_specs: Optional list of compile specs. If not provided, defaults to
+                          only the method name compile spec for "forward"
+        """
         # Export the model
         exported_program = export(module, inputs, strict=True)
 
-        # Create partitioner and compile specs
-        partitioner = CudaPartitioner(
-            [CudaBackend.generate_method_name_compile_spec("forward")]
-        )
+        # Create partitioner with compile specs
+        if compile_specs is None:
+            compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
+
+        partitioner = CudaPartitioner(compile_specs)
 
         # Use to_edge_transform_and_lower for complete pipeline
         edge_program_manager = to_edge_transform_and_lower(
@@ -270,3 +283,45 @@ class TestCudaExport(unittest.TestCase):
         # Test export
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Conv1d operation export failed")
+
+    def test_sdpa_single_kernel(self):
+        """
+        Test CUDA export for model containing single SDPA kernel.
+        SDPA: Scaled Dot Product Attention
+        """
+
+        sdpa = SdpaModule()
+
+        # Test export
+        edge_program_manager = self._export_to_cuda_with_lower(
+            sdpa.get_eager_model(), sdpa.get_example_inputs()
+        )
+        self.assertIsNotNone(
+            edge_program_manager,
+            "SDPA single kernel operation export failed",
+        )
+
+    def test_triton_kernel_mode_off(self):
+        """
+        Test CUDA export with triton_kernel_mode set to OFF for SDPA kernel.
+        This validates that the backend correctly processes the triton_kernel_mode
+        compile spec and can export SDPA operations without Triton kernel replacements.
+        When triton_kernel_mode is OFF, SDPA should be decomposed using the MATH backend.
+        """
+
+        sdpa = SdpaModule()
+
+        # Create compile specs with triton_kernel_mode set to OFF
+        compile_specs = [
+            CudaBackend.generate_method_name_compile_spec("forward"),
+            CompileSpec(key="triton_kernel_mode", value=b"OFF"),
+        ]
+
+        # Test export with triton_kernel_mode=OFF
+        edge_program_manager = self._export_to_cuda_with_lower(
+            sdpa.get_eager_model(), sdpa.get_example_inputs(), compile_specs
+        )
+        self.assertIsNotNone(
+            edge_program_manager,
+            "SDPA kernel export with triton_kernel_mode=OFF failed",
+        )

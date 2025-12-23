@@ -59,7 +59,7 @@ parser.add_argument(
 if __name__ == "__main__":
     args = parser.parse_args()
     outfile = os.path.join(args.outdir, args.outfile)
-    attr = f'__attribute__((section("{args.section}"), aligned(16))) char '
+    attr = f'__attribute__((section("{args.section}"), aligned(16))) unsigned char '
 
     with open(args.pte, "rb") as fr, open(outfile, "w") as fw:
         data = fr.read()

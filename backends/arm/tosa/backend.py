@@ -17,9 +17,10 @@ subsequent stages (for example, JIT or hardware-specific compilers) consume.
 
 import logging
 import tempfile
-from collections import deque
 from itertools import count
-from typing import cast, Dict, final, List, Set
+from typing import cast, Dict, final, List
+
+import torch
 
 import tosa_serializer as ts
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
@@ -34,7 +35,8 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import TOSA_TENSOR_NAME_META
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.dim_order_utils import get_memory_format
+from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph, GraphModule, Node
 
@@ -43,35 +45,53 @@ logger = logging.getLogger(__name__)
 
 
 def _annotate_external_ids(ep_graph: Graph) -> Dict[str, int]:
-    """
-    Returns dictionary: node name -> external ids
+    """Assign deterministic output IDs to leaf outputs.
 
-    Assign id to an output node of the model so we can trace it.
+    Flattens the output structure and assigns the external ID
+    based on the leaf position in the exported output tuple/list.
+
+    Args:
+        ep_graph (Graph): FX graph produced by export preprocessing.
+
+    Returns:
+        dict[str, int]: Mapping from *leaf output node name* to external output index.
     """
     node2external_id = {}
 
-    def bfs_mark(start_nodes: List[Node], idx: int, seen: Set[Node]):
-        q = deque(start_nodes)
-        while q:
-            n = q.popleft()
-            if n in seen:
-                continue
-            seen.add(n)
-            node2external_id[n.name] = idx
-            # Walk backwards so we touch every producer
-            q.extend(n.all_input_nodes)
+    def _collect_leaves(arg, nodes):
+        # Collect only FX Nodes that are actual outputs
+        # (ignore ints/None/etc inside structured outputs).
+        if isinstance(arg, Node):
+            nodes.append(arg)
+        elif isinstance(arg, (list, tuple)):
+            for a in arg:
+                _collect_leaves(a, nodes)
 
     out = ep_graph.output_node()
-    # First argument of output node is tuple of outputs
-    output_list = cast(tuple, out.args[0])
-    seen: Set[Node] = set()
-    for idx, val in enumerate(output_list):
-        bfs_mark([val], idx, seen)
+    out_leaves: list[Node] = []
+    # First argument of output is the structured container (tuple/list) of outputs
+    _collect_leaves(out.args[0], out_leaves)
+
+    # Map each output leaf's name to its position
+    node2external_id = {leaf.name: idx for idx, leaf in enumerate(out_leaves)}
+
     return node2external_id
 
 
 def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
+    """Reorder graph outputs to match ascending external IDs.
+
+    Args:
+        graph_module (GraphModule): Graph to reorder in place.
+        node_to_id_map (dict[str, int]): Mapping from node name to output index.
+
+    Returns:
+        GraphModule: Updated graph module with deterministic output ordering.
+
+    """
+
     def _external_id(n: Node, node_2_id, fallback: int) -> int:
+        """Return the external ID for ``n`` or ``fallback`` when absent."""
         return node_2_id.get(n.name, fallback)
 
     out_node = graph_module.graph.output_node()
@@ -80,6 +100,7 @@ def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
 
     # sort nodes by the key that is id
     def _sort_key(t: Node) -> int:
+        """Key function that orders outputs by external ID or position."""
         return _external_id(t, node_to_id_map, next(_counter))
 
     orig_ord = tuple(sorted(out_list, key=_sort_key))
@@ -94,15 +115,24 @@ def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
     return graph_module
 
 
+def _get_matching_fake_tensor(node: Node):
+    """Return a fake tensor with the same properties as node,
+    but with .dim_order() == node.meta["tosa_dim_order"]
+    """
+    fake_tensor = node.meta["val"]
+    desired_dim_order = node.meta["tosa_dim_order"]
+    return fake_tensor.to(memory_format=get_memory_format(list(desired_dim_order)))
+
+
 def arm_get_first_delegation_tag(graph_module) -> str:
-    """Return the first delegation tag from the FX graph.
+    """Return the first delegation tag discovered in the FX graph.
 
     Args:
-        graph_module: FX GraphModule produced by the Arm passes.
+        graph_module (GraphModule): Module produced by Arm partitioning.
 
     Returns:
-        str: The first non-empty delegation tag found on any node, or an empty
-        string if none is present.
+        str: First non-empty delegation tag or an empty string when no tag is
+        recorded.
 
     """
     for node in graph_module.graph.nodes:
@@ -125,6 +155,17 @@ class TOSABackend(BackendDetails):
 
     @staticmethod
     def preprocess(edge_program: ExportedProgram, compile_specs: List[CompileSpec]):
+        """Convert an exported program using the provided compile specs.
+
+        Args:
+            edge_program (ExportedProgram): Program generated by Torch export.
+            compile_specs (List[CompileSpec]): Raw compile specifications from
+                ``executorch.apply_backend``.
+
+        Returns:
+            PreprocessResult: Result containing serialized TOSA bytes.
+
+        """
         return TOSABackend._preprocess(
             edge_program, TosaCompileSpec.from_list(compile_specs)
         )
@@ -142,7 +183,7 @@ class TOSABackend(BackendDetails):
 
         Args:
             edge_program (ExportedProgram): Program to lower to TOSA.
-            compile_spec (List[CompileSpec]): Backend options. Recognized keys:
+            compile_spec (TosaCompileSpec): Backend options. Recognized keys:
                 - output_format: Must be "tosa".
                 - tosa_spec: Target TOSA version/capabilities.
                 - debug_artifact_path: Directory for debug outputs.
@@ -225,6 +266,47 @@ class TOSABackend(BackendDetails):
         return PreprocessResult(processed_bytes=binary)
 
     @staticmethod
+    def _regularize_submodule(submodule: GraphModule, submodule_node: Node):
+        """To make a submodule fit into the normal flow of a graph_module, we need to do some regularizations.
+
+        - Buffers created before passes are treated as input to the submodule. Buffers created during passes
+            are treated as "normal" buffers, i.e. gathered from the state_dict.
+            To make it easy to tell them apart, mark all placeholders with "is_input = True" before running passes.
+        - Make sure output node args[0] is always iterable.
+        - Match the dim_order() of the input tensors with the dim orders of the submodule_node inputs.
+        - Match the dim_order() of the out tensors with the dim orders of the submodule_node outputs.
+        """
+        submodule_inputs: list[Node] = []
+        for node in submodule.graph.nodes:
+            if node.op == "placeholder":
+                node.meta["is_input"] = True
+                submodule_inputs.append(node)
+        match submodule_node.target:
+            case torch.ops.higher_order.cond:
+                args = cast(list[Node], submodule_node.args[-1])
+            case torch.ops.higher_order.while_loop:
+                args = cast(list[Node], submodule_node.args[-2]) + cast(
+                    list, submodule_node.args[-1]
+                )
+            case _:
+                raise RuntimeError(
+                    f"Unexpected control flow target: {submodule_node.target}"
+                )
+
+        for submodule_input, submodule_arg in zip(submodule_inputs, args, strict=True):
+            submodule_input.meta["val"] = _get_matching_fake_tensor(submodule_arg)
+
+        output_node = submodule.graph.output_node()
+        if isinstance(output_node.args[0], Node):
+            output_node.update_arg(0, [output_node.args[0]])
+        output_args = cast(list[Node], output_node.args[0])
+
+        # Not all outputs might be used, causing len(users) < len(outputs)
+        # Therefore, strict != True in the zip
+        for submodule_output, submodule_user in zip(output_args, submodule_node.users):
+            submodule_output.meta["val"] = _get_matching_fake_tensor(submodule_user)
+
+    @staticmethod
     def _preprocess_module(  # noqa: C901
         graph_module: GraphModule,
         edge_program: ExportedProgram,
@@ -232,16 +314,31 @@ class TOSABackend(BackendDetails):
         tosa_graph: ts.TosaSerializer,
         debug_hook: DebugHook | None,
         submodule_name: str | None = None,
+        containing_graph_module: GraphModule | None = None,
     ):
-        """Convert 'graph_module' to a tosa_graph"""
+        """Convert an FX ``graph_module`` to TOSA serializer calls.
+
+        Args:
+            graph_module (GraphModule): Module to lower recursively.
+            edge_program (ExportedProgram): Original exported program.
+            compile_spec (TosaCompileSpec): Backend options with TOSA settings.
+            tosa_graph (ts.TosaSerializer): Serializer receiving operators.
+            debug_hook (DebugHook | None): Optional debug instrumentation.
+            submodule_name (str | None): Name used when visiting nested blocks.
+
+        Raises:
+            RuntimeError: If an FX node with an unsupported op kind is found.
+
+        """
         tosa_spec = compile_spec.tosa_spec
         node_to_id_map = _annotate_external_ids(graph_module.graph)
         artifact_path = compile_spec.get_intermediate_path()
+        output_order_workaround = compile_spec.get_output_order_workaround()
 
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
 
-        graph_module = ArmPassManager(tosa_spec).transform_to_backend_pipeline(  # type: ignore
+        graph_module = ArmPassManager(compile_spec).transform_to_backend_pipeline(  # type: ignore
             exported_program=edge_program, graph_module=graph_module
         )
 
@@ -249,7 +346,12 @@ class TOSABackend(BackendDetails):
         from executorch.backends.arm.operators.node_visitor import get_node_visitors
 
         node_visitors = get_node_visitors(edge_program, tosa_spec, debug_hook)
-        graph_module = _sort_outputs(graph_module, node_to_id_map)
+
+        if output_order_workaround:
+            logger.debug("Re-sorting outputs during TOSA lowering.")
+            graph_module = _sort_outputs(graph_module, node_to_id_map)
+        else:
+            logger.debug("No re-sorting outputs (workaround) during TOSA lowering.")
 
         if submodule_name is not None:
             tosa_graph.startRegion(submodule_name)
@@ -264,9 +366,17 @@ class TOSABackend(BackendDetails):
                 if node.op == "call_function":
                     process_call_function(node, tosa_graph, node_visitors, tosa_spec)
                 elif node.op == "placeholder":
-                    if len(node.users) == 0:
+                    if len(node.users) == 0 and submodule_name is None:
+                        # In top level module, we don't need to handle unused placeholders.
+                        # In submodules, we do need to handle them to preserve call signature.
                         continue
-                    process_placeholder(node, tosa_graph, edge_program, tosa_spec)
+                    process_placeholder(
+                        node,
+                        tosa_graph,
+                        edge_program,
+                        containing_graph_module,
+                        tosa_spec,
+                    )
                 elif node.op == "output":
                     process_output(node, tosa_graph, tosa_spec)
                 elif node.op == "get_attr":
@@ -291,7 +401,10 @@ class TOSABackend(BackendDetails):
                 raise
 
         # Recursively preprocess controlflow submodules.
-        for name, submodule, _ in get_control_flow_submodules(graph_module):
+        for name, submodule, control_flow_node in get_cond_while_submodules(
+            graph_module
+        ):
+            TOSABackend._regularize_submodule(submodule, control_flow_node)
             TOSABackend._preprocess_module(
                 submodule,
                 edge_program,
@@ -299,19 +412,14 @@ class TOSABackend(BackendDetails):
                 tosa_graph,
                 debug_hook,
                 submodule_name=name,
+                containing_graph_module=graph_module,
             )
 
     @staticmethod
     def filter_tosa_compile_specs(
         compile_spec: ArmCompileSpec,
     ) -> TosaCompileSpec:
-        """
-        Filter out the CompileSpec elements relevant for the TOSA backend.
-        This is needed to compose a backend targetting hardware IP with the
-        TOSABackend, since we first want to use the TOSABackend to generate
-        the TOSA flatbuffer representation as an intermediate step. The TOSA
-        flatbuffer can then be consumed by the backend targetting specific
-        hardware.
+        """Extract the TOSA-specific settings from a composite compile spec.
 
         Args:
             compile_spec (ArmCompileSpec): Compile specification that may
@@ -319,12 +427,17 @@ class TOSABackend(BackendDetails):
 
         Returns:
             TosaCompileSpec: TOSA-only specification ready for
-                ``TOSABackend.preprocess``.
+            ``TOSABackend.preprocess``.
 
         """
 
+        pipeline_config = compile_spec.get_pass_pipeline_config()
+        tosa_compile_spec = TosaCompileSpec(compile_spec.tosa_spec)
+        tosa_compile_spec.set_pass_pipeline_config(pipeline_config)
         return (
-            TosaCompileSpec(compile_spec.tosa_spec)
-            .dump_intermediate_artifacts_to(compile_spec.get_intermediate_path())
+            tosa_compile_spec.dump_intermediate_artifacts_to(
+                compile_spec.get_intermediate_path()
+            )
             .dump_debug_info(compile_spec.tosa_debug_mode)
+            .set_output_order_workaround(compile_spec.output_order_workaround)
         )

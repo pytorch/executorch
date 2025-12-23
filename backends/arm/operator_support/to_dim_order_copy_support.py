@@ -52,7 +52,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
 
     @staticmethod
     def _merge_supported_types(
-        # pyre-ignore[11]
         dtypes1: SupportedTypeDict,
         dtypes2: SupportedTypeDict,
     ) -> SupportedTypeDict:
@@ -118,6 +117,9 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             torch.float32,
         ],
     }
+    SUPPORTED_INT_FP_PROFILE_DTYPES: SupportedTypeDict = {
+        torch.bool: [torch.float32],
+    }
 
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
@@ -137,6 +139,10 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if tosa_spec.support_float():
             supported_dtypes = self._merge_supported_types(
                 self.SUPPORTED_FP_PROFILE_DTYPES, supported_dtypes
+            )
+        if tosa_spec.support_integer() and tosa_spec.support_float():
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_INT_FP_PROFILE_DTYPES, supported_dtypes
             )
 
         if len(node.all_input_nodes) != 1:

@@ -106,7 +106,7 @@ void perform_conv1d(
     const ivec4 weight_block,
     const int kx) {
   [[unroll]] for (int out_w = 0; out_w < 4; ++out_w) {
-    const int window_i = out_w * conv2d_params.stride.x + kx;
+    const int window_i = out_w * conv2d_params_stride_x + kx;
     [[unroll]] for (int out_c = 0; out_c < 4; ++out_c) {
       accum.data[out_w][0][out_c] = dotPacked4x8AccSatEXT(
           input_window.data[window_i],

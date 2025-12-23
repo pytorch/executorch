@@ -336,4 +336,32 @@ class TensorTest {
       assertEquals(shape[i], deserShape[i])
     }
   }
+
+  @Test
+  fun testOnes_DTypeIsFloat() {
+    val shape = longArrayOf(2, 2)
+    val tensor = Tensor.ones(shape, DType.FLOAT)
+    val data = tensor.dataAsFloatArray
+    assertEquals(DType.FLOAT, tensor.dtype())
+    for (i in shape.indices) {
+      assertEquals(shape[i], tensor.shape[i])
+    }
+    for (i in data.indices) {
+      assertEquals(data[i], 1.0f, 1e-5.toFloat())
+    }
+  }
+
+  @Test
+  fun testZeros_DTypeIsFloat() {
+    val shape = longArrayOf(2, 2)
+    val tensor = Tensor.zeros(shape, DType.FLOAT)
+    val data = tensor.dataAsFloatArray
+    assertEquals(DType.FLOAT, tensor.dtype())
+    for (i in shape.indices) {
+      assertEquals(shape[i], tensor.shape[i])
+    }
+    for (i in data.indices) {
+      assertEquals(data[i], 0.0f, 1e-5.toFloat())
+    }
+  }
 }

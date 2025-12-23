@@ -86,7 +86,7 @@ case "$HF_MODEL" in
     MODEL_NAME="voxtral"
     RUNNER_TARGET="voxtral_runner"
     RUNNER_PATH="voxtral"
-    EXPECTED_OUTPUT="poem"
+    EXPECTED_OUTPUT="existence"
     PREPROCESSOR="voxtral_preprocessor.pte"
     TOKENIZER_URL="https://huggingface.co/mistralai/Voxtral-Mini-3B-2507/resolve/main" # @lint-ignore
     TOKENIZER_FILE="tekken.json"
@@ -147,7 +147,8 @@ if [ "$AUDIO_URL" != "" ]; then
   curl -L $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
 elif [[ "$MODEL_NAME" == *whisper* ]]; then
   conda install -y -c conda-forge "ffmpeg<8"
-  pip install datasets soundfile torchcodec
+  pip install datasets soundfile
+  pip install torchcodec==0.10.0.dev20251211 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
 fi
 
@@ -156,27 +157,13 @@ echo "::endgroup::"
 
 echo "::group::Build $MODEL_NAME Runner"
 
-if [ "$DEVICE" = "cuda" ]; then
-  BUILD_BACKEND="EXECUTORCH_BUILD_CUDA"
-elif [ "$DEVICE" = "metal" ]; then
-  BUILD_BACKEND="EXECUTORCH_BUILD_METAL"
-else
+if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ]; then
   echo "Error: Unsupported device '$DEVICE'. Must be 'cuda' or 'metal'."
   exit 1
 fi
 
-cmake --preset llm \
-      -D${BUILD_BACKEND}=ON \
-      -DCMAKE_INSTALL_PREFIX=cmake-out \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Bcmake-out -S.
-cmake --build cmake-out -j$(nproc) --target install --config Release
-
-cmake -D${BUILD_BACKEND}=ON \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Sexamples/models/$RUNNER_PATH \
-      -Bcmake-out/examples/models/$RUNNER_PATH/
-cmake --build cmake-out/examples/models/$RUNNER_PATH --target $RUNNER_TARGET --config Release
+MAKE_TARGET="${RUNNER_PATH}-${DEVICE}"
+make "${MAKE_TARGET}"
 echo "::endgroup::"
 
 echo "::group::Run $MODEL_NAME Runner"
@@ -195,7 +182,7 @@ case "$MODEL_NAME" in
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR"
     ;;
   whisper-*)
-    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR --model_name ${MODEL_NAME}"
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --audio_path ${MODEL_DIR}/$AUDIO_FILE --processor_path ${MODEL_DIR}/$PREPROCESSOR"
     ;;
   gemma3)
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/ --image_path $IMAGE_PATH"

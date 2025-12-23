@@ -57,14 +57,24 @@ if [[ "$FLOW" == *vulkan* ]]; then
 fi
 
 if [[ "$FLOW" == *arm* ]]; then
+
     # Setup ARM deps.
-    .ci/scripts/setup-arm-baremetal-tools.sh
-    source examples/arm/ethos-u-scratch/setup_path.sh
+    if [[ "$FLOW" == *vgf* ]]; then
+        .ci/scripts/setup-arm-baremetal-tools.sh --enable-mlsdk-deps --install-mlsdk-deps-with-pip
+    else
+        .ci/scripts/setup-arm-baremetal-tools.sh
+    fi
+    source examples/arm/arm-scratch/setup_path.sh
 
     if [[ "$FLOW" == *ethos_u* ]]; then
         # Prepare a test runner binary that can run on the Corstone-3x0 FVPs
         backends/arm/scripts/build_executorch.sh
         backends/arm/test/setup_testing.sh
+    fi
+
+    if [[ "$FLOW" == *vgf* ]]; then
+        # Prepare a test runner binary for VKML runtime
+        backends/arm/test/setup_testing_vkml.sh
     fi
 fi
 

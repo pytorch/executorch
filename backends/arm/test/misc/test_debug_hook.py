@@ -31,7 +31,7 @@ def create_mock_node_1():
         name="convolution",
         target="aten.convolution.default",
         graph_id=6052414368,
-        pass_name="ExportedProgram.module()",
+        pass_name="ExportedProgram.module()",  # nosec B106 - static test string, not a secret
         action="create",
         from_node=[],
         _get_action_string=_get_action_str,
@@ -41,7 +41,7 @@ def create_mock_node_1():
         name="convolution",
         target="aten.convolution.default",
         graph_id=5705954832,
-        pass_name="Interpreter_PropagateUnbackedSymInts",
+        pass_name="Interpreter_PropagateUnbackedSymInts",  # nosec B106 - static test string, not a secret
         action="create",
         from_node=[from_node_2],
         _get_action_string=_get_action_str,
@@ -69,7 +69,7 @@ def create_mock_node_2():
         name="convolution",
         target="aten.convolution.default",
         graph_id=5705954832,
-        pass_name="Interpreter_PropagateUnbackedSymInts",
+        pass_name="Interpreter_PropagateUnbackedSymInts",  # nosec B106 - static test string, not a secret
         action="create",
         from_node=[],
         _get_action_string=_get_action_str,
@@ -160,7 +160,7 @@ TESTCASES = {
 
 
 @common.parametrize("test_data", TESTCASES)
-def test_debug_hook_add_json(test_data: DebugHookTestCase):
+def test_debug_hook_add_json_no_target(test_data: DebugHookTestCase):
     hook = DebugHook(ArmCompileSpec.DebugMode.JSON)
     hook.add(cast(Node, test_data.mock_node), test_data.tosa_op, test_data.op_id)
 
@@ -173,7 +173,7 @@ def test_debug_hook_add_json(test_data: DebugHookTestCase):
 
 
 @common.parametrize("test_data", TESTCASES)
-def test_debug_hook_add_tosa(test_data: DebugHookTestCase):
+def test_debug_hook_add_tosa_no_target(test_data: DebugHookTestCase):
     hook = DebugHook(ArmCompileSpec.DebugMode.TOSA)
     hook.add(cast(Node, test_data.mock_node), test_data.tosa_op, test_data.op_id)
 

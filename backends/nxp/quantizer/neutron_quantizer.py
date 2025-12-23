@@ -20,6 +20,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     CatPattern,
     Conv1dPattern,
     Conv2dPattern,
+    ConvTranspose2dPattern,
     DropoutPattern,
     FlattenPattern,
     HardTanhInPlacePattern,
@@ -28,6 +29,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     MaxPoolPattern,
     MeanDimPattern,
     MmPattern,
+    MulTensorPattern,
     NodeArgsIdx,
     PadPattern,
     PermutePattern,
@@ -37,10 +39,12 @@ from executorch.backends.nxp.quantizer.patterns import (
     ReshapePattern,
     SharedSpecPattern,
     SigmoidPattern,
+    SliceTensorPattern,
     SoftMaxPattern,
     SubTensorPattern,
     TanhInPlacePattern,
     TanhPattern,
+    TransposeIntPattern,
     ViewPattern,
 )
 from executorch.backends.nxp.quantizer.utils import (
@@ -50,7 +54,13 @@ from executorch.backends.nxp.quantizer.utils import (
 )
 from torch import fx
 from torch.ao.quantization.quantizer.utils import _annotate_output_qspec
-from torchao.quantization.pt2e import HistogramObserver, MinMaxObserver
+from torchao.quantization.pt2e import (
+    FakeQuantize,
+    FusedMovingAvgObsFakeQuantize,
+    HistogramObserver,
+    MinMaxObserver,
+    MovingAverageMinMaxObserver,
+)
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
     DerivedQuantizationSpec,
@@ -150,74 +160,120 @@ class NeutronAtenQuantizer(Quantizer):
 
 
 # Quantization Specification used by Neutron NPU
-act_qspec = QuantizationSpec(
-    dtype=torch.int8,
-    quant_min=-128,
-    quant_max=127,
-    qscheme=torch.per_tensor_affine,
-    is_dynamic=False,
-    observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12),
-)
+def act_qspec(is_qat: bool):
+    eps = 2**-12
+    observer_or_fake_quant_ctr = (
+        FusedMovingAvgObsFakeQuantize.with_args(
+            observer=MovingAverageMinMaxObserver, eps=eps
+        )
+        if is_qat
+        else HistogramObserver.with_args(eps=eps)
+    )
 
-wgt_qspec = QuantizationSpec(
-    dtype=torch.int8,
-    quant_min=-127,
-    quant_max=127,
-    qscheme=torch.per_tensor_symmetric,
-    is_dynamic=False,
-    observer_or_fake_quant_ctr=MinMaxObserver,
-    ch_axis=0,
-)
+    return QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=-128,
+        quant_max=127,
+        qscheme=torch.per_tensor_affine,
+        is_dynamic=False,
+        observer_or_fake_quant_ctr=observer_or_fake_quant_ctr,
+    )
 
-wgt_fc_qspec = QuantizationSpec(
-    dtype=torch.int8,
-    quant_min=-127,
-    quant_max=127,
-    qscheme=torch.per_tensor_symmetric,
-    is_dynamic=False,
-    observer_or_fake_quant_ctr=MinMaxObserver,
-)
+
+def wgt_qspec(is_qat: bool):
+    observer_or_fake_quant_ctr = (
+        FakeQuantize.with_args(observer=MovingAverageMinMaxObserver)
+        if is_qat
+        else MinMaxObserver
+    )
+
+    return QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=-127,
+        quant_max=127,
+        qscheme=torch.per_tensor_symmetric,
+        is_dynamic=False,
+        observer_or_fake_quant_ctr=observer_or_fake_quant_ctr,
+        ch_axis=0,
+    )
+
+
+def wgt_fc_qspec(is_qat: bool):
+    observer_or_fake_quant_ctr = (
+        FakeQuantize.with_args(observer=MovingAverageMinMaxObserver)
+        if is_qat
+        else MinMaxObserver
+    )
+
+    return QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=-127,
+        quant_max=127,
+        qscheme=torch.per_tensor_symmetric,
+        is_dynamic=False,
+        observer_or_fake_quant_ctr=observer_or_fake_quant_ctr,
+    )
+
 
 # Is set by the *PatternQuantizer directly.
 bias_qspec = None
 
 
 class NeutronQuantizer(ComposableQuantizer):
-    def __init__(self, neutron_target_spec: NeutronTargetSpec):
+    def __init__(self, neutron_target_spec: NeutronTargetSpec, is_qat: bool = False):
         self.neutron_target_spec = neutron_target_spec
-        static_qconfig = QuantizationConfig(act_qspec, act_qspec, wgt_qspec, None)
-        static_fc_qconfig = QuantizationConfig(act_qspec, act_qspec, wgt_fc_qspec, None)
+        self.is_qat = is_qat
+
+        static_qconfig = QuantizationConfig(
+            act_qspec(is_qat=is_qat),
+            act_qspec(is_qat=is_qat),
+            wgt_qspec(is_qat=is_qat),
+            None,
+        )
+        static_fc_qconfig = QuantizationConfig(
+            act_qspec(is_qat=is_qat),
+            act_qspec(is_qat=is_qat),
+            wgt_fc_qspec(is_qat=is_qat),
+            None,
+        )
+
+        OpQuantizer = NeutronAtenQuantizer
         super().__init__(
             [
-                NeutronAtenQuantizer(AbsPattern(), static_qconfig),
-                NeutronAtenQuantizer(AdaptiveAvgPoolPattern(), static_qconfig),
-                NeutronAtenQuantizer(AddTensorPattern(), static_qconfig),
-                NeutronAtenQuantizer(AddmmPattern(self), static_fc_qconfig),
-                NeutronAtenQuantizer(AvgPoolPattern(), static_qconfig),
-                NeutronAtenQuantizer(CatPattern(), static_qconfig),
-                NeutronAtenQuantizer(Conv1dPattern(), static_qconfig),
-                NeutronAtenQuantizer(Conv2dPattern(self), static_qconfig),
-                NeutronAtenQuantizer(DropoutPattern(), static_qconfig),
-                NeutronAtenQuantizer(FlattenPattern(), static_qconfig),
-                NeutronAtenQuantizer(HardTanhPattern(), static_qconfig),
-                NeutronAtenQuantizer(HardTanhInPlacePattern(), static_qconfig),
-                NeutronAtenQuantizer(LinearPattern(self), static_fc_qconfig),
-                NeutronAtenQuantizer(MaxPoolPattern(), static_qconfig),
-                NeutronAtenQuantizer(MeanDimPattern(), static_qconfig),
-                NeutronAtenQuantizer(MmPattern(self), static_qconfig),
-                NeutronAtenQuantizer(PadPattern(), static_qconfig),
-                NeutronAtenQuantizer(PermutePattern(), static_qconfig),
-                NeutronAtenQuantizer(ReluPattern(), static_qconfig),
-                NeutronAtenQuantizer(ReluInPlacePattern(), static_qconfig),
-                NeutronAtenQuantizer(ReshapePattern(), static_qconfig),
-                NeutronAtenQuantizer(SigmoidPattern(), static_qconfig),
-                NeutronAtenQuantizer(SoftMaxPattern(), static_qconfig),
-                NeutronAtenQuantizer(SubTensorPattern(), static_qconfig),
-                NeutronAtenQuantizer(TanhPattern(), static_qconfig),
-                NeutronAtenQuantizer(TanhInPlacePattern(), static_qconfig),
-                NeutronAtenQuantizer(ViewPattern(), static_qconfig),
+                OpQuantizer(AbsPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(AdaptiveAvgPoolPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(AddTensorPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(AddmmPattern(self, is_qat=is_qat), static_fc_qconfig),
+                OpQuantizer(AvgPoolPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(CatPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(Conv1dPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(Conv2dPattern(self, is_qat=is_qat), static_qconfig),
+                OpQuantizer(ConvTranspose2dPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(DropoutPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(FlattenPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(HardTanhPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(HardTanhInPlacePattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(LinearPattern(self, is_qat=is_qat), static_fc_qconfig),
+                OpQuantizer(MaxPoolPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(MeanDimPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(MmPattern(self, is_qat=is_qat), static_qconfig),
+                OpQuantizer(MulTensorPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(PadPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(PermutePattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(ReluPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(ReluInPlacePattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(ReshapePattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(SigmoidPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(SliceTensorPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(SoftMaxPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(SubTensorPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(TanhPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(TanhInPlacePattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(TransposeIntPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(ViewPattern(is_qat=is_qat), static_qconfig),
             ]
         )
+
         # Mapping ops defined in quantizer partition types to its quantizer
         self.op_to_quantizer = {
             pt: q for q in self.quantizers for pt in q.pattern.partition_types()
@@ -227,7 +283,9 @@ class NeutronQuantizer(ComposableQuantizer):
             pt: False for q in self.quantizers for pt in q.pattern.partition_types()
         }
         self.cluster_quantizers = [
-            NeutronAtenQuantizer(ActivationsConcatClusterPattern(self), static_qconfig)
+            NeutronAtenQuantizer(
+                ActivationsConcatClusterPattern(self, is_qat=is_qat), static_qconfig
+            )
         ]
 
     def transform_for_annotation(
@@ -280,7 +338,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 continue
 
             if node.op == "placeholder" and len(node.users) > 0:
-                _annotate_output_qspec(node, act_qspec)
+                _annotate_output_qspec(node, act_qspec(self.is_qat))
                 self._mark_input_node_as_annotated(node)
 
     def validate(self, model: torch.fx.GraphModule) -> None:

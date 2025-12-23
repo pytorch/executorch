@@ -264,15 +264,6 @@ TEST_F(AOTITorchInt4MMTest, NullInputHandling) {
     EXPECT_EQ(error, Error::InvalidArgument)
         << "Should fail with null output pointer";
   }
-
-  // Test null output tensor (ret0 points to null)
-  {
-    Tensor* null_output = nullptr;
-    AOTITorchError error = aoti_torch_cuda__weight_int4pack_mm(
-        A, B, qGroupSize, qScaleAndZeros, &null_output);
-    EXPECT_EQ(error, Error::InvalidArgument)
-        << "Should fail with null output tensor";
-  }
 }
 
 // Test with larger batch size

@@ -506,6 +506,15 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_new_tensor_handle(
+    Tensor* orig_handle,
+    Tensor** new_handle) {
+  (void)orig_handle;
+  (void)new_handle;
+  throw std::runtime_error("Not implemented");
+  return Error::Internal;
+}
+
 // Cleanup function for clearing global state
 void cleanup_memory() {
   // Use aoti_torch_delete_tensor_object to properly delete each tensor

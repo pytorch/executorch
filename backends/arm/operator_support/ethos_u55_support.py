@@ -78,10 +78,12 @@ class EthosU55DtypeSupport(OperatorSupportBase):
 
     targeted_ops_i8_i16_i32 = [
         exir_ops.edge.aten.cat.default,
+        exir_ops.edge.aten.expand_copy.default,
         exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.view.default,
         exir_ops.edge.aten.permute.default,
+        exir_ops.edge.aten.permute_copy.default,
     ]
 
     target_ops_i8 = tuple(TableOps.included_ops())
@@ -187,6 +189,8 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.logical_not.default,
         exir_ops.edge.aten.amax.default,  # REDUCE_MAX
         exir_ops.edge.aten.amin.default,  # REDUCE_MIN
+        exir_ops.edge.aten.conv3d.default,  # CONV3D
+        exir_ops.edge.aten.conv3d.padding,  # CONV3D (deprecated alias)
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.eq.Scalar,
         exir_ops.edge.aten.ge.Tensor,

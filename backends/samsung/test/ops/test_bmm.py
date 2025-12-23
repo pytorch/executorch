@@ -31,6 +31,7 @@ class BatchMatmul(torch.nn.Module):
 
 class TestBatchMatmul(unittest.TestCase):
     def _test(self, module: torch.nn.Module):
+        torch.manual_seed(8)
         inputs = module.get_example_inputs()
         tester = SamsungTester(
             module, inputs, [gen_samsung_backend_compile_spec("E9955")]
@@ -42,6 +43,7 @@ class TestBatchMatmul(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_bmm_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs, atol=0.005, rtol=0.005)
         )
 
     def test_fp32_bmm(self):

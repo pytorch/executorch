@@ -119,6 +119,10 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
 
+if(EXECUTORCH_ENABLE_BUNDLE_IO)
+  add_definitions(-DET_BUNDLE_IO_ENABLED)
+endif()
+
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol.
 if(WIN32)
@@ -274,10 +278,16 @@ if(EXECUTORCH_BUILD_TESTS)
 endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
-set(_common_compile_options
-    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+list(APPEND _common_compile_options $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations>
 )
+# Set default CMAKE_POSITION_INDEPENDENT_CODE behavior if ON or not set
+# (default) (and not for MSVC compiler)
+if(NOT DEFINED CMAKE_POSITION_INDEPENDENT_CODE
+   OR CMAKE_POSITION_INDEPENDENT_CODE
+)
+  list(APPEND _common_compile_options $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fPIC>)
+endif()
 
 # Let files say "include <executorch/path/to/header.h>".
 # TODO(#6475): This requires/assumes that the repo lives in a directory named
@@ -801,6 +811,9 @@ if(EXECUTORCH_BUILD_PYBIND)
       torch
   )
 
+  # RPATH for _portable_lib.so
+  set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
+
   if(EXECUTORCH_BUILD_EXTENSION_MODULE)
     # Always use static linking for pybindings to avoid runtime symbol
     # resolution issues
@@ -835,6 +848,7 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_QNN)
     list(APPEND _dep_libs qnn_executorch_backend)
+    string(APPEND _portable_lib_rpath ":$ORIGIN/../../backends/qualcomm")
   endif()
 
   if(EXECUTORCH_BUILD_ENN)
@@ -886,10 +900,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
-  # Set RPATH to find PyTorch libraries relative to the installation location
-  # This goes from executorch/extension/pybindings up to site-packages, then to
-  # torch/lib. Don't do this to APPLE, as it will error out on the following
-  # error:
+  # Set RPATH to find PyTorch and backend libraries relative to the installation
+  # location. This goes from executorch/extension/pybindings up to
+  # site-packages, then to torch/lib. If QNN is enabled, also add
+  # backends/qualcomm/. Don't do this to APPLE, as it will error out on the
+  # following error:
   #
   if(APPLE)
     # Skip setting @loader_path for APPLE, since it causes error like ld:
@@ -897,8 +912,8 @@ if(EXECUTORCH_BUILD_PYBIND)
     # libtorch_cpu.dylib'
   else()
     set_target_properties(
-      portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"
-                              INSTALL_RPATH "$ORIGIN/../../../torch/lib"
+      portable_lib PROPERTIES BUILD_RPATH "${_portable_lib_rpath}"
+                              INSTALL_RPATH "${_portable_lib_rpath}"
     )
   endif()
 
@@ -1076,6 +1091,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
     list(APPEND _executor_runner_libs etdump flatccrt)
+  endif()
+
+  if(EXECUTORCH_ENABLE_BUNDLE_IO)
+    list(APPEND _executor_runner_libs bundled_program)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})

@@ -106,6 +106,20 @@ def get_param_tensor(
     raise RuntimeError(f"unsupported param type, {node.op}.")
 
 
+def expand_around_channel(param: Sequence[int] | int, spatial_rank: int) -> list[int]:
+    """
+    Expand a scalar or 1-D parameter around the channel dimension into a broadcastable
+    shape while preserving the channel location.
+    """
+    if isinstance(param, int):
+        return [param] * spatial_rank
+
+    param_list = list(param)
+    if len(param_list) == 1 and spatial_rank > 1:
+        param_list = param_list * spatial_rank
+    return param_list
+
+
 def create_node(
     graph: torch.fx.Graph,
     op_target: OpOverload | EdgeOpOverload,
@@ -114,6 +128,7 @@ def create_node(
     quantize: bool = False,
     q_params: Optional[tuple] = None,
     from_node: Optional[torch.fx.Node] = None,
+    inherit_qparams: bool = False,
 ):
     """
     Adds a node to 'graph'. graph.inserting_before/after() should be used before the call to decide where to insert the node.
@@ -132,6 +147,14 @@ def create_node(
         keys = from_node.meta.keys()
         for key in keys:
             new_meta[key] = from_node.meta[key]
+        if not inherit_qparams:
+            if "input_qparams" in new_meta:
+                new_meta["input_qparams"] = {}
+            if "output_qparams" in new_meta:
+                new_meta["output_qparams"] = {}
+    elif inherit_qparams:
+        raise ValueError("inherit_qparams is only valid when from_node is given")
+
     old_stack_trace = new_meta.get("stack_trace", "")
     new_meta["stack_trace"] = f"{old_stack_trace}\n{traceback.format_stack()[-2]}"
     node.meta = new_meta
@@ -216,7 +239,7 @@ def get_node_arg(args: list | dict, key: int | str | type, default_value=None):
                 f"Out of bounds index {key} for getting value in args (of size {len(args)})"
             )
     elif isinstance(key, str):
-        return args.get(key, default_value)  # type: ignore[union-attr]  # pyre-ignore[16]
+        return args.get(key, default_value)  # type: ignore[union-attr]
     elif isclass(key):
         for arg in args:
             if isinstance(arg, key):

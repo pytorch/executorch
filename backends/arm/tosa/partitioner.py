@@ -2,7 +2,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 """Provide a partitioner for delegating subgraphs to the TOSA backend.
 
 Implement logic to identify and tag regions of an ``ExportedProgram`` that can
@@ -11,6 +10,7 @@ be delegated to the TOSA backend. Use this module to:
 - Partition graphs based on operator support and additional checks.
 - Prune trivial no-op partitions that would lower to empty TOSA graphs.
 - Tag constant data and report reasons for rejected nodes.
+
 """
 
 import logging
@@ -22,6 +22,7 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
+
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
@@ -36,7 +37,7 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
@@ -141,6 +142,7 @@ def reject_partition(
         partition (object): Proposed partition object from the
             capability partitioner.
         reporter (WhyNoPartitionReporter): used to report why nodes were rejected.
+
     """
     for node in partition.nodes:
         if "delegation_tag" in node.meta:
@@ -157,6 +159,7 @@ class TOSAPartitioner(Partitioner):
     Construct this partitioner for compile specs targeting TOSA. The partition
     algorithm uses capability checks and optional additional operator-support
     rules to tag nodes with a delegation tag per subgraph.
+
     """
 
     def __init__(
@@ -183,6 +186,56 @@ class TOSAPartitioner(Partitioner):
         self.additional_checks = additional_checks
         self.tosa_spec = compile_spec.tosa_spec
 
+    def _detag_boundary_nodes(
+        self, module: GraphModule, tag: str, reporter: WhyNoPartitionReporter
+    ) -> None:
+        """De-tag nodes at the partition boundary.
+
+        Remove delegation tags from quantize nodes with inputs outside the
+        partition and from dequantize nodes with outputs outside the partition.
+
+        For non Q/DQ nodes, remove the tag from the first node in the partition
+        if any input has floating-point dtype.
+
+        Args:
+            tag: The delegation tag assigned to the partition.
+            reporter: A reporter to log rejected nodes.
+            module: The GraphModule containing the partition.
+
+        """
+
+        # De-tag outermost q-nodes upwards and dq-nodes downwards.
+        # De-tag if at least one input/output is not part of the partition.
+        for node in module.graph.nodes:
+            if not is_partitioned(node, tag):
+                continue
+
+            is_q_node = node.target in Q_OPS
+            is_dq_node = node.target in DQ_OPS
+            is_boundary_q_node = is_q_node and not is_partitioned(
+                node.all_input_nodes[0], tag
+            )
+            is_boundary_dq_node = is_dq_node and any(
+                not is_partitioned(user, tag) for user in node.users
+            )
+
+            if is_boundary_q_node or is_boundary_dq_node:
+                # Remove tag from quantize node with input outside partition,
+                # or dequantize node with any output outside partition
+                del node.meta["delegation_tag"]
+            elif not is_q_node and not is_dq_node:
+                # For non Q/DQ nodes, remove tag from first node in partition if any input has fp dtype
+                for input in node.all_input_nodes:
+                    if is_partitioned(input, tag):
+                        continue
+                    if get_first_fake_tensor(input).dtype.is_floating_point:
+                        reporter.report_reject(
+                            node,
+                            f"Was first node in partition and input {input.name} had fp dtype.",
+                        )
+                        del node.meta["delegation_tag"]
+                        break
+
     def _tag_module(  # noqa
         self,
         module: GraphModule,
@@ -190,19 +243,21 @@ class TOSAPartitioner(Partitioner):
         reporter: WhyNoPartitionReporter,
         tag_iterator: count | None = None,
     ) -> set[str]:
-        """Tag nodes in a module, possibly a submodule, from the containing program.
+        """Tag nodes in a module or submodule from the containing program.
 
         Args:
             module: A GraphModule from `containing_program` to tag nodes in.
             containing_program: The ExportedProgram that contains the module.
             reporter: A reporter to report why nodes were rejected.
+
         Returns:
             A set of strings with the partition tags.
+
         """
         tags: set[str] = set()
         if tag_iterator is None:
             tag_iterator = count(0)
-        for _, submodule, _ in get_control_flow_submodules(module):
+        for _, submodule, _ in get_cond_while_submodules(module):
             submodule_tags = self._tag_module(
                 submodule, containing_program, reporter, tag_iterator
             )
@@ -228,39 +283,13 @@ class TOSAPartitioner(Partitioner):
             for node in partition.nodes:
                 node.meta["delegation_tag"] = tag
 
-            # De-tag outermost q-nodes upwards and dq-nodes downwards.
-            # De-tag if at least one input/output is not part of the partition.
-            for node in module.graph.nodes:
-                if not is_partitioned(node, tag):
-                    continue
-                if node.target in Q_OPS:
-                    for input in node.all_input_nodes:
-                        if not is_partitioned(input, tag):
-                            del node.meta["delegation_tag"]
-                            break
-                    continue
-
-                if node.target in DQ_OPS:
-                    for user in node.users:
-                        if not is_partitioned(user, tag):
-                            del node.meta["delegation_tag"]
-                            break
-                    continue
-
-                if self.tosa_spec.support_float():
-                    continue
-
-                if is_partitioned(node, tag):
-                    for input in node.all_input_nodes:
-                        if is_partitioned(input, tag):
-                            continue
-                        if get_first_fake_tensor(input).dtype.is_floating_point:
-                            reporter.report_reject(
-                                node,
-                                f"Was first node in partition and input {input.name} had fp dtype.",
-                            )
-                            del node.meta["delegation_tag"]
-                            break
+            if self.tosa_spec.support_integer() and not self.tosa_spec.support_float():
+                # Detag boundary Q/DQ since we cannot handle them without float support
+                self._detag_boundary_nodes(
+                    module,
+                    tag,
+                    reporter,
+                )
 
             is_noop_partition = all(
                 is_noop_clone(node)
@@ -316,7 +345,7 @@ class TOSAPartitioner(Partitioner):
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
 
-    def ops_to_not_decompose(
+    def ops_to_not_decompose(  # noqa: C901
         self,
         ep: ExportedProgram,
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
@@ -336,17 +365,24 @@ class TOSAPartitioner(Partitioner):
 
         """
         ops_to_not_decompose_if_quant_op = {
+            torch.ops.aten.eye.default,
             torch.ops.aten.hardsigmoid.default,
             torch.ops.aten.hardswish.default,
             torch.ops.aten.linear.default,
+            torch.ops.aten.linspace.default,
         }
         ops_to_not_decompose_if_fp = {
+            torch.ops.aten.eye.default,
+            torch.ops.aten.logit.default,
             torch.ops.aten.linear.default,
+            torch.ops.aten.linspace.default,
         }
         ops_to_not_decompose_always = {
+            torch.ops.aten.logit.default,
+        }
+        ops_to_not_decompose_if_integer = {
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
-            torch.ops.aten.logit.default,
         }
 
         def filter_fn(node: torch.fx.Node) -> bool:
@@ -400,15 +436,42 @@ class TOSAPartitioner(Partitioner):
                 ):
                     correct_output_quant = True
 
-                return correct_input_quant and correct_output_quant
+                if correct_input_quant and correct_output_quant:
+                    return True
 
-            # By default, do not decompose the operator
-            return True
+            if node.target in ops_to_not_decompose_if_integer:
+                # We only want to tag nodes as do_not_decompose if we are sure that
+                # we can partition them. We partition them if one or more of the
+                # following is true:
+                # 1. The node outputs an integer type.
+                # 2. All users cast the output to an integer type.
+
+                dtype = get_first_fake_tensor(node).dtype
+                if not dtype.is_floating_point and not dtype.is_complex:
+                    return True
+
+                output_nodes = node.users
+                for user in output_nodes:
+                    if user.target != torch.ops.aten.to.dtype:
+                        return False
+                    else:
+                        cast_dtype = get_first_fake_tensor(user).dtype
+                        if cast_dtype.is_complex or cast_dtype.is_floating_point:
+                            return False
+                return True
+
+            if node.target in ops_to_not_decompose_if_fp:
+                if self.tosa_spec.support_float():
+                    return True
+            if node.target in ops_to_not_decompose_always:
+                return True
+            return False
 
         ops_to_not_decompose = list(
             ops_to_not_decompose_always
             | ops_to_not_decompose_if_quant_op
             | ops_to_not_decompose_if_fp
+            | ops_to_not_decompose_if_integer
         )
 
         if not self.tosa_spec.is_U55_subset:

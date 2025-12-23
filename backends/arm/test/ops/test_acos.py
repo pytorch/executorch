@@ -95,27 +95,27 @@ def test_acos_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_acos_vgf_FP(test_data: Tuple):
+def test_acos_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t](
         Acos(),
         (test_data(),),
         [],
         [],
-        tosa_version="TOSA-1.0+FP",
         run_on_vulkan_runtime=True,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_acos_vgf_INT(test_data: Tuple):
+def test_acos_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t](
         Acos(),
         (test_data(),),
         [],
         [],
-        tosa_version="TOSA-1.0+INT",
         run_on_vulkan_runtime=True,
+        quantize=True,
     )
     pipeline.run()

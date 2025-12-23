@@ -6,18 +6,20 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/backends/cadence/hifi/operators/operators.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
-#include <xa_nnlib_kernels_api.h>
-#include <xtensa/tie/xt_datacache.h>
+
 #include <algorithm>
 #include <cmath>
 #include <optional>
 
-namespace impl {
-namespace HiFi {
-namespace native {
+#include <xa_nnlib_api.h>
+#include <xtensa/tie/xt_datacache.h>
+
+#include <executorch/backends/cadence/generic/operators/op_quantized_linear.h>
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
+namespace impl::HiFi::native {
 
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
@@ -218,7 +220,22 @@ void quantized_linear_out(
     int64_t out_zero_point,
     __ET_UNUSED const optional<Tensor>& offset,
     Tensor& out) {
-  if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
+  if (out.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      in.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      weight.scalar_type() == ::executorch::aten::ScalarType::Char) {
+    ::impl::generic::native::quantized_linear_out(
+        ctx,
+        in,
+        weight,
+        bias,
+        in_zero_point,
+        weight_zero_point,
+        out_multiplier,
+        out_shift,
+        out_zero_point,
+        offset,
+        out);
+  } else if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
     _quantized_linear_asym8u(
         in,
         weight,
@@ -249,18 +266,33 @@ void quantized_linear_out(
 }
 
 void quantized_linear_per_tensor_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const Tensor& bias,
-    int64_t in_zero_point,
-    int64_t weight_zero_point,
-    int64_t out_multiplier,
-    int64_t out_shift,
-    int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
+    const int64_t in_zero_point,
+    const int64_t weight_zero_point,
+    const int64_t out_multiplier,
+    const int64_t out_shift,
+    const int64_t out_zero_point,
+    const optional<Tensor>& offset,
     Tensor& out) {
-  if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
+  if (out.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      in.scalar_type() == ::executorch::aten::ScalarType::Short &&
+      weight.scalar_type() == ::executorch::aten::ScalarType::Char) {
+    ::impl::generic::native::quantized_linear_per_tensor_out(
+        ctx,
+        in,
+        weight,
+        bias,
+        in_zero_point,
+        weight_zero_point,
+        out_multiplier,
+        out_shift,
+        out_zero_point,
+        offset,
+        out);
+  } else if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
     _quantized_linear_per_tensor_asym8u(
         in,
         weight,
@@ -290,6 +322,4 @@ void quantized_linear_per_tensor_out(
   }
 }
 
-} // namespace native
-} // namespace HiFi
-} // namespace impl
+} // namespace impl::HiFi::native

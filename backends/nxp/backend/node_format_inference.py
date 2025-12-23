@@ -30,7 +30,10 @@ class NodeFormatInference:
 
     # A set of Edge Aten ops, which have the ability to change the format (for example - input nodes
     # are channels first but output is formatless).
-    ops_that_can_change_tensor_format = {exir_ops.edge.aten.view_copy.default}
+    ops_that_can_change_tensor_format = {
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.permute_copy.default,
+    }
 
     _type_changed_during_last_run: bool
 
@@ -88,11 +91,23 @@ class NodeFormatInference:
 
         if op_type in self.ops_with_channels_first_nodes:
             self._handle_node_which_uses_channels_first_format(node)
+
         elif op_type in self.ops_that_can_change_tensor_format:
-            if op_type == exir_ops.edge.aten.view_copy.default:  # view_copy
+            if op_type in [
+                exir_ops.edge.aten.view_copy.default,
+                exir_ops.edge.aten.permute_copy.default,
+            ]:
+                # Try to assign the `formatless` format to the input and output. The converter will then handle the
+                #  transition.
+                # Note: If the format for the input/output has already been assigned as channels first, it will NOT be
+                #  overwritten.
                 self._assign_format_to_node(
                     self._node_outputs[node][0], NodeFormat.FORMATLESS
                 )
+                self._assign_format_to_node(
+                    self._node_inputs[node][0], NodeFormat.FORMATLESS
+                )
+
             else:
                 logger.error(
                     f"Node format inference for node type: {op_type} not found!"

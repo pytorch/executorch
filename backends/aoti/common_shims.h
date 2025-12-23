@@ -64,6 +64,7 @@ AOTI_SHIM_EXPORT int32_t aoti_torch_device_type_cpu();
 AOTI_SHIM_EXPORT int32_t aoti_torch_layout_strided();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_float32();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bfloat16();
+AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bool();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int8();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int32();
@@ -93,9 +94,6 @@ aoti_torch_clone_preserve_strides(Tensor* self, Tensor** ret_new_tensor);
 
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_clone(Tensor* self, Tensor** ret_new_tensor);
-
-AOTI_SHIM_EXPORT AOTITorchError
-aoti_torch_new_tensor_handle(Tensor* orig_handle, Tensor** new_handle);
 
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob(
     void* data_ptr,

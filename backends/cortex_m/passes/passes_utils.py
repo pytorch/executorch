@@ -17,6 +17,10 @@ from torch.fx import Node
 SHIFT_INT8 = 20
 
 
+def quantize_val(val, scale, zp, qmin, qmax):
+    return min(max(round(val / scale + zp), qmin), qmax)
+
+
 def dequantize_per_tensor_cmsis(
     qtensor: torch.Tensor, zero_point: int, multiplier: int, shift: int
 ) -> torch.Tensor:
@@ -50,14 +54,32 @@ def requantize_cmsis(
     multiplier: int,
     shift: int,
 ) -> torch.Tensor:
-    """
-    Simulate CMSIS-NN fixed-point requantization:
-    result = round(tensor * multiplier / (2 ^ shift))
-    with double rounding
-    """
-    multiplied = torch.round(tensor.to(torch.int64) * multiplier)
-    shifted = torch.round(multiplied / (2 ** (31 - shift)))
-    return shifted.to(torch.int32)
+    """Simulate CMSIS-NN's arm_nn_requantize helper."""
+
+    tensor_64 = tensor.to(torch.int64)
+    left_shift = max(shift, 0)
+    right_shift = max(-shift, 0)
+
+    # Equivalent to val * (1 << LEFT_SHIFT(shift))
+    value = tensor_64 << left_shift
+
+    # arm_nn_doubling_high_mult_no_sat(value, multiplier)
+    product = value * int(multiplier)
+    product = product + (1 << 30)
+    result = product >> 31
+
+    if right_shift:
+        remainder_mask = (1 << right_shift) - 1
+        remainder = torch.bitwise_and(result, remainder_mask)
+        result = result >> right_shift
+        threshold = remainder_mask >> 1
+        threshold_tensor = torch.full_like(result, threshold, dtype=torch.int64)
+        threshold_tensor = torch.where(
+            result < 0, threshold_tensor + 1, threshold_tensor
+        )
+        result = result + torch.where(remainder > threshold_tensor, 1, 0)
+
+    return result.to(torch.int32)
 
 
 def extract_scalar_value(node_arg) -> float:
@@ -171,3 +193,34 @@ def cleanup_nodes(nodes_to_erase, graph):
         print(f"Warning: {len(failed_nodes)} nodes could not be erased")
 
     return failed_nodes
+
+
+def is_channels_last(tensor: torch.Tensor) -> bool:
+    """Check if a 4D tensor is in channels last format."""
+    if tensor.ndim != 4:
+        return False
+
+    if tensor.shape[1] == 1 or tensor.shape[2] == tensor.shape[3] == 1:
+        return True
+
+    dim_order = list(tensor.dim_order())
+    return dim_order[0:2] == [0, 2]
+
+
+def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
+    """
+    Check if tensor1 is broadcasted to tensor2 along channel dimension.
+    Assumes tensor2 has shape [N, C, ...] and tensor1 has shape [N, 1, ...] or [1, C, ...].
+    """
+    if tensor1.dim() != tensor2.dim():
+        return False
+    if not is_channels_last(tensor1):
+        return False
+    if not is_channels_last(tensor2):
+        return False
+
+    channel_match = tensor1.size(1) == tensor2.size(1)
+    tensor1_channels_only = tensor1.numel() == tensor1.size(1)
+    tensor2_channels_only = tensor2.numel() == tensor2.size(1)
+
+    return channel_match and (tensor1_channels_only or tensor2_channels_only)

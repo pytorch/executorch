@@ -18,20 +18,20 @@ Backends are the bridge between your exported model and the hardware it runs on.
 
 ## Choosing a Backend
 
-| Backend                                                         | Platform(s)         | Hardware Type | Typical Use Case                |
-|-----------------------------------------------------------------|---------------------|---------------|---------------------------------|
-| [XNNPACK](backends/xnnpack/xnnpack-overview.md)                 | All                 | CPU           | General-purpose, fallback       |
-| [Core ML](/backends/coreml/coreml-overview.md)                  | iOS, macOS          | NPU/GPU/CPU   | Apple devices, high performance |
-| [Metal Performance Shaders](/backends/mps/mps-overview.md)      | iOS, macOS          | GPU           | Apple GPU acceleration          |
-| [Vulkan ](/backends/vulkan/vulkan-overview.md)                  | Android             | GPU           | Android GPU acceleration        |
-| [Qualcomm](backends-qualcomm)                                   | Android             | NPU           | Qualcomm SoCs                   |
-| [MediaTek](backends-mediatek)                                   | Android             | NPU           | MediaTek SoCs                   |
-| [ARM EthosU](backends-arm-ethos-u)                              | Embedded            | NPU           | ARM MCUs                        |
-| [ARM VGF](backends-arm-vgf)                                     | Android             | NPU           | ARM platforms                   |
-| [OpenVINO](build-run-openvino)                                  | Embedded            | CPU/GPU/NPU   | Intel SoCs                      |
-| [NXP](backends-nxp)                                             | Embedded            | NPU           | NXP SoCs                        |
-| [Cadence](backends-cadence)                                     | Embedded            | DSP           | DSP-optimized workloads         |
-| [Samsung Exynos](/backends/samsung/samsung-overview.md)         | Android             | NPU           | Samsung SoCs                    |
+| Backend                                                      | Platform(s) | Hardware Type | Typical Use Case                |
+|--------------------------------------------------------------|-------------|---------------|---------------------------------|
+| [XNNPACK](backends/xnnpack/xnnpack-overview.md)              | All         | CPU           | General-purpose, fallback       |
+| [Core ML](/backends/coreml/coreml-overview.md)               | iOS, macOS  | NPU/GPU/CPU   | Apple devices, high performance |
+| [Metal Performance Shaders](/backends/mps/mps-overview.md)   | iOS, macOS  | GPU           | Apple GPU acceleration          |
+| [Vulkan ](/backends/vulkan/vulkan-overview.md)               | Android     | GPU           | Android GPU acceleration        |
+| [Qualcomm](backends-qualcomm)                                | Android     | NPU           | Qualcomm SoCs                   |
+| [MediaTek](backends-mediatek)                                | Android     | NPU           | MediaTek SoCs                   |
+| [Arm Ethos-U](/backends/arm-ethos-u/arm-ethos-u-overview.md) | Embedded    | NPU           | Arm MCUs                        |
+| [Arm VGF](/backends/arm-vgf/arm-vgf-overview.md)             | Android     | GPU           | Arm platforms                   |
+| [OpenVINO](build-run-openvino)                               | Embedded    | CPU/GPU/NPU   | Intel SoCs                      |
+| [NXP](backends/nxp/nxp-overview.md)                          | Embedded    | NPU           | NXP SoCs                        |
+| [Cadence](backends-cadence)                                  | Embedded    | DSP           | DSP-optimized workloads         |
+| [Samsung Exynos](/backends/samsung/samsung-overview.md)      | Android     | NPU           | Samsung SoCs                    |
 
 **Tip:** For best performance, export a `.pte` file for each backend you plan to support.
 
@@ -50,10 +50,10 @@ Backends are the bridge between your exported model and the hardware it runs on.
 :hidden:
 :caption: Backend Overview
 
-backends/xnnpack/xnnpack-overview
+backends-xnnpack
 backends/coreml/coreml-overview
-backends/mps/mps-overview
-backends/vulkan/vulkan-overview
+backends-mps
+backends-vulkan
 backends-qualcomm
 backends-mediatek
 backends-arm-ethos-u
@@ -61,4 +61,4 @@ backends-arm-vgf
 build-run-openvino
 backends-nxp
 backends-cadence
-backends/samsung/samsung-overview
+backends-samsung-exynos

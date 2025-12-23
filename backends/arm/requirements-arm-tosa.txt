@@ -5,5 +5,5 @@
 
 ml_dtypes == 0.5.1
 flatbuffers == 24.3.25
-tosa-adapter-model-explorer == 0.0.1
+tosa-adapter-model-explorer == 0.1.0
 ai-edge-model-explorer >= 0.1.16

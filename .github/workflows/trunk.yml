@@ -100,7 +100,7 @@ jobs:
 #        cd $ZEPHYR_PROJ_ROOT/modules/lib/executorch
 #        install_executorch
 #        .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
-#        source examples/arm/ethos-u-scratch/setup_path.sh
+#        source examples/arm/arm-scratch/setup_path.sh
 #        source $ZEPHYR_PROJ_ROOT/zephyr/zephyr-env.sh
 #
 #        # Get the model as PTE
@@ -317,6 +317,40 @@ jobs:
         # Test test_arm_baremetal.sh with test
         backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
 
+  test-arm-backend-vkml:
+    name: test-arm-backend-vkml
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - test_arm_baremetal: test_pytest_ops_vkml
+      fail-fast: false
+    with:
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps --enable-mlsdk-deps --install-mlsdk-deps-with-pip
+
+        # Increase number of files user can monitor to bypass buck failures.
+        # Hopefully this is high enough for this setup.
+        sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
+
+        ARM_TEST=${{ matrix.test_arm_baremetal }}
+
+        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+
   test-arm-cortex-m-size-test:
     name: test-arm-cortex-m-size-test
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -347,7 +381,7 @@ jobs:
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
-          threshold="135656" # 132 KiB
+          threshold="136000" # 136 KiB
           toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
         else
           echo "Fail unsupport OS selection ${{ matrix.os }}"
@@ -357,7 +391,7 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
         .ci/scripts/setup-arm-baremetal-tools.sh ${setup_script_args}
-        source examples/arm/ethos-u-scratch/setup_path.sh
+        source examples/arm/arm-scratch/setup_path.sh
 
         # User toolchain
         ${toolchain_prefix}c++ --version
@@ -425,7 +459,7 @@ jobs:
         install_executorch "--use-pt-pinned-commit"
 
         .ci/scripts/setup-arm-baremetal-tools.sh
-        source examples/arm/ethos-u-scratch/setup_path.sh
+        source examples/arm/arm-scratch/setup_path.sh
 
         # Install requirements for converting notebooks
         pip install notebook
@@ -623,12 +657,12 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
 
         if [[ "${{ matrix.backend }}" == "torchao" ]]; then
-          BUILD_TORCHAO_EXPERIMENTAL=1 TORCHAO_BUILD_CPU_AARCH64=1 TORCHAO_BUILD_KLEIDIAI=1 TORCHAO_ENABLE_ARM_NEON_DOT=1 TORCHAO_PARALLEL_BACKEND=OPENMP pip install third-party/ao
+          BUILD_TORCHAO_EXPERIMENTAL=1 TORCHAO_BUILD_CPU_AARCH64=1 TORCHAO_BUILD_KLEIDIAI=1 TORCHAO_ENABLE_ARM_NEON_DOT=1 TORCHAO_PARALLEL_BACKEND=OPENMP pip install --no-build-isolation third-party/ao
         fi
 
         pip install -U "huggingface_hub[cli]<1.0"
 
-        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.model != 'phi_4_mini' && '--test_with_runner' || '' }}  ${{ matrix.backend == 'torchao' && '--use_torchao_kernels' || '' }}
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} --test_with_runner ${{ matrix.backend == 'torchao' && '--use_torchao_kernels' || '' }}
 
   test-multimodal-macos:
     if: ${{ !github.event.pull_request.head.repo.fork }}
@@ -805,7 +839,7 @@ jobs:
           qwen3-0.6b|xnnpack|--quantize,
           qwen3-1.7b|xnnpack|--quantize,
           gemma3-1b|xnnpack|--quantize,
-          phi4-mini|xnnpack|--quantize,
+          # phi4-mini|xnnpack|--quantize, transformers v5.0.0rc0 introduces a data-dependent branching in transformers/modeling_rope_utils.py:61 
           smollm2-135m|xnnpack|--quantize,
           smollm3-3b|xnnpack|--quantize
         ]
@@ -1089,7 +1123,7 @@ jobs:
 
         # Install arm dependencies
         .ci/scripts/setup-arm-baremetal-tools.sh
-        source examples/arm/ethos-u-scratch/setup_path.sh
+        source examples/arm/arm-scratch/setup_path.sh
 
         # To build cortex-m test runner
         backends/cortex_m/test/build_test_runner.sh

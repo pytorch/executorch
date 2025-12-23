@@ -9,49 +9,61 @@
 #ifndef SLICE_GLSLH
 #define SLICE_GLSLH
 
-#ifndef USING_BUFFER
+#include "indexing.glslh"
 
-/**
- * Enable the fast path if a texel loaded from the input texture can be used as
- * is to store to the output texture. The following conditions must be met:
- *
- * 1. The input and output textures have the same packed dimension.
- * 2. The select_dim must not be the packed dimension of the input.
- */
-bool can_use_fast_path() {
-  if (out_packed_dim != in_packed_dim) {
-    return false;
-  }
-  if (in_packed_dim == selected_dim) {
-    return false;
-  }
-  return true;
-}
-
-#endif // USING_BUFFER
+#ifdef USING_BUFFER
 
 /*
- * Converts output tensor indices to input tensor indices for the slice operation.
- * This function maps the output indices to the corresponding input indices based on
- * the slice parameters (start, step, selected_dim).
+ * Converts output tensor indices to input tensor indices for the slice operation
+ * on buffer storage.
  *
- * Parameters assumed to be defined in the layout specifier:
- * - in_sizes
+ * Parameters assumed to be defined:
+ * - inp: BufferMetadata
  * - selected_dim
  * - start
  * - step
  */
-ivec4 out_tidx_to_in_tidx(const ivec4 out_tidx) {
-  ivec4 in_tidx = out_tidx;
+TensorIndex out_tidx_to_in_tidx(const TensorIndex out_tidx) {
+  TensorIndex in_tidx = out_tidx;
 
+  int in_size = int(size_at(inp, selected_dim));
   int adjusted_start = start;
   if (start < 0) {
-    adjusted_start = start + in_sizes[selected_dim];
+    adjusted_start = start + in_size;
   }
 
-  in_tidx[selected_dim] = adjusted_start + out_tidx[selected_dim] * step;
+  uint out_idx = idx_at(out_tidx, selected_dim);
+  in_tidx.data[div_4(selected_dim)][mod_4(selected_dim)] =
+      adjusted_start + int(out_idx) * step;
 
   return in_tidx;
 }
+
+#else // texture storage
+
+/*
+ * Converts output tensor indices to input tensor indices for the slice operation
+ * on texture storage.
+ *
+ * Parameters assumed to be defined:
+ * - inp: TextureMetadata
+ * - selected_dim
+ * - start
+ * - step
+ */
+TensorIndex4D out_tidx_to_in_tidx(const TensorIndex4D out_tidx) {
+  TensorIndex4D in_tidx = out_tidx;
+
+  int adjusted_start = start;
+  if (start < 0) {
+    adjusted_start = start + inp.sizes[selected_dim];
+  }
+
+  in_tidx.data[selected_dim] = adjusted_start + out_tidx.data[selected_dim] * step;
+
+  return in_tidx;
+}
+
+#endif // USING_BUFFER
 
 #endif // SLICE_GLSLH

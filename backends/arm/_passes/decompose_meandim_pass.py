@@ -11,7 +11,9 @@ import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
-from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.backend.utils import WhyNoPartitionReporter
@@ -78,7 +80,7 @@ class DecomposeMeanDimPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
-        ComputeConstantOpsAOT,
+        ComputeConstantOpsAOTPass,
         DecomposeSumPass,
         SizeAdjustInputPass,
     }

@@ -107,9 +107,21 @@ runtime.python_test(
     deps = [
        "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
         "//executorch/export:lib",
+        "//executorch/runtime:runtime",  # @manual
         "//pytorch/vision:torchvision",  # @manual
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/examples/models:models",  # @manual
         "//executorch/examples/xnnpack:models",  # @manual
+    ],
+)
+
+runtime.python_test(
+    name = "test_xnnpack_partitioner",
+    srcs = ["test_xnnpack_partitioner.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable_lib",
     ],
 )

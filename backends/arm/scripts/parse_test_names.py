@@ -19,7 +19,9 @@ CUSTOM_EDGE_OPS = [
     "multihead_attention.default",
     "adaptive_avg_pool2d.default",
     "bitwise_right_shift.Tensor",
+    "bitwise_right_shift.Scalar",
     "bitwise_left_shift.Tensor",
+    "bitwise_left_shift.Scalar",
     "native_group_norm.default",
     "silu.default",
     "sdpa.default",
@@ -31,11 +33,22 @@ CUSTOM_EDGE_OPS = [
     "alias_copy.default",
     "pixel_shuffle.default",
     "pixel_unshuffle.default",
+    "while_loop.default",
+    "clamp.Tensor",
 ]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 
 # Add all targets and TOSA profiles we support here.
-TARGETS = ["tosa_FP", "tosa_INT", "u55_INT", "u85_INT", "vgf_INT", "vgf_FP"]
+TARGETS = [
+    "tosa_FP",
+    "tosa_INT",
+    "u55_INT",
+    "u85_INT",
+    "vgf_INT",
+    "vgf_FP",
+    "vgf_quant",
+    "vgf_no_quant",
+]
 
 
 def get_op_name_map():
@@ -99,6 +112,7 @@ def parse_test_name(
     # Special case for convolution
     op = op.removesuffix("_1d")
     op = op.removesuffix("_2d")
+    op = op.removesuffix("_3d")
 
     # Remove suffix for 16 bit activation and 8 bit weight test cases
     op = op.removesuffix("_16a8w")

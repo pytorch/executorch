@@ -2,6 +2,8 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
+oncall("executorch")
+
 runtime.python_library(
     name = "models",
     srcs = ["models.py"],
@@ -35,6 +37,7 @@ runtime.python_library(
         "//executorch/examples/qualcomm:utils",
         "//executorch/examples/models:models",
         "//executorch/backends/qualcomm/debugger:utils",
+        "//executorch/backends/qualcomm/debugger:qnn_intermediate_debugger",
     ],
 )
 
@@ -58,6 +61,10 @@ runtime.python_test(
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/backends/qualcomm/_passes:passes",
+        "//executorch/backends/qualcomm/partition:partition",
+        "//executorch/examples/models/llama:transformer_modules",
+        "//executorch/examples/qualcomm/oss_scripts/llama:masking_utils",
+        "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
         "//executorch/backends/qualcomm/builders:builders",
     ],
 )

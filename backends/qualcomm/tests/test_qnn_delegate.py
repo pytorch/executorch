@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import csv
 import io
 import itertools
 import json
@@ -30,6 +31,7 @@ from executorch.backends.qualcomm.tests.utils import (
     generate_context_binary,
     ModuleQConfig,
     prepare_pt2e,
+    QnnExecuTorchBackendType,
     QuantDtype,
     TestQNN,
     validate_context_binary,
@@ -47,6 +49,7 @@ from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     dump_context_from_pte,
     from_context_binary,
+    generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     is_qnn_sdk_version_less_than,
@@ -91,9 +94,16 @@ from executorch.exir.backend.backend_api import disable_validation
 class TestQNNFloatingPointOperator(TestQNN):
     # TODO: refactor to support different backends
     def setUp(self):
+        match self.get_backend_type():
+            case QnnExecuTorchBackendType.kHtpBackend:
+                backend_options = generate_htp_compiler_spec(use_fp16=True)
+            case QnnExecuTorchBackendType.kGpuBackend:
+                backend_options = generate_gpu_compiler_spec()
+            case _:
+                raise ValueError("Backend is not implemented yet")
+
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1e-1
-        backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
@@ -1351,9 +1361,14 @@ class TestQNNFloatingPointOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_linear(self):
-        module = Linear()  # noqa: F405
+        modules = [
+            Linear(),  # noqa: F405
+            LinearNonConstantWeight(),  # noqa: F405
+        ]
         sample_input = (torch.randn([3, 512]),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_log(self):
         module = Log()  # noqa: F405
@@ -1391,6 +1406,24 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = MaxPool2d()  # noqa: F405
         sample_input = (torch.randn(4, 3, 24, 24),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_max_pool3d(self):
+        # NOTE: The pad should be at most half of effective kernel size.
+        modules = [
+            MaxPool3d((3), (1), (1), (1), False, False),  # noqa: F405
+            MaxPool3d((7), (1), (3), (1), False, False),  # noqa: F405
+            MaxPool3d((7), (1), (3), (1), True, False),  # noqa: F405
+            MaxPool3d(  # noqa: F405
+                (7, 7, 7), (1, 1, 1), (3, 3, 3), (1, 1, 1), True, False
+            ),  # noqa: F405
+            MaxPool3d(  # noqa: F405
+                (7, 9, 13), (1, 1, 1), (3, 4, 6), (1, 1, 1), False, False
+            ),  # noqa: F405
+        ]
+        sample_input = (torch.randn(1, 7, 21, 35, 28),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_mean(self):
         test_comb = [
@@ -1576,9 +1609,14 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_rms_norm(self):
-        module = RmsNorm()  # noqa: F405
-        sample_input = (torch.abs(torch.randn([1, 1, 1, 4])),)
-        self.lower_module_and_test_output(module, sample_input)
+        modules = [
+            RmsNorm(),  # noqa: F405
+            RmsNorm(eps=1e-5),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 1, 4]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_roll(self):
         modules = [
@@ -1734,6 +1772,37 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_triu(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    Triu(),  # noqa: F405
+                    Triu(diagonal=1),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(3, 3),),
+                    (torch.randn(1, 2, 3, 3),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    TriuConstant(1),  # noqa: F405
+                    TriuConstant(1, constant_dtype=torch.bool),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.zeros(5, 5),),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_unflatten(self):
         module = Unflatten(dim=1, sizes=(2, 3, 4))  # noqa: F405
@@ -2049,6 +2118,39 @@ class TestQNNQuantizedOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 prepared = self.get_prepared_qat_module(module, sample_input)
+                converted = self.get_converted_sgd_trained_module(
+                    module, prepared, sample_input
+                )
+                self.lower_module_and_test_output(converted, sample_input)
+
+    def test_qnn_backend_16a4w_block_conv2d_qat(self):
+        in_c = 512
+        out_c = 32
+        kernel = 1
+        padding = 0
+        modules = [
+            Conv2dSingle(  # noqa: F405
+                in_channel=in_c,
+                out_channel=out_c,
+                kernel_size=kernel,
+                padding=padding,
+            ),
+            Conv2dSingle(  # noqa: F405
+                in_channel=in_c,
+                out_channel=out_c,
+                kernel_size=kernel,
+                padding=padding,
+            ),
+        ]  # noqa: F405
+        sample_input = (torch.randn([1, 512, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                prepared = self.get_prepared_qat_module(
+                    module,
+                    sample_input,
+                    quant_dtype=QuantDtype.use_16a4w_block,
+                    block_size_map={"conv2d": (1, 32, 1, 1)},
+                )
                 converted = self.get_converted_sgd_trained_module(
                     module, prepared, sample_input
                 )
@@ -3468,10 +3570,15 @@ class TestQNNQuantizedOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_linear(self):
-        module = Linear()  # noqa: F405
+        modules = [
+            Linear(),  # noqa: F405
+            LinearNonConstantWeight(),  # noqa: F405
+        ]
         sample_input = (torch.randn([3, 512]),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     @unittest.skipIf(is_qnn_sdk_version_less_than("2.30"), "UT pass after QNN 2.30")
     def test_qnn_backend_linear_block(self):
@@ -3547,6 +3654,25 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn(4, 3, 24, 24),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_max_pool3d(self):
+        # NOTE: The pad should be at most half of effective kernel size.
+        modules = [
+            MaxPool3d((3), (1), (1), (1), False, False),  # noqa: F405
+            MaxPool3d((7), (1), (3), (1), False, False),  # noqa: F405
+            MaxPool3d((7), (1), (3), (1), True, False),  # noqa: F405
+            MaxPool3d(  # noqa: F405
+                (7, 7, 7), (1, 1, 1), (3, 3, 3), (1, 1, 1), True, False
+            ),  # noqa: F405
+            MaxPool3d(  # noqa: F405
+                (7, 9, 13), (1, 1, 1), (3, 4, 6), (1, 1, 1), False, False
+            ),  # noqa: F405
+        ]
+        sample_input = (torch.randn(1, 7, 21, 35, 28),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_mean(self):
         test_comb = [
@@ -3747,12 +3873,17 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_rms_norm(self):
-        module = RmsNorm()  # noqa: F405
-        sample_input = (torch.abs(torch.randn([1, 1, 1, 4])),)
-        module = self.get_qdq_module(
-            module, sample_input, quant_dtype=QuantDtype.use_16a4w
-        )
-        self.lower_module_and_test_output(module, sample_input)
+        modules = [
+            RmsNorm(),  # noqa: F405
+            RmsNorm(eps=1e-5),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 1, 4]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    module, sample_input, quant_dtype=QuantDtype.use_16a4w
+                )
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_roll(self):
         modules = [
@@ -3933,6 +4064,38 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 qdq_module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_triu(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    Triu(),  # noqa: F405
+                    Triu(diagonal=1),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(3, 3),),
+                    (torch.randn(1, 2, 3, 3),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    TriuConstant(1),  # noqa: F405
+                    TriuConstant(1, constant_dtype=torch.bool),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.zeros((5, 5)),),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_unflatten(self):
         module = Unflatten(dim=1, sizes=(2, 3, 4))  # noqa: F405
@@ -4407,20 +4570,38 @@ class TestQNNFloatingPointUtils(TestQNN):
             saver=False,
         )
 
-    def test_qnn_backend_dump_intermediate_outputs(self):
+    def test_qnn_backend_dump_intermediate_outputs_topk(self):
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             dump_intermediate_outputs=True,
         )
-        module = Relu()  # noqa: F405
-        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = TopKandIndex()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
         self.lower_module_and_test_output(
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=3,
+            expected_intermediate_events=7,
+            expected_compared_events=5,
+        )
+
+    def test_qnn_backend_dump_intermediate_outputs_simple_model(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            dump_intermediate_outputs=True,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_intermediate_events=20,
+            expected_compared_events=16,
         )
 
     def test_qnn_backend_skip_node_id(self):
@@ -4443,9 +4624,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             skip_node_op_set={"aten.add.Tensor"},
         )
 
-    @unittest.expectedFailure
     def test_qnn_backend_spill_fill_buffer_size(self):
-        # TODO: Fix self.assertNotEqual(0, max_sf_size)
         module = LargeTensorLinear()  # noqa: F405
         sample_input = (torch.randn(1, 256, 512),)
         backend_options = generate_htp_compiler_spec(
@@ -4531,10 +4710,8 @@ class TestQNNFloatingPointUtils(TestQNN):
             generate_qnn_executorch_compiler_spec(
                 soc_model=self.chipset_table[TestQNN.model],
                 backend_options=backend_options,
-                graph_name=graph_name,
             )
-            for graph_name in graph_names
-        ]
+        ] * len(graph_names)
 
         modules_dict = {}
         sample_inputs_dict = {}
@@ -4739,11 +4916,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             lowered_module = edge_prog_mgr.exported_program().graph_module._modules[
                 "lowered_module_0"
             ]
-            qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-                lowered_module.compile_specs[0].value
-            )
-            qnn_mgr.Init()
-            binary = qnn_mgr.StripProtocol(lowered_module.processed_bytes)
+            binary = PyQnnManagerAdaptor.StripProtocol(lowered_module.processed_bytes)
             validate(binary)
 
     def test_qnn_backend_dump_context_from_pte(self):
@@ -4983,21 +5156,40 @@ class TestQNNQuantizedUtils(TestQNN):
             saver=False,
         )
 
-    def test_qnn_backend_dump_intermediate_outputs(self):
+    def test_qnn_backend_dump_intermediate_outputs_simple_model(self):
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             dump_intermediate_outputs=True,
         )
-        module = Relu()  # noqa: F405
-        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=5,
+            expected_intermediate_events=21,
+            expected_compared_events=14,
+        )
+
+    def test_qnn_backend_dump_intermediate_outputs_topk(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            dump_intermediate_outputs=True,
+        )
+        module = TopKandIndex()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_intermediate_events=8,
+            expected_compared_events=5,
         )
 
     def test_qnn_backend_dynamic_shape(self):
@@ -5348,10 +5540,8 @@ class TestQNNQuantizedUtils(TestQNN):
             generate_qnn_executorch_compiler_spec(
                 soc_model=self.chipset_table[TestQNN.model],
                 backend_options=backend_options,
-                graph_name=graph_name,
             )
-            for graph_name in graph_names
-        ]
+        ] * len(graph_names)
         modules_dict = {}
         sample_inputs_dict = {}
         compiler_specs_dict = {}
@@ -5566,11 +5756,7 @@ class TestQNNQuantizedUtils(TestQNN):
             lowered_module = edge_prog_mgr.exported_program().graph_module._modules[
                 "lowered_module_0"
             ]
-            qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-                lowered_module.compile_specs[0].value
-            )
-            qnn_mgr.Init()
-            binary = qnn_mgr.StripProtocol(lowered_module.processed_bytes)
+            binary = PyQnnManagerAdaptor.StripProtocol(lowered_module.processed_bytes)
             validate(binary)
 
     def test_qnn_backend_dump_context_from_pte(self):
@@ -5862,6 +6048,9 @@ class TestExampleLLMScript(TestQNN):
             "gemma3-1b": TestExampleLLMScript.LlmSpecs(
                 SM8650=70, SM8750=100, ppl=23, pte_size=1_200_000_000
             ),  # 1.2 GB
+            "glm-1_5b": TestExampleLLMScript.LlmSpecs(
+                SM8650=42, SM8750=52, ppl=21, pte_size=1_100_000_000
+            ),  # 1.1 GB
             "phi_4_mini": TestExampleLLMScript.LlmSpecs(
                 SM8650=14, SM8750=19, ppl=12, pte_size=4_000_000_000
             ),  # 4GB
@@ -5933,7 +6122,7 @@ class TestExampleLLMScript(TestQNN):
             "kv",
             "--max_seq_len",
             "1024",
-            "--eval_perplexity",
+            "--run_lm_eval",
             "--tasks",
             "wikitext",
             "--limit",
@@ -6050,6 +6239,73 @@ class TestExampleLLMScript(TestQNN):
                     self.assertLessEqual(pte_size, 1_200_000_000)  # 1200MB
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 60)
+
+    def test_granite_3_3_2b_instruct(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "What is the meaning of life?"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--temperature",
+            "0",
+            "--decoder_model",
+            "granite_3_3-2b_instruct",
+            "--model_mode",
+            "kv",
+            "--max_seq_len",
+            "1024",
+            "--run_lm_eval",
+            "--tasks",
+            "hellaswag",
+            "--limit",
+            "10",
+            "--kv_updater",
+            "shift_pointer",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                inference_speed_ref = {"SM8650": 20, "SM8750": 22}
+                if (
+                    not self.compile_only
+                    and not self.enable_x86_64
+                    and self.model in inference_speed_ref
+                ):
+                    self.assertLessEqual(msg["pte_size"], 1_600_000_000)
+                    self.assertGreaterEqual(msg["acc_norm"], 0.2)
+                    self.assertGreaterEqual(
+                        msg["inference_speed"], inference_speed_ref[self.model]
+                    )
 
     def test_llama_stories_260k(self):
         if not self.required_envs():
@@ -6258,6 +6514,126 @@ class TestExampleLLMScript(TestQNN):
                         model_out.startswith(golden_start_with),
                         f"Expected Output: '{golden_start_with}' Actual Output: '{model_out}'",
                     )
+
+
+class TestExampleMultimodalityScript(TestQNN):
+    def test_smolvlm_500m_instruct(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "Can you describe this image?"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            prompt,
+            "--temperature",
+            "0",
+            "--decoder_model",
+            "smolvlm_500m_instruct",
+            "--model_mode",
+            "kv",
+            "--max_seq_len",
+            "128",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.enable_x86_64:
+                    encoder_pte_size = msg["encoder_pte_size"]
+                    text_embedding_pte_size = msg["text_embedding_pte_size"]
+                    decoder_pte_size = msg["pte_size"]
+                    self.assertLessEqual(encoder_pte_size, 110_000_000)  # 110MB
+                    self.assertLessEqual(text_embedding_pte_size, 100_000_000)  # 100MB
+                    self.assertLessEqual(decoder_pte_size, 400_000_000)  # 400MB
+                    print(f"Encoder PTE Size: {encoder_pte_size} bytes")
+                    print(f"Text Embedding PTE Size: {text_embedding_pte_size} bytes")
+                    print(f"Decoder PTE Size: {decoder_pte_size} bytes")
+
+    def test_internvl3_1b(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "Can you describe this image?"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            prompt,
+            "--temperature",
+            "0",
+            "--decoder_model",
+            "internvl3_1b",
+            "--model_mode",
+            "kv",
+            "--max_seq_len",
+            "320",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.enable_x86_64:
+                    encoder_pte_size = msg["encoder_pte_size"]
+                    text_embedding_pte_size = msg["text_embedding_pte_size"]
+                    decoder_pte_size = msg["pte_size"]
+                    self.assertLessEqual(encoder_pte_size, 425_000_000)  # 425MB
+                    self.assertLessEqual(text_embedding_pte_size, 300_000_000)  # 300MB
+                    self.assertLessEqual(decoder_pte_size, 550_000_000)  # 550MB
+                    print(f"Encoder PTE Size: {encoder_pte_size} bytes")
+                    print(f"Text Embedding PTE Size: {text_embedding_pte_size} bytes")
+                    print(f"Decoder PTE Size: {decoder_pte_size} bytes")
 
 
 class TestExampleOssScript(TestQNN):
@@ -8163,6 +8539,9 @@ class TestExampleScript(TestQNN):
 
 
 class TestUtilsScript(TestQNN):
+    TestQNN.atol = 1e-1
+    TestQNN.rtol = 1
+
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
         return all(
@@ -8172,6 +8551,150 @@ class TestUtilsScript(TestQNN):
                 *conditions,
             ]
         )
+
+    def test_cli(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sample_input = torch.randn(1, 2, 3, 4)
+            ep = torch.export.export(Relu(), (sample_input,))  # noqa: F405
+            torch.export.save(ep, f"{tmp_dir}/relu.pt2")
+            torch.save(sample_input, f"{tmp_dir}/input_0_0.pt")
+            with open(f"{tmp_dir}/input_list", "w") as f:
+                f.write(f"{tmp_dir}/input_0_0.pt\n")
+
+            # quantize
+            cmds = [
+                "python",
+                "-m",
+                "examples.qualcomm.util_scripts.cli",
+                "quantize",
+                "--artifact",
+                f"{tmp_dir}/relu.pt2",
+                "--output_folder",
+                f"{tmp_dir}/q_out",
+                "--input_list",
+                f"{tmp_dir}/input_list",
+            ]
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/q_out/relu_quantized.pt2"))
+            # compile
+            cmds = [
+                "python",
+                "-m",
+                "examples.qualcomm.util_scripts.cli",
+                "compile",
+                "--artifact",
+                f"{tmp_dir}/q_out/relu_quantized.pt2",
+                "--output_folder",
+                f"{tmp_dir}/c_out",
+                "--model",
+                self.model,
+            ]
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/relu_quantized.pte"))
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/relu_quantized.svg"))
+            # execute
+            cmds = [
+                "python",
+                "-m",
+                "examples.qualcomm.util_scripts.cli",
+                "execute",
+                "--artifact",
+                f"{tmp_dir}/c_out/relu_quantized.pte",
+                "--output_folder",
+                f"{tmp_dir}/e_out",
+                "--model",
+                self.model,
+                "--target",
+                self.target,
+                "--device",
+                self.device,
+                "--host",
+                self.host,
+                "--build_folder",
+                self.build_folder,
+                "--input_list",
+                f"{tmp_dir}/input_list",
+            ]
+            if self.host:
+                cmds.extend(["--host", self.host])
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/Result_0/output_0.pt"))
+
+    def test_cli_with_input_list_assignment(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sample_input = torch.randn(1, 2, 3, 4)
+            sample_input2 = torch.randn(1, 2, 3, 4)
+            ep = torch.export.export(
+                Sub_y_x_from_x_y(), (sample_input, sample_input2)  # noqa: F405
+            )
+            torch.export.save(ep, f"{tmp_dir}/sub.pt2")
+            torch.save(sample_input, f"{tmp_dir}/input_0_0.pt")
+            torch.save(sample_input2, f"{tmp_dir}/input_0_1.pt")
+            with open(f"{tmp_dir}/input_list", "w") as f:
+                f.write(f"x:={tmp_dir}/input_0_0.pt y:={tmp_dir}/input_0_1.pt\n")
+
+            # quantize
+            cmds = [
+                "python",
+                "-m",
+                "examples.qualcomm.util_scripts.cli",
+                "quantize",
+                "--artifact",
+                f"{tmp_dir}/sub.pt2",
+                "--output_folder",
+                f"{tmp_dir}/q_out",
+                "--input_list",
+                f"{tmp_dir}/input_list",
+            ]
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/q_out/sub_quantized.pt2"))
+            # compile
+            cmds = [
+                "python",
+                "-m",
+                "examples.qualcomm.util_scripts.cli",
+                "compile",
+                "--artifact",
+                f"{tmp_dir}/q_out/sub_quantized.pt2",
+                "--output_folder",
+                f"{tmp_dir}/c_out",
+                "--model",
+                self.model,
+            ]
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/sub_quantized.pte"))
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/sub_quantized.svg"))
+            # execute
+            cmds = [
+                "python",
+                "-m",
+                "examples.qualcomm.util_scripts.cli",
+                "execute",
+                "--artifact",
+                f"{tmp_dir}/c_out/sub_quantized.pte",
+                "--output_folder",
+                f"{tmp_dir}/e_out",
+                "--model",
+                self.model,
+                "--target",
+                self.target,
+                "--device",
+                self.device,
+                "--host",
+                self.host,
+                "--build_folder",
+                self.build_folder,
+                "--input_list",
+                f"{tmp_dir}/input_list",
+            ]
+            if self.host:
+                cmds.extend(["--host", self.host])
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            output_file = f"{tmp_dir}/e_out/Result_0/output_0.pt"
+            self.assertTrue(os.path.isfile(output_file))
+            device_output = torch.load(output_file, weights_only=True)
+            golden_output = ep.module()(sample_input, sample_input2)
+            self._assert_outputs_equal(golden_output, device_output)
 
     def test_custom_op(self):
         if not self.required_envs([self.op_package_dir]):
@@ -8248,69 +8771,69 @@ class TestUtilsScript(TestQNN):
                         qhas_data = json.load(qhas_file)
                         self.assertIn("data", qhas_data)
 
-    def test_cli(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            sample_input = torch.randn(1, 2, 3, 4)
-            ep = torch.export.export(Relu(), (sample_input,))  # noqa: F405
-            torch.export.save(ep, f"{tmp_dir}/relu.pt2")
-            torch.save(sample_input, f"{tmp_dir}/input_0_0.pt")
-            with open(f"{tmp_dir}/input_list", "w") as f:
-                f.write(f"{tmp_dir}/input_0_0.pt\n")
+    def test_intermediate_debugger(self):
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/util_scripts/qnn_intermediate_debugger_demo.py",
+            "--artifact",
+            self.artifact_dir,
+            "--dataset",
+            self.image_dataset,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--dump_intermediate_outputs",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
 
-            # quantize
-            cmds = [
-                "python",
-                "-m",
-                "examples.qualcomm.util_scripts.cli",
-                "quantize",
-                "--artifact",
-                f"{tmp_dir}/relu.pt2",
-                "--output_folder",
-                f"{tmp_dir}/q_out",
-                "--input_list",
-                f"{tmp_dir}/input_list",
-            ]
-            subprocess.run(cmds, stdout=subprocess.DEVNULL)
-            self.assertTrue(os.path.isfile(f"{tmp_dir}/q_out/relu_quantized.pt2"))
-            # compile
-            cmds = [
-                "python",
-                "-m",
-                "examples.qualcomm.util_scripts.cli",
-                "compile",
-                "--artifact",
-                f"{tmp_dir}/q_out/relu_quantized.pt2",
-                "--output_folder",
-                f"{tmp_dir}/c_out",
-                "--model",
-                self.model,
-            ]
-            subprocess.run(cmds, stdout=subprocess.DEVNULL)
-            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/relu_quantized.pte"))
-            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/relu_quantized.svg"))
-            # execute
-            cmds = [
-                "python",
-                "-m",
-                "examples.qualcomm.util_scripts.cli",
-                "execute",
-                "--artifact",
-                f"{tmp_dir}/c_out/relu_quantized.pte",
-                "--output_folder",
-                f"{tmp_dir}/e_out",
-                "--model",
-                self.model,
-                "--target",
-                self.target,
-                "--device",
-                self.device,
-                "--build_folder",
-                self.build_folder,
-                "--input_list",
-                f"{tmp_dir}/input_list",
-            ]
-            subprocess.run(cmds, stdout=subprocess.DEVNULL)
-            self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/output_0_0.pt"))
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                svg_path = msg["svg_path"]
+                csv_path = msg["csv_path"]
+                min_accepted = 235
+                max_accepted = 241
+                # Having a +- 3 tolerance, expecting 238 events
+                assert os.path.exists(svg_path), f"Unable to find SVG file: {svg_path}"
+                assert os.path.exists(csv_path), f"Unable to find CSV file: {csv_path}"
+
+                csv_valid_count = 0
+                with open(csv_path, mode="r", newline="") as csv_file:
+                    reader = csv.reader(csv_file)
+                    header = next(reader)
+                    index = header.index("is_valid_score")
+                    for row in reader:
+                        if len(row) > index and row[index].strip().upper() == "TRUE":
+                            csv_valid_count += 1
+                # We assume csv_valid_count == compared_events, since all compared events meet metric's threshold
+                assert (
+                    min_accepted <= csv_valid_count <= max_accepted
+                ), f"Expected CSV events with valid score is outside of expected range, number of valid score events found: {csv_valid_count}"
+
+                svg_valid_count = 0
+                with open(svg_path, "r", encoding="utf-8") as svg_file:
+                    for line in svg_file:
+                        svg_valid_count += line.count("is_valid_score=True")
+                # We assume svg_valid_count == compared_events, since all compared events meet metric's threshold
+                assert (
+                    min_accepted <= svg_valid_count <= max_accepted
+                ), f"Expected SVG events with valid score is outside of expected range, number of valid score events found: {svg_valid_count}"
+                print(
+                    f"CSV valid count: {csv_valid_count}. SVG valid count: {svg_valid_count}"
+                )
 
 
 def setup_environment():
@@ -8382,6 +8905,13 @@ def setup_environment():
         type=str,
     )
     parser.add_argument(
+        "--backend",
+        help="Backend to be deployed ('htp'/'gpu' are currently supported).",
+        choices=["htp", "gpu"],
+        default="htp",
+        type=str,
+    )
+    parser.add_argument(
         "--llama_artifacts",
         help="A folder that contains: weight, tokenizer, and params.",
         type=str,
@@ -8411,6 +8941,7 @@ def setup_environment():
     TestQNN.llama_artifacts = args.llama_artifacts
     TestQNN.op_package_dir = args.op_package_dir
     TestQNN.target = args.target
+    TestQNN.backend = args.backend
     return sys.argv[:1] + ns_args
 
 

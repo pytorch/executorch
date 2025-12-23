@@ -4,12 +4,15 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import cast, Set, Type, TypeAlias
+from typing import cast, Sequence, Set, Type, TypeAlias
 
 import torch.fx
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import create_node
-from executorch.backends.arm._passes.rewrite_conv2d_pass import RewriteConv2dPass
+from executorch.backends.arm._passes.arm_pass_utils import (
+    create_node,
+    expand_around_channel,
+)
+from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -39,19 +42,22 @@ def pooling_remainder(input_size, pad, kernel_size, stride) -> int:
     return (input_size + 2 * pad - kernel_size) % stride
 
 
-def get_slices_conv2d(conv_node: torch.fx.Node) -> Slices:
+def get_slices_convolution(conv_node: torch.fx.Node) -> Slices:
     slices = []
 
     input_node, weight, _, stride_hw, pad_hw, dilation_hw, _, _, _ = conv_node.args
     weight_shape = cast(torch.fx.Node, weight).meta["val"].shape
     input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
+    spatial_rank = len(input_shape) - 2
 
-    for stride, pad, dilation, dim in zip(
-        cast(list, stride_hw),
-        cast(list, pad_hw),
-        cast(list, dilation_hw),
-        (2, 3),
-    ):
+    strides = expand_around_channel(cast(Sequence[int] | int, stride_hw), spatial_rank)
+    pads = expand_around_channel(cast(Sequence[int] | int, pad_hw), spatial_rank)
+    dilations = expand_around_channel(
+        cast(Sequence[int] | int, dilation_hw), spatial_rank
+    )
+
+    for axis_index, (stride, pad, dilation) in enumerate(zip(strides, pads, dilations)):
+        dim = axis_index + 2
         remainder = conv_remainder(
             input_shape[dim], pad, dilation, weight_shape[dim], stride
         )
@@ -69,19 +75,16 @@ def get_slices_pooling(pooling_node: torch.fx.Node) -> Slices:
     input_node = pooling_node.args[0]
     kernel_size = pooling_node.args[1]
     stride = pooling_node.args[2]
-    padding = pooling_node.args[3] if len(pooling_node.args) >= 4 else [0, 0]
-
-    # For the loop below, padding must be a list
-    if isinstance(padding, int):
-        padding = [padding, padding]
+    padding = pooling_node.args[3] if len(pooling_node.args) >= 4 else 0
 
     input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
 
-    for kernel_length, stride_length, pad_size, dim in zip(
-        cast(list, kernel_size),
-        cast(list, stride),
-        cast(list, padding),
-        (2, 3),
+    kernel_sizes = expand_around_channel(cast(Sequence[int] | int, kernel_size), 2)
+    strides = expand_around_channel(cast(Sequence[int] | int, stride), 2)
+    pads = expand_around_channel(cast(Sequence[int] | int, padding), 2)
+
+    for dim, (kernel_length, stride_length, pad_size) in enumerate(
+        zip(kernel_sizes, strides, pads), start=2
     ):
         remainder = pooling_remainder(
             input_shape[dim], pad_size, kernel_length, stride_length
@@ -99,7 +102,7 @@ def get_slices(node: torch.fx.Node) -> Slices:
     Returns the remainder of input_length; given graph Node.
     """
     if node.target == conv2d_op:
-        return get_slices_conv2d(node)
+        return get_slices_convolution(node)
     elif node.target == max_pooling_op or node.target == avg_pooling_op:
         return get_slices_pooling(node)
     else:
@@ -113,17 +116,17 @@ def is_valid_operator(node: torch.fx.Node) -> bool:
         dilation = node.args[4] if len(node.args) >= 5 else 1
         ceil_mode = node.args[5] if len(node.args) >= 6 else False
 
-        # Dilation should be handled first by DecomposeMaxPool2DPass
+        # Dilation should be handled first by DecomposeMaxPool2dPass
         if isinstance(dilation, int):
             if dilation > 1:
                 raise ValueError(
-                    "Expected max_pool2d with dilation = 1, has DecomposeMaxPool2DPass been run?"
+                    "Expected max_pool2d with dilation = 1, has DecomposeMaxPool2dPass been run?"
                 )
         else:
             dilation = cast(list, dilation)
             if dilation[0] > 1 or dilation[1] > 1:
                 raise ValueError(
-                    "Expected max_pool2d with dilation = [1, 1], has DecomposeMaxPool2DPass been run?"
+                    "Expected max_pool2d with dilation = [1, 1], has DecomposeMaxPool2dPass been run?"
                 )
 
         # If using ceil mode for rounding, the input does not need adjusting
@@ -186,7 +189,9 @@ class SizeAdjustInputPass(ArmPass):
     input.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {RewriteConv2dPass}
+    _passes_required_after: Set[Type[ExportPass]] = {
+        RewriteConvPass,
+    }
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
@@ -207,7 +212,9 @@ class SizeAdjustInputPass(ArmPass):
             with graph_module.graph.inserting_before(node):
                 last_node = cast(torch.fx.Node, parent_node)
                 for args in slice_args:
-                    slice_node = create_node(graph, slice_op, (last_node,) + args)
+                    slice_node = create_node(
+                        graph, slice_op, (last_node,) + args, from_node=node
+                    )
                     last_node = slice_node
                 node.replace_input_with(cast(torch.fx.Node, parent_node), last_node)
                 modified_graph = True

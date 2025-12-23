@@ -7,7 +7,7 @@ import argparse
 import gzip
 import io
 import json
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405
 from pathlib import Path
 
 from typing import Any, Callable, Dict, Iterable, NamedTuple, Union
@@ -18,6 +18,7 @@ from executorch.devtools.visualization.visualization_utils import (
     visualize_model_explorer,
 )
 from model_explorer import config as model_explorer_config, node_data_builder as ndb
+from model_explorer.config import ModelSource
 
 COMPILER_OP_ID = "scheduled_id"
 
@@ -35,7 +36,7 @@ def parse_tables(tables_path: Path) -> Tables:
     """
     required_tables = {"queue", "group", "perf", "source"}
     try:
-        tree = ET.parse(tables_path)
+        tree = ET.parse(tables_path)  # nosec B314
     except ET.ParseError as e:
         raise ValueError(f"Failed to parse XML tables file {tables_path}: {e}")
 
@@ -95,6 +96,11 @@ def transform_events(
 
         qread_offset = 4 * int(event["args"]["qread"])
 
+        while (cmd_index + chain_len <= queue_df_len - 1) and queue_df.iloc[
+            cmd_index + chain_len
+        ]["scheduled_id"] in sub_ops:
+            chain_len += 1
+
         end_idx = cmd_index + chain_len
         if is_end_of_command(qread_offset, end_idx):
             end_ts = int(event["ts"]) - 1
@@ -102,12 +108,8 @@ def transform_events(
                 end_ts - start_ts,
             ]
             start_ts = end_ts
-            cmd_index += chain_len
+            cmd_index = end_idx
             chain_len = 1
-            while (cmd_index + chain_len <= queue_df_len - 1) and queue_df.iloc[
-                cmd_index + chain_len
-            ]["scheduled_id"] in sub_ops:
-                chain_len += 1
 
 
 Agg = Union[str, Callable[[pd.Series], Any]]
@@ -251,17 +253,53 @@ def validate_perf_mode_args(trace: str, tables: str) -> None:
         )
 
 
+def set_pte_model_explorer_config(model_file, tosa_files, config):
+    from pte_adapter_model_explorer.main import PTEAdapter
+
+    pte_adapter = PTEAdapter()
+
+    settings = {"delegate_file_paths": [str(path) for path in tosa_files]}
+    me_graphs = pte_adapter.convert(model_path=str(model_file), settings=settings)
+
+    # Convert the given model to model explorer graphs.
+
+    graphs_index = len(config.graphs_list)
+    config.graphs_list.append(me_graphs)
+
+    # Construct model source.
+    #
+    # The model source has a special format, in the form of:
+    # graphs://{name}/{graphs_index}
+    model_name = model_file.stem
+    model_source: ModelSource = {"url": f"graphs://{model_name}/{graphs_index}"}
+    config.model_sources.append(model_source)
+
+
+def set_tosa_model_explorer_config(model_file, config):
+    config.add_model_from_path(str(model_file))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Visualize a model using model explorer."
     )
     parser.add_argument(
-        "--model_path", required=True, type=str, help="Path to the model file"
+        "--model_dir", required=True, type=str, help="Path to the model directory"
+    )
+    parser.add_argument(
+        "--pte",
+        action="store_true",
+        help="Visualize PTE flatbuffer model and delegates. Cannot be used with --tosa",
+    )
+    parser.add_argument(
+        "--tosa",
+        action="store_true",
+        help="Visualize TOSA flatbuffer model. Cannot be used with --pte",
     )
     parser.add_argument(
         "--trace",
         required=False,
-        help="(perf mode) PMU trace JSON.gz file with performance data",
+        help="(perf mode) PMU trace JSON.gz file with performance data. Can only be used together with --tosa",
     )
     parser.add_argument(
         "--tables",
@@ -270,10 +308,37 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    model_file = Path(args.model_path).resolve()
+    if args.pte and args.tosa:
+        raise ValueError("Cannot use both --pte and --tosa options together")
+
+    model_dir = Path(args.model_dir).resolve()
+
+    tosa_files = list(model_dir.glob("*TOSA*.tosa"))
+
+    model_files = None
+    if args.pte:
+        model_files = list(model_dir.glob("*.pte"))
+    elif args.tosa:
+        model_files = tosa_files
+
+    if not model_files:
+        raise FileNotFoundError(
+            f"No model files found in {model_dir} for the specified format."
+        )
+
+    model_file = model_files[0]
+
     validate_file_exists(model_file)
 
-    config = model_explorer_config().add_model_from_path(str(model_file))
+    config = model_explorer_config()
+
+    extensions = []
+
+    if args.pte:
+        set_pte_model_explorer_config(model_file, tosa_files, config)
+    elif args.tosa:
+        set_tosa_model_explorer_config(model_file, config)
+        extensions.append("tosa_adapter_model_explorer")
 
     if args.trace or args.tables:
         validate_perf_mode_args(args.trace, args.tables)
@@ -286,7 +351,7 @@ def main() -> None:
             "Duration (Cycles)", build_overlay_data(trace_file, tables_file)
         )
 
-    visualize_model_explorer(config=config, extensions=["tosa_adapter_model_explorer"])
+    visualize_model_explorer(config=config, extensions=extensions)
 
 
 if __name__ == "__main__":

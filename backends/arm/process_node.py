@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
+import operator
 from typing import Any, cast, Dict
 
 import numpy as np
@@ -45,14 +46,18 @@ def process_call_function(
             f"Failed processing call_function: {node.name}. "
             "Is the original torch function supported?"
         ) from e
-    tosa_graph.currRegion.currBasicBlock.addTensor(
-        output.name, tosa_shape(output.shape, output.dim_order), output.dtype
-    )
+
+    if not output.multiple_output_names:
+        tosa_graph.currRegion.currBasicBlock.addTensor(
+            output.name, tosa_shape(output.shape, output.dim_order), output.dtype
+        )
+
+    # Get item nodes just add tensors, no node visitor is needed.
+    if node.target == operator.getitem:
+        return
 
     # Visiting each Node
-    # pyre-ignore[16]: Undefined attribute.
     if node.target.__name__ in node_visitors:  # type: ignore[union-attr]
-        # pyre-ignore[16]: Undefined attribute.
         node_visitors[node.target.__name__].define_node(  # type: ignore[union-attr]
             node,
             tosa_graph,
@@ -177,16 +182,27 @@ def process_inputs_to_lifted_tensor_constants(
         ) from e
     tensor = get_lifted_tensor_constant(edge_program, node)
     tensor_data = tensor.detach().numpy()  # type: ignore[union-attr]
+    tensor_values = np.transpose(tensor_data, tosa_arg.dim_order)
 
     tosa_graph.addConst(
-        tensor_data.shape, tosa_arg.dtype, tensor_data, name=tosa_arg.name
+        tensor_values.shape, tosa_arg.dtype, tensor_values, name=tosa_arg.name
     )
+
+
+def _is_submodule_input(
+    node: torch.fx.Node, containing_graph_module: torch.fx.GraphModule
+) -> bool:
+    """Determines whether 'node' is an input to a submodule of 'containing_graph_module'."""
+    if node.op != "placeholder":
+        return False
+    return node.meta.get("is_input", False)
 
 
 def process_placeholder(
     node: torch.fx.Node,
     tosa_graph: Any,
     edge_program: ExportedProgram,
+    containing_graph_module: torch.fx.GraphModule | None,
     tosa_spec: TosaSpecification,
 ):
     """Wrapper for processing and serializing all types of placeholders"""
@@ -198,6 +214,8 @@ def process_placeholder(
         raise ValueError(f"Placeholder '{node.name}' must not have default values")
 
     if node.name in edge_program.graph_signature.user_inputs:
+        process_inputs(node, tosa_graph, tosa_spec)
+    elif containing_graph_module and _is_submodule_input(node, containing_graph_module):
         process_inputs(node, tosa_graph, tosa_spec)
     elif is_param(edge_program, node):
         process_inputs_to_parameters(node, tosa_graph, edge_program, tosa_spec)

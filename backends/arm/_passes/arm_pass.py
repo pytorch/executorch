@@ -6,13 +6,19 @@
 
 import traceback
 from abc import abstractmethod
-from typing import List, Optional, Set, Type
+from typing import Any, List, Optional, Set, Type
 
 from executorch.exir.pass_base import ExportPass, NodeMetadata
+from torch.fx import GraphModule
+from torch.fx.passes.infra.pass_base import PassResult
 
 
 class ArmPass(ExportPass):
     """Base class for Arm passes"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.submodule_depth = 0
 
     @property
     @abstractmethod
@@ -56,3 +62,19 @@ class ArmPass(ExportPass):
         old_stack_trace = new_meta.get("stack_trace", "")
         new_meta["stack_trace"] = f"{old_stack_trace}\n{traceback.format_stack()[-2]}"
         return super().call_operator(op, args, kwargs, NodeMetadata(new_meta))
+
+    def call_submodule(
+        self, graph_module: GraphModule, inputs: tuple[Any, ...]
+    ) -> PassResult:
+        self.submodule_depth += 1
+        if self.submodule_depth == 1:
+            result = super().call_submodule(graph_module, inputs)
+        else:
+            # When we trace a submodule, we don't want to apply the calling pass.
+            # Temporarily replace call_operator to avoid this.
+            _call_operator_fn = self.call_operator
+            self.call_operator = super().call_operator  # type: ignore
+            result = super().call_submodule(graph_module, inputs)
+            self.call_operator = _call_operator_fn  # type: ignore
+        self.submodule_depth -= 1
+        return result

@@ -28,6 +28,9 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
+# Use dynamic linking for CUDA runtime
+set(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
+
 find_package(CUDAToolkit REQUIRED)
 
 # Use ExecutorTorch's standard way to find PyTorch libraries for AOTI
@@ -192,11 +195,3 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION lib
 )
-
-if(BUILD_TESTING)
-  add_executable(multimodal_benchmark tests/multimodal_benchmark.cpp)
-  target_link_libraries(
-    multimodal_benchmark PUBLIC aoti_cuda_backend extension_module_static
-                                extension_flat_tensor portable_ops_lib
-  )
-endif()

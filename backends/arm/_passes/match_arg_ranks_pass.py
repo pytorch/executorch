@@ -49,6 +49,7 @@ class MatchArgRanksPass(ArmPass):
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.mul.Tensor,
         exir_ops.edge.aten.div.Tensor,
+        exir_ops.edge.aten.div.Tensor_mode,
         exir_ops.edge.aten.bitwise_right_shift.Tensor,
         exir_ops.edge.aten.bitwise_left_shift.Tensor,
         exir_ops.edge.aten.eq.Tensor,
@@ -62,6 +63,8 @@ class MatchArgRanksPass(ArmPass):
         exir_ops.edge.aten.bitwise_and.Tensor,
         exir_ops.edge.aten.bitwise_xor.Tensor,
         exir_ops.edge.aten.bitwise_or.Tensor,
+        exir_ops.edge.aten.maximum.default,
+        exir_ops.edge.aten.minimum.default,
     ]
 
     def _match_op_rank(self, graph_module, node, arg, max_rank):

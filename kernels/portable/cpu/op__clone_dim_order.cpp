@@ -10,6 +10,9 @@
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
+#include <algorithm>
+#include <cstring>
+
 namespace torch {
 namespace executor {
 namespace native {
@@ -18,6 +21,30 @@ using Tensor = executorch::aten::Tensor;
 
 template <typename T>
 using OptionalArrayRef = executorch::aten::OptionalArrayRef<T>;
+
+namespace {
+
+/**
+ * Checks the conditions for fast path direct memcpy. This can be used
+ * when the output dim order is unchanged.
+ */
+bool check_fast_path_conditions(
+    const Tensor& in,
+    OptionalArrayRef<int64_t> dim_order) {
+  if (!dim_order.has_value()) {
+    // No dim order means preserve input dim order.
+    return true;
+  }
+
+  auto input_dim_order = in.dim_order();
+  return std::equal(
+      dim_order.value().begin(),
+      dim_order.value().end(),
+      input_dim_order.begin(),
+      input_dim_order.end());
+}
+
+} // namespace
 
 /**
  * _clone_dim_order.out(Tensor self, *, bool non_blocking=False, int[]?
@@ -55,13 +82,18 @@ Tensor& _clone_dim_order_out(
     return out;
   }
 
-  // Select the correct input dtype and copy the tensors.
-  ET_SWITCH_REALHBBF16_TYPES(
-      self.scalar_type(),
-      ctx,
-      "dim_order_ops::_clone_dim_order.out",
-      CTYPE,
-      [&] { _to_dim_order_copy_impl<CTYPE, CTYPE>(self, out); });
+  // Dispatch to the fast path if we can use direct memcpy.
+  if (check_fast_path_conditions(self, dim_order)) {
+    std::memcpy(out.mutable_data_ptr(), self.const_data_ptr(), self.nbytes());
+  } else {
+    // Select the correct input dtype and copy the tensors.
+    ET_SWITCH_REALHBBF16_TYPES(
+        self.scalar_type(),
+        ctx,
+        "dim_order_ops::_clone_dim_order.out",
+        CTYPE,
+        [&] { _to_dim_order_copy_impl<CTYPE, CTYPE>(self, out); });
+  }
 
   return out;
 }

@@ -140,8 +140,68 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
 
+/**
+ * Creates a new tensor handle from an existing one.
+ *
+ * This function creates a new tensor object that shares the same underlying
+ * memory as the original tensor. Similar to PyTorch's Tensor copy constructor,
+ * it creates a new handle/reference to the same data without performing a deep
+ * copy.
+ *
+ * The new tensor will:
+ * - Share the same memory/storage as the original tensor
+ * - Have the same shape, strides, and dtype as the original
+ * - Increment the reference count for the underlying memory (if owned)
+ *
+ * @param orig_handle Original tensor to create a new handle from (must not be
+ * null)
+ * @param new_handle Output pointer to store the new tensor handle (must not be
+ * null)
+ *
+ * @return Error::Ok on success, appropriate error code on failure:
+ *         - Error::InvalidArgument: null pointers or invalid parameters
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_new_tensor_handle(Tensor* orig_handle, Tensor** new_handle);
+
+/**
+ * Retrieves a boolean value from a 0D boolean tensor.
+ *
+ * This function extracts the scalar boolean value from a tensor that contains
+ * a single boolean element. The tensor can be on either CPU or CUDA device.
+ * For CUDA tensors, the value is copied from device to host memory.
+ *
+ * @param tensor Pointer to a 0D boolean tensor (must not be null)
+ * @param ret_value Output pointer to store the boolean value (must not be null)
+ *
+ * @return Error::Ok on success, appropriate error code on failure:
+ *         - Error::InvalidArgument: null pointers or tensor dtype is not bool
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_bool(Tensor* tensor, bool* ret_value);
+
+/**
+ * Creates a new tensor that shares the same underlying data as the source
+ * tensor.
+ *
+ * This function creates a new tensor view with the same shape, strides, and
+ * dtype as the source tensor, sharing the same underlying memory. The new
+ * tensor handle will be stored in ret_dst.
+ *
+ * @param src The source tensor providing the data and metadata.
+ * @param ret_dst On output, this will point to the new tensor view.
+ *
+ * @return Error::Ok on success, appropriate error code on failure:
+ *         - Error::InvalidArgument: null pointers or memory not tracked
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst);
+
 // Function to clear all tensors from internal storage
 AOTI_SHIM_EXPORT void clear_all_tensors();
+
+// Function to clear memory tracking map (for test cleanup)
+AOTI_SHIM_EXPORT void clear_memory_tracking();
 } // extern "C"
 
 } // namespace executorch::backends::cuda
