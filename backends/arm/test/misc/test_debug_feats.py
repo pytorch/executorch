@@ -16,6 +16,7 @@ import pytest
 import torch
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.runner_utils import dbg_tosa_fb_to_json
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     TosaPipelineFP,
@@ -76,10 +77,10 @@ def _is_tosa_marker_in_file(tmp_file):
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_FP_artifact(test_data: input_t1):
+def test_artifact_tosa_FP(test_data: input_t1):
     model = Linear()
     tmp_file = common.get_time_formatted_path(
-        tempfile.mkdtemp(), test_FP_artifact.__name__
+        tempfile.mkdtemp(), test_artifact_tosa_FP.__name__
     )
     _tosa_FP_pipeline(model, test_data, dump_file=tmp_file)
     assert os.path.exists(tmp_file), f"File {tmp_file} was not created"
@@ -89,10 +90,10 @@ def test_FP_artifact(test_data: input_t1):
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_INT_artifact(test_data: input_t1):
+def test_artifact_tosa_INT(test_data: input_t1):
     model = Linear()
     tmp_file = common.get_time_formatted_path(
-        tempfile.mkdtemp(), test_INT_artifact.__name__
+        tempfile.mkdtemp(), test_artifact_tosa_INT.__name__
     )
     _tosa_INT_pipeline(model, test_data, dump_file=tmp_file)
     assert os.path.exists(tmp_file), f"File {tmp_file} was not created"
@@ -105,7 +106,7 @@ def test_INT_artifact(test_data: input_t1):
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_numerical_diff_print(test_data: input_t1):
+def test_numerical_diff_print_tosa_INT(test_data: input_t1):
     aten_ops: list[str] = []
     exir_ops: list[str] = []
     pipeline = TosaPipelineINT[input_t1](
@@ -133,7 +134,7 @@ def test_numerical_diff_print(test_data: input_t1):
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_dump_ops_and_dtypes(test_data: input_t1):
+def test_dump_ops_and_dtypes_tosa_INT(test_data: input_t1):
     aten_ops: list[str] = []
     exir_ops: list[str] = []
     pipeline = TosaPipelineINT[input_t1](Linear(), test_data, aten_ops, exir_ops)
@@ -153,7 +154,7 @@ def test_dump_ops_and_dtypes(test_data: input_t1):
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_dump_ops_and_dtypes_parseable(test_data: input_t1):
+def test_dump_ops_and_dtypes_parseable_tosa_INT(test_data: input_t1):
     aten_ops: list[str] = []
     exir_ops: list[str] = []
     pipeline = TosaPipelineINT[input_t1](Linear(), test_data, aten_ops, exir_ops)
@@ -180,7 +181,7 @@ def test_dump_ops_and_dtypes_parseable(test_data: input_t1):
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_collate_tosa_INT_tests(test_data: input_t1):
+def test_collate_tests_tosa_INT(test_data: input_t1):
     # Set the environment variable to trigger the collation of TOSA tests
     os.environ["TOSA_TESTCASES_BASE_PATH"] = "test_collate_tosa_tests"
     # Clear out the directory
@@ -191,7 +192,7 @@ def test_collate_tosa_INT_tests(test_data: input_t1):
     pipeline.run()
 
     test_collate_dir = (
-        "test_collate_tosa_tests/tosa-int/test_collate_tosa_INT_tests[randn]"
+        "test_collate_tosa_tests/tosa-int/test_collate_tests_tosa_INT[randn]"
     )
     # test that the output directory is created and contains the expected files
     assert os.path.exists(test_collate_dir)
@@ -204,7 +205,7 @@ def test_collate_tosa_INT_tests(test_data: input_t1):
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_dump_tosa_debug_json(test_data: input_t1):
+def test_dump_tosa_debug_json_tosa_INT(test_data: input_t1):
     with tempfile.TemporaryDirectory() as tmpdir:
         aten_ops: list[str] = []
         exir_ops: list[str] = []
@@ -237,30 +238,52 @@ def test_dump_tosa_debug_json(test_data: input_t1):
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_dump_tosa_debug_tosa(test_data: input_t1):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        aten_ops: list[str] = []
-        exir_ops: list[str] = []
-        pipeline = TosaPipelineINT[input_t1](
-            module=Linear(),
-            test_data=test_data,
-            aten_op=aten_ops,
-            exir_op=exir_ops,
-            custom_path=tmpdir,
-            tosa_debug_mode=ArmCompileSpec.DebugMode.TOSA,
-        )
+def test_dump_tosa_debug_tosa_FP(test_data: input_t1):
+    output_dir = "test_dump_tosa_debug"
 
-        pipeline.pop_stage("run_method_and_compare_outputs")
-        pipeline.run()
+    aten_ops: list[str] = []
+    exir_ops: list[str] = []
+    pipeline = TosaPipelineFP[input_t1](
+        module=Linear(),
+        test_data=test_data,
+        use_to_edge_transform_and_lower=True,
+        aten_op=aten_ops,
+        exir_op=exir_ops,
+        custom_path=output_dir,
+        tosa_debug_mode=ArmCompileSpec.DebugMode.TOSA,
+    )
 
-        json_output_path = Path(tmpdir) / "debug.json"
+    pipeline.pop_stage("run_method_and_compare_outputs")
+    pipeline.run()
 
-        # A JSON file should not be created when TOSA mode used
-        assert not json_output_path.exists()
+    output_path = Path(output_dir)
+    json_output_path = output_path / "debug.json"
+
+    # A JSON file should not be created when TOSA mode used
+    assert not json_output_path.exists()
+
+    # At least one TOSA file should exist
+    tosa_files = list(output_path.glob("*.tosa"))
+    assert len(tosa_files) > 0
+
+    tosa_file = tosa_files[0]
+    with tosa_file.open("rb") as f:
+        tosa_json = dbg_tosa_fb_to_json(f.read())
+
+    # Check all non-empty JSON strings are valid
+    ops = tosa_json["regions"][0]["blocks"][0]["operators"]
+    for op in ops:
+        if op["location"]["text"]:
+            try:
+                json.loads(op["location"]["text"])
+            except json.JSONDecodeError:
+                pytest.fail("Failed to load debug JSON string")
+
+    shutil.rmtree(output_dir, ignore_errors=True)
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_dump_tosa_ops(capsys, test_data: input_t1):
+def test_dump_tosa_ops_tosa_INT(capsys, test_data: input_t1):
     aten_ops: list[str] = []
     exir_ops: list[str] = []
     pipeline = TosaPipelineINT[input_t1](Linear(), test_data, aten_ops, exir_ops)
@@ -281,15 +304,13 @@ class Add(torch.nn.Module):
 
 @common.parametrize("test_data", Add.inputs)
 @common.XfailIfNoCorstone300
-def test_fail_dump_tosa_ops(capsys, test_data: input_t1):
+def test_fail_dump_ops_u55_INT(capsys, test_data: input_t1):
     aten_ops: list[str] = []
     exir_ops: list[str] = []
     pipeline = EthosU55PipelineINT[input_t1](
         Add(), test_data, aten_ops, exir_ops, use_to_edge_transform_and_lower=True
     )
     pipeline.dump_operator_distribution("to_edge_transform_and_lower")
-    pipeline.run()
-    assert (
-        "Can not get operator distribution for Vela command stream."
-        in capsys.readouterr().out
-    )
+    error_msg = "Can not get operator distribution for Vela command stream."
+    with pytest.raises(NotImplementedError, match=error_msg):
+        pipeline.run()

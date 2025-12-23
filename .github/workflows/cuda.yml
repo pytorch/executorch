@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cuda-version: ["12.6", "12.8", "13.0"]
+        cuda-version: ["12.6", "12.8", "12.9", "13.0"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -86,6 +86,33 @@ jobs:
         PYTHON_EXECUTABLE=python ./install_executorch.sh
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
         PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
+
+  test-cuda-shims:
+    name: test-cuda-shims
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.6
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        # Install requirements
+        bash ./install_requirements.sh
+
+        # Build ExecuTorch with CUDA support
+        cmake --workflow --preset llm-release-cuda
+
+        # Build and run CUDA shim tests
+        pushd backends/cuda/runtime/shims/tests
+        cmake --workflow --preset default
+        popd
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact

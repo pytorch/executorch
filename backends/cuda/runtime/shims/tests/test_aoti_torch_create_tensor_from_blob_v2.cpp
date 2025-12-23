@@ -752,3 +752,68 @@ TEST_F(AOTITorchCreateTensorFromBlobV2Test, StressTestManySmallTensors) {
     EXPECT_EQ(error, Error::Ok);
   }
 }
+
+// Test device type mismatch: CPU data with CUDA device request should fail
+TEST_F(AOTITorchCreateTensorFromBlobV2Test, DeviceMismatchCPUDataCUDADevice) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = calculate_contiguous_strides(sizes);
+
+  // Allocate CPU memory
+  size_t bytes = calculate_numel(sizes) * sizeof(float);
+  void* cpu_data = allocate_cpu_memory(bytes);
+  ASSERT_NE(cpu_data, nullptr);
+
+  Tensor* tensor;
+  // Request CUDA device but provide CPU memory - should fail
+  AOTITorchError error = aoti_torch_create_tensor_from_blob_v2(
+      cpu_data,
+      sizes.size(),
+      sizes.data(),
+      strides.data(),
+      0, // storage_offset
+      static_cast<int32_t>(SupportedDTypes::FLOAT32),
+      static_cast<int32_t>(SupportedDevices::CUDA), // Request CUDA
+      0, // device index
+      &tensor,
+      0, // layout
+      nullptr, // opaque_metadata
+      0); // opaque_metadata_size
+
+  EXPECT_EQ(error, Error::InvalidArgument)
+      << "Should fail when CPU data is provided but CUDA device is requested";
+}
+
+// Test device type mismatch: CUDA data with CPU device request should fail
+TEST_F(AOTITorchCreateTensorFromBlobV2Test, DeviceMismatchCUDADataCPUDevice) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = calculate_contiguous_strides(sizes);
+
+  // Allocate CUDA memory (device memory, not managed)
+  size_t bytes = calculate_numel(sizes) * sizeof(float);
+  void* cuda_data = nullptr;
+  cudaError_t cuda_err = cudaMalloc(&cuda_data, bytes);
+  ASSERT_EQ(cuda_err, cudaSuccess);
+  ASSERT_NE(cuda_data, nullptr);
+
+  Tensor* tensor;
+  // Request CPU device but provide CUDA memory - should fail
+  AOTITorchError error = aoti_torch_create_tensor_from_blob_v2(
+      cuda_data,
+      sizes.size(),
+      sizes.data(),
+      strides.data(),
+      0, // storage_offset
+      static_cast<int32_t>(SupportedDTypes::FLOAT32),
+      static_cast<int32_t>(SupportedDevices::CPU), // Request CPU
+      0, // device index
+      &tensor,
+      0, // layout
+      nullptr, // opaque_metadata
+      0); // opaque_metadata_size
+
+  EXPECT_EQ(error, Error::InvalidArgument)
+      << "Should fail when CUDA data is provided but CPU device is requested";
+
+  // Clean up the CUDA memory we allocated directly
+  cudaFree(cuda_data);
+}

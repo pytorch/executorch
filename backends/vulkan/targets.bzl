@@ -93,12 +93,15 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
     for target, subpath in spv_filegroups.items():
         glsl_paths.append("$(location {})/{}".format(target, subpath))
 
+    nthreads = read_config("etvk", "shader_compile_nthreads", "-1")
+
     genrule_cmd = (
         "$(exe {}) ".format(gen_vulkan_spv_target) +
         "--glsl-paths {} ".format(" ".join(glsl_paths)) +
         "--output-path $OUT " +
         "--glslc-path=$(exe {}) ".format(glslc_path) +
         "--tmp-dir-path=shader_cache " +
+        "--nthreads {} ".format(nthreads) +
         ("-f " if read_config("etvk", "force_shader_rebuild", "0") == "1" else " ") +
         select({
             "DEFAULT": "",
@@ -192,6 +195,7 @@ def define_common_targets(is_fbcode = False):
         else:
             for deps in [default_deps, android_deps]:
                 deps.append("fbsource//third-party/volk:volk-header")
+                deps.append("fbsource//third-party/volk:volk-implementation")
 
         if is_fbcode:
             VK_API_DEPS += [

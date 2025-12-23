@@ -9,10 +9,9 @@ import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
-    TOSAQuantizer,
 )
 
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -20,9 +19,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-
-from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.xnnpack.test.tester import Quantize
 
 from torch.nn.quantizable.modules import rnn
 
@@ -119,53 +115,32 @@ def test_lstm_u85_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_lstm_vgf_INT():
+def test_lstm_vgf_quant():
     pipeline = VgfPipeline[input_t](
         TestLSTM.lstm,
         TestLSTM.model_example_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_lstm_vgf_FP():
+def test_lstm_vgf_no_quant():
     pipeline = VgfPipeline[input_t](
         TestLSTM.lstm,
         TestLSTM.model_example_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()
 
 
-def get_symmetric_a16w8_lstm_quantizer(per_channel_quantization=False):
-    tosa_version = conftest.get_option("tosa_version")
-    tosa_profiles = {
-        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
-    }
-
-    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-    quantizer.set_global(
-        get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization, epsilon=2**-16
-        )
-    )
-
-    return Quantize(
-        quantizer,
-        get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization, epsilon=2**-16
-        ),
-    )
-
-
-def test_lstm_16a8w_tosa_INT():
+def test_lstm_tosa_INT_16a8w():
     """Test LSTM model with 16A8W quantization (16-bit activations, 8-bit weights)"""
 
     pipeline = TosaPipelineINT[input_t](
@@ -177,8 +152,9 @@ def test_lstm_16a8w_tosa_INT():
         use_to_edge_transform_and_lower=True,
         tosa_extensions=["int16"],
     )
-
-    pipeline.change_args("quantize", get_symmetric_a16w8_lstm_quantizer())
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=False, epsilon=2**-16)
+    )
     pipeline.run()
 
 
@@ -186,7 +162,7 @@ def test_lstm_16a8w_tosa_INT():
     reason="MLETORCH-1452: AssertionError: Output 0 does not match reference output."
 )
 @common.XfailIfNoCorstone300
-def test_lstm_16a8w_u55_INT():
+def test_lstm_u55_INT_16a8w():
     pipeline = EthosU55PipelineINT[input_t](
         TestLSTM.lstm,
         TestLSTM.model_example_inputs,
@@ -195,12 +171,15 @@ def test_lstm_16a8w_u55_INT():
         use_to_edge_transform_and_lower=True,
     )
 
-    pipeline.change_args("quantize", get_symmetric_a16w8_lstm_quantizer())
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=False, epsilon=2**-16)
+    )
+
     pipeline.run()
 
 
 @common.XfailIfNoCorstone320
-def test_lstm_16a8w_u85_INT():
+def test_lstm_u85_INT_16a8w():
     pipeline = EthosU85PipelineINT[input_t](
         TestLSTM.lstm,
         TestLSTM.model_example_inputs,
@@ -208,5 +187,8 @@ def test_lstm_16a8w_u85_INT():
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.change_args("quantize", get_symmetric_a16w8_lstm_quantizer())
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=False, epsilon=2**-16)
+    )
+
     pipeline.run()

@@ -42,15 +42,15 @@ class TestCLIPTextModelWithProjection:
 
     ops_after_partitioner_INT = {
         "executorch_exir_dialects_edge__ops_aten_argmax_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_full_default": 1,
         "executorch_exir_dialects_edge__ops_aten_index_select_default": 1,
         "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": 1,
         "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_where_self": 1,
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
-        "torch.ops.aten.scalar_tensor.default": 1,
         "torch.ops.higher_order.executorch_call_delegate": 2,
     }
+
+    ops_after_partitioner_vgf_quantize = ops_after_partitioner_FP
+    ops_after_partitioner_vgf_no_quantize = ops_after_partitioner_FP
 
     def _prepare_inputs(
         self,
@@ -76,7 +76,7 @@ class TestCLIPTextModelWithProjection:
         return text_encoder_model, text_encoder_model_inputs
 
 
-def test_CLIPTextModelWithProjection_tosa_FP():
+def test_clip_text_with_projection_tosa_FP():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )
@@ -99,7 +99,7 @@ def test_CLIPTextModelWithProjection_tosa_FP():
         pipeline.run()
 
 
-def test_CLIPTextModelWithProjection_tosa_INT():
+def test_clip_text_with_projection_tosa_INT():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )
@@ -120,7 +120,7 @@ def test_CLIPTextModelWithProjection_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_CLIPTextModelWithProjection_vgf_FP():
+def test_clip_text_with_projection_vgf_no_quant():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )
@@ -130,23 +130,24 @@ def test_CLIPTextModelWithProjection_vgf_FP():
             text_encoder_model_inputs,
             aten_op=[],
             exir_op=[],
-            tosa_version="TOSA-1.0+FP",
             use_to_edge_transform_and_lower=True,
-            atol=4,  # TODO: Investiage numerical issue: MAX Diff ~50%
+            atol=4,
             transform_passes=[
                 ConvertInt64ConstOpsToInt32Pass(),
                 ConvertInt64OutputOpsToInt32Pass(),
                 InsertInt32CastsAfterInt64PlaceholdersPass(),
             ],
+            quantize=False,
         )
         pipeline.change_args(
-            "check_count.exir", TestCLIPTextModelWithProjection.ops_after_partitioner_FP
+            "check_count.exir",
+            TestCLIPTextModelWithProjection.ops_after_partitioner_vgf_no_quantize,
         )
         pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_CLIPTextModelWithProjection_vgf_INT():
+def test_clip_text_with_projection_vgf_quant():
     text_encoder_model, text_encoder_model_inputs = (
         TestCLIPTextModelWithProjection().prepare_model_and_inputs()
     )
@@ -156,12 +157,12 @@ def test_CLIPTextModelWithProjection_vgf_INT():
             text_encoder_model_inputs,
             aten_op=[],
             exir_op=[],
-            tosa_version="TOSA-1.0+INT",
             use_to_edge_transform_and_lower=True,
             atol=0.8,
+            quantize=True,
         )
         pipeline.change_args(
             "check_count.exir",
-            TestCLIPTextModelWithProjection.ops_after_partitioner_INT,
+            TestCLIPTextModelWithProjection.ops_after_partitioner_vgf_quantize,
         )
         pipeline.run()

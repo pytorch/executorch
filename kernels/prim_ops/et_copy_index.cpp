@@ -114,27 +114,16 @@ void et_copy_index(KernelRuntimeContext& context, Span<EValue*> stack) {
     expected_output_size[i + 1] = copy_from.sizes()[i];
   }
 
-  if (copy_to.sizes()[0] < expected_output_size[0]) {
-    // Resize `copy_to` to the expected output size.
-    const void* data_ptr = copy_to.const_data_ptr();
-    Error err =
-        resize_tensor(copy_to, {expected_output_size, copy_to.sizes().size()});
-    ET_CHECK(err == Error::Ok);
-    ET_KERNEL_CHECK_MSG(
-        context,
-        data_ptr == copy_to.const_data_ptr(),
-        InvalidState,
-        /* void */,
-        "Data ptr of copy_to tensor changed after resize which isn't allowed for static/upper-bounded tensors");
-  }
-
-  // After potential resize, verify that index is within bounds.
+  // Resize `copy_to` to the expected output size. This grows the tensor
+  // as we write to each index (0→1, 1→2, 2→3, etc.).
+  Error err =
+      resize_tensor(copy_to, {expected_output_size, copy_to.sizes().size()});
   ET_KERNEL_CHECK_MSG(
       context,
-      index < copy_to.sizes()[0],
-      InvalidArgument,
+      err == Error::Ok,
+      InvalidState,
       /* void */,
-      "Index out of bounds");
+      "Failed to resize copy_to tensor");
 
   auto copy_to_ptr = copy_to.const_data_ptr();
   auto copy_from_ptr = copy_from.const_data_ptr();

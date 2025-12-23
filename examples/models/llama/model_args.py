@@ -131,6 +131,9 @@ class ModelArgs:
     attention_kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
     # Hybrid models can have layer types different from attention
     layer_types: Optional[list] = None
+    model_architecture: Optional[str] = (
+        None  # Architecture of model. For HF models, please refer to the HF model.config.architectures. This is used in QNN backend only for now.
+    )
 
     def __post_init__(self):
         if self.n_kv_heads is None:

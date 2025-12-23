@@ -11,7 +11,10 @@ from executorch.backends.arm._passes import (
     ScalarsToAttributePass,
 )
 from executorch.backends.cortex_m.passes import (
+    ActivationFusionPass,
+    ClampHardswishPass,
     ConvertToCortexMPass,
+    DecomposeHardswishPass,
     QuantizedOpFusionPass,
     ReplaceQuantNodesPass,
 )
@@ -30,6 +33,8 @@ class CortexMPassManager(PassManager):
         FoldAndAnnotateQParamsPass,
         ReplaceScalarWithTensorArgPass,
         ReplaceQuantNodesPass,
+        ActivationFusionPass,
+        DecomposeHardswishPass,
         QuantizedOpFusionPass,
         ConvertToCortexMPass,
     ]
@@ -37,6 +42,7 @@ class CortexMPassManager(PassManager):
     pass_list_transform_for_annotation: list[ExportPass] = [
         ScalarsToAttributePass,
         ReplaceScalarWithTensorArgPass,
+        ClampHardswishPass,
     ]
 
     def __init__(self, exported_program, passes=None):

@@ -57,7 +57,6 @@ import shutil
 import site
 import subprocess
 import sys
-
 from distutils import log  # type: ignore[import-not-found]
 from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
 from pathlib import Path
@@ -552,7 +551,7 @@ class CustomBuildPy(build_py):
         # package subdirectory.
         if self.editable_mode:
             # In editable mode, the package directory is the original source directory
-            dst_root = self.get_package_dir(".")
+            dst_root = self.get_package_dir("executorch")
         else:
             dst_root = os.path.join(self.build_lib, "executorch")
         # Create the version file.
@@ -760,7 +759,6 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_QNN"):
             cmake_build_args += ["--target", "qnn_executorch_backend"]
             cmake_build_args += ["--target", "PyQnnManagerAdaptor"]
-            cmake_build_args += ["--target", "PyQnnWrapperAdaptor"]
 
         # Set PYTHONPATH to the location of the pip package.
         os.environ["PYTHONPATH"] = (
@@ -860,12 +858,6 @@ setup(
             src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
             src="PyQnnManagerAdaptor.*",
             modpath="executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
-            dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
-        ),
-        BuiltExtension(
-            src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
-            src="PyQnnWrapperAdaptor.*",
-            modpath="executorch.backends.qualcomm.python.PyQnnWrapperAdaptor",
             dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
         ),
     ],

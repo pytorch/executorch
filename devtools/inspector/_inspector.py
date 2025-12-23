@@ -73,6 +73,7 @@ from executorch.devtools.inspector._intermediate_output_capturer import (
 from executorch.devtools.inspector.numerical_comparator import (
     L1Comparator,
     MSEComparator,
+    NumericalComparatorBase,
     SNRComparator,
 )
 from executorch.exir import ExportedProgram
@@ -1404,7 +1405,9 @@ class Inspector:
         )
 
     def calculate_numeric_gap(
-        self, distance: str = "MSE", disable_debug_handle_valdiation: bool = False
+        self,
+        distance: Union[str, NumericalComparatorBase],
+        disable_debug_handle_valdiation: bool = False,
     ):
         """
         Compares logged intermediate outputs from the exported graph (in ETRecord)
@@ -1416,7 +1419,10 @@ class Inspector:
         compare the intermediate outputs from the AOT and the runtime.
 
         Args:
-            distance: The metrics the inspector will use for gap calculation. Should be one of "MSE", "L1" and "SNR".
+            distance: The metrics the inspector will use for gap calculation. Can be either:
+                - A string: one of "MSE", "L1", or "SNR" for built-in comparators.
+                - A custom NumericalComparatorBase instance: allows you to define custom comparison logic
+                  by subclassing NumericalComparatorBase and implementing the compare() method.
             disable_debug_handle_validation: Often when aten graph has symbolic shape nodes and inbuilt ops like gt/lt etc.,
                 during re-export of such a graph 'from_node' information is lost from node.meta. As a result we loose
                 connection between edge IR nodes and aten nodes for such ops. By default we validate that every edge IR
@@ -1442,15 +1448,18 @@ class Inspector:
         mapping = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
-        metric = distance.strip().upper()
-        if metric == "MSE":
-            comparator = MSEComparator()
-        elif metric == "L1":
-            comparator = L1Comparator()
-        elif metric == "SNR":
-            comparator = SNRComparator()
+        if isinstance(distance, NumericalComparatorBase):
+            comparator = distance
         else:
-            raise ValueError(f"Unsupported distance metric {distance!r}")
+            metric = distance.strip().upper()
+            if metric == "MSE":
+                comparator = MSEComparator()
+            elif metric == "L1":
+                comparator = L1Comparator()
+            elif metric == "SNR":
+                comparator = SNRComparator()
+            else:
+                raise ValueError(f"Unsupported distance metric {distance!r}")
 
         rows = []
         for (aot_debug_handle, aot_intermediate_output), (

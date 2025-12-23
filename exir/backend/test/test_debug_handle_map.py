@@ -11,8 +11,8 @@ import executorch.exir.tests.models as models
 import torch
 from executorch import exir
 from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.test.demo_backend import DemoBackend
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
-from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
 from executorch.exir.delegate import executorch_call_delegate
 from hypothesis import given, settings, strategies as st
 
@@ -84,10 +84,10 @@ class TestBackendDebugHandle(unittest.TestCase):
                 edge_compile_config
             )
             lowered_model = to_backend(
-                QnnBackend.__name__, edgeir_m.exported_program, []
+                DemoBackend.__name__, edgeir_m.exported_program, []
             )
 
-            # QnnBackend compile all nodes as one node. The debug_handle_map will be like (1: (debug handle from all nodes))
+            # DemoBackend compile all nodes as one node. The debug_handle_map will be like (1: (debug handle from all nodes))
             # Ensure there is only one debug identifier
             self.assertEqual(
                 len(lowered_model.meta["debug_handle_map"].keys()),

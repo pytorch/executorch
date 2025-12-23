@@ -7,11 +7,14 @@
  * @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
  */
 
+#include <executorch/examples/models/llama/runner/runner.h>
 #include <gflags/gflags.h>
 #include <sstream>
 #include <vector>
 
-#include <executorch/examples/models/llama/runner/runner.h>
+#ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/devtools/etdump/etdump_flatcc.h>
+#endif
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
@@ -63,6 +66,11 @@ DEFINE_int32(
     "Number of EOS tokens to append to the prompt. Defaults to 0. If > 0, the prompt will be appended with EOS tokens. This is useful for models that expect one or more EOS token at the end.");
 
 DEFINE_bool(warmup, false, "Whether to run a warmup run.");
+
+DEFINE_string(
+    etdump_path,
+    "etdump.in",
+    "If an etdump path is provided, generate an ETDump file at the specified path for profiling purposes.");
 
 // Helper function to parse comma-separated string lists
 std::vector<std::string> parseStringList(const std::string& input) {
@@ -117,9 +125,26 @@ int32_t main(int32_t argc, char** argv) {
         ->_unsafe_reset_threadpool(num_performant_cores);
   }
 #endif
+
+#ifdef ET_EVENT_TRACER_ENABLED
+  // Create ETDumpGen and get raw pointer reference for later access
+  auto etdump_gen_ptr = std::make_unique<executorch::etdump::ETDumpGen>();
+  executorch::etdump::ETDumpGen* etdump_gen = etdump_gen_ptr.get();
+#endif
+
   // create llama runner
   std::unique_ptr<::executorch::extension::llm::TextLLMRunner> runner =
-      example::create_llama_runner(model_path, tokenizer_path, data_paths);
+      example::create_llama_runner(
+          model_path,
+          tokenizer_path,
+          data_paths,
+          temperature,
+#ifdef ET_EVENT_TRACER_ENABLED
+          std::move(etdump_gen_ptr)
+#else
+          nullptr
+#endif
+      );
 
   if (runner == nullptr) {
     ET_LOG(Error, "Failed to create llama runner");
@@ -156,6 +181,26 @@ int32_t main(int32_t argc, char** argv) {
     ET_LOG(Error, "Failed to run llama runner");
     return 1;
   }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+  if (etdump_gen != nullptr) {
+    executorch::etdump::ETDumpResult result = etdump_gen->get_etdump_data();
+    if (result.buf != nullptr && result.size > 0) {
+      FILE* f = fopen(FLAGS_etdump_path.c_str(), "w+");
+      if (f == nullptr) {
+        ET_LOG(
+            Error,
+            "Failed to open etdump file at path: %s",
+            FLAGS_etdump_path.c_str());
+      } else {
+        fwrite((uint8_t*)result.buf, 1, result.size, f);
+        fclose(f);
+        ET_LOG(Info, "ETDump file written to: %s", FLAGS_etdump_path.c_str());
+      }
+      free(result.buf);
+    }
+  }
+#endif
 
   return 0;
 }
