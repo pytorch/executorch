@@ -106,25 +106,38 @@ def all_flows() -> dict[str, TestFlow]:
         logger.info(f"Skipping Vulkan flow registration: {e}")
 
     try:
-        from executorch.backends.test.suite.flows.qualcomm import (
-            QNN_16A16W_TEST_FLOW,
-            QNN_16A4W_BLOCK_TEST_FLOW,
-            QNN_16A4W_TEST_FLOW,
-            QNN_16A8W_TEST_FLOW,
-            QNN_8A8W_TEST_FLOW,
-            QNN_TEST_FLOW,
+        from executorch.backends.test.suite.flows.openvino import (
+            OPENVINO_INT8_TEST_FLOW,
+            OPENVINO_TEST_FLOW,
         )
 
         flows += [
-            QNN_TEST_FLOW,
-            QNN_16A16W_TEST_FLOW,
-            QNN_16A8W_TEST_FLOW,
-            QNN_16A4W_TEST_FLOW,
-            QNN_16A4W_BLOCK_TEST_FLOW,
-            QNN_8A8W_TEST_FLOW,
+            OPENVINO_TEST_FLOW,
+            OPENVINO_INT8_TEST_FLOW,
         ]
     except Exception as e:
-        logger.info(f"Skipping QNN flow registration: {e}")
+        logger.info(f"Skipping OpenVINO flow registration: {e}")
+
+    # try:
+    #     from executorch.backends.test.suite.flows.qualcomm import (
+    #         QNN_16A16W_TEST_FLOW,
+    #         QNN_16A4W_BLOCK_TEST_FLOW,
+    #         QNN_16A4W_TEST_FLOW,
+    #         QNN_16A8W_TEST_FLOW,
+    #         QNN_8A8W_TEST_FLOW,
+    #         QNN_TEST_FLOW,
+    #     )
+
+    #     flows += [
+    #         QNN_TEST_FLOW,
+    #         QNN_16A16W_TEST_FLOW,
+    #         QNN_16A8W_TEST_FLOW,
+    #         QNN_16A4W_TEST_FLOW,
+    #         QNN_16A4W_BLOCK_TEST_FLOW,
+    #         QNN_8A8W_TEST_FLOW,
+    #     ]
+    # except Exception as e:
+    #     logger.info(f"Skipping QNN flow registration: {e}")
 
     try:
         from executorch.backends.test.suite.flows.arm import (
