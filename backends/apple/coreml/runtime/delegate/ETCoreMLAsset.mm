@@ -11,6 +11,7 @@
 #import "objc_safe_cast.h"
 
 #import <fcntl.h>
+#import <memory>
 #import <os/lock.h>
 #import <stdio.h>
 #import <system_error>
