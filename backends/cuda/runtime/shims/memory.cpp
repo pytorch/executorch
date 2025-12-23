@@ -119,8 +119,6 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     int32_t layout,
     const uint8_t* opaque_metadata,
     int64_t opaque_metadata_size) {
-  // TODO(gasoonjia): verify given data is on the target device
-  (void)device_type;
   (void)opaque_metadata;
   (void)layout;
   (void)opaque_metadata_size;
@@ -153,6 +151,34 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
 
   // Storage offset must be 0 since from_blob cannot handle different offsets
   ET_CHECK_OK_OR_RETURN_ERROR(validate_storage_offset(storage_offset));
+
+  // Verify that data pointer location matches the requested device_type
+  cudaPointerAttributes data_attributes{};
+  ET_CUDA_CHECK_OR_RETURN_ERROR(
+      cudaPointerGetAttributes(&data_attributes, data));
+
+  bool data_is_on_device = data_attributes.type == cudaMemoryTypeDevice;
+  bool data_is_on_host = data_attributes.type == cudaMemoryTypeHost ||
+      data_attributes.type == cudaMemoryTypeUnregistered;
+  bool requested_device =
+      device_type == static_cast<int32_t>(SupportedDevices::CUDA);
+  bool requested_cpu =
+      device_type == static_cast<int32_t>(SupportedDevices::CPU);
+
+  // Error if data location doesn't match requested device type
+  ET_CHECK_OR_RETURN_ERROR(
+      !(data_is_on_device && requested_cpu),
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob_v2 failed: data pointer %p is on CUDA "
+      "but device_type is CPU. Data must be on CPU for CPU tensors.",
+      data);
+
+  ET_CHECK_OR_RETURN_ERROR(
+      !(data_is_on_host && requested_device),
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob_v2 failed: data pointer %p is on CPU "
+      "but device_type is CUDA. Data must be on GPU for CUDA tensors.",
+      data);
 
   // Convert sizes to the format expected by ExecutorTorch using SizesType
   std::vector<executorch::aten::SizesType> sizes =
@@ -305,7 +331,10 @@ void clear_all_tensors() {
   // tensors set should now be empty, but ensure it's cleared
   tensors.clear();
 
-  ET_LOG(Info, "Cleared all tensors");
+  // Clear memory tracking map (includes leftover NOT_OWN entries)
+  memory_to_n_tensor.clear();
+
+  ET_LOG(Info, "Cleared all tensors and memory tracking");
 }
 
 AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
