@@ -18,7 +18,7 @@ class AddSigmoidMul(torch.nn.Module):
 
 
 @pytest.mark.parametrize("fp_extension", [True, False])
-def test_qdq_squeezed_fp_op(fp_extension: bool):
+def test_qdq_squeezed_fp_op_tosa_INT_FP(fp_extension: bool):
     """Test that a float operation surrounded by quantize-dequantize pairs
     is correctly handled by the partitioner and the TOSA backend.
     Pattern:
@@ -66,7 +66,7 @@ class MulAddSigmoidConv(torch.nn.Module):
 
 
 @pytest.mark.parametrize("fp_extension", [True, False])
-def test_quantized_to_float_transition(fp_extension: bool):
+def test_quantized_to_float_transition_tosa_INT_FP(fp_extension: bool):
     """Test that a model executing quantized ops followed by float ops
     is correctly handled by the partitioner and the TOSA backend.
     Pattern:

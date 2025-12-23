@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from typing import Optional
 
 import torch
@@ -13,7 +14,6 @@ from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
 
 
 def validate_conv3d_args_dtypes(
@@ -36,10 +36,7 @@ def validate_conv3d_args_dtypes(
     "Tensor bias, "
     "int[3] stride, "
     "int[6] pad, "
-    "int[3] dialation, "
-    "bool transposed, "
-    "int[3] output_padding, "
-    "int groups) -> Tensor",
+    "int[3] dilation) -> Tensor",
     (
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
@@ -51,25 +48,27 @@ def CONV3D(
     bias: torch.Tensor,
     stride: list[int],
     pad: list[int],
-    dialation: list[int],
-    transposed: bool,
-    output_padding: list[int],
-    groups: int,
+    dilation: list[int],
 ) -> torch.Tensor:
     tosa_spec = get_context_spec()
 
     output_dtype = validate_conv3d_args_dtypes(tosa_spec, x, weight, bias)
 
     torch_pad = [pad[0], pad[2], pad[4]]
-    aten_fake_tensor = exir_ops.edge.aten.convolution.default(
-        x,
-        weight,
-        bias,
-        stride,
-        torch_pad,
-        dialation,
-        transposed,
-        output_padding,
-        groups,
+    N = x.shape[0]
+    C_out = weight.shape[0]
+    D_in, H_in, W_in = x.shape[2:]
+    D_out = math.floor(
+        (D_in + 2 * torch_pad[0] - dilation[0] * (weight.shape[2] - 1) - 1) / stride[0]
+        + 1
     )
-    return aten_fake_tensor.to(dtype=output_dtype)
+    H_out = math.floor(
+        (H_in + 2 * torch_pad[1] - dilation[1] * (weight.shape[3] - 1) - 1) / stride[1]
+        + 1
+    )
+    W_out = math.floor(
+        (W_in + 2 * torch_pad[2] - dilation[2] * (weight.shape[4] - 1) - 1) / stride[2]
+        + 1
+    )
+    output_shape = [N, C_out, D_out, H_out, W_out]
+    return torch.empty(size=output_shape, dtype=output_dtype)

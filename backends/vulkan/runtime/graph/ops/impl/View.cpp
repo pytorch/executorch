@@ -108,11 +108,6 @@ void add_view_copy_buffer_node(
   std::string kernel_name = "view_buffer";
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  bool all_contiguous = graph.is_contiguous_buffer_tensor(in) &&
-      graph.is_contiguous_buffer_tensor(out);
-
-  int32_t all_contiguous_int = all_contiguous ? 1 : 0;
-
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
@@ -125,7 +120,7 @@ void add_view_copy_buffer_node(
       // Push Constants
       {},
       // Specialization Constants
-      {all_contiguous_int},
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
       // Resize Args
       resize_args,
       // Resizing Logic
@@ -142,11 +137,6 @@ void add_view_copy_convert_buffer_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(in));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  bool all_contiguous = graph.is_contiguous_buffer_tensor(in) &&
-      graph.is_contiguous_buffer_tensor(out);
-
-  int32_t all_contiguous_int = all_contiguous ? 1 : 0;
-
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
@@ -159,7 +149,7 @@ void add_view_copy_convert_buffer_node(
       // Push Constants
       {},
       // Specialization Constants
-      {all_contiguous_int},
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
       // Resize Args
       resize_args,
       // Resizing Logic

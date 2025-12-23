@@ -35,3 +35,5 @@ def define_common_targets():
     cuda_shim_cpp_unittest("aoti_torch_cuda_guard")
     cuda_shim_cpp_unittest("aoti_torch_cuda__weight_int4pack_mm")
     cuda_shim_cpp_unittest("aoti_torch_new_tensor_handle")
+    cuda_shim_cpp_unittest("aoti_torch_item_bool")
+    cuda_shim_cpp_unittest("aoti_torch_assign_tensors_out")
