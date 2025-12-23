@@ -435,19 +435,37 @@ def _validate_cross_attn_cache_params(value: torch.Tensor, cache: torch.Tensor):
     torch._assert(value.dtype == cache.dtype, "dtype mismatch")
 
 
-# This is cheating: we delibrately NOT mark `cache` to be mutating so that this
-# custom op can be used in HOP such as `torch.cond`, where `torch.compile` requires
-# no aliasing or mutation in the branches. This is fine because we only care about inference.
+# Intentionally declaring no mutations to enable use inside torch.cond branches,
+# which require pure functions. torch.cond requires branch functions to be mutation-free.
+# We omit `cache` from `mutates_args` to satisfy this constraint, accepting the
+# mutation for inference use.
 @torch.library.custom_op("executorch::update_cross_attn_cache", mutates_args=[])
 def _update_cross_attn_cache(value: torch.Tensor, cache: torch.Tensor) -> torch.Tensor:
-    # Eager implementation
-    _validate_cross_attn_cache_params(value, cache)
+    """
+    Update cross-attention KV cache with new values.
 
-    # Slice the cache to match value's sequence length and copy
-    # cache shape: [B, H, S_max, D]
-    # value shape: [B, H, S, D]
+    Copies the value tensor into the beginning of the cache tensor along the
+    sequence dimension. This is used for cross-attention caching where the
+    encoder outputs are computed once and reused across decoding steps.
+
+    Args:
+        value: New values to store in cache. Shape: [B, H, S, D] where
+            B = batch size, H = num heads, S = sequence length, D = head dim.
+        cache: Pre-allocated cache tensor to update. Shape: [B, H, S_max, D]
+            where S_max >= S.
+
+    Returns:
+        A clone of the updated cache tensor. Note that this is different from
+        inductor lowering which returns the cache tensor itself. The reason is
+        that if we return input buffer directly, we will fail torch check in
+        higher order ops.
+
+    Note:
+        The cache is mutated in-place, but we return a clone to avoid aliasing
+        issues with the exported program.
+    """
+    _validate_cross_attn_cache_params(value, cache)
     cache[:, :, : value.size(2), :].copy_(value)
-    # Return a clone of the cache to avoid aliasing with the input cache, so that we can still run exported program.
     return cache.clone()
 
 

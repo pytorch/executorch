@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import unittest
 
 import torch
@@ -148,7 +154,6 @@ class TestUpdateCrossAttnCache(unittest.TestCase):
         )
 
     def test_update_cross_attn_cache_different_shapes(self):
-        print("Testing executorch::update_cross_attn_cache with different shapes...")
 
         # Test with different batch sizes and sequence lengths
         test_cases = [
@@ -158,14 +163,14 @@ class TestUpdateCrossAttnCache(unittest.TestCase):
             (2, 1, 16, 10, 32),
         ]
 
+        @torch.compile
+        def fn(v, c):
+            return torch.ops.executorch.update_cross_attn_cache(v, c)
+
         for B, H, S_max, S, D in test_cases:
             # Cache: [B, H, S_max, D], Value: [B, H, S, D]
             cache = torch.zeros(B, H, S_max, D, dtype=torch.float32)
             value = torch.randn(B, H, S, D, dtype=torch.float32)
-
-            @torch.compile
-            def fn(v, c):
-                return torch.ops.executorch.update_cross_attn_cache(v, c)
 
             fn(value, cache)
 
