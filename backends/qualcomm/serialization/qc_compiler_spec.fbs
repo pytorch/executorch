@@ -34,7 +34,7 @@ table HtpInfo {
 enum QcomChipset: int {
   UNKNOWN_SM = 0,
   SA8295 = 39,
-  SM8350 = 35,
+  SM8350 = 30,
   SM8450 = 36,
   SM8475 = 42,
   SM8550 = 43,
@@ -50,6 +50,7 @@ enum QcomChipset: int {
   SAR2230P = 95,
   SA8255 = 52,
   SW6100 = 96,
+  QCM6490 = 93,
 }
 
 /// Indicate the information of the specified SoC.

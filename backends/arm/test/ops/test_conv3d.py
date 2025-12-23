@@ -475,7 +475,7 @@ def test_convolution_3d_tosa_INT(test_data):
 
 
 @common.parametrize("test_data", test_data_INT16)
-def test_convolution_3d_tosa_INT16(test_data):
+def test_convolution_3d_tosa_INT_a16w8(test_data):
     model, per_channel_quantization = test_data()
     pipeline = TosaPipelineINT[input_t](
         model,

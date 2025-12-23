@@ -161,7 +161,7 @@ def test_max_pool2d_u55_INT(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-def test_max_pool2d_16a8w_u55_INT16(test_data: torch.Tensor):
+def test_max_pool2d_16a8w_u55_INT(test_data: torch.Tensor):
     """Test max_pool2d with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     test_data, model_params = test_data()
     pipeline = EthosU55PipelineINT[input_t1](
@@ -190,7 +190,7 @@ def test_max_pool2d_u85_INT(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_max_pool2d_16a8w_u85_INT16(test_data: torch.Tensor):
+def test_max_pool2d_16a8w_u85_INT(test_data: torch.Tensor):
     """Test max_pool2d with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     test_data, model_params = test_data()
     pipeline = EthosU85PipelineINT[input_t1](
@@ -297,7 +297,7 @@ def test_max_pool2d_vgf_quant(test_data: torch.Tensor):
 
 @common.parametrize("test_data", dilation_test_data)
 @common.SkipIfNoModelConverter
-def test_max_pool2d_dilation_vgf_no_quant(test_data: torch.Tensor):
+def test_max_pool2d_vgf_no_quant_dilation(test_data: torch.Tensor):
     """
     VGF FP pipeline with dilation > 1 (and dilation=1 sanity cases).
     """
@@ -314,7 +314,7 @@ def test_max_pool2d_dilation_vgf_no_quant(test_data: torch.Tensor):
 
 @common.parametrize("test_data", dilation_test_data)
 @common.SkipIfNoModelConverter
-def test_max_pool2d_dilation_vgf_quant(test_data: torch.Tensor):
+def test_max_pool2d_vgf_quant_dilation(test_data: torch.Tensor):
     """
     VGF INT pipeline with dilation > 1 (and dilation=1 sanity cases).
     """

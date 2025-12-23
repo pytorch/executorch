@@ -27,9 +27,9 @@ class SimpleModel(torch.nn.Module):
 
 
 @common.parametrize("test_data", SimpleModel.test_data)
-def test_ioquantisation_pass_u55_INT(test_data: input_t):
+def test_quantize_io_u55_INT(test_data: input_t):
     """
-    Test the executorch/exir/passes/quanize_io_pass pass works(meaning we don't get Q/DQ nodes) on a simple model
+    Test the executorch/exir/passes/quantize_io_pass pass works(meaning we don't get Q/DQ nodes) on a simple model
     """
     model = SimpleModel()
     pipeline = EthosU55PipelineINT(
