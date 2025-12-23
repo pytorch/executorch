@@ -16,4 +16,3 @@ from .quantization_configs import (  # noqa
     SOFTMAX_OUTPUT_FIXED_QSPEC,
     SOFTMAX_PER_TENSOR_CONFIG,
 )
-from .quantizer import CortexMQuantizer, SharedQspecQuantizer  # noqa
