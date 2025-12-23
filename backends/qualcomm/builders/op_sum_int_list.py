@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import cast, Dict, List
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
@@ -26,8 +26,8 @@ class Sum(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
 
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
@@ -35,7 +35,7 @@ class Sum(NodeVisitor):
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         sum_input_tensors = [input_tensor_wrapper]
@@ -54,11 +54,11 @@ class Sum(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         sum_output_tensors = [output_tensor_wrapper]
-        sum_op = PyQnnWrapper.PyQnnOpWrapper(
+        sum_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpReduceSum.op_name,
@@ -67,7 +67,7 @@ class Sum(NodeVisitor):
         sum_op.AddOutputTensors(sum_output_tensors)
         sum_op.AddTensorParam(
             OpReduceSum.param_axes,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(sum_dims_shape),
             sum_dims_shape,
             np.array(sum_dims, dtype=np.uint32),
@@ -78,7 +78,7 @@ class Sum(NodeVisitor):
             keep_dims = cast(bool, node.args[2])
             sum_op.AddScalarParam(
                 OpReduceSum.param_keep_dims,
-                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+                PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
                 {QCOM_DATA: keep_dims},
             )
         return sum_op

@@ -48,22 +48,26 @@ def test_sdpa_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_sdpa_vgf_FP():
-    test_input = tuple(torch.randn(1, 3, 197, 64) for _ in range(3))
-    pipeline = VgfPipeline[input_t](
-        SDPA(), test_input, [], [], tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.SkipIfNoModelConverter
-def test_sdpa_vgf_INT():
+def test_sdpa_vgf_no_quant():
     test_input = tuple(torch.randn(1, 3, 197, 64) for _ in range(3))
     pipeline = VgfPipeline[input_t](
         SDPA(),
         test_input,
         [],
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sdpa_vgf_quant():
+    test_input = tuple(torch.randn(1, 3, 197, 64) for _ in range(3))
+    pipeline = VgfPipeline[input_t](
+        SDPA(),
+        test_input,
+        [],
+        [],
+        quantize=True,
     )
     pipeline.run()

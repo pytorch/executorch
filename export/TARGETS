@@ -32,7 +32,6 @@ runtime.python_library(
         ":recipe",
         ":stages",
         ":types",
-        "//executorch/runtime:runtime",
         ":recipe_registry"
     ]
 )

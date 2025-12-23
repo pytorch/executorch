@@ -53,6 +53,13 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
     endif()
   endif()
 
+  # Add nthreads argument for shader compilation
+  if(DEFINED EXECUTORCH_VULKAN_SHADER_COMPILE_NTHREADS)
+    list(APPEND GEN_SPV_ARGS "--nthreads"
+         "${EXECUTORCH_VULKAN_SHADER_COMPILE_NTHREADS}"
+    )
+  endif()
+
   add_custom_command(
     COMMENT "Generating Vulkan Compute Shaders"
     OUTPUT ${VULKAN_SHADERGEN_OUT_PATH}/spv.cpp

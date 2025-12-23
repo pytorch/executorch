@@ -20,7 +20,7 @@ class QnnDlcManager;
 class HtpContext : public QnnContext {
  public:
   HtpContext(
-      const QnnImplementation& implementation,
+      QnnImplementation* implementation,
       QnnBackend* backend,
       QnnDevice* device,
       QnnBackendCache* cache,
