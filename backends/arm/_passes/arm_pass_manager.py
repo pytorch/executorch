@@ -103,6 +103,7 @@ from executorch.backends.arm._passes import (
     RemoveNoopPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
+    RewriteBoolToFp32CastViaInt8Pass,
     RewriteConvPass,
     RewriteMatmulPass,
     RewriteUpsamplePass,
@@ -221,6 +222,7 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 FuseQuantizedActivationPass(),
+                RewriteBoolToFp32CastViaInt8Pass(),
                 ConvertToClampPass(),
                 DecomposeTOSAUnsupportedClampPass(),
                 DecomposeGroupNormPass(),
