@@ -4,13 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import sys
 import unittest
-from pathlib import Path
+
 import torch
-from backends.cuda.passes.move_cond_predicate_to_cpu import (
-    MoveCondPredicateToCpuPass,
-)
+from backends.cuda.passes.move_cond_predicate_to_cpu import MoveCondPredicateToCpuPass
 from torch.export import export
 
 
@@ -554,4 +551,3 @@ class TestMoveCondPredicateToCpuPass(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

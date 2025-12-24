@@ -97,7 +97,7 @@ jobs:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: 12.9
+      gpu-arch-version: 12.6
       use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
