@@ -8,6 +8,7 @@ import traceback
 from abc import abstractmethod
 from typing import Any, List, Optional, Set, Type
 
+from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.exir.pass_base import ExportPass, NodeMetadata
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
@@ -16,9 +17,23 @@ from torch.fx.passes.infra.pass_base import PassResult
 class ArmPass(ExportPass):
     """Base class for Arm passes"""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, tfa_pass: bool = False, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.submodule_depth = 0
+        self.is_tfa_pass = tfa_pass
+
+    def allowed_to_transform(self, meta: NodeMetadata | dict[str, Any]) -> bool:
+        if not self.is_tfa_pass:
+            return True
+
+        if isinstance(meta, NodeMetadata):
+            meta_dict = meta.data
+        else:
+            meta_dict = meta
+
+        disallow_tfa = meta_dict.get(DISALLOW_TFA_META_KEY, False)
+
+        return not disallow_tfa
 
     @property
     @abstractmethod
