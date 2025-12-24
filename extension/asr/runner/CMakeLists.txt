@@ -42,6 +42,15 @@ if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit QUIET)
   if(CUDAToolkit_FOUND)
     target_compile_definitions(extension_asr_runner PUBLIC CUDA_AVAILABLE)
+    target_include_directories(
+      extension_asr_runner PUBLIC ${CUDAToolkit_INCLUDE_DIRS}
+    )
+    # Link against the CUDA sampler library from extension/llm/sampler
+    if(TARGET extension_llm_sampler_cuda)
+      target_link_libraries(extension_asr_runner PUBLIC extension_llm_sampler_cuda)
+    else()
+      target_link_libraries(extension_asr_runner PUBLIC CUDA::cudart)
+    endif()
     message(STATUS "CUDAToolkit found; defining CUDA_AVAILABLE for ASR runner")
   else()
     message(
