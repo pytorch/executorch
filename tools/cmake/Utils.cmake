@@ -72,7 +72,10 @@ endfunction()
 function(resolve_python_executable)
   if(NOT PYTHON_EXECUTABLE)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
-    set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE} PARENT_SCOPE)
+    set(PYTHON_EXECUTABLE
+      ${Python3_EXECUTABLE}
+      PARENT_SCOPE
+    )
   endif()
 endfunction()
 
