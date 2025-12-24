@@ -83,7 +83,36 @@ class ET_EXPERIMENTAL CudaBackend final
       return false;
     }
     std::lock_guard<std::mutex> guard(skip_copy_method_mutex_);
-    return method_name == skip_copy_method_;
+    // Support comma-separated list of method names
+    if (skip_copy_method_.empty()) {
+      return false;
+    }
+    // Check if method_name matches any entry in the comma-separated list
+    size_t start = 0;
+    size_t end = skip_copy_method_.find(',');
+    while (end != std::string::npos) {
+      std::string entry = skip_copy_method_.substr(start, end - start);
+      // Trim whitespace
+      size_t entry_start = entry.find_first_not_of(" \t");
+      size_t entry_end = entry.find_last_not_of(" \t");
+      if (entry_start != std::string::npos) {
+        entry = entry.substr(entry_start, entry_end - entry_start + 1);
+        if (entry == method_name) {
+          return true;
+        }
+      }
+      start = end + 1;
+      end = skip_copy_method_.find(',', start);
+    }
+    // Check last (or only) entry
+    std::string entry = skip_copy_method_.substr(start);
+    size_t entry_start = entry.find_first_not_of(" \t");
+    size_t entry_end = entry.find_last_not_of(" \t");
+    if (entry_start != std::string::npos) {
+      entry = entry.substr(entry_start, entry_end - entry_start + 1);
+      return entry == method_name;
+    }
+    return false;
   }
 
   Error load_function_pointers_into_handle(
