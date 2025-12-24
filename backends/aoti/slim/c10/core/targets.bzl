@@ -40,6 +40,20 @@ def define_common_targets():
         ],
     )
 
+    # Header-only library for SizesAndStrides
+    runtime.cxx_library(
+        name = "sizes_and_strides",
+        headers = [
+            "SizesAndStrides.h",
+        ],
+        visibility = ["@EXECUTORCH_CLIENTS"],
+        exported_deps = [
+            "//executorch/backends/aoti/slim/c10/macros:macros",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+
     # Combined c10 core library
     runtime.cxx_library(
         name = "core",
@@ -48,5 +62,6 @@ def define_common_targets():
             ":device",
             ":device_type",
             ":scalar_type",
+            ":sizes_and_strides",
         ],
     )
