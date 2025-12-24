@@ -26,39 +26,33 @@ using DeviceIndex = int8_t;
 /// Represents a compute device on which a tensor is located.
 /// A device is uniquely identified by a type (e.g., CPU) and a device index.
 struct Device final {
+  using Type = DeviceType;
+
   /// Constructs a new Device from a DeviceType and an optional device index.
   /// @param type The type of device.
   /// @param index The device index. For CPU, this should be -1 or 0.
   /* implicit */
-  explicit Device(DeviceType type, DeviceIndex index = -1)
-      : type_(type), index_(index) {
+  Device(DeviceType type, DeviceIndex index = -1) : type_(type), index_(index) {
     validate();
   }
 
   /// Constructs a Device from a string description.
-  /// The string must be "cpu", "cpu:0", "cuda", or "cuda:N".
-  /* implicit */ Device(const std::string& device_string)
-      : Device(DeviceType::CPU) {
+  /// The string must be "cpu" or "cpu:0".
+  /* implicit */ Device(const std::string& device_string) : Device(Type::CPU) {
     ET_CHECK_MSG(!device_string.empty(), "Device string must not be empty");
 
     if (device_string == "cpu" || device_string == "CPU") {
       type_ = DeviceType::CPU;
       index_ = -1;
-    } else if (device_string == "cpu:0" || device_string == "CPU:0") {
-      type_ = DeviceType::CPU;
-      index_ = 0;
-    } else if (device_string == "cuda" || device_string == "CUDA") {
-      type_ = DeviceType::CUDA;
-      index_ = 0;
     } else if (
-        device_string.substr(0, 5) == "cuda:" ||
-        device_string.substr(0, 5) == "CUDA:") {
-      type_ = DeviceType::CUDA;
+        device_string == "cpu:0" || device_string == "CPU:0" ||
+        device_string == "cpu:1" || device_string == "CPU:1") {
+      type_ = DeviceType::CPU;
       index_ = static_cast<DeviceIndex>(device_string.back() - '0');
     } else {
       ET_CHECK_MSG(
           false,
-          "Invalid device string: %s. Supported: 'cpu', 'cuda', 'cuda:N'.",
+          "Invalid device string: %s. Currently only 'cpu' is supported.",
           device_string.c_str());
     }
     validate();
@@ -100,12 +94,7 @@ struct Device final {
     return type_ == DeviceType::CPU;
   }
 
-  /// Returns true if the device is of CUDA type.
-  bool is_cuda() const noexcept {
-    return type_ == DeviceType::CUDA;
-  }
-
-  /// Returns a string representation of the device (e.g., "cpu" or "cuda:0").
+  /// Returns a string representation of the device (e.g., "cpu" or "cpu:0").
   std::string str() const {
     std::string str = DeviceTypeName(type(), /* lower_case */ true);
     if (has_index()) {
