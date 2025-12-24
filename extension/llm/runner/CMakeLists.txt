@@ -66,6 +66,17 @@ if(EXECUTORCH_BUILD_CUDA)
     target_compile_definitions(extension_llm_runner PUBLIC CUDA_AVAILABLE)
     target_link_libraries(extension_llm_runner PUBLIC CUDA::cudart)
     message(STATUS "CUDAToolkit found; defining CUDA_AVAILABLE")
+
+    # Build the CUDA sampler library
+    if(NOT TARGET extension_llm_sampler_cuda)
+      add_subdirectory(
+        ${EXECUTORCH_ROOT}/extension/llm/sampler
+        ${CMAKE_CURRENT_BINARY_DIR}/sampler
+      )
+    endif()
+    if(TARGET extension_llm_sampler_cuda)
+      target_link_libraries(extension_llm_runner PUBLIC extension_llm_sampler_cuda)
+    endif()
   else()
     message(
       STATUS
