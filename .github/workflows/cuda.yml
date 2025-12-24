@@ -114,8 +114,8 @@ jobs:
         cmake --workflow --preset default
         popd
 
-        # Run CUDA backend Python tests
-        python -m pytest backends/cuda/tests backends/cuda/passes/tests extension/llm/custom_ops -v
+        # Run CUDA backend Python tests, overrides addopts so that we don't run all tests in pytest.ini
+        python -m pytest backends/cuda/tests backends/cuda/passes/tests extension/llm/custom_ops -v -o "addopts="
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
