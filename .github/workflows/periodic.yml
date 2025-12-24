@@ -26,10 +26,10 @@ jobs:
     outputs:
       models: ${{ steps.gather-models.outputs.models }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
         with:
           submodules: 'false'
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
       - name: Extract the list of models to test

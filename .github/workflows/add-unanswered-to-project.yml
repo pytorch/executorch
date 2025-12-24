@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Add open issues and open, non-draft PRs to org project (excluding certain authors)
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.ET_EXT_CONTRIB }}
           script: |
