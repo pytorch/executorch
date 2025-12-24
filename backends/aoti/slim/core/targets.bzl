@@ -13,30 +13,7 @@ def define_common_targets():
         exported_deps = [
             "//executorch/backends/aoti/slim/c10/core:device",
             "//executorch/backends/aoti/slim/c10/core:scalar_type",
-            "//executorch/backends/aoti/slim/util:array_ref_util",
             "//executorch/backends/aoti/slim/util:shared_ptr",
-            "//executorch/backends/aoti/slim/util:size_util",
-            "//executorch/runtime/platform:platform",
-            "//executorch/backends/aoti/slim/c10/cuda:exception",
-            "//executorch/backends/cuda/runtime:guard",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "slimtensor",
-        headers = [
-            "SlimTensor.h",
-        ],
-        visibility = ["@EXECUTORCH_CLIENTS"],
-        exported_deps = [
-            ":storage",
-            "//executorch/backends/aoti/slim/c10/core:contiguity",
-            "//executorch/backends/aoti/slim/c10/core:device",
-            "//executorch/backends/aoti/slim/c10/core:scalar_type",
-            "//executorch/backends/aoti/slim/c10/core:sizes_and_strides",
-            "//executorch/backends/aoti/slim/util:array_ref_util",
-            "//executorch/backends/aoti/slim/util:size_util",
-            "//executorch/backends/aoti/slim/c10/cuda:exception",
             "//executorch/runtime/platform:platform",
         ],
     )
