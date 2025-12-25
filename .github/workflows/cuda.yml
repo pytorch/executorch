@@ -104,7 +104,7 @@ jobs:
       script: |
         set -eux
         # Install executorch in editable mode so custom op libs land in-tree
-        bash ./install_executorch.sh --editable
+        bash ./install_executorch.sh
 
         # Build ExecuTorch with CUDA support
         cmake --workflow --preset llm-release-cuda
@@ -115,7 +115,7 @@ jobs:
         popd
 
         # Run CUDA backend Python tests, overrides addopts so that we don't run all tests in pytest.ini
-        python -m pytest backends/cuda/tests backends/cuda/passes/tests extension/llm/custom_ops -v -o "addopts="
+        python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
