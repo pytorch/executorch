@@ -21,6 +21,9 @@ from executorch.backends.openvino.quantizer.observers import (
 )
 from nncf.common.graph.graph import NNCFGraph  # type: ignore[import-untyped]
 from nncf.common.logging import nncf_logger  # type: ignore[import-untyped]
+from nncf.experimental.common.tensor_statistics.statistics import (  # type: ignore[import-untyped]
+    WCTensorStatistic,
+)
 from nncf.quantization.algorithms.min_max.algorithm import (  # type: ignore[import-untyped]
     MinMaxQuantization,
 )
@@ -78,13 +81,13 @@ class OpenVINOQuantizer(Quantizer):
     optimally for the inference via OpenVINO.
     """
 
-    WEIGHTS_ONLY_COMPRESSION_MODES = (
-        QuantizationMode.INT4WO_SYM,
-        QuantizationMode.INT4WO_ASYM,
-        QuantizationMode.INT8WO_SYM,
-        QuantizationMode.INT8WO_ASYM,
-    )
-
+    WEIGHTS_ONLY_COMPRESSION_MODES = {
+        QuantizationMode.INT4WO_SYM: "int4_sym",
+        QuantizationMode.INT4WO_ASYM: "int4_asym",
+        QuantizationMode.INT8WO_SYM: "int8_sym",
+        QuantizationMode.INT8WO_ASYM: "int8_asym",
+    }
+    
     def __init__(
         self,
         *,
@@ -102,6 +105,7 @@ class OpenVINOQuantizer(Quantizer):
         :param kwargs: Arguments to pass to the NNCF MinMaxQuantization algorithm.
         """
         self.mode = mode
+        self._wc_config = None
         if self.mode not in OpenVINOQuantizer.WEIGHTS_ONLY_COMPRESSION_MODES:
             if mode == QuantizationMode.INT8_SYM:
                 preset = quantization.structs.QuantizationPreset.PERFORMANCE
@@ -116,17 +120,38 @@ class OpenVINOQuantizer(Quantizer):
                 preset=preset, model_type=model_type, **kwargs
             )
         else:
-            compression_mode = mode.value.replace(
-                "wo", ""
-            )  # Mode value has to match NNCF CompressWeightsMode
+            compression_mode = OpenVINOQuantizer.WEIGHTS_ONLY_COMPRESSION_MODES[mode]  # Mode value has to match NNCF CompressWeightsMode
             weight_compression_configuration = get_weight_compression_configuration(
                 nncf.CompressWeightsMode(compression_mode),
                 **kwargs,
             )
-            subset_size = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
+            weight_compression_configuration["subset_size"] = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
+
+            self._backup_mode =  self._algo._backup_mode
             self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
-                subset_size=subset_size, **weight_compression_configuration
+                **weight_compression_configuration
             )
+
+    def get_weights_compression_config(self) -> Dict[str, Any]:
+        """
+        Returns a dictionary with all_layers, group_size, backup_mode and Quantization mode parameters
+        used by the compress_pt2e weight compression algorithm.
+        
+        :return: A dictionary containing:
+            1. mode: Quantization mode. One of INT4 Sym, INT4 Asym, INT8 Sym, INT8 Asym. 
+            2. group_size: group size to be used for group-wise compression.
+            3. all_layers: Indicates whether embeddings and last MatMul layers should be compressed to a primary
+                precision. By default, the backup precision is assigned for the embeddings and last MatMul layers. 
+            4. backup_mode: Defines a backup mode for mixed-precision weight compression.
+        """
+        quantizer_initialized_algo_attributes = {
+            "mode": self._algo.mode,
+            "group_size": self._algo.group_size,
+            "all_layers": self._algo.all_layers,
+            "backup_mode": self._algo.backup_mode,
+        }
+
+        return quantizer_initialized_algo_attributes
 
     def set_ignored_scope(
         self,
@@ -163,6 +188,28 @@ class OpenVINOQuantizer(Quantizer):
         self._algo._set_backend_entity(model)
         return self._algo.find_quantization_setup(model, nncf_graph)
 
+    def get_nncf_weight_compression_parameters(
+        self,
+        model: torch.fx.GraphModule,
+        nncf_graph: NNCFGraph,
+    ) -> tuple[
+        list[WeightCompressionParameters],
+        list[WeightCompressionParameters],
+        list[WeightCompressionParameters],
+    ]:
+        """
+        Collect weight compression parameters for the given FX model and NNCF graph.
+
+        :param model: FX GraphModule to analyze for weight compression.
+        :param nncf_graph: NNCFGraph representation of the model.
+        :return: A tuple of:
+            - all parameters eligible for weight compression,
+            - ratio-defining parameters used to set primary/backup precisions,
+            - parameters that are not compressible and remain in original precision.
+        """
+        self._algo.set_backend_entity(model)
+        return self._algo.get_weight_compression_parameters(model, nncf_graph)
+
     def _annotate_weight_compression(
         self,
         model: torch.fx.GraphModule,
@@ -182,12 +229,13 @@ class OpenVINOQuantizer(Quantizer):
         :param node_vs_torch_annotation: A mapping of FX nodes to quantization annotations.
         :return: Updated mapping of FX nodes with weight compression annotations.
         """
-        self._algo.set_backend_entity(model)
-        all_wc_params, _ = self._algo.get_weight_compression_parameters(
+        all_wc_params, *_ = self.get_nncf_weight_compression_parameters(
             model, nncf_graph
         )
 
         for wc_param in all_wc_params:
+            if not wc_param.compression_config:
+                continue
             node_with_weight = wc_param.node_with_weight
             target_node = nncf_fx.node_utils.get_graph_node_by_name(
                 graph, node_with_weight.node_name
