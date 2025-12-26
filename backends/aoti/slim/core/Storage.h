@@ -27,7 +27,7 @@ inline void noop(void*) {}
 } // namespace detail
 
 /// Default CPU device constant.
-const c10::Device CPU_DEVICE = c10::Device(c10::DeviceType::CPU, 0);
+inline const c10::Device CPU_DEVICE = c10::Device(c10::DeviceType::CPU, 0);
 
 /// DeviceTraits template for device-specific operations.
 /// Device-specific implementations provide allocate(), free(), and memcpy().
