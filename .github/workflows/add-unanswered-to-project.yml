@@ -2,14 +2,20 @@ name: Add Open External Contributor PRs and Issues to PyTorch Org Project 136
 
 on:
   workflow_dispatch:
-  pull_request: 
-   paths: 
-     .github/workflows/add-unanswered-to-project.yml
+  schedule:
+    # GitHub Actions cron uses UTC. These run at:
+    #  - 14:00 UTC  -> 08:00 CST (UTC-6)
+    #  - 19:00 UTC  -> 13:00 CST (UTC-6)
+    - cron: "0 14 * * *"
+    - cron: "0 19 * * *"
+  pull_request:
+    paths:
+      - .github/workflows/add-unanswered-to-project.yml
 jobs:
   add_to_project:
     runs-on: ubuntu-latest
     steps:
-      - name: Add open issues and open, non-draft PRs to org project (excluding certain authors)
+      - name: Add open issues and open, non-draft PRs to org project (excluding certain authors and bots)
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.ET_EXT_CONTRIB }}
@@ -22,8 +28,8 @@ jobs:
             const excludedAuthors = new Set([
               "nil-is-all", "tanvirislam-meta", "cbilgin", "kimishpatel", "psiddh", "digantdesai", "SS-JIA", "ahmtox", "mcr229", 
               "shoumikhin", "manuelcandales", "metascroy", "cccclai", "rohansjoshi", "kirklandsign", "abhinaykukkadapu", 
-              "JacobSzwejbka", "Conarnar", "lucylq", "larryliu0820", "BujSet", "Gasoonjia", "Juntian777", "guangy10", "jackzhxng",
-              "GregoryComer", "leafs1", "swolchok", "mergennachin", "tarun292", "byjlw", "jathu", "Jack-Khuu", "georgehong", 
+              "JacobSzwejbka", "Conarnar", "rascani", "lucylq", "larryliu0820", "BujSet", "Gasoonjia", "Juntian777", "guangy10", 
+              "jackzhxng", "GregoryComer", "leafs1", "swolchok", "mergennachin", "tarun292", "byjlw", "jathu", "Jack-Khuu", "georgehong", 
               "zhenyan-zhang-meta", "silverguo", "harishs88ss", "AlannaBurke", "dbort", "huydhn", "mcremon-meta", "trivedivivek", 
               "angelayi", "helunwencser", "hsharma35", "zhxchen17", "iseeyuan", "svekars", "nathanaelsee", "dulinriley", 
               "jerryzh168", "cmodi-meta", "bigfootjon", "sxu", "ydwu4", "Riandy", "tugsbayasgalan", "bsoyluoglu", "yangw-dev", 
@@ -36,17 +42,30 @@ jobs:
               "agunapal", "SamGondelman", "Ninja91", "ivayloen", "DrJessop", "rodrigos01meta", "akrieger", "cmt0", "yiming0416", 
               "ethansfng", "ThomasJannaud", "nirvanagth", "marcinkwiatkowski", "3l1", "omerjerk", "nitish2112", "yipjustin", 
               "ejnguyen", "andrewor14", "phaiting", "mgiordy", "LeeOHzzZ", "adicatana", "Polyomino", "ezrilow", "navsud", 
-              "michaelmaitland", "RahulC7", "seyeong-han", "YifanShenSZ", "RdoubleA", "Olivia-liu", "Abhi-hpp", "Vysarat", 
-              "azad-meta", "junpi", "pytorchbot", "pytorchmergebot", "pytorchupdatebot", "facebook-github-bot", "app/dependabot", 
-              "Erik-Lundell", "zingo", "AdrianLundell", "oscarandersson8218", "per", "Sebastian-Larsson", "SaoirseARM", "robell", 
-              "mansnils", "martinlsm", "freddan80", "YufengShi-dudu", "tom-arm", "perheld", "Jerry-Ge", "gggekov", "fumchin", "wwwind",
-              "benkli01", "Tessil", "maddun01", "Michiel-Olieslagers", "armwaheed", "agrima1304", "emmakujala", "annietllnd", 
-              "MatthiasHertel80", "AlexTawseArm", "jmahbs", "haowhsu-quic", "shewu-quic", "winskuo-quic", "chunit-quic", 
-              "DannyYuyang-quic", "chuntl", "thchenqti", "jethroqti", "chenweng-quic", "cymbalrush", "DenisVieriu97", "billmguo", 
-              "StrycekSimon", "jirioc", "robert-kalmar", "skywall", "MartinPavella", "roman-janik-nxp", "novak-vaclav ", 
-              "neuropilot-captain", "dijopaul", "cad-rlc", "cad-audio", "ynimmaga", "daniil-lyakhov", "emmanuel-ferdman", 
-              "cavusmustafa", "Jiseong-oh", "alexdean08"
+              "michaelmaitland", "RahulC7", "seyeong-han", "thdusdl1219", "YifanShenSZ", "RdoubleA", "Olivia-liu", "Abhi-hpp", 
+              "Vysarat", "azad-meta", "junpi", "pytorchbot", "pytorchmergebot", "pytorchupdatebot", "facebook-github-bot", 
+              "app/dependabot", "Erik-Lundell", "zingo", "AdrianLundell", "oscarandersson8218", "per", "Sebastian-Larsson", "SaoirseARM", 
+              "robell", "mansnils", "martinlsm", "freddan80", "YufengShi-dudu", "tom-arm", "perheld", "Jerry-Ge", "gggekov", "fumchin", 
+              "wwwind", "benkli01", "Tessil", "maddun01", "Michiel-Olieslagers", "armwaheed", "agrima1304", "emmakujala", "annietllnd", 
+              "MatthiasHertel80", "AlexTawseArm", "jmahbs", "morgolock", "Christoffer-JL", "ArmRyan", "xingguo01", "tgonzalezorlandoarm", 
+              "haowhsu-quic", "shewu-quic", "winskuo-quic", "chunit-quic", "DannyYuyang-quic", "chuntl", "thchenqti", "jethroqti", 
+              "chenweng-quic", "cymbalrush", "DenisVieriu97", "billmguo", "StrycekSimon", "jirioc", "robert-kalmar", "skywall", 
+              "MartinPavella", "roman-janik-nxp", "novak-vaclav", "neuropilot-captain", "dijopaul", "cad-rlc", "cad-audio", "ynimmaga", 
+              "daniil-lyakhov", "emmanuel-ferdman", "cavusmustafa", "anzr299", "Jiseong-oh", "alexdean08",
+              // explicitly include the dependabot bot login seen in PRs
+              "dependabot[bot]"
             ]);
+
+            function isBotOrExcluded(user) {
+              if (!user) return false;
+              // GitHub sometimes marks bots with user.type === "Bot"
+              if (user.type && user.type.toLowerCase() === "bot") return true;
+              // Some bots use logins that end with [bot], e.g. dependabot[bot]
+              if (user.login && user.login.endsWith("[bot]")) return true;
+              // Explicit excluded list
+              if (excludedAuthors.has(user.login)) return true;
+              return false;
+            }
 
             async function addItem(contentId, type, number) {
               try {
@@ -69,7 +88,7 @@ jobs:
             }
 
             try {
-              // Add open issues (not PRs) and exclude by author
+              // Add open issues (not PRs) and exclude by author/bots
               const issues = await github.paginate(
                 github.rest.issues.listForRepo,
                 {
@@ -80,12 +99,14 @@ jobs:
                 }
               );
               for (const issue of issues) {
-                if (!issue.pull_request && !excludedAuthors.has(issue.user.login)) {
+                if (!issue.pull_request && !isBotOrExcluded(issue.user)) {
                   await addItem(issue.node_id, 'issue', issue.number);
+                } else {
+                  console.log(`Skipping issue #${issue.number} by ${issue.user && issue.user.login}`);
                 }
               }
 
-              // Add open, non-draft PRs (regardless of review state), exclude by author
+              // Add open, non-draft PRs (regardless of review state), exclude by author/bots
               const prs = await github.paginate(
                 github.rest.pulls.list,
                 {
@@ -95,8 +116,10 @@ jobs:
                 }
               );
               for (const pr of prs) {
-                if (!pr.draft && !excludedAuthors.has(pr.user.login)) {
+                if (!pr.draft && !isBotOrExcluded(pr.user)) {
                   await addItem(pr.node_id, 'pr', pr.number);
+                } else {
+                  console.log(`Skipping PR #${pr.number} by ${pr.user && pr.user.login}`);
                 }
               }
             } catch (error) {

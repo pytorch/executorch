@@ -1,6 +1,9 @@
 # Summary
 
 ## Overview
+
+**Video Tutorial:** [Build Along: Run LLMs Locally on Qualcomm Hardware Using ExecuTorch](https://www.youtube.com/watch?v=41PKDlGM3oU)
+
 This file provides you the instructions to run LLM Decoder model with different parameters via Qualcomm HTP backend. We currently support the following models:
 <!-- numbered list will be automatically generated -->
  1. LLAMA2 Stories 110M
@@ -16,7 +19,7 @@ This file provides you the instructions to run LLM Decoder model with different 
  1. QWEN3 0.6B / 1.7B
  1. SmolLM2 135M
  1. SmolLM3 3B
- 
+
 
 We offer the following modes to execute the model:
 

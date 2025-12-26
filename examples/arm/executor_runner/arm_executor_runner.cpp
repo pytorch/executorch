@@ -97,6 +97,7 @@
 #include <unistd.h>
 #include <memory>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "arm_memory_allocator.h"
@@ -340,6 +341,8 @@ void et_pal_free(ET_UNUSED void* ptr) {}
 namespace {
 
 /// Lightweight heapless container that constructs and stores a T in-place.
+/// Useful when you want to avoid heap allocations but need to delay
+/// construction.
 template <typename T>
 class Box {
  public:
@@ -543,8 +546,13 @@ struct RunnerContext {
   size_t input_memsize = 0;
   size_t pte_size = 0;
   bool bundle_io = false;
+  Box<BufferDataLoader> loader;
+  Box<Program> program;
   Box<ArmMemoryAllocator> method_allocator;
   Box<ArmMemoryAllocator> temp_allocator;
+  std::vector<Span<uint8_t>> planned_spans;
+  Box<HierarchicalAllocator> planned_memory;
+  Box<MemoryManager> memory_manager;
   Box<Result<Method>> method;
 #if defined(ET_EVENT_TRACER_ENABLED)
   Box<ETDumpGen> etdump_gen;
@@ -584,30 +592,31 @@ void runner_init(
         (unsigned int)status);
   }
 #endif
-  auto loader = BufferDataLoader(program_data, ctx.program_data_len);
+  ctx.loader.reset(program_data, ctx.program_data_len);
+  auto& loader = ctx.loader.value();
   ET_LOG(Info, "PTE Model data loaded. Size: %zu bytes.", ctx.program_data_len);
 
   // Parse the program file. This is immutable, and can also be reused
   // between multiple execution invocations across multiple threads.
-  Result<Program> program = Program::load(&loader);
-  if (!program.ok()) {
-    ET_LOG(
-        Info,
-        "Program loading failed @ 0x%p: 0x%" PRIx32,
-        program_data,
-        program.error());
-  }
+  Result<Program> program_result = Program::load(&loader);
+  ET_CHECK_MSG(
+      program_result.ok(),
+      "Program loading failed @ %p: 0x%" PRIx32,
+      program_data,
+      program_result.error());
+  ctx.program.reset(std::move(program_result.get()));
+  Program& program = ctx.program.value();
 
-  ET_LOG(Info, "Model buffer loaded, has %zu methods", program->num_methods());
+  ET_LOG(Info, "Model buffer loaded, has %zu methods", program.num_methods());
 
   {
-    const auto method_name_result = program->get_method_name(0);
+    const auto method_name_result = program.get_method_name(0);
     ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
     ctx.method_name = *method_name_result;
   }
   ET_LOG(Info, "Running method %s", ctx.method_name);
 
-  Result<MethodMeta> method_meta = program->method_meta(ctx.method_name);
+  Result<MethodMeta> method_meta = program.method_meta(ctx.method_name);
   if (!method_meta.ok()) {
     ET_LOG(
         Info,
@@ -624,10 +633,9 @@ void runner_init(
   ctx.method_allocator.reset(
       method_allocation_pool_size, method_allocation_pool);
 
-  std::vector<uint8_t*> planned_buffers; // Owns the memory
-  std::vector<Span<uint8_t>> planned_spans; // Passed to the allocator
+  ctx.planned_spans.clear();
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
-
+  ctx.planned_spans.reserve(num_memory_planned_buffers);
   size_t planned_buffer_membase = ctx.method_allocator->used_size();
 
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
@@ -643,21 +651,24 @@ void runner_init(
         buffer != nullptr,
         "Could not allocate memory for memory planned buffer size %zu",
         buffer_size);
-    planned_buffers.push_back(buffer);
-    planned_spans.push_back({planned_buffers.back(), buffer_size});
+    ctx.planned_spans.push_back({buffer, buffer_size});
   }
 
   ctx.planned_buffer_memsize =
       ctx.method_allocator->used_size() - planned_buffer_membase;
 
-  HierarchicalAllocator planned_memory(
-      {planned_spans.data(), planned_spans.size()});
+  Span<Span<uint8_t>> planned_memory_span;
+  if (!ctx.planned_spans.empty()) {
+    planned_memory_span =
+        Span<Span<uint8_t>>(ctx.planned_spans.data(), ctx.planned_spans.size());
+  }
+  ctx.planned_memory.reset(planned_memory_span);
 
   ctx.temp_allocator.reset(temp_allocation_pool_size, temp_allocation_pool);
 
-  MemoryManager memory_manager(
+  ctx.memory_manager.reset(
       &ctx.method_allocator.value(),
-      &planned_memory,
+      &ctx.planned_memory.value(),
       &ctx.temp_allocator.value());
 
   size_t method_loaded_membase = ctx.method_allocator->used_size();
@@ -723,8 +734,8 @@ void runner_init(
 #endif // defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
 #endif // defined(ET_EVENT_TRACER_ENABLED)
 
-  ctx.method.reset(
-      program->load_method(ctx.method_name, &memory_manager, event_tracer_ptr));
+  ctx.method.reset(program.load_method(
+      ctx.method_name, &ctx.memory_manager.value(), event_tracer_ptr));
 
   if (!ctx.method->ok()) {
     ET_LOG(

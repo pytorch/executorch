@@ -180,7 +180,7 @@ def test_cat_16a8w_tosa_INT(test_data: Tuple):
 
 @common.parametrize("test_data", Cat.test_parameters)
 @common.XfailIfNoCorstone300
-def test_cat_16a8w_u55_INT16(test_data: Tuple):
+def test_cat_16a8w_u55_INT(test_data: Tuple):
     """Test cat operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
@@ -201,7 +201,7 @@ def test_cat_16a8w_u55_INT16(test_data: Tuple):
 
 @common.parametrize("test_data", Cat.test_parameters)
 @common.XfailIfNoCorstone320
-def test_cat_16a8w_u85_INT16(test_data: Tuple):
+def test_cat_16a8w_u85_INT(test_data: Tuple):
     """Test cat operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 

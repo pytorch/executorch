@@ -139,7 +139,7 @@ def test_rsqrt_16a8w_u55_INT16(test_tensor: torch.Tensor):
 
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
 @common.XfailIfNoCorstone320
-def test_rsqrt_16a8w_u85_INT16(test_tensor: torch.Tensor):
+def test_rsqrt_16a8w_u85_INT(test_tensor: torch.Tensor):
     """Test rsqrt operation with int16 I/O quantization for U85"""
     # Use wider tolerances for int16 I/O quantization on U85
     pipeline = EthosU85PipelineINT[input_t1](

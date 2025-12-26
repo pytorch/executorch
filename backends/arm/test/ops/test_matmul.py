@@ -226,7 +226,7 @@ def test_matmul_vgf_no_quant(test_data: input_t1):
 
 @common.parametrize("test_data", MatMulSingleInput.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_single_input_vgf_no_quant(test_data: input_t1):
+def test_matmul_vgf_no_quant_single_input(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         MatMulSingleInput(),
         test_data(),
@@ -239,7 +239,7 @@ def test_matmul_single_input_vgf_no_quant(test_data: input_t1):
 
 @common.parametrize("test_data", MatMulCombo.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_combo_vgf_no_quant(test_data: input_t1):
+def test_matmul_vgf_no_quant_combo(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         MatMulCombo(),
         test_data(),
@@ -265,7 +265,7 @@ def test_matmul_vgf_quant(test_data: input_t1):
 
 @common.parametrize("test_data", MatMulSingleInput.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_single_input_vgf_quant(test_data: input_t1):
+def test_matmul_vgf_quant_single_input(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         MatMulSingleInput(),
         test_data(),
@@ -278,7 +278,7 @@ def test_matmul_single_input_vgf_quant(test_data: input_t1):
 
 @common.parametrize("test_data", MatMulCombo.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_matmul_combo_vgf_quant(test_data: input_t1):
+def test_matmul_vgf_quant_combo(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         MatMulCombo(),
         test_data(),

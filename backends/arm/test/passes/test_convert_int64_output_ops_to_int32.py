@@ -46,7 +46,7 @@ TestDataFactory = Callable[[], Tuple[torch.Tensor, torch.dtype]]
 
 
 @common.parametrize("test_data", test_data_suite_convert)
-def test_convert_or_remove_casting_to_int64_convert_tosa_FP(
+def test_convert_int64_output_ops_to_int32_tosa_FP_convert_casting(
     test_data: TestDataFactory,
 ) -> None:
     test_tensor, target_dtype = test_data()
@@ -66,7 +66,7 @@ def test_convert_or_remove_casting_to_int64_convert_tosa_FP(
 
 
 @common.parametrize("test_data", test_data_suite_remove)
-def test_convert_or_remove_casting_to_int64_remove_tosa_FP(
+def test_convert_int64_output_ops_to_int32_tosa_FP_remove_casting(
     test_data: TestDataFactory,
 ) -> None:
     test_tensor, target_dtype = test_data()
@@ -108,7 +108,7 @@ class Int64OutputModel(torch.nn.Module):
         )
 
 
-def test_insert_int64_output_to_int32_cast_tosa_FP():
+def test_convert_int64_output_ops_to_int32_tosa_FP_insert_cast():
     module = Int64OutputModel()
     aten_ops_checks = [
         "torch.ops.aten.argmax.default",

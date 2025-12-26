@@ -1,0 +1,16 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "dw_convs_shared_weights_module",
+    srcs = ["test_dw_convs_with_shared_weights.py"],
+    deps = [
+        "//executorch/backends/arm/test:arm_tester_lib",
+    ],
+)

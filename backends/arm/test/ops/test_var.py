@@ -198,7 +198,7 @@ def test_var_dim_u85_INT_no_dim(test_data: Tuple):
 
 @common.parametrize("test_data", Var.test_parameters)
 @common.SkipIfNoModelConverter
-def test_var_dim_no_dim_vgf_no_quant(test_data: Tuple):
+def test_var_dim_vgf_no_quant_no_dim(test_data: Tuple):
     data, keepdim, correction = test_data()
     pipeline = VgfPipeline[input_t1](
         Var(keepdim, correction),
@@ -212,7 +212,7 @@ def test_var_dim_no_dim_vgf_no_quant(test_data: Tuple):
 
 @common.parametrize("test_data", Var.test_parameters)
 @common.SkipIfNoModelConverter
-def test_var_dim_no_dim_vgf_quant(test_data: Tuple):
+def test_var_dim_vgf_quant_no_dim(test_data: Tuple):
     data, keepdim, correction = test_data()
     pipeline = VgfPipeline[input_t1](
         Var(keepdim, correction),
@@ -368,7 +368,7 @@ def test_var_dim_u85_INT_correction(test_data: Tuple):
 
 @common.parametrize("test_data", VarCorrection.test_parameters)
 @common.SkipIfNoModelConverter
-def test_var_dim_correction_vgf_no_quant(test_data: Tuple):
+def test_var_dim_vgf_no_quant_correction(test_data: Tuple):
     data, dim, keepdim, corr = test_data()
     pipeline = VgfPipeline[input_t1](
         VarCorrection(dim, keepdim, corr),
@@ -382,7 +382,7 @@ def test_var_dim_correction_vgf_no_quant(test_data: Tuple):
 
 @common.parametrize("test_data", VarCorrection.test_parameters)
 @common.SkipIfNoModelConverter
-def test_var_dim_correction_vgf_quant(test_data: Tuple):
+def test_var_dim_vgf_quant_correction(test_data: Tuple):
     data, dim, keepdim, corr = test_data()
     pipeline = VgfPipeline[input_t1](
         VarCorrection(dim, keepdim, corr),

@@ -137,7 +137,7 @@ def test_silu_vgf_no_quant(test_data: input_t):
 
 @common.parametrize("test_data", Silu.test_data)
 @common.SkipIfNoModelConverter
-def test_silu_inplace_vgf_no_quant(test_data: input_t):
+def test_silu_vgf_no_quant_inplace(test_data: input_t):
     silu_data = (test_data(), True)
     pipeline = VgfPipeline[input_t](
         Silu(),
@@ -163,7 +163,7 @@ def test_silu_vgf_quant(test_data: input_t):
 
 @common.parametrize("test_data", Silu.test_data)
 @common.SkipIfNoModelConverter
-def test_silu_inplace_vgf_quant(test_data: input_t):
+def test_silu_vgf_quant_inplace(test_data: input_t):
     silu_data = (test_data(), True)
     pipeline = VgfPipeline[input_t](
         Silu(),
