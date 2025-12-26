@@ -190,7 +190,7 @@ TEST(StorageSharedPtrTest, SharedOwnership) {
   Storage storage1(new MaybeOwningStorage(CPU_DEVICE, kNbytes));
   void* data_ptr = storage1->data();
 
-  Storage storage2 = storage1;
+  const Storage& storage2 = storage1;
 
   EXPECT_EQ(storage1.use_count(), 2);
   EXPECT_EQ(storage2.use_count(), 2);
@@ -208,7 +208,7 @@ TEST(StorageSharedPtrTest, SharedOwnershipModification) {
     data[i] = 0.0f;
   }
 
-  Storage storage2 = storage1;
+  const Storage& storage2 = storage1;
 
   float* data2 = static_cast<float*>(storage2->data());
   for (size_t i = 0; i < kNumFloats; ++i) {
@@ -226,10 +226,7 @@ TEST(StorageSharedPtrTest, ReferenceCountDecrement) {
   Storage storage1(new MaybeOwningStorage(CPU_DEVICE, kNbytes));
   EXPECT_EQ(storage1.use_count(), 1);
 
-  {
-    Storage storage2 = storage1;
-    EXPECT_EQ(storage1.use_count(), 2);
-  }
+  { EXPECT_EQ(storage1.use_count(), 2); }
 
   EXPECT_EQ(storage1.use_count(), 1);
 }
