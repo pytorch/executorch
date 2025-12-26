@@ -24,6 +24,7 @@ namespace executorch::backends::cuda {
 
 using executorch::aten::SizesType;
 using executorch::aten::StridesType;
+using executorch::backends::aoti::aoti_torch_dtype_bool;
 using executorch::backends::aoti::aoti_torch_get_device_index;
 using executorch::backends::aoti::aoti_torch_get_dtype;
 using executorch::backends::aoti::aoti_torch_get_sizes;
@@ -791,6 +792,126 @@ AOTITorchError aoti_torch_new_tensor_handle(
   tensors.insert(tensor);
 
   *new_handle = tensor.get();
+
+  // Increment the reference count for this memory address only if it is owned
+  // by tensor
+  memory_to_n_tensor[data_ptr] = memory_to_n_tensor[data_ptr] == NOT_OWN
+      ? NOT_OWN
+      : memory_to_n_tensor[data_ptr] + 1;
+
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_item_bool(Tensor* tensor, bool* ret_value) {
+  // Validate input parameters
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch_item_bool failed: tensor is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_value != nullptr,
+      InvalidArgument,
+      "aoti_torch_item_bool failed: ret_value is null");
+
+  // Validate that tensor dtype is bool
+  int32_t dtype;
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_dtype(tensor, &dtype));
+
+  ET_CHECK_OR_RETURN_ERROR(
+      dtype == aoti_torch_dtype_bool(),
+      InvalidArgument,
+      "aoti_torch_item_bool failed: tensor dtype is not bool (got %d)",
+      dtype);
+
+  // Get the data pointer
+  const void* data_ptr = tensor->const_data_ptr();
+  ET_CHECK_OR_RETURN_ERROR(
+      data_ptr != nullptr,
+      InvalidArgument,
+      "aoti_torch_item_bool failed: tensor data pointer is null");
+
+  // Check if tensor is on CUDA or CPU
+  cudaPointerAttributes attributes{};
+  ET_CUDA_CHECK_OR_RETURN_ERROR(
+      cudaPointerGetAttributes(&attributes, data_ptr));
+
+  if (attributes.type == cudaMemoryTypeDevice) {
+    // CUDA memory case: copy from device to host
+    bool device_value;
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
+        &device_value, data_ptr, sizeof(bool), cudaMemcpyDeviceToHost));
+    *ret_value = device_value;
+  } else {
+    // CPU memory case: direct access
+    const bool* bool_ptr = static_cast<const bool*>(data_ptr);
+    *ret_value = *bool_ptr;
+  }
+
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst) {
+  // Validate input parameters
+  ET_CHECK_OR_RETURN_ERROR(
+      src != nullptr,
+      InvalidArgument,
+      "aoti_torch_assign_tensors_out failed: src is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_dst != nullptr,
+      InvalidArgument,
+      "aoti_torch_assign_tensors_out failed: ret_dst is null");
+
+  // Get the data pointer from the source tensor
+  void* data_ptr = src->mutable_data_ptr();
+  ET_CHECK_OR_RETURN_ERROR(
+      data_ptr != nullptr,
+      InvalidArgument,
+      "Source tensor has null data pointer");
+
+  // Check if the given memory is in the map, if not return error
+  auto memory_it = memory_to_n_tensor.find(data_ptr);
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it != memory_to_n_tensor.end(),
+      InvalidArgument,
+      "Memory address %p is not being tracked by reference counting system",
+      data_ptr);
+
+  // Get dtype from source tensor
+  int32_t dtype = 0;
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_dtype(src, &dtype));
+
+  // Get sizes and strides from source tensor
+  int64_t* sizes_ptr;
+  int64_t* strides_ptr;
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_sizes(src, &sizes_ptr));
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_strides(src, &strides_ptr));
+
+  int64_t ndim = src->dim();
+
+  // Convert to vectors
+  std::vector<SizesType> sizes = convert_sizes_to_vector(ndim, sizes_ptr);
+  std::vector<StridesType> strides =
+      convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
+
+  // Create new tensor view that shares the same memory as source tensor
+  std::shared_ptr<Tensor> tensor = make_tensor(
+      sizes,
+      data_ptr, // Share the same memory from source tensor
+      {}, // dim_order (empty, will be auto-generated)
+      strides,
+      dtype_to_scalar_type(dtype));
+
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr,
+      InvalidArgument,
+      "Failed to create tensor view in aoti_torch_assign_tensors_out");
+
+  // Store the tensor so it doesn't get destroyed
+  tensors.insert(tensor);
+
+  *ret_dst = tensor.get();
 
   // Increment the reference count for this memory address only if it is owned
   // by tensor

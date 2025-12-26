@@ -258,3 +258,39 @@ def test_to_u55_INT(test_data: Tuple):
         non_delegated_ops={},  # These are removed outside of the Arm backend so the graph is empty
     )
     pipeline.run()
+
+
+_TO_COPY_TEST_DATA_INT_FP = {
+    "bool_fp32": lambda: (
+        torch.tensor([True, False], dtype=torch.bool),
+        torch.float32,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_TEST_DATA_INT_FP)
+@common.SkipIfNoModelConverter
+def test_to_vgf_no_quant_bool_fp32(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", _TO_COPY_TEST_DATA_INT_FP)
+@common.SkipIfNoModelConverter
+def test_to_vgf_quant_bool_fp32(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
+        quantize=True,
+    )
+    pipeline.run()
