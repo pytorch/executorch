@@ -188,13 +188,12 @@ for COMMIT in ${COMMITS}; do
         fi
     fi
 
-    # Op test checks
-    op_test_files=$(echo $commit_files | grep -oE 'backends/arm/test/ops/\S+')
-    if [ "$op_test_files" ]; then
+    # Test name checks
+    test_files=$(echo $commit_files | grep -oE 'backends/arm/test/\S+')
+    if [ "$test_files" ]; then
 
-        # Check that the tested op and target is parsed correctly from the test name
-        test_names=$(grep -h "def test_" $op_test_files | cut -d"(" -f1 | cut -d" " -f2)
-        python ./backends/arm/scripts/parse_test_names.py $test_names
+        # Check that the test name follows the specified convention
+        python ./backends/arm/scripts/parse_test_names.py $test_files
         if [ $? -ne 0 ]; then
             echo -e "${ERROR} Failed op test name check." >&2
             FAILED=1

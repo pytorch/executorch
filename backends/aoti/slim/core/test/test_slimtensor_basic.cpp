@@ -277,7 +277,7 @@ TEST(SlimTensorBasicTest, Reset) {
 
 TEST(SlimTensorBasicTest, CopyConstructor) {
   SlimTensor original = make_2x3_tensor();
-  SlimTensor copy = original;
+  const SlimTensor& copy = original;
 
   EXPECT_TRUE(copy.defined());
   EXPECT_EQ(copy.dim(), 2u);

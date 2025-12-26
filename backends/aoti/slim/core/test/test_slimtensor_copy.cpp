@@ -20,8 +20,8 @@ Storage make_cpu_storage(size_t nbytes) {
 
 // Helper function to create a contiguous float tensor and fill with values
 SlimTensor make_filled_tensor(
-    std::vector<int64_t> sizes,
-    std::vector<int64_t> strides,
+    const std::vector<int64_t>& sizes,
+    const std::vector<int64_t>& strides,
     const std::vector<float>& values) {
   size_t numel = 1;
   for (auto s : sizes) {
