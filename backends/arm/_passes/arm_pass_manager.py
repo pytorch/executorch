@@ -107,6 +107,7 @@ from executorch.backends.arm._passes import (
     RewriteConvPass,
     RewriteMatmulPass,
     RewriteUpsamplePass,
+    ReciprocalDualLutPass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
     ToTosaMemoryFormatPass,
@@ -329,6 +330,8 @@ class ArmPassManager(PassManager):
                 FuseViewCopyTransformPass(),
                 DecomposeConvWithInt16ActivationPass(),
                 DecomposeSumPass(),
+                # FIX: Fixed LUT generation, re-enabled dual LUT pass
+                ReciprocalDualLutPass(exported_program),
                 InsertTableOpsPass(exported_program),
             ]
         )

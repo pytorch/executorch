@@ -5,6 +5,7 @@
 
 
 from . import arm_pass_utils  # noqa
+from . import fb
 from .arm_pass import ArmPass  # noqa  # usort: skip
 from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
 from .annotate_output_dim_order_pass import AnnotateOutputDimOrderPass  # noqa
@@ -80,6 +81,7 @@ from .decompose_tosa_unsupported_clamp_pass import (  # noqa
 )
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
+from .fb.reciprocal_dual_lut_pass import ReciprocalDualLutPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
     QuantizeClampArgumentsPass,
