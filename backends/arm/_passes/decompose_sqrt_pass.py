@@ -35,7 +35,9 @@ class DecomposeSqrtPass(ArmPass):
         Decomposes `sqrt(x)` into `pow(x, 0.5)` for backend support.
         """
 
-        if op not in (edge_sqrt_ops + aten_sqrt_ops):
+        if op not in (edge_sqrt_ops + aten_sqrt_ops) or not self.allowed_to_transform(
+            meta
+        ):
             return super().call_operator(op, args, kwargs, meta)
 
         is_quantized = (
