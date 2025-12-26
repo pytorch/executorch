@@ -37,9 +37,14 @@ find_package(executorch CONFIG REQUIRED HINTS ${CMAKE_INSTALL_PREFIX})
 
 # List of test files
 set(CUDA_SHIM_TESTS
-    test_aoti_torch_create_tensor_from_blob_v2 test_aoti_torch_empty_strided
-    test_aoti_torch_delete_tensor_object test_aoti_torch__reinterpret_tensor
-    test_aoti_torch_copy_ test_aoti_torch_new_tensor_handle
+    test_aoti_torch_create_tensor_from_blob_v2
+    test_aoti_torch_empty_strided
+    test_aoti_torch_delete_tensor_object
+    test_aoti_torch__reinterpret_tensor
+    test_aoti_torch_copy_
+    test_aoti_torch_new_tensor_handle
+    test_aoti_torch_item_bool
+    test_aoti_torch_assign_tensors_out
 )
 
 enable_testing()

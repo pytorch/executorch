@@ -72,6 +72,7 @@ You will need an Android / Linux device with adb-connected running on one of bel
  - SXR2230P
  - SXR2330P
  - QCM6490
+ - QCS9100
 
 This example is verified with SM8550 and SM8450.
 

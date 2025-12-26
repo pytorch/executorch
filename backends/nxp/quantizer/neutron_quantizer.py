@@ -53,7 +53,6 @@ from executorch.backends.nxp.quantizer.utils import (
     no_outside_users,
 )
 from torch import fx
-from torch.ao.quantization.quantizer.utils import _annotate_output_qspec
 from torchao.quantization.pt2e import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
@@ -62,6 +61,7 @@ from torchao.quantization.pt2e import (
     MovingAverageMinMaxObserver,
 )
 from torchao.quantization.pt2e.quantizer import (
+    annotate_output_qspec,
     ComposableQuantizer,
     DerivedQuantizationSpec,
     OperatorConfig,
@@ -338,7 +338,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 continue
 
             if node.op == "placeholder" and len(node.users) > 0:
-                _annotate_output_qspec(node, act_qspec(self.is_qat))
+                annotate_output_qspec(node, act_qspec(self.is_qat))
                 self._mark_input_node_as_annotated(node)
 
     def validate(self, model: torch.fx.GraphModule) -> None:
