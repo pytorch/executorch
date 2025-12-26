@@ -13,7 +13,9 @@ def define_common_targets():
         exported_deps = [
             "//executorch/backends/aoti/slim/c10/core:device",
             "//executorch/backends/aoti/slim/c10/core:scalar_type",
+            "//executorch/backends/aoti/slim/util:array_ref_util",
             "//executorch/backends/aoti/slim/util:shared_ptr",
+            "//executorch/backends/aoti/slim/util:size_util",
             "//executorch/runtime/platform:platform",
         ],
     )
