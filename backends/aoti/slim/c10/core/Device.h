@@ -26,27 +26,25 @@ using DeviceIndex = int8_t;
 /// Represents a compute device on which a tensor is located.
 /// A device is uniquely identified by a type (e.g., CPU) and a device index.
 struct Device final {
-  using Type = DeviceType;
-
   /// Constructs a new Device from a DeviceType and an optional device index.
   /// @param type The type of device.
   /// @param index The device index. For CPU, this should be -1 or 0.
   /* implicit */
-  Device(DeviceType type, DeviceIndex index = -1) : type_(type), index_(index) {
+  explicit Device(DeviceType type, DeviceIndex index = -1)
+      : type_(type), index_(index) {
     validate();
   }
 
   /// Constructs a Device from a string description.
   /// The string must be "cpu" or "cpu:0".
-  /* implicit */ Device(const std::string& device_string) : Device(Type::CPU) {
+  /* implicit */ Device(const std::string& device_string)
+      : Device(DeviceType::CPU) {
     ET_CHECK_MSG(!device_string.empty(), "Device string must not be empty");
 
     if (device_string == "cpu" || device_string == "CPU") {
       type_ = DeviceType::CPU;
       index_ = -1;
-    } else if (
-        device_string == "cpu:0" || device_string == "CPU:0" ||
-        device_string == "cpu:1" || device_string == "CPU:1") {
+    } else if (device_string == "cpu:0" || device_string == "CPU:0") {
       type_ = DeviceType::CPU;
       index_ = static_cast<DeviceIndex>(device_string.back() - '0');
     } else {
