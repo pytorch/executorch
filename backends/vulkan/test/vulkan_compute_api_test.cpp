@@ -271,7 +271,8 @@ TEST_F(VulkanComputeAPITest, calculate_dim_order_test) {
     const size_t& ndim = std::get<0>(test_case);
     const int32_t packed_dim = std::get<1>(test_case);
     const auto& expected_dim_order = std::get<2>(test_case);
-    std::vector<int64_t> dim_order = calculate_dim_order(ndim, packed_dim);
+    api::PackedDimInfo packed_dim_info(packed_dim, false, packed_dim, false);
+    std::vector<int64_t> dim_order = calculate_dim_order(ndim, packed_dim_info);
 
     ASSERT_TRUE(dim_order == expected_dim_order);
   }
@@ -294,9 +295,14 @@ TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
          {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
       {
         const int32_t packed_dim = static_cast<int32_t>(layout);
+        api::PackedDimInfo packed_dim_info(
+            packed_dim, false, packed_dim, false);
         std::vector<int64_t> dim_order =
-            calculate_dim_order(sizes.size(), packed_dim);
-        std::vector<int64_t> strides = calculate_strides(sizes, dim_order);
+            calculate_dim_order(sizes.size(), packed_dim_info);
+        std::vector<int64_t> padded_sizes =
+            calculate_padded_sizes(sizes, packed_dim_info);
+        std::vector<int64_t> strides = calculate_strides(
+            vkapi::kFloat, sizes.size(), padded_sizes, dim_order);
         int64_t numel = utils::multiply_integers(sizes);
 
         std::vector<int64_t> ref_strides = get_reference_strides(sizes, layout);
