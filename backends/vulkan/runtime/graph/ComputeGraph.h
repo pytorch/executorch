@@ -442,6 +442,11 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().packed_dim();
   }
 
+  inline const api::PackedDimInfo& packed_dim_info_of(
+      const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().packed_dim_info();
+  }
+
   inline int32_t concat_dim_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().concat_dim();
   }
