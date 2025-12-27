@@ -653,19 +653,27 @@ bool ValueSpec::validate_against_reference(
 }
 
 // Helper function to collect GPU timing from querypool
-float collect_gpu_timing_us(ComputeGraph& graph) {
+float collect_gpu_timing_us(
+    ComputeGraph& graph,
+    const std::vector<std::string>& shader_filter) {
   graph.context()->querypool().extract_results();
   const auto results = graph.context()->querypool().get_shader_timestamp_data();
   if (!results.empty()) {
-    // Sum durations of all shaders that don't contain nchw_to or to_nchw
+    // Sum durations of all shaders that don't match any pattern in
+    // shader_filter
     float total_duration_us = 0.0f;
     for (const auto& shader_result : results) {
-      if (shader_result.kernel_name.find("nchw_to") == std::string::npos &&
-          shader_result.kernel_name.find("to_nchw") == std::string::npos &&
-          shader_result.kernel_name.find("quantize_and_pack_4w4c") ==
-              std::string::npos &&
-          shader_result.kernel_name.find("unpack_4w4c_and_dequantize") ==
-              std::string::npos) {
+      bool filtered = false;
+      // Check if this shader matches any filter pattern
+      for (const auto& filter_pattern : shader_filter) {
+        if (shader_result.kernel_name.find(filter_pattern) !=
+            std::string::npos) {
+          filtered = true;
+          break;
+        }
+      }
+
+      if (!filtered) {
         // Calculate duration from start and end times, convert from ns to μs
         uint64_t duration_ns =
             shader_result.end_time_ns - shader_result.start_time_ns;
@@ -1192,7 +1200,8 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
     total_cpu_time_us += cpu_time_us;
 
     // Collect GPU timing using helper function
-    float gpu_time_us = collect_gpu_timing_us(graph);
+    float gpu_time_us =
+        collect_gpu_timing_us(graph, test_case.get_shader_filter());
     total_gpu_time_us += gpu_time_us;
 
     // Add the appropriate timing based on the flag
