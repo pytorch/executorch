@@ -132,6 +132,7 @@ class vTensorStorage final {
       const PackedDimInfo& packed_dim_info,
       const std::vector<int64_t>& padded_sizes,
       const vkapi::ScalarType dtype,
+      const int64_t physical_numel,
       const bool allocate_memory = true);
 
   vTensorStorage(Context* const context, const vkapi::VulkanImage& image);
@@ -379,6 +380,10 @@ class vTensor final {
   // number of elements based on the canonical sizes
   size_t numel_;
 
+  // number of elements required for GPU buffer storage (with padding/packing)
+  // This is pre-computed to avoid recomputing calculate_gpu_buffer_numel
+  int64_t physical_numel_;
+
   // For texture backed tensors, this int32 contains the axis map data packed
   // into a single int32. For buffer backed tensors, this int32 contains the
   // wchn dim order data packed into a single int32.
@@ -546,6 +551,10 @@ class vTensor final {
 
   inline size_t numel() const {
     return numel_;
+  }
+
+  inline int64_t physical_numel() const {
+    return physical_numel_;
   }
 
   inline size_t nbytes() const {

@@ -8,7 +8,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
@@ -312,10 +311,7 @@ def test_sigmoid_16a8w_tosa_INT(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="MLETORCH-707: AssertionError: Output 0 does not match reference output."
-)
-def test_sigmoid_16a8w_u55_INT(test_data: torch.Tensor):
+def test_sigmoid_16a8w_u55_INT16(test_data: torch.Tensor):
     """Test sigmoid operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 

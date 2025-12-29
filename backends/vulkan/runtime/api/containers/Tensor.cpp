@@ -533,6 +533,7 @@ vTensorStorage::vTensorStorage(
     const PackedDimInfo& packed_dim_info,
     const std::vector<int64_t>& padded_sizes,
     const vkapi::ScalarType dtype,
+    const int64_t physical_numel,
     const bool allocate_memory)
     : context_(context),
       storage_type_{storage_type},
@@ -541,8 +542,7 @@ vTensorStorage::vTensorStorage(
           packed_dim_info,
           padded_sizes,
           axis_map)),
-      buffer_length_{
-          calculate_gpu_buffer_numel(dtype, packed_dim_info, padded_sizes)},
+      buffer_length_{physical_numel},
       buffer_offset_{0},
       image_(allocate_image(
           context_,
@@ -669,6 +669,8 @@ vTensor::vTensor(
       strides_(
           calculate_strides(dtype_, sizes.size(), padded_sizes_, dim_order_)),
       numel_(utils::multiply_integers(sizes_)),
+      physical_numel_(
+          calculate_gpu_buffer_numel(dtype_, packed_dim_info_, padded_sizes_)),
       hashed_layout_(create_hashed_layout(
           dim_order_,
           axis_map_,
@@ -689,6 +691,7 @@ vTensor::vTensor(
           packed_dim_info_,
           padded_sizes_,
           dtype_,
+          physical_numel_,
           allocate_memory)) {
   // uniform_data_ only valid for low dim tensors
   if (sizes.size() <= 4) {
@@ -720,6 +723,8 @@ vTensor::vTensor(
       axis_map_(calculate_axis_map(sizes_, axis_map_layout)),
       strides_(),
       numel_(utils::multiply_integers(sizes_)),
+      physical_numel_(
+          calculate_gpu_buffer_numel(dtype_, packed_dim_info_, padded_sizes_)),
       hashed_layout_(create_hashed_layout(
           dim_order_,
           axis_map_,
@@ -751,6 +756,7 @@ vTensor::vTensor(vTensor& other)
       axis_map_(other.axis_map_.begin(), other.axis_map_.end()),
       strides_(other.strides_.begin(), other.strides_.end()),
       numel_(other.numel_),
+      physical_numel_(other.physical_numel_),
       hashed_layout_(other.hashed_layout_),
       min_nbytes_per_ubo_{other.min_nbytes_per_ubo_},
       max_ubo_nbytes_{other.max_ubo_nbytes_},
@@ -774,7 +780,9 @@ vTensor::vTensor(
       axis_map_(calculate_axis_map(sizes_, utils::kDefaultAxisMap)),
       strides_(
           calculate_strides(dtype_, sizes_.size(), padded_sizes_, dim_order_)),
-      numel_(other.numel_),
+      numel_(utils::multiply_integers(sizes_)),
+      physical_numel_(
+          calculate_gpu_buffer_numel(dtype_, packed_dim_info_, padded_sizes_)),
       hashed_layout_(create_hashed_layout(
           dim_order_,
           axis_map_,
@@ -787,11 +795,7 @@ vTensor::vTensor(
       // Copy Tensor storage
       storage_(other.storage_) {
   uniform_data_ = std::make_shared<UniformData>(UniformData{
-      static_cast<size_t>(utils::multiply_integers(sizes_)),
-      sizes_,
-      dim_order_,
-      strides_,
-      other.logical_limits()});
+      numel_, sizes_, dim_order_, strides_, other.logical_limits()});
 
   VK_CHECK_COND(
       dim_order_is_valid(dim_order_), "new dim order provided is invalid");
@@ -1100,6 +1104,8 @@ void vTensor::acquire_allocation(vkapi::Allocation&& allocation) {
 
 void vTensor::update_metadata() {
   numel_ = utils::multiply_integers(sizes_);
+  physical_numel_ =
+      calculate_gpu_buffer_numel(dtype_, packed_dim_info_, padded_sizes_);
   strides_ =
       calculate_strides(dtype_, sizes_.size(), padded_sizes_, dim_order_);
 
@@ -1164,10 +1170,10 @@ void vTensor::check_sizes(const std::vector<int64_t>& sizes) const {
   } else {
     // For buffer storage check that the current buffer is large enough for
     // the new sizes of the tensor.
-    int64_t numel =
+    int64_t gpu_buffer_numel =
         calculate_gpu_buffer_numel(dtype_, packed_dim_info_, padded_sizes_);
     bool valid_resize =
-        numel + storage_->buffer_offset_ <= storage_->buffer_length_;
+        gpu_buffer_numel + storage_->buffer_offset_ <= storage_->buffer_length_;
     VK_CHECK_COND(
         valid_resize,
         "tensor sizes requires a larger buffer than the current one.");

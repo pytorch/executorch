@@ -362,6 +362,10 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().staging_buffer_numel();
   }
 
+  inline int64_t physical_numel_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().physical_numel();
+  }
+
   inline utils::StorageType storage_type_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().storage_type();
   }
