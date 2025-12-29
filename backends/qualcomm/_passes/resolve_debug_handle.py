@@ -6,7 +6,7 @@
 import operator
 
 import torch
-from executorch.backends.qualcomm.utils.constants import QCOM_DEBUG_HANDLE
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
@@ -34,9 +34,9 @@ class ResolveDebugHandle(ExportPass):
                 assert (
                     source_node.name in visited
                 ), "Graph is not traversed in topological order, unexpected behavior."
-                node.meta[QCOM_DEBUG_HANDLE] = source_node.meta[QCOM_DEBUG_HANDLE]
+                node.meta[DEBUG_HANDLE_KEY] = source_node.meta[DEBUG_HANDLE_KEY]
             elif node.op == "call_function":
-                node.meta[QCOM_DEBUG_HANDLE] = handle_counter
+                node.meta[DEBUG_HANDLE_KEY] = handle_counter
                 handle_counter += 1
             visited.add(node.name)
 

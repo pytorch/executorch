@@ -11,13 +11,13 @@ from typing import Any
 import pydot
 import torch
 from executorch.backends.qualcomm.utils.constants import (
-    QCOM_DEBUG_HANDLE,
     QCOM_QUANT_ATTRS,
     QCOM_SCALE,
     QCOM_SCALES,
     QCOM_ZERO_POINT,
     QCOM_ZERO_POINTS,
 )
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 
 from .metrics_evaluator import MetricEvaluatorBase
 
@@ -47,7 +47,7 @@ def retrieve_node_info(evaluator, node, node_tensor_map):
     node_info["target"] = typename(node.target)
     node_info["num_users"] = len(node.users)
     # Only call_function and getitem nodes that is present prior to qnn_preprocess has a debug_handle.
-    node_info["debug_handle"] = node.meta.get(QCOM_DEBUG_HANDLE, -1)
+    node_info["debug_handle"] = node.meta.get(DEBUG_HANDLE_KEY, -1)
 
     if "val" in node.meta:
         if isinstance(node.meta["val"], torch.Tensor):

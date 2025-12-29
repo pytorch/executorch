@@ -15,7 +15,6 @@ import torch
 from executorch.backends.qualcomm._passes.layout_transform import LayoutTransform
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS_ORDER,
-    QCOM_DEBUG_HANDLE,
     QCOM_QUANT_ATTRS,
     QCOM_SCALE,
     QCOM_ZERO_POINT,
@@ -24,6 +23,7 @@ from executorch.devtools import Inspector
 from executorch.devtools.inspector._intermediate_output_capturer import (
     IntermediateOutputCapturer,
 )
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.sym_util import eval_shape
 
 from .format_outputs import export_csv, export_raw, export_svg
@@ -275,7 +275,6 @@ class QNNIntermediateDebugger:
         self.debug_handle_map = debug_handle_map
         self.node_meta_map = {}
         for node in self.edge_module.graph.nodes:
-
             # For multi output ops like topk,
             # meta info is stored in getitem, so skip source node itself.
             if any(user.target == operator.getitem for user in node.users):
@@ -285,7 +284,7 @@ class QNNIntermediateDebugger:
                 ), "[QNN Delegate Debugger]: Expect all users to be get_item node"
                 continue
 
-            if handle_id := node.meta.get(QCOM_DEBUG_HANDLE):
+            if handle_id := node.meta.get(DEBUG_HANDLE_KEY):
                 scale = None
                 zero_point = None
                 is_qcom_layout = QCOM_AXIS_ORDER in node.meta
