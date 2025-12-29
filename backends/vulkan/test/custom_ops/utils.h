@@ -40,24 +40,6 @@ bool debugging();
 void set_debugging(bool enable_debugging);
 
 //
-// Shader filter defaults
-//
-
-// Default shader filter: excludes layout conversions and quantization overhead
-// This is used for tests where quantize/dequantize are overhead operations
-inline const std::vector<std::string> kDefaultShaderFilter = {
-    "nchw_to",
-    "to_nchw",
-    "quantize_and_pack_4w4c",
-    "unpack_4w4c_and_dequantize"};
-
-// Layout-only filter: only excludes layout conversions
-// Use this for tests where quantize/dequantize ARE the operations being tested
-inline const std::vector<std::string> kLayoutOnlyShaderFilter = {
-    "nchw_to",
-    "to_nchw"};
-
-//
 // ValueSpec class
 //
 
@@ -350,15 +332,9 @@ struct ValueSpec {
 
 class TestCase {
  public:
-  TestCase()
-      : abs_tolerance_(2e-3f),
-        rel_tolerance_(1e-3f),
-        shader_filter_(kDefaultShaderFilter) {}
+  TestCase() : abs_tolerance_(2e-3f), rel_tolerance_(1e-3f) {}
   TestCase(const std::string& name)
-      : name_(name),
-        abs_tolerance_(2e-3f),
-        rel_tolerance_(1e-3f),
-        shader_filter_(kDefaultShaderFilter) {}
+      : name_(name), abs_tolerance_(2e-3f), rel_tolerance_(1e-3f) {}
 
   void set_name(const std::string& name) {
     name_ = name;
@@ -387,15 +363,6 @@ class TestCase {
   }
   float get_rel_tolerance() const {
     return rel_tolerance_;
-  }
-
-  // Shader filter settings - list of shader name patterns to exclude from
-  // timing
-  void set_shader_filter(const std::vector<std::string>& filter) {
-    shader_filter_ = filter;
-  }
-  const std::vector<std::string>& get_shader_filter() const {
-    return shader_filter_;
   }
 
   void add_input_spec(const ValueSpec& spec) {
@@ -440,7 +407,6 @@ class TestCase {
     operator_name_.clear();
     abs_tolerance_ = 2e-3f;
     rel_tolerance_ = 1e-3f;
-    shader_filter_ = kDefaultShaderFilter;
   }
 
  private:
@@ -450,7 +416,6 @@ class TestCase {
   std::vector<ValueSpec> outputs_;
   float abs_tolerance_;
   float rel_tolerance_;
-  std::vector<std::string> shader_filter_;
 };
 
 //
