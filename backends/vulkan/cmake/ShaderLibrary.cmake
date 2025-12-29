@@ -61,7 +61,12 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
   endif()
 
   # Ninja cannot expand wildcards (*) in DEPENDS lists.
-  file(GLOB VULKAN_SHADERS "${shaders_path}/*.glsl")
+  file(GLOB VULKAN_SHADERS
+      "${shaders_path}/*.glsl"
+      "${shaders_path}/*.glslh"
+      "${shaders_path}/*.yaml"
+      "${shaders_path}/*.h"
+  )
 
   add_custom_command(
     COMMENT "Generating Vulkan Compute Shaders"
