@@ -55,8 +55,8 @@ class Conv2dVisitor(NodeVisitor):
     ) -> None:
         """Define the TOSA CONV2D/DEPTHWISE_CONV2D operator."""
 
-        input, weight, bias, stride, pad, dilation, _, _, group = inputs
-        validate_num_inputs(self.target, inputs, 9)
+        input, weight, bias, stride, pad, dilation = inputs
+        validate_num_inputs(self.target, inputs, 6)
 
         valid_input_dtypes = []
         if self.tosa_spec.support_float():

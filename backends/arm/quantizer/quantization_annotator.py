@@ -369,6 +369,7 @@ _one_to_one = [
     torch.ops.aten.gelu.default,
     torch.ops.aten.sinh.default,
     torch.ops.aten.atan.default,
+    torch.ops.aten.log1p.default,
     torch.ops.aten.acosh.default,
     torch.ops.aten.sign.default,
     torch.ops.aten.asin.default,

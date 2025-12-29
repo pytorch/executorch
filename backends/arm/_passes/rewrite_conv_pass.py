@@ -33,8 +33,8 @@ from torch.export.graph_signature import InputKind
 class RewriteConvPass(ArmPass):
     """Rewrites aten.convolution to tosa.CONV2D or tosa.DEPTHWISE_CONV2D."""
 
-    def __init__(self, exported_program: torch.export.ExportedProgram):
-        super().__init__()
+    def __init__(self, exported_program: torch.export.ExportedProgram, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -236,8 +236,8 @@ class RewriteConvPass(ArmPass):
                 stride,
                 pad,
                 dilation,
-                transposed,
-                output_pad,
+                _,
+                _,
                 group,
             ) = node.args
 
@@ -290,9 +290,6 @@ class RewriteConvPass(ArmPass):
                 stride,
                 pad,
                 dilation,
-                transposed,
-                output_pad,
-                group,
             )
 
             with graph_module.graph.inserting_after(node):

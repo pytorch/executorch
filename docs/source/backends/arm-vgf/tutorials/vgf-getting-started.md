@@ -78,13 +78,17 @@ The example below shows how to quantize a model consisting of a single addition,
 ```python
 import torch
 
-class Add(torch.nn.Module):
+class AddSigmoid(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.sigmoid = torch.nn.Sigmoid()
+
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        return x + y
+        return self.sigmoid(x + y)
 
 example_inputs = (torch.ones(1,1,1,1),torch.ones(1,1,1,1))
 
-model = Add()
+model = AddSigmoid()
 model = model.eval()
 exported_program = torch.export.export(model, example_inputs)
 graph_module = exported_program.graph_module
@@ -98,12 +102,18 @@ from executorch.backends.arm.vgf import VgfCompileSpec
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 # Create a compilation spec describing the target for configuring the quantizer
-compile_spec = VgfCompileSpec("TOSA-1.0+INT")
+compile_spec = VgfCompileSpec()
 
 # Create and configure quantizer to use a symmetric quantization config globally on all nodes
 quantizer = VgfQuantizer(compile_spec)
 operator_config = get_symmetric_quantization_config(is_per_channel=False)
+
+# Set default quantization config for the layers in the models.
+# Can also be set to `None` to let layers run in FP as default.
 quantizer.set_global(operator_config)
+
+# OPTIONAL: skip quantizing all sigmoid ops (only one for this model); let it run in FP
+quantizer.set_module_type(torch.nn.Sigmoid, None)
 
 # Post training quantization
 quantized_graph_module = prepare_pt2e(graph_module, quantizer)
