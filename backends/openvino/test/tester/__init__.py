@@ -5,21 +5,15 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.openvino.test.tester.tester import (
+    OpenVINOTester,
     Partition,
     Quantize,
-    Serialize,
-    Tester,
-    ToEdge,
     ToEdgeTransformAndLower,
-    ToExecutorch,
 )
 
 __all__ = [
+    "OpenVINOTester",
     "Partition",
     "Quantize",
-    "Serialize",
-    "Tester",
-    "ToEdge",
     "ToEdgeTransformAndLower",
-    "ToExecutorch",
 ]
