@@ -24,7 +24,7 @@ static constexpr size_t kTensorDimLimit = 8;
 /*
  * PackedDimInfo encapsulates metadata about packed dimensions in GPU tensors.
  * This includes information about which dimension is packed, whether it's
- * padded, and tiled packing information for special layouts like 4W4C and 4H4W.
+ * padded, and block packing information for special layouts like 4W4C and 4H4W.
  */
 struct PackedDimInfo {
   // Describes which dimension is "tightly packed" using WHCN index (i.e. 0 for
@@ -40,70 +40,26 @@ struct PackedDimInfo {
   // Describes a second level of packing, if applicable (which will only apply
   // to the 4W4C and 4H4W layouts). If there is no second level of packing,
   // then this will be equal to packed_dim. Otherwise, it will represent the
-  // outer dim used to construct tiled packing. For example, 4W4C will have
+  // outer dim used to construct block packing. For example, 4W4C will have
   // packed_dim = 2 and outer_packed_dim = 0.
   int32_t outer_packed_dim;
   // Whether the outer packed dim is padded to the next multiple of 4. This is
-  // true only for tiled layouts.
+  // true only for block-packed layouts.
   bool outer_packed_dim_padded;
+  // True if this layout uses block packing (i.e., outer_packed_dim !=
+  // packed_dim). Block packing is used for layouts like 4W4C and 4H4W.
+  bool is_block_packed;
 
   PackedDimInfo(
       int32_t dim,
       bool dim_padded,
       int32_t outer_dim,
-      bool outer_dim_padded)
-      : packed_dim(dim),
-        packed_dim_padded(dim_padded),
-        outer_packed_dim(outer_dim),
-        outer_packed_dim_padded(outer_dim_padded) {}
+      bool outer_dim_padded);
 };
 
-/*
- * Given a GPUMemoryLayout value, produce a dim order vector that matches the
- * given memory layout. The produced dim order vector will be in the NCHW
- * dimension order
- */
-std::vector<int64_t> calculate_dim_order(
-    const size_t ndim,
-    const PackedDimInfo& packed_dim_info);
-
-/*
- * Given the sizes of a tensor and the dim order of the tensor (both in NCHW)
- * dimension order, calculate the strides of the tensor.
- */
-std::vector<int64_t> calculate_strides(
-    const vkapi::ScalarType dtype,
-    const size_t ndim,
-    const std::vector<int64_t>& padded_sizes,
-    const std::vector<int64_t>& dim_order);
-
-/*
- * When stored on the GPU, tensor data is stored using texels (i.e. a vector of
- * 4 scalar values) in order to take advantage of the GPU's native vectorization
- * capabilities. Furthermore, tensor metadata is passed in to shaders as ivec4
- * types.
- *
- * To accommodate these vectorized types, the sizes of a tensor will be modified
- * for GPU storage in the following ways:
- *
- *   1. The dimensionality of the tensor will be padded to a multiple of 4.
- *   2. The size of the packed dimension will be padded to a multiple of 4.
- *
- * The "packed dimension" is determined based on the utils::GPUMemoryLayout
- * argument.
- */
 std::vector<int64_t> calculate_padded_sizes(
     const std::vector<int64_t>& sizes,
     const PackedDimInfo& packed_dim_info);
-
-/*
- * Calculate the image extents required of a texture backed tensor.
- */
-utils::uvec3 calculate_image_extents(
-    const vkapi::ScalarType dtype,
-    const PackedDimInfo& packed_dim_info,
-    const std::vector<int64_t>& padded_sizes,
-    const std::vector<int64_t>& axis_map);
 
 struct LastAccess {
   vkapi::PipelineStageFlags stage;
@@ -339,7 +295,7 @@ class vTensor final {
    * to construct a tensor.
    */
 
-  // Information about packed dimension padding and tiled packing
+  // Information about packed dimension padding and block packing
   PackedDimInfo packed_dim_info_;
   // Whether the tensor has elements of type float, int, etc.
   vkapi::ScalarType dtype_;
@@ -549,12 +505,20 @@ class vTensor final {
     return strides_;
   }
 
+  inline const std::vector<int64_t>& padded_sizes() const {
+    return padded_sizes_;
+  }
+
   inline size_t numel() const {
     return numel_;
   }
 
   inline int64_t physical_numel() const {
     return physical_numel_;
+  }
+
+  inline utils::uvec3 image_extents() const {
+    return storage_->image_extents_;
   }
 
   inline size_t nbytes() const {

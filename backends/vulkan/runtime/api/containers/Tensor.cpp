@@ -14,6 +14,21 @@
 namespace vkcompute {
 namespace api {
 
+PackedDimInfo::PackedDimInfo(
+    int32_t dim,
+    bool dim_padded,
+    int32_t outer_dim,
+    bool outer_dim_padded)
+    : packed_dim(dim),
+      packed_dim_padded(dim_padded),
+      outer_packed_dim(outer_dim),
+      outer_packed_dim_padded(outer_dim_padded),
+      is_block_packed(outer_dim != dim) {
+  if (!is_block_packed) {
+    VK_CHECK_COND(!outer_packed_dim_padded);
+  }
+}
+
 PackedDimInfo calculate_packed_dim_info(
     const utils::GPUMemoryLayout memory_layout,
     const utils::StorageType storage_type) {
@@ -27,17 +42,18 @@ PackedDimInfo calculate_packed_dim_info(
       memory_layout == utils::kPackedInt8_4W4C ||
       memory_layout == utils::kPackedInt8_4H4W;
 
-  // Determine outer packed dimension (for tiled layouts)
+  // Determine outer packed dimension (for block-packed layouts)
   int32_t outer_packed_dim;
   if (memory_layout == utils::kPackedInt8_4W4C) {
     outer_packed_dim = 0; // Width
   } else if (memory_layout == utils::kPackedInt8_4H4W) {
     outer_packed_dim = 1; // Height
   } else {
-    outer_packed_dim = packed_dim; // No tiled packing
+    outer_packed_dim = packed_dim; // No block packing
   }
 
-  // Determine if outer packed dimension is padded (only for tiled layouts)
+  // Determine if outer packed dimension is padded (only for block-packed
+  // layouts)
   const bool outer_packed_dim_padded =
       memory_layout == utils::kPackedInt8_4W4C ||
       memory_layout == utils::kPackedInt8_4H4W;
@@ -74,6 +90,11 @@ std::vector<int64_t> calculate_sizes(
   return sizes;
 }
 
+/*
+ * Given a GPUMemoryLayout value, produce a dim order vector that matches the
+ * given memory layout. The produced dim order vector will be in the NCHW
+ * dimension order
+ */
 std::vector<int64_t> calculate_dim_order(
     const size_t ndim,
     const PackedDimInfo& packed_dim_info) {
@@ -100,6 +121,10 @@ std::vector<int64_t> calculate_dim_order(
   return dim_order;
 }
 
+/*
+ * Given the sizes of a tensor and the dim order of the tensor (both in NCHW
+ * dimension order), calculate the strides of the tensor.
+ */
 std::vector<int64_t> calculate_strides(
     const vkapi::ScalarType dtype,
     const size_t ndim,
@@ -213,6 +238,21 @@ utils::ivec4 flip_and_unsqueeze_ivec4(
   };
 }
 
+/*
+ * When stored on the GPU, tensor data may be stored using texels (i.e. a vector
+ * of 4 scalar values) in order to take advantage of the GPU's native
+ * vectorization capabilities. Furthermore, tensor metadata is passed in to
+ * shaders as ivec4 types.
+ *
+ * To accommodate these vectorized types, the sizes of a tensor will be modified
+ * for GPU storage in the following ways:
+ *
+ *   1. The dimensionality of the tensor will be padded to a multiple of 4.
+ *   2. The size of the packed dimension will be padded to a multiple of 4.
+ *
+ * The "packed dimension" is determined based on the utils::GPUMemoryLayout
+ * argument.
+ */
 std::vector<int64_t> calculate_padded_sizes(
     const std::vector<int64_t>& sizes,
     const PackedDimInfo& packed_dim_info) {
@@ -236,9 +276,10 @@ std::vector<int64_t> calculate_padded_sizes(
     padded_sizes.at(ndim_up4 - dim_offset) = utils::align_up_4(padded_dim_size);
   }
 
-  // For tiled layouts (e.g., 4W4C, 4H4W), also pad the outer packed dimension
-  // if it's different from the inner packed dimension and is marked as padded.
-  if (packed_dim_info.outer_packed_dim != packed_dim_info.packed_dim &&
+  // For block-packed layouts (e.g., 4W4C, 4H4W), also pad the outer packed
+  // dimension if it's different from the inner packed dimension and is marked
+  // as padded.
+  if (packed_dim_info.is_block_packed &&
       packed_dim_info.outer_packed_dim_padded) {
     const int64_t outer_dim_offset = packed_dim_info.outer_packed_dim + 1;
     const int64_t outer_padded_dim_size =
@@ -250,6 +291,9 @@ std::vector<int64_t> calculate_padded_sizes(
   return padded_sizes;
 }
 
+/*
+ * Calculate the image extents required of a texture backed tensor.
+ */
 utils::uvec3 calculate_image_extents(
     const vkapi::ScalarType dtype,
     const PackedDimInfo& packed_dim_info,
@@ -290,7 +334,7 @@ utils::uvec3 calculate_image_extents(
   if (dtype == vkapi::kInt8x4) {
     // For layouts with only one packed dimension, loading an ivec4 texel from
     // the texture loads 16 int8 values (4 int32 that each contain 4 int8).
-    if (packed_dim_info.outer_packed_dim == packed_dim_info.packed_dim) {
+    if (!packed_dim_info.is_block_packed) {
       extents[packed_dim_axis] = utils::div_up(extents[packed_dim_axis], 16u);
     }
     // Layouts with two packed dimension (e.g., 4W4C, 4H4W) load a 4x4 block of
@@ -947,9 +991,9 @@ vkapi::VulkanBuffer& vTensor::buffer(
 }
 
 utils::GPUMemoryLayout vTensor::estimate_memory_layout() const {
-  // Check for tiled layouts (two-level packing) - only applicable for kInt8x4
-  if (dtype_ == vkapi::kInt8x4 &&
-      packed_dim_info_.outer_packed_dim != packed_dim_info_.packed_dim) {
+  // Check for block-packed layouts (two-level packing) - only applicable for
+  // kInt8x4
+  if (dtype_ == vkapi::kInt8x4 && packed_dim_info_.is_block_packed) {
     // For 4W4C: packed_dim = Channels, outer_packed_dim = Width
     if (packed_dim_info_.packed_dim == WHCN::kChannelsDim &&
         packed_dim_info_.outer_packed_dim == WHCN::kWidthDim) {
@@ -960,7 +1004,7 @@ utils::GPUMemoryLayout vTensor::estimate_memory_layout() const {
         packed_dim_info_.outer_packed_dim == WHCN::kHeightDim) {
       return utils::kPackedInt8_4H4W;
     }
-    VK_THROW("Invalid tiled layout configuration for kInt8x4 dtype");
+    VK_THROW("Invalid block-packed layout configuration for kInt8x4 dtype");
   }
 
   // Single-level packing layouts
@@ -1244,14 +1288,34 @@ void transpose_dim_order_inplace(
 }
 
 void vTensor::virtual_transpose(const int64_t dim0, const int64_t dim1) {
-  std::iter_swap(sizes_.begin() + dim0, sizes_.begin() + dim1);
-
   const int dim0_whcn = sizes_.size() - 1 - dim0;
   const int dim1_whcn = sizes_.size() - 1 - dim1;
+
+  // For block-packed layouts, do not allow transposition if either packed_dim
+  // or outer_packed_dim is one of the dims being transposed
+  if (packed_dim_info_.is_block_packed) {
+    VK_CHECK_COND(
+        packed_dim_info_.packed_dim != dim0_whcn &&
+        packed_dim_info_.packed_dim != dim1_whcn);
+    VK_CHECK_COND(
+        packed_dim_info_.outer_packed_dim != dim0_whcn &&
+        packed_dim_info_.outer_packed_dim != dim1_whcn);
+  }
+
+  std::iter_swap(sizes_.begin() + dim0, sizes_.begin() + dim1);
+
+  // Update packed_dim and outer_packed_dim if they match one of the transposed
+  // dims
   if (packed_dim_info_.packed_dim == dim0_whcn) {
     packed_dim_info_.packed_dim = dim1_whcn;
   } else if (packed_dim_info_.packed_dim == dim1_whcn) {
     packed_dim_info_.packed_dim = dim0_whcn;
+  }
+
+  if (packed_dim_info_.outer_packed_dim == dim0_whcn) {
+    packed_dim_info_.outer_packed_dim = dim1_whcn;
+  } else if (packed_dim_info_.outer_packed_dim == dim1_whcn) {
+    packed_dim_info_.outer_packed_dim = dim0_whcn;
   }
 
   if (storage_type() == utils::kBuffer) {
@@ -1269,7 +1333,7 @@ void vTensor::virtual_transpose(const int64_t dim0, const int64_t dim1) {
     }
   }
 
-  // Update the hashed layout because dim order / axis mpa is updated
+  // Update the hashed layout because dim order / axis map is updated
   hashed_layout_ = create_hashed_layout(
       dim_order_, axis_map_, packed_dim_info_, storage_type());
 

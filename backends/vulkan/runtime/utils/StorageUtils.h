@@ -101,11 +101,14 @@ enum class GPUMemoryLayout : uint8_t {
    * 16 element block is loaded, rather than 4 elements along one dimension.
    */
 
-  // Single-dimension packed layouts (with padding)
+  // "vector" packed layouts - single level of packing (4 elements along packed
+  // dim per int32)
   TENSOR_PACKED_INT8_4W = 5u,
   TENSOR_PACKED_INT8_4C = 6u,
   TENSOR_PACKED_INT8_4H = 7u,
 
+  // Block packed layouts - two levels of packing (4x4 block composed of
+  // elements from two packed dims per ivec4)
   TENSOR_PACKED_INT8_4W4C = 3u,
   TENSOR_PACKED_INT8_4H4W = 4u,
 };
