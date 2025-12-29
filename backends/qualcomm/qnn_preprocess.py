@@ -19,10 +19,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
-from executorch.backends.qualcomm.utils.constants import (
-    QCOM_AXIS_ORDER,
-    QCOM_DEBUG_HANDLE,
-)
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
     get_current_qnn_manager,
 )
@@ -32,6 +29,7 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from torch.export.exported_program import ExportedProgram
 
 DEFAULT_DEBUG_HANDLE = 65535
@@ -183,7 +181,7 @@ class QnnBackend(BackendDetails):
                 )
                 if qnn_manager.IsTensorDump():
                     for node in programs[i].graph.nodes:
-                        if handle_id := node.meta.get(QCOM_DEBUG_HANDLE):
+                        if handle_id := node.meta.get(DEBUG_HANDLE_KEY):
                             debug_handle_builder.insert_delegate_mapping_entry(
                                 handles=handle_id,
                                 identifier=node.name,

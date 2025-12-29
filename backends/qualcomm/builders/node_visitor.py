@@ -19,7 +19,6 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_BLOCK_SCALE_OFFSET,
     QCOM_BLOCK_SCALES,
     QCOM_BLOCK_STORAGE_TYPE,
-    QCOM_DEBUG_HANDLE,
     QCOM_DTYPE,
     QCOM_ENCODING,
     QCOM_NUM_BLOCKS_PER_AXIS,
@@ -34,7 +33,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_ZERO_POINT,
     QCOM_ZERO_POINTS,
 )
-
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .utils import (
@@ -379,7 +378,7 @@ class NodeVisitor:
         tensor_name = f"{node.name}_{wrapper_idx}"
 
         # Only append special namings when enable tensor dump, since longer name results bigger .pte
-        if (handle_id := node.meta.get(QCOM_DEBUG_HANDLE)) and self.enable_tensor_dump:
+        if (handle_id := node.meta.get(DEBUG_HANDLE_KEY)) and self.enable_tensor_dump:
             tensor_name = f"{tensor_name}_debugID_{str(handle_id)}"
 
         # The `input_{id}` is utilized for sorting at runtime. Due to multiple passes in qnn_preprocess,
