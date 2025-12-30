@@ -15,13 +15,12 @@ import logging
 import math
 import operator
 from operator import neg
-from typing import cast, Dict, Iterable, Optional, Sequence
+from typing import cast, Dict, Optional, Sequence
 
 import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import (
     get_zero_point,
-    is_node_with_op,
     quantize_tensor_multiplier,
 )
 from executorch.backends.cadence.aot.fuse_ops import (
@@ -50,17 +49,6 @@ functionally_equivalent_op_targets: Dict[EdgeOpOverload, EdgeOpOverload] = {
     exir_ops.edge.aten.relu_.default: exir_ops.edge.aten.relu.default,
     exir_ops.edge.aten.unsafe_split.Tensor: exir_ops.edge.aten.split_copy.Tensor,
 }
-
-
-def contains_placeholder_or_param(nodes: Iterable[torch.fx.Node]) -> bool:
-    """
-    Return true if any of the node in the incoming nodes list is a placeholder
-    or parameter
-    """
-    return any(
-        is_node_with_op(node, "placeholder") or is_node_with_op(node, "get_attr")
-        for node in nodes
-    )
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -367,6 +355,9 @@ class ReplaceAddMMWithLinearPass(RemoveOrReplacePassInterface):
 
         graph = node.graph
 
+        fit_bias = beta == 1.0
+        fit_mat2 = False
+
         # Handle transpose: if mat2 is a transpose op, extract the original tensor
         transposed_mat2 = False
         if (
@@ -376,6 +367,10 @@ class ReplaceAddMMWithLinearPass(RemoveOrReplacePassInterface):
             # mat2 is already transposed, so we use the input to the transpose
             mat2 = cast(torch.fx.Node, mat2.args[0])
             transposed_mat2 = True
+            fit_mat2 = alpha == 1.0
+
+        if not (fit_bias and fit_mat2):
+            return False
 
         # Multiply bias by beta if needed
         if beta != 1.0:
