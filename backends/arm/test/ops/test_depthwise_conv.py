@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,6 +8,9 @@ from typing import Tuple
 import pytest
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a8w4_quantization_config,
+)
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -198,6 +201,15 @@ test_data_conv1d_INT = {
 }
 
 
+def _get_dtype_count(model: torch.nn.Module):
+    nbr_convs: int = model.nbr_convs  # noqa
+    return {
+        "CONST": {"INT4": nbr_convs * 2},
+        "DEPTHWISE_CONV2D": {"INT32": nbr_convs},
+        "RESCALE": {"INT8": nbr_convs},
+    }
+
+
 @common.parametrize("test_data", test_data_conv1d_FP | test_data_conv2d_FP)
 def test_convolution_2d_tosa_FP_depthwise(test_data: torch.nn.Module):
     pipeline = TosaPipelineFP[input_t](
@@ -219,6 +231,27 @@ def test_convolution_2d_tosa_INT_depthwise(test_data):
         aten_op=[],
         exir_op=exir_op,
         per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_conv1d_INT | test_data_conv2d_INT)
+def test_convolution_2d_tosa_INT_a8w4_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = TosaPipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_extensions=["int4"],
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.add_stage_after(
+        "to_edge_transform_and_lower",
+        pipeline.tester.check_dtype_count,
+        _get_dtype_count(model),
     )
     pipeline.run()
 
@@ -251,7 +284,7 @@ def test_convolution_2d_vgf_quant_depthwise(test_data):
     pipeline.run()
 
 
-@common.XfailIfNoCorstone300  # TODO: MLETORCH-516
+@common.XfailIfNoCorstone300
 @common.parametrize("test_data", test_data_conv2d_INT)
 def test_convolution_2d_u55_INT_depthwise(test_data):
     model, per_channel_quantization = test_data()
@@ -265,7 +298,23 @@ def test_convolution_2d_u55_INT_depthwise(test_data):
     pipeline.run()
 
 
-@common.XfailIfNoCorstone300  # TODO: MLETORCH-516
+@common.XfailIfNoCorstone300
+@common.parametrize("test_data", test_data_conv2d_INT)
+def test_convolution_2d_u55_a8w4_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU55PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=exir_op,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone300
 @common.parametrize("test_data", test_data_conv1d_INT)
 def test_convolution_1d_u55_INT_depthwise(test_data):
     model, per_channel_quantization = test_data()
@@ -279,7 +328,23 @@ def test_convolution_1d_u55_INT_depthwise(test_data):
     pipeline.run()
 
 
-@common.XfailIfNoCorstone320  # TODO: MLETORCH-516
+@common.XfailIfNoCorstone300
+@common.parametrize("test_data", test_data_conv1d_INT)
+def test_convolution_1d_u55_a8w4_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU55PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=exir_op,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
 @common.parametrize("test_data", test_data_conv2d_INT)
 def test_convolution_2d_u85_INT_depthwise(test_data):
     model, per_channel_quantization = test_data()
@@ -293,7 +358,23 @@ def test_convolution_2d_u85_INT_depthwise(test_data):
     pipeline.run()
 
 
-@common.XfailIfNoCorstone320  # TODO: MLETORCH-516
+@common.XfailIfNoCorstone320
+@common.parametrize("test_data", test_data_conv2d_INT)
+def test_convolution_2d_u85_a8w4_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=exir_op,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
 @common.parametrize("test_data", test_data_conv1d_INT)
 def test_convolution_1d_u85_INT_depthwise(test_data):
     model, per_channel_quantization = test_data()
@@ -303,5 +384,21 @@ def test_convolution_1d_u85_INT_depthwise(test_data):
         aten_ops=[],
         exir_ops=exir_op,
         per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+@common.parametrize("test_data", test_data_conv1d_INT)
+def test_convolution_1d_u85_a8w4_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=exir_op,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()

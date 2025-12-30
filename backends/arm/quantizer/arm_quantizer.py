@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -178,6 +178,14 @@ def get_symmetric_quantization_config(
             bias_quantization_spec,
         )
     return quantization_config
+
+
+def get_symmetric_a8w4_quantization_config(
+    is_per_channel: bool = True, is_qat: bool = True, is_dynamic: bool = False
+):
+    return get_symmetric_quantization_config(
+        is_per_channel, is_qat, is_dynamic, weight_qmin=-7, weight_qmax=7
+    )
 
 
 @functools.lru_cache
