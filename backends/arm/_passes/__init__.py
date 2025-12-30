@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,6 +9,7 @@ from .arm_pass import ArmPass  # noqa  # usort: skip
 from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
 from .annotate_output_dim_order_pass import AnnotateOutputDimOrderPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
+from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
