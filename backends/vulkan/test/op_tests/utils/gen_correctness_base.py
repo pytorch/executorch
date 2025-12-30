@@ -286,10 +286,12 @@ cpp_test_template = """
 at::Tensor make_casted_randint_tensor(
     std::vector<int64_t> sizes,
     at::ScalarType dtype = at::kFloat,
-    int low = 0,
-    int high = 10) {{
+    int64_t low = 1,
+    int64_t high = 20) {{
 
-  return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
+  // For some reason range needs to be passed in as explicit variables
+  // otherwise 0s will be generated.
+  return at::randint(1, 20, sizes, at::device(at::kCPU).dtype(dtype));
 }}
 
 at::Tensor make_rand_tensor(
@@ -341,7 +343,7 @@ at::Tensor make_seq_tensor(
 
   std::vector<float> values(n);
   for (int i=0;i<n;i++) {{
-    values[i] = (float) i;
+    values[i] = (float) (i + 1);
   }}
 
   // Clone as original data will be deallocated upon return.
