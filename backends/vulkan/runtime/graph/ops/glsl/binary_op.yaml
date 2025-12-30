@@ -10,6 +10,7 @@ binary_op:
     NDIM: 3
     DTYPE: float
     PACKING: C_packed
+    MASK_PADDING: 0
   generate_variant_forall:
     STORAGE:
       - VALUE: texture3d
@@ -26,10 +27,12 @@ binary_op:
       OPERATOR: X * Y
     - NAME: binary_div
       OPERATOR: X / Y
+      MASK_PADDING: 1
     - NAME: binary_pow
       OPERATOR: pow(X, Y)
     - NAME: binary_floor_divide
       OPERATOR: floor(X / Y)
+      MASK_PADDING: 1
     - NAME: binary_minimum
       OPERATOR: min(X, Y)
     - NAME: binary_eq_int32
