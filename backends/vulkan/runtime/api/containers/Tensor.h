@@ -57,10 +57,6 @@ struct PackedDimInfo {
       bool outer_dim_padded);
 };
 
-std::vector<int64_t> calculate_padded_sizes(
-    const std::vector<int64_t>& sizes,
-    const PackedDimInfo& packed_dim_info);
-
 struct LastAccess {
   vkapi::PipelineStageFlags stage;
   vkapi::MemoryAccessFlags access;
@@ -83,7 +79,6 @@ class vTensorStorage final {
   vTensorStorage(
       Context* context,
       const utils::StorageType storage_type,
-      const utils::GPUMemoryLayout memory_layout,
       const std::vector<int64_t>& axis_map,
       const PackedDimInfo& packed_dim_info,
       const std::vector<int64_t>& padded_sizes,

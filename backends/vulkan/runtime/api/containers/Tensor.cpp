@@ -126,7 +126,6 @@ std::vector<int64_t> calculate_dim_order(
  * dimension order), calculate the strides of the tensor.
  */
 std::vector<int64_t> calculate_strides(
-    const vkapi::ScalarType dtype,
     const size_t ndim,
     const std::vector<int64_t>& padded_sizes,
     const std::vector<int64_t>& dim_order) {
@@ -404,7 +403,6 @@ utils::uvec3 calculate_logical_limits(
  */
 int64_t calculate_gpu_buffer_numel(
     const vkapi::ScalarType dtype,
-    const PackedDimInfo& packed_dim_info,
     const std::vector<int64_t>& padded_sizes) {
   size_t numel;
 
@@ -572,7 +570,6 @@ vkapi::VulkanBuffer allocate_buffer(
 vTensorStorage::vTensorStorage(
     Context* const context,
     const utils::StorageType storage_type,
-    const utils::GPUMemoryLayout memory_layout,
     const std::vector<int64_t>& axis_map,
     const PackedDimInfo& packed_dim_info,
     const std::vector<int64_t>& padded_sizes,
@@ -710,11 +707,9 @@ vTensor::vTensor(
       padded_sizes_(calculate_padded_sizes(sizes_, packed_dim_info_)),
       dim_order_(calculate_dim_order(sizes_.size(), packed_dim_info_)),
       axis_map_(calculate_axis_map(sizes_, axis_map_layout)),
-      strides_(
-          calculate_strides(dtype_, sizes.size(), padded_sizes_, dim_order_)),
+      strides_(calculate_strides(sizes.size(), padded_sizes_, dim_order_)),
       numel_(utils::multiply_integers(sizes_)),
-      physical_numel_(
-          calculate_gpu_buffer_numel(dtype_, packed_dim_info_, padded_sizes_)),
+      physical_numel_(calculate_gpu_buffer_numel(dtype_, padded_sizes_)),
       hashed_layout_(create_hashed_layout(
           dim_order_,
           axis_map_,
@@ -730,7 +725,6 @@ vTensor::vTensor(
       storage_(std::make_shared<vTensorStorage>(
           context,
           storage_type,
-          memory_layout,
           axis_map_,
           packed_dim_info_,
           padded_sizes_,
@@ -767,8 +761,7 @@ vTensor::vTensor(
       axis_map_(calculate_axis_map(sizes_, axis_map_layout)),
       strides_(),
       numel_(utils::multiply_integers(sizes_)),
-      physical_numel_(
-          calculate_gpu_buffer_numel(dtype_, packed_dim_info_, padded_sizes_)),
+      physical_numel_(calculate_gpu_buffer_numel(dtype_, padded_sizes_)),
       hashed_layout_(create_hashed_layout(
           dim_order_,
           axis_map_,
@@ -822,11 +815,9 @@ vTensor::vTensor(
       padded_sizes_(calculate_padded_sizes(sizes_, packed_dim_info_)),
       dim_order_(dim_order.begin(), dim_order.end()),
       axis_map_(calculate_axis_map(sizes_, utils::kDefaultAxisMap)),
-      strides_(
-          calculate_strides(dtype_, sizes_.size(), padded_sizes_, dim_order_)),
+      strides_(calculate_strides(sizes_.size(), padded_sizes_, dim_order_)),
       numel_(utils::multiply_integers(sizes_)),
-      physical_numel_(
-          calculate_gpu_buffer_numel(dtype_, packed_dim_info_, padded_sizes_)),
+      physical_numel_(calculate_gpu_buffer_numel(dtype_, padded_sizes_)),
       hashed_layout_(create_hashed_layout(
           dim_order_,
           axis_map_,
@@ -1148,10 +1139,8 @@ void vTensor::acquire_allocation(vkapi::Allocation&& allocation) {
 
 void vTensor::update_metadata() {
   numel_ = utils::multiply_integers(sizes_);
-  physical_numel_ =
-      calculate_gpu_buffer_numel(dtype_, packed_dim_info_, padded_sizes_);
-  strides_ =
-      calculate_strides(dtype_, sizes_.size(), padded_sizes_, dim_order_);
+  physical_numel_ = calculate_gpu_buffer_numel(dtype_, padded_sizes_);
+  strides_ = calculate_strides(sizes_.size(), padded_sizes_, dim_order_);
 
   // Update uniform data if it has been modified
   if (sizes_.size() <= 4) {
@@ -1215,7 +1204,7 @@ void vTensor::check_sizes(const std::vector<int64_t>& sizes) const {
     // For buffer storage check that the current buffer is large enough for
     // the new sizes of the tensor.
     int64_t gpu_buffer_numel =
-        calculate_gpu_buffer_numel(dtype_, packed_dim_info_, padded_sizes_);
+        calculate_gpu_buffer_numel(dtype_, padded_sizes_);
     bool valid_resize =
         gpu_buffer_numel + storage_->buffer_offset_ <= storage_->buffer_length_;
     VK_CHECK_COND(
