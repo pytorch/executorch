@@ -287,8 +287,6 @@ def test_cond_u55_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     "case",
     test_cases,
     xfails={
-        "zero_args_one_output": "Since the submodules have no input, the tracer fails finding a fake tensor mode,"
-        " and traces the graph with real tensors, which tosa.RESCALE can't handle.",
         "one_arg_and_scalar_one_output": "Incorrect quantization on the scalar.",
         "nested_one_arg_one_output": "Node submodule_0 target submodule_0 references nonexistent attribute submodule_0",
     },
@@ -298,7 +296,7 @@ def test_cond_u55_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
         "multiple_one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
     },
 )
-@common.XfailIfNoCorstone320
+@common.XfailIfNoCorstone320.with_args(raises=None)
 def test_cond_u85_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     module, example_inputs = case()
     pipeline = EthosU85PipelineINT[tuple](module, example_inputs, aten_op, exir_op)
