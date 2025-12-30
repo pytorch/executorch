@@ -58,7 +58,6 @@ EXCLUDED_FROM_ANNOTATION_TESTING: set[type[CadenceQuantizer]] = {
     CadenceNopQuantizer,  # No-op quantizer, doesn't annotate anything
     CadenceW8A32MixedQuantizer,  # TODO: T247438158 Add test coverage
     CadenceRmsNormNopQuantizer,  # No-op quantizer, doesn't annotate anything, preserves rms_norm from decomposition
-    CadenceWakeWordQuantizer,  # TODO: T247438162 Add test coverage
 }
 
 
@@ -128,6 +127,15 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
         qconfig_A8W8.output_activation,
         # For layer_norm: only input_activation (weights/bias are passed as others)
         [qconfig_A8W8.input_activation],
+    ),
+    (
+        "add_A8W8",
+        lambda self: self._build_add_graph(),
+        CadenceWakeWordQuantizer(),
+        torch.ops.aten.add.Tensor,
+        qconfig_A8W8.output_activation,
+        # For add: both inputs are activations
+        [qconfig_A8W8.input_activation, qconfig_A8W8.input_activation],
     ),
 ]
 
@@ -278,6 +286,28 @@ class QuantizerAnnotationTest(unittest.TestCase):
             ("layer_norm", torch.ops.aten.layer_norm.default)
         ]
         return gm, layer_norm_nodes[0]
+
+    def _build_add_graph(self) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a simple graph with an add operation."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 10))
+        y = builder.placeholder("y", torch.randn(1, 10))
+        add = builder.call_operator(
+            op=torch.ops.aten.add.Tensor,
+            args=(x, y),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("add", torch.ops.aten.add.Tensor)]}
+            ),
+        )
+        builder.output([add])
+        gm = builder.get_graph_module()
+
+        add_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.add.Tensor,
+        )
+        self.assertEqual(len(add_nodes), 1, "Should find exactly one add node")
+        return gm, add_nodes[0]
 
     @parameterized.expand(QUANTIZER_ANNOTATION_TEST_CASES)
     def test_quantizer_annotation(
