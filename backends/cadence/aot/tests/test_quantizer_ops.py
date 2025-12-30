@@ -11,7 +11,10 @@ import unittest
 from typing import Callable
 
 import torch
-from executorch.backends.cadence.aot.graph_builder import GraphBuilder
+from executorch.backends.cadence.aot.graph_builder import (
+    GraphBuilder,
+    single_op_builder,
+)
 from executorch.backends.cadence.aot.quantizer import quantizer as quantizer_module
 from executorch.backends.cadence.aot.quantizer.patterns import AddmmPattern
 from executorch.backends.cadence.aot.quantizer.quantizer import (
@@ -56,7 +59,6 @@ EXCLUDED_FROM_ANNOTATION_TESTING: set[type[CadenceQuantizer]] = {
     CadenceW8A32MixedQuantizer,  # TODO: T247438158 Add test coverage
     CadenceRmsNormNopQuantizer,  # No-op quantizer, doesn't annotate anything, preserves rms_norm from decomposition
     CadenceWakeWordQuantizer,  # TODO: T247438162 Add test coverage
-    CadenceWithLayerNormQuantizer,  # TODO: T247438410 Add test coverage
 }
 
 
@@ -117,6 +119,15 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
         qconfig_A16.output_activation,
         # For softmax: only input_activation
         [qconfig_A16.input_activation],
+    ),
+    (
+        "layer_norm_A8W8",
+        lambda self: self._build_layer_norm_graph(),
+        CadenceWithLayerNormQuantizer(),
+        torch.ops.aten.layer_norm.default,
+        qconfig_A8W8.output_activation,
+        # For layer_norm: only input_activation (weights/bias are passed as others)
+        [qconfig_A8W8.input_activation],
     ),
 ]
 
@@ -242,6 +253,31 @@ class QuantizerAnnotationTest(unittest.TestCase):
         )
         self.assertEqual(len(softmax_nodes), 1, "Should find exactly one softmax node")
         return gm, softmax_nodes[0]
+
+    def _build_layer_norm_graph(self) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a simple graph with a layer_norm operation."""
+        # Input shape: (batch, features)
+        x = torch.randn(1, 10)
+        # normalized_shape must match the last dimension(s) of input
+        normalized_shape = [10]
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=torch.ops.aten.layer_norm.default,
+            args=(x, normalized_shape),
+        )
+
+        layer_norm_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.layer_norm.default,
+        )
+        self.assertEqual(
+            len(layer_norm_nodes), 1, "Should find exactly one layer_norm node"
+        )
+        # Add source_fn_stack metadata required by quantizer pattern matching
+        layer_norm_nodes[0].meta["source_fn_stack"] = [
+            ("layer_norm", torch.ops.aten.layer_norm.default)
+        ]
+        return gm, layer_norm_nodes[0]
 
     @parameterized.expand(QUANTIZER_ANNOTATION_TEST_CASES)
     def test_quantizer_annotation(
