@@ -9,9 +9,13 @@ import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
+from pytest import mark
 
 aten_op = "torch.ops.higher_order.cond"
 exir_op = "torch.ops.higher_order.cond"
@@ -210,6 +214,15 @@ def _make_calibration_samples(
     return (if_example_inputs, else_example_inputs)
 
 
+def _set_branch_calibration_samples(
+    pipeline, module: torch.nn.Module, example_inputs: tuple
+) -> None:
+    calibration_samples = _make_calibration_samples(module, example_inputs)
+    quant_stage_pos = pipeline.find_pos("quantize")
+    quant_stage = pipeline._stages[quant_stage_pos].args[0]
+    quant_stage.calibration_samples = calibration_samples
+
+
 @common.parametrize(
     "case",
     test_cases,
@@ -247,10 +260,7 @@ def test_cond_tosa_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     pipeline = TosaPipelineINT[tuple](
         module, example_inputs, aten_op, tosa_extensions=["cf"]
     )
-    calibration_samples = _make_calibration_samples(module, example_inputs)
-    quant_stage_pos = pipeline.find_pos("quantize")
-    quant_stage = pipeline._stages[quant_stage_pos].args[0]
-    quant_stage.calibration_samples = calibration_samples
+    _set_branch_calibration_samples(pipeline, module, example_inputs)
 
     # Make sure no cond ops are left after partitioning.
     pipeline.add_stage_after(
@@ -259,4 +269,70 @@ def test_cond_tosa_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
         pipeline.tester,
         ["torch.ops.higher_order.cond"],
     )
+    pipeline.run()
+
+
+@common.parametrize(
+    "case",
+    test_cases,
+)
+def test_cond_u55_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
+    module, example_inputs = case()
+    pipeline = OpNotSupportedPipeline[tuple](module, example_inputs, {aten_op: 1})
+    pipeline.pop_stage("check_count.exir")
+    pipeline.run()
+
+
+@common.parametrize(
+    "case",
+    test_cases,
+    xfails={
+        "one_arg_and_scalar_one_output": "Incorrect quantization on the scalar.",
+        "nested_one_arg_one_output": "Node submodule_0 target submodule_0 references nonexistent attribute submodule_0",
+    },
+    skips={
+        "one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
+        "one_arg_const_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
+        "multiple_one_arg_one_output": "Segfault when transpose goes into cond. MLBEDSW-11416.",
+    },
+)
+@common.XfailIfNoCorstone320.with_args(raises=None)
+def test_cond_u85_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
+    module, example_inputs = case()
+    pipeline = EthosU85PipelineINT[tuple](module, example_inputs, aten_op, exir_op)
+    _set_branch_calibration_samples(pipeline, module, example_inputs)
+    pipeline.run()
+
+
+@mark.skip("Cond not supported in model_converter.")
+@common.parametrize(
+    "case",
+    test_cases,
+)
+@common.SkipIfNoModelConverter
+def test_cond_vgf_FP(case: Callable[[], tuple[torch.nn.Module, tuple]]):
+    module, example_inputs = case()
+    VgfPipeline[tuple](
+        module,
+        example_inputs,
+        aten_op,
+        exir_op,
+    ).run()
+
+
+@mark.skip("Cond not supported in model_converter.")
+@common.parametrize(
+    "case",
+    test_cases,
+)
+@common.SkipIfNoModelConverter
+def test_cond_vgf_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
+    module, example_inputs = case()
+    pipeline = VgfPipeline[tuple](
+        module,
+        example_inputs,
+        aten_op,
+        exir_op,
+    )
+    _set_branch_calibration_samples(pipeline, module, example_inputs)
     pipeline.run()
