@@ -1007,9 +1007,10 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @expand([[1.0, 1.0], [2.0, 3.0]])
     @torch.no_grad()
-    def test_replace_addmm_with_linear(self, alpha: float, beta: float) -> None:
+    def test_replace_addmm_with_linear(self) -> None:
+        alpha = 1.0
+        beta = 1.0
         M, K, N = 14, 12, 10
         builder = GraphBuilder()
         x_input = torch.randn(N, dtype=torch.float32)
@@ -1053,6 +1054,37 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.addmm.default),
             0,
         )
+
+    @torch.no_grad()
+    def test_no_replace_addmm_with_linear(self) -> None:
+        alpha = 2.0
+        beta = 3.0
+        M, K, N = 14, 12, 10
+        builder = GraphBuilder()
+        x_input = torch.randn(N, dtype=torch.float32)
+        y_input = torch.randn([M, K], dtype=torch.float32)
+        z_input = torch.randn([N, K], dtype=torch.float32)
+        x = builder.placeholder("x", x_input)
+        y = builder.placeholder("y", y_input)
+        z = builder.placeholder("z", z_input)
+        permute_copy = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(z, [1, 0]),
+        )
+        addmm = builder.call_operator(
+            op=exir_ops.edge.aten.addmm.default,
+            args=(x, y, permute_copy),
+            kwargs={"beta": beta, "alpha": alpha},
+        )
+        builder.output([addmm])
+        original_gm = builder.get_graph_module()
+
+        gm = cast(
+            PassResult, ReplacePermuteWithTransposePass()(original_gm)
+        ).graph_module
+
+        pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(gm))
+        self.assertFalse(pass_result.modified)
 
     @torch.no_grad()
     def test_replace_mm_with_addmm(self) -> None:
