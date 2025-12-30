@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -632,14 +633,13 @@ class _ExportPassBase(PassBase):
                 ), "Multiple fake tensor mode detected."
                 fake_tensor_mode = i.fake_mode
         if fake_tensor_mode is None:
-            self.tracer.fake_tensor_mode = FakeTensorMode(allow_non_fake_inputs=True)
-            fake_tensor_mode = nullcontext()  # type: ignore[assignment]
+            fake_tensor_mode = FakeTensorMode(allow_non_fake_inputs=True)
             dispatcher_mode = nullcontext()  # type: ignore[assignment]
         else:
             fake_tensor_mode.allow_non_fake_inputs = True
-            self.tracer.fake_tensor_mode = fake_tensor_mode
             dispatcher_mode = enable_python_dispatcher()  # type: ignore[assignment]
-        self.fake_tensor_mode = self.tracer.fake_tensor_mode
+        self.tracer.fake_tensor_mode = fake_tensor_mode
+        self.fake_tensor_mode = fake_tensor_mode
 
         with fake_tensor_mode, dispatcher_mode:  # type: ignore[assignment, union-attr]
             result = self.call_submodule(graph_module, tuple(inputs))
