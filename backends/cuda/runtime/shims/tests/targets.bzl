@@ -19,6 +19,10 @@ def cuda_shim_cpp_unittest(name):
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
     )
 
 def define_common_targets():

@@ -57,7 +57,6 @@ EXCLUDED_FROM_ANNOTATION_TESTING: set[type[CadenceQuantizer]] = {
     CadenceRmsNormNopQuantizer,  # No-op quantizer, doesn't annotate anything, preserves rms_norm from decomposition
     CadenceWakeWordQuantizer,  # TODO: T247438162 Add test coverage
     CadenceWithLayerNormQuantizer,  # TODO: T247438410 Add test coverage
-    CadenceWithSoftmaxQuantizer,  # TODO: T247438418 Add test coverage
 }
 
 
@@ -109,6 +108,15 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
         qconfig_A16.output_activation,
         # For conv2d: [input_activation, weight]
         [qconfig_A16.input_activation, qconfig_A16.weight],
+    ),
+    (
+        "softmax_A16",
+        lambda self: self._build_softmax_graph(),
+        CadenceWithSoftmaxQuantizer(),
+        torch.ops.aten._softmax.default,
+        qconfig_A16.output_activation,
+        # For softmax: only input_activation
+        [qconfig_A16.input_activation],
     ),
 ]
 
@@ -213,6 +221,27 @@ class QuantizerAnnotationTest(unittest.TestCase):
         )
         self.assertEqual(len(conv2d_nodes), 1, "Should find exactly one conv2d node")
         return gm, conv2d_nodes[0]
+
+    def _build_softmax_graph(self) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a simple graph with a softmax operation."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 10))
+        softmax = builder.call_operator(
+            op=torch.ops.aten._softmax.default,
+            args=(x, -1, False),  # dim=-1, half_to_float=False
+            meta=NodeMetadata(
+                {"source_fn_stack": [("softmax", torch.ops.aten._softmax.default)]}
+            ),
+        )
+        builder.output([softmax])
+        gm = builder.get_graph_module()
+
+        softmax_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten._softmax.default,
+        )
+        self.assertEqual(len(softmax_nodes), 1, "Should find exactly one softmax node")
+        return gm, softmax_nodes[0]
 
     @parameterized.expand(QUANTIZER_ANNOTATION_TEST_CASES)
     def test_quantizer_annotation(
