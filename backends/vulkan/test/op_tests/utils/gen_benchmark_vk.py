@@ -167,6 +167,7 @@ class VkBenchmarkGen(CorrectnessTestGen):
 cpp_test_template = """
 #include <iostream>
 #include <ATen/ATen.h>
+#include <torch/torch.h>
 #include <benchmark/benchmark.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>

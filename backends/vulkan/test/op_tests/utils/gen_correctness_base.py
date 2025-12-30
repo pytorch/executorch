@@ -44,6 +44,7 @@ class GeneratedOpsTest_{op_name} : public ::testing::Test {{
 
 test_suite_template = """
 TEST_P(GeneratedOpsTest_{op_name}, {case_name}) {{
+torch::manual_seed(42);
 {create_ref_data}
 try {{
 {create_and_check_out}
@@ -280,6 +281,7 @@ cpp_test_template = """
 #include <gtest/gtest.h>
 
 #include <ATen/ATen.h>
+#include <torch/torch.h>
 
 {preamble}
 
