@@ -146,8 +146,13 @@ void setup_output_storage(
       // and memory planned outputs.
       continue;
     }
-    Error output_status = method.set_output_data_ptr(
+    // Assuming non-Tensor output `is_memory_planned` is false
+    auto output_meta = method.method_meta().output_tensor_meta(i);
+    Error output_status = Error::Ok;
+    if (!output_meta->is_memory_planned()) {
+      output_status = method.set_output_data_ptr(
         output_storages[i].data(), output_storages[i].size(), i);
+    }
     // We already should be skipping non-tensor outputs, and memory planned
     // outputs so any error is real.
     THROW_IF_ERROR(
