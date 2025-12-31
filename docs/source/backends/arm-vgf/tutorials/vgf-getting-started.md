@@ -58,7 +58,7 @@ This will install:
 
 The `setup.sh` script has generated a `setup_path.sh` script that you need to source whenever you restart your shell. Do this by running
 
-`source examples/arm/ethos-u-scratch/setup_path.sh`
+`source examples/arm/arm-scratch/setup_path.sh`
 
 As a simple check that your environment is set up correctly, run
 
@@ -78,13 +78,17 @@ The example below shows how to quantize a model consisting of a single addition,
 ```python
 import torch
 
-class Add(torch.nn.Module):
+class AddSigmoid(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.sigmoid = torch.nn.Sigmoid()
+
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        return x + y
+        return self.sigmoid(x + y)
 
 example_inputs = (torch.ones(1,1,1,1),torch.ones(1,1,1,1))
 
-model = Add()
+model = AddSigmoid()
 model = model.eval()
 exported_program = torch.export.export(model, example_inputs)
 graph_module = exported_program.graph_module
@@ -98,12 +102,18 @@ from executorch.backends.arm.vgf import VgfCompileSpec
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 # Create a compilation spec describing the target for configuring the quantizer
-compile_spec = VgfCompileSpec("TOSA-1.0+INT")
+compile_spec = VgfCompileSpec()
 
 # Create and configure quantizer to use a symmetric quantization config globally on all nodes
 quantizer = VgfQuantizer(compile_spec)
 operator_config = get_symmetric_quantization_config(is_per_channel=False)
+
+# Set default quantization config for the layers in the models.
+# Can also be set to `None` to let layers run in FP as default.
 quantizer.set_global(operator_config)
+
+# OPTIONAL: skip quantizing all sigmoid ops (only one for this model); let it run in FP
+quantizer.set_module_type(torch.nn.Sigmoid, None)
 
 # Post training quantization
 quantized_graph_module = prepare_pt2e(graph_module, quantizer)
@@ -207,7 +217,7 @@ In this tutorial you have learned how to use ExecuTorch to export a PyTorch mode
 
 Issue: glslc is not found when configuring the executor runner.
 Solution: The Vulkan sdk is likely not in your path, check whether setup_path.sh contains something like
-`export PATH=$(pwd)/examples/arm/ethos-u-scratch/vulkan_sdk/1.4.321.1/x86_64/bin:$PATH`.
+`export PATH=$(pwd)/examples/arm/arm-scratch/vulkan_sdk/1.4.321.1/x86_64/bin:$PATH`.
 If not, add it and source the file.
 
 If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).

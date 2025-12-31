@@ -1,6 +1,9 @@
 # Summary
 
 ## Overview
+
+**Video Tutorial:** [Build Along: Run LLMs Locally on Qualcomm Hardware Using ExecuTorch](https://www.youtube.com/watch?v=41PKDlGM3oU)
+
 This file provides you the instructions to run LLM Decoder model with different parameters via Qualcomm HTP backend. We currently support the following models:
 <!-- numbered list will be automatically generated -->
  1. LLAMA2 Stories 110M
@@ -16,7 +19,7 @@ This file provides you the instructions to run LLM Decoder model with different 
  1. QWEN3 0.6B / 1.7B
  1. SmolLM2 135M
  1. SmolLM3 3B
- 
+
 
 We offer the following modes to execute the model:
 
@@ -195,20 +198,12 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 ```
 
 ### KV Cache update mechanism
-We have two distinct mechanisms for updating the key-value (KV) cache, which can be selected at runtime. Shift Pointer and Smart Mask.
-
-#### Shift Pointer mechanism
-
-<figure>
-    <img src="assets/ShiftPointer.png" alt="Shift Pointer mechanism"> <figcaption>
-    The figure illustrates the process of updating the key and value caches during each inference step. In key cache update process, we initially allocate memory for each layer with <code>num_head</code> size of <code>(head_dim + 1) * (seq_len - 1)</code>. After a single inference, the new key cache is copied from the key output pointer <code>k_out</code> and appended to the key cache. Subsequently, the buffer start pointer of the key cache <code>k_in</code> moves to the next token, making the previous position of the buffer start pointer unused. This process is repeated for each subsequent inference step.
-    For the value cache update process, we first allocate a contiguous memory of size <code>(num_head + 1) * head_dim * (seq_len - 1)</code> for each layer, with the last head reserved for I/O shifting, After the first inference, the cache is updated by simply shifting the pointers of all heads to the next token position, making only the previous <code>head_dim * 1</code> section of the buffer start pointer <code>v_in</code> of the first head unused. This process is repeated for each subsequent inference step.</figcaption>
-</figure>
+We use Smart Mask mechanisms for updating the key-value (KV) cache.
 
 #### Smart Mask mechanism:
 <figure>
     <img src="assets/SmartMask.png" alt="Smart Mask mechanism">
-    <figcaption>The Smart Mask mechanism streamlines the process of updating tokens in the cache. Unlike the Shift Pointer mechanism, which requires moving the buffer start pointer <code>k_in</code>/<code>v_in</code> of the cache, the Smart Mask mechanism updates only the new token at the specified position. This approach eliminates the need to adjust the buffer start pointer. This mechanism is beneficial for shared buffers but requires CPU memory copying. </figcaption>
+    <figcaption>The figure illustrates how key and value caches are updated during each inference step. The Smart Mask mechanism simplifies updating tokens in the cache by modifying only the new token at the designated position. This approach is useful for shared buffers, though it does require copying data in CPU memory to update the kv cache. </figcaption>
 </figure>
 
 #### Analysis KV Cache Update Mechanism for each Layer each inference
@@ -224,13 +219,6 @@ We have two distinct mechanisms for updating the key-value (KV) cache, which can
     <th style="text-align:center;">V</th>
     <th style="text-align:center;">K</th>
     <th style="text-align:center;">V</th>
-  </tr>
-  <tr>
-    <td style="text-align:center;">Shift Pointer</td>
-    <td style="text-align:center;">num_head * head_dim</td>
-    <td style="text-align:center;">1</td>
-    <td style="text-align:center;">num_head * (head_dim + 1) * seq_len</td>
-    <td style="text-align:center;">(num_head + 1) * head_dim * (seq_len - 1)</td>
   </tr>
   <tr>
     <td style="text-align:center;">Smart Mask</td>
@@ -253,14 +241,6 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -m ${SOC_MO
 On the other hand, if you already have a pre-compiled .pte model, you can perform inference by providing the flag `--pre_gen_pte` and specifying the folder that contains the .pte model. Taking LLAMA3.2 as an example:
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "what is 1+1" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
-```
-
-#### KV Cache Updater
-
-You can select the KV Cache update mechanism at runtime by setting the `KV_UPDATER` variable to either "shift_pointer" or "smart_mask". By default, it is set to "smart_mask".
-`KV_UPDATER` = "shift_pointer"
-```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "what is 1+1" --kv_updator ${KV_UPDATER}
 ```
 
 #### Lookahead Decoding Mode

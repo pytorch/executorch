@@ -14,6 +14,7 @@ import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot.compiler_funcs import (
     prepare as prepare_fn,
+    QuantizedInputWrapper,
     trace as trace_fn,
 )
 from executorch.backends.cadence.aot.memory_planning import (
@@ -39,12 +40,10 @@ from executorch.exir import (
 from executorch.exir.passes import ToOutVarPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.program._program import _transform, to_edge
-
 from torch.export.exported_program import ExportedProgram
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e
 
 from .passes import apply_exir_ops_passes, apply_torch_ops_passes
-
 from .utils import print_ops_info
 
 default_quantizer = CadenceDefaultQuantizer()
@@ -204,6 +203,7 @@ def quantize_pt2(
     quantizer: Optional[CadenceQuantizer] = None,
     calibration_data: Optional[list[tuple[object, ...]]] = None,
     dump_graphs: bool = False,
+    quant_input_args: Optional[list[str]] = None,
 ) -> ExportedProgram:
     """
     Trace, prepare, convert and fuse the model using the given quantizer.
@@ -226,6 +226,9 @@ def quantize_pt2(
         calibration_data=calibration_data,
         dump_graphs=dump_graphs,
     )
+    # Wrap the model to handle quantized inputs if provided
+    if quant_input_args is not None:
+        converted_gm = QuantizedInputWrapper(converted_gm, quant_input_args)
 
     # Apply quant fusion to the exported program
     program = torch.export.export(converted_gm, inputs, strict=True)

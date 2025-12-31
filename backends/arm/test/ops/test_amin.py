@@ -155,48 +155,51 @@ def test_min_dim_tosa_FP_not_delegated():
 
 @common.parametrize("test_data", Amin.test_data)
 @common.SkipIfNoModelConverter
-def test_amin_vgf_FP(test_data: Amin.input_t):
+def test_amin_vgf_no_quant(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
     pipeline = VgfPipeline[Amin.input_t](
-        Amin(dim, keep_dims), data, Amin.aten_op, tosa_version="TOSA-1.0+FP"
+        Amin(dim, keep_dims),
+        data,
+        Amin.aten_op,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Amin.test_data)
 @common.SkipIfNoModelConverter
-def test_amin_vgf_INT(test_data: Amin.input_t):
+def test_amin_vgf_quant(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
     pipeline = VgfPipeline[Amin.input_t](
         Amin(dim, keep_dims),
         data,
         Amin.aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Min.test_data)
 @common.SkipIfNoModelConverter
-def test_min_dim_vgf_FP_to_amin(test_data: Min.input_t):
+def test_min_dim_vgf_no_quant_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Min.input_t](
         Min(dim),
         data,
         "torch.ops.aten.min",
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Min.test_data)
 @common.SkipIfNoModelConverter
-def test_min_dim_vgf_INT_to_amin(test_data: Min.input_t):
+def test_min_dim_vgf_quant_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Min.input_t](
         Min(dim),
         data,
         "torch.ops.aten.amin",
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

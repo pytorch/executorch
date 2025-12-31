@@ -90,7 +90,7 @@ set(ET_PTE_FILE_PATH
     CACHE PATH "Path to ExecuTorch model pte"
 )
 set(ETHOS_SDK_PATH
-    "${ET_DIR_PATH}/examples/arm/ethos-u-scratch/ethos-u"
+    "${ET_DIR_PATH}/examples/arm/arm-scratch/ethos-u"
     CACHE PATH "Path to Ethos-U bare metal driver/env"
 )
 set(PYTHON_EXECUTABLE
@@ -347,6 +347,21 @@ if(CMAKE_BUILD_TYPE MATCHES "UndefinedSanitizer")
     arm_executor_runner PRIVATE $<TARGET_FILE_DIR:executorch_ubsan>
   )
   target_link_libraries(arm_executor_runner PRIVATE executorch_ubsan)
+endif()
+
+if(CMAKE_BUILD_TYPE MATCHES "AddressSanitizer")
+  set(_et_runner_asan_flags -fsanitize=kernel-address -fasan-shadow-offset=0x0)
+  target_compile_options(arm_executor_runner PRIVATE ${_et_runner_asan_flags})
+  target_link_options(arm_executor_runner PRIVATE ${_et_runner_asan_flags})
+  if(NOT TARGET executorch_asan)
+    add_subdirectory(
+      ${ET_DIR_PATH}/examples/arm/asan ${CMAKE_CURRENT_BINARY_DIR}/asan_runtime
+    )
+  endif()
+  target_link_libraries(arm_executor_runner PRIVATE executorch_asan)
+  target_compile_definitions(
+    arm_executor_runner PRIVATE EXECUTORCH_ENABLE_ADDRESS_SANITIZER
+  )
 endif()
 
 # ET headers and generated headers includes

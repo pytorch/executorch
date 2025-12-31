@@ -1,10 +1,15 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.vgf import VgfCompileSpec
 from pytest import raises
 
 
-def test_ethos_u_compile_spec():
+def test_ethos_u_compile_spec_no_target():
     compile_spec = (
         EthosUCompileSpec("ethos-u55", extra_flags=["--my-flag"])
         .dump_intermediate_artifacts_to("my_path")
@@ -23,7 +28,7 @@ def test_ethos_u_compile_spec():
         EthosUCompileSpec.from_list(spec_list)
 
 
-def test_vgf_compile_spec():
+def test_vgf_compile_spec_no_target():
     compile_spec = (
         VgfCompileSpec(compiler_flags=["--my-flag"])
         .dump_intermediate_artifacts_to("my_path")
@@ -41,7 +46,7 @@ def test_vgf_compile_spec():
         EthosUCompileSpec.from_list(spec_list)
 
 
-def test_tosa_compile_spec():
+def test_tosa_compile_spec_no_target():
     compile_spec = TosaCompileSpec("TOSA-1.0+INT")
     spec_list = compile_spec.to_list()
 

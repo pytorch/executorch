@@ -2,7 +2,7 @@ import warnings
 from collections import OrderedDict
 from typing import Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import numpy as np
 import torch
 
@@ -34,8 +34,8 @@ class IndexPutVisitor(NodeVisitor):
     def define_node(  # noqa: C901
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         op_wrapper_list = []
         input_node = self.get_node(node.args[0])
         # Because the args[0] of index_put op doesn't annotate, need to fill in the quant_attr with the node here.
@@ -48,7 +48,7 @@ class IndexPutVisitor(NodeVisitor):
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -144,7 +144,7 @@ class IndexPutVisitor(NodeVisitor):
                     range_index_node,
                     node,
                     range_indices,
-                    PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                    PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
                     nodes_to_wrappers,
                 )
                 # store it for future concatenation
@@ -178,7 +178,7 @@ class IndexPutVisitor(NodeVisitor):
                 indices_node,
                 node,
                 indices_tensor,
-                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 nodes_to_wrappers,
             )
             if indices_tensor.nelement() < max_indices_in_specified_index:
@@ -188,16 +188,16 @@ class IndexPutVisitor(NodeVisitor):
                 indices_multiples_shape = [len(indices_multiples)]
                 indices_tile_tensor_wrapper = self.define_custom_tensor_wrapper(
                     node_name=node.name + f"_indices_tile_{i}",
-                    tensor_type=PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                    tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                     dtype=QNN_TENSOR_TYPE_MAP[indices_tensor.dtype],
-                    quant_encoding=PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
+                    quant_encoding=PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
                     quant_configs={},
                     dims=indices_tensor.size(),
                     tensor=indices_tensor,
                     is_fake_tensor=True,
                     nodes_to_wrappers=nodes_to_wrappers,
                 )
-                tile_op = PyQnnWrapper.PyQnnOpWrapper(
+                tile_op = PyQnnManager.PyQnnOpWrapper(
                     node.name,
                     QNN_OP_PACKAGE_NAME_QTI_AISW,
                     OpTile.op_name,
@@ -206,7 +206,7 @@ class IndexPutVisitor(NodeVisitor):
                 tile_op.AddOutputTensors([indices_tile_tensor_wrapper])
                 tile_op.AddTensorParam(
                     OpTile.param_multiples,
-                    PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+                    PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                     len(indices_multiples_shape),
                     indices_multiples_shape,
                     np.array(indices_multiples, dtype=np.uint32),
@@ -221,16 +221,16 @@ class IndexPutVisitor(NodeVisitor):
             reshape_output_tensor = indices_tensor.reshape(reshape_shape)
             reshape_output_tensor_wrapper = self.define_custom_tensor_wrapper(
                 node_name=node.name + f"_reshape_{i}",
-                tensor_type=PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 dtype=QNN_TENSOR_TYPE_MAP[reshape_output_tensor.dtype],
-                quant_encoding=PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
+                quant_encoding=PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
                 quant_configs={},
                 dims=reshape_output_tensor.size(),
                 tensor=reshape_output_tensor,
                 is_fake_tensor=True,
                 nodes_to_wrappers=nodes_to_wrappers,
             )
-            reshape_op = PyQnnWrapper.PyQnnOpWrapper(
+            reshape_op = PyQnnManager.PyQnnOpWrapper(
                 node.name,
                 QNN_OP_PACKAGE_NAME_QTI_AISW,
                 OpReshape.op_name,
@@ -255,16 +255,16 @@ class IndexPutVisitor(NodeVisitor):
                 multiples_shape = [len(multiples)]
                 tile_output_tensor_wrapper = self.define_custom_tensor_wrapper(
                     node_name=node.name + f"_tile_{i}",
-                    tensor_type=PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                    tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                     dtype=QNN_TENSOR_TYPE_MAP[tile_output_tensor.dtype],
-                    quant_encoding=PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
+                    quant_encoding=PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
                     quant_configs={},
                     dims=tile_output_tensor.size(),
                     tensor=tile_output_tensor,
                     is_fake_tensor=True,
                     nodes_to_wrappers=nodes_to_wrappers,
                 )
-                tile_op = PyQnnWrapper.PyQnnOpWrapper(
+                tile_op = PyQnnManager.PyQnnOpWrapper(
                     node.name,
                     QNN_OP_PACKAGE_NAME_QTI_AISW,
                     OpTile.op_name,
@@ -273,7 +273,7 @@ class IndexPutVisitor(NodeVisitor):
                 tile_op.AddOutputTensors([tile_output_tensor_wrapper])
                 tile_op.AddTensorParam(
                     OpTile.param_multiples,
-                    PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+                    PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                     len(multiples_shape),
                     multiples_shape,
                     np.array(multiples, dtype=np.uint32),
@@ -299,16 +299,16 @@ class IndexPutVisitor(NodeVisitor):
             concat_output_tensor = torch.concat(index_tensors, dim=-1)
             concat_output_tensor_wrapper = self.define_custom_tensor_wrapper(
                 node_name=node.name + "_concat",
-                tensor_type=PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 dtype=QNN_TENSOR_TYPE_MAP[concat_output_tensor.dtype],
-                quant_encoding=PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
+                quant_encoding=PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
                 quant_configs={},
                 dims=concat_output_tensor.size(),
                 tensor=concat_output_tensor,
                 is_fake_tensor=True,
                 nodes_to_wrappers=nodes_to_wrappers,
             )
-            concat_op = PyQnnWrapper.PyQnnOpWrapper(
+            concat_op = PyQnnManager.PyQnnOpWrapper(
                 node.name,
                 QNN_OP_PACKAGE_NAME_QTI_AISW,
                 OpConcat.op_name,
@@ -317,7 +317,7 @@ class IndexPutVisitor(NodeVisitor):
             concat_op.AddOutputTensors([concat_output_tensor_wrapper])
             concat_op.AddScalarParam(
                 OpConcat.param_axis,
-                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+                PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 {QCOM_DATA: np.uint32(concat_output_tensor.dim() - 1)},
             )
             op_wrapper_list.append(concat_op)
@@ -328,7 +328,7 @@ class IndexPutVisitor(NodeVisitor):
             value_node,
             node,
             value_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         # handle broadcast scenario
@@ -345,7 +345,7 @@ class IndexPutVisitor(NodeVisitor):
         value_dtype = (
             QNN_TENSOR_TYPE_MAP[value_tensor.dtype]
             if value_quant_encoding
-            == PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED
+            == PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED
             else QNN_QUANT_TYPE_MAP[
                 (
                     torch.uint16
@@ -357,7 +357,7 @@ class IndexPutVisitor(NodeVisitor):
         value_reshape_tensor = value_tensor.reshape(new_value_shape)
         value_reshape_tensor_wrapper = self.define_custom_tensor_wrapper(
             node_name=node.name + "_value_reshape",
-            tensor_type=PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             dtype=value_dtype,
             quant_encoding=value_quant_encoding,
             quant_configs=value_quant_configs,
@@ -366,7 +366,7 @@ class IndexPutVisitor(NodeVisitor):
             is_fake_tensor=True,
             nodes_to_wrappers=nodes_to_wrappers,
         )
-        value_reshape_op = PyQnnWrapper.PyQnnOpWrapper(
+        value_reshape_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpReshape.op_name,
@@ -394,7 +394,7 @@ class IndexPutVisitor(NodeVisitor):
         value_multiples_shape = [len(value_multiples)]
         value_tile_tensor_wrapper = self.define_custom_tensor_wrapper(
             node_name=node.name + "_value_tile",
-            tensor_type=PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             dtype=value_dtype,
             quant_encoding=value_quant_encoding,
             quant_configs=value_quant_configs,
@@ -403,7 +403,7 @@ class IndexPutVisitor(NodeVisitor):
             is_fake_tensor=True,
             nodes_to_wrappers=nodes_to_wrappers,
         )
-        value_tile_op = PyQnnWrapper.PyQnnOpWrapper(
+        value_tile_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpTile.op_name,
@@ -412,7 +412,7 @@ class IndexPutVisitor(NodeVisitor):
         value_tile_op.AddOutputTensors([value_tile_tensor_wrapper])
         value_tile_op.AddTensorParam(
             OpTile.param_multiples,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(value_multiples_shape),
             value_multiples_shape,
             np.array(value_multiples, dtype=np.uint32),
@@ -425,11 +425,11 @@ class IndexPutVisitor(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
-        index_put_op = PyQnnWrapper.PyQnnOpWrapper(
+        index_put_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpScatterNd.op_name,
@@ -438,7 +438,7 @@ class IndexPutVisitor(NodeVisitor):
         if len(node.args) > 3 and node.args[3]:
             index_put_op.AddScalarParam(
                 OpScatterNd.param_reduction,
-                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+                PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 {QCOM_DATA: 1},
             )
 
@@ -451,16 +451,16 @@ class IndexPutVisitor(NodeVisitor):
         target_index_reshape_tensor = index_input_tensor.reshape((*target_index, -1))
         target_index_reshape_tensor_wrapper = self.define_custom_tensor_wrapper(
             node_name=node.name + "_target_index_reshape",
-            tensor_type=PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             dtype=QNN_TENSOR_TYPE_MAP[target_index_reshape_tensor.dtype],
-            quant_encoding=PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
+            quant_encoding=PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
             quant_configs={},
             dims=target_index_reshape_tensor.size(),
             tensor=target_index_reshape_tensor,
             is_fake_tensor=True,
             nodes_to_wrappers=nodes_to_wrappers,
         )
-        target_index_reshape_op = PyQnnWrapper.PyQnnOpWrapper(
+        target_index_reshape_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpReshape.op_name,

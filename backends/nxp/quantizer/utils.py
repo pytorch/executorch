@@ -20,8 +20,15 @@ from torch.fx.passes.utils.source_matcher_utils import (
     check_subgraphs_connected,
     SourcePartition,
 )
-from torchao.quantization.pt2e import ObserverOrFakeQuantize
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e import (
+    move_exported_model_to_eval,
+    ObserverOrFakeQuantize,
+)
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY, Quantizer
 
 
@@ -154,10 +161,11 @@ def find_sequential_partitions_aten(
     return fused_partitions
 
 
-def post_training_quantize(
+def calibrate_and_quantize(
     model: ExportedProgram | fx.GraphModule,
     calibration_inputs: Iterable[tuple[torch.Tensor, ...]],
     quantizer: Quantizer,
+    is_qat: bool = False,
 ) -> fx.GraphModule:
     """Quantize the provided model.
 
@@ -165,6 +173,8 @@ def post_training_quantize(
     :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a model
                                 input. Or an iterator over such tuples.
     :param quantizer: Quantizer to use.
+    :param is_qat: Whether quantization is done using Quantization Aware Training (QAT) or not.
+                    Note: In QAT mode, training is not performed. Only calibration (in eval mode) is done.
 
     :return: Quantized GraphModule.
     """
@@ -172,7 +182,12 @@ def post_training_quantize(
     if isinstance(model, ExportedProgram):
         model = model.module()
 
-    m = prepare_pt2e(model, quantizer)
+    if is_qat:
+        m = prepare_qat_pt2e(model, quantizer)
+        m = move_exported_model_to_eval(m)
+    else:
+        m = prepare_pt2e(model, quantizer)
+
     for data in calibration_inputs:
         m(*data)
     m = convert_pt2e(m)

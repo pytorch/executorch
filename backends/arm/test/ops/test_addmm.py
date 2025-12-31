@@ -167,26 +167,26 @@ def test_addmm_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_addmm_vgf_FP(test_data: input_t1):
+def test_addmm_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Addmm(),
         (*test_data,),
         aten_op=aten_op,
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_addmm_vgf_INT(test_data: input_t1):
+def test_addmm_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Addmm(),
         (*test_data,),
         aten_op=[],
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -239,7 +239,7 @@ def test_addmm_16a8w_tosa_INT(test_data: input_t1):
 @pytest.mark.xfail(
     reason="Vela compilation fails with 'Invalid arguments' for int16 addmm operations"
 )
-def test_addmm_16a8w_u55_INT16(test_data: input_t1):
+def test_addmm_16a8w_u55_INT(test_data: input_t1):
     """Test addmm (FC layer) operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
@@ -263,7 +263,7 @@ def test_addmm_16a8w_u55_INT16(test_data: input_t1):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_addmm_16a8w_u85_INT16(test_data: input_t1):
+def test_addmm_16a8w_u85_INT(test_data: input_t1):
     """Test addmm (FC layer) operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 

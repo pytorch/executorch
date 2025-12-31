@@ -225,28 +225,28 @@ def test_convolution_2d_tosa_INT_depthwise(test_data):
 
 @common.parametrize("test_data", test_data_conv1d_FP | test_data_conv2d_FP)
 @common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_FP_depthwise(test_data: torch.nn.Module):
+def test_convolution_2d_vgf_no_quant_depthwise(test_data: torch.nn.Module):
     model = test_data()
     pipeline = VgfPipeline[input_t](
         model,
         model.get_inputs(),
         aten_op=[],
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_conv1d_INT | test_data_conv2d_INT)
 @common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_INT_depthwise(test_data):
+def test_convolution_2d_vgf_quant_depthwise(test_data):
     model, per_channel_quantization = test_data()
     pipeline = VgfPipeline[input_t](
         model,
         model.get_inputs(),
         aten_op=[],
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 

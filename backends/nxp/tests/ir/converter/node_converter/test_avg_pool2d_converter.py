@@ -28,6 +28,7 @@ from executorch.backends.nxp.tests.executors import (
 )
 from executorch.backends.nxp.tests.models import AvgPool2dConvModule, AvgPool2dModule
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 @pytest.fixture(autouse=True)
@@ -143,14 +144,16 @@ def test_avg_pool_2d_conversion(input_shape, padding, count_include_pad):
         ),
     ],
 )
-def test_avg_pool_2d_quant_conversion(mocker, input_shape, padding, count_include_pad):
+def test_avg_pool_2d_quant_conversion(
+    mocker, input_shape, padding, count_include_pad, use_qat
+):
     model = AvgPool2dConvModule(padding=padding, count_include_pad=count_include_pad)
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
     _ = to_quantized_edge_program(
-        model, input_shape, use_neutron_for_format_conversion=False
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     )
 
     # Capture generated model
@@ -170,7 +173,7 @@ def test_avg_pool_2d_quant_conversion(mocker, input_shape, padding, count_includ
     )
 
 
-def test_avg_pool_2d_quant_conversion__padded(mocker):
+def test_avg_pool_2d_quant_conversion__padded(mocker, use_qat):
     input_shape = (1, 8, 8, 8)
     model = AvgPool2dModule(True, 1)
 
@@ -179,7 +182,7 @@ def test_avg_pool_2d_quant_conversion__padded(mocker):
 
     # Run conversion
     _ = to_quantized_edge_program(
-        model, input_shape, use_neutron_for_format_conversion=False
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     )
 
     # Capture the converter operators.

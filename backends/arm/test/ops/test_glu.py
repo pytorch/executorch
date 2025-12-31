@@ -103,13 +103,13 @@ def test_glu_u85_INT(test_data: Tuple):
     test_data_suite,
 )
 @common.SkipIfNoModelConverter
-def test_glu_vgf_FP(test_data: input_t1):
+def test_glu_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Glu(),
         (*test_data,),
         [],
         [],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
@@ -119,12 +119,12 @@ def test_glu_vgf_FP(test_data: input_t1):
     test_data_suite,
 )
 @common.SkipIfNoModelConverter
-def test_glu_vgf_INT(test_data: input_t1):
+def test_glu_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Glu(),
         (*test_data,),
         [],
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

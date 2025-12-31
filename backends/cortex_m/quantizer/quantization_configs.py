@@ -5,6 +5,7 @@
 
 
 import torch
+from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from torchao.quantization.pt2e import (
     HistogramObserver,
     MinMaxObserver,
@@ -12,7 +13,7 @@ from torchao.quantization.pt2e import (
 )
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
-    QuantizationConfig,
+    FixedQParamsQuantizationSpec,
     QuantizationSpec,
 )
 
@@ -41,6 +42,19 @@ INT8_ACTIVATION_PER_CHANNEL_QSPEC = QuantizationSpec(
     observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
     qscheme=torch.per_channel_affine,
     ch_axis=0,
+)
+
+# Constants shared by Cortex-M quantized operators.
+CMSIS_SOFTMAX_SCALE: float = 1.0 / 256.0
+CMSIS_SOFTMAX_ZERO_POINT: int = -128
+
+SOFTMAX_OUTPUT_FIXED_QSPEC = FixedQParamsQuantizationSpec(
+    dtype=torch.int8,
+    scale=CMSIS_SOFTMAX_SCALE,
+    zero_point=CMSIS_SOFTMAX_ZERO_POINT,
+    quant_min=-128,
+    quant_max=127,
+    qscheme=torch.per_tensor_affine,
 )
 
 
@@ -96,4 +110,12 @@ INT8_PER_CHANNEL_CONFIG = QuantizationConfig(
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_WEIGHT_PER_CHANNEL_QSPEC,
     _get_int32_per_channel_bias_qspec,
+)
+
+
+SOFTMAX_PER_TENSOR_CONFIG = QuantizationConfig(
+    INT8_ACTIVATION_PER_TENSOR_QSPEC,
+    SOFTMAX_OUTPUT_FIXED_QSPEC,
+    None,
+    None,
 )

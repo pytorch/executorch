@@ -90,23 +90,23 @@ def test_reciprocal_u85_INT(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_reciprocal_vgf_FP(test_data: torch.Tensor):
+def test_reciprocal_vgf_no_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
         Reciprocal(),
         (test_data(),),
         aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_reciprocal_vgf_INT(test_data: torch.Tensor):
+def test_reciprocal_vgf_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
         Reciprocal(),
         (test_data(),),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

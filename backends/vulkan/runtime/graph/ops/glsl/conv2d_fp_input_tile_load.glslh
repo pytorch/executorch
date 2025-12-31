@@ -39,6 +39,8 @@ void load_fp_input_tile(
   [[unroll]] for (int w = 0; w < TILE_M; w++) {
     if (load_tidx.data.x < input_sizes.x) {
       tile.data[w][0] = load_fp_input_texel(load_tidx);
+    } else {
+      tile.data[w][0] = VEC4_T(0);
     }
     load_tidx.data.x++;
   }
