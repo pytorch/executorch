@@ -44,6 +44,8 @@ BUILD_ANDROID="true"
 CMAKE_ANDROID="build-android"
 BUILD_OE_LINUX="false"
 CMAKE_OE_LINUX="build-oe-linux"
+BUILD_HEXAGON="false"
+CMAKE_HEXAGON="build-hexagon"
 CLEAN="true"
 BUILD_TYPE="RelWithDebInfo"
 BUILD_JOB_NUMBER="16"
@@ -56,7 +58,7 @@ if [ -z BUCK2 ]; then
   BUCK2="buck2"
 fi
 
-long_options=skip_x86_64,skip_linux_android,skip_linux_embedded,enable_linux_embedded,no_clean,release,job_number:
+long_options=skip_x86_64,skip_linux_android,skip_linux_embedded,skip_hexagon,enable_linux_embedded,enable_hexagon,no_clean,release,job_number:
 
 parsed_args=$(getopt -a --options '' --longoptions $long_options --name "$0" -- "$@")
 eval set -- "$parsed_args"
@@ -68,6 +70,8 @@ while true ; do
         --skip_linux_android) BUILD_ANDROID="false"; shift;;
         --skip_linux_embedded) BUILD_OE_LINUX="false"; shift;;
         --enable_linux_embedded) BUILD_ANDROID="false"; BUILD_OE_LINUX="true"; shift;;
+        --skip_hexagon) BUILD_HEXAGON="false"; shift;;
+        --enable_hexagon) BUILD_HEXAGON="true"; shift;;
         --no_clean) CLEAN="false"; shift;;
         --release) BUILD_TYPE="Release"; shift;;
         --job_number) BUILD_JOB_NUMBER="$2"; shift 2;;
@@ -237,6 +241,56 @@ if [ "$BUILD_OE_LINUX" = true ]; then
         -B$LLAMA_EXAMPLE_ROOT
 
     cmake --build $LLAMA_EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
+fi
+
+if [ "$BUILD_HEXAGON" = true ]; then
+    if [[ -z ${ANDROID_NDK_ROOT} ]]; then
+        echo "Please export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
+        exit -1
+    fi
+    if [[ -z ${HEXAGON_SDK_ROOT} ]]; then
+        echo "Please export HEXAGON_SDK_ROOT=/path/to/hexagon-sdk-x.x.x"
+        exit -1
+    fi
+    if [[ -z ${HEXAGON_TOOLS_ROOT} ]]; then
+        echo "Please export HEXAGON_TOOLS_ROOT=/path/to/hexagon-sdk-x.x.x/tools/HEXAGON_Tools/x.x.x"
+        exit -1
+    fi
+    if [[ -z ${HEXAGON_ARCH} ]]; then
+        echo "Please export HEXAGON_ARCH=xx. e.g. SM8750=v79"
+        exit -1
+    fi
+
+    BUILD_ROOT=$PRJ_ROOT/$CMAKE_HEXAGON
+    if [ "$CLEAN" = true ]; then
+        rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
+    else
+        # force rebuild flatccrt for the correct platform
+        cd $BUILD_ROOT/third-party/flatcc && make clean
+    fi
+    cd $BUILD_ROOT
+    cmake .. \
+        -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
+        -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+        -DEXECUTORCH_BUILD_QNN=ON \
+        -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
+        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+        -DEXECUTORCH_ENABLE_LOGGING=ON \
+        -DFLATCC_ALLOW_WERROR=OFF \
+        -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
+        -DHEXAGON_SDK_ROOT=$HEXAGON_SDK_ROOT \
+        -DHEXAGON_TOOLS_ROOT=$HEXAGON_TOOLS_ROOT \
+        -DHEXAGON_ARCH=$HEXAGON_ARCH \
+        -DCMAKE_TOOLCHAIN_FILE=$HEXAGON_SDK_ROOT/build/cmake/hexagon_toolchain.cmake \
+        -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+        -B$BUILD_ROOT
+
+    cmake --build $BUILD_ROOT -j$BUILD_JOB_NUMBER --target install
 fi
 
 if [ "$BUILD_X86_64" = true ]; then

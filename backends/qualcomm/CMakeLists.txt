@@ -239,11 +239,28 @@ target_link_libraries(
           shared_buffer
           qnn_dlc_manager
 )
-target_link_libraries(
-  qnn_executorch_backend
-  PRIVATE qnn_executorch_header qnn_schema qnn_manager executorch_core
-          extension_tensor qnn_backend_options
-)
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
+  link_directories(
+    $ENV{HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/$ENV{HEXAGON_ARCH}/G0/pic
+  )
+  target_link_libraries(
+    qnn_executorch_backend
+    PRIVATE qnn_executorch_header
+            qnn_schema
+            qnn_manager
+            executorch_core
+            extension_tensor
+            qnn_backend_options
+            c
+            c++
+  )
+else()
+  target_link_libraries(
+    qnn_executorch_backend
+    PRIVATE qnn_executorch_header qnn_schema qnn_manager executorch_core
+            extension_tensor qnn_backend_options
+  )
+endif()
 set_target_properties(
   qnn_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )
@@ -277,6 +294,13 @@ install(
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
   RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
 )
+
+if(DEFINED ENV{HEXAGON_SDK_ROOT})
+  add_subdirectory(
+    ${QNN_EXECUTORCH_ROOT_DIR}/fastrpc
+    ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/fastrpc
+  )
+endif()
 
 # QNN pybind
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
