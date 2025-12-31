@@ -132,7 +132,7 @@ executorch::runtime::Error QuantizePerTensor(
     double scale,
     int zero_point) {
   const float* rdata = rtensor.const_data_ptr<float>();
-  int numel = rtensor.numel();
+  auto numel = rtensor.numel();
   ET_CHECK_OR_RETURN_ERROR(
       (std::is_same<T, uint8_t>::value || std::is_same<T, int8_t>::value),
       Internal,
