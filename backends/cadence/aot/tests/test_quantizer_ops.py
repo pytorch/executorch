@@ -11,7 +11,10 @@ import unittest
 from typing import Callable
 
 import torch
-from executorch.backends.cadence.aot.graph_builder import GraphBuilder
+from executorch.backends.cadence.aot.graph_builder import (
+    GraphBuilder,
+    single_op_builder,
+)
 from executorch.backends.cadence.aot.quantizer import quantizer as quantizer_module
 from executorch.backends.cadence.aot.quantizer.patterns import AddmmPattern
 from executorch.backends.cadence.aot.quantizer.quantizer import (
@@ -30,6 +33,7 @@ from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceWithSoftmaxQuantizer,
     qconfig_A16,
     qconfig_A8W8,
+    qconfig_A8W8sym,
 )
 from executorch.exir.pass_base import NodeMetadata
 from parameterized import parameterized
@@ -50,14 +54,10 @@ GraphBuilderFn = Callable[
 # Quantizers intentionally excluded from annotation testing.
 # These should be explicitly justified when added.
 EXCLUDED_FROM_ANNOTATION_TESTING: set[type[CadenceQuantizer]] = {
-    CadenceDefaultQuantizer,  # TODO: T247438143 Add test coverage
     CadenceFusedConvReluQuantizer,  # TODO: T247438151 Add test coverage
     CadenceNopQuantizer,  # No-op quantizer, doesn't annotate anything
     CadenceW8A32MixedQuantizer,  # TODO: T247438158 Add test coverage
     CadenceRmsNormNopQuantizer,  # No-op quantizer, doesn't annotate anything, preserves rms_norm from decomposition
-    CadenceWakeWordQuantizer,  # TODO: T247438162 Add test coverage
-    CadenceWithLayerNormQuantizer,  # TODO: T247438410 Add test coverage
-    CadenceWithSoftmaxQuantizer,  # TODO: T247438418 Add test coverage
 }
 
 
@@ -109,6 +109,88 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
         qconfig_A16.output_activation,
         # For conv2d: [input_activation, weight]
         [qconfig_A16.input_activation, qconfig_A16.weight],
+    ),
+    (
+        "softmax_A16",
+        lambda self: self._build_softmax_graph(),
+        CadenceWithSoftmaxQuantizer(),
+        torch.ops.aten._softmax.default,
+        qconfig_A16.output_activation,
+        # For softmax: only input_activation
+        [qconfig_A16.input_activation],
+    ),
+    (
+        "layer_norm_A8W8",
+        lambda self: self._build_layer_norm_graph(),
+        CadenceWithLayerNormQuantizer(),
+        torch.ops.aten.layer_norm.default,
+        qconfig_A8W8.output_activation,
+        # For layer_norm: only input_activation (weights/bias are passed as others)
+        [qconfig_A8W8.input_activation],
+    ),
+    (
+        "add_A8W8",
+        lambda self: self._build_add_graph(),
+        CadenceWakeWordQuantizer(),
+        torch.ops.aten.add.Tensor,
+        qconfig_A8W8.output_activation,
+        # For add: both inputs are activations
+        [qconfig_A8W8.input_activation, qconfig_A8W8.input_activation],
+    ),
+    # CadenceDefaultQuantizer test cases
+    (
+        "default_matmul_A8W8",
+        lambda self: self._build_matmul_graph(),
+        CadenceDefaultQuantizer(),
+        torch.ops.aten.matmul.default,
+        qconfig_A8W8.output_activation,
+        # For matmul: both inputs are activations
+        [qconfig_A8W8.input_activation, qconfig_A8W8.input_activation],
+    ),
+    (
+        "default_linear_A8W8",
+        lambda self: self._build_linear_graph(),
+        CadenceDefaultQuantizer(),
+        torch.ops.aten.linear.default,
+        qconfig_A8W8.output_activation,
+        # For linear: [input_activation, weight]
+        [qconfig_A8W8.input_activation, qconfig_A8W8.weight],
+    ),
+    (
+        "default_conv1d_A8W8sym",
+        lambda self: self._build_conv1d_graph(),
+        CadenceDefaultQuantizer(),
+        torch.ops.aten.conv1d.default,
+        qconfig_A8W8sym.output_activation,
+        # For conv1d: [input_activation, weight] with symmetric weights
+        [qconfig_A8W8sym.input_activation, qconfig_A8W8sym.weight],
+    ),
+    (
+        "default_conv2d_A8W8sym",
+        lambda self: self._build_conv2d_graph(),
+        CadenceDefaultQuantizer(),
+        torch.ops.aten.conv2d.default,
+        qconfig_A8W8sym.output_activation,
+        # For conv2d: [input_activation, weight] with symmetric weights
+        [qconfig_A8W8sym.input_activation, qconfig_A8W8sym.weight],
+    ),
+    (
+        "default_bmm_A8W8",
+        lambda self: self._build_bmm_graph(),
+        CadenceDefaultQuantizer(),
+        torch.ops.aten.bmm.default,
+        qconfig_A8W8.output_activation,
+        # For bmm: both inputs are activations
+        [qconfig_A8W8.input_activation, qconfig_A8W8.input_activation],
+    ),
+    (
+        "default_relu_A8W8",
+        lambda self: self._build_relu_graph(),
+        CadenceDefaultQuantizer(),
+        torch.ops.aten.relu.default,
+        qconfig_A8W8.output_activation,
+        # For relu: only input_activation
+        [qconfig_A8W8.input_activation],
     ),
 ]
 
@@ -213,6 +295,118 @@ class QuantizerAnnotationTest(unittest.TestCase):
         )
         self.assertEqual(len(conv2d_nodes), 1, "Should find exactly one conv2d node")
         return gm, conv2d_nodes[0]
+
+    def _build_softmax_graph(self) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a simple graph with a softmax operation."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 10))
+        softmax = builder.call_operator(
+            op=torch.ops.aten._softmax.default,
+            args=(x, -1, False),  # dim=-1, half_to_float=False
+            meta=NodeMetadata(
+                {"source_fn_stack": [("softmax", torch.ops.aten._softmax.default)]}
+            ),
+        )
+        builder.output([softmax])
+        gm = builder.get_graph_module()
+
+        softmax_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten._softmax.default,
+        )
+        self.assertEqual(len(softmax_nodes), 1, "Should find exactly one softmax node")
+        return gm, softmax_nodes[0]
+
+    def _build_layer_norm_graph(self) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a simple graph with a layer_norm operation."""
+        # Input shape: (batch, features)
+        x = torch.randn(1, 10)
+        # normalized_shape must match the last dimension(s) of input
+        normalized_shape = [10]
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=torch.ops.aten.layer_norm.default,
+            args=(x, normalized_shape),
+        )
+
+        layer_norm_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.layer_norm.default,
+        )
+        self.assertEqual(
+            len(layer_norm_nodes), 1, "Should find exactly one layer_norm node"
+        )
+        # Add source_fn_stack metadata required by quantizer pattern matching
+        layer_norm_nodes[0].meta["source_fn_stack"] = [
+            ("layer_norm", torch.ops.aten.layer_norm.default)
+        ]
+        return gm, layer_norm_nodes[0]
+
+    def _build_add_graph(self) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a simple graph with an add operation."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 10))
+        y = builder.placeholder("y", torch.randn(1, 10))
+        add = builder.call_operator(
+            op=torch.ops.aten.add.Tensor,
+            args=(x, y),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("add", torch.ops.aten.add.Tensor)]}
+            ),
+        )
+        builder.output([add])
+        gm = builder.get_graph_module()
+
+        add_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.add.Tensor,
+        )
+        self.assertEqual(len(add_nodes), 1, "Should find exactly one add node")
+        return gm, add_nodes[0]
+
+    def _build_bmm_graph(self) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a simple graph with a bmm (batch matrix multiply) operation."""
+        builder = GraphBuilder()
+        # BMM requires 3D tensors: (batch, n, m) @ (batch, m, p) -> (batch, n, p)
+        x = builder.placeholder("x", torch.randn(2, 4, 8))
+        y = builder.placeholder("y", torch.randn(2, 8, 4))
+        bmm = builder.call_operator(
+            op=torch.ops.aten.bmm.default,
+            args=(x, y),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("bmm", torch.ops.aten.bmm.default)]}
+            ),
+        )
+        builder.output([bmm])
+        gm = builder.get_graph_module()
+
+        bmm_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.bmm.default,
+        )
+        self.assertEqual(len(bmm_nodes), 1, "Should find exactly one bmm node")
+        return gm, bmm_nodes[0]
+
+    def _build_relu_graph(self) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a simple graph with a relu operation."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 10))
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(x,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+
+        relu_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.relu.default,
+        )
+        self.assertEqual(len(relu_nodes), 1, "Should find exactly one relu node")
+        return gm, relu_nodes[0]
 
     @parameterized.expand(QUANTIZER_ANNOTATION_TEST_CASES)
     def test_quantizer_annotation(
