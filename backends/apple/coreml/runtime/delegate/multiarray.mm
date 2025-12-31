@@ -11,6 +11,7 @@
 #import "objc_array_util.h"
 
 #import <Accelerate/Accelerate.h>
+#import <algorithm>
 #import <CoreML/CoreML.h>
 #import <functional>
 #import <numeric>
