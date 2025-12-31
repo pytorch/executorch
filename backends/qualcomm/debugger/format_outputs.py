@@ -14,10 +14,10 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QUANT_ATTRS,
     QCOM_SCALE,
     QCOM_SCALES,
-    QCOM_TENSOR_NAME,
     QCOM_ZERO_POINT,
     QCOM_ZERO_POINTS,
 )
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 
 from .metrics_evaluator import MetricEvaluatorBase
 
@@ -46,6 +46,8 @@ def retrieve_node_info(evaluator, node, node_tensor_map):
     node_info["op_code"] = node.op
     node_info["target"] = typename(node.target)
     node_info["num_users"] = len(node.users)
+    # Only call_function and getitem nodes that is present prior to qnn_preprocess has a debug_handle.
+    node_info["debug_handle"] = node.meta.get(DEBUG_HANDLE_KEY, -1)
 
     if "val" in node.meta:
         if isinstance(node.meta["val"], torch.Tensor):
@@ -67,10 +69,9 @@ def retrieve_node_info(evaluator, node, node_tensor_map):
             if QCOM_ZERO_POINTS in quant_attrs
             else quant_attrs.get(QCOM_ZERO_POINT)
         )
-
-    if node.name in node_tensor_map:
-        qnn_output, cpu_output, meta = node_tensor_map[node.name]
-        node_info[QCOM_TENSOR_NAME] = meta.get(QCOM_TENSOR_NAME)
+    if node_data := node_tensor_map.get(node.name):
+        qnn_output, cpu_output, debug_meta = node_data
+        assert debug_meta.edge_node_name == node.name
         node_info[evaluator.metric_name()], node_info["is_valid_score"] = (
             evaluator.evaluate(qnn_output, cpu_output)
         )
@@ -78,13 +79,12 @@ def retrieve_node_info(evaluator, node, node_tensor_map):
         # The values in meta are directly retrieved from the node during the forward hook, which means the values should be the same for meta and node.meta.
         # Storing these data during the forward hook helps us compare QNN tensors with CPU tensors without traversing the graph.
         # We only check "scale" and not "scales" since the forward hook only stores the node's output, which should always be per tensor.
-        if QCOM_QUANT_ATTRS in node.meta:
-            assert (
-                node_info["scale(s)"] == node.meta[QCOM_QUANT_ATTRS][QCOM_SCALE]
+        if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
+            assert node_info["scale(s)"] == quant_attrs.get(
+                QCOM_SCALE
             ), "node meta scale should be same as scale retrieve during forward hook"
-            assert (
-                node_info["zero_point(s)"]
-                == node.meta[QCOM_QUANT_ATTRS][QCOM_ZERO_POINT]
+            assert node_info["zero_point(s)"] == quant_attrs.get(
+                QCOM_ZERO_POINT
             ), "node meta zero_point should be same as zero_point retrieve during forward hook"
 
     return node_info
@@ -128,7 +128,7 @@ def export_svg(
         node_label = "{"
         node_label += f"name=%{node_info.get('name')}" + r"\n"
         node_label += f"|op_code={node_info.get('op_code')}" + r"\n"
-        node_label += f"|qnn_tensor_name={node_info.get('qnn_tensor_name')}" + r"\n"
+        node_label += f"|debug_handle={node_info.get('debug_handle')}" + r"\n"
         node_label += f"|target={node_info.get('target')}" + r"\n"
         node_label += f"|num_users={node_info.get('num_users')}" + r"\n"
         node_label += f"|pytorch_layout={node_info.get('pytorch_layout')}" + r"\n"
@@ -177,6 +177,7 @@ def export_csv(
         node_info = retrieve_node_info(
             evaluator=evaluator, node=node, node_tensor_map=node_tensor_map
         )
+
         node_info_list.append(node_info)
 
     # Writing to a CSV file
@@ -184,7 +185,7 @@ def export_csv(
         fieldnames = [
             "name",
             "op_code",
-            "qnn_tensor_name",
+            "debug_handle",
             "target",
             "num_users",
             "pytorch_layout",
@@ -203,19 +204,12 @@ def export_csv(
 
 def export_raw(
     path: str,
-    edge_module: torch.fx.GraphModule,
     node_tensor_map: dict,
 ):
-    for node in edge_module.graph.nodes:
-        # These are just unused nodes before fold_quant and still there
-        if len(node.users) == 0 and node.op == "placeholder":
-            continue
-        if paired_event := node_tensor_map.get(node.name):
-            qnn_output, cpu_output, meta = paired_event
-            qnn_tensor_name = meta[QCOM_TENSOR_NAME]
-            qnn_output_path = os.path.join(path, qnn_tensor_name + "_qnn.raw")
-            cpu_output_path = os.path.join(path, qnn_tensor_name + "_cpu.raw")
-            qnn_output.numpy().tofile(qnn_output_path)
-            cpu_output.numpy().tofile(cpu_output_path)
+    for qnn_output, cpu_output, meta in node_tensor_map.values():
+        qnn_output_path = os.path.join(path, meta.edge_node_name + "_qnn.raw")
+        cpu_output_path = os.path.join(path, meta.edge_node_name + "_cpu.raw")
+        qnn_output.numpy().tofile(qnn_output_path)
+        cpu_output.numpy().tofile(cpu_output_path)
 
     print(f"Intermediate debugger raw files saved at: {path}")

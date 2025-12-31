@@ -63,6 +63,7 @@ def main(args):
     pte_filename = "ic3_qnn_debug"
     instance = InceptionV3Model()
     source_model = instance.get_eager_model().eval()
+
     # Init our QNNIntermediateDebugger and pass it in to build_executorch_binary().
     qnn_intermediate_debugger = QNNIntermediateDebugger()
     build_executorch_binary(
@@ -129,12 +130,11 @@ def main(args):
             debug_buffer_path=f"{args.artifact}/debug_output.bin",
         )
 
-        edge_result = qnn_intermediate_debugger.intermediate_output_module(
-            *(inputs[0])
-        )[0]
+        qnn_intermediate_debugger.capture_golden(*(inputs[0]))
 
         # Optional: Ensures that edge module accuracy aligns with nn.Module
         with torch.no_grad():
+            edge_result = qnn_intermediate_debugger.edge_module(*(inputs[0]))[0]
             source_result = source_model(*(inputs[0]))
             score = torch.nn.functional.cosine_similarity(
                 edge_result.flatten(), source_result.flatten(), dim=0

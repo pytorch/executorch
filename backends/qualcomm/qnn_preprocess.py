@@ -28,6 +28,8 @@ from executorch.exir.backend.backend_details import (
     CompileSpec,
     PreprocessResult,
 )
+from executorch.exir.backend.utils import DelegateMappingBuilder
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from torch.export.exported_program import ExportedProgram
 
 DEFAULT_DEBUG_HANDLE = 65535
@@ -138,7 +140,7 @@ class QnnBackend(BackendDetails):
         )
 
     @staticmethod
-    def preprocess_multimethod(
+    def preprocess_multimethod(  # noqa: C901
         edge_programs: Dict[str, List[ExportedProgram]],
         compile_specs: Dict[str, List[List[CompileSpec]]],
     ) -> PreprocessResult:
@@ -161,8 +163,9 @@ class QnnBackend(BackendDetails):
         qnn_manager = get_current_qnn_manager(
             option.backend_options.backend_type, compile_spec
         )
+        debug_handle_builder = DelegateMappingBuilder(generated_identifiers=False)
         for i in range(num_sub_graphs):
-            # e.g. 2 methods (x, y) with 3 partitions
+            # e.g. 2 methods (x, y) with 3 subgraphs(partitions)
             #      > context_binary_0: [x.subgraph_0, y.subgraph_0]
             #      > context_binary_1: [x.subgraph_1, y.subgraph_1]
             #      > context_binary_2: [x.subgraph_2, y.subgraph_2]
@@ -176,6 +179,13 @@ class QnnBackend(BackendDetails):
                     option.op_package_options.op_package_infos,
                     option.use_mha2sha,
                 )
+                if qnn_manager.IsTensorDump():
+                    for node in programs[i].graph.nodes:
+                        if handle_id := node.meta.get(DEBUG_HANDLE_KEY):
+                            debug_handle_builder.insert_delegate_mapping_entry(
+                                handles=handle_id,
+                                identifier=node.name,
+                            )
                 if isinstance(py_op_wrappers, bytes):
                     ctx_binary_list.append(py_op_wrappers)
                 else:
@@ -185,7 +195,6 @@ class QnnBackend(BackendDetails):
                             for py_op_wrapper in py_op_wrappers
                         ]
                     )
-
             if len(py_op_wrapper_list) == len(edge_programs.values()):
                 qnn_context_binary = qnn_manager.Compile(
                     graph_names, py_op_wrapper_list
@@ -204,15 +213,18 @@ class QnnBackend(BackendDetails):
                     all_processed_results[key].append(
                         PreprocessResult(
                             processed_bytes=bytes(qnn_context_binary),
-                            debug_handle_map={},
+                            debug_handle_map=debug_handle_builder.get_delegate_mapping(),
                         )
                     )
+
             elif len(ctx_binary_list) == len(edge_programs.values()):
                 for i, key in enumerate(edge_programs.keys()):
                     all_processed_results[key].append(
-                        PreprocessResult(processed_bytes=ctx_binary_list[i])
+                        PreprocessResult(
+                            processed_bytes=ctx_binary_list[i],
+                            debug_handle_map=debug_handle_builder.get_delegate_mapping(),
+                        )
                     )
             else:
                 raise RuntimeError("Hybrid compilation is not supported")
-
         return all_processed_results
