@@ -13,6 +13,9 @@ namespace utils {
 
 bool is_packed_int8_layout(const GPUMemoryLayout layout) {
   switch (layout) {
+    case kPackedInt8_4W:
+    case kPackedInt8_4C:
+    case kPackedInt8_4H:
     case kPackedInt8_4W4C:
     case kPackedInt8_4H4W:
       return true;
