@@ -226,7 +226,7 @@ class TOSABackend(BackendDetails):
 
         if not (
             tosa_spec.version.major == ts.TOSA_VERSION_MAJOR
-            and tosa_spec.version.minor == ts.TOSA_VERSION_MINOR
+            and tosa_spec.version.minor <= ts.TOSA_VERSION_MINOR
         ):
             raise RuntimeError(
                 f"TOSA serializer version "
