@@ -225,6 +225,7 @@ class Whisper:
             per_channel_linear=True,
             act_observer=MinMaxObserver,
             custom_annotations=custom_annotations,
+            eps=2**-20,
         )
 
         with torch.no_grad():
