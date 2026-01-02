@@ -39,6 +39,7 @@ from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
+    get_backend_type,
     make_output_dir,
     make_quantizer,
     SimpleADB,
@@ -222,9 +223,6 @@ class TestQNN(unittest.TestCase):
 
         return ref_outputs, pte_fname
 
-    def get_backend_type(self):
-        return getattr(QnnExecuTorchBackendType, f"k{self.backend.title()}Backend")
-
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
         return all(
@@ -234,6 +232,42 @@ class TestQNN(unittest.TestCase):
                 *conditions,
             ]
         )
+
+    def add_default_cmds(self, cmds):
+        cmds.extend(
+            [
+                "--model",
+                self.model,
+                "--target",
+                self.target,
+                "--ip",
+                self.ip,
+                "--port",
+                str(self.port),
+                "--seed",
+                str(1126),
+                "--backend",
+                self.backend,
+            ]
+        )
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+
+        if self.online_prepare:
+            cmds.extend(["--online_prepare"])
+
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
+
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
 
     def verify_output(  # noqa: C901
         self,
@@ -442,7 +476,7 @@ class TestQNN(unittest.TestCase):
                     dump_intermediate_outputs=(
                         True if expected_intermediate_events != -1 else False
                     ),
-                    backend=self.get_backend_type(),
+                    backend=get_backend_type(self.backend),
                     expected_input_shape=(
                         (tensor.shape for tensor in processed_inputs)
                         if check_io_shape
