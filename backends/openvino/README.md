@@ -111,10 +111,33 @@ Follow the steps below to setup your build environment:
    git clone --recurse-submodules https://github.com/pytorch/executorch.git
    ```
 3. **Build ExecuTorch with OpenVINO Backend**
-- Ensure that you are inside `executorch/backends/openvino/scripts` directory. The following command builds and installs ExecuTorch with the OpenVINO backend, also compiles the C++ runtime libraries and binaries into `<executorch_root>/cmake-out` for quick inference testing.
+- The following commands build and install ExecuTorch with the OpenVINO backend, also compiles the C++ runtime libraries and binaries into `<executorch_root>/cmake-out` for quick inference testing.
    ```bash
-   openvino_build.sh
+   # cd to the root of executorch repo
+   cd executorch
+
+   # Get a clean cmake-out directory
+   ./install_executorch.sh --clean
+   mkdir cmake-out
+
+   #Configure cmake
+   cmake \
+      -DCMAKE_INSTALL_PREFIX=cmake-out \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
+      -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+      -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+      -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+      -DEXECUTORCH_BUILD_OPENVINO=ON \
+      -DEXECUTORCH_ENABLE_LOGGING=ON \
+      -DPYTHON_EXECUTABLE=python \
+      -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+      -Bcmake-out .
+   
+   # We can then build the runtime components with 
+   cmake --build cmake-out --target install --config Release
    ```
+
 - Optionally, `openvino_build.sh` script can be used to build python package or C++ libraries/binaries seperately.
 
    **Build OpenVINO Backend Python Package with Pybindings**: To build and install the OpenVINO backend Python package with Python bindings, run the `openvino_build.sh` script with the `--enable_python` argument as shown in the below command. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment. This option will also enable python bindings required to execute OpenVINO backend tests and `aot_optimize_and_infer.py` script inside `executorch/examples/openvino` folder.
