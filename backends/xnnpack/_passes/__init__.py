@@ -26,6 +26,9 @@ from executorch.backends.xnnpack._passes.convert_to_upsample_bilinear2d import (
 from executorch.backends.xnnpack._passes.decompose_cat import DecomposeConcatenate
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
+from executorch.backends.xnnpack._passes.pointwise_affine_pass import (
+    PointwiseAffineRewritePass,
+)
 from executorch.backends.xnnpack._passes.prelu_reshape_pass import PReLUReshapePass
 from executorch.backends.xnnpack._passes.propagate_custom_meta_pass import (
     PropagateCustomMetaPass,
@@ -75,6 +78,11 @@ class XNNPACKPassManager:
                 PropagateCustomMetaPass,
                 ConvertToSDPAPass,
                 ConstPropPass,
+                # PointwiseAffineRewritePass converts pointwise Linear/MatMul to
+                # Conv2d 1x1, enabling fusion with BatchNorm. Handles NCHW, NHWC,
+                # and other layouts. Must run after ConvertToLinearPass and before
+                # FuseBatchNormPass.
+                PointwiseAffineRewritePass,
                 FuseBatchNormPass,
                 FuseActivationPass,
                 DecomposeConcatenate,
