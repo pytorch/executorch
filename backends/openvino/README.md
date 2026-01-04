@@ -90,7 +90,6 @@ For more information about OpenVINO build, refer to the [OpenVINO Build Instruct
 
 Follow the steps below to setup your build environment:
 
-
 1. **Create a Virtual Environment**
 - Create a virtual environment and activate it by executing the commands below.
    For Linux
@@ -107,6 +106,7 @@ Follow the steps below to setup your build environment:
    
 2. **Clone ExecuTorch Repository from Github**
 - Clone Executorch repository by executing the command below.
+   -  On windows, make sure to enable symlinks before cloning. Refer to [Building from Source](https://docs.pytorch.org/executorch/main/using-executorch-building-from-source.html#environment-setup) for more details.
    ```bash
    git clone --recurse-submodules https://github.com/pytorch/executorch.git
    ```
