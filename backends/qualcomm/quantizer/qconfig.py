@@ -28,6 +28,8 @@ from torchao.quantization.pt2e.quantizer import (
     QuantizationSpec,
 )
 
+DEFAULT_EPS_8BIT = 0.0001 / 255
+DEFAULT_EPS_16BIT = 0.0001 / 65535
 
 @dataclass(eq=True)
 class QuantizationConfig:
@@ -108,8 +110,8 @@ def get_8a8w_qnn_ptq_config(
     act_observer=MovingAverageMinMaxObserver,
     eps: float = None,
 ) -> QuantizationConfig:
-    # the smallest scale defaults to 0.0001 / 255
-    extra_args: Dict[str, Any] = {"eps": eps if eps else 0.0001 / 255}
+    # the smallest scale defaults to DEFAULT_EPS_8BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
 
     act_quantization_spec = QuantizationSpec(
         dtype=torch.uint8,
@@ -152,8 +154,8 @@ def get_8a4w_qnn_ptq_config(
     act_observer=MovingAverageMinMaxObserver,
     eps: float = None,
 ) -> QuantizationConfig:
-    # the smallest defaults to 0.0001 / 255
-    extra_args: Dict[str, Any] = {"eps": eps if eps else 0.0001 / 255}
+    # the smallest defaults to DEFAULT_EPS_8BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
 
     if act_symmetric:
         # If zero_point is 128, htp can do optimizations.
@@ -209,8 +211,8 @@ def get_8a4w_qnn_ptq_config(
 def get_16a4w_qnn_ptq_config(
     act_observer=MovingAverageMinMaxObserver, eps: float = None
 ) -> QuantizationConfig:
-    # the smallest defaults to 0.0001 / 65535
-    extra_args: Dict[str, Any] = {"eps": eps if eps else 0.0001 / 65535}
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
@@ -249,8 +251,8 @@ def get_16a4w_qnn_ptq_config(
 def get_16a8w_qnn_ptq_config(
     act_observer=MovingAverageMinMaxObserver, eps: float = None
 ) -> QuantizationConfig:
-    # the smallest defaults to 0.0001 / 65535
-    extra_args: Dict[str, Any] = {"eps": eps if eps else 0.0001 / 65535}
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
@@ -287,8 +289,8 @@ def get_16a8w_qnn_ptq_config(
 def get_16a8w_qnn_qat_config(
     act_observer=MovingAverageMinMaxObserver, eps: float = None
 ) -> QuantizationConfig:
-    # the smallest defaults to 0.0001 / 65535
-    extra_args: Dict[str, Any] = {"eps": eps if eps else 0.0001 / 65535}
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
@@ -345,8 +347,8 @@ def get_16a8w_qnn_qat_config(
 def get_16a16w_qnn_ptq_config(
     act_observer=MovingAverageMinMaxObserver, eps: float = None
 ) -> QuantizationConfig:
-    # the smallest defaults to 0.0001 / 65535
-    extra_args: Dict[str, Any] = {"eps": eps if eps else 0.0001 / 65535}
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
@@ -391,8 +393,8 @@ def get_ptq_per_channel_quant_config(
     ch_axis: int = 0,
     eps: float = None,
 ) -> QuantizationConfig:
-    # the smallest defaults to 0.0001 / 65535
-    extra_args: Dict[str, Any] = {"eps": eps if eps else 0.0001 / 65535}
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     supported_act_types = {
         torch.uint8,
         torch.uint16,
@@ -463,8 +465,8 @@ def get_ptq_per_block_quant_config(
     ch_axis: int = 0,
     eps: float = None,
 ) -> QuantizationConfig:
-    # the smallest defaults to 0.0001 / 65535
-    extra_args: Dict[str, Any] = {"eps": eps if eps else 0.0001 / 65535}
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     quantization_config = get_ptq_per_channel_quant_config(
         act_dtype=act_dtype,
         weight_dtype=weight_dtype,

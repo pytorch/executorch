@@ -71,7 +71,6 @@ class QnnSeq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
         )
         for idx in range(len(self.static_cache.layers)):
             self.register_buffer(f"key_cache_{idx}", self.static_cache.layers[idx].keys)
-        for idx in range(len(self.static_cache.layers)):
             self.register_buffer(
                 f"value_cache_{idx}", self.static_cache.layers[idx].values
             )
