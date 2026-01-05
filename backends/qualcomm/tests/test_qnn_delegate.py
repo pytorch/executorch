@@ -1982,6 +1982,17 @@ class TestQNNFloatingPointModel(TestQNN):
         sample_input = (torch.randn(1, 3, 32, 32),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_copy(self):
+        sample_inputs = [
+            (torch.randn(3, 4, 5),),
+            (torch.randn(4, 1),),
+        ]
+        for i, sample_input in enumerate(sample_inputs):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    Copy(torch.randn(3, 4, 5)), sample_input  # noqa: F405,
+                )
+
     def test_qnn_backend_einsum_outer_product_relu(self):
         module = EinsumOuterProductRelu()  # noqa: F405
         x = torch.randn(5)
@@ -4341,6 +4352,18 @@ class TestQNNQuantizedModel(TestQNN):
         sample_input = (torch.randn(1, 3, 32, 32),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_copy(self):
+        sample_inputs = [
+            (torch.randn(3, 4, 5),),
+            (torch.randn(4, 1),),
+        ]
+        for i, sample_input in enumerate(sample_inputs):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    Copy(torch.randn(3, 4, 5)), sample_input  # noqa: F405
+                )
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_einsum_outer_product_relu(self):
         module = EinsumOuterProductRelu()  # noqa: F405

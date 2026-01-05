@@ -77,6 +77,8 @@ class EthosUCompileSpec(ArmCompileSpec):
         if "u55" in target_lower:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"
+        if "u85" in self.target:
+            base_tosa_version += "+cf"
         tosa_spec = TosaSpecification.create_from_string(base_tosa_version)
 
         self._set_compile_specs(tosa_spec, compiler_flags)

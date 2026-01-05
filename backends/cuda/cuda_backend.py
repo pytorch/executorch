@@ -12,6 +12,9 @@ from typing import Any, Dict, final, List, Optional
 
 import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
+from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
+    MoveCondPredicateToCpuPass,
+)
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
@@ -155,7 +158,10 @@ class CudaBackend(AotiBackend, BackendDetails):
                     )
                 triton_kernel_mode = mode
 
-        return [ReplaceEdgeOpWithTritonOpPass()] if triton_kernel_mode == "ON" else []
+        passes = [MoveCondPredicateToCpuPass()]
+        if triton_kernel_mode == "ON":
+            passes.append(ReplaceEdgeOpWithTritonOpPass())
+        return passes
 
     @classmethod
     def get_aoti_compile_options(
