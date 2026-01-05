@@ -80,6 +80,7 @@ from executorch.backends.arm._passes import (
     DecomposeSoftmaxPass,
     DecomposeSoftmaxUnstablePass,
     DecomposeSqrtPass,
+    DecomposeStridedSliceCopyPass,
     DecomposeSumPass,
     DecomposeTanPass,
     DecomposeTOSAUnsupportedClampPass,
@@ -292,6 +293,7 @@ class ArmPassManager(PassManager):
                 DecomposeUnfoldToGatherPass(),
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
+                DecomposeStridedSliceCopyPass(),
                 Conv1dUnsqueezePass(),
             ]
         )
