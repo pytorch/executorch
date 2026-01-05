@@ -13,9 +13,6 @@ from multiprocessing.connection import Client
 import numpy as np
 
 import torch
-from executorch.backends.qualcomm.serialization.qc_schema import (
-    QnnExecuTorchBackendType,
-)
 from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,

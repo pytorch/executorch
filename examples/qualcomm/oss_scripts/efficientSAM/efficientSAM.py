@@ -14,10 +14,6 @@ from typing import Callable, List
 import numpy as np
 import torch
 
-from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import (
-    QnnExecuTorchBackendType,
-)
 from executorch.examples.qualcomm.oss_scripts.efficientSAM.source_transformation import (
     replace_maskdecoder_with_custom_op,
     replace_pos_emb_with_custom_op,
