@@ -10,10 +10,7 @@
 
 #include <executorch/backends/aoti/slim/core/SlimTensor.h>
 #include <executorch/backends/aoti/slim/core/Storage.h>
-<<<<<<< HEAD
 #include <executorch/backends/aoti/slim/factory/Empty.h>
-=======
->>>>>>> 4af507845a ([slimtensor] Add SlimTensor class with basic properties and CPU copy operation)
 
 namespace executorch::backends::aoti::slim {
 
@@ -24,13 +21,8 @@ Storage make_cpu_storage(size_t nbytes) {
 
 // Helper function to create a contiguous float tensor and fill with values
 SlimTensor make_filled_tensor(
-<<<<<<< HEAD
     const std::vector<int64_t>& sizes,
     const std::vector<int64_t>& strides,
-=======
-    std::vector<int64_t> sizes,
-    std::vector<int64_t> strides,
->>>>>>> 4af507845a ([slimtensor] Add SlimTensor class with basic properties and CPU copy operation)
     const std::vector<float>& values) {
   size_t numel = 1;
   for (auto s : sizes) {
@@ -265,7 +257,6 @@ TEST(SlimTensorCopyTest, CopyWithStorageOffset) {
   EXPECT_FLOAT_EQ(dst_base[23], 4.0f);
 }
 
-<<<<<<< HEAD
 // =============================================================================
 // CUDA Tensor Creation Tests
 // These tests verify CUDA tensor creation and the is_cuda() method.
@@ -641,6 +632,4 @@ TEST(CUDACopyTest, CopyNonContiguousCPUToCUDAInt64) {
 
 #endif // CUDA_AVAILABLE
 
-=======
->>>>>>> 4af507845a ([slimtensor] Add SlimTensor class with basic properties and CPU copy operation)
 } // namespace executorch::backends::aoti::slim
