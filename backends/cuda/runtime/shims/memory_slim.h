@@ -57,6 +57,28 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     const uint8_t* opaque_metadata,
     int64_t opaque_metadata_size);
 
+/**
+ * Creates an uninitialized tensor with specified dimensions, strides, and
+ * dtype on either CPU or CUDA device.
+ *
+ * @param ndim Number of dimensions in the tensor
+ * @param sizes_ptr Pointer to array of dimension sizes
+ * @param strides_ptr Pointer to array of strides for each dimension
+ * @param dtype Data type identifier (matches PyTorch scalar types)
+ * @param device_type Device type (0=CPU, 1=CUDA)
+ * @param device_index Device index
+ * @param ret_new_tensor Output parameter for the created tensor
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    Tensor** ret_new_tensor);
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda

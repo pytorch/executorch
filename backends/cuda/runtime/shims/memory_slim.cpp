@@ -76,6 +76,39 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_empty_strided(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    Tensor** ret_new_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch_empty_strided: ret_new_tensor is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      !(sizes_ptr == nullptr && ndim > 0),
+      InvalidArgument,
+      "aoti_torch_empty_strided: sizes_ptr is null but ndim > 0");
+
+  IntArrayRef sizes(sizes_ptr, static_cast<size_t>(ndim));
+  IntArrayRef strides(strides_ptr, static_cast<size_t>(ndim));
+
+  // Create the SlimTensor using empty_strided (owning)
+  *ret_new_tensor = new Tensor(empty_strided(
+      sizes,
+      strides,
+      static_cast<ScalarType>(dtype),
+      Device(
+          static_cast<DeviceType>(device_type),
+          static_cast<DeviceIndex>(device_index))));
+
+  return Error::Ok;
+}
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda
