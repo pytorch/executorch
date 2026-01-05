@@ -91,6 +91,22 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
  */
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor);
 
+/**
+ * Creates a new tensor handle that shares storage with the original tensor.
+ *
+ * The new handle is a copy of the original tensor's metadata (sizes, strides,
+ * dtype, device) and shares the same underlying storage via SharedPtr.
+ * Both tensors will reference the same memory, and the memory will only be
+ * freed when all references are deleted.
+ *
+ * @param orig_handle Pointer to the original tensor (must not be null)
+ * @param new_handle Output parameter for the new tensor handle
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_new_tensor_handle(
+    Tensor* orig_handle,
+    Tensor** new_handle);
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda
