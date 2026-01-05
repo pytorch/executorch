@@ -105,8 +105,10 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         RemoveNoopPass,
     }
 
-    def __init__(self, exported_program: Optional[ExportedProgram] = None) -> None:
-        super().__init__()
+    def __init__(
+        self, exported_program: Optional[ExportedProgram] = None, *args, **kwargs
+    ) -> None:
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     def fold_and_annotate_arg(

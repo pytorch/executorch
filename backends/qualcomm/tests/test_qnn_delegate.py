@@ -1982,6 +1982,17 @@ class TestQNNFloatingPointModel(TestQNN):
         sample_input = (torch.randn(1, 3, 32, 32),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_copy(self):
+        sample_inputs = [
+            (torch.randn(3, 4, 5),),
+            (torch.randn(4, 1),),
+        ]
+        for i, sample_input in enumerate(sample_inputs):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    Copy(torch.randn(3, 4, 5)), sample_input  # noqa: F405,
+                )
+
     def test_qnn_backend_einsum_outer_product_relu(self):
         module = EinsumOuterProductRelu()  # noqa: F405
         x = torch.randn(5)
@@ -4342,6 +4353,18 @@ class TestQNNQuantizedModel(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_copy(self):
+        sample_inputs = [
+            (torch.randn(3, 4, 5),),
+            (torch.randn(4, 1),),
+        ]
+        for i, sample_input in enumerate(sample_inputs):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    Copy(torch.randn(3, 4, 5)), sample_input  # noqa: F405
+                )
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_einsum_outer_product_relu(self):
         module = EinsumOuterProductRelu()  # noqa: F405
         x = torch.randn(5)
@@ -6514,6 +6537,126 @@ class TestExampleLLMScript(TestQNN):
                         model_out.startswith(golden_start_with),
                         f"Expected Output: '{golden_start_with}' Actual Output: '{model_out}'",
                     )
+
+
+class TestExampleMultimodalityScript(TestQNN):
+    def test_smolvlm_500m_instruct(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "Can you describe this image?"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            prompt,
+            "--temperature",
+            "0",
+            "--decoder_model",
+            "smolvlm_500m_instruct",
+            "--model_mode",
+            "kv",
+            "--max_seq_len",
+            "128",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.enable_x86_64:
+                    encoder_pte_size = msg["encoder_pte_size"]
+                    text_embedding_pte_size = msg["text_embedding_pte_size"]
+                    decoder_pte_size = msg["pte_size"]
+                    self.assertLessEqual(encoder_pte_size, 110_000_000)  # 110MB
+                    self.assertLessEqual(text_embedding_pte_size, 100_000_000)  # 100MB
+                    self.assertLessEqual(decoder_pte_size, 400_000_000)  # 400MB
+                    print(f"Encoder PTE Size: {encoder_pte_size} bytes")
+                    print(f"Text Embedding PTE Size: {text_embedding_pte_size} bytes")
+                    print(f"Decoder PTE Size: {decoder_pte_size} bytes")
+
+    def test_internvl3_1b(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "Can you describe this image?"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            prompt,
+            "--temperature",
+            "0",
+            "--decoder_model",
+            "internvl3_1b",
+            "--model_mode",
+            "kv",
+            "--max_seq_len",
+            "320",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.enable_x86_64:
+                    encoder_pte_size = msg["encoder_pte_size"]
+                    text_embedding_pte_size = msg["text_embedding_pte_size"]
+                    decoder_pte_size = msg["pte_size"]
+                    self.assertLessEqual(encoder_pte_size, 425_000_000)  # 425MB
+                    self.assertLessEqual(text_embedding_pte_size, 300_000_000)  # 300MB
+                    self.assertLessEqual(decoder_pte_size, 550_000_000)  # 550MB
+                    print(f"Encoder PTE Size: {encoder_pte_size} bytes")
+                    print(f"Text Embedding PTE Size: {text_embedding_pte_size} bytes")
+                    print(f"Decoder PTE Size: {decoder_pte_size} bytes")
 
 
 class TestExampleOssScript(TestQNN):
