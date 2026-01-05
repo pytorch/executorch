@@ -83,7 +83,8 @@ class SliceVisitor(NodeVisitor):
             self.tosa_spec,
         )
 
-        # See slice_copy_support.py
+        # TOSA.SLICE has no stride parameter. Any non-unit-step slice_copy must have been
+        # rewritten earlier (e.g. by DecomposeStridedSliceCopyPass), so only step=1 is legal here.
         if not (len(inputs) == 4 or (len(inputs) == 5 and inputs[4].number == 1)):
             raise ValueError("Unsupported combination of inputs")
 
