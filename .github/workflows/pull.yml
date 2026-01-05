@@ -945,6 +945,12 @@ jobs:
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
         source .ci/scripts/setup-samsung-linux-deps.sh
 
+        # Check if device was reserved
+        if [[ "${DEVICE_RESERVED:-0}" != "1" ]]; then
+          echo "::warning::Skipping tests - no Samsung device available"
+          exit 0
+        fi
+
         # Test quant models
         model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
         for m_script in $model_scripts; do
@@ -980,6 +986,12 @@ jobs:
         # Setup Samsung SDK (AI Lite Core) and install enn backend
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
         source .ci/scripts/setup-samsung-linux-deps.sh
+
+        # Check if device was reserved
+        if [[ "${DEVICE_RESERVED:-0}" != "1" ]]; then
+          echo "::warning::Skipping tests - no Samsung device available"
+          exit 0
+        fi
 
         # Test models
         python -m unittest discover -s backends/samsung/test/models -p "test_*.py"
