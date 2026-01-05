@@ -19,10 +19,7 @@ from typing import cast, Dict, Optional, Sequence
 
 import torch
 import torch.fx
-from executorch.backends.cadence.aot.compiler_utils import (
-    get_zero_point,
-    quantize_tensor_multiplier,
-)
+from executorch.backends.cadence.aot.compiler_utils import quantize_tensor_multiplier
 from executorch.backends.cadence.aot.fuse_ops import (
     FuseCascadedTransposeOrPermuteOps,
     FuseCascadedViewOps,
@@ -1463,10 +1460,12 @@ class ReplaceTransposedConvWithLinearPass(RemoveOrReplacePassInterface):
         kernel_size = list(weight_shape[1:-1] if channel_last else weight_shape[2:])
         # If the transposed_convolution op was quantized, we need the input tensor's
         # zero_point for im2row. Otherwise in_zero_point defaults to a zero
-        # tensor.
+        # tensor. For quantized ops, the input_zero_point is at args[8] as an int,
+        # and we need to convert it to a tensor since transposed_im2row expects
+        # a Tensor for in_zero_point (unlike im2row which expects an int).
         assert isinstance(in_tensor, torch.fx.Node)
         in_zero_point = (
-            get_zero_point(in_tensor.meta["val"])
+            torch.tensor(node.args[8], dtype=torch.int32)
             if quantized_op
             else torch.tensor(0, dtype=torch.int32)
         )
