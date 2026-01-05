@@ -61,6 +61,16 @@ jobs:
       script: |
         set -eux
 
+        echo "::group::Fix libstdc++ GLIBCXX version"
+        # The executorch pybindings require GLIBCXX_3.4.30 which conda's libstdc++ doesn't have.
+        # Replace conda's libstdc++ with the system version to fix ImportError.
+        # Verify system version has GLIBCXX_3.4.30
+        strings /usr/lib/x86_64-linux-gnu/libstdc++.so.6 | grep GLIBCXX_3.4.30
+        # Backup and replace conda's version
+        mv /opt/conda/lib/libstdc++.so.6 /opt/conda/lib/libstdc++.so.6.bak || true
+        ln -sf /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /opt/conda/lib/libstdc++.so.6
+        echo "::endgroup::"
+
         echo "::group::Verify pre-installed dependencies"
         x86_64-w64-mingw32-g++ --version
         nvcc --version
@@ -69,8 +79,6 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup ExecuTorch"
-        # Ensure system libstdc++ is used instead of conda's for GLIBCXX_3.4.30 compatibility
-        export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}
         PYTHON_EXECUTABLE=python ./install_executorch.sh
         echo "::endgroup::"
 
