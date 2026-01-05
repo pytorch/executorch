@@ -75,8 +75,8 @@ add_executable(img_class_example main.cpp)
 
 target_sources(
   img_class_example
-  PRIVATE main.cpp ../executor_runner/arm_memory_allocator.cpp
-          ../executor_runner/arm_perf_monitor.cpp
+  PRIVATE main.cpp
+          ${CMAKE_SOURCE_DIR}/../../executor_runner/arm_memory_allocator.cpp
 )
 
 target_link_libraries(
