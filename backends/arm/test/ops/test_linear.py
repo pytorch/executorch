@@ -299,25 +299,7 @@ def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-x_fails = {}
-x_skips = {}
-
-for test_name in [
-    "model_linear_rank4_zeros",
-    "model_linear_rank4_negative_ones",
-    "model_linear_rank4_negative_large_rand",
-]:
-    for set_per_chan in ["True", "False"]:
-        key = test_name + ",per_channel_quant={}".format(set_per_chan)
-        reason = (
-            "MLETORCH-1452: AssertionError: Output 0 does not match reference output."
-        )
-        x_fails[key] = reason
-        # TODO: Check why xfail doesn't work for this buck target. In the interim rely on skip
-        x_skips[key] = reason
-
-
-@common.parametrize("test_data", test_data_all_16a8w, xfails=x_fails, skips=x_skips)
+@common.parametrize("test_data", test_data_all_16a8w)
 @common.XfailIfNoCorstone300
 def test_linear_16a8w_u55_INT(test_data: torch.Tensor):
     """Test linear operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""

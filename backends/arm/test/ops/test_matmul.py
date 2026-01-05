@@ -137,9 +137,6 @@ def test_matmul_u55_INT(test_data: input_t1):
 @common.parametrize(
     "test_data",
     MatMulSingleInput.test_data_generators,
-    xfails={
-        "rand_4d": "MLBEDSW-11228: Matmul output diff between 1 input vs 2 identical inputs"
-    },
 )
 @common.XfailIfNoCorstone300
 def test_matmul_u55_INT_single_input(test_data: input_t1):
@@ -156,9 +153,6 @@ def test_matmul_u55_INT_single_input(test_data: input_t1):
 @common.parametrize(
     "test_data",
     MatMulCombo.test_data_generators,
-    xfails={
-        "rand_rand_rand_4d": "MLBEDSW-11228: Matmul output diff between 1 input vs 2 identical inputs"
-    },
 )
 @common.XfailIfNoCorstone300
 def test_matmul_u55_INT_combo(test_data: input_t1):
@@ -188,9 +182,6 @@ def test_matmul_u85_INT(test_data: input_t1):
 @common.parametrize(
     "test_data",
     MatMulSingleInput.test_data_generators,
-    xfails={
-        "rand_4d": "MLBEDSW-11228: Matmul output diff between 1 input vs 2 identical inputs"
-    },
 )
 @common.XfailIfNoCorstone320
 def test_matmul_u85_INT_single_input(test_data: input_t1):
@@ -207,9 +198,6 @@ def test_matmul_u85_INT_single_input(test_data: input_t1):
 @common.parametrize(
     "test_data",
     MatMulCombo.test_data_generators,
-    xfails={
-        "rand_rand_rand_4d": "MLBEDSW-11228: Matmul output diff between 1 input vs 2 identical inputs"
-    },
 )
 @common.XfailIfNoCorstone320
 def test_matmul_u85_INT_combo(test_data: input_t1):
