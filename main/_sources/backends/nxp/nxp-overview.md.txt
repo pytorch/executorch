@@ -60,6 +60,8 @@ For more finegrained tutorial, visit [this manual page](https://mcuxpresso.nxp.c
 
 **→{doc}`tutorials/nxp-tutorials` — Tutorials.**
 
+**→{doc}`nxp-dim-order` — Dim order support (channels last inputs).**
+
 ```{toctree}
 :maxdepth: 2
 :hidden:
@@ -68,4 +70,5 @@ For more finegrained tutorial, visit [this manual page](https://mcuxpresso.nxp.c
 nxp-partitioner
 nxp-quantization
 tutorials/nxp-tutorials
+nxp-dim-order
 ```

@@ -190,6 +190,14 @@ if __name__ == "__main__":  # noqa C901
         help="Visualize the lowered program. `show` launches a browser tab with the visualization. `store` stores the "
         "visualization in a json file for later inspection. See `docs/source/visualize-with-clusters.md` for details.",
     )
+    parser.add_argument(
+        "--use_channels_last_dim_order",
+        required=False,
+        default=False,
+        action="store_true",
+        help="The model (including the Neutron backend) will use the channels last dim order, which can result in faster "
+        "inference. The inputs must also be provided in the channels last dim order.",
+    )
 
     args = parser.parse_args()
 
@@ -205,6 +213,15 @@ if __name__ == "__main__":  # noqa C901
         args.model_name
     )
     model = model.eval()
+
+    if args.use_channels_last_dim_order:
+        # Turn the model to channels last.
+        model.to(memory_format=torch.channels_last)
+
+        # The dim order of the example inputs will define the dim order of the intermediate tensors in the model.
+        example_inputs = tuple(
+            i.to(memory_format=torch.channels_last) for i in example_inputs
+        )
 
     # 2. Export the model to ATEN
     exported_program = torch.export.export(model, example_inputs, strict=True)
