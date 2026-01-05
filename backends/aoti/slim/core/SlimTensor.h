@@ -504,6 +504,34 @@ class SlimTensor {
     return *this;
   }
 
+  /**
+   * Extract the scalar value from a tensor with exactly 1 element.
+   * Automatically handles CUDA tensors by copying data to CPU.
+   *
+   * @tparam T The type to extract (must match tensor dtype).
+   * @return The scalar value.
+   */
+  template <typename T>
+  T item() const {
+    ET_CHECK_MSG(
+        this->numel() == 1,
+        "item() requires tensor to have exactly 1 element, got %zu",
+        this->numel());
+
+    T result;
+    if (this->is_cpu()) {
+      result = *static_cast<const T*>(this->data_ptr());
+    } else {
+#if defined(CUDA_AVAILABLE)
+      DeviceTraits<c10::DeviceType::CUDA>::memcpy(
+          &result, this->data_ptr(), sizeof(T), CPU_DEVICE, this->device());
+#else
+      ET_CHECK_MSG(false, "item(): CUDA tensor but CUDA support not available");
+#endif
+    }
+    return result;
+  }
+
  private:
   SlimTensor _clone_impl(
       c10::IntArrayRef sizes,
