@@ -19,10 +19,12 @@ namespace executorch::backends::aoti::slim::c10 {
 /// Enum representing the type of device.
 enum class DeviceType : int8_t {
   CPU = 0,
-  COMPILE_TIME_MAX_DEVICE_TYPES = 1,
+  CUDA = 1,
+  COMPILE_TIME_MAX_DEVICE_TYPES = 2,
 };
 
 constexpr DeviceType kCPU = DeviceType::CPU;
+constexpr DeviceType kCUDA = DeviceType::CUDA;
 
 /// Maximum number of device types at compile time.
 constexpr int COMPILE_TIME_MAX_DEVICE_TYPES =
@@ -36,6 +38,8 @@ inline std::string DeviceTypeName(DeviceType d, bool lower_case = false) {
   switch (d) {
     case DeviceType::CPU:
       return lower_case ? "cpu" : "CPU";
+    case DeviceType::CUDA:
+      return lower_case ? "cuda" : "CUDA";
     default:
       ET_CHECK_MSG(false, "Unknown device type: %d", static_cast<int>(d));
   }
@@ -45,7 +49,7 @@ inline std::string DeviceTypeName(DeviceType d, bool lower_case = false) {
 /// @param d The device type to check.
 /// @return true if the device type is valid, false otherwise.
 inline bool isValidDeviceType(DeviceType d) {
-  return d == DeviceType::CPU;
+  return d == DeviceType::CPU || d == DeviceType::CUDA;
 }
 
 inline std::ostream& operator<<(std::ostream& stream, DeviceType type) {
