@@ -206,6 +206,25 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking) {
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst) {
+  ET_CHECK_OR_RETURN_ERROR(
+      src != nullptr,
+      InvalidArgument,
+      "aoti_torch_assign_tensors_out: src is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_dst != nullptr,
+      InvalidArgument,
+      "aoti_torch_assign_tensors_out: ret_dst is null");
+
+  // Move the source tensor into the destination. After this operation,
+  // the source tensor will be left in an undefined state (reset).
+  // This differs from aoti_torch_new_tensor_handle which copies the tensor.
+  *ret_dst = new Tensor(std::move(*src));
+
+  return Error::Ok;
+}
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda
