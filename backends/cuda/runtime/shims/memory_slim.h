@@ -143,6 +143,20 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
 
+/**
+ * Moves a tensor into a new handle and assigns it to the output parameter.
+ *
+ * Unlike aoti_torch_new_tensor_handle which copies, this function moves the
+ * source tensor into the destination. After this operation, the source tensor
+ * is left in an undefined/reset state and should not be used.
+ *
+ * @param src Source tensor to move from (must not be null, will be reset)
+ * @param ret_dst Output parameter for the new tensor handle
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_assign_tensors_out(Tensor* src, Tensor** ret_dst);
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda
