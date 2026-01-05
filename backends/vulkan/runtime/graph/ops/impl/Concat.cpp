@@ -108,17 +108,19 @@ utils::uvec3 concat_pick_global_wg_size(
   // Calculate what the image extents would be of a tensor with the input
   // volume's sizes. This produces the number of texels that would need to be
   // written to.
-  const int32_t packed_dim = graph->packed_dim_of(out);
+
+  const int32_t packed_dim_idx = graph->packed_dim_of(out);
   std::vector<int64_t> inp_volume_texel_sizes =
-      api::calculate_padded_sizes(inp_volume_sizes, packed_dim);
+      api::flip_and_unsqueeze<int64_t>(inp_volume_sizes, api::kTensorSizes, 1);
+
   // If the concat_dim is the same as the packed dim, and the concat_offset for
   // this input batch is not a multiple of 4, then the data from an input texel
   // may be split up between two output texels. For example:
   //                I0 , I1 , I2 , I2
   // O0 , O1 , O2 , X  | X  , X  , X ,  X
   // Therefore, 1 texel is added to the packed dim to account for this.
-  inp_volume_texel_sizes.at(3 - packed_dim) =
-      utils::div_up_4(inp_volume_texel_sizes.at(3 - packed_dim)) + 1;
+  inp_volume_texel_sizes.at(packed_dim_idx) =
+      utils::div_up_4(inp_volume_texel_sizes.at(packed_dim_idx)) + 1;
 
   const uint32_t inp_volume_texel_numel =
       utils::multiply_integers(inp_volume_texel_sizes);
@@ -324,7 +326,7 @@ void add_concat_node(
           {1u, 1u, 1u},
           {1u, 1u, 1u},
           // Inputs and Outputs
-          {{concat_offset, vkapi::kWrite}},
+          {{concat_offset, vkapi::kReadWrite}},
           // Parameter buffers
           param_buffers,
           // Push Constants
