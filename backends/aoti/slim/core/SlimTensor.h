@@ -11,10 +11,6 @@
 #include <cstdint>
 #include <cstring>
 #include <utility>
-<<<<<<< HEAD
-#include <vector>
-=======
->>>>>>> 4af507845a ([slimtensor] Add SlimTensor class with basic properties and CPU copy operation)
 
 #include <executorch/backends/aoti/slim/c10/core/Contiguity.h>
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
@@ -232,7 +228,6 @@ class SlimTensor {
   }
 
   /**
-<<<<<<< HEAD
    * Check if the tensor is on CUDA.
    */
   bool is_cuda() const {
@@ -240,8 +235,6 @@ class SlimTensor {
   }
 
   /**
-=======
->>>>>>> 4af507845a ([slimtensor] Add SlimTensor class with basic properties and CPU copy operation)
    * Check if the tensor is defined (has valid storage).
    */
   bool defined() const {
@@ -284,43 +277,23 @@ class SlimTensor {
    * Copy data from another tensor to this tensor.
    *
    * Both tensors must have the same numel and dtype.
-<<<<<<< HEAD
-   * Supports CPU-to-CPU and cross-device copies (CPU↔CUDA, CUDA↔CUDA).
-=======
    * Currently only supports CPU-to-CPU copy (contiguous tensors only).
->>>>>>> 4af507845a ([slimtensor] Add SlimTensor class with basic properties and CPU copy operation)
    *
    * @param other The source tensor to copy from
    * @return Reference to this tensor
    */
   SlimTensor& copy_(const SlimTensor& other) {
     ET_CHECK_MSG(
-<<<<<<< HEAD
-        this->numel() == other.numel(), "copy_: numel of tensors must match");
-    ET_CHECK_MSG(this->dtype() == other.dtype(), "copy_: dtype must match");
-=======
         this->numel() == other.numel(),
         "copy_: numel mismatch (dst=%zu, src=%zu)",
         this->numel(),
         other.numel());
     ET_CHECK_MSG(this->dtype() == other.dtype(), "copy_: dtype mismatch");
->>>>>>> 4af507845a ([slimtensor] Add SlimTensor class with basic properties and CPU copy operation)
 
     if (this->numel() == 0) {
       return *this;
     }
 
-<<<<<<< HEAD
-    // Case 1: Both tensors are contiguous. We can do a fast bulk copy.
-    if (this->is_contiguous() && other.is_contiguous()) {
-      storage_->copy_(
-          this->data_ptr(), other.data_ptr(), other.nbytes(), other.device());
-      return *this;
-    }
-
-    // Case 2: At least one tensor is non-contiguous, perform element-wise copy
-    // that respects both source and destination strides.
-=======
     // Current we only support CPU-only tensors
     // TODO(gasoonjia): support other device types.
     ET_CHECK_MSG(
@@ -342,47 +315,12 @@ class SlimTensor {
    * Element-wise copy for non-contiguous tensors.
    */
   void copy_strided_(const SlimTensor& other) {
->>>>>>> 4af507845a ([slimtensor] Add SlimTensor class with basic properties and CPU copy operation)
     const size_t elem_size = c10::elementSize(dtype_);
     char* dst_data = static_cast<char*>(this->data_ptr());
     const char* src_data = static_cast<const char*>(other.data_ptr());
 
     std::vector<int64_t> counter(this->dim(), 0);
     for (size_t i = 0; i < this->numel(); i++) {
-<<<<<<< HEAD
-      // Compute src offset in elements
-      int64_t src_offset = 0;
-      for (size_t d = 0; d < other.dim(); d++) {
-        src_offset += counter[d] * other.stride(d);
-      }
-
-      // Compute dst offset in elements
-      int64_t dst_offset = 0;
-      for (size_t d = 0; d < this->dim(); d++) {
-        dst_offset += counter[d] * this->stride(d);
-      }
-
-      // Copy elem_size bytes from src to dst
-      if (this->device().is_cpu() && other.device().is_cpu()) {
-        std::memcpy(
-            dst_data + dst_offset * elem_size,
-            src_data + src_offset * elem_size,
-            elem_size);
-      } else if (this->device().is_cuda() || other.device().is_cuda()) {
-#if defined(CUDA_AVAILABLE)
-        DeviceTraits<c10::DeviceType::CUDA>::memcpy(
-            dst_data + dst_offset * elem_size,
-            src_data + src_offset * elem_size,
-            elem_size,
-            device(), // dst device
-            other.device() // src device
-        );
-#else
-        ET_CHECK_MSG(false, "Failed on copy_ cuda tensors: no CUDA support");
-#endif
-      }
-      // Increment the multi-dimensional counter
-=======
       // Compute source offset
       int64_t src_offset = 0;
       for (size_t d = 0; d < other.dim(); d++) {
@@ -402,7 +340,6 @@ class SlimTensor {
           elem_size);
 
       // Increment multi-dimensional counter
->>>>>>> 4af507845a ([slimtensor] Add SlimTensor class with basic properties and CPU copy operation)
       for (int64_t d = static_cast<int64_t>(this->dim()) - 1; d >= 0; --d) {
         counter[d]++;
         if (counter[d] < this->size(d)) {
@@ -411,15 +348,8 @@ class SlimTensor {
         counter[d] = 0;
       }
     }
-<<<<<<< HEAD
-    return *this;
   }
 
- private:
-=======
-  }
-
->>>>>>> 4af507845a ([slimtensor] Add SlimTensor class with basic properties and CPU copy operation)
   void refresh_numel() {
     numel_ = compute_numel(sizes_and_strides_.sizes_arrayref());
   }
