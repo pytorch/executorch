@@ -14,12 +14,6 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
-if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
-  set(CMAKE_TOOLCHAIN_IOS ON)
-else()
-  set(CMAKE_TOOLCHAIN_IOS OFF)
-endif()
-
 # Let files say "include <executorch/path/to/header.h>"
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 

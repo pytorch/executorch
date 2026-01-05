@@ -1,8 +1,10 @@
 """Export nvidia/parakeet-tdt-0.6b-v3 components to ExecuTorch."""
 
+import argparse
 import os
 
 import torch
+import torchaudio
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -14,35 +16,15 @@ from torch.export import Dim, export
 
 def load_audio(audio_path: str, sample_rate: int = 16000) -> torch.Tensor:
     """Load audio file and resample to target sample rate."""
-    try:
-        import torchaudio
 
-        waveform, sr = torchaudio.load(audio_path)
-    except Exception:
-        from scipy.io import wavfile
-
-        sr, data = wavfile.read(audio_path)
-        if data.dtype == "int16":
-            data = data.astype("float32") / 32768.0
-        elif data.dtype == "int32":
-            data = data.astype("float32") / 2147483648.0
-        waveform = torch.from_numpy(data).unsqueeze(0)
+    waveform, sr = torchaudio.load(audio_path)
 
     if waveform.shape[0] > 1:
         waveform = waveform.mean(dim=0, keepdim=True)
 
     if sr != sample_rate:
-        try:
-            import torchaudio
-
-            resampler = torchaudio.transforms.Resample(sr, sample_rate)
-            waveform = resampler(waveform)
-        except ImportError:
-            from scipy import signal
-
-            num_samples = int(len(waveform[0]) * sample_rate / sr)
-            resampled = signal.resample(waveform[0].numpy(), num_samples)
-            waveform = torch.from_numpy(resampled).unsqueeze(0).float()
+        resampler = torchaudio.transforms.Resample(sr, sample_rate)
+        waveform = resampler(waveform)
 
     return waveform
 
@@ -402,8 +384,6 @@ def lower_to_executorch(programs, metadata=None, backend="portable"):
 
 
 def main():
-    import argparse
-    import sys
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", default="./parakeet_tdt_exports")

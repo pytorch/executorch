@@ -5,7 +5,7 @@ Export [nvidia/parakeet-tdt-0.6b-v3](https://huggingface.co/nvidia/parakeet-tdt-
 ## Installation
 
 ```bash
-pip install nemo_toolkit[asr] torchaudio
+pip install -r install_requirements.txt
 ```
 
 ## Export
