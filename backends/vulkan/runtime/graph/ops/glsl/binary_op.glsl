@@ -151,13 +151,16 @@ void main() {
   // will have padding elements. For division operations, padding elements
   // (which are 0/0) can produce NaN values that propagate through reductions.
   const int nspill = mod4(out_sizes[packed_dim]);
-  const int texels_per_batch = divup4(out_sizes[packed_dim]);
-  const bool is_last_texel = (lpos[packed_dim] % texels_per_batch) == (texels_per_batch - 1);
 
-  if (is_last_texel && nspill > 0) {
-    // Explicitly set padding elements to 0 to avoid NaN
-    [[unroll]] for (int i = nspill; i < 4; i++) {
-      out_texel[i] = 0;
+  if (nspill > 0) {
+    const int texels_per_batch = divup4(out_sizes[packed_dim]);
+    const bool is_last_texel = (lpos[packed_dim] % texels_per_batch) == (texels_per_batch - 1);
+
+    if (is_last_texel) {
+      // Explicitly set padding elements to 0 to avoid NaN
+      [[unroll]] for (int i = nspill; i < 4; i++) {
+        out_texel[i] = 0;
+      }
     }
   }
 #endif
