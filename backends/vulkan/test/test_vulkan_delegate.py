@@ -1061,6 +1061,24 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_batch_norm_after_linear(self):
+        class LinearBatchNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(128, 64)
+                self.bn = torch.nn.BatchNorm1d(num_features=64)
+
+            def forward(self, x):
+                x = self.linear(x)
+                return self.bn(x)
+
+        sample_inputs = (torch.randn(size=(4, 128), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            LinearBatchNormModule(),
+            sample_inputs,
+        )
+
     def test_vulkan_backend_full(self):
         class FullModule(torch.nn.Module):
             def __init__(self):
