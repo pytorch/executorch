@@ -94,7 +94,9 @@ class Copy(NodeVisitor):
             )
             multiples = []
             for i in range(len(reshape_tensor.shape)):
-                assert output_tensor.shape[i] % reshape_tensor.shape[i] == 0, f"Shape mismatch at dim {i}: {output_tensor.shape[i]} not divisible by {reshape_tensor.shape[i]}"
+                assert (
+                    output_tensor.shape[i] % reshape_tensor.shape[i] == 0
+                ), f"Shape mismatch at dim {i}: {output_tensor.shape[i]} not divisible by {reshape_tensor.shape[i]}"
                 multiples.append(output_tensor.shape[i] // reshape_tensor.shape[i])
             tile_op.AddTensorParam(
                 OpTile.param_multiples,

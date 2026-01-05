@@ -31,6 +31,7 @@ from torchao.quantization.pt2e.quantizer import (
 DEFAULT_EPS_8BIT = 0.0001 / 255
 DEFAULT_EPS_16BIT = 0.0001 / 65535
 
+
 @dataclass(eq=True)
 class QuantizationConfig:
     input_activation: Optional[QuantizationSpec]
