@@ -186,6 +186,26 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   return Error::Ok;
 }
 
+AOTITorchError
+aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking) {
+  (void)non_blocking; // SlimTensor::copy_() is always synchronous for now
+
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr, InvalidArgument, "aoti_torch_copy_: self is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      src != nullptr, InvalidArgument, "aoti_torch_copy_: src is null");
+
+  // SlimTensor::copy_() handles:
+  // - Same numel validation
+  // - Same dtype validation
+  // - CPU-CPU, CPU-CUDA, CUDA-CPU, CUDA-CUDA copies
+  // - Contiguous fast path and non-contiguous element-wise copy
+  self->copy_(*src);
+
+  return Error::Ok;
+}
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda
