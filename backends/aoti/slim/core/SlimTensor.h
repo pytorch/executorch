@@ -228,6 +228,13 @@ class SlimTensor {
   }
 
   /**
+   * Check if the tensor is on CUDA.
+   */
+  bool is_cuda() const {
+    return device().is_cuda();
+  }
+
+  /**
    * Check if the tensor is defined (has valid storage).
    */
   bool defined() const {
