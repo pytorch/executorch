@@ -1767,6 +1767,52 @@ class TestVulkanBackend(unittest.TestCase):
             (torch.randn(size=(1, 6, 40, 50), dtype=torch.float32),),
         )
 
+    def test_vulkan_backend_div_with_padding_nan_propagation(self):
+        """
+        Test division operations with non-multiple-of-4 channels followed by convolution.
+
+        This test verifies the fix for NaN propagation in padding texels during division.
+        When the packed dimension (channels=3) is not a multiple of 4, texture-backed
+        tensors have padding elements in the last texel. Without proper masking, division
+        operations produce NaN values (0/0) in padding regions that propagate through
+        subsequent operations like convolution, corrupting results.
+
+        This simulates a common real-world pattern: per-channel image normalization
+        (subtract mean, divide by std) followed by convolution.
+        """
+
+        class NormalizationConvModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Per-channel mean and std for normalization (shape: [1, 3, 1, 1])
+                self.mean = torch.tensor([[[[0.485]], [[0.456]], [[0.406]]]])
+                self.std = torch.tensor([[[[0.229]], [[0.224]], [[0.215]]]])
+
+                # Conv2d layer to process normalized image
+                self.conv = torch.nn.Conv2d(
+                    in_channels=3,  # Non-multiple-of-4 to trigger padding
+                    out_channels=16,
+                    kernel_size=3,
+                    padding=1,
+                    stride=1,
+                    bias=True,
+                )
+
+            def forward(self, x):
+                # Simulate image normalization: (x - mean) / std
+                # This is where NaN could appear in padding texels without the fix
+                x = x - self.mean
+                x = x / self.std
+                # Convolution operation that would be corrupted by NaN propagation
+                x = self.conv(x)
+                return x
+
+        module = NormalizationConvModule()
+        # Use a typical image tensor size [batch=1, channels=3, height=256, width=256]
+        sample_inputs = (torch.randn(size=(1, 3, 256, 256), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(module, sample_inputs)
+
     def test_vulkan_backend_grid_priors(self):
         class GridPriorsModule(torch.nn.Module):
             def __init__(self):
