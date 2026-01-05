@@ -26,12 +26,14 @@ from executorch.backends.qualcomm._passes.utils import (
     get_passes_dependency_for_capture_program,
 )
 from executorch.backends.qualcomm.debugger.utils import generate_optrace
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.tests.utils import (
     convert_pt2e,
     generate_context_binary,
     ModuleQConfig,
     prepare_pt2e,
-    QnnExecuTorchBackendType,
     QuantDtype,
     TestQNN,
     validate_context_binary,

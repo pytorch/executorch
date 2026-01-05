@@ -20,10 +20,10 @@ class RemoveRedundancy(ExportPass):
             torch.clone: self._default_condition,
             torch.ops.aten.clone.default: self._default_condition,
             exir_ops.edge.dim_order_ops._clone_dim_order.default: self._default_condition,
-            exir_ops.edge.aten.expand_copy.default: self._same_shape_condition,
             torch.ops.aten.alias.default: self._default_condition,
             exir_ops.edge.aten.alias.default: self._default_condition,
             exir_ops.edge.aten.alias_copy.default: self._default_condition,
+            exir_ops.edge.aten.expand_copy.default: self._same_shape_condition,
             exir_ops.edge.aten.lift_fresh_copy.default: self._default_condition,
             exir_ops.edge.aten.repeat.default: self._same_shape_condition,
             # remove this target if '_skip_dim_order' is set to False
