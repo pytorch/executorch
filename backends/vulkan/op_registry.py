@@ -808,7 +808,10 @@ def register_batch_norm_op():
         x = node.args[0]
         if not isinstance(x, torch.fx.Node):
             return False
-        x_shape = x.meta["val"].size()
+        x_val = x.meta.get("val", None)
+        if x_val is None:
+            return False
+        x_shape = x_val.size()
         # Only support 4-D input tensors since this is a restriction enforced by the
         # operator implementation.
         # TODO(ssjia): Add shape agnostic support for batch norm
