@@ -1,0 +1,81 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <executorch/backends/cuda/runtime/shims/memory_slim.h>
+
+#include <executorch/backends/aoti/slim/factory/Empty.h>
+#include <executorch/backends/aoti/slim/factory/FromBlob.h>
+#include <executorch/backends/aoti/slim/util/ArrayRefUtil.h>
+#include <executorch/runtime/platform/assert.h>
+
+namespace executorch::backends::cuda {
+
+namespace c10 = executorch::backends::aoti::slim::c10;
+using c10::Device;
+using c10::DeviceIndex;
+using c10::DeviceType;
+using c10::ScalarType;
+using executorch::backends::aoti::slim::empty_strided;
+using executorch::backends::aoti::slim::from_blob;
+using executorch::backends::aoti::slim::IntArrayRef;
+
+extern "C" {
+
+AOTITorchError aoti_torch_create_tensor_from_blob_v2(
+    void* data,
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int64_t storage_offset,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    Tensor** ret_new_tensor,
+    int32_t layout,
+    const uint8_t* opaque_metadata,
+    int64_t opaque_metadata_size) {
+  // Unused parameters
+  (void)layout;
+  (void)opaque_metadata;
+  (void)opaque_metadata_size;
+
+  ET_CHECK_OR_RETURN_ERROR(
+      data != nullptr,
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob_v2: data is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob_v2: ret_new_tensor is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      !(sizes_ptr == nullptr && ndim > 0),
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob_v2: sizes_ptr is null but ndim > 0");
+
+  IntArrayRef sizes(sizes_ptr, static_cast<size_t>(ndim));
+  IntArrayRef strides(strides_ptr, static_cast<size_t>(ndim));
+
+  // Create the SlimTensor using from_blob (non-owning)
+  *ret_new_tensor = new Tensor(from_blob(
+      data,
+      sizes,
+      strides,
+      static_cast<ScalarType>(dtype),
+      Device(
+          static_cast<DeviceType>(device_type),
+          static_cast<DeviceIndex>(device_index)),
+      storage_offset));
+
+  return Error::Ok;
+}
+
+} // extern "C"
+
+} // namespace executorch::backends::cuda
