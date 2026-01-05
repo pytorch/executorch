@@ -79,6 +79,18 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
     int32_t device_index,
     Tensor** ret_new_tensor);
 
+/**
+ * Deletes a tensor object and frees associated resources.
+ *
+ * For SlimTensor, the underlying storage uses SharedPtr-based reference
+ * counting. When the last tensor referencing the storage is deleted,
+ * the memory is automatically freed.
+ *
+ * @param tensor Pointer to the tensor to delete (must not be null)
+ * @return AOTITorchError error code (Error::Ok on success)
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor);
+
 } // extern "C"
 
 } // namespace executorch::backends::cuda
