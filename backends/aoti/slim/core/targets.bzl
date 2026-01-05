@@ -17,10 +17,12 @@ def define_common_targets():
             "//executorch/backends/aoti/slim/util:shared_ptr",
             "//executorch/backends/aoti/slim/util:size_util",
             "//executorch/runtime/platform:platform",
+            "//executorch/backends/aoti/slim/c10/cuda:exception",
+            "//executorch/backends/aoti/slim/cuda:guard",
         ],
     )
 
-    # Header-only library for SlimTensor
+    # Header-only library for SlimTensor (CPU-only for now)
     runtime.cxx_library(
         name = "slimtensor",
         headers = [
