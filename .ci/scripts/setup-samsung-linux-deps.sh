@@ -101,6 +101,9 @@ install_devicefarm_cli() {
 }
 
 reserve_if_needed() {
+  # Set default value
+  export DEVICE_RESERVED=0
+
   if ! command -v devicefarm-cli >/dev/null 2>&1; then
     echo "[WARN] devicefarm-cli is not installed." >&2
     return 1
@@ -144,7 +147,11 @@ reserve_if_needed() {
 
   if (( any_below_threshold )); then
     echo "[INFO] Reserving now."
-    devicefarm-cli -R
+    if ! devicefarm-cli -R; then
+      echo "::warning::Failed to reserve a device. No devices are currently available." >&2
+      echo "[WARN] Device reservation failed - continuing without device." >&2
+      return 0
+    fi
   else
     echo "[INFO] Don't need to be reserved."
   fi
@@ -174,7 +181,10 @@ reserve_if_needed() {
   if [[ -n "$reservation_id" ]]; then
     devicefarm-cli -C "$reservation_id"
     devicefarm-cli -E "ls /"
+    export DEVICE_RESERVED=1
+    echo "[INFO] Device successfully reserved and connected."
   else
+    echo "::warning::No available devices found." >&2
     echo "[WARN] There is no available devices."
   fi
 }
