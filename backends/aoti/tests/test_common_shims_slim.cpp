@@ -589,3 +589,44 @@ TEST_F(CommonShimsSlimTest, ConsistentPointerReturn) {
   EXPECT_EQ(aoti_torch_get_strides(tensor, &strides_ptr2), Error::Ok);
   EXPECT_EQ(strides_ptr1, strides_ptr2);
 }
+
+// ============================================================================
+// DType Constants Tests
+// ============================================================================
+
+TEST_F(CommonShimsSlimTest, DTypeConstants) {
+  // Verify dtype constants match expected PyTorch ScalarType values
+  EXPECT_EQ(aoti_torch_dtype_float32(), 6); // ScalarType::Float
+  EXPECT_EQ(aoti_torch_dtype_bfloat16(), 15); // ScalarType::BFloat16
+  EXPECT_EQ(aoti_torch_dtype_int64(), 4); // ScalarType::Long
+  EXPECT_EQ(aoti_torch_dtype_int32(), 3); // ScalarType::Int
+  EXPECT_EQ(aoti_torch_dtype_int16(), 2); // ScalarType::Short
+  EXPECT_EQ(aoti_torch_dtype_int8(), 1); // ScalarType::Char
+  EXPECT_EQ(aoti_torch_dtype_bool(), 11); // ScalarType::Bool
+}
+
+// ============================================================================
+// Device Type Constants Tests
+// ============================================================================
+
+TEST_F(CommonShimsSlimTest, DeviceTypeConstants) {
+  EXPECT_EQ(aoti_torch_device_type_cpu(), 0); // DeviceType::CPU
+  EXPECT_EQ(aoti_torch_device_type_cuda(), 1); // DeviceType::CUDA
+}
+
+// ============================================================================
+// Grad Mode Tests
+// ============================================================================
+
+TEST_F(CommonShimsSlimTest, GradModeIsEnabled) {
+  // ExecuTorch doesn't support autograd, so should always return false
+  EXPECT_EQ(aoti_torch_grad_mode_is_enabled(), false);
+}
+
+TEST_F(CommonShimsSlimTest, GradModeSetEnabled) {
+  // Setting to false should succeed
+  EXPECT_EQ(aoti_torch_grad_mode_set_enabled(false), Error::Ok);
+
+  // Setting to true should fail (not supported in ExecuTorch)
+  EXPECT_EQ(aoti_torch_grad_mode_set_enabled(true), Error::NotSupported);
+}

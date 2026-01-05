@@ -288,6 +288,65 @@ inline AOTITorchError aoti_torch_get_device_index(
   return Error::Ok;
 }
 
+// ============================================================
+// DType Constants - These return PyTorch ScalarType enum values
+// ============================================================
+
+inline int32_t aoti_torch_dtype_float32() {
+  return 6; // ScalarType::Float
+}
+
+inline int32_t aoti_torch_dtype_bfloat16() {
+  return 15; // ScalarType::BFloat16
+}
+
+inline int32_t aoti_torch_dtype_int64() {
+  return 4; // ScalarType::Long
+}
+
+inline int32_t aoti_torch_dtype_int32() {
+  return 3; // ScalarType::Int
+}
+
+inline int32_t aoti_torch_dtype_int16() {
+  return 2; // ScalarType::Short
+}
+
+inline int32_t aoti_torch_dtype_int8() {
+  return 1; // ScalarType::Char
+}
+
+inline int32_t aoti_torch_dtype_bool() {
+  return 11; // ScalarType::Bool
+}
+
+// ============================================================
+// Device Type Constants
+// ============================================================
+
+inline int32_t aoti_torch_device_type_cpu() {
+  return 0; // DeviceType::CPU
+}
+
+inline int32_t aoti_torch_device_type_cuda() {
+  return 1; // DeviceType::CUDA
+}
+
+// ============================================================
+// Grad Mode Functions (not supported in ExecuTorch)
+// ============================================================
+
+inline bool aoti_torch_grad_mode_is_enabled() {
+  return false; // ExecuTorch doesn't support autograd
+}
+
+inline AOTITorchError aoti_torch_grad_mode_set_enabled(bool enabled) {
+  if (enabled) {
+    return Error::NotSupported; // Grad mode not supported in ExecuTorch
+  }
+  return Error::Ok;
+}
+
 } // namespace aoti
 } // namespace backends
 } // namespace executorch
