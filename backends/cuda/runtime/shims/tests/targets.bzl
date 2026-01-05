@@ -76,3 +76,4 @@ def define_common_targets():
     cuda_shim_slim_cpp_unittest("aoti_torch_delete_tensor_object")
     cuda_shim_slim_cpp_unittest("aoti_torch_new_tensor_handle")
     cuda_shim_slim_cpp_unittest("aoti_torch__reinterpret_tensor")
+    cuda_shim_slim_cpp_unittest("aoti_torch_copy_")
