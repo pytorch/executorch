@@ -198,7 +198,7 @@ class IndexPutVisitor(NodeVisitor):
                     nodes_to_wrappers=nodes_to_wrappers,
                 )
                 tile_op = PyQnnManager.PyQnnOpWrapper(
-                    node.name,
+                    node.name + f"_indices_tile_{i}",
                     QNN_OP_PACKAGE_NAME_QTI_AISW,
                     OpTile.op_name,
                 )
@@ -231,7 +231,7 @@ class IndexPutVisitor(NodeVisitor):
                 nodes_to_wrappers=nodes_to_wrappers,
             )
             reshape_op = PyQnnManager.PyQnnOpWrapper(
-                node.name,
+                node.name + f"_reshape_{i}",
                 QNN_OP_PACKAGE_NAME_QTI_AISW,
                 OpReshape.op_name,
             )
@@ -265,7 +265,7 @@ class IndexPutVisitor(NodeVisitor):
                     nodes_to_wrappers=nodes_to_wrappers,
                 )
                 tile_op = PyQnnManager.PyQnnOpWrapper(
-                    node.name,
+                    node.name + f"_tile_{i}",
                     QNN_OP_PACKAGE_NAME_QTI_AISW,
                     OpTile.op_name,
                 )
@@ -309,7 +309,7 @@ class IndexPutVisitor(NodeVisitor):
                 nodes_to_wrappers=nodes_to_wrappers,
             )
             concat_op = PyQnnManager.PyQnnOpWrapper(
-                node.name,
+                node.name + "_concat",
                 QNN_OP_PACKAGE_NAME_QTI_AISW,
                 OpConcat.op_name,
             )
@@ -367,7 +367,7 @@ class IndexPutVisitor(NodeVisitor):
             nodes_to_wrappers=nodes_to_wrappers,
         )
         value_reshape_op = PyQnnManager.PyQnnOpWrapper(
-            node.name,
+            node.name + "_value_reshape",
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpReshape.op_name,
         )
@@ -404,7 +404,7 @@ class IndexPutVisitor(NodeVisitor):
             nodes_to_wrappers=nodes_to_wrappers,
         )
         value_tile_op = PyQnnManager.PyQnnOpWrapper(
-            node.name,
+            node.name + "_value_tile",
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpTile.op_name,
         )
@@ -461,7 +461,7 @@ class IndexPutVisitor(NodeVisitor):
             nodes_to_wrappers=nodes_to_wrappers,
         )
         target_index_reshape_op = PyQnnManager.PyQnnOpWrapper(
-            node.name,
+            node.name + "_target_index_reshape",
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpReshape.op_name,
         )
