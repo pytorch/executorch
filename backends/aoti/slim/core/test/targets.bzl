@@ -32,16 +32,17 @@ def define_common_targets():
             **backend_kwargs
         )
 
-    runtime.cxx_test(
-        name = "test_slimtensor_basic",
-        srcs = [
-            "test_slimtensor_basic.cpp",
-        ],
-        deps = [
-            "//executorch/backends/aoti/slim/core:slimtensor",
-            "//executorch/backends/aoti/slim/core:storage",
-        ],
-    )
+        runtime.cxx_test(
+            name = "test_slimtensor_basic"  + backend_suffix,
+            srcs = [
+                "test_slimtensor_basic.cpp",
+            ],
+            deps = [
+                "//executorch/backends/aoti/slim/core:slimtensor",
+                "//executorch/backends/aoti/slim/core:storage",
+            ],
+            **backend_kwargs
+        )
 
     runtime.cxx_test(
         name = "test_slimtensor_copy",

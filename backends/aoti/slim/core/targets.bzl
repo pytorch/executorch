@@ -22,7 +22,6 @@ def define_common_targets():
         ],
     )
 
-    # Header-only library for SlimTensor (CPU-only for now)
     runtime.cxx_library(
         name = "slimtensor",
         headers = [
@@ -37,6 +36,8 @@ def define_common_targets():
             "//executorch/backends/aoti/slim/c10/core:sizes_and_strides",
             "//executorch/backends/aoti/slim/util:array_ref_util",
             "//executorch/backends/aoti/slim/util:size_util",
+            "//executorch/backends/aoti/slim/c10/cuda:exception",
+            "//executorch/backends/aoti/slim/cuda:guard",
             "//executorch/runtime/platform:platform",
         ],
     )
