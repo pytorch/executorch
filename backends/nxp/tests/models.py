@@ -670,3 +670,12 @@ class MLP(torch.nn.Module):
 
     def forward(self, x):
         return self.sequential(x)
+
+
+class UnsqueezeAddModel(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x, y):
+        return torch.unsqueeze(x + y, self.dim)
