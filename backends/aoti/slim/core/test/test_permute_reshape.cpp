@@ -8,9 +8,9 @@
 
 #include <gtest/gtest.h>
 
-#include <executorch/backends/aoti/slim/core/SlimTensor.h>
-#include <executorch/backends/aoti/slim/core/SlimTensorView-incl.h>
-#include <executorch/backends/aoti/slim/factory/Empty.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor_view_incl.h>
+#include <executorch/backends/aoti/slim/factory/empty.h>
 
 #ifdef CUDA_AVAILABLE
 #include <cuda_runtime.h>
