@@ -78,3 +78,4 @@ def identity_operator_factory(identity_target: str):
 
 
 identity_operator_factory("aten.alias_copy.default")
+identity_operator_factory("aten.detach_copy.default")

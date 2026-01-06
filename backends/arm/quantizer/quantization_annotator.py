@@ -458,6 +458,7 @@ _one_to_one_shared_input_qspec = [
     # That is why we force it to use the same qparams and avoid
     # dequant -> neg -> requant chain.
     torch.ops.aten.neg.default,
+    torch.ops.aten.detach_copy.default,
 ]
 
 _one_to_one_shared_input_or_input_act_qspec = [
