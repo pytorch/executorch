@@ -8,8 +8,8 @@
 
 #include <gtest/gtest.h>
 
-#include <executorch/backends/aoti/slim/core/SlimTensor.h>
-#include <executorch/backends/aoti/slim/core/Storage.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#include <executorch/backends/aoti/slim/core/storage.h>
 
 namespace executorch::backends::aoti::slim {
 
