@@ -7,7 +7,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "empty",
         headers = [
-            "Empty.h",
+            "empty.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [
@@ -20,7 +20,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "from_blob",
         headers = [
-            "FromBlob.h",
+            "from_blob.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [

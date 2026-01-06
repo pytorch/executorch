@@ -18,7 +18,7 @@
 // CUDA backend (SlimTensor) and other backends like MPS (ETensor).
 // The caller determines which path is used by defining CUDA_AVAILABLE.
 #ifdef CUDA_AVAILABLE
-#include <executorch/backends/aoti/slim/core/SlimTensor.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #else
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #endif

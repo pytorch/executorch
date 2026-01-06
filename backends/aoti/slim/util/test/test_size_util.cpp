@@ -8,7 +8,7 @@
 
 #include <gtest/gtest.h>
 
-#include <executorch/backends/aoti/slim/util/SizeUtil.h>
+#include <executorch/backends/aoti/slim/util/size_util.h>
 
 namespace executorch::backends::aoti::slim {
 

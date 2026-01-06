@@ -6,7 +6,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "guard",
         exported_headers = [
-            "Guard.h",
+            "guard.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [
