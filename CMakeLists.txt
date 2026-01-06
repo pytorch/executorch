@@ -865,6 +865,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs vulkan_backend)
   endif()
 
+  if(EXECUTORCH_BUILD_VGF)
+    list(APPEND _dep_libs vgf_backend)
+  endif()
+
   # compile options for pybind
   set(_pybind_compile_options
       $<$<CXX_COMPILER_ID:MSVC>:/EHsc
