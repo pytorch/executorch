@@ -720,13 +720,22 @@ std::unique_ptr<StaticLLMRunner> create_static_llm_runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
     const std::string& params_path) {
+  ET_LOG(Info, "Creating static LLM runner with model: %s", model_path.c_str());
+
   // Load model to extract metadata
   Module module(model_path, Module::LoadMode::File);
+  ET_LOG(Info, "Module created, loading method 'forward'...");
+
   auto load_result = module.load_method("forward");
   if (load_result != Error::Ok) {
-    ET_LOG(Error, "Failed to load model method: %s", model_path.c_str());
+    ET_LOG(
+        Error,
+        "Failed to load model method 'forward' from %s (error code: %d)",
+        model_path.c_str(),
+        static_cast<int>(load_result));
     return nullptr;
   }
+  ET_LOG(Info, "Method 'forward' loaded successfully");
 
   auto method_meta = module.method_meta("forward");
   if (!method_meta.ok()) {
