@@ -489,7 +489,7 @@ jobs:
     name: test-static-llama-ane
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
-      runner: macos-m1-stable
+      runner: macos-26
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -839,7 +839,7 @@ jobs:
           qwen3-0.6b|xnnpack|--quantize,
           qwen3-1.7b|xnnpack|--quantize,
           gemma3-1b|xnnpack|--quantize,
-          # phi4-mini|xnnpack|--quantize, transformers v5.0.0rc0 introduces a data-dependent branching in transformers/modeling_rope_utils.py:61 
+          # phi4-mini|xnnpack|--quantize, transformers v5.0.0rc0 introduces a data-dependent branching in transformers/modeling_rope_utils.py:61
           smollm2-135m|xnnpack|--quantize,
           smollm3-3b|xnnpack|--quantize
         ]
