@@ -23,20 +23,23 @@ install_mingw() {
     echo "Installing mingw-w64 cross-compiler..."
 
     apt-get update
+    # Install the POSIX threads version of mingw-w64 which supports C++11 threading
+    # primitives (std::mutex, std::condition_variable, std::shared_mutex).
+    # The default win32 threads version does not support these.
     apt-get install -y --no-install-recommends \
-        g++-mingw-w64-x86-64 \
+        g++-mingw-w64-x86-64-posix \
         mingw-w64-tools \
         p7zip-full \
         wget
 
-    # Verify installation
+    # Verify installation shows POSIX threads
     x86_64-w64-mingw32-g++ --version
 
     # Cleanup
     apt-get clean
     rm -rf /var/lib/apt/lists/*
 
-    echo "mingw-w64 installation complete"
+    echo "mingw-w64 installation complete (POSIX threads version)"
 }
 
 get_torch_cuda_version() {
