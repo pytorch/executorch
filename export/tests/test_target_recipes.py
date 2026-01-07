@@ -393,13 +393,23 @@ class TestTargetRecipes(unittest.TestCase):
         if is_supported_platform_for_coreml_lowering():
             from executorch.export.target_recipes import get_ios_recipe
 
-            all_recipes = {
-                "ios-arm64-coreml-fp16": (get_ios_recipe(), "CoreMLBackend"),
-                "ios-arm64-coreml-int8": (
+            all_recipes["ios-arm64-coreml-fp16"] = (get_ios_recipe(), "CoreMLBackend")
+
+            # ios-arm64-coreml-int8 requires CoreMLQuantizer which depends on
+            # torch.ao.quantization.quantizer. This module has been migrated to
+            # torchao and may not be available in all PyTorch versions.
+            # TODO: https://github.com/pytorch/executorch/issues/16484
+            # Update coremltools to use torchao.quantization.pt2e.quantizer
+            # instead of the deprecated torch.ao.quantization.quantizer, then remove this try/except.
+            try:
+                all_recipes["ios-arm64-coreml-int8"] = (
                     get_ios_recipe("ios-arm64-coreml-int8"),
                     "CoreMLBackend",
-                ),
-            }
+                )
+            except (ImportError, ModuleNotFoundError, ValueError) as e:
+                logging.warning(
+                    f"Skipping ios-arm64-coreml-int8 recipe (torch.ao.quantization.quantizer not available): {e}"
+                )
 
         # Add android recipes
         if is_fbcode() and is_supported_platform_for_qnn_lowering():
