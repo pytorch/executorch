@@ -8765,7 +8765,17 @@ class TestUtilsScript(TestQNN):
                 for _, (optrace, qhas) in msg["binaries_trace"].items():
                     with open(optrace, "r") as optrace_file:
                         optrace_data = json.load(optrace_file)
-                        for row in optrace_data:
+                        # {
+                        #  header:
+                        #    {
+                        #     'header_version': {'major': x, 'minor': y, 'patch': z},
+                        #     'version': {'major': x, 'minor': y, 'patch': z},
+                        #     'artifact_type': 'OP_TRACE'
+                        #    }
+                        #  traceEvents:
+                        #    {...}
+                        # }
+                        for row in optrace_data["traceEvents"]:
                             self.assertIn("pid", row)
                     with open(qhas, "r") as qhas_file:
                         qhas_data = json.load(qhas_file)
