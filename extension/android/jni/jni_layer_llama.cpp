@@ -217,10 +217,12 @@ class ExecuTorchLlmNative {
 class CallbackHelper {
  public:
   CallbackHelper(JNIEnv* env, jobject callback)
-      : env_(env), callback_(callback) {
-    if (callback_ != nullptr) {
+      : env_(env), callback_(nullptr), callback_class_(nullptr) {
+    if (callback != nullptr) {
       callback_ = env_->NewGlobalRef(callback);
-      callback_class_ = env_->GetObjectClass(callback_);
+      jclass local_class = env_->GetObjectClass(callback);
+      callback_class_ = static_cast<jclass>(env_->NewGlobalRef(local_class));
+      env_->DeleteLocalRef(local_class);
       on_result_method_ = env_->GetMethodID(
           callback_class_, "onResult", "(Ljava/lang/String;)V");
       on_stats_method_ =
@@ -229,20 +231,21 @@ class CallbackHelper {
   }
 
   ~CallbackHelper() {
-    if (callback_ != nullptr) {
-      // Get the current JNIEnv (might be different thread)
-      JNIEnv* env = nullptr;
-      if (g_jvm != nullptr) {
-        int status = g_jvm->GetEnv((void**)&env, JNI_VERSION_1_6);
-        if (status == JNI_EDETACHED) {
-          g_jvm->AttachCurrentThread(&env, nullptr);
-        }
-        if (env != nullptr) {
-          env->DeleteGlobalRef(callback_);
-          if (callback_class_ != nullptr) {
-            env->DeleteGlobalRef(callback_class_);
-          }
-        }
+    if (g_jvm == nullptr) {
+      return;
+    }
+    // Get the current JNIEnv (might be different thread)
+    JNIEnv* env = nullptr;
+    int status = g_jvm->GetEnv((void**)&env, JNI_VERSION_1_6);
+    if (status == JNI_EDETACHED) {
+      g_jvm->AttachCurrentThread(&env, nullptr);
+    }
+    if (env != nullptr) {
+      if (callback_ != nullptr) {
+        env->DeleteGlobalRef(callback_);
+      }
+      if (callback_class_ != nullptr) {
+        env->DeleteGlobalRef(callback_class_);
       }
     }
   }
