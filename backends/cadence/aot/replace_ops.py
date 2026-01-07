@@ -19,10 +19,7 @@ from typing import cast, Dict, Optional, Sequence
 
 import torch
 import torch.fx
-from executorch.backends.cadence.aot.compiler_utils import (
-    get_zero_point,
-    quantize_tensor_multiplier,
-)
+from executorch.backends.cadence.aot.compiler_utils import quantize_tensor_multiplier
 from executorch.backends.cadence.aot.fuse_ops import (
     FuseCascadedTransposeOrPermuteOps,
     FuseCascadedViewOps,
@@ -1463,10 +1460,12 @@ class ReplaceTransposedConvWithLinearPass(RemoveOrReplacePassInterface):
         kernel_size = list(weight_shape[1:-1] if channel_last else weight_shape[2:])
         # If the transposed_convolution op was quantized, we need the input tensor's
         # zero_point for im2row. Otherwise in_zero_point defaults to a zero
-        # tensor.
+        # tensor. For quantized ops, the input_zero_point is at args[8] as an int,
+        # and we need to convert it to a tensor since transposed_im2row expects
+        # a Tensor for in_zero_point (unlike im2row which expects an int).
         assert isinstance(in_tensor, torch.fx.Node)
         in_zero_point = (
-            get_zero_point(in_tensor.meta["val"])
+            torch.tensor(node.args[8], dtype=torch.int32)
             if quantized_op
             else torch.tensor(0, dtype=torch.int32)
         )
@@ -1679,8 +1678,15 @@ class ReplaceLinearWithFullyConnectedOpPass(RemoveOrReplacePassInterface):
     """
 
     linear_to_fc_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
+        # Default variants
         exir_ops.edge.aten.linear.default: exir_ops.edge.cadence.fully_connected.default,
         exir_ops.edge.cadence.quantized_linear.default: exir_ops.edge.cadence.quantized_fully_connected.default,
+        # Per-tensor variants
+        exir_ops.edge.cadence.quantized_linear.per_tensor: exir_ops.edge.cadence.quantized_fully_connected.per_tensor,
+        # Type-specialized variants (int8)
+        exir_ops.edge.cadence.quantized_linear_asym8sxasym8s_asym8s.per_tensor: exir_ops.edge.cadence.quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor,
+        # Type-specialized variants (uint8)
+        exir_ops.edge.cadence.quantized_linear_asym8uxasym8u_asym8u.per_tensor: exir_ops.edge.cadence.quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor,
     }
 
     @property
@@ -1916,7 +1922,10 @@ class ReplaceIm2RowWithViewPass(RemoveOrReplacePassInterface):
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
-        return [exir_ops.edge.cadence.im2row.default]
+        return [
+            exir_ops.edge.cadence.im2row.default,
+            exir_ops.edge.cadence.im2row.per_tensor,
+        ]
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Check if im2row applies padding. If yes, we cannot replace it with view.
