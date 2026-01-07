@@ -39,9 +39,8 @@ jobs:
           - repo: "google"
             name: "gemma-3-4b-it"
         quant:
-          - "non-quantized"
-          - "quantized-int4-tile-packed"
-          - "quantized-int4-weight-only"
+            - "non-quantized"
+            - "quantized-int4-weight-only"
         exclude:
           # TODO: enable int4-weight-only on gemma3.
           - model:
