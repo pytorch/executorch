@@ -791,6 +791,8 @@ def to_edge_no_delegate(
     return model_quant, edge
 
 
+from executorch.backends.xnnpack._passes import XNNPACKPass
+
 def transform_for_cortex_m_backend(edge_program_manager, args):
     # Let's make sure we are using optimized Cortex M backend
     # NB: If we can't find and replace ops those are expected to be replaced,
@@ -802,11 +804,11 @@ def transform_for_cortex_m_backend(edge_program_manager, args):
         passes += [ConvertToCortexMPass, QuantizedOpFusionPass]
     current_edge = edge_program_manager
     for pass_cls in passes:
-        transform_pass = (
-            pass_cls(current_edge.exported_program())
-            if pass_cls.__name__ == "QuantizedLinearFusionPass"
-            else pass_cls()
-        )
+        # XNNPACKPass and its subclasses require exported_program
+        if issubclass(pass_cls, XNNPACKPass):
+            transform_pass = pass_cls(current_edge.exported_program())
+        else:
+            transform_pass = pass_cls()
         current_edge = current_edge.transform([transform_pass])
     return current_edge
 
