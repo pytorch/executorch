@@ -27,6 +27,7 @@ class ResolveDebugHandle(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule):
         handle_counter = 1
         visited = set()
+        # TODO: Migrate to bfs tracing if torch.cond is introduced to QNN.
         for node in graph_module.graph.nodes:
             # Assume node is traversed in topological order, adding a check here to be safe.
             if node.target == operator.getitem:
