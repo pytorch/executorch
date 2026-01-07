@@ -73,17 +73,20 @@ endif()
 
 # Dependencies for the runner library
 set(static_llm_runner_deps
-    executorch_core extension_data_loader extension_module extension_tensor
-    extension_flat_tensor extension_llm_runner
+    executorch_core
+    extension_data_loader
+    extension_module
+    extension_tensor
+    extension_flat_tensor
+    extension_llm_runner
+    executorch_backends
 )
 
 # Add CoreML delegate if available (required for running CoreML models) Note:
 # coremldelegate is linked transitively through executorch build system when
 # EXECUTORCH_BUILD_COREML is ON. We don't need to link it again here to avoid
-# duplicate symbol errors.
-if(TARGET coremldelegate)
-  list(APPEND static_llm_runner_deps coremldelegate)
-endif()
+# duplicate symbol errors. if(TARGET coremldelegate) list(APPEND
+# static_llm_runner_deps coremldelegate) endif()
 
 target_link_libraries(static_llm_runner PUBLIC ${static_llm_runner_deps})
 target_link_libraries(static_llm_runner PUBLIC tokenizers::tokenizers)
