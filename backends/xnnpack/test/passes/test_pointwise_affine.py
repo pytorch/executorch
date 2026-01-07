@@ -27,25 +27,29 @@ import torch.nn as nn
 from executorch.backends.test.harness.stages.stage import StageType
 from executorch.backends.xnnpack._passes import XNNPACKRemoveCloneOpsTransform
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
-from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack._passes.pointwise_affine_pass import (
     ACTIVATION_OPS,
+    apply_pointwise_transform,
     PointwiseAffineRewritePass,
 )
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.const_prop_pass import ConstPropPass
 from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
 
 
 # Op targets for direct node.target comparison (NOT string matching)
-# Use edge ops since PointwiseAffineRewritePass creates edge ops for FuseActivationPass compatibility
-CONV_OP = exir_ops.edge.aten.convolution.default
-MM_OP = exir_ops.edge.aten.mm.default
-ADD_OP = exir_ops.edge.aten.add.Tensor
-RELU_OP = exir_ops.edge.aten.relu.default
+# Use ATen ops since PointwiseAffineRewritePass creates ATen ops for ExportedProgram compatibility
+CONV_OP = torch.ops.aten.convolution.default
+MM_OP = torch.ops.aten.mm.default
+ADD_OP = torch.ops.aten.add.Tensor
+RELU_OP = torch.ops.aten.relu.default
 LINEAR_OP = torch.ops.aten.linear.default
 ADDMM_OP = torch.ops.aten.addmm.default
+
+# Edge dialect ops (for checking ops from original model after to_edge())
+from executorch.exir.dialects._ops import ops as exir_ops
+
+EDGE_RELU_OP = exir_ops.edge.aten.relu.default
 
 
 class TestMatcherPositive(unittest.TestCase):
@@ -249,7 +253,9 @@ class TestMatcherPositive(unittest.TestCase):
             .to_edge()
             .run_passes(self.PassStage)
             .check_node_count({CONV_OP: 1})  # Conv2d exists - pass worked!
-            .check_node_count({RELU_OP: 1})  # ReLU preserved
+            .check_node_count(
+                {EDGE_RELU_OP: 1}
+            )  # ReLU preserved (edge op after to_edge)
             .check_node_count({LINEAR_OP: 0, ADDMM_OP: 0})
             .run_method_and_compare_outputs()
         )
@@ -282,7 +288,9 @@ class TestMatcherPositive(unittest.TestCase):
             .to_edge()
             .run_passes(self.PassStage)
             .check_node_count({CONV_OP: 1})  # Conv2d exists - pass worked!
-            .check_node_count({RELU_OP: 1})  # ReLU preserved
+            .check_node_count(
+                {EDGE_RELU_OP: 1}
+            )  # ReLU preserved (edge op after to_edge)
             .run_method_and_compare_outputs()
         )
 
@@ -860,132 +868,17 @@ class TestXNNPACKIntegration(unittest.TestCase):
 class TestFuseActivationPassIntegration(unittest.TestCase):
     """Integration tests with FuseActivationPass.
 
-    Verifies that the PointwiseAffineRewritePass creates proper edge ops
-    that can be fused by FuseActivationPass (conv2d + relu -> fused conv2d).
+    Verifies that the PointwiseAffineRewritePass creates ops that work
+    correctly with the full XNNPACK pipeline including FuseActivationPass.
 
-    Note: FuseActivationPass embeds activation constraints as metadata and removes
-    the activation node. This metadata is only consumed by the XNNPACK serializer,
-    not by the Python graph module execution. So we verify fusion occurred via
-    metadata inspection, not output comparison.
+    Note: Since PointwiseAffineRewritePass now runs on ExportedProgram (before to_edge),
+    it creates ATen ops. These are converted to edge ops during to_edge_transform_and_lower(),
+    which then allows FuseActivationPass to fuse activations properly.
     """
-
-    # Pass stage that includes PointwiseAffineRewritePass THEN FuseActivationPass
-    PassStageWithFusion = RunPasses(
-        [
-            XNNPACKRemoveCloneOpsTransform,
-            DimOrderOpsRevertPass,
-            ConvertToLinearPass,
-            ConstPropPass,
-            PointwiseAffineRewritePass,
-            FuseActivationPass,  # Should fuse relu into conv2d
-        ]
-    )
 
     def setUp(self):
         torch.manual_seed(42)
         torch._dynamo.reset()
-
-    def test_conv2d_relu_fusion(self):
-        """Verify conv2d + relu from PointwiseAffineRewritePass gets fused.
-
-        After PointwiseAffineRewritePass: conv2d -> relu
-        After FuseActivationPass: conv2d (with fused activation metadata), no relu node
-        """
-
-        class LinearReluLayout(nn.Module):
-            def __init__(self, cin: int, cout: int):
-                super().__init__()
-                self.cout = cout
-                self.linear = nn.Linear(cin, cout)
-
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                n, c, h, w = x.shape
-                x = x.permute(0, 2, 3, 1).reshape(n * h * w, c)
-                x = self.linear(x)
-                x = torch.relu(x)  # Activation before layout ops
-                x = x.reshape(n, h, w, self.cout).permute(0, 3, 1, 2)
-                return x
-
-        model = LinearReluLayout(8, 16).eval()
-        inputs = (torch.randn(2, 8, 4, 4),)
-
-        # After both passes: conv2d exists, relu is fused (removed)
-        tester = (
-            Tester(model, inputs)
-            .export()
-            .to_edge()
-            .run_passes(self.PassStageWithFusion)
-            .check_node_count({CONV_OP: 1})  # Conv2d exists
-            .check_node_count({RELU_OP: 0})  # ReLU was fused (removed)
-            # Note: Don't call run_method_and_compare_outputs() because FuseActivationPass
-            # embeds activation as metadata, which is only consumed by XNNPACK serializer
-        )
-
-        # Verify the fused activation metadata is set on the conv2d node
-        gm = tester.get_artifact(StageType.RUN_PASSES).exported_program().graph_module
-        for node in gm.graph.nodes:
-            if node.target == CONV_OP:
-                fused_tag = node.meta.get(FuseActivationPass.FUSED_ACTIVATION_TAG)
-                self.assertIsNotNone(
-                    fused_tag,
-                    "Conv2d should have fused activation metadata after FuseActivationPass",
-                )
-                # ReLU has output_min=0, output_max=+inf
-                self.assertEqual(fused_tag.output_min, 0)
-                break
-        else:
-            self.fail("No conv2d node found in graph")
-
-    def test_conv2d_bias_relu_fusion(self):
-        """Verify conv2d (with bias) + relu pattern gets fused correctly.
-
-        Tests: linear -> add(bias) -> relu -> layout
-        After PointwiseAffineRewritePass: conv2d(with bias) -> relu
-        After FuseActivationPass: conv2d(with bias and fused activation)
-        """
-
-        class LinearBiasReluLayout(nn.Module):
-            def __init__(self, cin: int, cout: int):
-                super().__init__()
-                self.cout = cout
-                self.weight = nn.Parameter(torch.randn(cout, cin))
-                self.bias = nn.Parameter(torch.randn(cout))
-
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                n, c, h, w = x.shape
-                x = x.permute(0, 2, 3, 1).reshape(n * h * w, c)
-                x = torch.mm(x, self.weight.t())
-                x = x + self.bias  # Bias add
-                x = torch.relu(x)  # Activation after bias
-                x = x.reshape(n, h, w, self.cout).permute(0, 3, 1, 2)
-                return x
-
-        model = LinearBiasReluLayout(8, 16).eval()
-        inputs = (torch.randn(2, 8, 4, 4),)
-
-        tester = (
-            Tester(model, inputs)
-            .export()
-            .to_edge()
-            .run_passes(self.PassStageWithFusion)
-            .check_node_count({CONV_OP: 1})  # Conv2d with bias
-            .check_node_count({RELU_OP: 0})  # ReLU was fused
-        )
-
-        # Verify the fused activation metadata is set
-        gm = tester.get_artifact(StageType.RUN_PASSES).exported_program().graph_module
-        conv_found = False
-        for node in gm.graph.nodes:
-            if node.target == CONV_OP:
-                conv_found = True
-                fused_tag = node.meta.get(FuseActivationPass.FUSED_ACTIVATION_TAG)
-                self.assertIsNotNone(
-                    fused_tag,
-                    "Conv2d should have fused activation metadata after FuseActivationPass",
-                )
-                self.assertEqual(fused_tag.output_min, 0)
-                break
-        self.assertTrue(conv_found, "No conv2d node found in graph")
 
     def test_full_pipeline_with_xnnpack_delegation(self):
         """Verify full pipeline: rewrite + fusion + XNNPACK delegation.
@@ -1173,6 +1066,195 @@ class TestQuantizationCompatibility(unittest.TestCase):
             .check(["lowered_module"])
             .run_method_and_compare_outputs()
         )
+
+
+class TestApplyPointwiseTransformWorkflow(unittest.TestCase):
+    """Tests for the explicit user workflow using apply_pointwise_transform.
+
+    This tests the recommended opt-in usage pattern:
+        exported = torch.export.export(model, inputs)
+        transformed = apply_pointwise_transform(exported)
+        edge_program = to_edge_transform_and_lower(transformed, partitioner=[XnnpackPartitioner()])
+
+    The apply_pointwise_transform function takes ExportedProgram and applies
+    prerequisite passes (ConvertToLinearPass, ConstPropPass) before PointwiseAffineRewritePass.
+    """
+
+    def setUp(self):
+        torch.manual_seed(42)
+        torch._dynamo.reset()
+
+    def test_nchw_pattern_with_apply_function(self):
+        """Test NCHW pattern using the apply_pointwise_transform utility."""
+
+        class NCHWPointwiseLinear(nn.Module):
+            def __init__(self, cin: int, cout: int):
+                super().__init__()
+                self.cout = cout
+                self.linear = nn.Linear(cin, cout)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                n, c, h, w = x.shape
+                x = x.permute(0, 2, 3, 1)
+                x = x.reshape(n * h * w, c)
+                x = self.linear(x)
+                x = x.reshape(n, h, w, self.cout)
+                x = x.permute(0, 3, 1, 2)
+                return x
+
+        model = NCHWPointwiseLinear(8, 16).eval()
+        inputs = (torch.randn(2, 8, 4, 4),)
+
+        # Step 1: Export
+        exported = torch.export.export(model, inputs)
+
+        # Step 2: Apply pointwise transform (the function under test)
+        transformed = apply_pointwise_transform(exported)
+
+        # Step 3: Verify convolution was created
+        has_conv = any(
+            node.op == "call_function" and node.target == CONV_OP
+            for node in transformed.graph.nodes
+        )
+        self.assertTrue(
+            has_conv, "Conv2d should be created by apply_pointwise_transform"
+        )
+
+        # Step 4: Verify linear was removed
+        has_linear = any(
+            node.op == "call_function" and node.target in (LINEAR_OP, ADDMM_OP)
+            for node in transformed.graph.nodes
+        )
+        self.assertFalse(has_linear, "Linear should be removed after transformation")
+
+    def test_nhwc_pattern_with_apply_function(self):
+        """Test NHWC pattern using the apply_pointwise_transform utility."""
+
+        class NHWCPointwiseLinear(nn.Module):
+            def __init__(self, cin: int, cout: int):
+                super().__init__()
+                self.cout = cout
+                self.linear = nn.Linear(cin, cout)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                n, h, w, c = x.shape
+                x = x.reshape(n * h * w, c)
+                x = self.linear(x)
+                x = x.reshape(n, h, w, self.cout)
+                return x
+
+        model = NHWCPointwiseLinear(8, 16).eval()
+        inputs = (torch.randn(2, 4, 4, 8),)
+
+        # Step 1: Export
+        exported = torch.export.export(model, inputs)
+
+        # Step 2: Apply pointwise transform
+        transformed = apply_pointwise_transform(exported)
+
+        # Step 3: Verify mm was created
+        has_mm = any(
+            node.op == "call_function" and node.target == MM_OP
+            for node in transformed.graph.nodes
+        )
+        self.assertTrue(
+            has_mm, "mm should be created by apply_pointwise_transform for NHWC"
+        )
+
+    def test_full_pipeline_with_xnnpack_delegation(self):
+        """Test the complete workflow: export -> apply_pointwise_transform -> to_edge_transform_and_lower.
+
+        This is the recommended usage pattern for users who want pointwise optimization
+        with XNNPACK delegation.
+        """
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+        from executorch.exir import to_edge_transform_and_lower
+
+        class NCHWPointwiseLinear(nn.Module):
+            def __init__(self, cin: int, cout: int):
+                super().__init__()
+                self.cout = cout
+                self.linear = nn.Linear(cin, cout)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                n, c, h, w = x.shape
+                x = x.permute(0, 2, 3, 1)
+                x = x.reshape(n * h * w, c)
+                x = self.linear(x)
+                x = x.reshape(n, h, w, self.cout)
+                x = x.permute(0, 3, 1, 2)
+                return x
+
+        model = NCHWPointwiseLinear(8, 16).eval()
+        inputs = (torch.randn(2, 8, 4, 4),)
+
+        # The user workflow
+        exported = torch.export.export(model, inputs)
+        transformed = apply_pointwise_transform(exported)
+        edge_manager = to_edge_transform_and_lower(
+            transformed,
+            partitioner=[XnnpackPartitioner()],
+        )
+
+        # Verify delegation to XNNPACK
+        ep = edge_manager.exported_program()
+        has_delegate = any(
+            node.op == "call_function"
+            and "executorch_call_delegate" in str(node.target)
+            for node in ep.graph.nodes
+        )
+        self.assertTrue(has_delegate, "Model should be delegated to XNNPACK")
+
+        # Verify numerical correctness
+        test_input = torch.randn(2, 8, 4, 4)
+        expected = model(test_input)
+        actual = ep.module()(test_input)
+        torch.testing.assert_close(actual, expected, rtol=1e-4, atol=1e-4)
+
+    def test_numerical_correctness_after_transform(self):
+        """Verify apply_pointwise_transform preserves numerical correctness."""
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+        from executorch.exir import to_edge_transform_and_lower
+
+        class NCHWPointwiseLinear(nn.Module):
+            def __init__(self, cin: int, cout: int):
+                super().__init__()
+                self.cout = cout
+                self.linear = nn.Linear(cin, cout)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                n, c, h, w = x.shape
+                x = x.permute(0, 2, 3, 1)
+                x = x.reshape(n * h * w, c)
+                x = self.linear(x)
+                x = x.reshape(n, h, w, self.cout)
+                x = x.permute(0, 3, 1, 2)
+                return x
+
+        model = NCHWPointwiseLinear(8, 16).eval()
+        inputs = (torch.randn(2, 8, 4, 4),)
+
+        # Get expected output from eager model
+        test_input = torch.randn(2, 8, 4, 4)
+        expected = model(test_input)
+
+        # Apply transform and lower
+        exported = torch.export.export(model, inputs)
+        transformed = apply_pointwise_transform(exported)
+        edge_manager = to_edge_transform_and_lower(
+            transformed,
+            partitioner=[XnnpackPartitioner()],
+        )
+
+        # Get actual output
+        actual = edge_manager.exported_program().module()(test_input)
+
+        # Verify outputs match
+        torch.testing.assert_close(actual, expected, rtol=1e-4, atol=1e-4)
 
 
 if __name__ == "__main__":

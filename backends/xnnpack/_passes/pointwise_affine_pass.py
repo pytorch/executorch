@@ -50,7 +50,6 @@ import torch.fx as fx
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.utils import get_param_tensor, is_param_node
 from executorch.exir.backend.utils import is_shape_dynamic
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.graph_signature import InputKind
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -847,10 +846,10 @@ class PointwiseAffineLowering:
             out_shape = list(m.shape)
             out_shape[m.channel_axis] = m.cout
 
-            # Use edge op for compatibility with FuseActivationPass
+            # Use ATen IR op for compatibility with ExportedProgram
             out = self._create_node(
                 g,
-                exir_ops.edge.aten.convolution.default,
+                torch.ops.aten.convolution.default,
                 (m.origin, w_node, b_node, [1, 1], [0, 0], [1, 1], False, [0, 0], 1),
                 m.origin,
                 self._meta_tensor(out_shape, dtype),
@@ -898,21 +897,21 @@ class PointwiseAffineLowering:
                 self._meta_tensor([flat, m.cin], dtype),
             )
 
-            # MatMul - use edge op for compatibility with downstream passes
+            # MatMul - use ATen IR op for compatibility with ExportedProgram
             out = self._create_node(
                 g,
-                exir_ops.edge.aten.mm.default,
+                torch.ops.aten.mm.default,
                 (flat_node, w_node),
                 m.origin,
                 self._meta_tensor([flat, m.cout], dtype),
             )
 
-            # Bias - use edge op for compatibility with FuseActivationPass
+            # Bias - use ATen IR op for compatibility with ExportedProgram
             if m.bias is not None:
                 b_node = self._const(m.bias.view(1, m.cout), f"{m.origin.name}_mm_b")
                 out = self._create_node(
                     g,
-                    exir_ops.edge.aten.add.Tensor,
+                    torch.ops.aten.add.Tensor,
                     (out, b_node),
                     m.origin,
                     self._meta_tensor([flat, m.cout], dtype),
@@ -1045,3 +1044,69 @@ class PointwiseAffineRewritePass(XNNPACKPass):
         graph_module.graph.lint()
         graph_module.recompile()
         return PassResult(graph_module, True)
+
+
+def apply_pointwise_transform(exported_program: "torch.export.ExportedProgram"):
+    """
+    Apply pointwise affine transformation to an ExportedProgram.
+
+    This function converts pointwise Linear/MatMul operations to Conv2d(1x1)
+    or optimized MatMul, reducing transpose overhead in vision and transformer
+    models.
+
+    Usage:
+        exported_program = torch.export.export(model, example_inputs)
+        transformed = apply_pointwise_transform(exported_program)
+        edge_program = to_edge_transform_and_lower(transformed, partitioner=[XnnpackPartitioner()])
+
+    This is an opt-in optimization. It is NOT enabled by default in XNNPACKPassManager
+    because it changes the graph structure in ways that may affect downstream passes
+    or debugging. Use this when you explicitly want pointwise affine optimization.
+
+    Prerequisite passes (ConvertToLinearPass, ConstPropPass) are applied automatically.
+
+    Args:
+        exported_program: An ExportedProgram from torch.export.export()
+
+    Returns:
+        ExportedProgram: A new ExportedProgram with pointwise patterns
+        rewritten to Conv2d(1x1) for NCHW or optimized MatMul for other layouts.
+
+    Example:
+        import torch
+        from executorch.backends.xnnpack._passes.pointwise_affine_pass import (
+            apply_pointwise_transform,
+        )
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+        from executorch.exir import to_edge_transform_and_lower
+
+        # Export your model
+        exported = torch.export.export(model, example_inputs)
+
+        # Apply pointwise optimization (opt-in)
+        transformed = apply_pointwise_transform(exported)
+
+        # Lower to XNNPACK
+        edge_program = to_edge_transform_and_lower(
+            transformed,
+            partitioner=[XnnpackPartitioner()],
+        )
+    """
+    from executorch.backends.xnnpack._passes.convert_to_linear import (
+        ConvertToLinearPass,
+    )
+    from executorch.exir.passes.const_prop_pass import ConstPropPass
+    from executorch.exir.program._program import _transform
+
+    # Apply prerequisite passes (ExportPass), then the pointwise pass (XNNPACKPass)
+    ep = exported_program
+
+    # ConvertToLinearPass and ConstPropPass are ExportPass, don't need ep in constructor
+    for pass_cls in [ConvertToLinearPass, ConstPropPass]:
+        ep = _transform(ep, pass_cls())
+
+    # PointwiseAffineRewritePass is XNNPACKPass, needs ep in constructor
+    ep = _transform(ep, PointwiseAffineRewritePass(ep))
+    return ep
