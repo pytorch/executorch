@@ -196,9 +196,9 @@
         "EXECUTORCH_BUILD_CUDA": "ON"
       },
       "condition": {
-        "lhs": "${hostSystemName}",
-        "type": "equals",
-        "rhs": "Linux"
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Windows"]
       }
     },
     {
