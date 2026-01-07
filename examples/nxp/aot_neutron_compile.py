@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -39,9 +39,18 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.extension.export_util import save_pte_program
+from torch.ao.quantization import (
+    move_exported_model_to_eval,
+    move_exported_model_to_train,
+)
 from torch.export import export
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
-from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
+from .experimental.cifar_net.cifar_net import (
+    CifarNet,
+    test_cifarnet_model,
+    train_cifarnet_model,
+)
 from .models.mobilenet_v2 import MobilenetV2
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -150,6 +159,13 @@ if __name__ == "__main__":  # noqa C901
         help="Produce a quantized model",
     )
     parser.add_argument(
+        "--use_qat",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Use QAT mode for quantization (performs two QAT training epochs)",
+    )
+    parser.add_argument(
         "-s",
         "--so_library",
         required=False,
@@ -230,13 +246,27 @@ if __name__ == "__main__":  # noqa C901
 
     # 3. Quantize if required
     if args.quantize:
-        if calibration_inputs is None:
-            logging.warning(
-                "No calibration inputs available, using the example inputs instead"
-            )
-            calibration_inputs = example_inputs
-        quantizer = NeutronQuantizer(neutron_target_spec)
-        module = calibrate_and_quantize(module, calibration_inputs, quantizer)
+        quantizer = NeutronQuantizer(neutron_target_spec, is_qat=args.use_qat)
+        if args.use_qat:
+            match args.model_name:
+                case "cifar10":
+                    print("Starting two epochs of QAT training with CifarNet model...")
+                    module = prepare_qat_pt2e(module, quantizer)
+                    module = move_exported_model_to_train(module)
+                    module = train_cifarnet_model(module, num_epochs=2)
+                    module = move_exported_model_to_eval(module)
+                    module = convert_pt2e(module)
+                case _:
+                    raise ValueError(
+                        f"QAT training is not supported for model '{args.model_name}'"
+                    )
+        else:
+            if calibration_inputs is None:
+                logging.warning(
+                    "No calibration inputs available, using the example inputs instead"
+                )
+                calibration_inputs = example_inputs
+            module = calibrate_and_quantize(module, calibration_inputs, quantizer)
 
     if args.so_library is not None:
         logging.debug(f"Loading libraries: {args.so_library}")
