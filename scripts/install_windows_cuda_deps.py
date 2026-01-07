@@ -217,7 +217,7 @@ def set_windows_cuda_home(cuda_home_path: Path) -> None:
         else:
             log_info(f"Adding WINDOWS_CUDA_HOME to {config_file}")
             with open(config_file, "a") as f:
-                f.write(f"\n# Windows CUDA path for cross-compilation\n")
+                f.write("\n# Windows CUDA path for cross-compilation\n")
                 f.write(f"{export_line}\n")
 
 
