@@ -210,7 +210,7 @@ def test_le_scalar_u85_INT(test_module):
 
 @common.parametrize("test_module", test_data_tensor)
 @common.XfailIfNoCorstone320
-def test_le_tensor_16a8w_u85_INT16(test_module):
+def test_le_tensor_16a8w_u85_INT(test_module):
     """Test le operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
@@ -228,7 +228,7 @@ def test_le_tensor_16a8w_u85_INT16(test_module):
 
 @common.parametrize("test_module", test_data_scalar)
 @common.XfailIfNoCorstone320
-def test_le_scalar_16a8w_u85_INT16(test_module):
+def test_le_scalar_16a8w_u85_INT(test_module):
     """Test le operation (scalar) with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
 
@@ -246,51 +246,51 @@ def test_le_scalar_16a8w_u85_INT16(test_module):
 
 @common.parametrize("test_module", test_data_tensor)
 @common.SkipIfNoModelConverter
-def test_le_tensor_vgf_FP(test_module):
+def test_le_tensor_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         LessEqual.aten_op_tensor,
         LessEqual.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_tensor)
 @common.SkipIfNoModelConverter
-def test_le_tensor_vgf_INT(test_module):
+def test_le_tensor_vgf_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         LessEqual.aten_op_tensor,
         LessEqual.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
 @common.SkipIfNoModelConverter
-def test_le_scalar_vgf_FP(test_module):
+def test_le_scalar_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         LessEqual.aten_op_scalar,
         LessEqual.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
 @common.SkipIfNoModelConverter
-def test_le_scalar_vgf_INT(test_module):
+def test_le_scalar_vgf_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         LessEqual.aten_op_tensor,
         LessEqual.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

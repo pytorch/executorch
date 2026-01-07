@@ -30,6 +30,7 @@ runtime.python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/export:lib",
+        "//executorch/runtime:runtime",  # @manual
         "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         ":xnnpack_recipe_types",

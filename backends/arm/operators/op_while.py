@@ -6,6 +6,7 @@
 from typing import Any, cast, List
 
 import tosa_serializer as ts
+from executorch.backends.arm._passes.arm_pass_utils import get_output_dim_orders
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -15,7 +16,9 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_cf_extension,
     validate_num_inputs,
 )
-from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import map_dtype, TosaArg
+from executorch.backends.arm.tosa.utils import tosa_shape
+
 from torch.fx import Node
 
 
@@ -47,7 +50,7 @@ class WhileLoopVisitor(NodeVisitor):
             )
 
         attr = ts.TosaSerializerAttribute()
-        cond_graph, body_graph = (cast(Node, arg).target for arg in node.args[:2])
+        cond_graph, body_graph = (str(cast(Node, arg).target) for arg in node.args[:2])
         attr.WhileLoopAttribute(cond_graph, body_graph)
 
         input_names: list[str] = []
@@ -58,7 +61,33 @@ class WhileLoopVisitor(NodeVisitor):
                 )
             input_names.append(loop_input.name)
 
-        if len(input_names) != len(output.multiple_output_names):
+        num_inputs = len(input_names)
+        num_outputs = len(output.multiple_output_names)
+        if num_inputs > num_outputs:
+            # If we have more inputs than outputs, we can just add missing output tensors.
+            body_module = getattr(node.graph.owning_module, body_graph)
+            output_dim_orders = get_output_dim_orders(body_module)
+            body_outputs = body_module.graph.output_node().args[0]
+            outputs_needing_tensors = body_outputs[num_outputs - num_inputs :]
+            output_dim_orders = output_dim_orders[num_outputs - num_inputs :]
+            for (
+                output_needing_tensor,
+                dim_order,
+            ) in zip(outputs_needing_tensors, output_dim_orders, strict=True):
+                tensor_name = output_needing_tensor.name + "_dummy"
+                shape = output_needing_tensor.meta["val"].shape
+                dtype = map_dtype(
+                    output_needing_tensor.meta["val"].dtype, self.tosa_spec
+                )
+
+                tosa_graph.currRegion.currBasicBlock.addTensor(
+                    tensor_name,
+                    tosa_shape(shape, dim_order),
+                    dtype,
+                )
+                output.multiple_output_names.append(tensor_name)
+        elif num_inputs < num_outputs:
+            # This is a strange case, if we reach it something bad has happened.
             raise ValueError(
                 f"TOSA specifies that the number of inputs, {input_names}, need to be the "
                 f"same as the number of outputs, {output.multiple_output_names}."
