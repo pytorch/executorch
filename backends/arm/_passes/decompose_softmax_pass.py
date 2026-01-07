@@ -73,7 +73,9 @@ class DecomposeSoftmaxPass(ArmPass):
     }
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in torch_softmax + edge_softmax:
+        if op not in torch_softmax + edge_softmax or not self.allowed_to_transform(
+            meta
+        ):
             return super().call_operator(op, args, kwargs, meta)
         log_op, sub_op, max_op, exp_op, sum_op, reciprocal_op, mul_op = (
             _get_logsoftmax_ops(op)

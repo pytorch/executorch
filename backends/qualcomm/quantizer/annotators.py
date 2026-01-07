@@ -955,6 +955,10 @@ def annotate_elu(node: Node, quantization_config: QuantizationConfig) -> None:
 def annotate_embedding(node: Node, quantization_config: QuantizationConfig) -> None:
     weight = node.args[0]
 
+    # Only quantize if input is a float tensor
+    if not _is_float_tensor(weight):
+        return
+
     input_qspec_map = {}
     input_qspec_map[weight] = quantization_config.input_activation
 

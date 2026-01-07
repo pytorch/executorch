@@ -15,6 +15,24 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
+#ifdef ET_EVENT_TRACER_ENABLED
+std::string& set_and_get_current_operator_json(const std::string& json) {
+  static std::string current_operator_json;
+  if (json.size() > 0) {
+    current_operator_json = json;
+  }
+  return current_operator_json;
+}
+
+size_t get_current_operator_count(const bool increment) {
+  static int count = 0;
+  if (increment) {
+    count++;
+  }
+  return count;
+}
+#endif /* ET_EVENT_TRACER_ENABLED */
+
 namespace vkcompute {
 
 //

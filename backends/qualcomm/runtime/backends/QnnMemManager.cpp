@@ -25,7 +25,7 @@ Error QnnMemManager::RegisterIonMem(
     const std::shared_ptr<TensorWrapper>& tensor_wrapper,
     int32_t mem_fd,
     void* mem_ptr) {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_MemDescriptor_t descriptor = {
       {tensor_wrapper->GetRank(), tensor_wrapper->GetDims(), nullptr},
       tensor_wrapper->GetDataType(),
@@ -63,7 +63,7 @@ Error QnnMemManager::RegisterCustomMem(
     size_t total_custom_mem_size,
     size_t tensor_offset,
     const CustomMemTensorInfo& info) {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_MemDescriptor_t descriptor = {
       {tensor_wrapper->GetRank(), tensor_wrapper->GetDims(), nullptr},
       tensor_wrapper->GetDataType(),
@@ -122,7 +122,7 @@ Error QnnMemManager::SetMemHandle(
 }
 
 void QnnMemManager::DeRegisterMem() {
-  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   for (auto& it : registered_map_) {

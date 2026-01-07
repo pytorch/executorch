@@ -17,7 +17,7 @@ namespace qnn {
 using executorch::runtime::Error;
 
 GpuBackend::GpuBackend(
-    const QnnImplementation& implementation,
+    QnnImplementation* implementation,
     QnnLogger* logger,
     const QnnExecuTorchGpuBackendOptions* gpu_options)
     : QnnBackend(implementation, logger) {

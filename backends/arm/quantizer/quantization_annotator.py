@@ -369,6 +369,7 @@ _one_to_one = [
     torch.ops.aten.gelu.default,
     torch.ops.aten.sinh.default,
     torch.ops.aten.atan.default,
+    torch.ops.aten.log1p.default,
     torch.ops.aten.acosh.default,
     torch.ops.aten.sign.default,
     torch.ops.aten.asin.default,
@@ -479,6 +480,12 @@ def get_quant_properties(  # noqa: C901
     weight_qspec = quantization_config.get_weight_qspec()
     output_act_qspec = quantization_config.get_output_act_qspec()
     bias_qspec = quantization_config.get_bias_qspec(node)
+    if output_act_qspec is not None:
+        # Check if output activation qspec is symmetric. In that case
+        # we avoid conv + relu fusion for quantization annotation.
+        is_symmetric = output_act_qspec.qscheme == torch.per_tensor_symmetric
+    else:
+        is_symmetric = False
 
     quant_properties = _OpQuantProperties()
 
@@ -491,7 +498,7 @@ def get_quant_properties(  # noqa: C901
             or n.args[1] == 0
         )
 
-    if _match_pattern(
+    if not is_symmetric and _match_pattern(
         node,
         [
             _conv_ops,
@@ -536,7 +543,7 @@ def get_quant_properties(  # noqa: C901
             torch.ops.aten.batch_norm.default,
         ]:
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
-    elif _match_pattern(
+    elif not is_symmetric and _match_pattern(
         node,
         [
             [

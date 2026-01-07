@@ -56,11 +56,14 @@ set(_cortex_m_kernels__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_dequantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_add.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_avg_pool2d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_conv2d.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_depthwise_conv2d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_mul.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_minimum.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_maximum.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_softmax.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_transpose.cpp
 )
 
@@ -79,6 +82,7 @@ target_link_libraries(
   cortex_m_kernels
   PRIVATE cmsis-nn
   PRIVATE executorch
+  PRIVATE kernels_util_all_deps
 )
 
 # Include directories for cortex_m_kernels

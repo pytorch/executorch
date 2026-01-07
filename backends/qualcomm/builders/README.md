@@ -18,8 +18,8 @@ Thank you for contributing to Qualcomm AI Engine Direct delegate for ExecuTorch.
 
 ## References
 ### Qualcomm AI Engine Direct
-- [Operator Definitions](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/MasterOpDef.html)
-- [Supported Operators in Backends](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/operations.html#backend-supplements)
+- [Operator Definitions](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/MasterOpDef.html)
+- [Supported Operators in Backends](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/operations.html#backend-supplements)
 
 ### PyTorch
 - [torch.nn Operator Definitions](https://pytorch.org/docs/stable/nn.html)
@@ -124,9 +124,9 @@ It will provide more hint to the source PyTorch layer where the missing operator
         };
     } Qnn_Param_t;
     ```
-    The name value equals to the parameter name described in [Operator Definitions](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/MasterOpDef.html), there are `epsilon`, `axes` for `LayerNorm` case.<br/>
+    The name value equals to the parameter name described in [Operator Definitions](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/MasterOpDef.html), there are `epsilon`, `axes` for `LayerNorm` case.<br/>
 
-    If you find it hard to correlate missing operator with documentation, this [table](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/SupportedOps.html) might be helpful for searching. In some cases, an exact match may not exist. Consider seeking for a math equivalent approach or notify maintainer for further analysis.
+    If you find it hard to correlate missing operator with documentation, this [table](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/SupportedOps.html) might be helpful for searching. In some cases, an exact match may not exist. Consider seeking for a math equivalent approach or notify maintainer for further analysis.
 
 - **PyTorch**:<br/>
     We could also read the IO spec from [function declaration](https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/layer_norm.cpp) mentioned in [PyTorch Documentation](#pytorch):
@@ -225,7 +225,7 @@ Now, we can start to fill in function body step by step:
     - **tensor_source_node**: current graph source node of the tensor
     - **target_build_node**: current node to build, which is important for fixed point mixed-precision to work properly
     - **tensor**: torch tensor emitted by node
-    - **tensor_type**: type compatible with QNN SDK, oftenly use `QNN_TENSOR_TYPE_NATIVE` for intermediate outputs and `QNN_TENSOR_TYPE_STATIC` for constant parameters
+    - **tensor_type**: type compatible with QNN SDK, often use `QNN_TENSOR_TYPE_NATIVE` for intermediate outputs and `QNN_TENSOR_TYPE_STATIC` for constant parameters
     - **nodes_to_wrappers**: dictionary of graph node and its output tensor (note: the tensor here is not a torch tensor but a wrapped object for QNN)
     - **node_name**: (optional) tensor name for user to specify
     - **wrapper_idx**: (optional) defaults to zero if node is not a tuple, otherwise it acts as an indexer to output tensors. e.g. when slicing input tensor into multiple outputs, `wrapper_idx` is necessary for getting correct wrapped tensor object
@@ -280,7 +280,7 @@ Now, we can start to fill in function body step by step:
             nodes_to_wrappers,
         )
     ```
-    Althought the input / output activations might map to the graph IOs (a.k.a. user inputs / outputs) with corresponding type   `QNN_TENSOR_TYPE_APP_READ` / `QNN_TENSOR_TYPE_APP_WRITE`. Users are still expected to have `QNN_TENSOR_TYPE_NATIVE` for all nodes' IOs and leave the  detection logic handled inside `define_tensor` method.
+    Although the input / output activations might map to the graph IOs (a.k.a. user inputs / outputs) with corresponding type   `QNN_TENSOR_TYPE_APP_READ` / `QNN_TENSOR_TYPE_APP_WRITE`. Users are still expected to have `QNN_TENSOR_TYPE_NATIVE` for all nodes' IOs and leave the  detection logic handled inside `define_tensor` method.
 
 5. Generate operator object in QNN graph:
     ```python
@@ -330,7 +330,7 @@ Now, we can start to fill in function body step by step:
     - **data_type**: type compatible with QNN SDK, e.g. `QNN_DATATYPE_FLOAT_32`, `QNN_DATATYPE_UINT_32`, etc.
     - **rank**: dimensions of tensor
     - **dims**: shape of tensor
-    - **data**: tesnor data
+    - **data**: tensor data
     - **copy_data**: user should specify to True for constant parameters
 
 8. Last, return operator object for partitioner to conduct validation:

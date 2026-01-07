@@ -65,6 +65,8 @@ class DecomposeEmbeddingPass(ArmPass):
                 continue
             if node.target not in self.aten_ops + self.edge_ops:
                 continue
+            if not self.allowed_to_transform(node.meta):
+                continue
 
             args = node.args
 
