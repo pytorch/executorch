@@ -27,7 +27,7 @@ Qualcomm AI Engine Direct is also referred to as QNN in the source and documenta
 is designed to provide unified, low-level APIs for AI development.
 
 Developers can interact with various accelerators on Qualcomm SoCs with these set of APIs, including
-Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found [here](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/overview.html).
+Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found [here](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/overview.html).
 
 Currently, this ExecuTorch Backend can delegate AI computations to Hexagon processors through Qualcomm AI Engine Direct APIs.
 
@@ -71,6 +71,8 @@ You will need an Android / Linux device with adb-connected running on one of bel
  - SXR1230P (Linux Embedded)
  - SXR2230P
  - SXR2330P
+ - QCM6490
+ - QCS9100
 
 This example is verified with SM8550 and SM8450.
 

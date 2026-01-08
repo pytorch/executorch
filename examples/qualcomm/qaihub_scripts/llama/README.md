@@ -7,7 +7,7 @@ Please check corresponding section for more information.
 
 ## Llama-2-7b-chat-hf
 This example demonstrates how to run Llama-2-7b-chat-hf on mobile via Qualcomm HTP backend. Model was precompiled into context binaries by [Qualcomm AI HUB](https://aihub.qualcomm.com/).
-Note that the pre-compiled context binaries could not be futher fine-tuned for other downstream tasks.
+Note that the pre-compiled context binaries could not be further fine-tuned for other downstream tasks.
 
 ### Instructions
 #### Step 1: Setup
@@ -35,7 +35,7 @@ python examples/qualcomm/qaihub_scripts/llama/llama2/qaihub_llama2_7b.py -b buil
 
 ## Llama-3-8b-chat-hf
 This example demonstrates how to run Llama-3-8b-chat-hf on mobile via Qualcomm HTP backend. Model was precompiled into context binaries by [Qualcomm AI HUB](https://aihub.qualcomm.com/).
-Note that the pre-compiled context binaries could not be futher fine-tuned for other downstream tasks. This example script has been tested on a 16GB RAM device and verified to work.
+Note that the pre-compiled context binaries could not be further fine-tuned for other downstream tasks. This example script has been tested on a 16GB RAM device and verified to work.
 
 ### Instructions
 #### Step 1: Setup

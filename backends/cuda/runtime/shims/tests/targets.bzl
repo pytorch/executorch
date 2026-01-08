@@ -19,6 +19,10 @@ def cuda_shim_cpp_unittest(name):
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
     )
 
 def define_common_targets():
@@ -35,3 +39,5 @@ def define_common_targets():
     cuda_shim_cpp_unittest("aoti_torch_cuda_guard")
     cuda_shim_cpp_unittest("aoti_torch_cuda__weight_int4pack_mm")
     cuda_shim_cpp_unittest("aoti_torch_new_tensor_handle")
+    cuda_shim_cpp_unittest("aoti_torch_item_bool")
+    cuda_shim_cpp_unittest("aoti_torch_assign_tensors_out")

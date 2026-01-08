@@ -745,6 +745,109 @@ class TestPasses(unittest.TestCase):
         upper_bound = eval_upper_bound(spec[1].shape[0])
         self.assertEqual(upper_bound, 10)
 
+    def test_spec_prop_pass_scan(self) -> None:
+        from torch._higher_order_ops.scan import scan
+
+        class ModelWithScan(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return scan(combine_fn, init, xs)
+
+        model = ModelWithScan()
+        inputs = (torch.arange(15).float().reshape(5, 3),)
+
+        # Run the spec prop pass and sanity check the spec on the scan.
+        edge_program = to_edge(
+            export(model, inputs, strict=True),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        gm = edge_program.exported_program().graph_module
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the scan node.
+        scan_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "scan"
+        )
+        self.assertIsNotNone(scan_node)
+
+        # Spec for the scan node should be a two-element tuple (carry, stacked_outputs)
+        spec: Tuple[TensorSpec, TensorSpec] = scan_node.meta["spec"]
+        self.assertTrue(isinstance(spec, tuple))
+        self.assertEqual(len(spec), 2)
+
+        # Carry should have shape [3] (same as xs[0])
+        self.assertEqual(list(spec[0].shape), [3])
+        # Stacked outputs should have shape [5, 3] (same as xs)
+        self.assertEqual(list(spec[1].shape), [5, 3])
+
+    def test_spec_prop_pass_scan_dynamic_shape(self) -> None:
+        from torch._higher_order_ops.scan import scan
+
+        class ModelWithScan(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return scan(combine_fn, init, xs)
+
+        model = ModelWithScan()
+        inputs = (torch.arange(15).float().reshape(5, 3),)
+        dynamic_shapes = {"xs": {0: torch.export.Dim("seq_len", min=1, max=20)}}
+
+        # First verify that export preserves symbolic shapes
+        exported = export(model, inputs, dynamic_shapes=dynamic_shapes, strict=True)
+        scan_node_after_export = next(
+            n
+            for n in exported.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "scan"
+        )
+        val_after_export = scan_node_after_export.meta.get("val")
+        self.assertIsNotNone(val_after_export)
+        # After export, the stacked output should have a symbolic first dimension
+        self.assertIsInstance(val_after_export[1].shape[0], torch.SymInt)
+
+        # Run the spec prop pass and sanity check the spec on the scan.
+        edge_program = to_edge(
+            exported,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        gm = edge_program.exported_program().graph_module
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the scan node.
+        scan_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "scan"
+        )
+        self.assertIsNotNone(scan_node)
+
+        # Spec for the scan node should be a two-element tuple (carry, stacked_outputs)
+        spec: Tuple[TensorSpec, TensorSpec] = scan_node.meta["spec"]
+        self.assertTrue(isinstance(spec, tuple))
+        self.assertEqual(len(spec), 2)
+
+        # Carry should have static shape [3]
+        self.assertEqual(list(spec[0].shape), [3])
+        self.assertEqual(spec[0].shape_dynamism, TensorShapeDynamism.STATIC)
+
+        # Stacked outputs should have dynamic first dimension with upper bound 20
+        self.assertEqual(len(spec[1].shape), 2)
+        upper_bound = eval_upper_bound(spec[1].shape[0])
+        self.assertEqual(upper_bound, 20)
+        self.assertEqual(spec[1].shape_dynamism, TensorShapeDynamism.DYNAMIC_BOUND)
+        self.assertEqual(spec[1].shape[1], 3)  # Second dim is static
+
     def test_compile_fix_broken_ops(self) -> None:
         class ExportableLoop(nn.Module):
             def __init__(self, hidden_size, out_channels):

@@ -122,7 +122,7 @@ def validate_node(
     validate_output(node, output_qspec)
 
 
-def test_set_module_name() -> None:
+def test_set_module_name_tosa_INT() -> None:
     model = ConvModel()
     model.eval()
 

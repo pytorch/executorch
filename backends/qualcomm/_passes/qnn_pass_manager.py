@@ -16,6 +16,7 @@ from executorch.backends.qualcomm._passes import (
     CanonicalizeConv,
     ConvertBmmToMatmul,
     ConvertLinearToConv2d,
+    ConvertMhaToSha,
     ConvertSquareToPow,
     DecomposeAny,
     DecomposeBinaryAlpha,
@@ -26,6 +27,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
+    DecomposeMaxPool3d,
     DecomposeMinMaxDim,
     DecomposeRoll,
     DecomposeSilu,
@@ -88,7 +90,6 @@ def get_capture_program_passes():
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
-        (CanonicalizeConv, True),
         (ConvertBmmToMatmul, False),
         (DecomposeAny, True),
         (DecomposeColIm, True),
@@ -98,6 +99,7 @@ def get_capture_program_passes():
         (FoldQDQ, True),
         (I64toI32, True),
         (LayoutTransform, True),
+        (DecomposeMaxPool3d, True),
         (RecomposePixelUnshuffle, True),
         (RecomposeRmsNorm, True),
         (Remove0DTensor, True),
@@ -201,6 +203,7 @@ class QnnPassManager(PassManager):
         self.add_pass(ReplaceArangeArgs())
         self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
+        self.add_pass(DecomposeMaxPool3d(quantization_capture=True))
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
@@ -245,8 +248,12 @@ class QnnPassManager(PassManager):
         ep = lift_constant_tensor_pass(exported_program)
         return ep
 
-    def transform_for_preprocess_pipeline(self, exported_program: ExportedProgram):
+    def transform_for_preprocess_pipeline(
+        self, exported_program: ExportedProgram, use_mha2sha=False
+    ):
         self.add_pass(FoldQDQ(exported_program, force_fold=True))
+        if use_mha2sha:
+            self.add_pass(ConvertMhaToSha(exported_program))
         self.add_pass(InsertRequantize())
         self.add_pass(InsertIOQDQ(exported_program))
         self.add_pass(LayoutTransform(exported_program, insert_permute=True))

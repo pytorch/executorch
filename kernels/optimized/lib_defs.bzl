@@ -10,6 +10,16 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 # functions in order to declare the required compiler flags needed in order to
 # access CPU vector intrinsics.
 
+def get_exported_linker_flags():
+    if not runtime.is_oss:
+        exported_linker_flags = select({
+            "DEFAULT": [],
+            "ovr_config//os:macos-arm64": ["-framework", "Accelerate"],
+            "ovr_config//os:macos-x86_64": ["-framework", "Accelerate"],
+        })
+        return exported_linker_flags
+    return []
+
 def get_vec_preprocessor_flags():
     if not runtime.is_oss:
         # various ovr_configs are not available in oss
@@ -204,6 +214,7 @@ def define_libs(is_fbcode=False):
             exported_headers = native.glob([
                 "blas/**/*.h",
             ]),
+            exported_linker_flags = get_exported_linker_flags(),
             compiler_flags = ["-Wno-pass-failed"] + select({
                 "ovr_config//runtime:fbcode": [],
                 # TODO: replace with get_compiler_optimization_flags from op_registration_util.bzl when that

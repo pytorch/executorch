@@ -39,6 +39,29 @@ if (result.buf != nullptr && result.size > 0) {
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 target_compile_options(portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED)
 ```
+
+### Make sure ET_EVENT_TRACER_ENABLED flag is enabled or ETDump will be empty.
+
+If the binary is not compiled with the `ET_EVENT_TRACER_ENABLED` preprocessor flag, no trace events will be recorded and the ETDump will be empty.
+
+When this flag is missing, the following code:
+
+```C++
+ETDumpResult result = etdump_gen.get_etdump_data();
+if (result.buf != nullptr && result.size > 0) {
+    ...
+}
+```
+
+will always return:
+
+```C++
+result.buf == nullptr
+result.size == 0
+```
+
+This indicates that no ETDump data was collected, and therefore nothing can be analyzed through the Inspector API.
+
 ## Using an ETDump
 
 Pass this ETDump into the [Inspector API](model-inspector.rst) to access this data and do post-run analysis.

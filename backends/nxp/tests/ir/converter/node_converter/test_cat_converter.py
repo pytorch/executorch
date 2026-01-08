@@ -22,6 +22,7 @@ from executorch.backends.nxp.tests.executors import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 def _normalized_dim(dim, rank):
@@ -84,13 +85,13 @@ class CatConvModule(torch.nn.Module):
         pytest.param(4, 5, -3, id="4D, 5 inputs, dim=-3"),
     ],
 )
-def test_cat__same_shapes(dim, num_inputs, rank, mocker):
+def test_cat__same_shapes(dim, num_inputs, rank, mocker, use_qat):
     input_shape = tuple([8, 8, 8, 8][:rank])
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     quantized_program = to_quantized_edge_program(
-        CatModule(dim), [input_shape] * num_inputs
+        CatModule(dim), [input_shape] * num_inputs, use_qat=use_qat
     ).exported_program()
 
     # Make sure the `Cat` was delegated.
@@ -115,13 +116,13 @@ def test_cat__same_shapes(dim, num_inputs, rank, mocker):
 
 @pytest.mark.parametrize("dim", [3, -2, -3])
 @pytest.mark.parametrize("num_inputs", [2, 5])
-def test_cat__channels_first__same_shapes(dim, num_inputs, mocker):
+def test_cat__channels_first__same_shapes(dim, num_inputs, mocker, use_qat):
     input_shape = (2, 8, 6, 8)
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     channels = input_shape[1] if dim not in {1, -3} else input_shape[1] * num_inputs
     quantized_program = to_quantized_edge_program(
-        CatConvModule(dim, channels), [input_shape] * num_inputs
+        CatConvModule(dim, channels), [input_shape] * num_inputs, use_qat=use_qat
     ).exported_program()
 
     # Make sure the `Cat` was delegated.
@@ -158,13 +159,13 @@ def test_cat__channels_first__same_shapes(dim, num_inputs, mocker):
         pytest.param(-2, (1, 1, 1, 8), id="axis = -2"),
     ],
 )
-def test_cat__unsupported__imxrt700(dim, input_shape):
+def test_cat__unsupported__imxrt700(dim, input_shape, use_qat):
     """This test is conjoined with the one below (`test_cat__context_dependent__imxrt700`).
     In this case, the inputs of the `cat` are NOT compute ops, so the `cat` is NOT delegated.
     """
     num_inputs = 2
     quantized_program = to_quantized_edge_program(
-        CatModule(dim), [input_shape] * num_inputs, target="imxrt700"
+        CatModule(dim), [input_shape] * num_inputs, target="imxrt700", use_qat=use_qat
     ).exported_program()
 
     # Make sure the `Cat` was NOT delegated.
@@ -188,13 +189,16 @@ def test_cat__unsupported__imxrt700(dim, input_shape):
         pytest.param(-2, (1, 1, 1, 8), id="axis = -2"),
     ],
 )
-def test_cat__context_dependent__imxrt700(dim, input_shape):
+def test_cat__context_dependent__imxrt700(dim, input_shape, use_qat):
     """This test is conjoined with the one above (`test_cat__unsupported__imxrt700`).
     In this case, the inputs of the `cat` are compute ops, so the `cat` is delegated.
     """
     num_inputs = 2
     ep = to_quantized_edge_program(
-        AddCatModule(dim), [input_shape] * num_inputs, target="imxrt700"
+        AddCatModule(dim),
+        [input_shape] * num_inputs,
+        target="imxrt700",
+        use_qat=use_qat,
     ).exported_program()
 
     # Make sure the `Cat` was delegated.
@@ -218,7 +222,7 @@ def test_cat__context_dependent__imxrt700(dim, input_shape):
         pytest.param(4, 5, -3, id="4D, 5 inputs, dim=-3"),
     ],
 )
-def test_cat__different_shapes(dim, num_inputs, rank, mocker):
+def test_cat__different_shapes(dim, num_inputs, rank, mocker, use_qat):
     input_shape = tuple([2, 8, 8, 8, 8][-rank:])
 
     # The shape of every input will be different along the concatenated dimension.
@@ -231,7 +235,7 @@ def test_cat__different_shapes(dim, num_inputs, rank, mocker):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     quantized_program = to_quantized_edge_program(
-        CatModule(dim), input_shapes
+        CatModule(dim), input_shapes, use_qat=use_qat
     ).exported_program()
 
     # Make sure the `Cat` was delegated.
@@ -258,7 +262,7 @@ def test_cat__different_shapes(dim, num_inputs, rank, mocker):
 @pytest.mark.parametrize(
     "num_inputs", [2, 5], ids=lambda num_inputs: f"num_inputs = {num_inputs}"
 )
-def test_cat__channels_first__different_shapes(dim, num_inputs, mocker):
+def test_cat__channels_first__different_shapes(dim, num_inputs, mocker, use_qat):
     input_shape = (2, 8, 6, 8)
 
     # The shape of every input will be different along the concatenated dimension.
@@ -276,7 +280,7 @@ def test_cat__channels_first__different_shapes(dim, num_inputs, mocker):
         sum(shape[1] for shape in input_shapes) if dim in [1, -3] else input_shape[1]
     )
     quantized_program = to_quantized_edge_program(
-        CatConvModule(dim, channels), input_shapes
+        CatConvModule(dim, channels), input_shapes, use_qat=use_qat
     ).exported_program()
 
     # Make sure the `Cat` was delegated.
@@ -301,7 +305,7 @@ def test_cat__channels_first__different_shapes(dim, num_inputs, mocker):
     )
 
 
-def test_cat__different_shapes__unsupported_channels__imxrt700():
+def test_cat__different_shapes__unsupported_channels__imxrt700(use_qat):
     input_shape = (2, 4, 6, 7)  # (channels % 8) != 0
 
     num_inputs = 2
@@ -315,7 +319,7 @@ def test_cat__different_shapes__unsupported_channels__imxrt700():
         input_shapes.append(tuple(tmp_shape))
 
     quantized_program = to_quantized_edge_program(
-        CatModule(dim), input_shapes, target="imxrt700"
+        CatModule(dim), input_shapes, target="imxrt700", use_qat=use_qat
     ).exported_program()
 
     # Make sure the `Cat` was NOT delegated.
@@ -327,7 +331,7 @@ def test_cat__different_shapes__unsupported_channels__imxrt700():
     )
 
 
-def test_cat__force_delegate():
+def test_cat__force_delegate(use_qat):
     target = "imxrt700"
 
     # The Partitioner doesn't know if the `8` or the `1` will become the channels in the IR. Therefore, it would
@@ -339,6 +343,7 @@ def test_cat__force_delegate():
         [input_shape, input_shape],
         target=target,
         custom_delegation_options=CustomDelegationOptions(force_delegate_cat=True),
+        use_qat=use_qat,
     ).exported_program()
 
     # Make sure the `Cat` was delegated.
@@ -348,7 +353,7 @@ def test_cat__force_delegate():
     assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
 
 
-def test_cat__same_shapes_converter_padding_last_dimension():
+def test_cat__same_shapes_converter_padding_last_dimension(use_qat):
     target = "imxrt700"
 
     # The Converter is capable of padding the last dimension of `cat` with the same input shapes.
@@ -360,6 +365,7 @@ def test_cat__same_shapes_converter_padding_last_dimension():
         target=target,
         neutron_converter_flavor="SDK_25_09",
         custom_delegation_options=CustomDelegationOptions(),
+        use_qat=use_qat,
     ).exported_program()
 
     # Make sure the `Cat` was delegated.
@@ -369,7 +375,7 @@ def test_cat__same_shapes_converter_padding_last_dimension():
     assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
 
 
-def test_cat__same_shapes__channels_first__padding_channels():
+def test_cat__same_shapes__channels_first__padding_channels(use_qat):
     target = "imxrt700"
 
     # The Converter is capable of padding the last dimension of `cat` with the same input shapes.
@@ -381,6 +387,7 @@ def test_cat__same_shapes__channels_first__padding_channels():
         target=target,
         neutron_converter_flavor="SDK_25_09",
         custom_delegation_options=CustomDelegationOptions(),
+        use_qat=use_qat,
     ).exported_program()
 
     # Make sure the `Cat` was delegated.
@@ -390,7 +397,7 @@ def test_cat__same_shapes__channels_first__padding_channels():
     assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
 
 
-def test_cat__same_shapes_converter_padding_middle_dimension():
+def test_cat__same_shapes_converter_padding_middle_dimension(use_qat):
     target = "imxrt700"
 
     # The Converter is not capable of padding the middle dimensions of `cat` with the same input shapes.
@@ -401,6 +408,7 @@ def test_cat__same_shapes_converter_padding_middle_dimension():
         [input_shape, input_shape],
         target=target,
         custom_delegation_options=CustomDelegationOptions(),
+        use_qat=use_qat,
     ).exported_program()
 
     # Make sure the `Cat` was NOT delegated.
@@ -412,7 +420,7 @@ def test_cat__same_shapes_converter_padding_middle_dimension():
     )
 
 
-def test_cat__format_specific_support__formatless(mocker):
+def test_cat__format_specific_support__formatless(mocker, use_qat):
     # The last dim will end up being the channels, as the format is `formatless`.
     # Only the last dim satisfies the Neutron requirements for the channels.
     input_shape = (3, 3, 3, 8)
@@ -424,7 +432,7 @@ def test_cat__format_specific_support__formatless(mocker):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     quantized_program = to_quantized_edge_program(
-        CatModule(dim), input_shapes
+        CatModule(dim), input_shapes, use_qat=use_qat
     ).exported_program()
 
     # Make sure the `Cat` was delegated.
@@ -447,7 +455,7 @@ def test_cat__format_specific_support__formatless(mocker):
     )
 
 
-def test_cat__format_specific_support__channels_first(mocker):
+def test_cat__format_specific_support__channels_first(mocker, use_qat):
     # The second dim will end up being the channels, as the format is `formatless`.
     # Only the second dim satisfies the Neutron requirements for the channels.
     input_shape = (3, 8, 3, 3)
@@ -462,7 +470,7 @@ def test_cat__format_specific_support__channels_first(mocker):
         sum(shape[1] for shape in input_shapes) if dim in [1, -3] else input_shape[1]
     )
     quantized_program = to_quantized_edge_program(
-        CatConvModule(dim, channels), input_shapes
+        CatConvModule(dim, channels), input_shapes, use_qat=use_qat
     ).exported_program()
 
     # Make sure the `Cat` was delegated.

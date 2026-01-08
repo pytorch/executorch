@@ -255,7 +255,7 @@ def test_bitwise_and_tensor_u85_INT(test_data: input_t2):
 
 @common.parametrize("test_data", And().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_and_tensor_vgf_FP(test_data: input_t2):
+def test_bitwise_and_tensor_vgf_no_quant(test_data: input_t2):
     pipeline = OpNotSupportedPipeline[input_t2](
         And(),
         test_data(),
@@ -266,7 +266,7 @@ def test_bitwise_and_tensor_vgf_FP(test_data: input_t2):
 
 @common.parametrize("test_data", AndScalar().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_and_scalar_vgf_FP(test_data: input_t2):
+def test_bitwise_and_scalar_vgf_no_quant(test_data: input_t2):
     pipeline = OpNotSupportedPipeline[input_t2](
         AndScalar(),
         test_data(),
@@ -277,7 +277,7 @@ def test_bitwise_and_scalar_vgf_FP(test_data: input_t2):
 
 @common.parametrize("test_data", And().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_and_tensor_vgf_INT(test_data: input_t2):
+def test_bitwise_and_tensor_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         And(),
         test_data(),
@@ -286,14 +286,14 @@ def test_bitwise_and_tensor_vgf_INT(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AndScalar().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_and_scalar_vgf_INT(test_data: input_t2):
+def test_bitwise_and_scalar_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         AndScalar(),
         test_data(),
@@ -302,7 +302,7 @@ def test_bitwise_and_scalar_vgf_INT(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -424,7 +424,7 @@ def test_bitwise_xor_scalar_u85_INT(test_data: input_t2):
 
 @common.parametrize("test_data", Xor().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_xor_tensor_vgf_FP(test_data: input_t2):
+def test_bitwise_xor_tensor_vgf_no_quant(test_data: input_t2):
     pipeline = OpNotSupportedPipeline[input_t2](
         Xor(),
         test_data(),
@@ -435,7 +435,7 @@ def test_bitwise_xor_tensor_vgf_FP(test_data: input_t2):
 
 @common.parametrize("test_data", XorScalar().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_xor_scalar_vgf_FP(test_data: input_t2):
+def test_bitwise_xor_scalar_vgf_no_quant(test_data: input_t2):
     pipeline = OpNotSupportedPipeline[input_t2](
         XorScalar(),
         test_data(),
@@ -446,7 +446,7 @@ def test_bitwise_xor_scalar_vgf_FP(test_data: input_t2):
 
 @common.parametrize("test_data", Xor().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_xor_tensor_vgf_INT(test_data: input_t2):
+def test_bitwise_xor_tensor_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         Xor(),
         test_data(),
@@ -455,14 +455,14 @@ def test_bitwise_xor_tensor_vgf_INT(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", XorScalar().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_xor_scalar_vgf_INT(test_data: input_t2):
+def test_bitwise_xor_scalar_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         XorScalar(),
         test_data(),
@@ -471,7 +471,7 @@ def test_bitwise_xor_scalar_vgf_INT(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -593,7 +593,7 @@ def test_bitwise_or_scalar_u85_INT(test_data: input_t2):
 
 @common.parametrize("test_data", Or().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_or_tensor_vgf_FP(test_data: input_t2):
+def test_bitwise_or_tensor_vgf_no_quant(test_data: input_t2):
     pipeline = OpNotSupportedPipeline[input_t2](
         Or(),
         test_data(),
@@ -604,7 +604,7 @@ def test_bitwise_or_tensor_vgf_FP(test_data: input_t2):
 
 @common.parametrize("test_data", OrScalar().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_or_scalar_vgf_FP(test_data: input_t2):
+def test_bitwise_or_scalar_vgf_no_quant(test_data: input_t2):
     pipeline = OpNotSupportedPipeline[input_t2](
         OrScalar(),
         test_data(),
@@ -615,7 +615,7 @@ def test_bitwise_or_scalar_vgf_FP(test_data: input_t2):
 
 @common.parametrize("test_data", Or().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_or_tensor_vgf_INT(test_data: input_t2):
+def test_bitwise_or_tensor_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         Or(),
         test_data(),
@@ -624,14 +624,14 @@ def test_bitwise_or_tensor_vgf_INT(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", OrScalar().test_data)
 @common.SkipIfNoModelConverter
-def test_bitwise_or_scalar_vgf_INT(test_data: input_t2):
+def test_bitwise_or_scalar_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         OrScalar(),
         test_data(),
@@ -640,7 +640,7 @@ def test_bitwise_or_scalar_vgf_INT(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 

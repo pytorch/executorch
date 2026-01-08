@@ -90,7 +90,7 @@ set(ET_PTE_FILE_PATH
     CACHE PATH "Path to ExecuTorch model pte"
 )
 set(ETHOS_SDK_PATH
-    "${ET_DIR_PATH}/examples/arm/ethos-u-scratch/ethos-u"
+    "${ET_DIR_PATH}/examples/arm/arm-scratch/ethos-u"
     CACHE PATH "Path to Ethos-U bare metal driver/env"
 )
 set(PYTHON_EXECUTABLE

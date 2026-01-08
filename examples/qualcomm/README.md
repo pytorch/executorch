@@ -14,6 +14,8 @@ Before executing the scripts and runner, please ensure that you are using the QN
 
 4. scripts: This folder contains scripts to build models provided by ExecuTorch.
 
+5. util_scripts: This folder includes tutorial example scripts designed to showcase the utilities we've developed. For example, we provide a debugging tool [qnn_intermediate_debugger](./util_scripts/qnn_intermediate_debugger_demo.py) that allow users to compare the intermediate outputs of QNNs V.S. CPUs. By reviewing these scripts, we aim to help users smoothly integrate these utilities into their own projects.
+
 
 
 Please check helper of each examples for detailed arguments.

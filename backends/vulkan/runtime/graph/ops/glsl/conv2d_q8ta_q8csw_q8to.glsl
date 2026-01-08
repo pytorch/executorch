@@ -46,7 +46,6 @@ ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False
 
 ${layout_declare_ubo(B, "ivec4", "output_sizes")}
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}
-${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
 
 layout(push_constant) uniform restrict Block {
   float input_scale;
@@ -58,6 +57,23 @@ layout(push_constant) uniform restrict Block {
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_in_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_out_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_groups", "1")}
+
 
 #include "im2col_packed_int8_utils.glslh"
 #include "conv2d_int8_input_tile_load.glslh"
@@ -84,10 +100,10 @@ void main() {
 
   const int out_w = mul_4(out_block_idx.data.x);
   const int w_start =
-      (out_w * conv2d_params.stride.x) - conv2d_params.padding.x;
-  const int w_end = ((out_w + 3) * conv2d_params.stride.x) -
-      conv2d_params.padding.x +
-      (conv2d_params.kernel_size.x - 1) * conv2d_params.dilation.x;
+      (out_w * conv2d_params_stride_x) - conv2d_params_padding_x;
+  const int w_end = ((out_w + 3) * conv2d_params_stride_x) -
+      conv2d_params_padding_x +
+      (conv2d_params_kernel_size_x - 1) * conv2d_params_dilation_x;
 
   Conv2dBlockExtents in_block_extents = make_block_extents(input_sizes);
 
@@ -97,15 +113,15 @@ void main() {
   Int32Accum out_accum;
   initialize(out_accum);
 
-  const int IC4_per_group = div_up_4(conv2d_params.in_channels_per_group);
+  const int IC4_per_group = div_up_4(conv2d_params_in_channels_per_group);
 
   const int n = mul_4(out_block_idx.data.z);
-  const int group_idx = n / conv2d_params.out_channels_per_group;
+  const int group_idx = n / conv2d_params_out_channels_per_group;
   const int group_ic4_offset = group_idx * IC4_per_group;
 
-  for (int ky = 0; ky < conv2d_params.kernel_size.y; ky++) {
-    const int h = out_block_idx.data.y * conv2d_params.stride.y -
-        conv2d_params.padding.y + ky * conv2d_params.dilation.y;
+  for (int ky = 0; ky < conv2d_params_kernel_size_y; ky++) {
+    const int h = out_block_idx.data.y * conv2d_params_stride_y -
+        conv2d_params_padding_y + ky * conv2d_params_dilation_y;
 
     for (int ic4 = 0; ic4 < IC4_per_group; ic4++) {
       Int8InputWindow1D int8_input_window = load_input_window(
@@ -116,15 +132,15 @@ void main() {
           in_block_extents,
           input_zps);
 
-      for (int kx = 0; kx < conv2d_params.kernel_size.x; kx++) {
+      for (int kx = 0; kx < conv2d_params_kernel_size_x; kx++) {
         const ivec4 weight_block = load_weight_block(
             ic4,
             kx,
             ky,
             out_block_idx.data.z,
             IC4_per_group,
-            conv2d_params.kernel_size.x,
-            conv2d_params.kernel_size.y,
+            conv2d_params_kernel_size_x,
+            conv2d_params_kernel_size_y,
             out_block_extents.data.z);
 
         perform_conv1d(out_accum, int8_input_window, weight_block, kx);

@@ -71,7 +71,7 @@ def define_common_targets():
                 "//common/gtest:gtest",
             ] if not runtime.is_oss else [],
             xplat_exported_deps = [
-                "//xplat/folly:init_init",
+                "fbsource//xplat/folly/init:init",
                 "//third-party/googletest:gtest_main",
             ],
         )

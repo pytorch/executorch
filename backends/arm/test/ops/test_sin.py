@@ -86,20 +86,23 @@ def test_sin_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_sin_vgf_FP(test_data: Tuple):
+def test_sin_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
-        Sin(), (test_data,), aten_op, tosa_version="TOSA-1.0+FP"
+        Sin(),
+        (test_data,),
+        aten_op,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_sin_vgf_INT(test_data: Tuple):
+def test_sin_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Sin(),
         (test_data,),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

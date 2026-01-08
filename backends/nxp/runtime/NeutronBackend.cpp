@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -10,6 +10,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 
 #include "NeutronDriver.h"
 #include "NeutronErrors.h"
@@ -19,7 +20,6 @@ using namespace std;
 namespace torch {
 namespace executor {
 namespace neutron {
-
 // All the memory need to be aligned with 16
 #define BUFFER_ALIGNMENT 16
 #define ALIGN_SIZE(size) \
@@ -378,18 +378,45 @@ class NeutronBackend final : public PyTorchBackendInterface {
     // Transpose inputs if needed.
     for (int i = 0; i < cfg->numInputs; i++) {
       auto arg = args[cfg->inputMap[i]]->toTensor();
+      auto dim_order = arg.dim_order().data();
+
       if (cfg->inputTranspositionFlags[i] &&
           multipleChannelsPresent(arg.sizes())) {
+        // The input must be transposed.
         if (arg.sizes().size() < 3) {
           ET_LOG(Error, "Unable to transpose 1D and 2D input to channel last");
           return Error::InvalidProgram;
         }
-        // Allocate buffer, the allocator is reset after each PTE instruction.
-        void* buffer = context.allocate(arg.nbytes(), 16);
-        transposeInput(
-            arg.const_data_ptr(), buffer, arg.sizes(), arg.element_size());
-        cfg->dcfg.inputs[i] = buffer;
+
+        if (is_channels_last_dim_order(dim_order, arg.dim())) {
+          // The tensor is already permuted.
+          ET_LOG(Info, "Using channels last dim order for input %d.\n", i);
+          cfg->dcfg.inputs[i] = arg.const_data_ptr();
+        } else if (is_contiguous_dim_order(dim_order, arg.dim())) {
+          // Transpose the data to channels last.
+
+          ET_LOG(Info, "Transposing input %d to channels last.\n", i);
+
+          // Allocate buffer, the allocator is reset after each PTE instruction.
+          void* buffer = context.allocate(arg.nbytes(), 16);
+          transposeInput(
+              arg.const_data_ptr(), buffer, arg.sizes(), arg.element_size());
+          cfg->dcfg.inputs[i] = buffer;
+        } else {
+          // Unexpected dim-order.
+          ET_LOG(Error, "Input %d uses unsupported dim-order.", i);
+          return Error::InvalidProgram;
+        }
       } else {
+        // The input matches the ExecuTorch format, so no transposition is
+        //  needed.
+
+        if (!is_contiguous_dim_order(dim_order, arg.dim())) {
+          // Unexpected dim-order.
+          ET_LOG(Error, "Input %d uses unsupported dim-order.", i);
+          return Error::InvalidProgram;
+        }
+
         cfg->dcfg.inputs[i] = arg.const_data_ptr();
       }
     }
@@ -398,12 +425,35 @@ class NeutronBackend final : public PyTorchBackendInterface {
     // Redirect outputs if needed before transposition.
     for (int i = 0; i < cfg->numOutputs; i++) {
       auto arg = args[cfg->numInputArgs + cfg->outputMap[i]]->toTensor();
+      auto dim_order = arg.dim_order().data();
+
       if (cfg->outputTranspositionFlags[i] &&
           multipleChannelsPresent(arg.sizes())) {
-        // Allocate buffer, the allocator is reset after each PTE instruction.
-        void* buffer = context.allocate(arg.nbytes(), 16);
-        cfg->dcfg.outputs[i] = buffer;
+        // The output will have to be transposed.
+
+        if (is_channels_last_dim_order(dim_order, arg.dim())) {
+          // The tensor will already be correctly permuted. No transposition
+          //  needed.
+          cfg->dcfg.outputs[i] = arg.mutable_data_ptr();
+        } else if (is_contiguous_dim_order(dim_order, arg.dim())) {
+          // Allocate buffer, the allocator is reset after each PTE instruction.
+          void* buffer = context.allocate(arg.nbytes(), 16);
+          cfg->dcfg.outputs[i] = buffer;
+        } else {
+          // Unexpected dim-order.
+          ET_LOG(Error, "Output %d uses unsupported dim-order.", i);
+          return Error::InvalidProgram;
+        }
       } else {
+        // The tensor should match the ExecuTorch required format, so no
+        //  transposition is needed.
+
+        if (!is_contiguous_dim_order(dim_order, arg.dim())) {
+          // Unexpected dim-order.
+          ET_LOG(Error, "Output %d uses unsupported dim-order.", i);
+          return Error::InvalidProgram;
+        }
+
         cfg->dcfg.outputs[i] = arg.mutable_data_ptr();
       }
     }
@@ -427,18 +477,35 @@ class NeutronBackend final : public PyTorchBackendInterface {
     // Transpose outputs.
     for (int i = 0; i < cfg->numOutputs; i++) {
       auto arg = args[cfg->numInputArgs + cfg->outputMap[i]]->toTensor();
+
       if (cfg->outputTranspositionFlags[i] &&
           multipleChannelsPresent(arg.sizes())) {
+        // The output must be transposed.
+
         if (arg.sizes().size() < 3) {
           ET_LOG(
               Error, "Unable to transpose 1D and 2D output to channel first");
           return Error::InvalidProgram;
         }
-        transposeOutput(
-            cfg->dcfg.outputs[i],
-            arg.mutable_data_ptr(),
-            arg.sizes(),
-            arg.element_size());
+
+        auto dim_order = arg.dim_order().data();
+        if (is_channels_last_dim_order(dim_order, arg.dim())) {
+          // The rest of the model expects the `channels_last` dim order, which
+          //  the data already matches.
+          ET_LOG(Info, "Using channels last dim order for output %d.\n", i);
+        } else if (is_contiguous_dim_order(dim_order, arg.dim())) {
+          // Transpose the data to channels first.
+          ET_LOG(Info, "Transposing output %d to channels first.\n", i);
+          transposeOutput(
+              cfg->dcfg.outputs[i],
+              arg.mutable_data_ptr(),
+              arg.sizes(),
+              arg.element_size());
+        } else {
+          // Unexpected dim-order.
+          ET_LOG(Error, "Output %d uses unsupported dim-order.", i);
+          return Error::InvalidProgram;
+        }
       }
     }
 
@@ -467,7 +534,6 @@ auto backend = NeutronBackend();
 Backend backend_id{"NeutronBackend", &backend};
 static auto registered = register_backend(backend_id);
 } // namespace
-
 } // namespace neutron
 } // namespace executor
 } // namespace torch

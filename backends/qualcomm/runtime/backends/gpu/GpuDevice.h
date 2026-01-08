@@ -15,7 +15,7 @@ namespace qnn {
 
 class GpuDevice : public QnnDevice {
  public:
-  GpuDevice(const QnnImplementation& implementation, QnnLogger* logger)
+  GpuDevice(QnnImplementation* implementation, QnnLogger* logger)
       : QnnDevice(implementation, logger){};
 
   // GPU backend does not support device creation

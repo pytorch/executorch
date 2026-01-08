@@ -44,3 +44,5 @@ NNNCHW_ORDER: Final = (0, 1, 2, 3, 4, 5)
 HWCM_ORDER: Final = (2, 3, 0, 1)
 
 MAX_RANK: Final = 6
+
+DISALLOW_TFA_META_KEY: Final = "_arm_disallow_tfa"

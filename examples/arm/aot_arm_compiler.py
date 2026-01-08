@@ -11,6 +11,7 @@ import argparse
 import copy
 import logging
 import os
+import sys
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -161,6 +162,7 @@ def _load_python_module_model(
         raise RuntimeError(f"Unable to load model file {model_name}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    sys.modules["tmp_model"] = module
     model = module.ModelUnderTest
     inputs = example_inputs if example_inputs is not None else module.ModelInputs
 

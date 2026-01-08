@@ -892,6 +892,7 @@ class SPVGenerator:
         output_dir: str,
         cache_dir: Optional[str] = None,
         force_rebuild: bool = False,
+        nthreads: int = -1,
     ) -> Dict[str, str]:
         # The key of this dictionary is the full path to a generated source file. The
         # value is a tuple that contains 3 entries:
@@ -1118,11 +1119,21 @@ class SPVGenerator:
             gen_file_meta[gen_out_path] = (file_changed, include_list)
 
         # Parallelize SPIR-V compilation to optimize build time
-        with ThreadPool(os.cpu_count()) as pool:
-            for spv_out_path, glsl_out_path in pool.map(
-                compile_spirv, self.output_file_map.items()
-            ):
+        # Determine number of threads: -1 means use all CPU cores, 1 means sequential
+        num_processes = os.cpu_count() if nthreads == -1 else nthreads
+
+        if num_processes == 1:
+            # Sequential compilation (single-threaded)
+            for shader_pair in self.output_file_map.items():
+                spv_out_path, glsl_out_path = compile_spirv(shader_pair)
                 spv_to_glsl_map[spv_out_path] = glsl_out_path
+        else:
+            # Parallel compilation
+            with ThreadPool(num_processes) as pool:
+                for spv_out_path, glsl_out_path in pool.map(
+                    compile_spirv, self.output_file_map.items()
+                ):
+                    spv_to_glsl_map[spv_out_path] = glsl_out_path
 
         return spv_to_glsl_map
 
@@ -1443,6 +1454,12 @@ def main(argv: List[str]) -> int:
     parser.add_argument(
         "--env", metavar="KEY=VALUE", nargs="*", help="Set a number of key-value pairs"
     )
+    parser.add_argument(
+        "--nthreads",
+        type=int,
+        default=-1,
+        help="Number of threads for shader compilation. -1 (default) uses all available CPU cores, 1 uses sequential compilation.",
+    )
     options = parser.parse_args()
 
     env = DEFAULT_ENV
@@ -1477,7 +1494,10 @@ def main(argv: List[str]) -> int:
         replace_u16vecn=options.replace_u16vecn,
     )
     output_spv_files = shader_generator.generateSPV(
-        options.output_path, options.tmp_dir_path, options.force_rebuild
+        options.output_path,
+        options.tmp_dir_path,
+        options.force_rebuild,
+        options.nthreads,
     )
 
     genCppFiles(

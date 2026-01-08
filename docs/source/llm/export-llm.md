@@ -114,7 +114,7 @@ base:
   metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 model:
   use_kv_cache: True
-  use_sdpa_withp_kv_cache: True
+  use_sdpa_with_kv_cache: True
 quantization:
   embedding_quantize: 4,32
   qmode: 8da4w
@@ -144,7 +144,7 @@ base:
   metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 model:
   use_kv_cache: True
-  use_sdpa_withp_kv_cache: True
+  use_sdpa_with_kv_cache: True
 quantization:
   embedding_quantize: 4,32
   qmode: 8da4w

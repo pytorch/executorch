@@ -1,0 +1,36 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "quantizer",
+    srcs = [
+        "__init__.py",
+        "operator_configs.py",
+        "quantization_configs.py",
+        "quantizer.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/arm/quantizer:quantization_config",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+python_library(
+    name = "quantization_configs",
+    srcs = [
+        "quantization_configs.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/arm/quantizer:quantization_config",
+        "//pytorch/ao:torchao",
+    ],
+)

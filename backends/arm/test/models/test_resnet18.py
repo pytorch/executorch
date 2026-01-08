@@ -38,7 +38,7 @@ quant_test_data = {
 }
 
 
-def test_resnet_tosa_FP():
+def test_resnet_18_tosa_FP():
     pipeline = TosaPipelineFP[input_t](
         model,
         model_inputs,
@@ -50,7 +50,7 @@ def test_resnet_tosa_FP():
 
 
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_resnet_tosa_INT(per_channel_quantization):
+def test_resnet_18_tosa_INT(per_channel_quantization):
     pipeline = TosaPipelineINT[input_t](
         model,
         model_inputs,
@@ -67,7 +67,7 @@ def test_resnet_tosa_INT(per_channel_quantization):
 @pytest.mark.slow
 @common.XfailIfNoCorstone300
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_resnet_u55_INT(per_channel_quantization):
+def test_resnet_18_u55_INT(per_channel_quantization):
     pipeline = EthosU55PipelineINT[input_t](
         model,
         model_inputs,
@@ -84,7 +84,7 @@ def test_resnet_u55_INT(per_channel_quantization):
 @pytest.mark.slow
 @common.XfailIfNoCorstone320
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_resnet_u85_INT(per_channel_quantization):
+def test_resnet_18_u85_INT(per_channel_quantization):
     pipeline = EthosU85PipelineINT[input_t](
         model,
         model_inputs,

@@ -82,6 +82,7 @@ runtime.python_library(
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/backend:utils",
         "//executorch/export:lib",
+        "//executorch/runtime:runtime",  # @manual
     ],
 )
 

@@ -54,7 +54,7 @@ This will install:
 The setup.sh script generates a setup_path.sh script that you need to source whenever you restart your shell. Run:
 
 ```{bash}
-source  examples/arm/ethos-u-scratch/setup_path.sh
+source  examples/arm/arm-scratch/setup_path.sh
 ```
 
 As a simple check that your environment is set up correctly, run `which FVP_Corstone_SSE-320` and make sure that the executable is located where you expect, in the `examples/arm` tree.

@@ -7,10 +7,7 @@
 
 import torch
 
-from executorch.backends.nxp.backend.node_format_inference import (
-    NodeFormat,
-    NXP_NODE_FORMAT,
-)
+from executorch.backends.nxp.backend.node_format import NodeFormat, NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 

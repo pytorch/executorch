@@ -70,7 +70,6 @@ class SpecPropPass(ExportPass):
             if isinstance(module, torch.fx.GraphModule):
                 for node in module.graph.nodes:
                     meta_val = node.meta.get("val", None)
-
                     if node.op == "output":
                         node.meta["spec"] = pytree.tree_map(get_spec, node.args[0])
                     elif node.op == "call_function" and node.target == operator.getitem:

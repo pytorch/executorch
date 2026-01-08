@@ -49,7 +49,7 @@ Make sure you have the toolchain configured correctly. Refer to this [setup](htt
 
 ```bash
 which arm-none-eabi-gcc
-# Should return: executorch/examples/arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/arm-none-eabi-gcc
+# Should return: executorch/examples/arm/arm-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/arm-none-eabi-gcc
 ```
 
 ## Build Pico2 Firmware with ExecuTorch

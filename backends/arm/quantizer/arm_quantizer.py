@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,9 +13,10 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import torch
+from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 
 from executorch.backends.arm.quantizer import QuantizationConfig
@@ -333,17 +334,42 @@ def _get_not_module_type_or_name_filter(
     return not_module_type_or_name_filter
 
 
+def _get_composite_filter(
+    filters: List[NodeFilterType], reduce_func: Callable[[Iterable[bool]], bool]
+):
+    """Get a composite filter function given a list of filters, the composite
+    filter accepts a node and checks it with every filter in the list. The
+    filters' outputs are reduced into a single bool output using reduce_func.
+
+    Example:
+        >>> filters = [
+        ...     _get_module_name_filter("blocks.sub"),
+        ...     _get_module_type_filter(torch.nn.Linear),
+        ... ]
+        >>> composite = _get_composite_filter(filters, any)
+        >>> composite(node)  # True if any individual filter matches
+        True
+    """
+
+    def composite_filter(n: Node) -> bool:
+        return reduce_func((f(n) for f in filters))
+
+    return composite_filter
+
+
 class TOSAQuantizer(Quantizer):
     """Manage quantization annotations for TOSA-compatible backends."""
 
     def __init__(
         self, compile_spec_or_tosa_spec: TosaSpecification | ArmCompileSpec
     ) -> None:
-
         super().__init__()
+        self.compile_spec: ArmCompileSpec
         if isinstance(compile_spec_or_tosa_spec, TosaSpecification):
-            self.tosa_spec = compile_spec_or_tosa_spec
-            self.compile_spec = None
+            from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+
+            self.compile_spec = TosaCompileSpec(compile_spec_or_tosa_spec)
+            self.tosa_spec = self.compile_spec.tosa_spec
         elif isinstance(compile_spec_or_tosa_spec, ArmCompileSpec):
             self.compile_spec = compile_spec_or_tosa_spec
             self.tosa_spec = self.compile_spec.tosa_spec
@@ -403,8 +429,6 @@ class TOSAQuantizer(Quantizer):
 
         """
         # Validate that quantization_config is provided
-        if quantization_config is None:
-            raise ValueError("quantization_config == None is not supported yet")
         self.module_name_config[module_name] = quantization_config
         return self
 
@@ -419,6 +443,31 @@ class TOSAQuantizer(Quantizer):
         self.io_config = quantization_config
         return self
 
+    def _set_disallow_tfa_for_nodes(self, model: GraphModule) -> None:
+        """Populate `disallow_tfa` metadata for each FX node.
+
+        Transform-for-annotation passes inspect this flag to decide whether
+        they may transform a node. Typically, a node should not be transformed
+        in case it is not to be quantized, which is relevant for partially
+        quantized models.
+        """
+
+        unquantized_modules_types = [
+            m
+            for m in self.module_type_config.keys()
+            if self.module_type_config[m] is None
+        ]
+        module_filters = [
+            _get_module_type_filter(module_type)
+            for module_type in unquantized_modules_types
+        ]
+        # Create a composite filter that returns True if any of the
+        # "unquantized" modules contains the node.
+        composite_filter = _get_composite_filter(module_filters, any)
+
+        for node in model.graph.nodes:
+            node.meta[DISALLOW_TFA_META_KEY] = composite_filter(node)
+
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         """Transform the graph to prepare it for quantization annotation.
 
@@ -431,12 +480,14 @@ class TOSAQuantizer(Quantizer):
             GraphModule: Transformed model prepared for annotation.
 
         """
+
+        self._set_disallow_tfa_for_nodes(model)
+
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
 
-        return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(
-            graph_module=model
-        )
+        pass_manager = ArmPassManager(self.compile_spec)
+        return pass_manager.transform_for_annotation_pipeline(graph_module=model)
 
     def annotate(self, model: GraphModule) -> GraphModule:
         """Annotate the graph with the configured quantization settings.

@@ -828,6 +828,17 @@ class ConvTranspose3dSingle(torch.nn.Module):
         return self.conv_transpose(x)
 
 
+class Copy(torch.nn.Module):
+    def __init__(self, x):
+        super().__init__()
+        self.x = x
+
+    def forward(self, y):
+        # +1 to workaround that copy has no quant config
+        x = torch.ops.aten.copy.default(self.x, y + 1)
+        return x + 1
+
+
 class Cos(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1464,6 +1475,24 @@ class MaxPool2d(torch.nn.Module):
 
     def forward(self, x):
         return self.max_pool2d(x)
+
+
+class MaxPool3d(torch.nn.Module):
+    def __init__(
+        self, kernel_size, stride, padding, dilation, ceil_mode, return_indices
+    ):
+        super().__init__()
+        self.max_pool3d = torch.nn.MaxPool3d(
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            return_indices=return_indices,
+            ceil_mode=ceil_mode,
+        )
+
+    def forward(self, x):
+        return self.max_pool3d(x)
 
 
 class Mean(torch.nn.Module):

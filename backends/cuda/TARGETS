@@ -3,6 +3,20 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 oncall("executorch")
 
 runtime.python_library(
+    name = "cuda_passes",
+    srcs = [
+        "passes/__init__.py",
+        "passes/move_cond_predicate_to_cpu.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
     name = "cuda_backend",
     srcs = [
         "cuda_backend.py",
@@ -11,6 +25,7 @@ runtime.python_library(
         "//executorch/...",
     ],
     deps = [
+        ":cuda_passes",
         ":triton_replacement_pass",
         "//caffe2:torch",
         "//executorch/backends/aoti/passes:passes",

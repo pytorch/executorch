@@ -39,8 +39,9 @@ class TestSqueeze(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_squeeze_dims"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs)
         )
 
     def test_fp32_squeeze(self):
-        inputs = (torch.randn(1, 2, 1, 3, 1),)
-        self._test(Squeeze(dims=[2, 4]), inputs)
+        inputs = (torch.randn(1, 2, 1, 3),)
+        self._test(Squeeze(dims=[2]), inputs)

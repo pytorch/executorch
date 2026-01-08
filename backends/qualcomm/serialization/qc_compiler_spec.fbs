@@ -34,7 +34,7 @@ table HtpInfo {
 enum QcomChipset: int {
   UNKNOWN_SM = 0,
   SA8295 = 39,
-  SM8350 = 35,
+  SM8350 = 30,
   SM8450 = 36,
   SM8475 = 42,
   SM8550 = 43,
@@ -50,6 +50,7 @@ enum QcomChipset: int {
   SAR2230P = 95,
   SA8255 = 52,
   SW6100 = 96,
+  QCM6490 = 93,
 }
 
 /// Indicate the information of the specified SoC.
@@ -156,10 +157,6 @@ table QnnExecuTorchHtpBackendOptions {
   /// Signed or unsigned HTP PD session. The default PD session is unsigned.
   pd_session:QnnExecuTorchHtpPdSession;
 
-  /// Optional parameter specifying the directory of QNN Skel library. Only
-  /// useful for backends which have a Skel library.
-  skel_library_dir:string;
-
   /// With using conv hmx with short depths, we might have better performance,
   /// but convolution that have short depth and/or weights that are not
   /// symmetric could exhibit inaccurate results.
@@ -263,10 +260,6 @@ table QnnExecuTorchOptions {
   /// Optional backend specific options for the HTP backend.
   backend_options:QnnExecuTorchBackendOptions;
 
-  /// Optional parameter to create qnn graph if QNN context blob is not given
-  /// It could be a list of names only when doing weight-sharing lowering
-  graph_name:[string];
-
   /// Optional parameter to override the QNN backend library.
   library_path:string;
 
@@ -289,14 +282,17 @@ table QnnExecuTorchOptions {
   /// Is model from qnn context binary
   is_from_context_binary:bool;
 
-  // Enable this option to record all QNN API calls for debugging purpose
+  /// Enable this option to record all QNN API calls for debugging purpose
   saver:bool;
 
-  // Path to saver output folder
+  /// Path to saver output folder
   saver_output_dir:string;
 
   /// Optional structure to specify op packages loaded and used by the backend.
   op_package_options:QnnExecuTorchOpPackageOptions;
+
+  /// This experimental parameter is used to decide whether to enable multi-head attention to single-head attention pass, aiming to reduce time consumption in AOT and improve performance on HTP.
+  use_mha2sha:bool;
 }
 
 root_type QnnExecuTorchOptions;
