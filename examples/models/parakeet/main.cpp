@@ -105,16 +105,38 @@ std::vector<int64_t> greedy_decode_executorch(
        static_cast<::executorch::aten::SizesType>(pred_hidden)},
       ::executorch::aten::ScalarType::Float);
 
-  // Initialize decoder state with zeros
-  std::vector<float> sos_g_data(1 * 1 * pred_hidden, 0.0f);
-  auto sos_g = from_blob(
-      sos_g_data.data(),
-      {1, 1, static_cast<::executorch::aten::SizesType>(pred_hidden)},
-      ::executorch::aten::ScalarType::Float);
+  // Prime the prediction network state with SOS (= blank_id) to match NeMo TDT
+  // greedy label-looping decoding behavior:
+  // - SOS is defined as blank:
+  // https://github.com/NVIDIA-NeMo/NeMo/blob/bf583c980b70cecc184fa8a083a9c3ddb87f905e/nemo/collections/asr/parts/submodules/transducer_decoding/tdt_label_looping.py#L250
+  // - Predictor priming with SOS:
+  // https://github.com/NVIDIA-NeMo/NeMo/blob/bf583c980b70cecc184fa8a083a9c3ddb87f905e/nemo/collections/asr/parts/submodules/transducer_decoding/tdt_label_looping.py#L363-L368
+  std::vector<int64_t> sos_token_data = {blank_id};
+  auto sos_token = from_blob(
+      sos_token_data.data(), {1, 1}, ::executorch::aten::ScalarType::Long);
+  auto decoder_init_result = model.execute(
+      "decoder_predict",
+      std::vector<::executorch::runtime::EValue>{sos_token, h, c});
+  if (!decoder_init_result.ok()) {
+    ET_LOG(Error, "decoder_predict (SOS) failed");
+    return hypothesis;
+  }
+  auto& init_outputs = decoder_init_result.get();
+  auto g_init = init_outputs[0].toTensor();
+  auto new_h_init = init_outputs[1].toTensor();
+  auto new_c_init = init_outputs[2].toTensor();
+  std::memcpy(
+      h_data.data(),
+      new_h_init.const_data_ptr<float>(),
+      h_data.size() * sizeof(float));
+  std::memcpy(
+      c_data.data(),
+      new_c_init.const_data_ptr<float>(),
+      c_data.size() * sizeof(float));
 
   auto g_proj_result = model.execute(
       "joint_project_decoder",
-      std::vector<::executorch::runtime::EValue>{sos_g});
+      std::vector<::executorch::runtime::EValue>{g_init});
   if (!g_proj_result.ok()) {
     ET_LOG(Error, "joint_project_decoder failed");
     return hypothesis;
