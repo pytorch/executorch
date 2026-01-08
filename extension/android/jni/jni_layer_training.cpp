@@ -345,7 +345,7 @@ class SGDHybrid : public facebook::jni::HybridClass<SGDHybrid> {
 } // namespace executorch::extension
 
 // Function to register training module natives
-void register_natives_for_training() {
+void register_natives_for_training(JNIEnv* /* env */) {
   executorch::extension::ExecuTorchTrainingJni::registerNatives();
   executorch::extension::SGDHybrid::registerNatives();
 };
