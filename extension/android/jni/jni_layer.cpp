@@ -192,7 +192,7 @@ jobject newJTensorFromTensor(JNIEnv* env, const executorch::aten::Tensor& tensor
   if (scalar_type_to_java_dtype.count(scalarType) == 0) {
     std::stringstream ss;
     ss << "executorch::aten::Tensor scalar type is not supported on java side";
-    jni_helper::throwExecutorchException(
+    executorch::jni_helper::throwExecutorchException(
         env, static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
     return nullptr;
   }
@@ -277,7 +277,7 @@ TensorPtr newTensorFromJTensor(JNIEnv* env, jobject jtensor) {
   if (java_dtype_to_scalar_type.count(jdtype) == 0) {
     std::stringstream ss;
     ss << "Unknown Tensor jdtype: [" << jdtype << "]";
-    jni_helper::throwExecutorchException(
+    executorch::jni_helper::throwExecutorchException(
         env, static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
     env->DeleteLocalRef(jshape);
     env->DeleteLocalRef(jbuffer);
@@ -289,7 +289,7 @@ TensorPtr newTensorFromJTensor(JNIEnv* env, jobject jtensor) {
   if (dataCapacity < 0) {
     std::stringstream ss;
     ss << "Tensor buffer is not direct or has invalid capacity";
-    jni_helper::throwExecutorchException(
+    executorch::jni_helper::throwExecutorchException(
         env, static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
     env->DeleteLocalRef(jshape);
     env->DeleteLocalRef(jbuffer);
@@ -307,7 +307,7 @@ TensorPtr newTensorFromJTensor(JNIEnv* env, jobject jtensor) {
     ss << "Tensor dimensions(elements number: " << numel
        << ") inconsistent with buffer capacity " << dataCapacity
        << " (element size bytes: " << elementSize << ")";
-    jni_helper::throwExecutorchException(
+    executorch::jni_helper::throwExecutorchException(
         env, static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
     env->DeleteLocalRef(jshape);
     env->DeleteLocalRef(jbuffer);
@@ -359,7 +359,7 @@ jobject newJEValueFromEValue(JNIEnv* env, EValue evalue) {
 
   std::stringstream ss;
   ss << "Unknown EValue type: [" << static_cast<int>(evalue.tag) << "]";
-  jni_helper::throwExecutorchException(
+  executorch::jni_helper::throwExecutorchException(
       env, static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
   return nullptr;
 }
@@ -379,7 +379,7 @@ TensorPtr JEValueToTensorImpl(JNIEnv* env, jobject jevalue) {
 
   std::stringstream ss;
   ss << "Unknown EValue typeCode: " << typeCode;
-  jni_helper::throwExecutorchException(
+  executorch::jni_helper::throwExecutorchException(
       env, static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
   return nullptr;
 }
@@ -434,7 +434,7 @@ Java_org_pytorch_executorch_Module_nativeExecute(
       std::stringstream ss;
       ss << "Cannot get method names [Native Error: 0x" << std::hex
          << std::uppercase << static_cast<uint32_t>(result) << "]";
-      jni_helper::throwExecutorchException(
+      executorch::jni_helper::throwExecutorchException(
           env, static_cast<uint32_t>(result), ss.str());
       return nullptr;
     }
@@ -442,7 +442,7 @@ Java_org_pytorch_executorch_Module_nativeExecute(
     auto&& buf = prepare_input_tensors(*underlying_method);
     result = underlying_method->execute();
     if (result != Error::Ok) {
-      jni_helper::throwExecutorchException(
+      executorch::jni_helper::throwExecutorchException(
           env, static_cast<uint32_t>(result), "Execution failed for method: " + method);
       return nullptr;
     }
@@ -510,7 +510,7 @@ Java_org_pytorch_executorch_Module_nativeExecute(
 #endif
 
   if (!result.ok()) {
-    jni_helper::throwExecutorchException(
+    executorch::jni_helper::throwExecutorchException(
         env,
         static_cast<uint32_t>(result.error()),
         "Execution failed for method: " + method);
@@ -559,7 +559,7 @@ Java_org_pytorch_executorch_Module_nativeGetMethods(
     std::stringstream ss;
     ss << "Cannot get load module [Native Error: 0x" << std::hex
        << std::uppercase << static_cast<uint32_t>(names_result.error()) << "]";
-    jni_helper::throwExecutorchException(
+    executorch::jni_helper::throwExecutorchException(
         env, static_cast<uint32_t>(Error::InvalidArgument), ss.str());
     return nullptr;
   }
