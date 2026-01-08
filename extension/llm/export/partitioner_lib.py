@@ -1,10 +1,11 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional
+from typing import List, Optional
 
 
 def get_xnnpack_partitioner(dynamic_quant_only_partitioner: bool = True):
@@ -236,3 +237,32 @@ def get_qnn_partitioner(
         # TODO: if deprecated legacy export, skip_mutable_buffer can be set False
         skip_mutable_buffer=True,
     )
+
+
+def get_tosa_partitioner(version: str):
+    from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+    from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+
+    compile_spec = TosaCompileSpec(version)
+
+    return TOSAPartitioner(compile_spec)
+
+
+def get_ethosu_partitioner(target: str):
+    from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
+    from executorch.backends.arm.ethosu.partitioner import EthosUPartitioner
+
+    compile_spec = EthosUCompileSpec(target)
+
+    return EthosUPartitioner(compile_spec)
+
+
+def get_vgf_partitioner(
+    compile_spec: Optional[str], compiler_flags: Optional[List[str]]
+):
+    from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
+    from executorch.backends.arm.vgf.partitioner import VgfPartitioner
+
+    compile_spec_obj = VgfCompileSpec(compile_spec, compiler_flags)
+
+    return VgfPartitioner(compile_spec_obj)
