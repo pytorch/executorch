@@ -186,6 +186,15 @@ class ExecuTorchJni {
     }
 #endif
   }
+
+  // Access protected methods_ member (friend class privilege)
+  Method* get_method(const std::string& method_name) {
+    auto it = module_->methods_.find(method_name);
+    if (it != module_->methods_.end()) {
+      return it->second.method.get();
+    }
+    return nullptr;
+  }
 };
 
 } // namespace executorch::extension
@@ -446,7 +455,12 @@ Java_org_pytorch_executorch_Module_nativeExecute(
           env, static_cast<uint32_t>(result), ss.str());
       return nullptr;
     }
-    auto&& underlying_method = native->module_->methods_[method].method;
+    auto* underlying_method = native->get_method(method);
+    if (underlying_method == nullptr) {
+      executorch::jni_helper::throwExecutorchException(
+          env, static_cast<uint32_t>(Error::InvalidArgument), "Method not found: " + method);
+      return nullptr;
+    }
     auto&& buf = prepare_input_tensors(*underlying_method);
     result = underlying_method->execute();
     if (result != Error::Ok) {
