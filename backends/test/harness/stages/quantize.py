@@ -28,11 +28,13 @@ class Quantize(Stage):
         calibration_samples: Optional[Sequence[Any]] = None,
         is_qat: Optional[bool] = False,
         set_global: bool = True,
+        fold_quantize: bool = True
     ):
         self.quantizer = quantizer
         self.quantization_config = quantization_config
         self.calibrate = calibrate
         self.calibration_samples = calibration_samples
+        self.fold_quantize = fold_quantize
 
         if self.quantization_config is not None and set_global:
             self.quantizer.set_global(self.quantization_config)
@@ -66,7 +68,7 @@ class Quantize(Stage):
             else:
                 prepared(*inputs)
 
-        converted = convert_pt2e(prepared)
+        converted = convert_pt2e(prepared, fold_quantize=self.fold_quantize)
         DuplicateDynamicQuantChainPass()(converted)
 
         self.converted_graph = converted
