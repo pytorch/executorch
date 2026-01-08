@@ -331,9 +331,11 @@ Java_org_pytorch_executorch_extension_llm_LlmModule_nativeDestroy(
     JNIEnv* /* env */,
     jobject /* this */,
     jlong native_handle) {
-  auto* native =
-      reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
-  delete native;
+  if (native_handle != 0) {
+    auto* native =
+        reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
+    delete native;
+  }
 }
 
 JNIEXPORT jint JNICALL

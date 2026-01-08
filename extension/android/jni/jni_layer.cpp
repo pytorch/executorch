@@ -404,8 +404,10 @@ Java_org_pytorch_executorch_Module_nativeDestroy(
     JNIEnv* /* env */,
     jclass /* clazz */,
     jlong nativeHandle) {
-  auto* native = reinterpret_cast<ExecuTorchModuleNative*>(nativeHandle);
-  delete native;
+  if (nativeHandle != 0) {
+    auto* native = reinterpret_cast<ExecuTorchModuleNative*>(nativeHandle);
+    delete native;
+  }
 }
 
 JNIEXPORT jobjectArray JNICALL
