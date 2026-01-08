@@ -1698,35 +1698,35 @@
     nanoid "3.3.7"
 
 "@remix-run/node@^2.12.0":
-  version "2.15.0"
-  resolved "https://registry.yarnpkg.com/@remix-run/node/-/node-2.15.0.tgz#e64e2b14ca5ce4628021b7384d45992df118218f"
-  integrity sha512-tWbR7pQ6gwj+MkGf6WVIYnjgfGfpdU8EOIa6xsCIRlrm0p3BtMz4jA3GvBWEpOuEnN5MV7CarVzhduaRzkZ0SQ==
+  version "2.17.3"
+  resolved "https://registry.yarnpkg.com/@remix-run/node/-/node-2.17.3.tgz#ae2c5e44b8a6797f63ee2a54e68910287e2a0a53"
+  integrity sha512-8ZxzI7PPoulP2D+Xlyl8RrJUnFw7NlaeVSR8ZSrvUh9AKOR/r75FuOB4/IIOCEKJgQ/tEDj7yaM4ecVUZ+kJww==
   dependencies:
-    "@remix-run/server-runtime" "2.15.0"
+    "@remix-run/server-runtime" "2.17.3"
     "@remix-run/web-fetch" "^4.4.2"
     "@web3-storage/multipart-parser" "^1.0.0"
     cookie-signature "^1.1.0"
     source-map-support "^0.5.21"
     stream-slice "^0.1.2"
-    undici "^6.11.1"
+    undici "^6.21.2"
 
-"@remix-run/router@1.21.0":
-  version "1.21.0"
-  resolved "https://registry.yarnpkg.com/@remix-run/router/-/router-1.21.0.tgz#c65ae4262bdcfe415dbd4f64ec87676e4a56e2b5"
-  integrity sha512-xfSkCAchbdG5PnbrKqFWwia4Bi61nH+wm8wLEqfHDyp7Y3dZzgqS2itV8i4gAq9pC2HsTpwyBC6Ds8VHZ96JlA==
+"@remix-run/router@1.23.0":
+  version "1.23.0"
+  resolved "https://registry.yarnpkg.com/@remix-run/router/-/router-1.23.0.tgz#35390d0e7779626c026b11376da6789eb8389242"
+  integrity sha512-O3rHJzAQKamUz1fvE0Qaw0xSFqsA/yafi2iqeE0pvdFtCO1viYx8QL6f3Ln/aCCTLxs68SLf0KPM9eSeM8yBnA==
 
-"@remix-run/server-runtime@2.15.0":
-  version "2.15.0"
-  resolved "https://registry.yarnpkg.com/@remix-run/server-runtime/-/server-runtime-2.15.0.tgz#08a43eaac5d7441893dfd27db88a2dadea2b14aa"
-  integrity sha512-FuM8vAg1sPskf4wn0ivbuj/7s9Qdh2wnKu+sVXqYz0a95gH5b73TuMzk6n3NMSkFVKKc6+UmlG1WLYre7L2LTg==
+"@remix-run/server-runtime@2.17.3":
+  version "2.17.3"
+  resolved "https://registry.yarnpkg.com/@remix-run/server-runtime/-/server-runtime-2.17.3.tgz#3eb185669ee15d7c71928b640135bf544ddeea40"
+  integrity sha512-8uuV0COprImDpyDB8Rx0VLDKxsttBsMjtdv9BFViz8WfJz79jr8YRfp27hXUs9P4/NU6+wQQYcJawkBj/5uuSg==
   dependencies:
-    "@remix-run/router" "1.21.0"
+    "@remix-run/router" "1.23.0"
     "@types/cookie" "^0.6.0"
     "@web3-storage/multipart-parser" "^1.0.0"
-    cookie "^0.6.0"
+    cookie "^0.7.2"
     set-cookie-parser "^2.4.8"
     source-map "^0.7.3"
-    turbo-stream "2.4.0"
+    turbo-stream "2.4.1"
 
 "@remix-run/web-blob@^3.1.0":
   version "3.1.0"
@@ -2799,7 +2799,7 @@ cookie-signature@^1.1.0:
   resolved "https://registry.yarnpkg.com/cookie-signature/-/cookie-signature-1.2.2.tgz#57c7fc3cc293acab9fec54d73e15690ebe4a1793"
   integrity sha512-D76uU73ulSXrD1UXF4KE2TMxVVwhsnCgfAyTg9k8P6KGZjlXKrOLe4dJQKI3Bxi5wjesZoFXJWElNWBjPZMbhg==
 
-cookie@>=0.7.0, cookie@^0.6.0:
+cookie@>=0.7.0, cookie@^0.7.2:
   version "1.0.2"
   resolved "https://registry.yarnpkg.com/cookie/-/cookie-1.0.2.tgz#27360701532116bd3f1f9416929d176afe1e4610"
   integrity sha512-9Kr/j4O16ISv8zBBhJoi4bXOYNTkFLOqSL3UDB0njXxCXNezjeyVrJyGOWtgfs/q2km1gwBcfH8q1yEGoMYunA==
@@ -6963,10 +6963,10 @@ tslib@^2.0.1, tslib@^2.4.0:
   resolved "https://registry.yarnpkg.com/tslib/-/tslib-2.8.1.tgz#612efe4ed235d567e8aba5f2a5fab70280ade83f"
   integrity sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==
 
-turbo-stream@2.4.0:
-  version "2.4.0"
-  resolved "https://registry.yarnpkg.com/turbo-stream/-/turbo-stream-2.4.0.tgz#1e4fca6725e90fa14ac4adb782f2d3759a5695f0"
-  integrity sha512-FHncC10WpBd2eOmGwpmQsWLDoK4cqsA/UT/GqNoaKOQnT8uzhtCbg3EoUDMvqpOSAI0S26mr0rkjzbOO6S3v1g==
+turbo-stream@2.4.1:
+  version "2.4.1"
+  resolved "https://registry.yarnpkg.com/turbo-stream/-/turbo-stream-2.4.1.tgz#c1a64397724084c09b0f6ea4a2c528d3f67931f9"
+  integrity sha512-v8kOJXpG3WoTN/+at8vK7erSzo6nW6CIaeOvNOkHQVDajfz1ZVeSxCbc6tOH4hrGZW7VUCV0TOXd8CPzYnYkrw==
 
 type-detect@4.0.8:
   version "4.0.8"
@@ -7003,10 +7003,15 @@ undici-types@~6.20.0:
   resolved "https://registry.yarnpkg.com/undici-types/-/undici-types-6.20.0.tgz#8171bf22c1f588d1554d55bf204bc624af388433"
   integrity sha512-Ny6QZ2Nju20vw1SRHe3d9jVu6gJ+4e3+MMpqu7pqE5HT6WsTSlce++GQmK5UXS8mzV8DSYHrQH+Xrf2jVcuKNg==
 
-undici@^6.11.1, undici@^6.18.2:
+undici@^6.18.2:
   version "6.21.0"
   resolved "https://registry.yarnpkg.com/undici/-/undici-6.21.0.tgz#4b3d3afaef984e07b48e7620c34ed8a285ed4cd4"
   integrity sha512-BUgJXc752Kou3oOIuU1i+yZZypyZRqNPW0vqoMPl8VaoalSfeR0D8/t4iAS3yirs79SSMTxTag+ZC86uswv+Cw==
+
+undici@^6.21.2:
+  version "6.23.0"
+  resolved "https://registry.yarnpkg.com/undici/-/undici-6.23.0.tgz#7953087744d9095a96f115de3140ca3828aff3a4"
+  integrity sha512-VfQPToRA5FZs/qJxLIinmU59u0r7LXqoJkCzinq3ckNJp3vKEh7jTWN589YQ5+aoAC/TGRLyJLCPKcLQbM8r9g==
 
 unicode-canonical-property-names-ecmascript@^2.0.0:
   version "2.0.1"
