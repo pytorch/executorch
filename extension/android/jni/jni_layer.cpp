@@ -44,13 +44,8 @@
 using namespace executorch::extension;
 using namespace torch::executor;
 
-namespace {
-
-// Global JavaVM pointer for obtaining JNIEnv in callbacks
-JavaVM* g_jvm = nullptr;
-
-// Helper to convert jstring to std::string
-std::string jstring_to_string(JNIEnv* env, jstring jstr) {
+// Helper to convert jstring to std::string (defined outside namespace for broad access)
+static std::string jstring_to_string(JNIEnv* env, jstring jstr) {
   if (jstr == nullptr) {
     return "";
   }
@@ -62,6 +57,11 @@ std::string jstring_to_string(JNIEnv* env, jstring jstr) {
   env->ReleaseStringUTFChars(jstr, chars);
   return result;
 }
+
+namespace {
+
+// Global JavaVM pointer for obtaining JNIEnv in callbacks
+JavaVM* g_jvm = nullptr;
 
 // EValue type codes (must match Java EValue class)
 constexpr int kTypeCodeNone = 0;
@@ -137,18 +137,22 @@ struct JniCache {
       evalue_mData = env->GetFieldID(evalue_class, "mData", "Ljava/lang/Object;");
     }
 
-    initialized = true;
+  initialized = true;
   }
 };
 
 JniCache g_jni_cache;
 
-// Native module handle class
-class ExecuTorchModuleNative {
+} // anonymous namespace
+
+namespace executorch::extension {
+
+// Native module handle class - named ExecuTorchJni to match friend declaration in Module
+class ExecuTorchJni {
  public:
   std::unique_ptr<Module> module_;
 
-  ExecuTorchModuleNative(
+  ExecuTorchJni(
       JNIEnv* env,
       jstring modelPath,
       jint loadMode,
@@ -183,6 +187,10 @@ class ExecuTorchModuleNative {
 #endif
   }
 };
+
+} // namespace executorch::extension
+
+namespace {
 
 // Helper to create Java Tensor from native tensor
 jobject newJTensorFromTensor(JNIEnv* env, const executorch::aten::Tensor& tensor) {
@@ -395,7 +403,7 @@ Java_org_pytorch_executorch_Module_nativeCreate(
     jstring modelPath,
     jint loadMode,
     jint numThreads) {
-  auto* native = new ExecuTorchModuleNative(env, modelPath, loadMode, numThreads);
+  auto* native = new executorch::extension::ExecuTorchJni(env, modelPath, loadMode, numThreads);
   return reinterpret_cast<jlong>(native);
 }
 
@@ -405,7 +413,7 @@ Java_org_pytorch_executorch_Module_nativeDestroy(
     jclass /* clazz */,
     jlong nativeHandle) {
   if (nativeHandle != 0) {
-    auto* native = reinterpret_cast<ExecuTorchModuleNative*>(nativeHandle);
+    auto* native = reinterpret_cast<executorch::extension::ExecuTorchJni*>(nativeHandle);
     delete native;
   }
 }
@@ -417,7 +425,7 @@ Java_org_pytorch_executorch_Module_nativeExecute(
     jlong nativeHandle,
     jstring methodName,
     jobjectArray jinputs) {
-  auto* native = reinterpret_cast<ExecuTorchModuleNative*>(nativeHandle);
+  auto* native = reinterpret_cast<executorch::extension::ExecuTorchJni*>(nativeHandle);
   if (native == nullptr) {
     return nullptr;
   }
@@ -536,7 +544,7 @@ Java_org_pytorch_executorch_Module_nativeLoadMethod(
     jclass /* clazz */,
     jlong nativeHandle,
     jstring methodName) {
-  auto* native = reinterpret_cast<ExecuTorchModuleNative*>(nativeHandle);
+  auto* native = reinterpret_cast<executorch::extension::ExecuTorchJni*>(nativeHandle);
   if (native == nullptr) {
     return -1;
   }
@@ -549,7 +557,7 @@ Java_org_pytorch_executorch_Module_nativeGetMethods(
     JNIEnv* env,
     jclass /* clazz */,
     jlong nativeHandle) {
-  auto* native = reinterpret_cast<ExecuTorchModuleNative*>(nativeHandle);
+  auto* native = reinterpret_cast<executorch::extension::ExecuTorchJni*>(nativeHandle);
   if (native == nullptr) {
     return nullptr;
   }
@@ -585,7 +593,7 @@ Java_org_pytorch_executorch_Module_nativeGetUsedBackends(
     jclass /* clazz */,
     jlong nativeHandle,
     jstring methodName) {
-  auto* native = reinterpret_cast<ExecuTorchModuleNative*>(nativeHandle);
+  auto* native = reinterpret_cast<executorch::extension::ExecuTorchJni*>(nativeHandle);
   if (native == nullptr) {
     return nullptr;
   }
@@ -658,7 +666,7 @@ Java_org_pytorch_executorch_Module_nativeEtdump(
     jclass /* clazz */,
     jlong nativeHandle) {
 #ifdef EXECUTORCH_ANDROID_PROFILING
-  auto* native = reinterpret_cast<ExecuTorchModuleNative*>(nativeHandle);
+  auto* native = reinterpret_cast<executorch::extension::ExecuTorchJni*>(nativeHandle);
   if (native == nullptr) {
     return JNI_FALSE;
   }
