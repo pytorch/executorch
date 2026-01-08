@@ -105,8 +105,10 @@ std::vector<int64_t> greedy_decode_executorch(
        static_cast<::executorch::aten::SizesType>(pred_hidden)},
       ::executorch::aten::ScalarType::Float);
 
-  // Prime the prediction network state with SOS (= blank_id) to match NeMo
-  // decoding behavior.
+  // Prime the prediction network state with SOS (= blank_id) to match NeMo TDT
+  // greedy label-looping decoding behavior:
+  // - SOS is defined as blank: https://github.com/NVIDIA-NeMo/NeMo/blob/bf583c980b70cecc184fa8a083a9c3ddb87f905e/nemo/collections/asr/parts/submodules/transducer_decoding/tdt_label_looping.py#L250
+  // - Predictor priming with SOS: https://github.com/NVIDIA-NeMo/NeMo/blob/bf583c980b70cecc184fa8a083a9c3ddb87f905e/nemo/collections/asr/parts/submodules/transducer_decoding/tdt_label_looping.py#L363-L368
   std::vector<int64_t> sos_token_data = {blank_id};
   auto sos_token = from_blob(
       sos_token_data.data(), {1, 1}, ::executorch::aten::ScalarType::Long);
