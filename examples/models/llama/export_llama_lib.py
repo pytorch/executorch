@@ -245,13 +245,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--openvino_awq",
         required=False,
         action="store_true",
-        help="Whether to use AWQ from NNCF. Applicable only for the Openvino backend.",
+        help="Whether to use AWQ from NNCF. Applicable only for the OpenVINO backend.",
     )
 
     parser.add_argument(
         "--openvino_scale_estimation",
         action="store_true",
-        help="Whether to use Scale Estimation algorithm from NNCF. Applicable only for the Openvino backend",
+        help="Whether to use Scale Estimation algorithm from NNCF. Applicable only for the OpenVINO backend",
     )
 
     parser.add_argument(

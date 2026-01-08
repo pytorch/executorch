@@ -21,9 +21,6 @@ from executorch.backends.openvino.quantizer.observers import (
 )
 from nncf.common.graph.graph import NNCFGraph  # type: ignore[import-untyped]
 from nncf.common.logging import nncf_logger  # type: ignore[import-untyped]
-from nncf.experimental.common.tensor_statistics.statistics import (  # type: ignore[import-untyped]
-    WCTensorStatistic,
-)
 from nncf.quantization.algorithms.min_max.algorithm import (  # type: ignore[import-untyped]
     MinMaxQuantization,
 )
@@ -87,7 +84,7 @@ class OpenVINOQuantizer(Quantizer):
         QuantizationMode.INT8WO_SYM: "int8_sym",
         QuantizationMode.INT8WO_ASYM: "int8_asym",
     }
-    
+
     def __init__(
         self,
         *,
@@ -127,7 +124,6 @@ class OpenVINOQuantizer(Quantizer):
             )
             weight_compression_configuration["subset_size"] = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
 
-            self._backup_mode =  self._algo._backup_mode
             self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
                 **weight_compression_configuration
             )
@@ -144,6 +140,7 @@ class OpenVINOQuantizer(Quantizer):
                 precision. By default, the backup precision is assigned for the embeddings and last MatMul layers. 
             4. backup_mode: Defines a backup mode for mixed-precision weight compression.
         """
+        assert isinstance(self._algo, nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression), "get_weights_compression_config() is called but the algorithm initialized is not a WeightCompression Algorithm"
         quantizer_initialized_algo_attributes = {
             "mode": self._algo.mode,
             "group_size": self._algo.group_size,

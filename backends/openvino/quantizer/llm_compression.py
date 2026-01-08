@@ -56,7 +56,7 @@ def transform_fn(token_pos_map: tuple[int, int]):
     Transforms and returns input from dataset so that it is acceptable by the model
     Currently, this method is only tested with Llama models
 
-    :param token_pos_map: This input contains the posiition and its token ID
+    :param token_pos_map: This input contains the position and its token ID
     """
     inputs = (
         torch.tensor(token_pos_map[1]).unsqueeze(0).unsqueeze(0),
