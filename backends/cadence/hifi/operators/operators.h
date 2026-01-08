@@ -218,6 +218,13 @@ void im2row_per_tensor_out(
     bool channel_last,
     ::executorch::aten::Tensor& out);
 
+::executorch::aten::Tensor& transpose_copy_int_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    int64_t dim0,
+    int64_t dim1,
+    ::executorch::aten::Tensor& out);
+
 } // namespace native
 } // namespace HiFi
 } // namespace impl
