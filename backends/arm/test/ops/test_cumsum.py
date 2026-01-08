@@ -68,28 +68,28 @@ def test_cumsum_tosa_INT(test_data: input_t1):
 
 @common.parametrize("test_data", CumsumModule.test_parameters)
 @common.SkipIfNoModelConverter
-def test_cumsum_vgf_FP(test_data: input_t1):
+def test_cumsum_vgf_no_quant(test_data: input_t1):
     module = CumsumModule()
     args = test_data()
     pipeline = VgfPipeline[input_t1](
         module,
         args,
         aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", CumsumModule.test_parameters)
 @common.SkipIfNoModelConverter
-def test_cumsum_vgf_INT(test_data: input_t1):
+def test_cumsum_vgf_quant(test_data: input_t1):
     module = CumsumModule()
     args = test_data()
     pipeline = VgfPipeline[input_t1](
         module,
         args,
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 

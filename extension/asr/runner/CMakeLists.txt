@@ -35,6 +35,22 @@ set_target_properties(
   extension_asr_runner PROPERTIES POSITION_INDEPENDENT_CODE ON
 )
 
+# If the project is configured to build with CUDA support, try to find a CUDA
+# runtime (prefer the CUDAToolkit package). If found, expose a compile-time
+# macro so sources can conditionally compile CUDA-aware code.
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit QUIET)
+  if(CUDAToolkit_FOUND)
+    target_compile_definitions(extension_asr_runner PUBLIC CUDA_AVAILABLE)
+    message(STATUS "CUDAToolkit found; defining CUDA_AVAILABLE for ASR runner")
+  else()
+    message(
+      STATUS
+        "CUDA requested (EXECUTORCH_BUILD_CUDA=ON) but no CUDA runtime found"
+    )
+  endif()
+endif()
+
 install(
   TARGETS extension_asr_runner
   EXPORT ExecuTorchTargets

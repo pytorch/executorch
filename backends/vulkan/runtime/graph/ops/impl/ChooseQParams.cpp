@@ -158,7 +158,8 @@ bool can_use_choose_qparams_per_row(
 void choose_qparams_affine_impl(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
-  int arg_idx = 0;
+  size_t arg_idx = 0;
+  size_t last_arg_idx = args.size() - 1;
   const ValueRef input = args[arg_idx++];
   const ValueRef mapping_type = args[arg_idx++];
   (void)mapping_type;
@@ -170,7 +171,8 @@ void choose_qparams_affine_impl(
   (void)eps;
   const ValueRef scale_dtype = args[arg_idx++];
   const ValueRef zero_point_dtype = args[arg_idx++];
-  const ValueRef out_tuple_ref = args[arg_idx++];
+
+  const ValueRef out_tuple_ref = args[last_arg_idx];
 
   // Suppress unused variable warnings
   (void)target_dtype;

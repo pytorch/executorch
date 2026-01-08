@@ -69,11 +69,17 @@ class DecomposeLayerNormPass(ArmPass):
         InsertTableOpsPass,
     }
 
+    _TARGET_OPS = {
+        exir_ops.edge.aten.native_layer_norm.default,
+        torch.ops.aten.layer_norm.default,
+    }
+
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in (
-                exir_ops.edge.aten.native_layer_norm.default,
-                torch.ops.aten.layer_norm.default,
+            if (
+                node.op != "call_function"
+                or node.target not in DecomposeLayerNormPass._TARGET_OPS
+                or not self.allowed_to_transform(node.meta)
             ):
                 continue
 

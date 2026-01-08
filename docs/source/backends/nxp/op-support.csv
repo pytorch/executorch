@@ -1,0 +1,21 @@
+Operator,Compute DType,Quantization,Constraints
+aten.abs.default,int8,static int8,
+aten._adaptive_avg_pool2d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
+aten.addmm.default,int8,static int8,2D tensor only
+aten.add.Tensor,int8,static int8,"alpha = 1, input tensor of rame rank"
+aten.avg_pool2d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
+aten.cat.default,int8,static int8,"input_channels % 8 = 0, output_channels %8 = 0"
+aten.clone.default,int8,static int8,
+aten.constant_pad_nd.default,int8,static int8,"H or W padding only"
+aten.convolution.default,int8,static int8,"1D or 2D convolution, constant weights, groups=1 or groups=channels_count (depthwise)"
+aten.hardtanh.default,int8,static int8,"supported ranges: <0,6>, <-1, 1>, <0,1>, <0,inf>"
+aten.max_pool2d.default,int8,static int8,"dilation=1, ceil_mode=False"
+aten.max_pool2d_with_indices.default,int8,static int8,"dilation=1, ceil_mode=False"
+aten.mean.dim,int8,static int8,"4D tensor only, dims = [-1,-2] or [-2,-1]"
+aten.mul.Tensor, int8, static int8, "tensor-size % 8 = 0"
+aten.mm.default,int8,static int8,"2D tensor only"
+aten.relu.default,int8,static int8,
+aten.tanh.default,int8,static int8,
+aten.view_copy.default,int8,static int8,
+aten.sigmoid.default,int8,static int8,
+aten.slice_copy.Tensor, int8, static int8

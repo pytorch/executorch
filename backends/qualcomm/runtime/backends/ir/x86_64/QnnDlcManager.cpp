@@ -16,9 +16,7 @@ namespace qnn {
 QnnDlcManager::QnnDlcManager(
     const QnnExecuTorchContextBinary& qnn_context_blob,
     const QnnExecuTorchOptions* options)
-    : qnn_loaded_backend_(""),
-      qnn_context_blob_(qnn_context_blob),
-      options_(options) {
+    : qnn_context_blob_(qnn_context_blob), options_(options) {
   if (options_ == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Fail to create QnnDlcManager, options is nullptr");
@@ -26,52 +24,51 @@ QnnDlcManager::QnnDlcManager(
 }
 
 Error QnnDlcManager::LoadQnnIrLibrary() {
-  qnn_loaded_backend_ = QnnImplementation(library_name_);
-  Error ret = qnn_loaded_backend_.Load(nullptr);
+  backend_bundle_ptr_->implementation =
+      std::make_unique<QnnImplementation>(library_name_);
+  Error ret = backend_bundle_ptr_->implementation->Load(nullptr);
   return ret;
 }
 
 Error QnnDlcManager::Create() {
-  backend_params_ptr_->qnn_backend_ptr_ =
-      std::make_unique<IrBackend>(qnn_loaded_backend_, logger_.get());
+  backend_bundle_ptr_->qnn_backend_ptr = std::make_unique<IrBackend>(
+      backend_bundle_ptr_->implementation.get(),
+      backend_bundle_ptr_->qnn_logger_ptr.get());
 
-  backend_params_ptr_->qnn_device_ptr_ =
-      std::make_unique<QnnDevice>(qnn_loaded_backend_, logger_.get());
+  backend_bundle_ptr_->qnn_device_ptr = std::make_unique<QnnDevice>(
+      backend_bundle_ptr_->implementation.get(),
+      backend_bundle_ptr_->qnn_logger_ptr.get());
 
   backend_params_ptr_->qnn_backend_cache_ptr_ =
       std::make_unique<QnnBackendCache>(qnn_context_blob_);
 
   backend_params_ptr_->qnn_context_ptr_ = std::make_unique<IrContext>(
-      qnn_loaded_backend_,
-      backend_params_ptr_->qnn_backend_ptr_.get(),
-      backend_params_ptr_->qnn_device_ptr_.get(),
+      backend_bundle_ptr_->implementation.get(),
+      backend_bundle_ptr_->qnn_backend_ptr.get(),
+      backend_bundle_ptr_->qnn_device_ptr.get(),
       backend_params_ptr_->qnn_backend_cache_ptr_.get(),
       nullptr);
 
   backend_params_ptr_->qnn_graph_ptr_ = std::make_unique<QnnGraph>(
-      qnn_loaded_backend_,
-      backend_params_ptr_->qnn_backend_ptr_.get(),
+      backend_bundle_ptr_->implementation.get(),
+      backend_bundle_ptr_->qnn_backend_ptr.get(),
       backend_params_ptr_->qnn_context_ptr_.get(),
       get_option(options_->profile_level()));
   backend_params_ptr_->backend_init_state_ =
       BackendInitializeState::INITIALIZED;
-  return backend_params_ptr_->qnn_backend_ptr_->VerifyQNNSDKVersion();
+  return backend_bundle_ptr_->qnn_backend_ptr->VerifyQNNSDKVersion();
 }
 
-Error QnnDlcManager::Configure() {
+Error QnnDlcManager::Configure(const std::vector<std::string>& graph_names) {
   ET_CHECK_OR_RETURN_ERROR(
       backend_params_ptr_ != nullptr, Internal, "Failed to load Qnn backend.");
-  std::vector<std::string> graph_names;
-  for (auto name : *options_->graph_name()) {
-    graph_names.emplace_back(name->str());
-  }
   ET_CHECK_OR_RETURN_ERROR(
       backend_params_ptr_->qnn_backend_cache_ptr_->Configure(graph_names) ==
           Error::Ok,
       Internal,
       "Fail to configure Qnn backend cache");
   ET_CHECK_OR_RETURN_ERROR(
-      backend_params_ptr_->qnn_backend_ptr_->Configure(
+      backend_bundle_ptr_->qnn_backend_ptr->Configure(
           options_->op_package_options()) == Error::Ok,
       Internal,
       "Fail to configure Qnn backend");
@@ -92,7 +89,9 @@ Error QnnDlcManager::Configure() {
   return Error::Ok;
 }
 
-Error QnnDlcManager::SetUpDlcEnvironment(const Qnn_Version_t& coreApiVersion) {
+Error QnnDlcManager::SetUpDlcEnvironment(
+    const Qnn_Version_t& coreApiVersion,
+    const std::vector<std::string>& graph_names) {
   ET_CHECK_MSG(
       (coreApiVersion.major >= 2 && coreApiVersion.minor >= 23),
       "Qnn API version %u.%u.%u is not supported for Qnn IR backend, The minimum supported version is 2.23.0 or QNN_SDK version 2.30.0",
@@ -105,36 +104,33 @@ Error QnnDlcManager::SetUpDlcEnvironment(const Qnn_Version_t& coreApiVersion) {
       Internal,
       "Fail to Load Qnn IR library.");
 
-  logger_ = std::make_unique<QnnLogger>(
-      qnn_loaded_backend_, LoggingCallback, get_option(options_->log_level()));
+  backend_bundle_ptr_->qnn_logger_ptr = std::make_unique<QnnLogger>(
+      backend_bundle_ptr_->implementation.get(),
+      LoggingCallback,
+      get_option(options_->log_level()));
 
   ET_CHECK_OR_RETURN_ERROR(
       Create() == Error::Ok, Internal, "Failed to load Qnn IR backend.");
 
   ET_CHECK_OR_RETURN_ERROR(
-      Configure() == Error::Ok, Internal, "Fail to configure IR backend.");
+      Configure(graph_names) == Error::Ok,
+      Internal,
+      "Fail to configure IR backend.");
 
   return Error::Ok;
 }
 
 Error QnnDlcManager::RegisterGraphsFromDLC(
-    const QnnImplementation& implementation,
+    QnnImplementation* implementation,
     QnnBackend* backend,
     QnnContext* context,
     QnnBackendCache* cache) {
   return Error::Ok;
 }
 
-void QnnDlcManager::ResetBackendParams() {
+void QnnDlcManager::Destroy() {
   backend_params_ptr_.reset(new BackendConfigParameters());
-}
-
-void QnnDlcManager::ResetLogger() {
-  logger_.reset();
-}
-
-void QnnDlcManager::TerminateAllBackends() {
-  qnn_loaded_backend_.TerminateAllBackends();
+  backend_bundle_ptr_.reset(new QnnBackendBundle());
 }
 
 } // namespace qnn

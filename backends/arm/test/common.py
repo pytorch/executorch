@@ -170,12 +170,21 @@ def get_vgf_compile_spec(
 
     if not custom_path:
         custom_path = maybe_get_tosa_collate_path()
+    profiles = []
     if "FP" in repr(tosa_spec):
-        artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_vgf_fp_")
-    elif "INT" in repr(tosa_spec):
-        artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_vgf_int_")
-    else:
+        profiles.append("fp")
+    if "INT" in repr(tosa_spec):
+        profiles.append("int")
+    if len(profiles) == 0:
         raise ValueError(f"Unsupported vgf compile_spec: {repr(tosa_spec)}")
+
+    if custom_path is None:
+        artifact_path = "arm_vgf_"
+        for profile in profiles:
+            artifact_path = artifact_path + f"_{profile}"
+        artifact_path = tempfile.mkdtemp(artifact_path)
+    else:
+        artifact_path = custom_path
 
     if not os.path.exists(artifact_path):
         os.makedirs(artifact_path, exist_ok=True)

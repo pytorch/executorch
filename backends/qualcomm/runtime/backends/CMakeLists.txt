@@ -156,3 +156,10 @@ target_sources(
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnDlcManager.h
   PRIVATE ${HOST_ARCHITECTURE_IR}/QnnDlcManager.cpp
 )
+
+# qnn_backend_unified_registry
+target_sources(
+  qnn_backend_unified_registry
+  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnBackendUnifiedRegistry.h
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendUnifiedRegistry.cpp
+)

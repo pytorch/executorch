@@ -22,7 +22,7 @@ class Mul(torch.nn.Module):
 
 
 @parametrize("test_data", Mul.test_data)
-def test_decompose_quant_nodes_pass(test_data: Tuple[torch.Tensor]):
+def test_decompose_quant_nodes_tosa_INT(test_data: Tuple[torch.Tensor]):
     module = Mul()
     q_dq_ops = {
         "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3,

@@ -968,7 +968,7 @@ def _get_slice_patterns_and_replacements() -> (
             x, x_scale, x_zero_point, x_qmin, x_qmax, torch.uint8
         )
         x = torch.ops.aten.slice_copy.Tensor(x, dim, start, end)
-        x = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+        x = torch.ops.quantized_decomposed.quantize_per_tensor.default(
             x, x_scale, x_zero_point, x_qmin, x_qmax, torch.uint8
         )
         return x

@@ -23,6 +23,11 @@ using ::executorch::runtime::getLeadingDims;
   _(uint8_t, Byte)                           \
   _(int8_t, Char)
 
+#define ET_FORALL_CADENCE_QUANTIZED_TYPES_WITH_INT16(_) \
+  _(uint8_t, Byte)                                      \
+  _(int8_t, Char)                                       \
+  _(int16_t, Short)
+
 inline __attribute__((always_inline)) void linear_(
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& weight,

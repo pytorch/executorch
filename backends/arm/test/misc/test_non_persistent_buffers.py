@@ -32,7 +32,7 @@ input_t = tuple[torch.Tensor]
 
 
 @parametrize("test_data", test_input)
-def test_non_persistent_buffer_FP(test_data: input_t):
+def test_non_persistent_buffer_tosa_FP(test_data: input_t):
     """
     Test validates Arm backend handling of non-persistent buffers
     and ensures that there are no asserts or errors when they are used.
@@ -41,7 +41,7 @@ def test_non_persistent_buffer_FP(test_data: input_t):
 
 
 @parametrize("test_data", test_input)
-def test_non_persistent_buffer_INT(test_data: input_t):
+def test_non_persistent_buffer_tosa_INT(test_data: input_t):
     """
     Test validates Arm backend handling of non-persistent buffers
     and ensures that there are no asserts or errors when they are used.

@@ -192,7 +192,7 @@ See [examples/models/llama](examples/models/llama/README.md) for complete workfl
 | macOS            | XNNPACK, MPS, Metal *(experimental)*                     |
 | Embedded / MCU   | XNNPACK, ARM Ethos-U, NXP, Cadence DSP                   |
 
-See [Backend Documentation](https://docs.pytorch.org/executorch/main/backends-overview.html) for detailed hardware requirements and optimization guides.
+See [Backend Documentation](https://docs.pytorch.org/executorch/main/backends-overview.html) for detailed hardware requirements and optimization guides. For desktop/laptop GPU inference with CUDA and Metal, see the [Desktop Guide](desktop/README.md). For Zephyr RTOS integration, see the [Zephyr Guide](zephyr/README.md).
 
 ## Production Deployments
 
@@ -204,9 +204,9 @@ ExecuTorch powers on-device AI at scale across Meta's family of apps, VR/AR devi
 
 **Multimodal:** [Llava](examples/models/llava/README.md) (vision-language), [Voxtral](examples/models/voxtral/README.md) (audio-language), [Gemma](examples/models/gemma3) (vision-language)
 
-**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3), [Whisper](https://github.com/meta-pytorch/executorch-examples/tree/main/whisper/android/WhisperApp)
+**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3), [Whisper](examples/models/whisper/README.md) <!-- @lint-ignore -->
 
-**Resources:** [`examples/`](examples/) directory • [executorch-examples](https://github.com/meta-pytorch/executorch-examples) out-of-tree demos • [Optimum-ExecuTorch](https://github.com/huggingface/optimum-executorch) for HuggingFace models
+**Resources:** [`examples/`](examples/) directory • [executorch-examples](https://github.com/meta-pytorch/executorch-examples) out-of-tree demos • [Optimum-ExecuTorch](https://github.com/huggingface/optimum-executorch) for HuggingFace models • [Unsloth](https://docs.unsloth.ai/new/deploy-llms-phone) for fine-tuned LLM deployment <!-- @lint-ignore -->
 
 ## Key Features
 

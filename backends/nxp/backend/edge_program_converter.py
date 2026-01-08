@@ -76,9 +76,11 @@ class EdgeProgramToIRConverter:
         :return: TFLite flatbuffers as bytes.
         """
         parameters_mapping = self.map_inputs_to_parameters(edge_program)
+        dim_order_map = self.map_nodes_to_dim_order(edge_program)
 
         cc = self.build_conversion_context(
             parameters_mapping,
+            dim_order_map,
             neutron_target_spec,
             conversion_config,
             custom_delegation_options,
@@ -177,14 +179,34 @@ class EdgeProgramToIRConverter:
         return result_map
 
     @staticmethod
+    def map_nodes_to_dim_order(edge_program: ExportedProgram) -> dict[str, Parameter]:
+        """
+        Create mapping between node names and their dim-orders.
+
+        :param edge_program: EdgeProgram instance.
+        :return: Mapping from node name to dim-order.
+        """
+
+        return {
+            n.name: val.dim_order()
+            for n in edge_program.graph.nodes
+            if hasattr(val := n.meta.get("val", None), "dim_order")
+        }
+
+    @staticmethod
     def build_conversion_context(
         parameters_mapping: dict,
+        dim_order_map: dict[str, ...],
         neutron_target_spec: NeutronTargetSpec,
         conversion_config: ConversionConfig = _default_conversion_config,
         custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
     ) -> ConversionContext:
         tflite_builder = AtenModelBuilderDirector(
-            3, "TFLite from EdgeProgram", neutron_target_spec, conversion_config
+            3,
+            "TFLite from EdgeProgram",
+            neutron_target_spec,
+            dim_order_map,
+            conversion_config,
         )
 
         # Add "sentinel" buffer (defined in schema.fbs)

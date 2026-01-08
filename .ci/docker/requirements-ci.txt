@@ -2,7 +2,7 @@ mpmath==1.3.0
 numpy>=2.0.0; python_version >= '3.10'
 PyYAML==6.0.1
 ruamel.yaml==0.18.15
-sympy==1.12
+sympy>=1.13.3
 timm==0.6.13
 tomli==2.0.1
 torchsr==1.0.4

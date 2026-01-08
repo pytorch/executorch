@@ -4,8 +4,6 @@
 # LICENSE-MIT file in the root directory of this source tree and the Apache
 # License, Version 2.0 found in the LICENSE-APACHE file in the root directory
 # of this source tree.
-
-load("@fbsource//tools/build_defs:default_platform_defs.bzl", "DEVSERVER_PLATFORM_REGEX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 # Because vec exists as a collection of header files, compile and preprocessor
@@ -88,32 +86,15 @@ def define_libs():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        cxx_platform_deps = select({
-            "DEFAULT": [
-                (
-                    DEVSERVER_PLATFORM_REGEX,
-                    [
-                        "fbsource//third-party/sleef:sleef",
-                    ],
-                ),
+        deps = select({
+            "ovr_config//os:linux": [
+                "fbsource//third-party/sleef:sleef",
             ],
-            "ovr_config//cpu:arm64": [
-                (
-                    DEVSERVER_PLATFORM_REGEX,
-                    [
-                        "fbsource//third-party/sleef:sleef",
-                    ],
-                ),
+            "ovr_config//os:android-arm64": [
+                "fbsource//third-party/sleef:sleef",
             ],
+            "DEFAULT": [],
         }),
-        fbandroid_platform_deps = [
-            (
-                "^android-arm64.*$",
-                [
-                    "fbsource//third-party/sleef:sleef",
-                ],
-            ),
-        ],
     )
 
     runtime.cxx_library(
@@ -146,29 +127,35 @@ def define_libs():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        fbandroid_platform_preprocessor_flags = [
-            (
-                "^android-arm64.*$",
-                [
-                    "-DET_BUILD_WITH_BLAS",
-                ],
-            ),
-        ],
-        fbandroid_platform_deps = [
-            (
-                "^android-arm64.*$",
-                [
-                    "fbsource//third-party/openblas:openblas",
-                ],
-            ),
-        ],
-        fbobjc_exported_preprocessor_flags = [
-            "-DET_BUILD_WITH_BLAS",
-            "-DET_BUILD_FOR_APPLE",
-        ],
-        fbobjc_frameworks = [
-            "Accelerate",
-        ],
+        preprocessor_flags = select({
+            "ovr_config//os:android-arm64": [
+                "-DET_BUILD_WITH_BLAS",
+            ],
+            "ovr_config//os:iphoneos": [
+                "-DET_BUILD_WITH_BLAS",
+                "-DET_BUILD_FOR_APPLE",
+            ],
+            "ovr_config//os:macos": [
+                "-DET_BUILD_WITH_BLAS",
+                "-DET_BUILD_FOR_APPLE",
+            ],
+            "DEFAULT": [],
+        }),
+        deps = select({
+            "ovr_config//os:android-arm64": [
+                "fbsource//third-party/openblas:openblas",
+            ],
+            "DEFAULT": [],
+        }),
+        frameworks = select({
+            "ovr_config//os:iphoneos": [
+                "Accelerate",
+            ],
+            "ovr_config//os:macos": [
+                "Accelerate",
+            ],
+            "DEFAULT": [],
+        }),
         exported_deps = [
             "//executorch/kernels/optimized:libutils",
             "//executorch/runtime/core/exec_aten:lib",

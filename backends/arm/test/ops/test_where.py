@@ -261,25 +261,25 @@ def test_where_self_u85_INT(test_module):
 
 @common.parametrize("test_module", test_modules_FP)
 @common.SkipIfNoModelConverter
-def test_where_self_vgf_FP(test_module):
+def test_where_self_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules_INT)
 @common.SkipIfNoModelConverter
-def test_where_self_vgf_INT(test_module):
+def test_where_self_vgf_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

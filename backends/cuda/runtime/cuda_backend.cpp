@@ -8,13 +8,16 @@
 
 #include <cuda_runtime.h>
 #include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <cstdio>
 
+#include <array>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -35,20 +38,54 @@ using executorch::runtime::ArrayRef;
 using executorch::runtime::Backend;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
+using executorch::runtime::BackendOption;
+using executorch::runtime::BackendOptionContext;
 using executorch::runtime::CompileSpec;
 using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
+using executorch::runtime::kMaxOptionValueLength;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
+namespace {
+constexpr char kSkipCopyOutputToCpuForMethod[] =
+    "skip_copy_output_to_cpu_for_method";
+}
+
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
+  void set_skip_copy_method(
+      const std::array<char, kMaxOptionValueLength>& raw) {
+    std::lock_guard<std::mutex> guard(skip_copy_method_mutex_);
+    skip_copy_method_ = std::string(raw.data());
+  }
+
+  std::array<char, kMaxOptionValueLength> get_skip_copy_method_as_option()
+      const {
+    std::array<char, kMaxOptionValueLength> out{};
+    std::string value;
+    {
+      std::lock_guard<std::mutex> guard(skip_copy_method_mutex_);
+      value = skip_copy_method_;
+    }
+    std::snprintf(out.data(), out.size(), "%s", value.c_str());
+    return out;
+  }
+
+  bool should_skip_copy_for_method(const std::string& method_name) const {
+    if (method_name.empty()) {
+      return false;
+    }
+    std::lock_guard<std::mutex> guard(skip_copy_method_mutex_);
+    return method_name == skip_copy_method_;
+  }
+
   Error load_function_pointers_into_handle(
       void* so_handle,
       AOTIDelegateHandle* handle) const {
@@ -89,6 +126,38 @@ class ET_EXPERIMENTAL CudaBackend final
  public:
   bool is_available() const override {
     return 1;
+  }
+
+  Error set_option(
+      ET_UNUSED BackendOptionContext& context,
+      const executorch::runtime::Span<BackendOption>& backend_options)
+      override {
+    for (const auto& option : backend_options) {
+      if (std::strcmp(option.key, kSkipCopyOutputToCpuForMethod) == 0) {
+        if (auto* val = std::get_if<std::array<char, kMaxOptionValueLength>>(
+                &option.value)) {
+          set_skip_copy_method(*val);
+        } else {
+          ET_LOG(
+              Error,
+              "Option %s must be a method name string.",
+              kSkipCopyOutputToCpuForMethod);
+          return Error::InvalidArgument;
+        }
+      }
+    }
+    return Error::Ok;
+  }
+
+  Error get_option(
+      ET_UNUSED BackendOptionContext& context,
+      executorch::runtime::Span<BackendOption>& backend_options) override {
+    for (auto& option : backend_options) {
+      if (std::strcmp(option.key, kSkipCopyOutputToCpuForMethod) == 0) {
+        option.value = get_skip_copy_method_as_option();
+      }
+    }
+    return Error::Ok;
   }
 
   // Once per loaded binary blob
@@ -159,6 +228,7 @@ class ET_EXPERIMENTAL CudaBackend final
     AOTIDelegateHandle* handle = new AOTIDelegateHandle();
     handle->so_handle = lib_handle;
     handle->so_path = so_path.string();
+    handle->method_name = method_name;
 
     // Load function pointers specific to this handle's shared library
     ET_CHECK_OK_OR_RETURN_ERROR(
@@ -224,7 +294,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
     // Process input tensors: ExecuTorch provides CPU tensors, create GPU
     // copies
-    for (int i = 0; i < n_inputs; i++) {
+    for (size_t i = 0; i < n_inputs; i++) {
       // Get tensor dimensions and properties from ExecuTorch CPU tensor
       auto cpu_tensor = &(args[i]->toTensor());
       auto sizes = cpu_tensor->sizes();
@@ -260,7 +330,7 @@ class ET_EXPERIMENTAL CudaBackend final
     }
     // Process output tensors: create GPU counterparts for ExecuTorch CPU
     // tensors
-    for (int i = 0; i < n_outputs; i++) {
+    for (size_t i = 0; i < n_outputs; i++) {
       // Get output tensor dimensions from ExecuTorch CPU tensor
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       auto sizes = cpu_output_tensor->sizes();
@@ -303,18 +373,26 @@ class ET_EXPERIMENTAL CudaBackend final
         "AOTInductorModelContainerRun failed with error code %d",
         error);
 
-    // Copy GPU output results back to CPU output tensors
-    for (int i = 0; i < n_outputs; i++) {
-      auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
-      // For DYNAMIC_BOUND tensors we try to resize
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          resize_tensor(*cpu_output_tensor, gpu_outputs[i]->sizes()),
-          "Error resizing tensor at output index %d",
-          i);
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0),
-          "Failed to copy GPU output %d back to CPU",
-          i);
+    const bool copy_outputs = !should_skip_copy_for_method(handle->method_name);
+
+    if (copy_outputs) {
+      // Copy GPU output results back to CPU output tensors
+      for (size_t i = 0; i < n_outputs; i++) {
+        auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
+        // For DYNAMIC_BOUND tensors we try to resize
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            resize_tensor(*cpu_output_tensor, gpu_outputs[i]->sizes()),
+            "Error resizing tensor at output index %d",
+            i);
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0),
+            "Failed to copy GPU output %d back to CPU",
+            i);
+      }
+    } else {
+      for (size_t i = 0; i < n_outputs; i++) {
+        args[i + n_inputs]->toTensor() = *gpu_outputs[i];
+      }
     }
 
     return Error::Ok;
@@ -365,6 +443,10 @@ class ET_EXPERIMENTAL CudaBackend final
     delete handle;
     clear_all_tensors();
   }
+
+ private:
+  mutable std::mutex skip_copy_method_mutex_;
+  std::string skip_copy_method_;
 };
 
 } // namespace executorch::backends::cuda

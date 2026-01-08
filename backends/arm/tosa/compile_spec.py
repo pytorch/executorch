@@ -4,6 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
+from executorch.backends.arm.common.pipeline_config import (  # noqa: unused
+    ArmPassPipelineConfig,
+)
 from executorch.backends.arm.tosa import TosaSpecification
 
 
@@ -21,6 +24,7 @@ class TosaCompileSpec(ArmCompileSpec):
         if isinstance(tosa_spec, str):
             tosa_spec = TosaSpecification.create_from_string(tosa_spec)
         self._set_compile_specs(tosa_spec, [])
+        self.validate()
 
     def validate(self):
         """Ensure that no unsupported compiler flags were supplied."""
@@ -34,3 +38,11 @@ class TosaCompileSpec(ArmCompileSpec):
     def get_output_format(cls) -> str:
         """Return the artifact format emitted by this compile spec."""
         return "tosa"
+
+    @classmethod
+    def from_list_hook(cls, compile_spec, specs: dict[str, str]):
+        super().from_list_hook(compile_spec, specs)
+
+    def _create_default_pipeline_config(self):
+        config = super()._create_default_pipeline_config()
+        return config

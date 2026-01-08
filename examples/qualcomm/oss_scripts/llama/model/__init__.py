@@ -10,7 +10,7 @@ from .layernorm import NORM_REGISTRY
 
 
 __all__ = [
-    FeedForward_REGISTRY,
-    ROTARY_EMB_REGISTRY,
-    NORM_REGISTRY,
+    "FeedForward_REGISTRY",
+    "ROTARY_EMB_REGISTRY",
+    "NORM_REGISTRY",
 ]

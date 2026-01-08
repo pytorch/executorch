@@ -160,7 +160,7 @@ TESTCASES = {
 
 
 @common.parametrize("test_data", TESTCASES)
-def test_debug_hook_add_json(test_data: DebugHookTestCase):
+def test_debug_hook_add_json_no_target(test_data: DebugHookTestCase):
     hook = DebugHook(ArmCompileSpec.DebugMode.JSON)
     hook.add(cast(Node, test_data.mock_node), test_data.tosa_op, test_data.op_id)
 
@@ -173,7 +173,7 @@ def test_debug_hook_add_json(test_data: DebugHookTestCase):
 
 
 @common.parametrize("test_data", TESTCASES)
-def test_debug_hook_add_tosa(test_data: DebugHookTestCase):
+def test_debug_hook_add_tosa_no_target(test_data: DebugHookTestCase):
     hook = DebugHook(ArmCompileSpec.DebugMode.TOSA)
     hook.add(cast(Node, test_data.mock_node), test_data.tosa_op, test_data.op_id)
 

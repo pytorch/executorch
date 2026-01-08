@@ -1,0 +1,6 @@
+manifest:
+  projects:
+    - name: executorch
+      url: https://github.com/pytorch/executorch
+      revision: main
+      path: modules/lib/executorch

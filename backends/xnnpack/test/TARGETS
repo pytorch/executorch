@@ -107,6 +107,7 @@ runtime.python_test(
     deps = [
        "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
         "//executorch/export:lib",
+        "//executorch/runtime:runtime",  # @manual
         "//pytorch/vision:torchvision",  # @manual
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/examples/models:models",  # @manual

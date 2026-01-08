@@ -44,6 +44,13 @@ class TestT5EncoderModel:
         "torch.ops.higher_order.executorch_call_delegate": 3,
     }
 
+    ops_after_partitioner_vgf_quantize = {
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
+        "torch.ops.higher_order.executorch_call_delegate": 1,
+    }
+
+    ops_after_partitioner_vgf_no_quantize = ops_after_partitioner_vgf_quantize
+
     def _prepare_inputs(
         self,
         batch_size=12,
@@ -68,7 +75,7 @@ class TestT5EncoderModel:
         return t5_encoder_model, t5_encoder_model_inputs
 
 
-def test_T5EncoderModel_tosa_FP():
+def test_t5_encoder_tosa_FP():
     t5_encoder_model, t5_encoder_model_inputs = (
         TestT5EncoderModel().prepare_model_and_inputs()
     )
@@ -91,7 +98,7 @@ def test_T5EncoderModel_tosa_FP():
         pipeline.run()
 
 
-def test_T5EncoderModel_tosa_INT():
+def test_t5_encoder_tosa_INT():
     t5_encoder_model, t5_encoder_model_inputs = (
         TestT5EncoderModel().prepare_model_and_inputs()
     )
@@ -110,7 +117,7 @@ def test_T5EncoderModel_tosa_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_T5EncoderModel_vgf_FP():
+def test_t5_encoder_vgf_no_quant():
     t5_encoder_model, t5_encoder_model_inputs = (
         TestT5EncoderModel().prepare_model_and_inputs()
     )
@@ -120,22 +127,22 @@ def test_T5EncoderModel_vgf_FP():
             t5_encoder_model_inputs,
             aten_op=[],
             exir_op=[],
-            tosa_version="TOSA-1.0+FP",
             use_to_edge_transform_and_lower=True,
             transform_passes=[
                 ConvertInt64ConstOpsToInt32Pass(),
                 ConvertInt64OutputOpsToInt32Pass(),
                 InsertInt32CastsAfterInt64PlaceholdersPass(),
             ],
+            quantize=False,
         )
         pipeline.change_args(
-            "check_count.exir", TestT5EncoderModel.ops_after_partitioner_FP
+            "check_count.exir", TestT5EncoderModel.ops_after_partitioner_vgf_no_quantize
         )
         pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_T5EncoderModel_vgf_INT():
+def test_t5_encoder_vgf_quant():
     t5_encoder_model, t5_encoder_model_inputs = (
         TestT5EncoderModel().prepare_model_and_inputs()
     )
@@ -145,10 +152,10 @@ def test_T5EncoderModel_vgf_INT():
             t5_encoder_model_inputs,
             aten_op=[],
             exir_op=[],
-            tosa_version="TOSA-1.0+INT",
             use_to_edge_transform_and_lower=True,
+            quantize=True,
         )
         pipeline.change_args(
-            "check_count.exir", TestT5EncoderModel.ops_after_partitioner_INT
+            "check_count.exir", TestT5EncoderModel.ops_after_partitioner_vgf_quantize
         )
         pipeline.run()

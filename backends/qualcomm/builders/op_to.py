@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
@@ -22,12 +22,12 @@ class To(NodeVisitor):
     sufixed_16_offset_diff = 32768
     epsilon = 1e-6
     sufixed_8 = {
-        PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_8,
-        PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8,
+        PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_8,
+        PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8,
     }
     sufixed_16 = {
-        PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_16,
-        PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_16,
+        PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_16,
+        PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_16,
     }
 
     def __init__(self, *args) -> None:
@@ -79,8 +79,8 @@ class To(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
 
@@ -88,7 +88,7 @@ class To(NodeVisitor):
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
         node_input_tensors = [input_tensor_wrapper]
@@ -110,7 +110,7 @@ class To(NodeVisitor):
             )
             cast_intermediate_tensor_wrapper = self.define_custom_tensor_wrapper(
                 node_name=node.name + "_cast",
-                tensor_type=PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 dtype=QNN_TENSOR_TYPE_MAP[torch.int32],
                 quant_encoding=input_quant_encoding,
                 quant_configs=input_quant_configs,
@@ -119,7 +119,7 @@ class To(NodeVisitor):
                 is_fake_tensor=True,
                 nodes_to_wrappers=nodes_to_wrappers,
             )
-            cast_op = PyQnnWrapper.PyQnnOpWrapper(
+            cast_op = PyQnnManager.PyQnnOpWrapper(
                 f"{node.name}_cast",
                 QNN_OP_PACKAGE_NAME_QTI_AISW,
                 OpCast.op_name,
@@ -134,12 +134,12 @@ class To(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
         qnn_op = OpCast if self.is_cast_node(node) else OpConvert
-        op = PyQnnWrapper.PyQnnOpWrapper(
+        op = PyQnnManager.PyQnnOpWrapper(
             node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, qnn_op.op_name
         )
         op.AddInputTensors(node_input_tensors)

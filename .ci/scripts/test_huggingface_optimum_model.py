@@ -170,6 +170,35 @@ def test_text_generation(model_id, model_dir, recipe, *, quantize=True, run_only
     assert check_causal_lm_output_quality(model_id, generated_tokens) is True
 
 
+def get_tokenizer_path(model_dir: str, saved_files: tuple) -> str:
+    """
+    Determine the tokenizer path based on files saved by tokenizer.save_pretrained().
+
+    Args:
+        model_dir: The directory where tokenizer files were saved
+        saved_files: Tuple of file paths returned by tokenizer.save_pretrained()
+
+    Returns:
+        The path to use for loading the tokenizer (either a specific file or directory)
+
+    Raises:
+        ValueError: If no supported tokenizer file format is found
+    """
+    saved_filenames = {Path(f).name for f in saved_files}
+
+    if "tokenizer.model" in saved_filenames:
+        return f"{model_dir}/tokenizer.model"
+
+    if "tokenizer.json" in saved_filenames:
+        return model_dir
+
+    # No supported tokenizer format found
+    raise ValueError(
+        f"Unsupported tokenizer format. Expected 'tokenizer.model' (SentencePiece) "
+        f"or 'tokenizer.json' (HuggingFace) but found: {saved_filenames}"
+    )
+
+
 def test_llm_with_image_modality(
     model_id, model_dir, recipe, *, quantize=True, run_only=False
 ):
@@ -196,7 +225,8 @@ def test_llm_with_image_modality(
         cli_export(command, model_dir)
 
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    tokenizer.save_pretrained(model_dir)
+    saved_files = tokenizer.save_pretrained(model_dir)
+    tokenizer_path = get_tokenizer_path(model_dir, saved_files)
 
     # input
     processor = AutoProcessor.from_pretrained(model_id)
@@ -232,7 +262,7 @@ def test_llm_with_image_modality(
 
     from executorch.extension.llm.runner import GenerationConfig, MultimodalRunner
 
-    runner = MultimodalRunner(f"{model_dir}/model.pte", f"{model_dir}/tokenizer.model")
+    runner = MultimodalRunner(f"{model_dir}/model.pte", tokenizer_path)
     generated_text = runner.generate_text_hf(
         inputs,
         GenerationConfig(max_new_tokens=128, temperature=0, echo=False),

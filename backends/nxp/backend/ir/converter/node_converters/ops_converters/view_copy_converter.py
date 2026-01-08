@@ -60,6 +60,24 @@ class ViewCopyConverter(NodeConverter):
         return True
 
     @classmethod
+    def _partition_contains_compute_nodes(cls, view_copy_partition: Partition) -> bool:
+        non_q_dq_partition_nodes = list(
+            filter(is_not_qdq_node, view_copy_partition.nodes)
+        )
+
+        if len(non_q_dq_partition_nodes) == 1:
+            # The `view_copy` cannot be the only node in a partition.
+            return False
+
+        # It is common for a `clone` node to come before the `view_copy`. Make sure these are not the only two nodes
+        #  in the partition.
+        if any("clone" in n.name for n in non_q_dq_partition_nodes):
+            if len(non_q_dq_partition_nodes) <= 2:
+                return False
+
+        return True
+
+    @classmethod
     def supports_partitioning_result(
         cls,
         node: Node,
@@ -72,12 +90,8 @@ class ViewCopyConverter(NodeConverter):
             partition for partition in partition_list if node in partition.nodes
         ]
         assert len(view_copy_partitions) == 1
-        non_q_dq_partition_nodes = list(
-            filter(is_not_qdq_node, view_copy_partitions[0].nodes)
-        )
 
-        if len(non_q_dq_partition_nodes) == 1:
-            # The `view_copy` cannot be the only node in a partition.
+        if not cls._partition_contains_compute_nodes(view_copy_partitions[0]):
             return False
 
         input_format = node.args[0].meta[NXP_NODE_FORMAT]

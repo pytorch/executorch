@@ -6,8 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "inttypes.h"
-#include "stddef.h"
+#include <stddef.h>
+
+#include <cstdint>
 
 namespace impl {
 namespace generic {
