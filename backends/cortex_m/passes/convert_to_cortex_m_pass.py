@@ -6,25 +6,29 @@
 # LICENSE file in the root directory of this source tree.
 
 import executorch.backends.cortex_m.ops.operators  # noqa
+import executorch.exir as exir
 
 import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+
+from executorch.backends.cortex_m.passes import CortexMPass
 from executorch.backends.cortex_m.passes.passes_utils import quantize_multiplier_aot
+from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
+    required_cmsis_nn_buffer_sizes,
+)
 
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
     get_param_tensor,
     is_param_node,
 )
-
-from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.graph_signature import InputKind
 from torch.fx.passes.infra.pass_manager import PassResult
 
 
-class ConvertToCortexMPass(XNNPACKPass):
+class ConvertToCortexMPass(CortexMPass):
     """
     Cortex-M backend pass for replacing supported quantized kernels with Cortex-M
     accelerated kernels.
@@ -238,6 +242,15 @@ class ConvertToCortexMPass(XNNPACKPass):
                 torch.tensor(quantized_shifts, dtype=torch.int32),
             )
 
+        with node.graph.inserting_before(node):
+            # Args of alloc are overwritten with planned size at a later point.
+            uninitialized_args = (((0,), torch.uint8),)
+            scratch = node.graph.call_function(
+                exir.memory.alloc,
+                args=uninitialized_args,
+                kwargs={},
+            )
+
         if use_depthwise_conv:
             # Compute depth_multiplier for depthwise convolution
             # For depthwise: output_channels = input_channels * depth_multiplier
@@ -263,6 +276,7 @@ class ConvertToCortexMPass(XNNPACKPass):
                 quantized_shift_tensor,
                 output_qmin,
                 output_qmax,
+                scratch,
             )
             return exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default, new_args
         else:
@@ -280,8 +294,29 @@ class ConvertToCortexMPass(XNNPACKPass):
                 quantized_shift_tensor,
                 output_qmin,
                 output_qmax,
+                scratch,
             )
             return exir_ops.edge.cortex_m.quantized_conv2d.default, new_args
+
+    def _set_scratch_buffer_size(self, node: torch.fx.Node) -> None:
+        scratch_buffer_sizes = required_cmsis_nn_buffer_sizes(
+            node, self.target_config.backend
+        )
+        if scratch_buffer_sizes is None:
+            return
+
+        for i, scratch_buffer_size in enumerate(reversed(scratch_buffer_sizes)):
+            scratch_arg = node.args[-(i + 1)]
+            if (
+                not isinstance(scratch_arg, torch.fx.Node)
+                or scratch_arg.target != exir.memory.alloc
+            ):
+                raise RuntimeError(
+                    f"Expected scratch alloc node as final argument(s) for {node.target}, got {scratch_arg}."
+                )
+
+            # buffer size is given in bytes, always use uint8 as dtype.
+            scratch_arg.args = (((scratch_buffer_size,), torch.uint8),)
 
     def _get_transpose_conv2d_replacement(self, node):
         """
@@ -459,6 +494,7 @@ class ConvertToCortexMPass(XNNPACKPass):
                     args=args,
                     kwargs={},
                 )
+                self._set_scratch_buffer_size(cortex_m_op)
 
                 node.replace_all_uses_with(cortex_m_op)
                 graph_module.graph.erase_node(node)

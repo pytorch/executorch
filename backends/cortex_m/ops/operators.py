@@ -638,7 +638,8 @@ lib.define(
     "Tensor requantize_multipliers, "
     "Tensor requantize_shifts, "
     "int activation_min, "
-    "int activation_max"
+    "int activation_max, "
+    "Tensor scratch"
     ") -> Tensor"
 )
 
@@ -657,6 +658,7 @@ lib.define(
     "Tensor requantize_shifts, "
     "int activation_min, "
     "int activation_max, "
+    "Tensor scratch, "
     "*, Tensor(a!) out"
     ") -> Tensor(a!)"
 )
@@ -733,6 +735,7 @@ def quantized_conv2d_meta(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     stride_vals = list(stride)
     padding_vals = list(padding)
@@ -762,6 +765,7 @@ def quantized_conv2d_impl(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     if input.dim() != 4 or weight.dim() != 4:
         raise RuntimeError("quantized_conv2d expects 4D input and weight tensors")
@@ -830,7 +834,8 @@ lib.define(
     "Tensor requantize_multipliers, "
     "Tensor requantize_shifts, "
     "int activation_min, "
-    "int activation_max"
+    "int activation_max, "
+    "Tensor scratch"
     ") -> Tensor"
 )
 
@@ -850,6 +855,7 @@ lib.define(
     "Tensor requantize_shifts, "
     "int activation_min, "
     "int activation_max, "
+    "Tensor scratch, "
     "*, Tensor(a!) out"
     ") -> Tensor(a!)"
 )
@@ -870,6 +876,7 @@ def quantized_depthwise_conv2d_meta(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     stride_vals = list(stride)
     padding_vals = list(padding)
@@ -900,6 +907,7 @@ def quantized_depthwise_conv2d_impl(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     if input.dim() != 4 or weight.dim() != 4:
         raise RuntimeError(

@@ -12,7 +12,7 @@ set -eu
 script_dir=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 et_root_dir=$(realpath "${script_dir}/../../..")
 build_executorch="${et_root_dir}/backends/arm/scripts/build_executorch.sh"
-${build_executorch} --devtools
+${build_executorch} --devtools --cmake-args="-DCORTEX_M_ENABLE_ASSERTS=ON"
 
 # Build executor runner with selected aten ops and semi hosting
 build_dir="${et_root_dir}/arm_test"

@@ -7,6 +7,7 @@
 # Optional parameter:
 # --build_type= "Release" | "Debug" | "RelWithDebInfo" | "UndefinedSanitizer" | "AddressSanitizer"
 # --etdump      build with devtools-etdump support
+# --cmake-args= Additional arguments passed to cmake configure
 
 set -eu
 
@@ -24,6 +25,7 @@ build_type="Release"
 build_devtools=OFF
 build_with_etdump=OFF
 is_linux_musl=0
+extra_cmake_args=()
 
 help() {
     echo "Usage: $(basename $0) [options]"
@@ -32,6 +34,7 @@ help() {
     echo "  --build_type=<TYPE>       Build with Release, Debug, RelWithDebInfo, UndefinedSanitizer or AddressSanitizer, default is ${build_type}"
     echo "  --devtools                Build Devtools libs"
     echo "  --etdump                  Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
+    echo "  --cmake-args=<ARGS>       Additional arguments passed to cmake configure"
     echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (arm-none-eabi-gcc, arm-zephyr-eabi-gcc, aarch64-linux-musl-gcc). Default: ${toolchain}"
     exit 0
 }
@@ -43,6 +46,10 @@ for arg in "$@"; do
       --build_type=*) build_type="${arg#*=}";;
       --devtools) build_devtools=ON ;;
       --etdump) build_with_etdump=ON ;;
+      --cmake-args=*)
+        # shellcheck disable=SC2206
+        extra_cmake_args=(${arg#*=})
+        ;;
       --toolchain=*) toolchain="${arg#*=}";;
       *)
       ;;
@@ -85,6 +92,7 @@ cmake_args=(
     -DCMAKE_BUILD_TYPE=${build_type}
     -DEXECUTORCH_BUILD_DEVTOOLS=${build_devtools}
     -DEXECUTORCH_BUILD_ARM_ETDUMP=${build_with_etdump}
+    "${extra_cmake_args[@]}"
 )
 
 if [[ ${is_linux_musl} -eq 1 ]]; then
