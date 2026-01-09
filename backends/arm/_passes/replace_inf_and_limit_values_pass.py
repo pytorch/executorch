@@ -11,7 +11,7 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult
 
 
 class ReplaceInfAndLimitValuesPass(ArmPass):
@@ -23,15 +23,39 @@ class ReplaceInfAndLimitValuesPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    def _allowed_to_transform_named_buffer(self, buf_name, graph_module) -> bool:
+        attr_nodes = [
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "get_attr" and node.target == buf_name
+        ]
+
+        can_transform_buffer = True
+        for attr_node in attr_nodes:
+            for user in list(attr_node.users):
+                if user.op != "call_function":
+                    continue
+                if not self.allowed_to_transform(NodeMetadata(user.meta)):
+                    can_transform_buffer = False
+                    break
+            if not can_transform_buffer:
+                break
+
+        return can_transform_buffer
+
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False
         for buf_name, tensor in graph_module.named_buffers():
-            if tensor.is_floating_point():
-                modified = True
-                # 255 here is mainly for attention_mask in Llama for reasonable quant scale
-                tensor[tensor == float("inf")] = 255
-                tensor[tensor == float("-inf")] = -255
-                setattr(graph_module, buf_name, tensor)
+            if not tensor.is_floating_point():
+                continue
+            if not self._allowed_to_transform_named_buffer(buf_name, graph_module):
+                continue
+
+            modified = True
+            # 255 here is mainly for attention_mask in Llama for reasonable quant scale
+            tensor[tensor == float("inf")] = 255
+            tensor[tensor == float("-inf")] = -255
+            setattr(graph_module, buf_name, tensor)
 
         for node in graph_module.graph.nodes:
             arg_list = list(node.args)

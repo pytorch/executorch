@@ -273,8 +273,8 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/portable/scripts/test_demo_backend_delegation.sh "${BUILD_TOOL}"
 
-  test-arm-backend:
-    name: test-arm-backend
+  test-arm-backend-ethos-u:
+    name: test-arm-backend-ethos-u
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -282,12 +282,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops_ethosu_fvp
-          - test_arm_baremetal: test_pytest_models_ethosu_fvp
-          - test_arm_baremetal: test_run_ethosu_fvp
-          - test_arm_baremetal: test_models_tosa
-          - test_arm_baremetal: test_models_ethos-u55
-          - test_arm_baremetal: test_models_ethos-u85
+          - test_arm_baremetal: test_pytest_ops_ethos_u55
+          - test_arm_baremetal: test_pytest_models_ethos_u55
+          - test_arm_baremetal: test_run_ethos_u55
+          - test_arm_baremetal: test_pytest_ops_ethos_u85
+          - test_arm_baremetal: test_pytest_models_ethos_u85
+          - test_arm_baremetal: test_run_ethos_u85
           - test_arm_baremetal: test_smaller_stories_llama
           - test_arm_baremetal: test_memory_allocation
           - test_arm_baremetal: test_model_smollm2-135M
@@ -839,7 +839,7 @@ jobs:
           qwen3-0.6b|xnnpack|--quantize,
           qwen3-1.7b|xnnpack|--quantize,
           gemma3-1b|xnnpack|--quantize,
-          phi4-mini|xnnpack|--quantize,
+          # phi4-mini|xnnpack|--quantize, transformers v5.0.0rc0 introduces a data-dependent branching in transformers/modeling_rope_utils.py:61 
           smollm2-135m|xnnpack|--quantize,
           smollm3-3b|xnnpack|--quantize
         ]

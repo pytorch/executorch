@@ -85,8 +85,8 @@ class DecomposeMeanDimPass(ArmPass):
         SizeAdjustInputPass,
     }
 
-    def __init__(self, graph_module, tosa_spec):
-        super().__init__()
+    def __init__(self, graph_module, tosa_spec, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._graph_module = graph_module
         self._tosa_spec = tosa_spec
         # Lazy import to avoid circular dependency with operator_support
@@ -104,7 +104,7 @@ class DecomposeMeanDimPass(ArmPass):
             torch.ops.aten.mean.dim,
             exir_ops.edge.aten.mean.default,
             torch.ops.aten.mean.default,
-        ):
+        ) or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         x = get_node_arg(args, 0)

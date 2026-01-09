@@ -14,8 +14,12 @@ import numpy as np
 
 import torch
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     make_output_dir,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
@@ -24,7 +28,7 @@ from executorch.examples.qualcomm.utils import (
 )
 from PIL import Image
 from torchvision import datasets
-from transformers import AutoModelForImageClassification, MobileViTFeatureExtractor
+from transformers import AutoImageProcessor, AutoModelForImageClassification
 
 
 def get_imagenet_dataset(dataset_path, data_size, shuffle=True):
@@ -39,15 +43,13 @@ def get_imagenet_dataset(dataset_path, data_size, shuffle=True):
     # prepare input data
     inputs, targets = [], []
     data_loader = get_data_loader()
-    feature_extractor = MobileViTFeatureExtractor.from_pretrained(
-        "apple/mobilevit-xx-small"
-    )
+    image_processor = AutoImageProcessor.from_pretrained("apple/mobilevit-xx-small")
     for index, data in enumerate(data_loader.dataset.imgs):
         if index >= data_size:
             break
         data_path, target = data
         image = Image.open(data_path).convert("RGB")
-        feature = feature_extractor(images=image, return_tensors="pt")
+        feature = image_processor(images=image, return_tensors="pt")
         inputs.append((feature["pixel_values"],))
         targets.append(torch.tensor(target))
 
@@ -78,7 +80,12 @@ def main(args):
         .to("cpu")
     )
 
-    pte_filename = "mobilevit_v1_qnn_q16"
+    pte_filename = "mobilevit_v1_qnn"
+    backend = get_backend_type(args.backend)
+    quant_dtype = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_16a16w,
+    }[backend]
     build_executorch_binary(
         module.eval(),
         inputs[0],
@@ -87,8 +94,10 @@ def main(args):
         inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        quant_dtype=QuantDtype.use_16a16w,
+        quant_dtype=quant_dtype,
+        backend=backend,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -104,6 +113,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
+        backend=backend,
     )
     adb.push(inputs=inputs)
     adb.execute()

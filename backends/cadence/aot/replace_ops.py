@@ -15,15 +15,11 @@ import logging
 import math
 import operator
 from operator import neg
-from typing import cast, Dict, Iterable, Optional, Sequence
+from typing import cast, Dict, Optional, Sequence
 
 import torch
 import torch.fx
-from executorch.backends.cadence.aot.compiler_utils import (
-    get_zero_point,
-    is_node_with_op,
-    quantize_tensor_multiplier,
-)
+from executorch.backends.cadence.aot.compiler_utils import quantize_tensor_multiplier
 from executorch.backends.cadence.aot.fuse_ops import (
     FuseCascadedTransposeOrPermuteOps,
     FuseCascadedViewOps,
@@ -50,17 +46,6 @@ functionally_equivalent_op_targets: Dict[EdgeOpOverload, EdgeOpOverload] = {
     exir_ops.edge.aten.relu_.default: exir_ops.edge.aten.relu.default,
     exir_ops.edge.aten.unsafe_split.Tensor: exir_ops.edge.aten.split_copy.Tensor,
 }
-
-
-def contains_placeholder_or_param(nodes: Iterable[torch.fx.Node]) -> bool:
-    """
-    Return true if any of the node in the incoming nodes list is a placeholder
-    or parameter
-    """
-    return any(
-        is_node_with_op(node, "placeholder") or is_node_with_op(node, "get_attr")
-        for node in nodes
-    )
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -367,6 +352,9 @@ class ReplaceAddMMWithLinearPass(RemoveOrReplacePassInterface):
 
         graph = node.graph
 
+        fit_bias = beta == 1.0
+        fit_mat2 = False
+
         # Handle transpose: if mat2 is a transpose op, extract the original tensor
         transposed_mat2 = False
         if (
@@ -376,6 +364,10 @@ class ReplaceAddMMWithLinearPass(RemoveOrReplacePassInterface):
             # mat2 is already transposed, so we use the input to the transpose
             mat2 = cast(torch.fx.Node, mat2.args[0])
             transposed_mat2 = True
+            fit_mat2 = alpha == 1.0
+
+        if not (fit_bias and fit_mat2):
+            return False
 
         # Multiply bias by beta if needed
         if beta != 1.0:
@@ -1466,15 +1458,7 @@ class ReplaceTransposedConvWithLinearPass(RemoveOrReplacePassInterface):
         # kernel_width for conv1d, and X = kernel_height * kernel_width for
         # conv2d. We extract X as the kernel_size for im2row.
         kernel_size = list(weight_shape[1:-1] if channel_last else weight_shape[2:])
-        # If the transposed_convolution op was quantized, we need the input tensor's
-        # zero_point for im2row. Otherwise in_zero_point defaults to a zero
-        # tensor.
         assert isinstance(in_tensor, torch.fx.Node)
-        in_zero_point = (
-            get_zero_point(in_tensor.meta["val"])
-            if quantized_op
-            else torch.tensor(0, dtype=torch.int32)
-        )
 
         # Cast to appropriate types
         stride = cast(Sequence[int], stride)
@@ -1498,6 +1482,20 @@ class ReplaceTransposedConvWithLinearPass(RemoveOrReplacePassInterface):
             return False
 
         graph = node.graph
+
+        # If the transposed_convolution op was quantized, we need the input tensor's
+        # zero_point for im2row. Otherwise in_zero_point defaults to a zero tensor.
+        # We create the tensor as a graph node using aten.full to avoid
+        # DataDependentOutputException during FakeTensor shape propagation.
+        in_zero_point_val = node.args[8] if quantized_op else 0
+        in_zero_point = graph.call_function(
+            exir_ops.edge.aten.full.default,
+            args=([1], in_zero_point_val),
+            kwargs={"dtype": torch.int32},
+        )
+        # Insert the node before the current node
+        node.prepend(in_zero_point)
+        in_zero_point.meta = node.meta
 
         # Create a transposed_im2row node with the input. This will create a 2d
         # matrix of shape [out_height*out_weight, X*in_channels]. X is as
@@ -1684,8 +1682,15 @@ class ReplaceLinearWithFullyConnectedOpPass(RemoveOrReplacePassInterface):
     """
 
     linear_to_fc_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
+        # Default variants
         exir_ops.edge.aten.linear.default: exir_ops.edge.cadence.fully_connected.default,
         exir_ops.edge.cadence.quantized_linear.default: exir_ops.edge.cadence.quantized_fully_connected.default,
+        # Per-tensor variants
+        exir_ops.edge.cadence.quantized_linear.per_tensor: exir_ops.edge.cadence.quantized_fully_connected.per_tensor,
+        # Type-specialized variants (int8)
+        exir_ops.edge.cadence.quantized_linear_asym8sxasym8s_asym8s.per_tensor: exir_ops.edge.cadence.quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor,
+        # Type-specialized variants (uint8)
+        exir_ops.edge.cadence.quantized_linear_asym8uxasym8u_asym8u.per_tensor: exir_ops.edge.cadence.quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor,
     }
 
     @property
@@ -1921,7 +1926,10 @@ class ReplaceIm2RowWithViewPass(RemoveOrReplacePassInterface):
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
-        return [exir_ops.edge.cadence.im2row.default]
+        return [
+            exir_ops.edge.cadence.im2row.default,
+            exir_ops.edge.cadence.im2row.per_tensor,
+        ]
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Check if im2row applies padding. If yes, we cannot replace it with view.

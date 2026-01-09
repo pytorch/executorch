@@ -29,6 +29,7 @@ from executorch.exir.tensor_layout import TensorLayout
 
 from executorch.extension.flat_tensor.serialize.serialize import (
     _deserialize_to_flat_tensor,
+    _FLATBUFFER_ALIGNMENT,
     FlatTensorConfig,
     FlatTensorHeader,
     FlatTensorSerializer,
@@ -109,8 +110,7 @@ class TestSerialize(unittest.TestCase):
                         f"Named data record {key}.{field.name} does not match.",
                     )
 
-    def test_serialize(self) -> None:
-        config = FlatTensorConfig()
+    def _serialize_with_alignment(self, config: FlatTensorConfig) -> None:
         serializer: DataSerializer = FlatTensorSerializer(config)
         serialized_data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
 
@@ -120,14 +120,14 @@ class TestSerialize(unittest.TestCase):
         )
         self.assertTrue(header.is_valid())
 
-        # Header is aligned to config.segment_alignment, which is where the flatbuffer starts.
-        self.assertEqual(
-            header.flatbuffer_offset,
-            aligned_size(FlatTensorHeader.EXPECTED_LENGTH, config.segment_alignment),
-        )
-
         # Flatbuffer is non-empty.
         self.assertTrue(header.flatbuffer_size > 0)
+
+        # Align the flatbuffer to _FLATBUFFER_ALIGNMENT.
+        self.assertEqual(
+            header.flatbuffer_offset,
+            aligned_size(FlatTensorHeader.EXPECTED_LENGTH, _FLATBUFFER_ALIGNMENT),
+        )
 
         # Segment base offset is aligned to config.segment_alignment.
         expected_segment_base_offset = aligned_size(
@@ -180,12 +180,12 @@ class TestSerialize(unittest.TestCase):
         segments = flat_tensor.segments
         self.assertEqual(len(segments), 3)
 
-        # Segment 0 contains fqn1, fqn2; 4 bytes, aligned to config.tensor_alignment.
+        # Segment 0 contains fqn1, fqn2; 4 bytes, aligned to config.segment_alignment.
         self.assertEqual(segments[0].offset, 0)
         self.assertEqual(segments[0].size, len(TEST_BUFFER[0]))
 
-        # Segment 1 contains fqn3; 32 bytes, aligned to config.tensor_alignment.
-        self.assertEqual(segments[1].offset, config.tensor_alignment)
+        # Segment 1 contains fqn3; 32 bytes, aligned to config.segment_alignment.
+        self.assertEqual(segments[1].offset, config.segment_alignment)
         self.assertEqual(segments[1].size, len(TEST_BUFFER[1]))
 
         # Segment 2 contains key0; 17 bytes, aligned to 64.
@@ -194,7 +194,7 @@ class TestSerialize(unittest.TestCase):
         )
         self.assertEqual(
             segments[2].offset,
-            aligned_size(config.tensor_alignment * 3, custom_alignment),
+            aligned_size(config.segment_alignment * 2, custom_alignment),
         )
         self.assertEqual(segments[2].size, len(TEST_BUFFER[2]))
 
@@ -244,6 +244,18 @@ class TestSerialize(unittest.TestCase):
         )
 
         self.assertEqual(segments[2].offset + segments[2].size, len(segment_data))
+
+    def test_serialize_default_alignment(self) -> None:
+        config = FlatTensorConfig()
+        self._serialize_with_alignment(config)
+
+    def test_serialize_align_4096(self) -> None:
+        config = FlatTensorConfig(segment_alignment=4096)
+        self._serialize_with_alignment(config)
+
+    def test_serialize_align_1024(self) -> None:
+        config = FlatTensorConfig(segment_alignment=1024)
+        self._serialize_with_alignment(config)
 
     def test_round_trip(self) -> None:
         # Serialize and then deserialize the test payload. Make sure it's reconstructed

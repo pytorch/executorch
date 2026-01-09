@@ -135,7 +135,8 @@ void record_matmul_texture3d(
     vkcompute::api::Context* context,
     vkcompute::api::vTensor& out,
     vkcompute::api::vTensor& mat1,
-    vkcompute::api::vTensor& mat2);
+    vkcompute::api::vTensor& mat2,
+    bool mat2_is_transposed = false);
 
 //
 // Input & Output Utilities

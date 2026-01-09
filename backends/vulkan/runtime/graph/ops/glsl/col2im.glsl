@@ -41,7 +41,23 @@ ${layout_declare_ubo(B, "ivec4", "input_sizes")}
 // Sizes of the im2col matrix of the convolution output
 ${layout_declare_ubo(B, "ivec4", "matrix_sizes")}
 
-${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
+${layout_declare_spec_const(C, "int", "apply_bias", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_stride_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_padding_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_dilation_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_x", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_kernel_size_y", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_in_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_out_channels_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K4", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_logical_K_per_group", "1")}
+${layout_declare_spec_const(C, "int", "conv2d_params_groups", "1")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 

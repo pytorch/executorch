@@ -2,7 +2,7 @@
 
 ExecuTorch's Samsung Exynos backend enables the execution of ExecuTorch models on
 Samsung SoCs via the NPU/DSP. The delegate is built on top of the
-[Samsung Exynos AI Litecore SDK]((https://soc-developer.semiconductor.samsung.com/global/development/ai-litecore)).
+[Samsung Exynos AI Litecore SDK](https://soc-developer.semiconductor.samsung.com/global/development/ai-litecore).
 
 ## Features
 

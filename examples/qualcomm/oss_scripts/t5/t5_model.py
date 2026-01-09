@@ -443,15 +443,26 @@ class Seq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
             device="cpu",
             dtype=torch.float32,
         )
+        head_dim = getattr(
+            self.config,
+            "head_dim",
+            self.config.hidden_size // self.config.num_attention_heads,
+        )
+        num_heads = getattr(
+            self.config, "num_key_value_heads", self.config.num_attention_heads
+        )
+        self.static_cache.early_initialization(
+            batch_size, num_heads, head_dim, torch.float32, "cpu"
+        )
 
         # Register cache buffers to make them exportable
-        for i in range(len(self.static_cache.key_cache)):
+        for i in range(len(self.static_cache.layers)):
             self.register_buffer(
-                f"key_cache_{i}", self.static_cache.key_cache[i], persistent=False
+                f"key_cache_{i}", self.static_cache.layers[i].keys, persistent=False
             )
             self.register_buffer(
                 f"value_cache_{i}",
-                self.static_cache.value_cache[i],
+                self.static_cache.layers[i].values,
                 persistent=False,
             )
 

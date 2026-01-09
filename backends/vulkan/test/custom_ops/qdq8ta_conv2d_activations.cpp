@@ -82,6 +82,10 @@ TestCase create_test_case_from_config(
 
   test_case.set_abs_tolerance(scale_val + 1e-4);
 
+  // Use layout-only filter for this test since quantize/dequantize ARE the
+  // operations being tested, not overhead
+  test_case.set_shader_filter(kLayoutOnlyShaderFilter);
+
   return test_case;
 }
 
