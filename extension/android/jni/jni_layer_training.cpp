@@ -106,7 +106,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
       numel *= shapeArr[i];
     }
 
-    JNIEnv* jni = jbuffer->getPlainJniEnv();
+    JNIEnv* jni = facebook::jni::Environment::current();
     void* dataPtr = jni->GetDirectBufferAddress(jbuffer.get());
     if (java_dtype_to_scalar_type.count(jdtype) == 0) {
       facebook::jni::throwNewJavaException(
