@@ -286,13 +286,14 @@ class TestReorderPasses(unittest.TestCase):
     @torch.no_grad()
     def test_advance_quantize(self) -> None:
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(16, 1, 6, 32, dtype=torch.float32))
-        weights = builder.placeholder(
-            "weights", torch.randint(-128, 127, (32, 32), dtype=torch.int8)
-        )
+        x_data = torch.randn(16, 1, 32, 6, dtype=torch.float32)
+        weight_data = torch.randint(-128, 127, (32, 32), dtype=torch.int8)
+        x = builder.placeholder("x", x_data)
+        weights = builder.placeholder("weights", weight_data)
         full = builder.call_operator(
             op=exir_ops.edge.aten.full.default,
             args=([1], -7),
+            kwargs={"dtype": torch.int32},
         )
         full_1 = builder.call_operator(
             op=exir_ops.edge.aten.full.default,
@@ -304,7 +305,8 @@ class TestReorderPasses(unittest.TestCase):
         )
         full_3 = builder.call_operator(
             op=exir_ops.edge.aten.full.default,
-            args=([12], 0.0),
+            args=([1], 0),
+            kwargs={"dtype": torch.int32},
         )
         permute = builder.call_operator(
             op=exir_ops.edge.aten.permute_copy.default,
@@ -337,8 +339,13 @@ class TestReorderPasses(unittest.TestCase):
 
         p1 = AdvanceQuantizeOpAboveDefInBranchPass()
         tmp_graph = cast(PassResult, p1(original_graph)).graph_module
-        p2 = AdvanceQuantizeOpAboveDefChainPass()
-        converted_graph = cast(PassResult, p2(tmp_graph)).graph_module
+        result = transform_and_check_numerics(
+            tmp_graph,
+            (x_data, weight_data),
+            AdvanceQuantizeOpAboveDefChainPass(),
+        )
+        self.assertFalse(result.modified)
+        converted_graph = result.graph_module
         # Assert that permute node is now the successor of the quant node.
         self.assertTrue(
             get_node_pos(
@@ -349,13 +356,14 @@ class TestReorderPasses(unittest.TestCase):
 
     def test_postpone_dequantize1(self) -> None:
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(1, 16, 32, 6, dtype=torch.float32))
-        weights = builder.placeholder(
-            "weights", torch.randint(-128, 127, (6, 6), dtype=torch.int8)
-        )
+        x_data = torch.randn(1, 16, 32, 6, dtype=torch.float32)
+        weight_data = torch.randint(-128, 127, (6, 6), dtype=torch.int8)
+        x = builder.placeholder("x", x_data)
+        weights = builder.placeholder("weights", weight_data)
         full = builder.call_operator(
             op=exir_ops.edge.aten.full.default,
             args=([1], -7),
+            kwargs={"dtype": torch.int32},
         )
         full_1 = builder.call_operator(
             op=exir_ops.edge.aten.full.default,
@@ -367,7 +375,8 @@ class TestReorderPasses(unittest.TestCase):
         )
         full_3 = builder.call_operator(
             op=exir_ops.edge.aten.full.default,
-            args=([12], 0.0),
+            args=([1], 0),
+            kwargs={"dtype": torch.int32},
         )
         quantize_per_tensor = builder.call_operator(
             op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
@@ -397,8 +406,13 @@ class TestReorderPasses(unittest.TestCase):
         )
         builder.output([permute])
         original_graph = builder.get_graph_module()
-        p = PostponeDequantizeOpBelowUseChainPass()
-        converted_graph = cast(PassResult, p(original_graph)).graph_module
+        result = transform_and_check_numerics(
+            original_graph,
+            (x_data, weight_data),
+            PostponeDequantizeOpBelowUseChainPass(),
+        )
+        self.assertTrue(result.modified)
+        converted_graph = result.graph_module
         # Assert that dequant node is now the successor of the permute node.
         self.assertTrue(
             get_node_pos(converted_graph, exir_ops.edge.aten.permute_copy.default)
