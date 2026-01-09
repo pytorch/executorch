@@ -1665,13 +1665,13 @@ class ReplaceNopTransposeOrPermuteWithViewPass(RemoveOrReplacePassInterface):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         result = super().call(graph_module)
-        # If this pass made modifications, fuse any cascaded view ops that may have been created
-        if result.modified:
-            fuse_cascaded_result = FuseCascadedViewOps().call(result.graph_module)
 
-            # True because we are in the 'if modified' block
-            return PassResult(fuse_cascaded_result.graph_module, True)
-        return result
+        # TODO: I tried conditionally running this only if the above made any modifications,
+        # but for whatever reason was getting numerical failures in
+        # test_mtl_e2e_test_a16w8_two_layers_turing_3_1_1k. Always running this pass
+        # resolved that issue.
+        fuse_cascaded_result = FuseCascadedViewOps().call(result.graph_module)
+        return PassResult(fuse_cascaded_result.graph_module, True)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
