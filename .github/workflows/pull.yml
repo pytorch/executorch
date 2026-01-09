@@ -490,8 +490,8 @@ jobs:
       build-tool: buck2
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
-  unittest-arm-backend-with-no-fvp:
-    name: unittest-arm-backend-with-no-fvp
+  unittest-arm-backend-with-no-deps:
+    name: unittest-arm-backend-with-no-deps
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -499,8 +499,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops
-          - test_arm_baremetal: test_pytest_models
+          - test_arm_baremetal: test_pytest_ops_no_target
+          - test_arm_baremetal: test_pytest_ops_tosa
+          - test_arm_baremetal: test_pytest_models_tosa
+          - test_arm_baremetal: test_run_tosa
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -516,7 +518,7 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
-        .ci/scripts/setup-arm-baremetal-tools.sh
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
 
         ARM_TEST=${{ matrix.test_arm_baremetal }}
 
@@ -945,6 +947,12 @@ jobs:
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
         source .ci/scripts/setup-samsung-linux-deps.sh
 
+        # Check if device was reserved
+        if [[ "${DEVICE_RESERVED:-0}" != "1" ]]; then
+          echo "::warning::Skipping tests - no Samsung device available"
+          exit 0
+        fi
+
         # Test quant models
         model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
         for m_script in $model_scripts; do
@@ -980,6 +988,12 @@ jobs:
         # Setup Samsung SDK (AI Lite Core) and install enn backend
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
         source .ci/scripts/setup-samsung-linux-deps.sh
+
+        # Check if device was reserved
+        if [[ "${DEVICE_RESERVED:-0}" != "1" ]]; then
+          echo "::warning::Skipping tests - no Samsung device available"
+          exit 0
+        fi
 
         # Test models
         python -m unittest discover -s backends/samsung/test/models -p "test_*.py"
