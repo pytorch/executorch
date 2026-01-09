@@ -27,7 +27,7 @@ Qualcomm AI Engine Direct is also referred to as QNN in the source and documenta
 is designed to provide unified, low-level APIs for AI development.
 
 Developers can interact with various accelerators on Qualcomm SoCs with these set of APIs, including
-Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found [here](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/overview.html).
+Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found [here](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/overview.html).
 
 Currently, this ExecuTorch Backend can delegate AI computations to Hexagon processors through Qualcomm AI Engine Direct APIs.
 
@@ -36,24 +36,30 @@ Currently, this ExecuTorch Backend can delegate AI computations to Hexagon proce
 
 ### Host OS
 
-The Linux host operating system that QNN Backend is verified with is Ubuntu 22.04 LTS x64
-at the moment of updating this tutorial.
-In addition, it is also confirmed to work on Windows Subsystem for Linux (WSL) with Ubuntu 22.04.
-Usually, we verified the backend on the same OS version which QNN is verified with.
-The version is documented in QNN SDK.
+The QNN Backend is currently verified on the following Linux host operating systems:
+
+- **Ubuntu 22.04 LTS (x64)**
+- **CentOS Stream 9**
+- **Windows Subsystem for Linux (WSL)** with Ubuntu 22.04
+
+In general, we verify the backend on the same OS versions that the QNN SDK is officially validated against.  
+The exact supported versions are documented in the QNN SDK.
 
 #### Windows (WSL) Setup
+
 To install Ubuntu 22.04 on WSL, run the following command in PowerShell or Windows Terminal:
-``` bash
+
+```bash
 wsl --install -d ubuntu 22.04
 ```
+
 This command will install WSL and set up Ubuntu 22.04 as the default Linux distribution.
 
 For more details and troubleshooting, refer to the official Microsoft WSL installation guide:
 👉 [Install WSL | Microsoft Learn](https://learn.microsoft.com/en-us/windows/wsl/install)
 
 ### Hardware:
-You will need an Android smartphone with adb-connected running on one of below Qualcomm SoCs:
+You will need an Android / Linux device with adb-connected running on one of below Qualcomm SoCs:
  - SA8295
  - SM8450 (Snapdragon 8 Gen 1)
  - SM8475 (Snapdragon 8 Gen 1+)
@@ -62,22 +68,24 @@ You will need an Android smartphone with adb-connected running on one of below Q
  - SM8750 (Snapdragon 8 Elite)
  - SSG2115P
  - SSG2125P
- - SXR1230P
+ - SXR1230P (Linux Embedded)
  - SXR2230P
  - SXR2330P
+ - QCM6490
+ - QCS9100
 
 This example is verified with SM8550 and SM8450.
 
 ### Software:
 
  - Follow ExecuTorch recommended Python version.
- - A compiler to compile AOT parts, e.g., the GCC compiler comes with Ubuntu LTS.
+ - A compiler to compile AOT parts, e.g., the GCC compiler comes with Ubuntu LTS. g++ version need to be 13 or higher.
  - [Android NDK](https://developer.android.com/ndk). This example is verified with NDK 26c.
+ - (Optional) Target toolchain for linux embedded platform.
  - [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
-   - Click the "Get Software" button to download a version of QNN SDK.
-   - However, at the moment of updating this tutorial, the above website doesn't provide QNN SDK newer than 2.22.6.
-   - The below is public links to download various QNN versions. Hope they can be publicly discoverable soon.
-   - [QNN 2.28.0](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.28.0.241029.zip)
+   - Click the "Get Software" button to download the latest version of the QNN SDK.
+   - Although newer versions are available, we have verified and recommend using QNN 2.37.0 for stability.
+   - You can download it directly from the following link: [QNN 2.37.0](https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.37.0.250724/v2.37.0.250724.zip)
 
 The directory with installed Qualcomm AI Engine Direct SDK looks like:
 ```
@@ -131,90 +139,13 @@ The above script is actively used. It is updated more frequently than this tutor
 An example usage is
 ```bash
 cd $EXECUTORCH_ROOT
+# android target
 ./backends/qualcomm/scripts/build.sh
-# or
+# (optional) linux embedded target
+./backends/qualcomm/scripts/build.sh --enable_linux_embedded
+# for release build
 ./backends/qualcomm/scripts/build.sh --release
 ```
-
-### AOT (Ahead-of-time) components:
-
-Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct binary.
-
-```bash
-cd $EXECUTORCH_ROOT
-mkdir build-x86
-cd build-x86
-# Note that the below command might change.
-# Please refer to the above build.sh for latest workable commands.
-cmake .. \
-  -DCMAKE_INSTALL_PREFIX=$PWD \
-  -DEXECUTORCH_BUILD_QNN=ON \
-  -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
-  -DEXECUTORCH_BUILD_DEVTOOLS=ON \
-  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-  -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-  -DPYTHON_EXECUTABLE=python3
-
-# nproc is used to detect the number of available CPU.
-# If it is not applicable, please feel free to use the number you want.
-cmake --build $PWD --target "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j$(nproc)
-
-# install Python APIs to correct import path
-# The filename might vary depending on your Python and host version.
-cp -f backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
-cp -f backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
-
-# Workaround for .fbs files in exir/_serialize
-cp $EXECUTORCH_ROOT/schema/program.fbs $EXECUTORCH_ROOT/exir/_serialize/program.fbs
-cp $EXECUTORCH_ROOT/schema/scalar_type.fbs $EXECUTORCH_ROOT/exir/_serialize/scalar_type.fbs
-```
-
-### Runtime:
-
-An example `qnn_executor_runner` executable would be used to run the compiled `pte` model.
-
-Commands to build `qnn_executor_runner` for Android:
-
-```bash
-cd $EXECUTORCH_ROOT
-mkdir build-android
-cd build-android
-# build executorch & qnn_executorch_backend
-cmake .. \
-    -DCMAKE_INSTALL_PREFIX=$PWD \
-    -DEXECUTORCH_BUILD_QNN=ON \
-    -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
-    -DEXECUTORCH_BUILD_DEVTOOLS=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-    -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-    -DPYTHON_EXECUTABLE=python3 \
-    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
-    -DANDROID_ABI='arm64-v8a' \
-    -DANDROID_PLATFORM=android-30
-
-# nproc is used to detect the number of available CPU.
-# If it is not applicable, please feel free to use the number you want.
-cmake --build $PWD --target install -j$(nproc)
-
-cmake ../examples/qualcomm \
-    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
-    -DANDROID_ABI='arm64-v8a' \
-    -DANDROID_PLATFORM=android-30 \
-    -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \
-    -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
-    -DPYTHON_EXECUTABLE=python3 \
-    -Bexamples/qualcomm
-
-cmake --build examples/qualcomm -j$(nproc)
-
-# qnn_executor_runner can be found under examples/qualcomm
-# The full path is $EXECUTORCH_ROOT/build-android/examples/qualcomm/executor_runner/qnn_executor_runner
-ls examples/qualcomm
-```
-
-**Note:** If you want to build for release, add `-DCMAKE_BUILD_TYPE=Release` to the `cmake` command options.
 
 
 ## Deploying and running on device
@@ -315,9 +246,11 @@ adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV69Stub.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV73Stub.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV75Stub.so ${DEVICE_DIR}
+adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV79Stub.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so ${DEVICE_DIR}
+adb push ${QNN_SDK_ROOT}/lib/hexagon-v79/unsigned/libQnnHtpV79Skel.so ${DEVICE_DIR}
 ```
 
 ***Step 2***.  We also need to indicate dynamic linkers on Android and Hexagon
@@ -351,7 +284,10 @@ I 00:00:00.364875 executorch:qnn_executor_runner.cpp:425] Write etdump to etdump
 The model is merely executed. If we want to feed real inputs and get model outputs, we can use
 ```bash
 cd $EXECUTORCH_ROOT
+# android
 python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8550 --download -s <device_serial>
+# (optional) linux embedded
+python -m examples.qualcomm.scripts.deeplab_v3 -b build-oe-linux -m SXR1230P --download -s <device_serial> -t aarch64-oe-linux-gcc-9.3
 ```
 The `<device_serial>` can be found by `adb devices` command.
 
@@ -360,16 +296,162 @@ After the above command, pre-processed inputs and outputs are put in `$EXECUTORC
 The command-line arguments are written in [utils.py](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/utils.py#L139).
 The model, inputs, and output location are passed to `qnn_executorch_runner` by `--model_path`, `--input_list_path`, and `--output_folder_path`.
 
+### Run [Android LlamaDemo](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android/LlamaDemo) with QNN backend
+
+`$DEMO_APP` refers to the root of the executorch android demo, i.e., the directory containing `build.gradle.kts`.
+
+***Step 1***: Rebuild ExecuTorch AAR
+
+```bash
+# Build the AAR
+cd $EXECUTORCH_ROOT
+export BUILD_AAR_DIR=$EXECUTORCH_ROOT/aar-out
+./scripts/build_android_library.sh
+```
+
+***Step 2***: Copy AAR to Android Project
+
+```bash
+cp $EXECUTORCH_ROOT/aar-out/executorch.aar \
+   $DEMO_APP/app/libs/executorch.aar
+```
+
+***Step 3***: Build Android APK
+
+```bash
+cd $DEMO_APP
+./gradlew clean assembleDebug -PuseLocalAar=true
+```
+
+***Step 4***: Install on Device
+
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+***Step 5***: Push model
+
+```bash
+adb shell mkdir -p /data/local/tmp/llama
+adb push model.pte /data/local/tmp/llama
+adb push tokenizer.bin /data/local/tmp/llama
+```
+
+***Step 6***: Run the Llama Demo
+
+- Open the App on Android
+- Select `QUALCOMM` backend
+- Select `model.pte` Model
+- Select `tokenizer.bin` Tokenizer
+- Select Model Type
+- Click LOAD MODEL
+- It should show `Successfully loaded model.`
+
+
+#### Verification Steps
+
+***Step 1***. Verify AAR Contains Your Changes
+
+```bash
+# Check for debug strings in the AAR
+unzip -p $DEMO_APP/app/libs/executorch.aar jni/arm64-v8a/libexecutorch.so | \
+  strings | grep "QNN"   # Replace "QNN" with your actual debug string if needed
+```
+
+If found, your changes are in the AAR.
+
+***Step 2***. Verify APK Contains Correct Libraries
+
+```bash
+# Check QNN library version in APK
+cd $DEMO_APP
+unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "libQnnHtp.so"
+```
+
+Expected size for QNN 2.37.0: ~2,465,440 bytes
+
+***Step 3***. Monitor Logs During Model Loading
+
+```bash
+adb logcat -c
+adb logcat | grep -E "ExecuTorch"
+```
+
+#### Common Issues and Solutions
+
+##### Issue 1: Error 18 (InvalidArgument)
+
+- **Cause**: Wrong parameter order in Runner constructor or missing QNN config
+
+- **Solution**: Check `$EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/llama/runner/runner.h` for the correct constructor signature.
+
+##### Issue 2: Error 1 (Internal) with QNN API Version Mismatch
+
+- **Symptoms**:
+
+    ```
+    W [Qnn ExecuTorch]: Qnn API version 2.33.0 is mismatched
+    E [Qnn ExecuTorch]: Using newer context binary on old SDK
+    E [Qnn ExecuTorch]: Can't create context from binary. Error 5000
+    ```
+
+- **Cause**: Model compiled with QNN SDK version X but APK uses QNN runtime version Y
+
+- **Solution**:
+    - Update `build.gradle.kts` with matching QNN runtime version
+
+    > **Note:** The version numbers below (`2.33.0` and `2.37.0`) are examples only. Please check for the latest compatible QNN runtime version or match your QNN SDK version to avoid API mismatches.
+
+    **Before**:
+    ```kotlin
+    implementation("com.qualcomm.qti:qnn-runtime:2.33.0")
+    ```
+    
+    **After**:
+    ```kotlin
+    implementation("com.qualcomm.qti:qnn-runtime:2.37.0")
+    ```
+
+    - Or recompile model with matching QNN SDK version
+
+##### Issue 3: Native Code Changes Not Applied
+
+- **Symptoms**:
+    - Debug logs don't appear
+    - Behavior doesn't change
+
+- **Cause**:
+    - Gradle using Maven dependency instead of local AAR
+
+- **Solution**:
+    - Always build with `-PuseLocalAar=true` flag
+
+##### Issue 4: Logs Not Appearing
+
+- **Cause**: Wrong logging tag filter
+
+- **Solution**: QNN uses "ExecuTorch" tag:
+
+    ```bash
+    adb logcat | grep "ExecuTorch"
+    ```
 
 ## Supported model list
 
-Please refer to `$EXECUTORCH_ROOT/examples/qualcomm/scripts/` and `EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/` to the list of supported models.
+Please refer to `$EXECUTORCH_ROOT/examples/qualcomm/scripts/` and `$EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/` to the list of supported models.
+
+Each script demonstrates:
+- Model export (torch.export)
+- Quantization (PTQ/QAT)
+- Lowering and compilation to QNN delegate
+
+Deployment on device or HTP emulator
 
 ## How to Support a Custom Model in HTP Backend
 
 ### Step-by-Step Implementation Guide
 
-Please reference [the simple example](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/export_example.py) and [more compilated examples](https://github.com/pytorch/executorch/tree/main/examples/qualcomm/scripts) for reference
+Please reference [the simple example](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/export_example.py) and [more complicated examples](https://github.com/pytorch/executorch/tree/main/examples/qualcomm/scripts) for reference
 #### Step 1: Prepare Your Model
 ```python
 import torch
@@ -385,7 +467,7 @@ example_inputs = (torch.randn(1, 3, 224, 224),)  # Example input tensor
 Choose between quantization approaches, post training quantization (PTQ) or quantization aware training (QAT):
 ```python
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
-from torch.ao.quantization.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e, convert_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e, convert_pt2e
 
 quantizer = QnnQuantizer()
 m = torch.export.export(model, example_inputs, strict=True).module()
@@ -431,11 +513,12 @@ For practical examples, see [`test_qnn_delegate.py`](https://github.com/pytorch/
 #### Step 3: Configure Compile Specs
 During this step, you will need to specify the target SoC, data type, and other QNN compiler spec.
 ```python
-from executorch.backends.qualcomm.compiler import (
+from executorch.backends.qualcomm.utils.utils import (
     generate_qnn_executorch_compiler_spec,
     generate_htp_compiler_spec,
+    QcomChipset,
+    to_edge_transform_and_lower_to_qnn,
 )
-from executorch.backends.qualcomm.utils.utils import QcomChipset
 
 # HTP Compiler Configuration
 backend_options = generate_htp_compiler_spec(
@@ -450,11 +533,6 @@ compile_spec = generate_qnn_executorch_compiler_spec(
 ```
 #### Step 4: Lower and Export the Model
 ```python
-from executorch.backends.qualcomm.partition.qnn_partitioner import (
-    to_edge_transform_and_lower_to_qnn,
-)
-from executorch.exir import ExecutorchBackendConfig
-
 # Lower to QNN backend
 delegated_program = to_edge_transform_and_lower_to_qnn(
     quantized_model if quantized else model,
@@ -463,9 +541,7 @@ delegated_program = to_edge_transform_and_lower_to_qnn(
 )
 
 # Export to ExecuTorch format
-executorch_program = delegated_program.to_executorch(
-    config=ExecutorchBackendConfig(extract_delegate_segments=False)
-)
+executorch_program = delegated_program.to_executorch()
 
 # Save the compiled model
 model_name = "custom_model_qnn.pte"
@@ -474,12 +550,86 @@ with open(model_name, "wb") as f:
 print(f"Model successfully exported to {model_name}")
 ```
 
-## What is coming?
+## Deep Dive
 
- - Improve the performance for llama3-8B-Instruct and support batch prefill.
- - We will support pre-compiled binaries from [Qualcomm AI Hub](https://aihub.qualcomm.com/).
+### Partitioner API
+
+The **QnnPartitioner** identifies and groups supported subgraphs for execution on the QNN backend.  
+It uses `QnnOperatorSupport` to check node-level compatibility with the Qualcomm backend via QNN SDK APIs.
+
+The partitioner tags supported nodes with a `delegation_tag` and handles constants, buffers, and mutable states appropriately.
+Please checkout [QNNPartitioner](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/partition/qnn_partitioner.py#L125) for the latest changes. It mostly supports the following 4 inputs, and only compile spec is required
+```python
+class QnnPartitioner(Partitioner):
+    """
+    QnnPartitioner identifies subgraphs that can be lowered to QNN backend, by tagging nodes for delegation,
+    and manages special cases such as mutable buffers and consumed constants.
+    """
+
+    def __init__(
+        self,
+        compiler_specs: List[CompileSpec],
+        skip_node_id_set: set = None,
+        skip_node_op_set: set = None,
+        skip_mutable_buffer: bool = False,
+    ):
+        ...
+```
+
+### Quantization
+Quantization in the QNN backend supports multiple data bit-widths and training modes (PTQ/QAT).
+The QnnQuantizer defines quantization configurations and annotations compatible with Qualcomm hardware.
+
+Supported schemes include:
+- 8a8w (default)
+- 16a16w
+- 16a8w
+- 16a4w
+- 16a4w_block
+
+
+Highlights:
+- QuantDtype enumerates bit-width combinations for activations and weights.
+- ModuleQConfig manages per-layer quantization behavior and observers.
+- QnnQuantizer integrates with PT2E prepare/convert flow to annotate and quantize models.
+
+Supports:
+
+- Per-channel and per-block quantization
+
+- Custom quant annotation via custom_quant_annotations
+
+- Skipping specific nodes or ops
+
+- Per-module customization via submodule_qconfig_list
+
+For details, see: backends/qualcomm/quantizer/quantizer.py
+
+### Operator Support
+[The full operator support matrix](https://github.com/pytorch/executorch/tree/f32cdc3de6f7176d70a80228f1a60bcd45d93437/backends/qualcomm/builders#operator-support-status is tracked and frequently updated in the ExecuTorch repository.
+
+It lists:
+- Supported PyTorch ops (aten.*, custom ops)
+- Planned ops
+- Deprecated ops
+
+This matrix directly corresponds to the implementations in: [executorch/backends/qualcomm/builders/node_visitors/*.py](https://github.com/pytorch/executorch/tree/main/backends/qualcomm/builders)
+
+### Custom Ops Support
+
+You can extend QNN backend support for your own operators.
+Follow the [tutorial](https://github.com/pytorch/executorch/tree/f32cdc3de6f7176d70a80228f1a60bcd45d93437/examples/qualcomm/custom_op#custom-operator-support):
+
+It covers:
+- Writing new NodeVisitor for your op
+- Registering via @register_node_visitor
+- Creating and linking libQnnOp*.so for the delegate
+- Testing and verifying custom kernels on HTP
 
 ## FAQ
 
 If you encounter any issues while reproducing the tutorial, please file a github
-issue on ExecuTorch repo and tag use `#qcom_aisw` tag
+[issue](https://github.com/pytorch/executorch/issues) on ExecuTorch repo and tag use `#qcom_aisw` tag
+
+ ### Debugging tips
+ - Before trying any complicated models, try out [a simple model example](https://github.com/pytorch/executorch/tree/f32cdc3de6f7176d70a80228f1a60bcd45d93437/examples/qualcomm#simple-examples-to-verify-the-backend-is-working) and see it if works one device.

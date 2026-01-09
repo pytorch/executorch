@@ -21,12 +21,17 @@ Please check `generate_qnn_executorch_compiler_spec()` in
 - Snapdragon 8 Gen 2
 - Snapdragon 8 Gen 3
 - Snapdragon 8 Elite
+- Snapdragon 8 Elite Gen 5
 - SA8295
+- SA8255
 - SSG2115P
 - SSG2125P
 - SXR1230P
 - SXR2230P
 - SXR2330P
+- QCS9100
+- SAR2230P
+- SW6100
 
 ### Adding more supported Chipset
 Currently, users cannot add additional chipset models because the chipset ID is not accessible to community users. If you have specific chipset models you wish to add, please contact one of the authors in the `Code Reviews` section at the bottom of this page.
@@ -51,7 +56,7 @@ backends/qualcomm
 |   |       # Meanwhile, this is also the runtime responsbile for executing compiled
 |   |       # models on a device.
 |   └── backends # Backends supported by QNN.
-|       └── htpbackend
+|       └── gpu / htp
 |           ├── aarch64 # Configuration required to run on device. (Device Part).
 |           └── x86_64 # Configuration required to compile graph on host. (AoT Part).
 ├── scripts # Misc supporting scripts, not related to core functionality.
@@ -128,7 +133,7 @@ PRs are always welcome to help improve the codebase in a comprehensive manner. B
 - **Code Reviews**:<br/>
     Please ping authors in Qualcomm AI Engine Direct related PRs for reviewing, possible candidates are listed below:
     - [shewu-quic](https://github.com/shewu-quic)
-    - [chunit-quic](https://github.com/chunit-quic)
+    - [chenweng-quic](https://github.com/chenweng-quic)
     - [winskuo-quic](https://github.com/winskuo-quic)
     - [DannyYuyang-quic](https://github.com/DannyYuyang-quic)
     - [haowhsu-quic](https://github.com/haowhsu-quic)

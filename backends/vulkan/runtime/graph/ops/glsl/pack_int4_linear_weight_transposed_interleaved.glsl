@@ -12,12 +12,14 @@
 
 $if not NO_INT8_BUFFERS:
   ${define_required_extensions("uint8")}
-$if STORAGE == "buffer":
-  ${define_required_extensions("int8")}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_qmat2", "uint8", STORAGE, is_scalar_array=False)}
+$if STORAGE == "buffer" and NO_INT8_BUFFERS:
+  ${layout_declare_tensor(B, "w", "t_qmat2", "uint", STORAGE, is_scalar_array=True)}
+$else:
+  ${layout_declare_tensor(B, "w", "t_qmat2", "uint8", STORAGE, is_scalar_array=False)}
+
 $if NO_INT8_BUFFERS:
   ${layout_declare_tensor(B, "r", "nchw_4x2", "uint", "buffer")}
 $else:
@@ -35,7 +37,10 @@ $else:
   #define BUF_T uint8_t
 
 $if STORAGE == "buffer":
-  #define UVEC4_T u8vec4
+  $if NO_INT8_BUFFERS:
+    #define UVEC4_T uvec4
+  $else:
+    #define UVEC4_T u8vec4
 $else:
   #define UVEC4_T uvec4
 
@@ -48,7 +53,7 @@ uint get_second(const BUF_T packed) {
 }
 
 uint combine(const uint first, const uint second) {
-  return (first << 4 | second);
+  return first * 16 + second;
 }
 
 $if NO_INT8_BUFFERS:
@@ -155,8 +160,12 @@ void main() {
 
   $if STORAGE == "buffer":
     int stride = qmat2_sizes.x >> 2;
-    t_qmat2[packed_pos.y * stride + packed_pos.x] = out_tex_1;
-    t_qmat2[(packed_pos.y + 1) * stride + packed_pos.x] = out_tex_2;
+    $if NO_INT8_BUFFERS:
+      t_qmat2[packed_pos.y * stride + packed_pos.x] = out_tex_1.x | (out_tex_1.y << 8) | (out_tex_1.z << 16) | (out_tex_1.w << 24);
+      t_qmat2[(packed_pos.y + 1) * stride + packed_pos.x] = out_tex_2.x | (out_tex_2.y << 8) | (out_tex_2.z << 16) | (out_tex_2.w << 24);
+    $else:
+      t_qmat2[packed_pos.y * stride + packed_pos.x] = out_tex_1;
+      t_qmat2[(packed_pos.y + 1) * stride + packed_pos.x] = out_tex_2;
   $else:
     imageStore(t_qmat2, packed_pos.xy, out_tex_1);
     imageStore(t_qmat2, ivec2(packed_pos.x, packed_pos.y + 1), out_tex_2);

@@ -16,11 +16,19 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 def generate_qnn_executorch_option(
     compiler_specs: List[CompileSpec],
 ) -> bytes:
+    qnn_compile_spec_buffer = None
+
     for compiler_spec in compiler_specs:
         if compiler_spec.key == QCOM_QNN_COMPILE_SPEC:
             qnn_compile_spec_buffer = compiler_spec.value
         else:
             raise ValueError(f"unknown compiler spec key value: {compiler_spec.key}")
+
+    if qnn_compile_spec_buffer is None:
+        raise ValueError(
+            f"QNN compile spec (key={QCOM_QNN_COMPILE_SPEC}) not found in compiler_specs"
+        )
+
     return qnn_compile_spec_buffer
 
 
@@ -44,6 +52,7 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.col2im.default,
         torch.ops.aten.elu.default,
+        torch.ops.aten.floor_divide.default,
         torch.ops.aten.hardsigmoid.default,
         torch.ops.aten.hardswish.default,
         torch.ops.aten.im2col.default,

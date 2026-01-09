@@ -60,6 +60,16 @@ void resize_view_node(
   }
 }
 
+void resize_to_dim_order_copy_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+  graph->virtual_resize(out, in_sizes);
+}
+
 void add_view_node(
     ComputeGraph& graph,
     ValueRef in,
@@ -89,12 +99,110 @@ void add_view_node(
       resize_view_node));
 }
 
+void add_view_copy_buffer_node(
+    ComputeGraph& graph,
+    ValueRef in,
+    ValueRef out,
+    const std::vector<ValueRef>& resize_args,
+    const ExecuteNode::ResizeFunction& resize_fn) {
+  std::string kernel_name = "view_buffer";
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
+      // Inputs and Outputs
+      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
+      // Parameter Buffers
+      {graph.buffer_meta_ubo(out), graph.buffer_meta_ubo(in)},
+      // Push Constants
+      {},
+      // Specialization Constants
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+      // Resize Args
+      resize_args,
+      // Resizing Logic
+      resize_fn));
+}
+
+void add_view_copy_convert_buffer_node(
+    ComputeGraph& graph,
+    ValueRef in,
+    ValueRef out,
+    const std::vector<ValueRef>& resize_args,
+    const ExecuteNode::ResizeFunction& resize_fn) {
+  std::string kernel_name = "view_convert_buffer";
+  add_dtype_suffix(kernel_name, graph.dtype_of(in));
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
+      // Inputs and Outputs
+      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
+      // Parameter Buffers
+      {graph.buffer_meta_ubo(out), graph.buffer_meta_ubo(in)},
+      // Push Constants
+      {},
+      // Specialization Constants
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+      // Resize Args
+      resize_args,
+      // Resizing Logic
+      resize_fn));
+}
+
 void view(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  return add_view_node(graph, args[0], args[1], args[2]);
+  int idx = 0;
+  const ValueRef in = args.at(idx++);
+  const ValueRef sizes = args.at(idx++);
+  const ValueRef out = args.at(idx++);
+
+  std::vector<ValueRef> resize_args = {sizes};
+
+  if (graph.is_buffer_storage(out)) {
+    return add_view_copy_buffer_node(
+        graph, in, out, resize_args, resize_view_node);
+  }
+  return add_view_node(graph, in, sizes, out);
+}
+
+void to_dim_order_copy(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  int args_idx = 0;
+  const ValueRef in = args.at(args_idx++);
+  const ValueRef dtype = args.at(args_idx++);
+  (void)dtype;
+  const ValueRef layout = args.at(args_idx++);
+  (void)layout;
+  const ValueRef device = args.at(args_idx++);
+  (void)device;
+  const ValueRef pin_memory = args.at(args_idx++);
+  (void)pin_memory;
+  const ValueRef non_blocking = args.at(args_idx++);
+  (void)non_blocking;
+  const ValueRef dim_order = args.at(args_idx++);
+  (void)dim_order;
+
+  const ValueRef out = args.at(args_idx++);
+
+  VK_CHECK_COND(graph.is_buffer_storage(in) && graph.is_buffer_storage(out));
+
+  if (graph.dtype_of(in) == graph.dtype_of(out)) {
+    return add_view_copy_buffer_node(
+        graph, in, out, {}, resize_to_dim_order_copy_node);
+  }
+
+  return add_view_copy_convert_buffer_node(
+      graph, in, out, {}, resize_to_dim_order_copy_node);
 }
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.view_copy.default, view);
+  VK_REGISTER_OP(dim_order_ops._to_dim_order_copy.default, to_dim_order_copy);
 }
 
 } // namespace vkcompute

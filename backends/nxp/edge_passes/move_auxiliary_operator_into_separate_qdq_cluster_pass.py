@@ -11,6 +11,18 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
 from torch.fx.passes.infra.pass_base import PassResult
 
+# Operator aliases for better readability.
+AddMM = exir_ops.edge.aten.addmm.default
+ViewCopy = exir_ops.edge.aten.view_copy.default
+MM = exir_ops.edge.aten.mm.default
+Conv = exir_ops.edge.aten.convolution.default
+HardTanh = exir_ops.edge.aten.hardtanh.default
+Relu = exir_ops.edge.aten.relu.default
+Sigmoid = exir_ops.edge.aten.sigmoid.default
+Tanh = exir_ops.edge.aten.tanh.default
+Clone = exir_ops.edge.aten.clone.default
+CloneDimOrder = exir_ops.edge.dim_order_ops._clone_dim_order.default
+
 
 def insert_qdq_pair_after_node(
     graph: torch.fx.Graph, anchor: torch.fx.Node, q_params: tuple
@@ -41,7 +53,8 @@ def insert_qdq_pair_after_node(
 
 def _is_dequantize(node_: Node) -> bool:
     return (
-        node_.op == "call_function"
+        hasattr(node_, "op")
+        and node_.op == "call_function"
         and node_.target
         == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
     )
@@ -49,7 +62,8 @@ def _is_dequantize(node_: Node) -> bool:
 
 def _is_quantize(node_: Node) -> bool:
     return (
-        node_.op == "call_function"
+        hasattr(node_, "op")
+        and node_.op == "call_function"
         and node_.target
         == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
     )
@@ -57,45 +71,45 @@ def _is_quantize(node_: Node) -> bool:
 
 class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
     """
-                                                           │
-                                                     ┌─────▼──────┐
-                │                                    │ dequantize │
-          ┌─────▼──────┐                             └─────┬──────┘
-          │ dequantize │                             ┌─────▼──────┐
-          └─────┬──────┘                             │ <aux_node> │
-          ┌─────▼──────┐                             └─────┬──────┘
-          │ <aux_node> │                              ┌────▼─────┐            ┐
-          └─────┬──────┘                              │ quantize │            │
-     ┌──────────▼──────────┐       replaced with      └────┬─────┘            │
-    ⋯┤ <main_cluster_node> ├⋯     ──────────────►          │                  │ newly added nodes
-     └──────────┬──────────┘                         ┌─────▼──────┐           │
-                ▼                                    │ dequantize │           │
-                ⋮                                    └─────┬──────┘           ┘
-           ┌────▼─────┐                         ┌──────────▼──────────┐
-           │ quantize │                        ⋯┤ <main_cluster_node> ├⋯
-           └────┬─────┘                         └──────────┬──────────┘
-                ▼                                          ▼
-                                                           ⋮
-                                                      ┌────▼─────┐
-                                                      │ quantize │
-                                                      └────┬─────┘
-                                                           ▼
+                                                             │
+                                                       ┌─────▼──────┐
+                  │                                    │ dequantize │
+            ┌─────▼──────┐                             └─────┬──────┘
+            │ dequantize │                             ┌─────▼──────┐
+            └─────┬──────┘                             │ <aux_node> │
+            ┌─────▼──────┐                             └─────┬──────┘
+            │ <aux_node> │                              ┌────▼─────┐            ┐
+            └─────┬──────┘                              │ quantize │            │
+       ┌──────────▼──────────┐       replaced with      └────┬─────┘            │
+    ...┤ <main_cluster_node> ├...   ──────────────►          │                  │ newly added nodes
+       └──────────┬──────────┘                         ┌─────▼──────┐           │
+                  ▼                                    │ dequantize │           │
+                  .                                    └─────┬──────┘           ┘
+             ┌────▼─────┐                         ┌──────────▼──────────┐
+             │ quantize │                      ...┤ <main_cluster_node> ├...
+             └────┬─────┘                         └──────────┬──────────┘
+                  ▼                                          ▼
+                                                             .
+                                                        ┌────▼─────┐
+                                                        │ quantize │
+                                                        └────┬─────┘
+                                                             ▼
     """
 
-    allowed_auxiliary_nodes = [exir_ops.edge.aten.view_copy.default]
-
-    # List of approved nodes to which the <aux_node> can be connected in order for the pass to make the modification.
-    allowed_main_cluster_nodes = [
-        exir_ops.edge.aten.addmm.default,
-        exir_ops.edge.aten.mm.default,
-    ]
+    # Dictionary mapping main cluster nodes to auxiliary nodes, for which this optimization will be applied.
+    main_cluster_node_to_auxiliary_nodes = {
+        AddMM: [
+            ViewCopy,
+        ],
+        MM: [
+            ViewCopy,
+        ],
+        ViewCopy: [Clone, CloneDimOrder],
+    }
 
     def run(self, graph_module: torch.fx.GraphModule) -> PassResult:
         for aux_node in graph_module.graph.nodes:
-            if (
-                aux_node.op != "call_function"
-                or aux_node.target not in self.allowed_auxiliary_nodes
-            ):
+            if aux_node.op != "call_function":
                 continue
 
             dequantize_node = aux_node.args[0]
@@ -109,11 +123,13 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
                 continue
 
             main_cluster_node = users[0]
-            if (
-                main_cluster_node.op != "call_function"
-                or main_cluster_node.target not in self.allowed_main_cluster_nodes
+            if main_cluster_node.op != "call_function":
+                continue
+
+            if aux_node.target not in self.main_cluster_node_to_auxiliary_nodes.get(
+                main_cluster_node.target, []
             ):
-                # Unsupported `main_cluster_node`.
+                # Unsupported main cluster node and auxiliary node pair.
                 continue
 
             # Make sure the nodes are part of the same QDQ cluster.
@@ -139,53 +155,72 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
 
 class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
     """
-                                                            │
-                                                      ┌─────▼──────┐
-                │                                     │ dequantize │
-          ┌─────▼──────┐                              └─────┬──────┘
-          │ dequantize │                                    ⋮
-          └─────┬──────┘                         ┌──────────▼──────────┐
-                ▼                               ⋯┤ <main_cluster_node> ├⋯
-                ⋮                                └──────────┬──────────┘
-     ┌──────────▼──────────┐       replaced with       ┌────▼─────┐            ┐
-    ⋯┤ <main_cluster_node> ├⋯     ──────────────►      │ quantize │            │
-     └──────────┬──────────┘                           └────┬─────┘            │
-          ┌─────▼──────┐                                    │                  │ newly added nodes
-          │ <aux_node> │                              ┌─────▼──────┐           │
-          └─────┬──────┘                              │ dequantize │           │
-           ┌────▼─────┐                               └─────┬──────┘           ┘
-           │ quantize │                               ┌─────▼──────┐
-           └────┬─────┘                               │ <aux_node> │
-                ▼                                     └─────┬──────┘
-                                                       ┌────▼─────┐
-                                                       │ quantize │
-                                                       └────┬─────┘
-                                                            ▼
+                                                              │
+                                                        ┌─────▼──────┐
+                  │                                     │ dequantize │
+            ┌─────▼──────┐                              └─────┬──────┘
+            │ dequantize │                                    .
+            └─────┬──────┘                         ┌──────────▼──────────┐
+                  ▼                             ...┤ <main_cluster_node> ├...
+                  .                                └──────────┬──────────┘
+       ┌──────────▼──────────┐       replaced with       ┌────▼─────┐            ┐
+    ...┤ <main_cluster_node> ├...   ──────────────►      │ quantize │            │
+       └──────────┬──────────┘                           └────┬─────┘            │
+            ┌─────▼──────┐                                    │                  │ newly added nodes
+            │ <aux_node> │                              ┌─────▼──────┐           │
+            └─────┬──────┘                              │ dequantize │           │
+             ┌────▼─────┐                               └─────┬──────┘           ┘
+             │ quantize │                               ┌─────▼──────┐
+             └────┬─────┘                               │ <aux_node> │
+                  ▼                                     └─────┬──────┘
+                                                         ┌────▼─────┐
+                                                         │ quantize │
+                                                         └────┬─────┘
+                                                              ▼
     """
 
-    allowed_auxiliary_nodes = [exir_ops.edge.aten.view_copy.default]
-
-    # List of approved nodes to which the `<aux_node>` can be connected in order for the pass to make the modification.
-    allowed_main_cluster_nodes = [
-        exir_ops.edge.aten.addmm.default,
-        exir_ops.edge.aten.mm.default,
-    ]
+    # Dictionary mapping main cluster nodes to auxiliary nodes, for which this optimization will be applied.
+    main_cluster_node_to_auxiliary_nodes = {
+        AddMM: [
+            ViewCopy,
+            HardTanh,
+            Relu,
+            Sigmoid,
+            Tanh,
+        ],
+        MM: [
+            ViewCopy,
+            HardTanh,
+            Relu,
+            Sigmoid,
+            Tanh,
+        ],
+        Conv: [
+            HardTanh,
+            Relu,
+            Sigmoid,
+            Tanh,
+        ],
+        ViewCopy: [Clone, CloneDimOrder],
+    }
 
     def run(self, graph_module: torch.fx.GraphModule) -> PassResult:
 
         for aux_node in graph_module.graph.nodes:
-            if (
-                aux_node.op != "call_function"
-                or aux_node.target not in self.allowed_auxiliary_nodes
-            ):
+            if aux_node.op != "call_function":
                 continue
 
             main_cluster_node = aux_node.args[0]
-            if (
-                main_cluster_node.op != "call_function"
-                or main_cluster_node.target not in self.allowed_main_cluster_nodes
+            if not (
+                hasattr(main_cluster_node, "op")
+                and main_cluster_node.op == "call_function"
             ):
-                # Unsupported `main_cluster_node`.
+                continue
+
+            if aux_node.target not in self.main_cluster_node_to_auxiliary_nodes.get(
+                main_cluster_node.target, []
+            ):
+                # Unsupported main cluster node and auxiliary node pair.
                 continue
 
             users = list(aux_node.users.keys())

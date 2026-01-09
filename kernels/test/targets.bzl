@@ -71,7 +71,7 @@ def define_common_targets():
                 "//common/gtest:gtest",
             ] if not runtime.is_oss else [],
             xplat_exported_deps = [
-                "//xplat/folly:init_init",
+                "fbsource//xplat/folly/init:init",
                 "//third-party/googletest:gtest_main",
             ],
         )
@@ -177,7 +177,7 @@ def define_common_targets():
 
     _common_op_test("op__to_dim_order_copy_test", ["aten", "portable"])
     _common_op_test("op__empty_dim_order_test", ["aten", "portable"])
-    _common_op_test("op__clone_dim_order_test", ["portable"])
+    _common_op_test("op__clone_dim_order_test", ["aten", "portable"])
     _common_op_test("op_abs_test", ["aten", "portable"])
     _common_op_test("op_acos_test", ["aten", "portable"])
     _common_op_test("op_acosh_test", ["aten", "portable"])
@@ -198,8 +198,10 @@ def define_common_targets():
     _common_op_test("op_atanh_test", ["aten", "portable"])
     _common_op_test("op_avg_pool2d_test", ["aten", "portable"])
     _common_op_test("op_bitwise_and_test", ["aten", "portable"])
+    _common_op_test("op_bitwise_left_shift_test", ["portable"])
     _common_op_test("op_bitwise_not_test", ["aten", "portable"])
     _common_op_test("op_bitwise_or_test", ["aten", "portable"])
+    _common_op_test("op_bitwise_right_shift_test", ["portable"])
     _common_op_test("op_bitwise_xor_test", ["aten", "portable"])
     _common_op_test("op_bmm_test", ["aten", "portable", "optimized"])
     _common_op_test("op_cat_test", ["aten", "portable"])

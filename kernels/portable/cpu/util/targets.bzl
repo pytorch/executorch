@@ -32,9 +32,11 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:select_copy_util",
             "//executorch/kernels/portable/cpu/util:advanced_index_util",
             "//executorch/kernels/portable/cpu/util:slice_util",
+            "//executorch/kernels/portable/cpu/util:stack_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:upsample_util",
             "//executorch/kernels/portable/cpu/util:vectorized_math",
+            "//executorch/kernels/portable/cpu/util:grid_sampler_2d_util",
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )
@@ -291,8 +293,22 @@ def define_common_targets():
         exported_headers = ["slice_util.h"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/extension/threadpool:threadpool",
         ],
         visibility = ["//executorch/kernels/portable/cpu/..."],
+    )
+
+    runtime.cxx_library(
+        name = "stack_util",
+        srcs = ["stack_util.cpp"],
+        exported_headers = ["stack_util.h"],
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+        exported_deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "@EXECUTORCH_CLIENTS"],
     )
 
     runtime.cxx_library(
@@ -326,6 +342,16 @@ def define_common_targets():
             "//executorch/runtime/core/portable_type:portable_type",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
         ],
+    )
+
+    runtime.cxx_library(
+        name = "grid_sampler_2d_util",
+        srcs = ["grid_sampler_2d_util.cpp"],
+        exported_headers = ["grid_sampler_2d_util.h"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
     # Utility functions that can be used by operators that perform reduction

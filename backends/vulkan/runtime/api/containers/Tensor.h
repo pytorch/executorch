@@ -19,53 +19,43 @@
 namespace vkcompute {
 namespace api {
 
-/*
- * Given a GPUMemoryLayout value, produce a dim order vector that matches the
- * given memory layout. The produced dim order vector will be in the NCHW
- * dimension order
- */
-std::vector<int64_t> calculate_dim_order(
-    const size_t ndim,
-    const int32_t packed_dim);
+static constexpr size_t kTensorDimLimit = 8;
 
 /*
- * Given the sizes of a tensor and the dim order of the tensor (both in NCHW)
- * dimension order, calculate the strides of the tensor.
+ * PackedDimInfo encapsulates metadata about packed dimensions in GPU tensors.
+ * This includes information about which dimension is packed, whether it's
+ * padded, and block packing information for special layouts like 4W4C and 4H4W.
  */
-std::vector<int64_t> calculate_strides(
-    const std::vector<int64_t>& sizes,
-    const std::vector<int64_t>& dim_order);
+struct PackedDimInfo {
+  // Describes which dimension is "tightly packed" using WHCN index (i.e. 0 for
+  // width, 1 for height, etc.). For texture backed tensors, this describes
+  // which dimension is packed along a texel. For buffer backed tensors, this
+  // describes which dimension has a stride of 1 (i.e. is last in the dim
+  // order).
+  int32_t packed_dim;
+  // Describes if the packed dimension is padded to a multiple of 4. This will
+  // be true for all tensors that use texture storage, and will also be true
+  // for the PACKED_PADDED memory layouts.
+  bool packed_dim_padded;
+  // Describes a second level of packing, if applicable (which will only apply
+  // to the 4W4C and 4H4W layouts). If there is no second level of packing,
+  // then this will be equal to packed_dim. Otherwise, it will represent the
+  // outer dim used to construct block packing. For example, 4W4C will have
+  // packed_dim = 2 and outer_packed_dim = 0.
+  int32_t outer_packed_dim;
+  // Whether the outer packed dim is padded to the next multiple of 4. This is
+  // true only for block-packed layouts.
+  bool outer_packed_dim_padded;
+  // True if this layout uses block packing (i.e., outer_packed_dim !=
+  // packed_dim). Block packing is used for layouts like 4W4C and 4H4W.
+  bool is_block_packed;
 
-std::vector<int64_t> unsqueeze_strides(
-    const std::vector<int64_t>& strides,
-    const int64_t numel);
-
-/*
- * When stored on the GPU, tensor data is stored using texels (i.e. a vector of
- * 4 scalar values) in order to take advantage of the GPU's native vectorization
- * capabilities. Furthermore, tensor metadata is passed in to shaders as ivec4
- * types.
- *
- * To accommodate these vectorized types, the sizes of a tensor will be modified
- * for GPU storage in the following ways:
- *
- *   1. The dimensionality of the tensor will be padded to a multiple of 4.
- *   2. The size of the packed dimension will be padded to a multiple of 4.
- *
- * The "packed dimension" is determined based on the utils::GPUMemoryLayout
- * argument.
- */
-std::vector<int64_t> calculate_padded_sizes(
-    const std::vector<int64_t>& sizes,
-    const int32_t packed_dim);
-
-/*
- * Calculate the image extents required of a texture backed tensor.
- */
-utils::uvec3 calculate_image_extents(
-    const std::vector<int64_t>& padded_sizes,
-    const std::vector<int64_t>& axis_map,
-    const int32_t packed_dim);
+  PackedDimInfo(
+      int32_t dim,
+      bool dim_padded,
+      int32_t outer_dim,
+      bool outer_dim_padded);
+};
 
 struct LastAccess {
   vkapi::PipelineStageFlags stage;
@@ -81,18 +71,6 @@ struct LastAccess {
       : stage{stage_flags}, access{access_flags} {}
 };
 
-/*
- * Calculate the number of elements that a GPU buffer would require to store the
- * contents of a tensor. This will depend on the storage type and dtype of the
- * tensor, as well as the features available on the device.
- */
-int64_t calculate_gpu_buffer_numel(
-    Context* const context,
-    const std::vector<int64_t>& sizes,
-    const utils::uvec3 image_extents,
-    const utils::StorageType storage_type,
-    const vkapi::ScalarType dtype);
-
 class vTensorStorage final {
  public:
   // Do not allow empty vTensorStorage construction
@@ -102,9 +80,10 @@ class vTensorStorage final {
       Context* context,
       const utils::StorageType storage_type,
       const std::vector<int64_t>& axis_map,
-      const int32_t packed_dim,
-      const std::vector<int64_t>& sizes,
+      const PackedDimInfo& packed_dim_info,
+      const std::vector<int64_t>& padded_sizes,
       const vkapi::ScalarType dtype,
+      const int64_t physical_numel,
       const bool allocate_memory = true);
 
   vTensorStorage(Context* const context, const vkapi::VulkanImage& image);
@@ -236,28 +215,23 @@ class vTensor final {
   };
 
   class UniformData {
-    utils::ivec4 sizes_v;
-    utils::ivec4 whcn_dim_order_v;
-    utils::ivec4 strides_v;
-    // See the comments documenting logical_limits() for more context.
-    TextureLimits logical_limits;
     // Contains the number of elements in the tensor according to the canonical
     // sizes.
     int32_t numel;
+    utils::ivec4 sizes_v;
+    utils::ivec4 dim_order_v;
+    utils::ivec4 strides_v;
+    // See the comments documenting logical_limits() for more context.
+    TextureLimits logical_limits;
 
     friend class vTensor;
 
     UniformData(
+        const size_t numel_ll,
         const std::vector<int64_t>& sizes,
-        const std::vector<int64_t>& whcn_dim_order,
+        const std::vector<int64_t>& dim_order,
         const std::vector<int64_t>& strides,
-        const utils::uvec3& logical_limits,
-        const size_t numel_ll)
-        : sizes_v(utils::make_whcn_ivec4(sizes)),
-          whcn_dim_order_v(utils::make_ivec4(whcn_dim_order)),
-          strides_v(utils::make_whcn_ivec4(strides)),
-          logical_limits(logical_limits),
-          numel(utils::safe_downcast<int32_t>(numel_ll)) {}
+        const utils::uvec3& limits);
 
    public:
     /*
@@ -271,22 +245,59 @@ class vTensor final {
         const Attribute attr);
   };
 
+  struct BufferMetadata {
+    uint32_t sizes[kTensorDimLimit];
+    uint32_t dim_order[kTensorDimLimit];
+    uint32_t strides[kTensorDimLimit];
+    uint32_t ndim;
+    uint32_t numel;
+
+    BufferMetadata(
+        std::vector<int64_t>& sizes,
+        std::vector<int64_t>& dim_order,
+        std::vector<int64_t>& strides,
+        size_t numel);
+
+    void update(
+        std::vector<int64_t>& sizes,
+        std::vector<int64_t>& dim_order,
+        std::vector<int64_t>& strides,
+        size_t numel);
+  };
+
+  struct TextureMetadata {
+    int32_t sizes[4];
+    int32_t logical_limits[4];
+    int32_t axis_map[4];
+    int32_t packed_dim;
+
+    TextureMetadata(
+        const std::vector<int64_t>& sizes,
+        const TextureLimits& logical_limits,
+        const std::vector<int64_t>& axis_map,
+        const PackedDimInfo& packed_dim_info);
+
+    void update(
+        const std::vector<int64_t>& sizes,
+        const TextureLimits& logical_limits,
+        const std::vector<int64_t>& axis_map,
+        const PackedDimInfo& packed_dim_info);
+  };
+
  private:
   /*
    * "Core" tensor metadata. They are the minimum amount of information required
    * to construct a tensor.
    */
 
+  // Information about packed dimension padding and block packing
+  PackedDimInfo packed_dim_info_;
   // Whether the tensor has elements of type float, int, etc.
   vkapi::ScalarType dtype_;
   // sizes of the tensor in NCHW dimension order
   std::vector<int64_t> sizes_;
-  // Describes which dimension is "tightly packed" using WHCN index (i.e. 0 for
-  // width, 1 for height, etc.). For texture backed tensors, this describes
-  // which dimension is packed along a texel. For buffer backed tensors, this
-  // describes which dimension has a stride of 1 (i.e. is last in the dim
-  // order).
-  int32_t packed_dim_;
+  // padded sizes of the tensor (pre-computed to avoid recalculation)
+  std::vector<int64_t> padded_sizes_;
 
   /*
    * "Layout" metadata. These describe with further detail how tensor data is
@@ -320,13 +331,17 @@ class vTensor final {
   // number of elements based on the canonical sizes
   size_t numel_;
 
+  // number of elements required for GPU buffer storage (with padding/packing)
+  // This is pre-computed to avoid recomputing calculate_gpu_buffer_numel
+  int64_t physical_numel_;
+
   // For texture backed tensors, this int32 contains the axis map data packed
   // into a single int32. For buffer backed tensors, this int32 contains the
   // wchn dim order data packed into a single int32.
   int32_t hashed_layout_;
 
   // Pre-compute these quantities to avoid frequent re-computation
-  size_t nbytes_per_ubo_;
+  size_t min_nbytes_per_ubo_;
   size_t max_ubo_nbytes_;
 
   /*
@@ -340,6 +355,17 @@ class vTensor final {
    * context about the data contained in each buffer.
    */
   ParamsBuffer uniforms_;
+
+  /*
+   * Used to store data for BufferMetadata to pass to shaders as buffer_meta_ubo
+   */
+  ParamsBuffer buffer_meta_;
+
+  /*
+   * Used to store data for TextureMetadata to pass to shaders as
+   * texture_meta_ubo
+   */
+  ParamsBuffer texture_meta_;
 
   uint32_t uniforms_size_ = 0u;
   uint32_t sizes_uniform_offset_ = kUniformOffsetUnset;
@@ -439,7 +465,11 @@ class vTensor final {
   utils::GPUMemoryLayout estimate_memory_layout() const;
 
   inline int32_t packed_dim() const {
-    return packed_dim_;
+    return packed_dim_info_.packed_dim;
+  }
+
+  inline const PackedDimInfo& packed_dim_info() const {
+    return packed_dim_info_;
   }
 
   /*
@@ -470,8 +500,20 @@ class vTensor final {
     return strides_;
   }
 
+  inline const std::vector<int64_t>& padded_sizes() const {
+    return padded_sizes_;
+  }
+
   inline size_t numel() const {
     return numel_;
+  }
+
+  inline int64_t physical_numel() const {
+    return physical_numel_;
+  }
+
+  inline utils::uvec3 image_extents() const {
+    return storage_->image_extents_;
   }
 
   inline size_t nbytes() const {
@@ -523,6 +565,26 @@ class vTensor final {
 
   size_t get_max_ubo_nbytes(const size_t nbytes_per_ubo) const;
 
+  template <typename T>
+  const vkapi::BufferBindInfo metadata_ubo_impl(
+      uint32_t* param_buffer_offset,
+      const T& data) {
+    if (!uniforms_.buffer()) {
+      uniforms_ = ParamsBuffer(storage_->context_, max_ubo_nbytes_, true);
+    }
+    size_t ubo_nbytes = utils::align_up(sizeof(data), min_nbytes_per_ubo_);
+    if (*param_buffer_offset == kUniformOffsetUnset) {
+      VK_CHECK_COND(
+          (uniforms_size_ + ubo_nbytes) <= max_ubo_nbytes_,
+          "Uniform data allocation has exceeded Tensor uniform buffer size");
+      *param_buffer_offset = uniforms_size_;
+      uniforms_size_ += ubo_nbytes;
+      uniforms_.update(data, *param_buffer_offset);
+    }
+    return vkapi::BufferBindInfo(
+        uniforms_.buffer(), *param_buffer_offset, ubo_nbytes);
+  }
+
  public:
   /*
    * The functions below return the buffer binding info for a UBO that contains
@@ -546,6 +608,10 @@ class vTensor final {
 
   const vkapi::BufferBindInfo numel_ubo();
 
+  const vkapi::BufferBindInfo buffer_meta_ubo();
+
+  const vkapi::BufferBindInfo texture_meta_ubo();
+
  public:
   inline size_t staging_buffer_numel() const {
     return storage_->buffer_len();
@@ -561,6 +627,12 @@ class vTensor final {
   VmaAllocationCreateInfo get_allocation_create_info() const;
 
   /*
+   * Checks if the tensor's underlying buffer or image resource is bound to a
+   * memory allocation.
+   */
+  bool memory_is_bound() const;
+
+  /*
    * Return the VkMemoryRequirements of the underlying resource
    */
   VkMemoryRequirements get_memory_requirements() const;
@@ -569,6 +641,11 @@ class vTensor final {
    * Binds the underlying resource to the given memory allocation
    */
   void bind_allocation(const vkapi::Allocation& allocation);
+
+  /*
+   * Binds and acquires a rvalue memory allocation
+   */
+  void acquire_allocation(vkapi::Allocation&& allocation);
 
  private:
   /*
@@ -625,6 +702,7 @@ class vTensor final {
   }
 
   const std::shared_ptr<UniformData>& get_uniform_data() const {
+    VK_CHECK_COND(sizes_.size() <= 4);
     return uniform_data_;
   }
 };
@@ -637,6 +715,71 @@ static constexpr vTensor::Attribute kTensorStrides =
 static constexpr vTensor::Attribute kTensorLogicalLimits =
     vTensor::Attribute::LOGICAL_LIMITS;
 static constexpr vTensor::Attribute kTensorNumel = vTensor::Attribute::NUMEL;
+
+/*
+ * Prepare tensor metadata vector for consumption on the GPU:
+ * 1. Convert NCHW dim order and indexes to WCHN dim order and indexes
+ * 2. Unsqueeze to the next multiple of 4 dims
+ * 3. Convert to requested output dtype
+ */
+template <
+    typename T,
+    typename std::enable_if<std::is_integral<T>::value, int>::type = 0>
+std::vector<T> flip_and_unsqueeze(
+    const std::vector<int64_t>& tensor_metadata,
+    const vTensor::Attribute metadata_type,
+    const size_t numel,
+    const int32_t fixed_ndim = -1) {
+  const size_t ndim = tensor_metadata.size();
+  size_t ndim_up4 =
+      std::max(utils::align_up_4(tensor_metadata.size()), size_t(4));
+
+  if (fixed_ndim > 0) {
+    VK_CHECK_COND(fixed_ndim >= ndim);
+    ndim_up4 = static_cast<size_t>(fixed_ndim);
+  }
+
+  std::vector<T> flipped_metadata(ndim_up4);
+
+  for (int flipped_i = 0; flipped_i < ndim; ++flipped_i) {
+    T val_at_dim =
+        utils::safe_downcast<T>(tensor_metadata.at(ndim - 1 - flipped_i));
+    if (metadata_type == kTensorDimOrder) {
+      val_at_dim = utils::safe_downcast<T>(ndim - 1 - val_at_dim);
+    }
+    flipped_metadata.at(flipped_i) = val_at_dim;
+  }
+
+  switch (metadata_type) {
+    case kTensorStrides:
+      for (int unsqueezed_i = ndim; unsqueezed_i < ndim_up4; ++unsqueezed_i) {
+        flipped_metadata.at(unsqueezed_i) = utils::safe_downcast<T>(numel);
+      }
+      break;
+    case kTensorDimOrder:
+      for (int unsqueezed_i = ndim; unsqueezed_i < ndim_up4; ++unsqueezed_i) {
+        flipped_metadata.at(unsqueezed_i) =
+            utils::safe_downcast<T>(unsqueezed_i);
+      }
+      break;
+    // Default: unsqueeze with ones
+    default:
+      for (int unsqueezed_i = ndim; unsqueezed_i < ndim_up4; ++unsqueezed_i) {
+        flipped_metadata.at(unsqueezed_i) = utils::safe_downcast<T>(1);
+      }
+      break;
+  }
+
+  return flipped_metadata;
+}
+
+/*
+ * Same as flip and unsqueeze, but returns the metadata as an `ivec4`.
+ */
+utils::ivec4 flip_and_unsqueezed_ivec4(
+    const std::vector<int64_t>& tensor_metadata,
+    const vTensor::Attribute metadata_type,
+    const size_t numel);
 
 } // namespace api
 } // namespace vkcompute

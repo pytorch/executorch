@@ -8,6 +8,7 @@ import getpass
 import json
 import logging
 import os
+
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -16,8 +17,12 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
     parse_skip_delegation_node,
@@ -55,7 +60,7 @@ def main(args):
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_imagenet_dataset(
+        inputs, targets = get_imagenet_dataset(
             dataset_path=f"{args.dataset}",
             data_size=data_num,
             image_shape=(height, width),
@@ -64,10 +69,15 @@ def main(args):
 
     # Get the Deit model.
     model = get_instance()
-    pte_filename = "deit_qnn_q8"
+    pte_filename = "deit_qnn"
 
     # lower to QNN
     passes_job = get_capture_program_passes()
+    backend = get_backend_type(args.backend)
+    quant_dtype = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_8a8w,
+    }[backend]
     build_executorch_binary(
         model,
         inputs[0],
@@ -76,9 +86,11 @@ def main(args):
         dataset=inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        quant_dtype=QuantDtype.use_8a8w,
+        quant_dtype=quant_dtype,
+        backend=backend,
         passes_job=passes_job,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -95,8 +107,11 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -147,6 +162,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

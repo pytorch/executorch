@@ -29,34 +29,39 @@ else()
 endif()
 target_link_libraries(
   extension_module PRIVATE executorch_core extension_data_loader
-                           extension_flat_tensor
+                           extension_flat_tensor extension_named_data_map
 )
 target_include_directories(
   extension_module PUBLIC ${_common_include_directories}
 )
 target_compile_options(
-  extension_module PUBLIC -Wno-deprecated-declarations -fPIC
+  extension_module
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
 )
 
 # Module extension built as a static library. TODO(gjcomer) Remove this target
 # after cleaning up CMake targets.
 add_library(extension_module_static STATIC ${_extension_module__srcs})
 target_link_libraries(
-  extension_module_static PRIVATE executorch_core extension_data_loader
-                                  extension_flat_tensor
+  extension_module_static
+  PRIVATE executorch_core extension_data_loader extension_flat_tensor
+          extension_named_data_map
 )
 target_include_directories(
   extension_module_static PUBLIC ${_common_include_directories}
 )
 target_compile_options(
-  extension_module_static PUBLIC -Wno-deprecated-declarations -fPIC
+  extension_module_static
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
 )
 
 # Install libraries
 install(
   TARGETS extension_module extension_module_static
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

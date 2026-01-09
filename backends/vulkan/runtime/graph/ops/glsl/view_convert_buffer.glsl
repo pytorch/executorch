@@ -1,0 +1,54 @@
+#version 450 core
+
+#define PRECISION ${PRECISION}
+
+#define IN_T ${buffer_scalar_type(IN_DTYPE)}
+#define OUT_T ${buffer_scalar_type(OUT_DTYPE)}
+
+${define_required_extensions(IN_DTYPE)}
+${define_required_extensions(OUT_DTYPE)}
+
+layout(std430) buffer;
+
+#include "indexing.glslh"
+
+${layout_declare_buffer(B, "w", "t_outp", OUT_DTYPE)}
+${layout_declare_buffer(B, "r", "t_inp", IN_DTYPE)}
+
+${layout_declare_ubo(B, "BufferMetadata", "outp")}
+${layout_declare_ubo(B, "BufferMetadata", "inp")}
+
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+${layout_declare_spec_const(C, "int", "outp_layout", "0")}
+${layout_declare_spec_const(C, "int", "inp_layout", "0")}
+
+/*
+ * The insight behind the view_convert operation is that the contiguous index of each
+ * tensor element in the input and output tensors are the same, but the data types
+ * may be different and need conversion.
+ */
+void main() {
+  const uint outp_bufi = gl_GlobalInvocationID.x;
+  if (outp_bufi >= numel(outp)) {
+    return;
+  }
+
+  uint inp_bufi = outp_bufi;
+
+  if (!is_contiguous(outp_layout) || !is_contiguous(inp_layout)) {
+    TensorIndex outp_tidx = linear_idx_to_tensor_idx(
+        outp, outp_bufi, outp_layout);
+
+    // To map the output to the input, find the input element that has the same
+    // contiguous index as the output element.
+    const uint contig_idx = tensor_idx_to_contiguous_idx(outp, outp_tidx);
+
+    TensorIndex inp_tidx = contiguous_idx_to_tensor_idx(inp, contig_idx);
+
+    inp_bufi = tensor_idx_to_linear_idx(inp, inp_tidx);
+  }
+
+  // Convert data type from input to output
+  t_outp[outp_bufi] = OUT_T(t_inp[inp_bufi]);
+}

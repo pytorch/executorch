@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,14 +8,15 @@
 import copy
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 from executorch.devtools.backend_debug import get_delegation_info
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager, ExportedProgram
 from executorch.exir.backend.backend_api import validation_disabled
+from executorch.exir.pass_manager import PassManager
 from executorch.exir.program import to_edge, to_edge_transform_and_lower
-from executorch.exir.program._program import _transform
 from executorch.export.recipe import LoweringRecipe, QuantizationRecipe
 from executorch.export.types import StageType
 from torch import nn
@@ -107,10 +109,14 @@ class TorchExportStage(Stage):
 
     def __init__(
         self,
-        pre_edge_transform_passes: Optional[List[PassType]] = None,
+        aten_transform_passes: Optional[
+            List[Callable[[str, ExportedProgram], ExportedProgram]]
+        ] = None,
+        strict=True,
     ) -> None:
         super().__init__()
-        self._pre_edge_transform_passes = pre_edge_transform_passes
+        self._aten_transform_passes = aten_transform_passes
+        self.strict = strict
 
     @property
     def stage_type(self) -> str:
@@ -145,13 +151,17 @@ class TorchExportStage(Stage):
                     model,
                     example_inputs[method_name][0],
                     dynamic_shapes=method_dynamic_shapes,
-                    strict=True,
+                    strict=self.strict,
                 )
 
                 # Apply pre-edge transform passes if available
-                for pass_ in self._pre_edge_transform_passes or []:
-                    exported_programs[method_name] = _transform(
-                        exported_programs[method_name], pass_
+                for pass_ in self._aten_transform_passes or []:
+                    if not callable(pass_):
+                        raise ValueError(
+                            "Aten transform passes must be a callable that can transform and return an exported program"
+                        )
+                    exported_programs[method_name] = pass_(
+                        method_name, exported_programs[method_name]
                     )
 
         self._artifact = artifact.copy_with_new_data(exported_programs)
@@ -165,9 +175,12 @@ class EdgeTransformAndLowerStage(Stage):
     def __init__(
         self,
         partitioners: Optional[List[Any]] = None,
-        transform_passes: Optional[Sequence[Callable[[Any], Optional[Any]]]] = None,
+        transform_passes: (
+            None | List[Callable[[str, ExportedProgram], List[PassType] | PassManager]]
+        ) = None,
         compile_config: Optional[Any] = None,
     ) -> None:
+        super().__init__()
         self._partitioners = partitioners
         self._transform_passes = transform_passes
         self._compile_config = compile_config
@@ -195,7 +208,7 @@ class EdgeTransformAndLowerStage(Stage):
 
     @property
     def can_start_pipeline(self) -> bool:
-        return False
+        return True
 
     def run(self, artifact: PipelineArtifact) -> None:
         """
@@ -205,11 +218,33 @@ class EdgeTransformAndLowerStage(Stage):
         constant_methods = artifact.get_context("constant_methods")
         generate_etrecord = artifact.get_context("generate_etrecord", False)
 
+        # Detect if any callable returns PassManager
+        pass_manager = None
+        transform_passes = defaultdict(list)
+        for method_name, ep in exported_programs.items():
+            # Resolve transform passes from callable
+            for pass_callable in self._transform_passes or []:
+                if not callable(pass_callable):
+                    raise ValueError(
+                        "Transform passes must be a callable that resolves to passes"
+                    )
+                passes = pass_callable(method_name, ep)
+                if isinstance(passes, PassManager):
+                    pass_manager = passes
+                    break
+                else:
+                    transform_passes[method_name].extend(passes)
+            if pass_manager:
+                break
+
+        # Use PassManager directly if found, otherwise use dict
+        final_passes = pass_manager if pass_manager else transform_passes
+
         with validation_disabled():
             edge_program_manager = to_edge_transform_and_lower(
                 exported_programs,
                 partitioner=self._partitioners,
-                transform_passes=self._transform_passes,
+                transform_passes=final_passes,
                 constant_methods=constant_methods,
                 compile_config=self._compile_config,
                 generate_etrecord=generate_etrecord,
@@ -243,7 +278,11 @@ class ExecutorchStage(Stage):
 
     @property
     def valid_predecessor_stages(self) -> List["StageType"]:
-        return [StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_BACKEND]
+        return [
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+            StageType.TO_BACKEND,
+            StageType.EDGE_PROGRAM_MANAGER_TRANSFORM,  # Added for server model generation (skipping TO_BACKEND)
+        ]
 
     @property
     def can_start_pipeline(self) -> bool:
@@ -307,11 +346,16 @@ class SourceTransformStage(Stage):
         self._transformed_models = copy.deepcopy(artifact.data)
 
         # Apply torchao quantize_ to each model
-        for _, model in artifact.data.items():
+        for _, model in self._transformed_models.items():
             # pyre-ignore
-            for ao_config in self._quantization_recipe.ao_quantization_configs:
-                quantize_(model, ao_config.ao_base_config, ao_config.filter_fn)
-                unwrap_tensor_subclass(model)
+            if len(self._quantization_recipe.ao_quantization_configs) > 1:
+                raise ValueError(
+                    "AO quantization configs cannot be reliably composed together, multiple quantization configs are disallowed for source transform at this point"
+                )
+
+            ao_config = self._quantization_recipe.ao_quantization_configs[0]
+            quantize_(model, ao_config.ao_base_config, ao_config.filter_fn)
+            unwrap_tensor_subclass(model)
 
         self._artifact = artifact.copy_with_new_data(self._transformed_models)
 
@@ -391,7 +435,7 @@ class QuantizeStage(Stage):
             captured_graph = torch.export.export(model, inputs, strict=True).module()
 
             quantizer = self._get_quantizer_for_prepare_pt2e(
-                self._quantization_recipe.quantizers
+                self._quantization_recipe.quantizers  # pyre-ignore
             )
             prepared_model = prepare_pt2e(captured_graph, quantizer)
 
@@ -435,7 +479,7 @@ class ToEdgeStage(Stage):
 
     @property
     def can_start_pipeline(self) -> bool:
-        return False
+        return True
 
     def run(self, artifact: PipelineArtifact) -> None:
         """
@@ -458,19 +502,128 @@ class ToEdgeStage(Stage):
         self._artifact = artifact.copy_with_new_data(edge_program_manager)
 
 
+class EdgeProgramManagerTransformStage(Stage):
+    """
+    Stage: Apply transformation passes that require EdgeProgramManager.
+
+    This stage enables dynamic pass generation where passes need access to the
+    EdgeProgramManager instance. Passes are applied sequentially, allowing
+    to control order and dependencies between pass groups.
+    """
+
+    def __init__(
+        self,
+        edge_transform_passes: (
+            None | List[Callable[[str, ExportedProgram], List[PassType] | PassManager]]
+        ) = None,
+        edge_manager_transform_passes: (
+            None | List[Callable[[EdgeProgramManager], List[PassType] | PassManager]]
+        ) = None,
+    ) -> None:
+        """
+        Initialize the EdgeProgramManagerTransformStage.
+
+        Args:
+            edge_manager_transform_passes: List of callables that take EdgeProgramManager
+                                           and return either List[PassType] or PassManager.
+                                           Each callable is applied sequentially, allowing
+                                           backends to control pass ordering and dependencies.
+        """
+        super().__init__()
+        self._edge_transform_passes = edge_transform_passes or []
+        self._edge_manager_transform_passes = edge_manager_transform_passes or []
+
+    @classmethod
+    def from_recipe(
+        cls, lowering_recipe: Optional[LoweringRecipe]
+    ) -> "EdgeProgramManagerTransformStage":
+        if lowering_recipe is None:
+            return cls()
+
+        return cls(
+            edge_transform_passes=lowering_recipe.edge_transform_passes,
+            edge_manager_transform_passes=lowering_recipe.edge_manager_transform_passes,
+        )
+
+    @property
+    def stage_type(self) -> str:
+        return StageType.EDGE_PROGRAM_MANAGER_TRANSFORM
+
+    @property
+    def valid_predecessor_stages(self) -> List["StageType"]:
+        return [
+            StageType.TO_EDGE,
+            # StageType.TO_EDGE_TRANSFORM_AND_LOWER,  # TODO
+        ]
+
+    @property
+    def can_start_pipeline(self) -> bool:
+        return False
+
+    def run(self, artifact: PipelineArtifact) -> None:
+        """
+        Apply transformation passes sequentially.
+
+        Args:
+            artifact: Pipeline artifact containing EdgeProgramManager
+        """
+        edge_program_manager = artifact.data
+
+        if not isinstance(edge_program_manager, EdgeProgramManager):
+            raise TypeError(
+                f"Expected EdgeProgramManager but got {type(edge_program_manager)}"
+            )
+
+        if not self._edge_transform_passes and not self._edge_manager_transform_passes:
+            self._artifact = artifact
+            return
+
+        # Detect if any callable returns PassManager
+        pass_manager = None
+        transform_passes = defaultdict(list)
+        for method_name in edge_program_manager.methods:
+            # Resolve transform passes if it's a callable
+            ep = edge_program_manager.exported_program(method_name)
+            for pass_callable in self._edge_transform_passes or []:
+                if not callable(pass_callable):
+                    raise ValueError(
+                        "Transform passes must be a callable that resolves to passes"
+                    )
+                passes = pass_callable(method_name, ep)
+                if isinstance(passes, PassManager):
+                    pass_manager = passes
+                    break
+                else:
+                    transform_passes[method_name].extend(passes)
+            if pass_manager:
+                break
+
+        # Use PassManager directly if found, otherwise use dict
+        final_passes = pass_manager if pass_manager else transform_passes
+
+        # Apply edge transform passes
+        edge_program_manager = edge_program_manager.transform(final_passes)
+
+        # Run edge manager transform passes
+        for pass_callable in self._edge_manager_transform_passes:
+            passes = pass_callable(edge_program_manager)
+            if passes:
+                edge_program_manager = edge_program_manager.transform(passes)
+
+        self._artifact = artifact.copy_with_new_data(edge_program_manager)
+
+
 class ToBackendStage(Stage):
     """
-    Stage: Apply transformations and partitioning to EdgeProgramManager.
+    Stage: Apply partitioning to EdgeProgramManager.
     """
 
     def __init__(
         self,
         partitioners: Optional[List[Any]] = None,
-        transform_passes: Optional[Sequence[Callable[[Any], Optional[Any]]]] = None,
     ) -> None:
         super().__init__()
         self._partitioners = partitioners
-        self._transform_passes = transform_passes
 
     @classmethod
     def from_recipe(
@@ -481,7 +634,6 @@ class ToBackendStage(Stage):
 
         return cls(
             partitioners=lowering_recipe.partitioners,
-            transform_passes=lowering_recipe.edge_transform_passes,
         )
 
     @property
@@ -490,7 +642,10 @@ class ToBackendStage(Stage):
 
     @property
     def valid_predecessor_stages(self) -> List["StageType"]:
-        return [StageType.TO_EDGE]
+        return [
+            StageType.TO_EDGE,
+            StageType.EDGE_PROGRAM_MANAGER_TRANSFORM,
+        ]
 
     @property
     def can_start_pipeline(self) -> bool:
@@ -498,7 +653,7 @@ class ToBackendStage(Stage):
 
     def run(self, artifact: PipelineArtifact) -> None:
         """
-        Apply transformations and partitioning to EdgeProgramManager.
+        Apply partitioning to EdgeProgramManager.
 
         Args:
             artifact: Contains edge program manager and context
@@ -507,12 +662,6 @@ class ToBackendStage(Stage):
 
         if edge_program_manager is None:
             raise RuntimeError("Edge program manager is not set.")
-
-        # Apply transform passes if available
-        if self._transform_passes:
-            edge_program_manager = edge_program_manager.transform(
-                self._transform_passes
-            )
 
         # Apply partitioners if available
         if self._partitioners is not None and len(self._partitioners) > 0:

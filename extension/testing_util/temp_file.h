@@ -9,12 +9,10 @@
 #pragma once
 
 #include <array>
+#include <fstream>
 #include <memory>
 #include <string>
-
-#include <fcntl.h> // open()
-#include <stdio.h> // tmpnam(), remove()
-#include <unistd.h> // write(), close()
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -42,6 +40,27 @@ class TempFile {
    */
   TempFile(const void* data, size_t size) {
     CreateFile(data, size, &path_);
+  }
+
+  /**
+   * Creates a sparse temporary file with a string at a specific offset.
+   * The file will have the specified total size, but only the data at the
+   * given offset will be written, creating a sparse file that doesn't
+   * allocate all the disk space.
+   *
+   * Example:
+   *   // Create a 3GB file with "DATA_AT_3GB" at 3GB offset
+   *   size_t offset = 3ULL * 1024 * 1024 * 1024;
+   *   std::string data = "DATA_AT_3GB";
+   *   TempFile tf(offset, data, offset + data.size());
+   *
+   * @param offset Byte offset where the string should be written
+   * @param data String to write at the specified offset
+   * @param file_size Total size of the sparse file (must be >= offset +
+   * data.size())
+   */
+  TempFile(size_t offset, const std::string& data, size_t file_size) {
+    CreateSparseFile(offset, data, file_size, &path_);
   }
 
   ~TempFile() {
@@ -72,19 +91,65 @@ class TempFile {
     }
 
     // Write the contents to the file.
-    int fd = open(
-        path.c_str(),
-        // O_EXCL ensures that we are the ones creating this file, to help
-        // protect against race conditions.
-        O_CREAT | O_EXCL | O_RDWR,
-        // User can read and write, group can read.
-        S_IRUSR | S_IWUSR | S_IRGRP);
-    ASSERT_GE(fd, 0) << "open(" << path << ") failed: " << strerror(errno);
+    std::ofstream file(path, std::ios::out | std::ios::binary);
+    ASSERT_TRUE(file.is_open())
+        << "open(" << path << ") failed: " << strerror(errno);
 
-    ssize_t nwrite = write(fd, data, size);
-    ASSERT_EQ(nwrite, size) << "Failed to write " << size << " bytes (wrote "
-                            << nwrite << "): " << strerror(errno);
-    close(fd);
+    file.write((const char*)data, size);
+    ASSERT_TRUE(file.good())
+        << "Failed to write " << size << " bytes: " << strerror(errno);
+
+    *out_path = path;
+  }
+
+  void CreateSparseFile(
+      size_t offset,
+      const std::string& data,
+      size_t file_size,
+      std::string* out_path) {
+    ASSERT_GE(file_size, offset + data.size())
+        << "file_size must be >= offset + data.size()";
+
+    // Find a unique temporary file name.
+    std::string path;
+    {
+      std::array<char, L_tmpnam> buf;
+      const char* ret = std::tmpnam(buf.data());
+      ASSERT_NE(ret, nullptr) << "Could not generate temp file";
+      buf[L_tmpnam - 1] = '\0';
+      path = std::string(buf.data()) + "-executorch-testing";
+    }
+
+    // Open file in binary mode for writing.
+    std::ofstream file(path, std::ios::out | std::ios::binary);
+    ASSERT_TRUE(file.is_open())
+        << "open(" << path << ") failed: " << strerror(errno);
+
+    // Seek to the offset.
+    file.seekp(offset, std::ios::beg);
+    ASSERT_TRUE(file.good()) << "Failed to seek to offset " << offset;
+
+    // Write the data.
+    file.write(data.data(), data.size());
+    ASSERT_TRUE(file.good())
+        << "Failed to write " << data.size() << " bytes at offset " << offset;
+
+    // Ensure file is the specified size by seeking to the end and writing a
+    // byte, but only if the file needs to be extended beyond the data we just
+    // wrote.
+    if (file_size > offset + data.size()) {
+      file.seekp(file_size - 1, std::ios::beg);
+      ASSERT_TRUE(file.good())
+          << "Failed to seek to file_size - 1: " << file_size - 1;
+
+      // Write a single byte to ensure file has the correct size.
+      file.write("\0", 1);
+      ASSERT_TRUE(file.good())
+          << "Failed to write final byte at position " << file_size - 1;
+    }
+
+    file.close();
+    ASSERT_TRUE(file.good() || file.eof()) << "Error closing file: " << path;
 
     *out_path = path;
   }

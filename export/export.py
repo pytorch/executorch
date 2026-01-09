@@ -1,23 +1,28 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import torch
+from executorch.exir import EdgeProgramManager
 from executorch.exir._warnings import experimental
 from executorch.exir.program import ExecutorchProgramManager
 from executorch.exir.schema import Program
 from executorch.extension.export_util.utils import save_pte_program
-from executorch.runtime import Runtime, Verification
 from tabulate import tabulate
 from torch import nn
+from torch.export import ExportedProgram
+from torch.fx import GraphModule
 
 from .recipe import ExportRecipe, LoweringRecipe, QuantizationRecipe
 from .stages import (
+    EdgeProgramManagerTransformStage,
     EdgeTransformAndLowerStage,
     ExecutorchStage,
     PipelineArtifact,
@@ -35,11 +40,22 @@ from .types import StageType
     "This API and all of its related functionality such as ExportSession and ExportRecipe are experimental."
 )
 def export(
-    model: Union[nn.Module, Dict[str, nn.Module]],
-    example_inputs: Union[
-        List[tuple[torch.Tensor, ...]], Dict[str, List[tuple[torch.Tensor, ...]]]
+    model: Union[
+        nn.Module,
+        Dict[str, nn.Module],
+        GraphModule,
+        Dict[str, GraphModule],
+        ExportedProgram,
+        Dict[str, ExportedProgram],
+        str,
     ],
-    export_recipe: ExportRecipe,
+    example_inputs: Optional[
+        Union[
+            List[tuple[torch.Tensor, ...]],
+            Dict[str, List[tuple[torch.Tensor, ...]]],
+        ]
+    ] = None,
+    export_recipe: ExportRecipe = None,
     name: Optional[str] = None,
     dynamic_shapes: Optional[Union[Any, Dict[str, Any]]] = None,
     constant_methods: Optional[Union[Dict[str, Callable]]] = None,
@@ -53,10 +69,16 @@ def export(
     optionally run the export process in one step.
 
     Args:
-        model: The PyTorch model(s) to export, either a single model or a dictionary
-              mapping method names to models
+        model: The PyTorch model(s) to export. Can be:
+              - nn.Module or Dict[str, nn.Module]: Eager PyTorch model(s)
+              - GraphModule or Dict[str, GraphModule]: Quantized model(s) (e.g., from prepare/convert)
+              - ExportedProgram or Dict[str, ExportedProgram]: Already exported model(s)
+              - str: Path to load an ExportedProgram from disk
         example_inputs: Example inputs for the model(s), either a list of input tuples
-                      or a dictionary mapping method names to lists of input tuples
+                      or a dictionary mapping method names to lists of input tuples.
+                      First sample (index 0) is used for torch.export.export() to export the model.
+                      All samples are used as calibration dataset in PT2E Quantize stage.
+                      Optional when model is ExportedProgram (not needed).
         export_recipe: Contains the configuration for the export process
         name: Optional name for the export
         dynamic_shapes: Optional dynamic shape specifications
@@ -98,11 +120,22 @@ class ExportSession:
 
     def __init__(
         self,
-        model: Union[nn.Module, Dict[str, nn.Module]],
-        example_inputs: Union[
-            List[tuple[torch.Tensor, ...]], Dict[str, List[tuple[torch.Tensor, ...]]]
+        model: Union[
+            nn.Module,
+            Dict[str, nn.Module],
+            GraphModule,
+            Dict[str, GraphModule],
+            ExportedProgram,
+            Dict[str, ExportedProgram],
+            str,
         ],
-        export_recipe: ExportRecipe,
+        example_inputs: Optional[
+            Union[
+                List[tuple[torch.Tensor, ...]],
+                Dict[str, List[tuple[torch.Tensor, ...]]],
+            ]
+        ] = None,
+        export_recipe: ExportRecipe = None,
         name: Optional[str] = None,
         dynamic_shapes: Optional[Union[Any, Dict[str, Any]]] = None,
         constant_methods: Optional[Union[Dict[str, Callable]]] = None,
@@ -113,10 +146,16 @@ class ExportSession:
         Initialize the ExportSession with model, inputs, and recipe.
 
         Args:
-            model: The PyTorch model(s) to export, either a single model or a dictionary
-                  mapping method names to models
+            model: The PyTorch model(s) to export. Can be:
+                  - nn.Module or Dict[str, nn.Module]: Eager PyTorch model(s)
+                  - GraphModule or Dict[str, GraphModule]: Quantized model(s)
+                  - ExportedProgram or Dict[str, ExportedProgram]: Already exported model(s)
+                  - str: Path to load an ExportedProgram from disk
             example_inputs: Example inputs for the model(s), either a list of input tuples
-                          or a dictionary mapping method names to lists of input tuples
+                          or a dictionary mapping method names to lists of input tuples.
+                          First sample (index 0) is used for torch.export.export() to export the model.
+                          All samples are used as calibration dataset in PT2E Quantize stage,
+                          Optional when model is ExportedProgram (not needed).
             export_recipe: Contains the configuration for the export process
             name: Optional name for the export
             dynamic_shapes: Optional dynamic shape specifications
@@ -124,15 +163,35 @@ class ExportSession:
             artifact_dir: Optional directory to store artifacts
             generate_etrecord: Optional flag to generate an etrecord
         """
+        # Load model from file if string path provided
+        if isinstance(model, str):
+            model = torch.export.load(model)
+            logging.info(f"Loaded ExportedProgram from {model}")
+
+        # Detect input model type to determine which stages to skip
+        self._input_model_type = self._detect_model_type(model)
+
         # Standardize model to dictionary format
         self._model = model if isinstance(model, dict) else {"forward": model}
 
-        # Standardize example_inputs to dictionary format
-        self._example_inputs = (
-            example_inputs
-            if isinstance(example_inputs, dict)
-            else {"forward": example_inputs}
-        )
+        # Validate and standardize example_inputs to dictionary format
+        # example_inputs not required for ExportedProgram input
+        if self._input_model_type == "ExportedProgram":
+            self._example_inputs = example_inputs or {}
+            if isinstance(self._example_inputs, list):
+                self._example_inputs = {"forward": self._example_inputs}
+        else:
+            # For nn.Module and GraphModule, example_inputs are required
+            if example_inputs is None:
+                raise ValueError(
+                    f"example_inputs are required when model is {self._input_model_type}. "
+                    f"Only ExportedProgram inputs can omit example_inputs."
+                )
+            self._example_inputs = (
+                example_inputs
+                if isinstance(example_inputs, dict)
+                else {"forward": example_inputs}
+            )
 
         # Standardize dynamic_shapes to dictionary format
         self._dynamic_shapes = {}
@@ -175,14 +234,64 @@ class ExportSession:
 
         self._stage_to_artifacts: Dict[StageType, PipelineArtifact] = {}
 
+    def _detect_model_type(
+        self, model: Union[nn.Module, GraphModule, ExportedProgram, Dict]
+    ) -> str:
+        """
+        Detect the type of input model.
+
+        Args:
+            model: Input model in various formats
+
+        Returns:
+            String indicating the model type: "nn.Module", "GraphModule", or "ExportedProgram"
+        """
+        # Handle dict (multi-method) - check first value
+        if isinstance(model, dict):
+            first_value = next(iter(model.values()))
+            return self._detect_model_type(first_value)
+
+        # Detect single model type
+        if isinstance(model, ExportedProgram):
+            return "ExportedProgram"
+        elif isinstance(model, GraphModule):
+            return "GraphModule"
+        elif isinstance(model, nn.Module):
+            return "nn.Module"
+        else:
+            raise TypeError(f"Unsupported model type: {type(model)}")
+
     def _get_default_pipeline(self) -> List[StageType]:
-        return [
-            StageType.SOURCE_TRANSFORM,  # Optional stage, returns original model if quant recipe is invalid
-            StageType.QUANTIZE,  # Optional stage, returns original model if quant recipe is invalid
-            StageType.TORCH_EXPORT,
-            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
-            StageType.TO_EXECUTORCH,
-        ]
+        """
+        Get default pipeline stages based on input model type.
+
+        Returns:
+            List of stages appropriate for the input model type
+        """
+        stages = []
+
+        # Add quantization stages only for eager nn.Module
+        if self._input_model_type == "nn.Module":
+            stages.extend(
+                [
+                    StageType.SOURCE_TRANSFORM,  # Optional stage, returns original model if quant recipe is invalid
+                    StageType.QUANTIZE,  # Optional stage, returns original model if quant recipe is invalid
+                ]
+            )
+
+        # Add torch export stage if not already exported
+        if self._input_model_type != "ExportedProgram":
+            stages.append(StageType.TORCH_EXPORT)
+
+        # Always include edge and executorch stages
+        stages.extend(
+            [
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ]
+        )
+
+        return stages
 
     def _build_stages(self, stages: List[StageType]) -> Dict[StageType, Stage]:
         """Build the stage registry from the given stages."""
@@ -195,16 +304,22 @@ class ExportSession:
             elif stage_type == StageType.QUANTIZE:
                 stage = QuantizeStage(self._quant_recipe)
             elif stage_type == StageType.TORCH_EXPORT:
-                pre_edge_passes = None
-                if self._export_recipe.pre_edge_transform_passes is not None:
-                    pre_edge_passes = list(
-                        self._export_recipe.pre_edge_transform_passes
+                aten_transform_passes = None
+                if self._export_recipe.aten_transform_passes is not None:
+                    aten_transform_passes = list(
+                        self._export_recipe.aten_transform_passes
                     )
-                stage = TorchExportStage(pre_edge_passes)
+                stage = TorchExportStage(
+                    aten_transform_passes, strict=self._export_recipe.strict
+                )
             elif stage_type == StageType.TO_EDGE_TRANSFORM_AND_LOWER:
                 stage = EdgeTransformAndLowerStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_EDGE:
                 stage = ToEdgeStage.from_recipe(self._lowering_recipe)
+            elif stage_type == StageType.EDGE_PROGRAM_MANAGER_TRANSFORM:
+                stage = EdgeProgramManagerTransformStage.from_recipe(
+                    self._lowering_recipe
+                )
             elif stage_type == StageType.TO_BACKEND:
                 stage = ToBackendStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_EXECUTORCH:
@@ -256,6 +371,34 @@ class ExportSession:
         if not stages:
             raise ValueError("Pipeline stages cannot be empty")
 
+        # Validate pipeline compatibility with input model type
+        if self._input_model_type == "GraphModule":
+            # GraphModule input should not run quantization stages
+            incompatible_stages = {StageType.SOURCE_TRANSFORM, StageType.QUANTIZE}
+            found_incompatible = set(stages) & incompatible_stages
+            if found_incompatible:
+                stage_names = ", ".join(s.name for s in found_incompatible)
+                raise ValueError(
+                    f"Cannot run {stage_names} stage(s) with GraphModule input. "
+                    f"GraphModule is already quantized. "
+                    f"Remove {stage_names} from pipeline_stages or use nn.Module input."
+                )
+        elif self._input_model_type == "ExportedProgram":
+            # ExportedProgram input should not run quantization or torch export stages
+            incompatible_stages = {
+                StageType.SOURCE_TRANSFORM,
+                StageType.QUANTIZE,
+                StageType.TORCH_EXPORT,
+            }
+            found_incompatible = set(stages) & incompatible_stages
+            if found_incompatible:
+                stage_names = ", ".join(s.name for s in found_incompatible)
+                raise ValueError(
+                    f"Cannot run {stage_names} stage(s) with ExportedProgram input. "
+                    f"ExportedProgram is already exported. "
+                    f"Remove {stage_names} from pipeline_stages or use nn.Module/GraphModule input."
+                )
+
         # Validate that the first stage can start a pipeline
         first_stage = stages[0]
         first_stage_instance = self._stage_registry.get(first_stage)
@@ -304,8 +447,13 @@ class ExportSession:
 
             logging.info(f"Executing stage: {stage_type}")
 
+            start = time.perf_counter()
             stage.run(current_artifact)
+            elapsed = (time.perf_counter() - start) * 1000
             current_artifact = stage.get_artifacts()
+            current_artifact.add_context("duration_ms", int(elapsed))
+
+            logging.info(f"Stage {stage_type} execution done")
 
             self._stage_to_artifacts[stage_type] = current_artifact
 
@@ -325,17 +473,67 @@ class ExportSession:
     def get_stage_artifacts(self) -> Dict[StageType, PipelineArtifact]:
         return self._stage_to_artifacts
 
-    def save_pte_file(self, path: str) -> None:
+    def get_exported_program(self, method_name: str = "forward") -> ExportedProgram:
         """
-        Save the exported program to a PTE file.
+        Get the ExportedProgram for a specific method after torch export.
 
         Args:
-            path: Path where the PTE file will be saved
+            method_name: Name of the method to get exported program for, defaults to "forward"
+
+        Returns:
+            The ExportedProgram for the specified method
 
         Raises:
-            RuntimeError: If the executorch program manager is not initialized
+            RuntimeError: If torch export stage has not been run
+            KeyError: If the method name is not found in exported programs
         """
-        self.get_executorch_program_manager().save(path)
+        artifact = self._stage_to_artifacts.get(StageType.TORCH_EXPORT)
+        if artifact is None or artifact.data is None:
+            raise RuntimeError(
+                "Exported program is not available. Run Torch Export Stage first."
+            )
+
+        exported_programs = artifact.data
+        if method_name not in exported_programs:
+            raise KeyError(
+                f"Method name '{method_name}' not found in exported programs. "
+                f"Available methods: {list(exported_programs.keys())}"
+            )
+
+        return exported_programs[method_name]
+
+    def get_edge_program_manager(self) -> "EdgeProgramManager":
+        """
+        Get the EdgeProgramManager after edge lowering stages.
+
+        This method checks multiple stages in order of preference:
+        1. TO_EDGE_TRANSFORM_AND_LOWER (combined stage)
+        2. TO_BACKEND (separate stage with backend delegation)
+        3. EDGE_PROGRAM_MANAGER_TRANSFORM (separate stage after TO_EDGE)
+        4. TO_EDGE (separate stage without backend delegation)
+
+        Returns:
+            The EdgeProgramManager
+
+        Raises:
+            RuntimeError: If no edge stage has been run
+        """
+        # Check stages in order of preference
+        for stage_type in [
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+            StageType.TO_BACKEND,
+            StageType.EDGE_PROGRAM_MANAGER_TRANSFORM,
+            StageType.TO_EDGE,
+        ]:
+            artifact = self._stage_to_artifacts.get(stage_type)
+            if artifact is not None and artifact.data is not None:
+                logging.info(f"Returning edge program manager from stage {stage_type}")
+                return artifact.data
+
+        raise RuntimeError(
+            "Edge program manager is not available. "
+            "Run one of the edge stages first: TO_EDGE_TRANSFORM_AND_LOWER, TO_EDGE, EDGE_PROGRAM_MANAGER_TRANSFORM, or TO_BACKEND."
+        )
 
     def get_executorch_program(self) -> Program:
         """
@@ -433,6 +631,16 @@ class ExportSession:
         Raises:
             RuntimeError: If the method cannot be loaded
         """
+        # Lazy import to avoid forcing portable_lib dependency at module load time.
+        try:
+            from executorch.runtime import Runtime, Verification
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError(
+                "executorch.runtime is not available. "
+                "In OSS: Please ensure executorch is properly installed via pip. "
+                "In fbcode: Please add //executorch/runtime:runtime to your dependencies."
+            ) from e
+
         et_runtime = Runtime.get()
         program = et_runtime.load_program(
             self.get_pte_buffer(), verification=Verification.Minimal

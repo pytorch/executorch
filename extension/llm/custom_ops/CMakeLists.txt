@@ -16,24 +16,23 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
-  list(APPEND _common_compile_options "-march=armv8.2-a+dotprod")
+  list(APPEND _common_compile_options
+       "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-march=armv8.2-a+dotprod>"
+  )
 endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 #
-# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
 #
-set(EXECUTORCH_SRCS_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/../../../executorch_srcs.cmake"
-)
-
-extract_sources(${EXECUTORCH_SRCS_FILE})
-
-include(${EXECUTORCH_SRCS_FILE})
+executorch_load_build_variables()
 
 set(_common_include_directories
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..,${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
@@ -89,7 +88,7 @@ target_compile_options(custom_ops PUBLIC ${_common_compile_options})
 install(
   TARGETS custom_ops
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
 if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
@@ -141,8 +140,15 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
     target_link_libraries(custom_ops_aot_lib PUBLIC pthreadpool cpuinfo)
   endif()
   target_compile_options(
-    custom_ops_aot_lib PUBLIC -Wno-deprecated-declarations -fPIC -frtti
-                              -fexceptions ${_common_compile_options}
+    custom_ops_aot_lib
+    PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc
+           /GR
+           /wd4996>
+           $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations
+           -fPIC
+           -frtti
+           -fexceptions>
+           ${_common_compile_options}
   )
 
   install(

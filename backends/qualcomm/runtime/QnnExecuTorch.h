@@ -69,10 +69,6 @@ void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment);
 /// handle to tensor wrapper during execution
 void QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem);
 
-/// Add custom mem tensor info. Help to bring forward the memHandle creating
-/// time from execution to initialization.
-void QnnExecuTorchAddCustomMemTensorInfo(const CustomMemTensorInfo& info);
-
 /// Free the allocated shared memory.
 void QnnExecuTorchFreeCustomMem(void* buffer_ptr);
 

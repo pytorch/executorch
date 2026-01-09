@@ -9,14 +9,14 @@
 
 set -u
 
-########
+########################
 ### Hardcoded constants
-########
+########################
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_dir=$(realpath $script_dir/../..)
 ARCH="$(uname -m)"
 OS="$(uname -s)"
-root_dir="${script_dir}/ethos-u-scratch"  # TODO: rename
+root_dir="${script_dir}/arm-scratch"
 eula_acceptance=0
 enable_baremetal_toolchain=1
 target_toolchain=""
@@ -25,8 +25,8 @@ enable_vela=1
 enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
-mlsdk_manifest_url="https://github.com/arm/ai-ml-sdk-manifest.git"
-
+enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
+enable_mlsdk_pip_install=0  # This is a temporary option that will soon be the default
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -36,34 +36,9 @@ toolchain_url=""
 toolchain_dir=""
 toolchain_md5_checksum=""
 
-if [[ "${ARCH}" == "x86_64" ]]; then
-    # FVPs
-    corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
-    corstone300_model_dir="Linux64_GCC-9.3"
-    corstone300_md5_checksum="98e93b949d0fbac977292d8668d34523"
+# Load logging helpers early so option parsing can emit status messages.
+source "$et_dir/backends/arm/scripts/utils.sh"
 
-    corstone320_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-320/FVP_Corstone_SSE-320_11.27_25_Linux64.tgz?rev=a507bffc219a4d5792f1192ab7002d89&hash=D9A824AA8227D2E679C9B9787FF4E8B6FBE3D7C6"
-    corstone320_model_dir="Linux64_GCC-9.3"
-    corstone320_md5_checksum="3deb3c68f9b2d145833f15374203514d"
-elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
-    # FVPs
-    corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
-    corstone300_model_dir="Linux64_armv8l_GCC-9.3"
-    corstone300_md5_checksum="cbbabbe39b07939cff7a3738e1492ef1"
-
-    corstone320_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-320/FVP_Corstone_SSE-320_11.27_25_Linux64_armv8l.tgz?rev=b6ebe0923cb84f739e017385fd3c333c&hash=8965C4B98E2FF7F792A099B08831FE3CB6120493"
-    corstone320_model_dir="Linux64_armv8l_GCC-9.3"
-    corstone320_md5_checksum="3889f1d80a6d9861ea4aa6f1c88dd0ae"
-else
-    echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
-fi
-
-# Vela
-vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="d37febc1715edf0d236c2ff555739a8a9aadcf9a"
-
-# MLSDK dependencies
-mlsdk_manifest_dir="ml-sdk-for-vulkan-manifest"
 
 # List of supported options and their descriptions
 OPTION_LIST=(
@@ -77,6 +52,7 @@ OPTION_LIST=(
   "--enable-emulation-layer Enable MLSDK Vulkan emulation layer"
   "--disable-ethos-u-deps Do not setup what is needed for Ethos-U"
   "--enable-mlsdk-deps Setup what is needed for MLSDK"
+  "--install-mlsdk-deps-with-pip Use MLSDK PyPi package instead of building from source"
   "--mlsdk-manifest-url URL to the MLSDK manifest for vulkan."
   "--help Display help"
 )
@@ -156,31 +132,29 @@ function check_options() {
                 enable_emulation_layer=1
                 shift
                 ;;
+            --enable-vulkan-sdk)
+                enable_vulkan_sdk=1
+                shift
+                ;;
             --disable-ethos-u-deps)
                 enable_baremetal_toolchain=0
                 enable_fvps=0
                 enable_vela=0
                 shift
                 ;;
+            --install-mlsdk-deps-with-pip)
+                enable_mlsdk_pip_install=1
+                shift
+                ;;
             --enable-mlsdk-deps)
                 enable_model_converter=1
                 enable_vgf_lib=1
                 enable_emulation_layer=1
+                enable_vulkan_sdk=1
                 shift
                 ;;
-            --mlsdk-manifest-url)
-                # Ensure that there is a url provided.
-                if [[ -n "$2" && "${2:0:1}" != "-" ]]; then
-                    mlsdk_manifest_url="$2"
-                    shift 2
-                else
-                    echo "Error: --mlsdk-manifest-url requires a URL argument."
-                    print_usage "$@"
-                    exit 1
-                fi
-                ;;
             --setup-test-dependency)
-                echo "Installing test dependency..."
+                log_step "deps" "Installing test dependency..."
                 source $et_dir/backends/arm/scripts/install_models_for_test.sh
                 exit 0
                 ;;
@@ -197,201 +171,87 @@ function check_options() {
 }
 
 function setup_root_dir() {
-    mkdir -p ${root_dir}
-    root_dir=$(realpath ${root_dir})
-    setup_path_script="${root_dir}/setup_path.sh"
+    mkdir -p "${root_dir}"
+    root_dir=$(realpath "${root_dir}")
+    log_step "main" "Prepared root dir at ${root_dir}"
+    setup_path_script="${root_dir}/setup_path"
 }
 
-function check_fvp_eula () {
-    # Mandatory user arg --i-agree-to-the-contained-eula
-    eula_acceptance_by_variable="${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA:-False}"
-
-    if [[ "${eula_acceptance}" -eq 0 ]]; then
-        if [[ ${eula_acceptance_by_variable} != "True" ]]; then
-            echo "Must pass argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP."
-            echo "Alternativly set environment variable ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True."
-            echo "Exiting!"
-            exit 1
-        else
-            echo "Arm EULA for FVP agreed to with ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True environment variable"
-        fi
-    fi
+function setup_ethos_u_tools() {
+    log_step "ethos-u-tools" "Installing Ethos-U Python tooling"
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
 }
 
-function setup_fvp() {
-    # check EULA, forward argument
-    check_fvp_eula
-
-    if [[ "${OS}" != "Linux" ]]; then
-        # Check if FVP is callable
-        if command -v FVP_Corstone_SSE-300_Ethos-U55 &> /dev/null; then
-            echo "[${FUNCNAME[0]}] Info: FVP for MacOS seem to be installed. Continuing..."
-            return 0  # If true exit gracefully and proceed with setup
-        else
-            echo "[${FUNCNAME[0]}] Warning: FVP only supported with Linux OS, skipping FVP setup..."
-            echo "[${FUNCNAME[0]}] Warning: For MacOS, using https://github.com/Arm-Examples/FVPs-on-Mac is recommended."
-            echo "[${FUNCNAME[0]}] Warning:   Follow the instructions and make sure the path is set correctly."
-            return 1  # Throw error. User need to install FVP according to ^^^
-        fi
-    fi
-
-    # Download and install the Corstone 300 FVP simulator platform
-    fvps=("corstone300" "corstone320")
-
-    for fvp in "${fvps[@]}"; do
-        cd "${root_dir}"
-        if [[ ! -e "FVP_${fvp}.tgz" ]]; then
-            echo "[${FUNCNAME[0]}] Downloading FVP ${fvp}..."
-            url_variable=${fvp}_url
-            fvp_url=${!url_variable}
-            curl --output "FVP_${fvp}.tgz" "${fvp_url}"
-            md5_variable=${fvp}_md5_checksum
-            fvp_md5_checksum=${!md5_variable}
-            verify_md5 ${fvp_md5_checksum} FVP_${fvp}.tgz || exit 1
-        fi
-
-        echo "[${FUNCNAME[0]}] Installing FVP ${fvp}..."
-        rm -rf FVP-${fvp}
-        mkdir -p FVP-${fvp}
-        cd FVP-${fvp}
-        tar xf ../FVP_${fvp}.tgz
-
-        # Install the FVP
-        case ${fvp} in
-            corstone300)
-                ./FVP_Corstone_SSE-300.sh --i-agree-to-the-contained-eula --force --destination ./ --quiet --no-interactive
-                ;;
-            corstone320)
-                ./FVP_Corstone_SSE-320.sh --i-agree-to-the-contained-eula --force --destination ./ --quiet --no-interactive
-                ;;
-            *)
-                echo "[${FUNCNAME[0]}] Error: Unknown FVP model ${fvp}. Exiting."
-                exit 1
-                ;;
-        esac
-    done
-}
-
-function select_toolchain() {
-    if [[ "${ARCH}" == "x86_64" ]]; then
-        if [[ "${OS}" == "Linux" ]]; then
-	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-	        # TODO can include support for zephyr toolchain for other host platforms later
-                toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
-                toolchain_dir="arm-zephyr-eabi"
-                toolchain_md5_checksum="93128be0235cf5cf5f1ee561aa6eac5f"
-            else
-                toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
-                toolchain_dir="arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi"
-                toolchain_md5_checksum="0601a9588bc5b9c99ad2b56133b7f118"
-	    fi
-        else
-            echo "[main] Error: only Linux is currently supported for x86-64 architecture now!"; exit 1;
-	fi
-   elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
-        if [[ "${OS}" == "Darwin" ]]; then
-	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-                echo "[main] Error: only Linux OS is currently supported for aarch64 architecture targeting Zephyr now!"; exit 1;
-	    else
-                toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
-                toolchain_dir="arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi"
-                toolchain_md5_checksum="f1c18320bb3121fa89dca11399273f4e"
-	    fi
-        elif [[ "${OS}" == "Linux" ]]; then
-	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-                toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
-                toolchain_dir="arm-zephyr-eabi"
-		toolchain_md5_checksum="ef4ca56786204439a75270ba800cc64b"
-	    else
-                toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi.tar.xz"
-                toolchain_dir="arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi"
-                toolchain_md5_checksum="303102d97b877ebbeb36b3158994b218"
-	    fi
-        fi
-    else
-        echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
-    fi
-    echo "[main] Info selected ${toolchain_dir} for ${ARCH} - ${OS} platform"
-}
-
-function setup_toolchain() {
-    # Download and install the arm toolchain (default is arm-none-eabi)
-    # setting --target-toolchain to zephyr sets this to arm-zephyr-eabi
-    cd "${root_dir}"
-    if [[ ! -e "${toolchain_dir}.tar.xz" ]]; then
-        echo "[${FUNCNAME[0]}] Downloading ${toolchain_dir} toolchain ..."
-        curl --output "${toolchain_dir}.tar.xz" -L "${toolchain_url}"
-        verify_md5 ${toolchain_md5_checksum} "${toolchain_dir}.tar.xz" || exit 1
-    fi
-
-    echo "[${FUNCNAME[0]}] Installing ${toolchain_dir} toolchain ..."
-    rm -rf "${toolchain_dir}"
-    tar xf "${toolchain_dir}.tar.xz"
-}
-
-function setup_vela() {
-    pip install ethos-u-vela@git+${vela_repo_url}@${vela_rev}
+function setup_mlsdk_dependencies() {
+    log_step "mlsdk" "Installing MLSDK dependencies from pip"
+    pip install -r $et_dir/backends/arm/requirements-arm-vgf.txt
 }
 
 function create_setup_path(){
     cd "${root_dir}"
 
-    echo "" > "${setup_path_script}"
+    clear_setup_path
+    log_step "path" "Generating setup path scripts at ${setup_path_script}"
+
+    local use_mlsdk_pip=0
+    if use_mlsdk_pip_package; then
+        use_mlsdk_pip=1
+    fi
 
     if [[ "${enable_fvps}" -eq 1 ]]; then
-        fvps=("corstone300" "corstone320")
-        for fvp in "${fvps[@]}"; do
-            model_dir_variable=${fvp}_model_dir
-            fvp_model_dir=${!model_dir_variable}
-            fvp_bin_path="${root_dir}/FVP-${fvp}/models/${fvp_model_dir}"
-            echo "export PATH=\${PATH}:${fvp_bin_path}" >> ${setup_path_script}
-        done
-
-        # Fixup for Corstone-320 python dependency
-        echo "export LD_LIBRARY_PATH=${root_dir}/FVP-corstone320/python/lib/" >> ${setup_path_script}
-
-        echo "hash FVP_Corstone_SSE-300_Ethos-U55" >> ${setup_path_script}
-        echo "hash FVP_Corstone_SSE-300_Ethos-U65" >> ${setup_path_script}
-        echo "hash FVP_Corstone_SSE-320" >> ${setup_path_script}
+        setup_path_fvp
     fi
 
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
-        toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
-        echo "export PATH=\${PATH}:${toolchain_bin_path}" >> ${setup_path_script}
+        setup_path_toolchain
     fi
 
-    if [[ "${enable_model_converter}" -eq 1 ]]; then
-        cd "${root_dir}"
-        model_converter_bin_path="$(cd ${mlsdk_manifest_dir}/sw/model-converter/build && pwd)"
-        echo "export PATH=\${PATH}:${model_converter_bin_path}" >> ${setup_path_script}
+    if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
+        setup_path_vulkan
     fi
 
-    # Add Path for vgf-lib and emulation-layer
-    if [[ "${enable_vgf_lib}" -eq 1 ]]; then
-        cd "${root_dir}"
-        model_vgf_path="$(cd ${mlsdk_manifest_dir}/sw/vgf-lib/deploy && pwd)"
-        echo "export PATH=\${PATH}:${model_vgf_path}/bin" >> ${setup_path_script}
-        echo "export LD_LIBRARY_PATH=\${LD_LIBRARY_PATH-}:${model_vgf_path}/lib" >> ${setup_path_script}
-        echo "export DYLD_LIBRARY_PATH=\${DYLD_LIBRARY_PATH-}:${model_vgf_path}/lib" >> ${setup_path_script}
+    if [[ "${enable_model_converter}" -eq 1 && "${use_mlsdk_pip}" -eq 0 ]]; then
+        setup_path_model_converter
+    fi
+
+    if [[ "${enable_vgf_lib}" -eq 1 && "${use_mlsdk_pip}" -eq 0 ]]; then
+        setup_path_vgf_lib
     fi
 
     if [[ "${enable_emulation_layer}" -eq 1 ]]; then
-        cd "${root_dir}"
-        model_emulation_layer_path="$(cd ${mlsdk_manifest_dir}/sw/emulation-layer/ && pwd)"
-        echo "export LD_LIBRARY_PATH=${model_emulation_layer_path}/deploy/lib:\${LD_LIBRARY_PATH}" >> ${setup_path_script}
-        echo "export DYLD_LIBRARY_PATH=${model_emulation_layer_path}/deploy/lib:\${DYLD_LIBRARY_PATH-}" >> ${setup_path_script}
-        echo "export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation:\${VK_INSTANCE_LAYERS-}" >> ${setup_path_script}
-        echo "export VK_ADD_LAYER_PATH=${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d:\${VK_ADD_LAYER_PATH-}" >> ${setup_path_script}
+        if [[ "${use_mlsdk_pip}" -eq 0 ]]; then
+            setup_path_emulation_layer
+        else
+            setup_path_emulation_layer_from_pip
+        fi
     fi
+
+   log_step "path" "Update PATH by sourcing ${setup_path_script}.{sh|fish}"
 }
 
-function check_platform_support() {
-    # Make sure we are on a supported platform
-    if [[ "${ARCH}" != "x86_64" ]] && [[ "${ARCH}" != "aarch64" ]] \
-        && [[ "${ARCH}" != "arm64" ]]; then
-        echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"
-        exit 1
+function use_mlsdk_pip_package() {
+    os=$(uname -s)
+    arch=$(uname -m)
+
+    if [[ "${enable_mlsdk_pip_install}" -eq 0 ]]; then
+        return 1
     fi
+
+    if [[ "$os" == "Darwin" ]]; then
+        if [[ "${enable_mlsdk_pip_install}" -eq 1 ]]; then
+            log_step "mlsdk" "[error] MLSDK pip install not yet supported on MacOS"
+            exit 1
+        fi
+    fi
+
+    if [[ "$arch" == "arm64" || "$arch" == "aarch64" ]]; then
+        if [[ "${enable_mlsdk_pip_install}" -eq 1 ]]; then
+            log_step "mlsdk" "[error] MLSDK pip install not yet supported on aarch64"
+            exit 1
+        fi
+    fi
+
+    return 0
 }
 
 
@@ -405,63 +265,116 @@ if [[ $is_script_sourced -eq 0 ]]; then
 
     check_options "$@"
 
+    # Import utils
+    source $et_dir/backends/arm/scripts/fvp_utils.sh
+    source $et_dir/backends/arm/scripts/toolchain_utils.sh
+    source $et_dir/backends/arm/scripts/vulkan_utils.sh
+    source $et_dir/backends/arm/scripts/mlsdk_utils.sh
+
+    log_step "main" "Checking platform and OS"
     check_platform_support
+    check_os_support
 
     cd "${script_dir}"
 
     # Setup the root dir
     setup_root_dir
     cd "${root_dir}"
-    echo "[main] Using root dir ${root_dir} and options:"
-    echo "enable-fvps=${enable_fvps}"
-    echo "target-toolchain=${target_toolchain}"
-    echo "enable-baremetal-toolchain=${enable_baremetal_toolchain}"
-    echo "enable-model-converter=${enable_model_converter}"
-    echo "enable-vgf-lib=${enable_vgf_lib}"
-    echo "enable-emulation-layer=${enable_emulation_layer}"
-    echo "enable-vela=${enable_vela}"
-    echo "mlsdk-manifest-url=${mlsdk_manifest_url}"
 
-    # Import utils
-    source $et_dir/backends/arm/scripts/utils.sh
+    if [[ "${mlsdk_manifest_dir}" != /* ]]; then
+        mlsdk_manifest_dir="${root_dir}/${mlsdk_manifest_dir}"
+    fi
 
-    # Select appropriate toolchain
-    select_toolchain
+    log_step "options" \
+             "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}, mlsdk-dir=${mlsdk_manifest_dir}"
+    log_step "options" \
+             "ethos-u: fvps=${enable_fvps}, toolchain=${enable_baremetal_toolchain}, vela=${enable_vela} | " \
+             "mlsdk: model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, " \
+                    "emu-layer=${enable_emulation_layer}, vulkan-sdk=${enable_vulkan_sdk}"
 
     # Setup toolchain
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
+        log_step "toolchain" "Configuring baremetal toolchain (${target_toolchain:-gnu})"
+        # Select appropriate toolchain
+        select_toolchain
         setup_toolchain
     fi
 
     # Setup FVP
     if [[ "${enable_fvps}" -eq 1 ]]; then
+        log_step "fvp" "Setting up Arm Fixed Virtual Platforms"
+        check_fvp_eula
         setup_fvp
+        install_fvp
+    fi
+
+    # Setup Vulkan SDK
+    if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
+        log_step "vulkan" "Setting up Vulkan SDK"
+        setup_vulkan_sdk
     fi
 
     if [[ "${enable_model_converter}" -eq 1 || \
           "${enable_vgf_lib}" -eq 1 || \
           "${enable_emulation_layer}" -eq 1 ]]; then
-        source $et_dir/backends/arm/scripts/mlsdk_utils.sh -u "${mlsdk_manifest_url}"
-        setup_model_converter ${root_dir} ${mlsdk_manifest_dir} ${enable_model_converter} ${enable_vgf_lib} ${enable_emulation_layer}
+        log_step "mlsdk" "Configuring MLSDK components (model-converter=${enable_model_converter}, " \
+                         "vgf-lib=${enable_vgf_lib}, emu-layer=${enable_emulation_layer})"
+        if use_mlsdk_pip_package; then
+            setup_mlsdk_dependencies
+        else
+            log_step "mlsdk" "Installing MLSDK dependencies from source"
+            setup_mlsdk ${root_dir} \
+                        ${mlsdk_manifest_dir} \
+                        ${enable_model_converter} \
+                        ${enable_vgf_lib} \
+                        ${enable_emulation_layer}
+        fi
     fi
 
-    # Create new setup_path script
-    if [[ "${enable_baremetal_toolchain}" -eq 1 || \
-          "${enable_fvps}" -eq 1 || \
-          "${enable_model_converter}" -eq 1 ]]; then
-        create_setup_path
+    # Create the setup_path.sh used to create the PATH variable for shell
+    create_setup_path
+
+    # Setup the TOSA reference model and serialization dependencies
+    log_step "deps" "Installing TOSA reference model dependencies"
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        pip install --no-dependencies -r "$et_dir/backends/arm/requirements-arm-tosa.txt"
+
+    pushd "$root_dir"
+    if [[ ! -d "tosa-tools" ]]; then
+        git clone https://git.gitlab.arm.com/tosa/tosa-tools.git
     fi
 
-    # Setup the tosa_reference_model
-    $et_dir/backends/arm/scripts/install_reference_model.sh ${root_dir}
+    pushd tosa-tools
+    git fetch origin main
+    git checkout 8468d041c50c6d806f3c1c18c66d7ef641e46580 # serialization lib pybindings
+    git cherry-pick 368f0cd745b2a1569bf36f077daeba95775de192 # perf fix for >2gb models
+    if [[ ! -d "reference_model" ]]; then
+        log_step "main" "[error] Missing reference_model directory in tosa-tools repo."
+        exit 1
+    fi
+    if [[ ! -d "serialization" ]]; then
+        log_step "main" "[error] Missing serialization directory in tosa-tools repo."
+        exit 1
+    fi
 
-    # Setup vela and patch in codegen fixes
+
+    export CMAKE_BUILD_PARALLEL_LEVEL="$(get_parallel_jobs)"
+
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        BUILD_PYBIND=1 \
+        pip install --no-dependencies ./reference_model
+
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        BUILD_PYBIND=1 \
+        pip install --no-dependencies ./serialization
+    popd
+    popd
+
     if [[ "${enable_vela}" -eq 1 ]]; then
-        setup_vela
+        log_step "deps" "Installing Ethos-U Vela compiler"
+        setup_ethos_u_tools
     fi
 
-    echo "[main] update path by doing 'source ${setup_path_script}'"
-
-    echo "[main] success!"
+    log_step "main" "Setup complete"
     exit 0
 fi

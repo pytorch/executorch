@@ -59,7 +59,11 @@ void resize_pool2d_node(
 
   if (is_max_pool2d) {
     const ValueRef indices = args.at(0).refs.at(1);
-    graph->virtual_resize(indices, new_out_sizes);
+    // For max_pool2d variant, indices tensor will be a 0-dim tensor - only
+    // resize the indices tensor if this is not the case.
+    if (graph->sizes_of(indices).size() > 0) {
+      graph->virtual_resize(indices, new_out_sizes);
+    }
   }
 }
 
@@ -76,8 +80,19 @@ void add_max_pool2d_node(
     const ValueRef dilation,
     const ValueRef ceil_mode,
     const ValueRef out) {
-  const auto out_val = graph.get_value_list(out);
-  const ValueRef out_tensor = out_val->at(0);
+  ValueRef out_tensor = out;
+  // Placeholder tensor to fill binding slot for indices tensor in case we are
+  // computing max_pool2d instead of max_pool2d_with_indices.
+  TmpTensor tmp_indices_tensor =
+      TmpTensor(&graph, {}, graph.dtype_of(in), graph.storage_type_of(in));
+  ValueRef indices_tensor = tmp_indices_tensor.vref;
+  int32_t write_indices = 0;
+  if (graph.val_is_value_list(out)) {
+    const auto out_val = graph.get_value_list(out);
+    out_tensor = out_val->at(0);
+    indices_tensor = out_val->at(1);
+    write_indices = 1;
+  }
 
   check_pool2d_args(graph, in, out_tensor);
 
@@ -98,7 +113,7 @@ void add_max_pool2d_node(
       default_pick_global_wg_size,
       default_pick_local_wg_size,
       // Inputs and Outputs
-      {{{out_val->at(0), out_val->at(1)}, vkapi::kWrite}, {in, vkapi::kRead}},
+      {{{out_tensor, indices_tensor}, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
       {
           graph.logical_limits_ubo(out_tensor),
@@ -108,7 +123,7 @@ void add_max_pool2d_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {write_indices},
       // Resize Args
       {kernel_size, stride, padding, dilation, ceil_mode},
       // Resizing Logic
@@ -126,7 +141,7 @@ void max_pool2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
 struct DivisorParams final {
   int32_t divisor_override;
-  bool count_include_pad;
+  int32_t count_include_pad;
 };
 
 DivisorParams create_divisor_params(
@@ -137,7 +152,7 @@ DivisorParams create_divisor_params(
       graph.val_is_int(divisor_override)
           ? static_cast<int32_t>(graph.get_int(divisor_override))
           : 0,
-      graph.get_bool(count_include_pad)};
+      int32_t(graph.get_bool(count_include_pad))};
 }
 
 void add_avg_pool2d_node(
@@ -203,6 +218,7 @@ void avg_pool2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.avg_pool2d.default, avg_pool2d);
   VK_REGISTER_OP(aten.max_pool2d_with_indices.default, max_pool2d);
+  VK_REGISTER_OP(aten.max_pool2d.default, max_pool2d);
 }
 
 } // namespace vkcompute

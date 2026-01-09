@@ -204,7 +204,7 @@ class MemoryPlanningAlgo(ABC):
                 for spec, c in spec_with_abs_constraint.items()
                 if c is not None and c.pinned_memory_id == mem_id and c.offset is None
             }
-            logging.error(f"Placing specs {mem_id_pinned_specs} for {mem_id=}")
+            logging.debug(f"Placing specs {mem_id_pinned_specs} for {mem_id=}")
 
             with self.block_memories_except(mem_id):
                 self.plan(
@@ -220,7 +220,7 @@ class MemoryPlanningAlgo(ABC):
             if constraint is None:
                 continue
 
-            logging.error(f"Placing spec {spec} with {constraint}")
+            logging.debug(f"Placing spec {spec} with {constraint}")
 
             if not state.is_placed(spec):
                 raise MemoryError(

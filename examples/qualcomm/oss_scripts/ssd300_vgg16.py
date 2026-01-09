@@ -6,6 +6,7 @@
 
 import json
 import os
+
 import sys
 from multiprocessing.connection import Client
 from pprint import PrettyPrinter
@@ -14,8 +15,12 @@ import numpy as np
 import torch
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     make_output_dir,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
@@ -88,7 +93,7 @@ def get_dataset(data_size, dataset_dir, download):
         test_dataset, shuffle=True, collate_fn=test_dataset.collate_fn
     )
 
-    inputs, input_list = [], ""
+    inputs = []
     true_boxes = []
     true_labels = []
     true_difficulties = []
@@ -96,12 +101,11 @@ def get_dataset(data_size, dataset_dir, download):
         if index >= data_size:
             break
         inputs.append((images,))
-        input_list += f"input_{index}_0.raw\n"
         true_boxes.extend(boxes)
         true_labels.extend(labels)
         true_difficulties.extend(difficulties)
 
-    return inputs, input_list, true_boxes, true_labels, true_difficulties
+    return inputs, true_boxes, true_labels, true_difficulties
 
 
 def SSD300VGG16(pretrained_weight_model):
@@ -126,14 +130,8 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     data_num = 100
-    inputs, input_list, true_boxes, true_labels, true_difficulties = get_dataset(
+    inputs, true_boxes, true_labels, true_difficulties = get_dataset(
         data_size=data_num, dataset_dir=args.artifact, download=args.download
     )
 
@@ -141,6 +139,11 @@ def main(args):
     model = SSD300VGG16(args.pretrained_weight)
 
     sample_input = (torch.randn((1, 3, 300, 300)),)
+    backend = get_backend_type(args.backend)
+    quant_dtype = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_8a8w,
+    }[backend]
     build_executorch_binary(
         model,
         sample_input,
@@ -149,8 +152,10 @@ def main(args):
         inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        quant_dtype=QuantDtype.use_8a8w,
+        quant_dtype=quant_dtype,
+        backend=backend,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -164,8 +169,11 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -275,6 +283,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

@@ -39,7 +39,7 @@ Tensor& neg_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
         CTYPE,
         op_name,
         utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-        [](const auto val_in) { return -val_in; },
+        [](const auto& val_in) { return -val_in; },
         ctx,
         in,
         utils::SupportedTensorDtypes::REALHBF16,

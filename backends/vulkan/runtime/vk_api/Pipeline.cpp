@@ -298,10 +298,11 @@ ComputePipeline::ComputePipeline(
   };
 
   VkPipelineCreateFlags flags = 0u;
-#if defined(VULKAN_DEBUG) && defined(VK_KHR_pipeline_executable_properties)
+#if defined(VK_KHR_pipeline_executable_properties) && \
+    defined(ETVK_INSPECT_PIPELINES)
   flags = VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR |
       VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR | flags;
-#endif /* VULKAN_DEBUG && VK_KHR_pipeline_executable_properties */
+#endif // VK_KHR_pipeline_executable_properties && ETVK_INSPECT_PIPELINES
 
   const VkComputePipelineCreateInfo compute_pipeline_create_info{
       VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, // sType

@@ -14,25 +14,27 @@ set -o pipefail
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
-setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
+setup_path_script=${et_root_dir}/examples/arm/arm-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
 
 model=""
-build_path="cmake-out"
+opt_flags=""
+build_path="cmake-out-vkml"
 converter="model-converter"
 
 help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
     echo "  --model=<MODEL_FILE>    .pte model file to run"
-    echo "  --build=<BUILD_PATH>    Target to build and run for Default: ${build_path}"
+    echo "  --build_path=<BUILD_PATH>  Path to executor_runner build. for Default: ${build_path}"
     exit 0
 }
 
 for arg in "$@"; do
     case $arg in
       -h|--help) help ;;
+      --optional_flags=*) opt_flags="${arg#*=}";;
       --model=*) model="${arg#*=}";;
       --build_path=*) build_path="${arg#*=}";;
       *)
@@ -50,16 +52,21 @@ if [[ -z ${model} ]]; then echo "Model name needs to be provided"; exit 1; fi
 
 source ${setup_path_script}
 
-# basic checks before we get started
-hash ${converter} \
-    || { echo "Could not find ${converter} on PATH, ${_setup_msg}"; exit 1; }
+if ! command -v "${converter}" >/dev/null 2>&1; then
+    if command -v model_converter >/dev/null 2>&1; then
+        converter="model_converter"
+    fi
+fi
+
+command -v "${converter}" >/dev/null 2>&1 \
+    || { echo "Could not find a model converter executable (tried model-converter, model_converter). ${_setup_msg}"; exit 1; }
 
 
+runner=$(find ${build_path} -name executor_runner -type f)
 
-runner="${build_path}/executor_runner"
 
 echo "--------------------------------------------------------------------------------"
-echo "Running ${model} with ${runner}"
+echo "Running ${model} with ${runner} ${opt_flags}"
 echo "WARNING: The VK_ML layer driver will not provide accurate performance information"
 echo "--------------------------------------------------------------------------------"
 
@@ -75,7 +82,7 @@ fi
 log_file=$(mktemp)
 
 
-${nobuf} ${runner} -model_path ${model} | tee ${log_file}
+${nobuf} ${runner} -model_path ${model} ${opt_flags} | tee ${log_file}
 echo "[${BASH_SOURCE[0]}] execution complete, $?"
 
 # Most of these can happen for bare metal or linx executor_runner runs.

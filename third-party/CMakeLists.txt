@@ -28,8 +28,9 @@ endif()
 # We use ExternalProject to build flatc from source to force it target the host.
 # Otherwise, flatc will target the project's toolchain (i.e. iOS, or Android).
 ExternalProject_Add(
-  flatbuffers_external_project
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatbuffers_external_project
+  flatbuffers_ep
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatc_ep
+  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatc_ep/src/build
   SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatbuffers
   CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
              -DFLATBUFFERS_INSTALL=ON
@@ -46,9 +47,9 @@ ExternalProject_Add(
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
   ${_executorch_external_project_additional_args}
 )
-ExternalProject_Get_Property(flatbuffers_external_project INSTALL_DIR)
+ExternalProject_Get_Property(flatbuffers_ep INSTALL_DIR)
 add_executable(flatc IMPORTED GLOBAL)
-add_dependencies(flatc flatbuffers_external_project)
+add_dependencies(flatc flatbuffers_ep)
 if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
   # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
   # config, but from CMake's perspective the build type is always Debug.
@@ -79,9 +80,10 @@ endif()
 # Similar to flatbuffers, we want to build flatcc for the host. See inline comments
 # in the flatbuffers ExternalProject_Add for more details.
 ExternalProject_Add(
-  flatcc_external_project
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatcc_external_project
+  flatcc_ep
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep
   SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatcc
+  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep/src/build
   CMAKE_ARGS -DFLATCC_RTONLY=OFF
              -DFLATCC_TEST=OFF
              -DFLATCC_REFLECTION=OFF
@@ -98,9 +100,9 @@ ExternalProject_Add(
   {_executorch_external_project_additional_args}
 )
 file(REMOVE_RECURSE ${PROJECT_SOURCE_DIR}/third-party/flatcc/lib)
-ExternalProject_Get_Property(flatcc_external_project INSTALL_DIR)
+ExternalProject_Get_Property(flatcc_ep INSTALL_DIR)
 add_executable(flatcc_cli IMPORTED GLOBAL)
-add_dependencies(flatcc_cli flatcc_external_project)
+add_dependencies(flatcc_cli flatcc_ep)
 if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
   set_target_properties(flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc.exe)
 else()

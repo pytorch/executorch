@@ -87,7 +87,6 @@ def test_acosh_u55_INT_xfail(test_data: Tuple):
         Acosh(),
         (test_data(),),
         aten_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
@@ -110,30 +109,29 @@ def test_acosh_u85_INT_xfail(test_data: Tuple):
         Acosh(),
         (test_data(),),
         aten_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_acosh_vgf_FP(test_data: Tuple):
+def test_acosh_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t](
         Acosh(),
         (test_data(),),
         aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_acosh_vgf_INT(test_data: Tuple):
+def test_acosh_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t](
         Acosh(),
         (test_data(),),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

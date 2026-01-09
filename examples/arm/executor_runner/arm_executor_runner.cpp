@@ -6,9 +6,88 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+/* This is an example ExecuTorch runner running on Arm Cortex-M and Ethos-U
+ * based hardware. This example tries to illustrate a few ways to use ExecuTorch
+ * and you can use it as is or remove the unneeded parts. Please use this code
+ * as inspiration.
+ *
+ * Some defines used to configure the code:
+ *
+ * ET_MODEL_PTE_ADDR  - Where in memory/flash your PTE model data is, if
+ *                      not set the model is supposed to have been converted to
+ *                      a c-array named model_pte and put into model_pte.h
+ *                      this is placed in network_model_sec linker section
+ *                      that is controlled by your memory mode via the
+ *                      ETHOSU_MODEL cmake parameter.
+ *                      If SEMIHOSTING is define this is not used
+ * ET_NUM_INFERENCES  - Numbers of times to run the inference
+ * ET_LOG_DUMP_INPUT  - Control if you want input to be dumped to the log.
+ * ET_LOG_DUMP_OUTPUT     - Control if you want output to be dumped to the log.
+ *
+ * Devtool BundleIO: Use Bundle PTE with input and reference output included to
+ * check if it matches.
+ *
+ * ET_BUNDLE_IO       - Build in Devtools BundleIO, this makes it possible to
+ *                      use bpte with bundled input and output refdata to
+ *                      compare output.
+ *                      See also ET_ATOL and ET_RTOL
+ *   ET_ATOL              - The atol used to compare the output and ref data
+ * when using ET_BUNDLE_IO ET_RTOL              - The rtol used to compare the
+ * output and ref data when using ET_BUNDLE_IO
+ *
+ * Devtools ETDump: Speed and dumping output
+ *
+ * ET_EVENT_TRACER_ENABLED       - Build in Devtools ETDump event trace code
+ *                                 to generate cycle data and print it base64
+ *                                 coded in the log so you can get it out of
+ *                                 your embedded target. This can be used to
+ *                                 benchmark where time is spent. If you run
+ *                                 on Ethos-U the delegate/commandstream is
+ *                                 run in one go, this means that per op
+ *                                 measurements is not possible.
+ *  ET_DUMP_OUTPUTS              - Collect and print outputs as a base64 buffer
+ *                                 in the log, see ExecuTorch Devtools for more
+ *                                 info. (Requires ET_EVENT_TRACER_ENABLED)
+ *  ET_DUMP_INTERMEDIATE_OUTPUTS - Collect and print intermediate outputs as a
+ *                                 base64 buffer in the log, see ExecuTorch
+ *                                 Devtools for more info.
+ *                                 (Requires ET_EVENT_TRACER_ENABLED)
+ *  ET_DEBUG_BUFFER_SIZE         - Override the size of memory area used by
+ *                                 ET_DUMP_OUTPUTS or
+ * ET_DUMP_INTERMEDIATE_OUTPUTS
+ *
+ * Warning: CPU time measurements is NOT possible in the FVP simulator and a
+ * real target or FPGA must be used. NPU number are roughly OK, and can be used
+ * as guidance if timeing adaptor values are set correctly.
+ *
+ * SEMIHOSTING - When using the FVP simulator it can be built to access your dev
+ *               machines filesystem, this is used for testing models in
+ *               unittest/pytest and a special version of the runner is built
+ *               to read model and input as files and output is saved to the
+ *               filesystem. The backends/arm/test/setup_testing.sh script will
+ *               build this for you so you can use it from pytest to test with
+ *               the FVP simulator.
+ *
+ * Memory areas used:
+ *    You might want to configure this differently on your HW, like maybe all
+ *    left over memory after code is linked. This needs to be big enough to fit
+ *    and run your model. In our example using the FVP simulator we have much
+ *    memory and set this quite high to be able to test larger models.
+ *    Regarding heap/mallocs type of allocation from ExecuTorch,
+ *    et_pal_allocate() is not implemented or needed.
+ *
+ * ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE            - Size of memory area
+ *                                                          used when setting up
+ *                                                          the model
+ * ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE - Size of memory area
+ *                                                          used when running
+ *                                                          inferences
+ */
+
 #include <errno.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
@@ -17,6 +96,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <memory>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "arm_memory_allocator.h"
@@ -28,10 +109,21 @@
 
 #if defined(ET_EVENT_TRACER_ENABLED)
 #include <executorch/devtools/etdump/etdump_flatcc.h>
+
+#if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
+#include <executorch/devtools/etdump/data_sinks/buffer_data_sink.h>
+
+#if !defined(ET_DEBUG_BUFFER_SIZE)
+#define ET_DEBUG_BUFFER_SIZE (2 * 1024 * 1024)
+#endif
+
+#endif
+
 #if !defined(SEMIHOSTING)
 #include <executorch/third-party/flatcc/include/flatcc/portable/pbase64.h>
 #endif
-#endif
+
+#endif // defined(ET_EVENT_TRACER_ENABLED)
 
 #if defined(SEMIHOSTING)
 
@@ -55,7 +147,17 @@ unsigned char __attribute__((
 char* model_pte = nullptr;
 
 #else
+#if defined(ET_MODEL_PTE_ADDR)
 
+/**
+ * Set ET_MODEL_PTE_ADDR to the memory address where your PTE is placed
+ * e.g. if you for example flash it to 0x7000000 set
+ * -DET_MODEL_PTE_ADDR=0x7000000 You can run the Corstone FVP with the --data
+ * flag to place it on a address if you use the FVP.
+ */
+char* model_pte = reinterpret_cast<char*>(ET_MODEL_PTE_ADDR);
+
+#else
 /**
  * This header file is generated by the build process based on the .pte file
  * specified in the ET_PTE_FILE_PATH variable to the cmake build.
@@ -66,7 +168,7 @@ char* model_pte = nullptr;
  * e.g. This includes the pte as a big chunk of data struct into this file
  */
 #include "model_pte.h"
-
+#endif
 #endif
 
 using executorch::aten::ScalarType;
@@ -84,14 +186,18 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
+using executorch::runtime::toString;
 #if defined(ET_BUNDLE_IO)
 using executorch::bundled_program::compute_method_output_error_stats;
 using executorch::bundled_program::ErrorStats;
 using executorch::bundled_program::verify_method_outputs;
 #endif
 #if defined(ET_EVENT_TRACER_ENABLED)
+using executorch::etdump::BufferDataSink;
 using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
+using executorch::runtime::EventTracerDebugLogLevel;
+using torch::executor::etdump_result;
 #endif
 /**
  * The method_allocation_pool should be large enough to fit the setup, input
@@ -235,6 +341,8 @@ void et_pal_free(ET_UNUSED void* ptr) {}
 namespace {
 
 /// Lightweight heapless container that constructs and stores a T in-place.
+/// Useful when you want to avoid heap allocations but need to delay
+/// construction.
 template <typename T>
 class Box {
  public:
@@ -293,6 +401,19 @@ class Box {
   }
 };
 
+template <typename ValueType>
+void fill_tensor_with_default_value(Tensor& tensor) {
+  ValueType fill_value{};
+  if constexpr (std::is_same_v<ValueType, bool>) {
+    fill_value = true;
+  } else {
+    fill_value = ValueType(1);
+  }
+
+  ValueType* data_ptr = tensor.mutable_data_ptr<ValueType>();
+  std::fill(data_ptr, data_ptr + tensor.numel(), fill_value);
+}
+
 Error prepare_input_tensors(
     Method& method,
     MemoryAllocator& allocator,
@@ -308,8 +429,7 @@ Error prepare_input_tensors(
       "Wrong number of inputs allocated compared to method");
 #endif
 
-  EValue* input_evalues =
-      static_cast<EValue*>(allocator.allocate(num_inputs * sizeof(EValue*)));
+  EValue* input_evalues = allocator.allocateList<EValue>(num_inputs);
   ET_CHECK_OR_RETURN_ERROR(
       input_evalues != nullptr,
       MemoryAllocationFailed,
@@ -351,23 +471,18 @@ Error prepare_input_tensors(
       if (input_evalues[i].isTensor()) {
         Tensor& tensor = input_evalues[i].toTensor();
         switch (tensor.scalar_type()) {
-          case ScalarType::Int:
-            std::fill(
-                tensor.mutable_data_ptr<int>(),
-                tensor.mutable_data_ptr<int>() + tensor.numel(),
-                1);
-            break;
-          case ScalarType::Float:
-            std::fill(
-                tensor.mutable_data_ptr<float>(),
-                tensor.mutable_data_ptr<float>() + tensor.numel(),
-                1.0);
-            break;
-          case ScalarType::Char:
-            std::fill(
-                tensor.mutable_data_ptr<int8_t>(),
-                tensor.mutable_data_ptr<int8_t>() + tensor.numel(),
-                1);
+#define HANDLE_SCALAR_TYPE(cpp_type, scalar_name)     \
+  case ScalarType::scalar_name:                       \
+    fill_tensor_with_default_value<cpp_type>(tensor); \
+    break;
+          ET_FORALL_SCALAR_TYPES(HANDLE_SCALAR_TYPE)
+#undef HANDLE_SCALAR_TYPE
+          default:
+            ET_LOG(
+                Error,
+                "Unhandled ScalarType %s",
+                toString(tensor.scalar_type()));
+            err = Error::InvalidArgument;
             break;
         }
       } else {
@@ -431,11 +546,19 @@ struct RunnerContext {
   size_t input_memsize = 0;
   size_t pte_size = 0;
   bool bundle_io = false;
+  Box<BufferDataLoader> loader;
+  Box<Program> program;
   Box<ArmMemoryAllocator> method_allocator;
   Box<ArmMemoryAllocator> temp_allocator;
+  std::vector<Span<uint8_t>> planned_spans;
+  Box<HierarchicalAllocator> planned_memory;
+  Box<MemoryManager> memory_manager;
   Box<Result<Method>> method;
 #if defined(ET_EVENT_TRACER_ENABLED)
-  Box<torch::executor::ETDumpGen> etdump_gen;
+  Box<ETDumpGen> etdump_gen;
+#if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
+  void* debug_buffer;
+#endif
 #endif
 #if defined(SEMIHOSTING)
   Box<ArmMemoryAllocator> input_file_allocator;
@@ -469,30 +592,31 @@ void runner_init(
         (unsigned int)status);
   }
 #endif
-  auto loader = BufferDataLoader(program_data, ctx.program_data_len);
-  ET_LOG(Info, "PTE Model data loaded. Size: %lu bytes.", ctx.program_data_len);
+  ctx.loader.reset(program_data, ctx.program_data_len);
+  auto& loader = ctx.loader.value();
+  ET_LOG(Info, "PTE Model data loaded. Size: %zu bytes.", ctx.program_data_len);
 
   // Parse the program file. This is immutable, and can also be reused
   // between multiple execution invocations across multiple threads.
-  Result<Program> program = Program::load(&loader);
-  if (!program.ok()) {
-    ET_LOG(
-        Info,
-        "Program loading failed @ 0x%p: 0x%" PRIx32,
-        program_data,
-        program.error());
-  }
+  Result<Program> program_result = Program::load(&loader);
+  ET_CHECK_MSG(
+      program_result.ok(),
+      "Program loading failed @ %p: 0x%" PRIx32,
+      program_data,
+      program_result.error());
+  ctx.program.reset(std::move(program_result.get()));
+  Program& program = ctx.program.value();
 
-  ET_LOG(Info, "Model buffer loaded, has %lu methods", program->num_methods());
+  ET_LOG(Info, "Model buffer loaded, has %zu methods", program.num_methods());
 
   {
-    const auto method_name_result = program->get_method_name(0);
+    const auto method_name_result = program.get_method_name(0);
     ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
     ctx.method_name = *method_name_result;
   }
   ET_LOG(Info, "Running method %s", ctx.method_name);
 
-  Result<MethodMeta> method_meta = program->method_meta(ctx.method_name);
+  Result<MethodMeta> method_meta = program.method_meta(ctx.method_name);
   if (!method_meta.ok()) {
     ET_LOG(
         Info,
@@ -503,16 +627,15 @@ void runner_init(
 
   ET_LOG(
       Info,
-      "Setup Method allocator pool. Size: %lu bytes.",
+      "Setup Method allocator pool. Size: %zu bytes.",
       method_allocation_pool_size);
 
   ctx.method_allocator.reset(
       method_allocation_pool_size, method_allocation_pool);
 
-  std::vector<uint8_t*> planned_buffers; // Owns the memory
-  std::vector<Span<uint8_t>> planned_spans; // Passed to the allocator
+  ctx.planned_spans.clear();
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
-
+  ctx.planned_spans.reserve(num_memory_planned_buffers);
   size_t planned_buffer_membase = ctx.method_allocator->used_size();
 
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
@@ -528,21 +651,24 @@ void runner_init(
         buffer != nullptr,
         "Could not allocate memory for memory planned buffer size %zu",
         buffer_size);
-    planned_buffers.push_back(buffer);
-    planned_spans.push_back({planned_buffers.back(), buffer_size});
+    ctx.planned_spans.push_back({buffer, buffer_size});
   }
 
   ctx.planned_buffer_memsize =
       ctx.method_allocator->used_size() - planned_buffer_membase;
 
-  HierarchicalAllocator planned_memory(
-      {planned_spans.data(), planned_spans.size()});
+  Span<Span<uint8_t>> planned_memory_span;
+  if (!ctx.planned_spans.empty()) {
+    planned_memory_span =
+        Span<Span<uint8_t>>(ctx.planned_spans.data(), ctx.planned_spans.size());
+  }
+  ctx.planned_memory.reset(planned_memory_span);
 
   ctx.temp_allocator.reset(temp_allocation_pool_size, temp_allocation_pool);
 
-  MemoryManager memory_manager(
+  ctx.memory_manager.reset(
       &ctx.method_allocator.value(),
-      &planned_memory,
+      &ctx.planned_memory.value(),
       &ctx.temp_allocator.value());
 
   size_t method_loaded_membase = ctx.method_allocator->used_size();
@@ -553,10 +679,63 @@ void runner_init(
   ET_LOG(Info, "Setting up ETDump");
   ctx.etdump_gen.reset();
   event_tracer_ptr = &ctx.etdump_gen.value();
-#endif
 
-  ctx.method.reset(
-      program->load_method(ctx.method_name, &memory_manager, event_tracer_ptr));
+#if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
+  // Alloc debug buffer and create if and only if we need to log intermediate
+  // tensor outputs
+  ctx.debug_buffer = ctx.method_allocator->allocate(ET_DEBUG_BUFFER_SIZE, 16);
+  if (ctx.debug_buffer != nullptr) {
+    Span<uint8_t> debug_buffer_span(
+        (uint8_t*)ctx.debug_buffer, ET_DEBUG_BUFFER_SIZE);
+
+    Result<bool> result =
+        ctx.etdump_gen.value().set_debug_buffer(debug_buffer_span);
+
+    if (result.ok()) {
+      // Everything worked, we got the buffer setup, lets enable output logging
+      // depending on the compile flag ET_DUMP_INTERMEDIATE_OUTPUTS e.g.
+      // kIntermediateOutputs or kProgramOutputs
+#if defined(ET_DUMP_INTERMEDIATE_OUTPUTS)
+      ET_LOG(
+          Info,
+          "ETDump: Allocated intermediate output buffer size: %d at 0x%p",
+          ET_DEBUG_BUFFER_SIZE,
+          ctx.debug_buffer);
+      ctx.etdump_gen.value().set_event_tracer_debug_level(
+          EventTracerDebugLogLevel::kIntermediateOutputs);
+#else // defined(ET_DUMP_INTERMEDIATE_OUTPUTS)
+      ET_LOG(
+          Info,
+          "ETDump: Allocated output buffer size: %d at 0x%p",
+          ET_DEBUG_BUFFER_SIZE,
+          ctx.debug_buffer);
+      ctx.etdump_gen.value().set_event_tracer_debug_level(
+          EventTracerDebugLogLevel::kProgramOutputs);
+#endif // defined(ET_DUMP_INTERMEDIATE_OUTPUTS)
+
+    } else {
+      // set_debug_buffer() failed
+      // Here we would free ctx.debug_buffer if it was possible, but we can't as
+      // the allocator don't support it.
+      ctx.debug_buffer = nullptr;
+      ET_LOG(
+          Error,
+          "ETDump: Could not set_debug_buffer() for output buffer size %zu error:0x%" PRIx32,
+          ET_DEBUG_BUFFER_SIZE,
+          result.error());
+    }
+  } else {
+    // debug buffer allocation failed
+    ET_LOG(
+        Error,
+        "ETDump: Could not allocate memory for output buffer size %zu",
+        ET_DEBUG_BUFFER_SIZE);
+  }
+#endif // defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
+#endif // defined(ET_EVENT_TRACER_ENABLED)
+
+  ctx.method.reset(program.load_method(
+      ctx.method_name, &ctx.memory_manager.value(), event_tracer_ptr));
 
   if (!ctx.method->ok()) {
     ET_LOG(
@@ -591,7 +770,7 @@ void runner_init(
     ET_CHECK_MSG(
         status == Error::Ok, "Failed to prepare inputs 0x%" PRIx32, status);
   }
-#if defined(ET_DUMP_INPUT)
+#if defined(ET_LOG_DUMP_INPUT)
   {
     std::vector<EValue> inputs((*ctx.method.value())->inputs_size());
     ET_LOG(Info, "%zu inputs: ", inputs.size());
@@ -643,12 +822,24 @@ void runner_init(
   ET_LOG(Info, "Input prepared.");
 }
 
-void log_mem_status(const RunnerContext& ctx) {
+void log_mem_status(RunnerContext& ctx) {
   size_t executor_memsize =
       ctx.method_allocator->used_size() - ctx.executor_membase;
 
-  ET_LOG(Info, "model_pte_program_size:     %lu bytes.", ctx.program_data_len);
-  ET_LOG(Info, "model_pte_loaded_size:      %lu bytes.", ctx.pte_size);
+#if defined(ET_MODEL_PTE_ADDR)
+  ET_LOG(
+      Info,
+      "model_pte_program_size:     %zu bytes. (pte size unknown when not baked into elf)",
+      ctx.program_data_len);
+  ET_LOG(
+      Info,
+      "model_pte_loaded_size:      %zu bytes. (pte size unknown when not baked into elf)",
+      ctx.pte_size);
+#else
+  ET_LOG(Info, "model_pte_program_size:     %zu bytes.", ctx.program_data_len);
+  ET_LOG(Info, "model_pte_loaded_size:      %zu bytes.", ctx.pte_size);
+#endif
+
 #if defined(SEMIHOSTING)
   if (ctx.input_file_allocator->size() > 0) {
     ET_LOG(
@@ -682,14 +873,22 @@ void log_mem_status(const RunnerContext& ctx) {
     ET_LOG(Info, "method_allocator_executor: %zu bytes", executor_memsize);
   }
   if (ctx.temp_allocator->size() > 0) {
+    ET_LOG(Info, "temp_allocator:            %zu", ctx.temp_allocator->size());
+  }
+#if defined(ET_EVENT_TRACER_ENABLED)
+#if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
+  if (ctx.debug_buffer != nullptr) {
+    size_t outputdump_len = ctx.etdump_gen->get_data_sink()->get_used_bytes();
     ET_LOG(
         Info,
-        "peak_temp_allocator:       %zu / %zu free: %zu ( used: %zu %% ) ",
-        ctx.temp_allocator->peak_used(),
-        ctx.temp_allocator->size(),
-        ctx.temp_allocator->free_size(),
-        100 * ctx.temp_allocator->peak_used() / ctx.temp_allocator->size());
+        "ETDump_outputs_buffer:     %zu / %zu free: %zu ( used: %zu %% ) ",
+        outputdump_len,
+        ET_DEBUG_BUFFER_SIZE,
+        ET_DEBUG_BUFFER_SIZE - outputdump_len,
+        100 * outputdump_len / ET_DEBUG_BUFFER_SIZE);
   }
+#endif
+#endif
 }
 
 void print_outputs(RunnerContext& ctx) {
@@ -704,7 +903,7 @@ void print_outputs(RunnerContext& ctx) {
     if (outputs[i].isTensor()) {
       Tensor tensor = outputs[i].toTensor();
 #if !defined(SEMIHOSTING)
-#if defined(ET_DUMP_OUTPUT)
+#if defined(ET_LOG_DUMP_OUTPUT)
       // The output might be collected and parsed so printf() is used instead
       // of ET_LOG() here
       for (int j = 0; j < tensor.numel(); ++j) {
@@ -736,7 +935,7 @@ void print_outputs(RunnerContext& ctx) {
         }
       }
 #endif
-#else
+#else //! defined(SEMIHOSTING)
       char out_filename[255];
       snprintf(out_filename, 255, "%s-%d.bin", ctx.output_basename, i);
       ET_LOG(Info, "Writing output to file: %s", out_filename);
@@ -744,7 +943,7 @@ void print_outputs(RunnerContext& ctx) {
       auto written_size =
           fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
       fclose(out_file);
-#endif
+#endif //! defined(SEMIHOSTING)
     } else {
       printf("Output[%d]: Not Tensor\n", i);
     }
@@ -760,45 +959,113 @@ void write_etdump(RunnerContext& ctx) {
   if (result.buf != nullptr && result.size > 0) {
     // On a device with no file system we can't just write it out
     // to the file-system so we base64 encode it and dump it on the log.
+    bool dump_outputs = false;
     int mode = base64_enc_modifier_padding | base64_dec_modifier_skipspace;
-    size_t len = result.size;
-    size_t encoded_len = base64_encoded_size(result.size, mode);
+    size_t etdump_len = result.size;
+    size_t encoded_etdump_len = base64_encoded_size(etdump_len, mode);
+    size_t base64buffer_len = encoded_etdump_len;
+#if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
+    // Make base64 buffer fit both so it can be reused istead of allocating two
+    // buffers.
+    size_t outputdump_len = 0;
+    size_t encoded_outputdump_len = 0;
+    if (ctx.debug_buffer != nullptr) {
+      outputdump_len = ctx.etdump_gen->get_data_sink()->get_used_bytes();
+      if (outputdump_len > 0) {
+        encoded_outputdump_len = base64_encoded_size(outputdump_len, mode);
+        if (encoded_outputdump_len > 0) {
+          base64buffer_len =
+              std::max(encoded_etdump_len, encoded_outputdump_len);
+          dump_outputs = true;
+        } else {
+          ET_LOG(
+              Error,
+              "Problem getting the size of the base64 ETDump output buffers");
+        }
+      } else {
+        ET_LOG(Error, "No ETDump output buffers saved in the data area");
+      }
+    }
+#endif
+    ET_LOG(Info, "[base64] buffer size: %d", base64buffer_len);
+
     uint8_t* encoded_buf = reinterpret_cast<uint8_t*>(
-        ctx.method_allocator->allocate(encoded_len + 1));
+        ctx.method_allocator->allocate(base64buffer_len + 1));
     if (encoded_buf != nullptr) {
-      int ret = base64_encode(
-          encoded_buf, (uint8_t*)result.buf, &encoded_len, &len, mode);
-      encoded_buf[encoded_len] = 0x00; // Ensure null termination
-      ET_LOG(Info, "Writing etdump.bin [base64]");
+      int ret;
+      const char* debug_buffer_flag = "";
+      printf("#[RUN THIS]\n");
+#if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
+      if (dump_outputs) {
+        ret = base64_encode(
+            encoded_buf,
+            (uint8_t*)ctx.debug_buffer,
+            &encoded_outputdump_len,
+            &outputdump_len,
+            mode);
+        encoded_buf[encoded_outputdump_len] = 0x00; // Ensure null termination
+        printf("# Writing debug_buffer.bin [base64]\n");
+        printf("echo \"%s\" | base64 -d >debug_buffer.bin\n", encoded_buf);
+        debug_buffer_flag = "--debug_buffer_path debug_buffer.bin";
+      }
+#endif
+      ret = base64_encode(
+          encoded_buf,
+          (uint8_t*)result.buf,
+          &encoded_etdump_len,
+          &etdump_len,
+          mode);
+      encoded_buf[encoded_etdump_len] = 0x00; // Ensure null termination
+      printf("# Writing etdump.bin [base64]\n");
+      printf("echo \"%s\" | base64 -d >etdump.bin\n", encoded_buf);
+
+      printf("# Generate cpu cycle table with:\n");
       printf(
-          "#---\necho \"%s\" | base64 -d >etdump.bin\npython3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles\n#---\n",
-          encoded_buf);
+          "python3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin %s --source_time_scale cycles --target_time_scale cycles\n",
+          debug_buffer_flag);
+      printf("#[END]\n");
+
     } else {
       ET_LOG(
           Error,
           "Could not allocate memory etdump base64 encoding size %zu",
-          encoded_len + 1);
+          encoded_etdump_len + 1);
     }
   }
-#else
-  // Dump the etdump data containing profiling/debugging data to the specified
-  // file.
-  etdump_result result = etdump_gen.get_etdump_data();
+#else // !defined(SEMIHOSTING)
+#if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
+  if (ctx.debug_buffer != nullptr) {
+    // Dump the etdump outputs data to a file.
+    size_t outputdump_len = ctx.etdump_gen->get_data_sink()->get_used_bytes();
+    const char* etdump_output_filename = "debug_buffer.bin";
+    ET_LOG(
+        Info,
+        "Writing etdump debug_buffer to file: %s",
+        etdump_output_filename);
+    FILE* f = fopen(etdump_output_filename, "w+");
+    fwrite((uint8_t*)ctx.debug_buffer, 1, outputdump_len, f);
+    fclose(f);
+  }
+#endif
+
+  // Dump the etdump data containing profiling/debugging data to a file.
+  etdump_result result = ctx.etdump_gen->get_etdump_data();
   if (result.buf != nullptr && result.size > 0) {
     // On a device with a file system we can just write it out
     // to the file-system.
-    char etdump_filename = "etdump.bin";
+    const char* etdump_filename = "etdump.bin";
     ET_LOG(Info, "Writing etdump to file: %s", etdump_filename);
     FILE* f = fopen(etdump_filename, "w+");
     fwrite((uint8_t*)result.buf, 1, result.size, f);
     fclose(f);
     free(result.buf);
   }
-#endif
-#endif
+#endif // !defined(SEMIHOSTING)
+#endif // defined(ET_EVENT_TRACER_ENABLED)
 }
 
-void verify_result(RunnerContext& ctx, const void* model_pte) {
+bool verify_result(RunnerContext& ctx, const void* model_pte) {
+  bool model_ok = false;
 #if defined(ET_BUNDLE_IO)
   if (ctx.bundle_io) {
     // Check result
@@ -824,6 +1091,7 @@ void verify_result(RunnerContext& ctx, const void* model_pte) {
     if (status == Error::Ok) {
       ET_LOG(Info, "Model output match expected BundleIO bpte ref data.");
       ET_LOG(Info, "TEST: BundleIO index[%d] Test_result: PASS", testset_idx);
+      model_ok = true;
     } else {
       ET_LOG(
           Error,
@@ -831,30 +1099,40 @@ void verify_result(RunnerContext& ctx, const void* model_pte) {
           et_rtol,
           et_atol);
       ET_LOG(Error, "TEST: BundleIO index[%d] Test_result: FAIL", testset_idx);
+      ET_LOG(
+          Error, "Bundle verification failed with status 0x%" PRIx32, status);
+      model_ok = false;
     }
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "Bundle verification failed with status 0x%" PRIx32,
-        status);
+  } else {
+    // No checking done, assume true
+    model_ok = true;
   }
-#else
+#else // defined(ET_BUNDLE_IO)
   (void)ctx;
   (void)model_pte;
-#endif
+  // No checking done, assume true
+  model_ok = true;
+#endif // defined(ET_BUNDLE_IO)
+  return model_ok;
 }
 
-void run_model(RunnerContext& ctx, const void* model_pte) {
+bool run_model(RunnerContext& ctx, const void* model_pte) {
   Error status;
   ET_LOG(Info, "Starting running %d inferences...", num_inferences);
-
   int n = 0;
   StartMeasurements();
-  for (n = 1; n <= num_inferences; n++) {
+  for (n = 0; n < num_inferences; n++) {
+    ET_LOG(Debug, "Running inference number %d", n);
     // Run the model.
     status = ctx.method.value()->execute();
     if (status != Error::Ok) {
       break;
     }
+    // Reset the temporary allocator holding the scratch buffer between
+    // inferences. We want to reuse the temp_allocator between inferences of the
+    // same Ethos-U custom delegate, not allocate memory with every new
+    // inference.
+    ctx.temp_allocator.reset(temp_allocation_pool_size, temp_allocation_pool);
   }
   StopMeasurements(n);
 
@@ -866,7 +1144,10 @@ void run_model(RunnerContext& ctx, const void* model_pte) {
 
   ET_LOG(Info, "%d inferences finished", num_inferences);
   print_outputs(ctx);
-  verify_result(ctx, model_pte);
+  bool model_ok = verify_result(ctx, model_pte);
+  ET_LOG(Info, "Model run: %d", model_ok);
+
+  return model_ok;
 }
 
 } // namespace
@@ -893,7 +1174,15 @@ int main(int argc, const char* argv[]) {
 
   executorch::runtime::runtime_init();
   std::vector<std::pair<char*, size_t>> input_buffers;
+
+#if defined(ET_MODEL_PTE_ADDR)
+  // pte not in a known array but just on a memory/flash address
+  // As we dont know the size we pick something big enough
+  // Actual model is read from this area.
+  size_t pte_size = 0x10000000;
+#else
   size_t pte_size = sizeof(model_pte);
+#endif
 
   RunnerContext ctx;
 
@@ -946,13 +1235,26 @@ int main(int argc, const char* argv[]) {
     }
   }
 #endif
+
+  // Byte 4-7 is usually a nice magic number that could be good to print to make
+  // sure it's OK ETxx for PTE and BPxx for bundled pte where xx is a number.
   ET_LOG(
-      Info, "PTE in %p %c Size: %lu bytes", model_pte, model_pte[0], pte_size);
+      Info,
+      "PTE @ %p [----%c%c%c%c]",
+      model_pte,
+      model_pte[4],
+      model_pte[5],
+      model_pte[6],
+      model_pte[7]);
 
   runner_init(ctx, input_buffers, pte_size);
-  run_model(ctx, model_pte);
+  bool model_ok = run_model(ctx, model_pte);
+  ET_LOG(Info, "Model run: %d", model_ok);
+
   log_mem_status(ctx);
   write_etdump(ctx);
+
+  ET_CHECK_MSG(model_ok == true, "Problem running model");
 
   ET_LOG(Info, "Program complete, exiting.");
 #if defined(SEMIHOSTING)

@@ -543,6 +543,9 @@ class MapReduceOverDimListPlan {
       const MapOp& map_fun,
       const ReduceOp& reduce_fun,
       const size_t out_ix) const {
+    ET_CHECK_MSG(
+        plan_.get_input_tensor().numel() > 0, "Input tensor must be nonempty");
+
     const size_t init_index =
         get_init_index(plan_.get_input_tensor(), plan_.get_dim_list(), out_ix);
 
@@ -811,10 +814,12 @@ template <typename Func>
     const Func& func) {
 #ifdef ET_USE_THREADPOOL
   const ssize_t reduction_size = get_reduced_dim_product(in, dim);
-  const auto grain_size = std::max(
-      static_cast<ssize_t>(1),
-      static_cast<ssize_t>(executorch::extension::internal::GRAIN_SIZE) /
-          reduction_size);
+  const auto grain_size = reduction_size == 0
+      ? 1
+      : std::max(
+            static_cast<ssize_t>(1),
+            static_cast<ssize_t>(executorch::extension::internal::GRAIN_SIZE) /
+                reduction_size);
 #else // ET_USE_THREADPOOL
   const auto grain_size = 1;
 #endif // ET_USE_THREADPOOL
@@ -834,10 +839,12 @@ template <typename Func>
     const Func& func) {
 #ifdef ET_USE_THREADPOOL
   const ssize_t reduction_size = get_reduced_dim_product(in, dim_list);
-  const auto grain_size = std::max(
-      static_cast<ssize_t>(1),
-      static_cast<ssize_t>(executorch::extension::internal::GRAIN_SIZE) /
-          reduction_size);
+  const auto grain_size = reduction_size == 0
+      ? 1
+      : std::max(
+            static_cast<ssize_t>(1),
+            static_cast<ssize_t>(executorch::extension::internal::GRAIN_SIZE) /
+                reduction_size);
 #else // ET_USE_THREADPOOL
   const auto grain_size = 1;
 #endif // ET_USE_THREADPOOL

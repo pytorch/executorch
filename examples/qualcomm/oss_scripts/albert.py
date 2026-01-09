@@ -17,9 +17,13 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_masked_language_model_dataset,
     make_output_dir,
     parse_skip_delegation_node,
@@ -30,6 +34,9 @@ from transformers import AlbertConfig, AutoModelForMaskedLM, AutoTokenizer
 
 
 def main(args):
+    if args.compile_only and args.pre_gen_pte:
+        raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
+
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     os.makedirs(args.artifact, exist_ok=True)
@@ -51,35 +58,48 @@ def main(args):
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_masked_language_model_dataset(
+        inputs, targets = get_masked_language_model_dataset(
             args.dataset, tokenizer, data_size
         )
 
     config = AlbertConfig.from_pretrained(model_name)
     config.hidden_act = "gelu"
     module = AutoModelForMaskedLM.from_pretrained(model_name, config=config).eval()
-    pte_filename = "albert_qnn_q16"
+    pte_filename = "albert_qnn"
 
-    # lower to QNN
-    passes_job = get_capture_program_passes()
-    build_executorch_binary(
-        module,
-        inputs[0],
-        args.model,
-        f"{args.artifact}/{pte_filename}",
-        dataset=inputs,
-        skip_node_id_set=skip_node_id_set,
-        skip_node_op_set=skip_node_op_set,
-        quant_dtype=QuantDtype.use_16a16w,
-        passes_job=passes_job,
-        shared_buffer=args.shared_buffer,
-    )
+    # Skip lowering/compilation if using pre-generated PTE
+    if not args.pre_gen_pte:
+        # lower to QNN
+        passes_job = get_capture_program_passes()
+        backend = get_backend_type(args.backend)
+        quant_dtype = {
+            QnnExecuTorchBackendType.kGpuBackend: None,
+            QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_16a16w,
+        }[backend]
+        build_executorch_binary(
+            module,
+            inputs[0],
+            args.model,
+            f"{args.artifact}/{pte_filename}",
+            dataset=inputs,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
+            quant_dtype=quant_dtype,
+            backend=backend,
+            passes_job=passes_job,
+            shared_buffer=args.shared_buffer,
+            online_prepare=args.online_prepare,
+        )
 
     if args.compile_only:
         return
 
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_filename}"
-    pte_path = f"{args.artifact}/{pte_filename}.pte"
+    pte_path = (
+        f"{args.pre_gen_pte}/{pte_filename}.pte"
+        if args.pre_gen_pte
+        else f"{args.artifact}/{pte_filename}.pte"
+    )
 
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
@@ -89,12 +109,15 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
     # accuracy analysis
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
     adb.pull(output_path=args.artifact)
     # since the original nn.Module could not perform well on this task either
@@ -152,6 +175,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

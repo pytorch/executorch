@@ -68,7 +68,6 @@ typedef NS_ENUM(uint8_t, ExecuTorchShapeDynamism) {
  * @return An NSInteger indicating the size in bytes.
  */
 FOUNDATION_EXPORT
-__attribute__((deprecated("This API is experimental.")))
 NSInteger ExecuTorchSizeOfDataType(ExecuTorchDataType dataType)
     NS_SWIFT_NAME(size(ofDataType:));
 
@@ -79,7 +78,6 @@ NSInteger ExecuTorchSizeOfDataType(ExecuTorchDataType dataType)
  * @return An NSInteger equal to the product of the sizes of all dimensions.
  */
 FOUNDATION_EXPORT
-__attribute__((deprecated("This API is experimental.")))
 NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape)
     NS_REFINED_FOR_SWIFT;
 
@@ -90,7 +88,6 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape)
  * initializers and utility methods to work with tensor data.
  */
  NS_SWIFT_NAME(AnyTensor)
-__attribute__((deprecated("This API is experimental.")))
 __attribute__((objc_subclassing_restricted))
 @interface ExecuTorchTensor : NSObject<NSCopying>
 
@@ -155,13 +152,42 @@ __attribute__((objc_subclassing_restricted))
 
 /**
  * Creates a new tensor that shares the underlying data storage with the
+ * given tensor, with metadata overrides. An empty array for
+ * a parameter signifies that it should be inherited or derived.
+ *
+ * @param otherTensor The tensor instance to create a view of.
+ * @param shape An override for the tensor's shape.
+ * @param dimensionOrder An override for the tensor's dimension order.
+ * @param strides An override for the tensor's strides.
+ * @return A new ExecuTorchTensor instance that shares data with otherTensor.
+ */
+- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
+                         shape:(NSArray<NSNumber *> *)shape
+                dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                       strides:(NSArray<NSNumber *> *)strides
+    NS_REFINED_FOR_SWIFT;
+
+/**
+ * Creates a new tensor that shares the underlying data storage with the
+ * given tensor, with an overridden shape.
+ *
+ * @param otherTensor The tensor instance to create a view of.
+ * @param shape An override for the tensor's shape.
+ * @return A new ExecuTorchTensor instance that shares data with otherTensor.
+ */
+- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
+                         shape:(NSArray<NSNumber *> *)shape
+    NS_SWIFT_UNAVAILABLE("");
+
+/**
+ * Creates a new tensor that shares the underlying data storage with the
  * given tensor. This new tensor is a view and does not own the data.
  *
  * @param otherTensor The tensor instance to create a view of.
  * @return A new ExecuTorchTensor instance that shares data with otherTensor.
  */
 - (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
-    NS_SWIFT_NAME(init(_:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Creates a deep copy of the tensor.
@@ -170,6 +196,16 @@ __attribute__((objc_subclassing_restricted))
  * @return A new ExecuTorchTensor instance that is a duplicate of the current tensor.
  */
 - (instancetype)copy;
+
+/**
+ * Creates a deep copy of the tensor, potentially casting to a new data type.
+ * The new tensor will have its own copy of the data.
+ *
+ * @param dataType The desired data type for the new tensor.
+ * @return A new ExecuTorchTensor instance that is a duplicate (and possibly casted) of the current tensor.
+*/
+- (instancetype)copyToDataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_NAME(copy(to:));
 
 /**
  * Executes a block with a pointer to the tensor's immutable byte data.

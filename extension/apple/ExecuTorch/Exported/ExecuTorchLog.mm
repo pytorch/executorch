@@ -90,9 +90,9 @@
     [self->_buffer addObject:@{
       @"level" : @(level),
       @"timestamp" : @(timestamp),
-      @"filename" : filename,
+      @"filename" : filename ?: @"(null)",
       @"line" : @(line),
-      @"message" : message
+      @"message" : message ?: @"(null)"
     }];
   });
   for (id<ExecuTorchLogSink> sink in sinks) {
@@ -151,6 +151,7 @@ void et_pal_emit_log_message(et_timestamp_t timestamp,
   case kFatal:
     logType = OS_LOG_TYPE_FAULT;
     break;
+  case kUnknown:
   default:
     logType = OS_LOG_TYPE_DEFAULT;
     break;

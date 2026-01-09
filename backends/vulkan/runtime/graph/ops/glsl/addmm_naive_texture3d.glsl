@@ -21,13 +21,17 @@ ${layout_declare_tensor(B, "r", "mat1_tensor", DTYPE, "texture3d")}
 ${layout_declare_tensor(B, "r", "mat2_tensor", DTYPE, "texture3d")}
 $if HAS_BIAS:
   ${layout_declare_tensor(B, "r", "bias_tensor", DTYPE, "texture3d")}
-${layout_declare_ubo(B, "ivec4", "out_sizes")}
-${layout_declare_ubo(B, "ivec3", "out_limits")}
-${layout_declare_ubo(B, "ivec4", "mat1_sizes")}
-${layout_declare_ubo(B, "ivec4", "mat2_sizes")}
-$if HAS_BIAS:
-  ${layout_declare_ubo(B, "ivec4", "bias_sizes")}
-  ${layout_declare_ubo(B, "float", "alpha", "float", "beta")}
+
+layout(push_constant) uniform restrict Block {
+  ivec4 out_sizes;
+  ivec4 mat1_sizes;
+  ivec4 mat2_sizes;
+  ivec3 out_limits;
+  $if HAS_BIAS:
+    ivec4 bias_sizes;
+    float alpha;
+    float beta;
+};
 
 #include "indexing_utils.h"
 
@@ -136,6 +140,9 @@ vec4 matmul_naive_k_dim_packed_row_dim_packed(const ivec3 out_lpos) {
     const vec4 mat1_tex = texelFetch(mat1_tensor, mat1_pos, 0);
 
     for (int r = 0; r < 4; ++r) {
+      if (4 * i + r >= mat2_sizes.y) {
+        continue;
+      }
       // On-demand construction of mat2_pos appears to provide the lowest
       // latency. Surprisingly, this doesn't translate to mat1_pos.
       ivec3 mat2_pos = ivec3(0);

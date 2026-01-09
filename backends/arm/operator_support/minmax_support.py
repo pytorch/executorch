@@ -2,18 +2,26 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Declare operator support for min/max along a dimension in TOSA.
+
+Provide support checks ensuring that argmax/argmin indices are not consumed,
+restricting to float profiles until index quantization is supported.
+
+"""
 
 import torch.fx as fx
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
 @register_tosa_support_check
 class MinMaxSupported(SupportedTOSAOperatorCheck):
+    """Provide TOSA support check for ``aten.max.dim`` and ``aten.min.dim``."""
+
     targets = [
         exir_ops.edge.aten.max.dim,
         exir_ops.edge.aten.min.dim,
@@ -24,7 +32,16 @@ class MinMaxSupported(SupportedTOSAOperatorCheck):
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
-    def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
+    def is_node_tosa_supported(
+        self, node: fx.Node, tosa_spec: TosaSpecification
+    ) -> bool:
+        """Return True if the node is supported by TOSA.
+
+        Allow max/min when the argmax/argmin output is unused or dropped (i.e.,
+        only the value is consumed). Disallow cases where arg indices are
+        further used.
+
+        """
         if node.target in [exir_ops.edge.aten.max.dim, exir_ops.edge.aten.min.dim]:
             no_argmax = len(node.users) == 1
             no_argmax_users = (len(node.users) == 2) and (
@@ -32,6 +49,13 @@ class MinMaxSupported(SupportedTOSAOperatorCheck):
             )
 
             if not (no_argmax or no_argmax_users):
+                self.reporter.report_reject(
+                    node,
+                    (
+                        "Using the indices output is not supported; only usage of the "
+                        "values output is supported."
+                    ),
+                )
                 return False
 
         return True

@@ -43,9 +43,7 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
 
   if (v_dst.storage_type() == utils::kBuffer) {
     kernel_name = "nchw_to_buffer";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
+    add_dtype_suffix(kernel_name, v_dst.dtype());
     add_dtype_suffix(kernel_name, v_dst.dtype());
     return VK_KERNEL_FROM_STR(kernel_name);
   }
@@ -55,6 +53,7 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
     kernel_name += "_no_pc";
   }
   add_storage_type_suffix(kernel_name, v_dst.storage_type());
+  add_dtype_suffix(kernel_name, v_dst.dtype());
   add_dtype_suffix(kernel_name, v_dst.dtype());
 
   return VK_KERNEL_FROM_STR(kernel_name);
@@ -80,9 +79,7 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
 
   if (v_src.storage_type() == utils::kBuffer) {
     kernel_name = "buffer_to_nchw";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
+    add_dtype_suffix(kernel_name, v_src.dtype());
     add_dtype_suffix(kernel_name, v_src.dtype());
     return VK_KERNEL_FROM_STR(kernel_name);
   }
@@ -92,6 +89,7 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
     kernel_name += "_no_pc";
   }
   add_storage_type_suffix(kernel_name, v_src.storage_type());
+  add_dtype_suffix(kernel_name, v_src.dtype());
   add_dtype_suffix(kernel_name, v_src.dtype());
 
   return VK_KERNEL_FROM_STR(kernel_name);
@@ -120,9 +118,7 @@ void record_nchw_to_buffer_op(
           vkapi::PipelineStage::COMPUTE,
           vkapi::MemoryAccessType::WRITE),
       src_buffer,
-      v_dst.sizes_ubo(),
-      v_dst.strides_ubo(),
-      v_dst.numel_ubo());
+      v_dst.buffer_meta_ubo());
 }
 
 void record_buffer_to_nchw_op(
@@ -140,9 +136,7 @@ void record_buffer_to_nchw_op(
       0,
       dst_buffer,
       v_src.buffer(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
-      v_src.sizes_ubo(),
-      v_src.strides_ubo(),
-      v_src.numel_ubo());
+      v_src.buffer_meta_ubo());
 }
 
 void record_nchw_to_image_op(
@@ -363,33 +357,76 @@ void record_matmul_texture3d(
     api::Context* context,
     api::vTensor& out,
     api::vTensor& mat1,
-    api::vTensor& mat2) {
-  std::string kernel_name = "matmul_naive";
+    api::vTensor& mat2,
+    bool mat2_is_transposed) {
+  std::string kernel_name =
+      mat2_is_transposed ? "matmul_transposed_naive" : "matmul_naive";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, out.storage_type());
   add_dtype_suffix(kernel_name, out.dtype());
 
   utils::uvec3 global_wg_size = out.logical_limits();
 
+  struct PushConstants {
+    utils::ivec4 out_sizes;
+    utils::ivec4 mat1_sizes;
+    utils::ivec4 mat2_sizes;
+    utils::ivec3 out_limits;
+  };
+
+  auto make_ivec4 = [](const std::vector<int64_t>& sizes) -> utils::ivec4 {
+    utils::ivec4 result{1, 1, 1, 1};
+    for (size_t i = 0; i < std::min(sizes.size(), size_t(4)); ++i) {
+      result.data[i] = static_cast<int32_t>(sizes[i]);
+    }
+    return result;
+  };
+
+  auto make_ivec3 = [](const utils::uvec3& v) -> utils::ivec3 {
+    return {
+        static_cast<int32_t>(v.data[0]),
+        static_cast<int32_t>(v.data[1]),
+        static_cast<int32_t>(v.data[2])};
+  };
+
+  PushConstants push_constants{
+      make_ivec4(out.sizes()),
+      make_ivec4(mat1.sizes()),
+      make_ivec4(mat2.sizes()),
+      make_ivec3(out.logical_limits()),
+  };
+
   vkapi::PipelineBarrier pipeline_barrier{};
-  api::context()->submit_compute_job(
+
+  vkapi::SpecVarList specialization_constants = {
+      out.hashed_layout(), mat1.hashed_layout(), mat2.hashed_layout()};
+
+  utils::uvec3 local_wg_size = {8, 8, 1};
+
+  vkapi::DescriptorSet descriptor_set = api::context()->get_descriptor_set(
       VK_KERNEL_FROM_STR(kernel_name),
-      pipeline_barrier,
-      global_wg_size,
-      {8, 8, 1},
-      {out.hashed_layout(), mat1.hashed_layout(), mat2.hashed_layout()},
-      VK_NULL_HANDLE,
+      utils::WorkgroupSize(local_wg_size),
+      specialization_constants,
+      sizeof(push_constants));
+
+  descriptor_set.bind(
       0,
       out.image(
           pipeline_barrier,
           vkapi::PipelineStage::COMPUTE,
-          vkapi::MemoryAccessType::WRITE),
-      mat1.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
-      mat2.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
-      out.sizes_ubo(),
-      out.logical_limits_ubo(),
-      mat1.sizes_ubo(),
-      mat2.sizes_ubo());
+          vkapi::MemoryAccessType::WRITE));
+  descriptor_set.bind(
+      1, mat1.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE));
+  descriptor_set.bind(
+      2, mat2.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE));
+
+  api::context()->register_shader_dispatch(
+      descriptor_set,
+      pipeline_barrier,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_wg_size,
+      &push_constants,
+      sizeof(push_constants));
 }
 
 //
@@ -405,7 +442,11 @@ void record_matmul_texture3d(
   _(int8_t, QInt8)
 
 void fill_vtensor(api::vTensor& vten, std::vector<float>& data) {
-  api::StagingBuffer staging_buffer(api::context(), vten.dtype(), data.size());
+  api::StagingBuffer staging_buffer(
+      api::context(),
+      vten.dtype(),
+      data.size(),
+      vkapi::CopyDirection::HOST_TO_DEVICE);
 
 #define CASE(ctype, name)                                     \
   case vkapi::ScalarType::name: {                             \
@@ -492,7 +533,10 @@ void fill_vtensor(
 
 void extract_vtensor(api::vTensor& vten, std::vector<float>& data) {
   api::StagingBuffer staging_buffer(
-      api::context(), vten.dtype(), vten.staging_buffer_numel());
+      api::context(),
+      vten.dtype(),
+      vten.staging_buffer_numel(),
+      vkapi::CopyDirection::DEVICE_TO_HOST);
 
   if (vten.storage_type() == utils::StorageType::BUFFER) {
     record_buffer_to_nchw_op(api::context(), vten, staging_buffer.buffer());

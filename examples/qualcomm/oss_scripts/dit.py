@@ -7,15 +7,20 @@
 import json
 import logging
 import os
+
 from multiprocessing.connection import Client
 
 import numpy as np
 import torch
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     make_output_dir,
     make_quantizer,
     parse_skip_delegation_node,
@@ -37,7 +42,7 @@ def get_rvlcdip_dataset(data_size):
     )
 
     # prepare input data
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     for index, data in enumerate(dataset):
         if index >= data_size:
             break
@@ -47,9 +52,8 @@ def get_rvlcdip_dataset(data_size):
         )
         inputs.append((feature["pixel_values"],))
         targets.append(torch.tensor(target))
-        input_list += f"input_{index}_0.raw\n"
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def main(args):
@@ -58,11 +62,6 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
     data_num = 160
     if args.ci:
         inputs = [(torch.rand(1, 3, 224, 224),)]
@@ -70,7 +69,7 @@ def main(args):
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_rvlcdip_dataset(data_num)
+        inputs, targets = get_rvlcdip_dataset(data_num)
 
     module = (
         AutoModelForImageClassification.from_pretrained(
@@ -80,12 +79,16 @@ def main(args):
         .to("cpu")
     )
 
-    pte_filename = "dit_qnn_q8"
+    pte_filename = "dit_qnn"
     # Use HistogramObserver to get better performance
-    quantizer = make_quantizer(
-        quant_dtype=QuantDtype.use_8a8w, act_observer=HistogramObserver
-    )
 
+    backend = get_backend_type(args.backend)
+    quantizer = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w, act_observer=HistogramObserver
+        ),
+    }[backend]
     build_executorch_binary(
         module.eval(),
         inputs[0],
@@ -94,9 +97,10 @@ def main(args):
         inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        quant_dtype=QuantDtype.use_8a8w,
         custom_quantizer=quantizer,
+        backend=backend,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -111,8 +115,10 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -151,6 +157,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

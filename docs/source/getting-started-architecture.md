@@ -4,7 +4,7 @@ This page describes the technical architecture of ExecuTorch and its individual 
 
 **Context**
 
-In order to target on-device AI with diverse hardware, critical power requirements, and realtime processing needs, a single monolithic solution is not practical. Instead, a modular, layered, and extendable architecture is desired. ExecuTorch defines a streamlined workflow to prepare (export, transformation, and compilation) and execute a PyTorch program, with opinionated out-of-the-box default components and well-defined entry points for customizations. This architecture greatly improves portability, allowing engineers to use a performant lightweight, cross-platform runtime that easily integrates into different devices and platforms.
+In order to target on-device AI with diverse hardware, critical power requirements, and real-time processing needs, a single monolithic solution is not practical. Instead, a modular, layered, and extensible architecture is desired. ExecuTorch defines a streamlined workflow to prepare (export, transformation, and compilation) and execute a PyTorch program, with opinionated out-of-the-box default components and well-defined entry points for customizations. This architecture greatly improves portability, allowing engineers to use a performant lightweight, cross-platform runtime that easily integrates into different devices and platforms.
 
 ## Overview
 
@@ -89,6 +89,6 @@ _Executor_ is the entry point to load the program and execute it. The execution 
 
 ## Developer Tools
 
-It should be efficient for users to go from research to production using the flow above. Productivity is essentially important, for users to author, optimize and deploy their models. We provide [ExecuTorch Developer Tools](devtools-overview.md) to improve productivity. The Developer Tools are not in the diagram. Instead it's a tool set that covers the developer workflow in all three phases.
+It should be efficient for users to go from research to production using the flow above. Productivity is especially important, for users to author, optimize and deploy their models. We provide [ExecuTorch Developer Tools](devtools-overview.md) to improve productivity. The Developer Tools are not in the diagram. Instead it's a tool set that covers the developer workflow in all three phases.
 
 During the program preparation and execution, users can use the ExecuTorch Developer Tools to profile, debug, or visualize the program. Since the end-to-end flow is within the PyTorch ecosystem, users can correlate and display performance data along with graph visualization as well as direct references to the program source code and model hierarchy. We consider this to be a critical component for quickly iterating and lowering PyTorch programs to edge devices and environments.

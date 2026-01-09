@@ -48,22 +48,33 @@ prepare_artifacts_upload() {
   fi
 }
 
+
 build_cmake_executor_runner() {
   local backend_string_select="${1:-}"
   echo "Building executor_runner"
   rm -rf ${CMAKE_OUTPUT_DIR}
   mkdir ${CMAKE_OUTPUT_DIR}
+  # Common options:
+  COMMON="-DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE"
   if [[ "$backend_string_select" == "XNNPACK" ]]; then
     echo "Backend $backend_string_select selected"
-    (cd ${CMAKE_OUTPUT_DIR} \
-      && cmake -DCMAKE_BUILD_TYPE=Release \
+    cmake -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+        ${COMMON} \
+        -B${CMAKE_OUTPUT_DIR} .
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4
+  elif [[ "$backend_string_select" == "CUDA" ]]; then
+    echo "Backend $backend_string_select selected"
+    cmake -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_CUDA=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+        ${COMMON} \
+        -B${CMAKE_OUTPUT_DIR} .
     cmake --build ${CMAKE_OUTPUT_DIR} -j4
   else
     cmake -DCMAKE_BUILD_TYPE=Debug \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        ${COMMON} \
         -B${CMAKE_OUTPUT_DIR} .
     cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
   fi
@@ -97,7 +108,7 @@ test_model() {
     bash examples/models/llava/install_requirements.sh
     STRICT="--no-strict"
   fi
-  if [[ "${MODEL_NAME}" == "qwen2_5" ]]; then
+  if [[ "${MODEL_NAME}" == "qwen2_5_1_5b" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
       # Test export_llm script: python3 -m extension.llm.export.export_llm.
@@ -131,13 +142,13 @@ test_model_with_xnnpack() {
     return 0
   fi
 
-  # Delegation
+  # Delegation and test with pybindings
   if [[ ${WITH_QUANTIZATION} == true ]]; then
     SUFFIX="q8"
-    "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --quantize
+    "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --quantize --test_after_export
   else
     SUFFIX="fp32"
-    "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate
+    "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --test_after_export
   fi
 
   OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_${SUFFIX}.pte"
@@ -320,6 +331,13 @@ test_model_with_mediatek() {
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "*.pte" -print -quit)
 }
 
+test_model_with_cuda() {
+  # Export a basic .pte and .ptd, then run the model.
+  "${PYTHON_EXECUTABLE}" -m examples.cuda.scripts.export --model_name="${MODEL_NAME}" --output_dir "./"
+  build_cmake_executor_runner "CUDA"
+  ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./${MODEL_NAME}.pte" --data_path "./aoti_cuda_blob.ptd"
+}
+
 
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
@@ -369,6 +387,12 @@ elif [[ "${BACKEND}" == *"xnnpack"* ]]; then
 elif [[ "${BACKEND}" == "mediatek" ]]; then
   echo "Testing ${MODEL_NAME} with mediatek..."
   test_model_with_mediatek
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
+elif [[ "${BACKEND}" == "cuda" ]]; then
+  echo "Testing ${MODEL_NAME} with cuda..."
+  test_model_with_cuda
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi

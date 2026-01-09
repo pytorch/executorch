@@ -23,8 +23,10 @@ layout(std430) buffer;
 ${layout_declare_tensor(B, "w", "tout", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "tin", DTYPE, STORAGE)}
 
-${layout_declare_ubo(B, "ivec3", "tout_limits")}
-${layout_declare_ubo(B, "ivec4", "tin_sizes")}
+layout(push_constant) uniform restrict Block {
+  ivec4 tin_sizes;
+  ivec3 tout_limits;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -42,7 +44,8 @@ layout(constant_id = 5) const int group_dim = 1;
 // work group will write into its assigned element in the shared array.
 #define MAX_NTHREADS 16
 
-shared vec4 shared_vecs[MAX_NTHREADS];
+shared vec4 shared_max[MAX_NTHREADS];
+shared vec4 shared_sum[MAX_NTHREADS];
 
 #include "indexing_utils.h"
 
@@ -102,13 +105,13 @@ void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
        i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
     max_elements = max(max_elements, load_texel(tin, scan_pos));
   }
-  shared_vecs[smi] = max_elements;
+  shared_max[smi] = max_elements;
   barrier();
   // Iterate over the partial maximums to obtain the overall maximum
   group_i = tid.y * NWORKERS;
-  max_elements = shared_vecs[group_i++];
+  max_elements = shared_max[group_i++];
   for (int i = 1; i < NWORKERS; ++i, group_i++) {
-    max_elements = max(max_elements, shared_vecs[group_i]);
+    max_elements = max(max_elements, shared_max[group_i]);
   }
 
   scan_pos[reduce_dim] = tid.x;
@@ -118,13 +121,13 @@ void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
        i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
     denominators += exp(load_texel(tin, scan_pos) - max_elements);
   }
-  shared_vecs[smi] = denominators;
+  shared_sum[smi] = denominators;
   barrier();
   // Iterate over the partial sums to obtain the overall sum
   group_i = tid.y * NWORKERS;
-  denominators = shared_vecs[group_i++];
+  denominators = shared_sum[group_i++];
   for (int i = 1; i < NWORKERS; ++i, group_i++) {
-    denominators += shared_vecs[group_i];
+    denominators += shared_sum[group_i];
   }
 
   // Determine if there are any padding elements in the final texel of the
@@ -184,13 +187,13 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
       max_elements.x = max(intex[i], max_elements.x);
     }
   }
-  shared_vecs[smi] = max_elements;
+  shared_max[smi] = max_elements;
   barrier();
   // Iterate over the partial maximums to obtain the overall maximum
   group_i = tid.y * NWORKERS;
-  max_elements = shared_vecs[group_i++];
+  max_elements = shared_max[group_i++];
   for (int i = 1; i < NWORKERS; ++i, group_i++) {
-    max_elements = max(max_elements, shared_vecs[group_i]);
+    max_elements = max(max_elements, shared_max[group_i]);
   }
   // Each element of the texel is itself a partial maximum; iterate over the
   // texel to find the actual maximum
@@ -214,13 +217,13 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
       denominators.x += exp(intex[i] - max_element);
     }
   }
-  shared_vecs[smi] = denominators;
+  shared_sum[smi] = denominators;
   barrier();
   // Iterate over the partial sums to obtain the overall sum
   group_i = tid.y * NWORKERS;
-  denominators = shared_vecs[group_i++];
+  denominators = shared_sum[group_i++];
   for (int i = 1; i < NWORKERS; ++i, group_i++) {
-    denominators += shared_vecs[group_i];
+    denominators += shared_sum[group_i];
   }
   // Reduce over the accumulated texel to find the overall sum
   float denominator = 0;

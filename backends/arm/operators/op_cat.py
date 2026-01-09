@@ -3,9 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 from typing import Any, List
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -13,8 +14,10 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
 
@@ -34,11 +37,19 @@ class CatVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        import serializer.tosa_serializer as ts
-
+        supported_dtypes = [ts.DType.BOOL, ts.DType.INT8, ts.DType.INT32, ts.DType.FP32]
+        if self.tosa_spec.support_extension("int16"):
+            supported_dtypes.append(ts.DType.INT16)
         validate_num_inputs(self.target, inputs, [1, 2])
+        input_tosa_args = [TosaArg(arg, output.tosa_spec) for arg in inputs[0].special]
+        validate_same_dtype(self.target, [*input_tosa_args, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*input_tosa_args, output],
+            supported_dtypes,
+            output.tosa_spec,
+        )
 
-        tensors = inputs[0].special
         dim = 0 if len(inputs) < 2 else inputs[1].number
         rank = len(output.shape)
         dim = (dim + rank) % rank
@@ -47,9 +58,11 @@ class CatVisitor(NodeVisitor):
         attr = ts.TosaSerializerAttribute()
         attr.ConcatAttribute(dim)
 
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().CONCAT,
-            [tensor.name for tensor in tensors],
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.Op.CONCAT,
+            [tensor.name for tensor in input_tosa_args],
             [output.name],
             attr,
         )

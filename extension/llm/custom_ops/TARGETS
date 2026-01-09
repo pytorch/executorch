@@ -60,5 +60,20 @@ runtime.python_test(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)
+
+runtime.python_test(
+    name = "test_update_cross_attn_cache",
+    srcs = [
+        "test_update_cross_attn_cache.py",
+    ],
+    preload_deps = [
+        ":custom_ops_aot_lib",
+        ":custom_ops_aot_py",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )

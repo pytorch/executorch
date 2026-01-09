@@ -44,6 +44,13 @@ void DispatchNode::encode(ComputeGraph* graph) {
   if (!shader_) {
     return;
   }
+
+  // If any global wg size element is 0, then skip encoding this shader
+  if (global_workgroup_size_[0] == 0 || global_workgroup_size_[1] == 0 ||
+      global_workgroup_size_[2] == 0) {
+    return;
+  }
+
   api::Context* const context = graph->context();
   vkapi::PipelineBarrier pipeline_barrier{};
 
@@ -53,8 +60,21 @@ void DispatchNode::encode(ComputeGraph* graph) {
 
   write_push_constant_data();
 
+#ifdef ET_EVENT_TRACER_ENABLED
+  std::string event_name;
+  if (!operator_json.empty()) {
+    event_name += "\"operator\": {" + operator_json + "}, ";
+  }
+  event_name += "\"kernel_name\": \"" + shader_.kernel_name + "\", ";
+  event_name += "\"operator_id\": " + std::to_string(operator_count);
+#endif
+
   context->report_shader_dispatch_start(
+#ifdef ET_EVENT_TRACER_ENABLED
+      event_name,
+#else
       shader_.kernel_name,
+#endif
       global_workgroup_size_,
       local_workgroup_size_,
       node_id_);

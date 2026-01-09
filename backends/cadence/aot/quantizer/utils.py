@@ -24,6 +24,12 @@ from torchao.quantization.pt2e import ObserverOrFakeQuantize
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
+def copy_node_metadata(dest_node: fx.Node, src_node: fx.Node) -> None:
+    for key in ["nn_module_stack", "stack_trace", "source_fn_stack"]:
+        if key in src_node.meta and src_node.meta[key]:
+            dest_node.meta[key] = src_node.meta[key]
+
+
 def quantize_tensor_multiplier(
     requantize_scale_tensor: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -114,14 +120,44 @@ def create_zero_bias_int32(
     """
     Creates a zero bias tensor with the shape of weight[0]
     """
-    attr_node = getattr(graph_module, weight_node.target)
+    try:
+        attr_node = getattr(graph_module, weight_node.target)
+    except AttributeError:
+        if "val" in weight_node.meta:
+            attr_node = weight_node.meta["val"]
+        else:
+            param_dict = dict(graph_module.named_parameters())
+            if weight_node.target in param_dict:
+                attr_node = param_dict[weight_node.target]
+            else:
+                buffer_dict = dict(graph_module.named_buffers())
+                if weight_node.target in buffer_dict:
+                    attr_node = buffer_dict[weight_node.target]
+                else:
+                    raise AttributeError(
+                        f"Could not find weight tensor for node {weight_node.target}. "
+                        f"Node metadata keys: {list(weight_node.meta.keys())}"
+                    )
+
     weight_shape = list(attr_node.shape)
     bias_shape = weight_shape[0]
-    return graph_module.graph.call_function(
+    new_node = graph_module.graph.call_function(
         torch.ops.aten.full.default,
         ([bias_shape], 0.0),
         {"dtype": torch.int32},
     )
+
+    if "val" in weight_node.meta:
+        fake_mode = weight_node.meta["val"].fake_mode
+        if fake_mode is not None:
+            with fake_mode:
+                fake_bias = torch.zeros([bias_shape], dtype=torch.int32)
+            new_node.meta["val"] = fake_bias
+        else:
+            new_node.meta["val"] = torch.zeros([bias_shape], dtype=torch.int32)
+        copy_node_metadata(new_node, weight_node)
+
+    return new_node
 
 
 def get_bias_qparams(
@@ -234,3 +270,19 @@ def find_sequential_partitions_aten(
         if _partitions_sequential(candidate):
             fused_partitions.append(candidate)
     return fused_partitions
+
+
+def check_out_zero_point_is_min_range(
+    out_zero_point: int,
+    out_dtype: torch.dtype,
+) -> bool:
+    """
+    Checks if the out_zero_point is the minimum range of the quant type.
+    """
+    if out_dtype == torch.int8:
+        return out_zero_point == -128
+    elif out_dtype == torch.int16:
+        return out_zero_point == -32768
+    elif out_dtype == torch.uint8 or torch.uint16:
+        return out_zero_point == 0
+    return False

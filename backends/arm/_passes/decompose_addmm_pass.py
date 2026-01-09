@@ -3,10 +3,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
 
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
+from executorch.backends.arm._passes.mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 
 # For MI case
@@ -36,8 +42,14 @@ def get_ops(op):
 class DecomposeAddmmPass(ArmPass):
     """Decomposes the addmm operator into tensor multiplication and addition."""
 
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ConvertMmToBmmPass,
+        MatchArgRanksPass,
+        MatchArgDtypePass,
+    }
+
     def call_operator(self, op, args, kwargs, meta):
-        if op not in [edge_addmm, aten_addmm]:
+        if op not in [edge_addmm, aten_addmm] or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         input, mat1, mat2 = args

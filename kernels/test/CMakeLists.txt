@@ -26,8 +26,8 @@ foreach(kernel ${_kernels})
   set(_functions_include "#include <executorch/kernels/${kernel}/Functions.h>")
   add_custom_command(
     OUTPUT "${_wrapper_path}"
-    COMMAND mkdir -p ${_wrapper_dir}
-    COMMAND echo ${_functions_include} > "${_wrapper_path}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${_wrapper_dir}
+    COMMAND ${CMAKE_COMMAND} -E echo ${_functions_include} > "${_wrapper_path}"
     DEPENDS
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/NativeFunctions.h"
@@ -44,7 +44,7 @@ foreach(kernel ${_kernels})
   add_custom_command(
     OUTPUT "${_wrapper_dir}/supported_features.cpp"
            "${_wrapper_dir}/supported_features.h"
-    COMMAND mkdir -p ${_wrapper_dir}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${_wrapper_dir}
     COMMAND
       ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
       kernels/${_supported_features_kernel}/test/supported_features_def.yaml >
@@ -73,17 +73,35 @@ foreach(kernel ${_kernels})
         "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib"
     )
   endif()
+
+  # Copy with glob needs to be handle in a platform-specific manner.
+  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+    # The quoting here is complicated, because there are three levels of
+    # interpretation: CMake -> Batch -> Powershell. The invoked (batch) command
+    # should look like `powershell -Command "Copy-Item ... -Path \"...\" ...".
+    # Powershell sees `Copy-Item -Path "..." ...`.
+    set(_copy_headers_cmd
+        powershell
+        -Command
+        "Copy-Item -Path \\\"${_kernel_ops_lib_path}/*.h\\\" -Destination \\\"${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/\\\""
+    )
+  else()
+    set(_copy_headers_cmd
+        cp
+        "${_kernel_ops_lib_path}/*.h"
+        "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
+    )
+  endif()
+
   add_custom_command(
     OUTPUT
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/NativeFunctions.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/RegisterKernels.h"
     COMMAND
-      mkdir -p
+      ${CMAKE_COMMAND} -E make_directory
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
-    COMMAND
-      cp "${_kernel_ops_lib_path}/*.h"
-      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
+    COMMAND ${_copy_headers_cmd}
     DEPENDS ${_kernel_ops_lib}
   )
 endforeach()
@@ -129,8 +147,10 @@ set(all_test_sources
     "op_atanh_test.cpp"
     "op_avg_pool2d_test.cpp"
     "op_bitwise_and_test.cpp"
+    "op_bitwise_left_shift_test.cpp"
     "op_bitwise_not_test.cpp"
     "op_bitwise_or_test.cpp"
+    "op_bitwise_right_shift_test.cpp"
     "op_bitwise_xor_test.cpp"
     "op_bmm_test.cpp"
     "op_cat_test.cpp"
@@ -167,6 +187,7 @@ set(all_test_sources
     "op_ge_test.cpp"
     "op_gelu_test.cpp"
     "op_glu_test.cpp"
+    "op_grid_sampler_2d_test.cpp"
     "op_gt_test.cpp"
     "op_hardtanh_test.cpp"
     "op_index_put_test.cpp"

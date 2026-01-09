@@ -5,18 +5,17 @@
 # LICENSE file in the root directory of this source tree.
 
 load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "CXX",
 )
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
-load("@fbcode_macros//build_defs:cpp_python_extension.bzl", "cpp_python_extension")
 
 oncall("odai_jarvis")
 
-python_library(
+runtime.python_library(
     name = "utils",
     srcs = [
         "utils.py",
@@ -31,7 +30,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "compiler",
     srcs = [
         "compiler.py",
@@ -53,7 +52,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "export_example",
     srcs = [
         "export_example.py",
@@ -75,7 +74,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "pass_utils",
     srcs = [
         "pass_utils.py",
@@ -90,7 +89,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "passes",
     srcs = [
         "passes.py",
@@ -111,18 +110,19 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "ops_registrations",
     srcs = [
         "ops_registrations.py",
     ],
     deps = [
         "fbcode//caffe2:torch",
+        "fbcode//executorch/backends/cadence/aot:ref_implementations",
         "fbcode//executorch/backends/cadence/aot:utils",
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "ref_implementations",
     srcs = [
         "ref_implementations.py",
@@ -131,6 +131,7 @@ python_library(
     deps = [
         "fbcode//caffe2:torch",
         "fbcode//executorch/exir:scalar_type",
+        "fbcode//executorch/kernels/quantized:custom_ops_generated_lib",
     ],
 )
 
@@ -143,8 +144,19 @@ executorch_generated_lib(
     platforms = CXX,
     visibility = ["PUBLIC"],
     deps = [
-        "//executorch/backends/cadence/reference/kernels:cadence_kernels",
-        "//executorch/backends/cadence/reference/operators:cadence_cpu_ops",
+        "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+        "//executorch/backends/cadence/generic/operators:op_requantize",
+        "//executorch/backends/cadence/generic/operators:op_im2row",
+        "//executorch/backends/cadence/generic/operators:op_dequantize_per_tensor",
+        "//executorch/backends/cadence/generic/operators:op_quantize_per_tensor",
+        "//executorch/backends/cadence/generic/operators:op_quantized_add",
+        "//executorch/backends/cadence/generic/operators:op_quantized_conv2d",
+        "//executorch/backends/cadence/generic/operators:op_quantized_conv1d",
+        "//executorch/backends/cadence/generic/operators:op_quantized_fully_connected",
+        "//executorch/backends/cadence/generic/operators:op_quantized_layer_norm",
+        "//executorch/backends/cadence/generic/operators:op_quantized_linear",
+        "//executorch/backends/cadence/generic/operators:op_quantized_matmul",
+        "//executorch/backends/cadence/generic/operators:op_quantized_relu",
         "//executorch/kernels/portable:executorch_all_ops",
         "//executorch/kernels/portable:operators",
     ],
@@ -162,7 +174,7 @@ python_unittest(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "compiler_utils",
     srcs = [
         "compiler_utils.py",
@@ -174,7 +186,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "graph_builder",
     srcs = [
         "graph_builder.py",
@@ -186,7 +198,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "program_builder",
     srcs = [
         "program_builder.py",
@@ -214,7 +226,7 @@ python_unittest(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "fuse_ops",
     srcs = [
         "fuse_ops.py",
@@ -234,7 +246,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "simplify_ops",
     srcs = [
         "simplify_ops.py",
@@ -249,13 +261,14 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "remove_ops",
     srcs = [
         "remove_ops.py",
     ],
     typing = True,
     deps = [
+        ":ops_registrations",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:simplify_ops",
@@ -267,7 +280,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "reorder_ops",
     srcs = [
         "reorder_ops.py",
@@ -285,7 +298,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "replace_ops",
     srcs = [
         "replace_ops.py",
@@ -306,7 +319,7 @@ python_library(
         "//executorch/exir/passes:spec_prop_pass",
     ],
 )
-python_library(
+runtime.python_library(
     name = "decompose_ops",
     srcs = [
         "decompose_ops.py",
@@ -323,7 +336,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "type_dispatch",
     srcs = [
         "type_dispatch.py",
@@ -345,6 +358,7 @@ python_unittest(
     typing = True,
     deps = [
         ":ops_registrations",
+        ":typing_stubs",
         ":type_dispatch",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:graph_builder",
@@ -354,7 +368,7 @@ python_unittest(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "typing_stubs",
     srcs = [
         "typing_stubs.py",
@@ -365,7 +379,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "compiler_funcs",
     srcs = [
         "compiler_funcs.py",
@@ -519,7 +533,7 @@ python_unittest(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "memory_planning_algo",
     srcs = [
         "memory_planning_algo.py",
@@ -535,7 +549,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "memory_planning",
     srcs = [
         "memory_planning.py",
@@ -553,7 +567,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "memory_constraints",
     srcs = [
         "memory_constraints.py",
@@ -602,5 +616,35 @@ python_unittest(
         "//executorch/backends/cadence/aot:ops_registrations",
         "//executorch/runtime:runtime",
         "//later:lib",
+    ],
+)
+
+python_unittest(
+    name = "test_ref_implementations",
+    srcs = [
+        "tests/test_ref_implementations.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        ":typing_stubs",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//caffe2:torch",
+    ]
+)
+
+python_unittest(
+    name = "test_quantizer_ops",
+    srcs = [
+        "tests/test_quantizer_ops.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/exir:pass_base",
+        "//pytorch/ao:torchao",
     ],
 )

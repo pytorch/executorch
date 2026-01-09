@@ -1,7 +1,7 @@
 # ExecuTorch Core ML Delegate
 
 This subtree contains the Core ML Delegate implementation for ExecuTorch.
-Core ML is an optimized framework for running machine learning models on Apple devices. The delegate is the mechanism for leveraging the Core ML framework to accelerate operators when running on Apple devices.  To learn how to use the CoreML delegate, see the [documentation](https://github.com/pytorch/executorch/blob/main/docs/source/backends-coreml.md). 
+Core ML is an optimized framework for running machine learning models on Apple devices. The delegate is the mechanism for leveraging the Core ML framework to accelerate operators when running on Apple devices.  To learn how to use the CoreML delegate, see the [documentation](https://github.com/pytorch/executorch/blob/main/docs/source/backends/coreml/coreml-overview.md).
 
 ## Layout
 - `compiler/` : Lowers a module to Core ML backend.

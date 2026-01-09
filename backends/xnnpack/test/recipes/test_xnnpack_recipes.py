@@ -6,7 +6,10 @@
 
 # pyre-strict
 
+import logging
+import os
 import unittest
+from typing import List, Optional, Tuple
 
 import torch
 from executorch.backends.xnnpack.recipes.xnnpack_recipe_provider import (
@@ -18,8 +21,15 @@ from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.examples.xnnpack import MODEL_NAME_TO_OPTIONS, QuantType
 from executorch.exir.schema import DelegateCall, Program
-from executorch.export import export, ExportRecipe, recipe_registry, StageType
-from torch import nn
+from executorch.export import (
+    export,
+    ExportRecipe,
+    ExportSession,
+    recipe_registry,
+    StageType,
+)
+from torch import nn, Tensor
+from torch.testing import FileCheck
 from torch.testing._internal.common_quantization import TestHelperModules
 from torchao.quantization.utils import compute_error
 
@@ -39,9 +49,12 @@ class TestXnnpackRecipes(unittest.TestCase):
         self.assertEqual(len(instructions), 1)
         self.assertIsInstance(instructions[0].instr_args, DelegateCall)
 
-    # pyre-ignore
     def _compare_eager_quantized_model_outputs(
-        self, session, example_inputs, atol: float
+        self,
+        # pyre-ignore[11]
+        session: ExportSession,
+        example_inputs: List[Tuple[Tensor]],
+        atol: float,
     ) -> None:
         """Utility to compare eager quantized model output with session output after xnnpack lowering"""
         torch_export_stage_output = session.get_stage_artifacts()[
@@ -53,8 +66,12 @@ class TestXnnpackRecipes(unittest.TestCase):
         Tester._assert_outputs_equal(output, expected, atol=atol)
 
     def _compare_eager_unquantized_model_outputs(
-        self, session, eager_unquantized_model, example_inputs, sqnr_threshold=20
-    ):
+        self,
+        session: ExportSession,
+        eager_unquantized_model: nn.Module,
+        example_inputs: List[Tuple[Tensor]],
+        sqnr_threshold: int = 20,
+    ) -> None:
         """Utility to compare eager unquantized model output with session output using SQNR"""
         quantized_output = session.run_method("forward", example_inputs[0])[0]
         original_output = eager_unquantized_model(*example_inputs[0])
@@ -137,7 +154,7 @@ class TestXnnpackRecipes(unittest.TestCase):
             ),
             ExportRecipe.get_recipe(
                 XNNPackRecipeType.TORCHAO_INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR,
-                group_size=8,
+                group_size=32,
             ),
         ]
 
@@ -163,12 +180,15 @@ class TestXnnpackRecipes(unittest.TestCase):
             return XNNPackRecipeType.PT2E_INT8_DYNAMIC_PER_CHANNEL
         elif quant_type == QuantType.STATIC_PER_TENSOR:
             return XNNPackRecipeType.PT2E_INT8_STATIC_PER_TENSOR
-        elif quant_type == QuantType.NONE:
-            return XNNPackRecipeType.FP32
-        else:
-            raise ValueError(f"Unsupported QuantType: {quant_type}")
+        return XNNPackRecipeType.FP32
 
-    def _test_model_with_factory(self, model_name: str) -> None:
+    def _test_model_with_factory(
+        self,
+        model_name: str,
+        tolerance: Optional[float] = None,
+        sqnr_threshold: Optional[float] = None,
+    ) -> None:
+        logging.info(f"Testing model {model_name}")
         if model_name not in MODEL_NAME_TO_MODEL:
             self.skipTest(f"Model {model_name} not found in MODEL_NAME_TO_MODEL")
             return
@@ -195,40 +215,76 @@ class TestXnnpackRecipes(unittest.TestCase):
             dynamic_shapes=dynamic_shapes,
         )
 
-        # Verify outputs match
-        Tester._assert_outputs_equal(
-            session.run_method("forward", example_inputs)[0],
-            model(*example_inputs),
-            atol=1e-3,
+        all_artifacts = session.get_stage_artifacts()
+        quantized_model = all_artifacts[StageType.QUANTIZE].data["forward"]
+
+        edge_program_manager = all_artifacts[StageType.TO_EDGE_TRANSFORM_AND_LOWER].data
+        lowered_module = edge_program_manager.exported_program().module()
+
+        # Check if model got lowered to xnnpack backend
+        FileCheck().check("torch.ops.higher_order.executorch_call_delegate").run(
+            lowered_module.code
         )
 
-    @unittest.skip("T187799178: Debugging Numerical Issues with Calibration")
+        if tolerance is not None:
+            quantized_output = quantized_model(*example_inputs)
+            lowered_output = lowered_module(*example_inputs)
+            if model_name == "dl3":
+                quantized_output = quantized_output["out"]
+                lowered_output = lowered_output["out"]
+
+            # lowering error
+            try:
+                Tester._assert_outputs_equal(
+                    lowered_output, quantized_output, atol=tolerance, rtol=tolerance
+                )
+            except AssertionError as e:
+                raise AssertionError(
+                    f"Model '{model_name}' lowering error check failed with tolerance {tolerance}"
+                ) from e
+            logging.info(
+                f"{self._testMethodName} - {model_name} - lowering error passed"
+            )
+
+        # verify sqnr between eager model and quantized model
+        if sqnr_threshold is not None:
+            original_output = model(*example_inputs)
+            quantized_output = quantized_model(*example_inputs)
+            # lowered_output = lowered_module(*example_inputs)
+            if model_name == "dl3":
+                original_output = original_output["out"]
+                quantized_output = quantized_output["out"]
+            error = compute_error(original_output, quantized_output)
+            logging.info(f"{self._testMethodName} - {model_name} - SQNR: {error} dB")
+            self.assertTrue(
+                error > sqnr_threshold, f"Model '{model_name}' SQNR check failed"
+            )
+
     def test_all_models_with_recipes(self) -> None:
         models_to_test = [
-            "linear",
-            "add",
-            "add_mul",
-            "ic3",
-            "mv2",
-            "mv3",
-            "resnet18",
-            "resnet50",
-            "vit",
-            "w2l",
-            "llama2",
+            # Tuple format: (model_name, error tolerance, minimum sqnr)
+            ("linear", 1e-3, 20),
+            ("add", 1e-3, 20),
+            ("add_mul", 1e-3, 20),
+            ("dl3", 1e-3, 20),
+            ("ic3", None, None),
+            ("ic4", 1e-3, 20),
+            ("mv2", 1e-3, None),
+            ("mv3", 1e-3, None),
+            ("resnet18", 1e-3, 20),
+            ("resnet50", 1e-3, 20),
+            ("vit", 1e-1, 10),
+            ("w2l", 1e-3, 20),
         ]
-        for model_name in models_to_test:
-            with self.subTest(model=model_name):
-                self._test_model_with_factory(model_name)
-
-    def test_validate_recipe_kwargs_fp32(self) -> None:
-        provider = XNNPACKRecipeProvider()
-
-        with self.assertRaises(ValueError) as cm:
-            provider.create_recipe(XNNPackRecipeType.FP32, invalid_param=123)
-
-        error_msg = str(cm.exception)
-        self.assertIn("Recipe 'fp32' does not accept any parameters", error_msg)
+        try:
+            for model_name, tolerance, sqnr in models_to_test:
+                with self.subTest(model=model_name):
+                    with torch.no_grad():
+                        self._test_model_with_factory(model_name, tolerance, sqnr)
+        finally:
+            # Clean up dog.jpg file if it exists
+            if os.path.exists("dog.jpg"):
+                os.remove("dog.jpg")
 
     def test_validate_recipe_kwargs_int4_tensor_with_valid_group_size(
         self,

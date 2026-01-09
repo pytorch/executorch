@@ -1,4 +1,4 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load(
     "@fbsource//arvr/tools/build_defs:oxx_python.bzl",
@@ -8,7 +8,7 @@ load(
 oncall("executorch")
 
 
-python_library(
+runtime.python_library(
     name = "aten_passes",
     srcs = glob([
         "aten_passes/*.py",
@@ -19,7 +19,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "edge_passes",
     srcs = glob([
         "edge_passes/*.py",
@@ -32,7 +32,19 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
+    name = "_passes",
+    srcs = glob([
+        "_passes/*.py",
+    ]),
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_manager",
+    ],
+)
+
+runtime.python_library(
     name = "quantizer",
     srcs = [
         "quantizer/neutron_quantizer.py",
@@ -46,15 +58,15 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "neutron_sdk",
     srcs = glob(["backend/**/*.py"]),
     deps = [
-       "fbsource//third-party/pypi/neutron_convertor_SDK_25_03:neutron_convertor_SDK_25_03",
+        "fbsource//third-party/pypi/neutron_converter:neutron_converter",
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "neutron_backend",
     srcs = [
         "nxp_backend.py",
@@ -65,10 +77,10 @@ python_library(
     deps = [
         ":neutron_sdk",
         ":aten_passes",
+        ":_passes",
         ":quantizer",
         "fbsource//third-party/pypi/flatbuffers:flatbuffers",
         "fbsource//third-party/pypi/ml-dtypes:ml-dtypes",
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
         "//executorch/exir:lib",
         "//executorch/backends/transforms:remove_getitem_op",
         "//caffe2:torch",

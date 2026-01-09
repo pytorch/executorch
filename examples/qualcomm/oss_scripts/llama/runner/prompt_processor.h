@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h>
@@ -29,6 +30,8 @@ class PromptProcessor {
     int32_t ar_len;
     int32_t vocab_size;
     bool use_int64_token;
+    int sliding_window;
+    CacheMode cache_mode;
   };
   PromptProcessor(
       DecoderRunner* decoder_runner,
@@ -38,8 +41,8 @@ class PromptProcessor {
 
   /**
    * @brief Initialize I/O tensor and allocate I/O data buffer.
-   * @param buffer_manager Pointer to IMemAlloc instance which depends on
-   * kv_updater.
+   * @param buffer_manager Pointer to IMemAlloc instance; by default, it uses a
+   * shared buffer with RPC memory.
    * @param method_meta Method metadata.
    */
   void init_io(
@@ -72,8 +75,13 @@ class PromptProcessor {
    * @return Total I/O size in bytes.
    */
   inline const size_t total_prompt_processor_io_size_in_bytes() const {
-    return input_toks_.size + input_pos_.size + attention_mask_.size +
-        logits_.size;
+    if (metadata_.cache_mode == CacheMode::HybridCache) {
+      return input_toks_.size + input_pos_.size + attention_mask_.size +
+          window_attention_mask_.size + logits_.size;
+    } else {
+      return input_toks_.size + input_pos_.size + attention_mask_.size +
+          logits_.size;
+    }
   }
 
  private:
@@ -103,17 +111,14 @@ class PromptProcessor {
   TensorStruct<int64_t> input_toks_;
   TensorStruct<int32_t> input_pos_;
   TensorStruct<uint16_t> attention_mask_;
+  TensorStruct<uint16_t> window_attention_mask_;
   TensorStruct<uint16_t> logits_;
 
-  // layer -> head -> TensorImpl
-  std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
-      k_cache_in_;
-  std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
-      v_cache_in_;
-  std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
-      k_cache_out_;
-  std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
-      v_cache_out_;
+  // layer -> TensorImpl
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_in_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> v_cache_in_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_out_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> v_cache_out_;
 
   std::vector<executorch::runtime::EValue> inputs_;
   std::vector<executorch::aten::Tensor> input_tensors_;

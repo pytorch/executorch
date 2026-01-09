@@ -53,7 +53,6 @@ def test_mm_u55_INT(test_data: Tuple):
         MM(),
         test_data(),
         MM.aten_op,
-        run_on_fvp=True,
     ).run()
 
 
@@ -65,27 +64,30 @@ def test_mm_u85_INT(test_data: Tuple):
         test_data(),
         MM.aten_op,
         MM.exir_op,
-        run_on_fvp=True,
     ).run()
 
 
 @common.parametrize("test_data", MM.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_mm_vgf_FP(test_data: Tuple):
+def test_mm_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[test_t](
-        MM(), test_data(), MM.aten_op, MM.exir_op, tosa_version="TOSA-1.0+FP"
+        MM(),
+        test_data(),
+        MM.aten_op,
+        MM.exir_op,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", MM.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_mm_vgf_INT(test_data: Tuple):
+def test_mm_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[test_t](
         MM(),
         test_data(),
         MM.aten_op,
         MM.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

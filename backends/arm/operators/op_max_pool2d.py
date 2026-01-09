@@ -3,10 +3,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 from typing import Any, List
 
 import torch
+
+import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -18,8 +19,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
@@ -41,15 +42,15 @@ class MaxPool2dVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
-        import serializer.tosa_serializer as ts  # type: ignore
-
         validate_num_inputs(self.target, inputs, [3, 4, 5, 6])
         validate_same_dtype(self.target, [inputs[0], output], ts)
+        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
+        if self.tosa_spec.support_extension("int16"):
+            supported_dtypes.append(ts.DType.INT16)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.FP32],
+            supported_dtypes,
             output.tosa_spec,
         )
 
@@ -91,11 +92,16 @@ class MaxPool2dVisitor(NodeVisitor):
 
         attr = ts.TosaSerializerAttribute()
         attr.MaxPool2dAttribute(
-            kernel=kernel_size, stride=stride, pad=pad_size_list, nan_mode=1
+            kernel=kernel_size,
+            stride=stride,
+            pad=pad_size_list,
+            nan_mode=ts.NanPropagationMode.PROPAGATE,
         )
 
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().MAX_POOL2D,
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.Op.MAX_POOL2D,
             [input_tensor.name],
             [output.name],
             attr,

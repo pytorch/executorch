@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Permute.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/View.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -45,8 +46,63 @@ void add_unsqueeze_node(
   add_permute_node(graph, in, permute_dims_ref, out);
 }
 
+void resize_unsqueeze_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+  const ValueRef dims_ref = extra_args.at(0);
+
+  std::vector<int64_t> dims_vec;
+  if (graph->is_scalar_or_none(dims_ref)) {
+    // Handle scalar case
+    int64_t dim = graph->extract_scalar<int64_t>(dims_ref);
+    dims_vec.push_back(dim);
+  } else {
+    // Handle list case
+    const IntListPtr dims = graph->get_int_list(dims_ref);
+    dims_vec.assign(dims->begin(), dims->end());
+  }
+
+  std::vector<int64_t> out_sizes = graph->sizes_of(in);
+
+  std::vector<int64_t> unsqueezed_dims;
+
+  if (graph->val_is_int_list(dims_ref)) {
+    const IntListPtr dims = graph->get_int_list(dims_ref);
+    for (int64_t d : *dims) {
+      unsqueezed_dims.push_back(d);
+    }
+  } else {
+    const int64_t dim = graph->extract_scalar<int64_t>(dims_ref);
+    unsqueezed_dims.push_back(dim);
+  }
+
+  // Insert singleton dimensions at the specified positions
+  for (auto dim : dims_vec) {
+    int64_t d = dim;
+    if (d < 0) {
+      d += static_cast<int64_t>(out_sizes.size()) + 1;
+    }
+    out_sizes.insert(out_sizes.begin() + d, 1);
+  }
+
+  graph->virtual_resize(out, out_sizes);
+}
+
 void unsqueeze(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  return add_unsqueeze_node(graph, args[0], args[1], args[2]);
+  int idx = 0;
+  const ValueRef in = args.at(idx++);
+  const ValueRef dims = args.at(idx++);
+  const ValueRef out = args.at(idx++);
+
+  std::vector<ValueRef> resize_args = {dims};
+  if (graph.is_buffer_storage(in)) {
+    return add_view_copy_buffer_node(
+        graph, in, out, resize_args, resize_unsqueeze_node);
+  }
+  return add_unsqueeze_node(graph, in, dims, out);
 }
 
 REGISTER_OPERATORS {

@@ -8,7 +8,6 @@
 
 #ifdef __aarch64__
 #include <arm_neon.h>
-#include <sleef.h>
 #endif
 
 #include <cmath>
@@ -32,8 +31,8 @@ namespace {
 
 template <typename IN_T, typename OUT_T>
 void log_softmax_kernel(const Tensor& input, int64_t dim, Tensor& out) {
-  const IN_T* __restrict__ input_data_base = input.const_data_ptr<IN_T>();
-  OUT_T* __restrict__ output_data_base = out.mutable_data_ptr<OUT_T>();
+  const IN_T* ET_RESTRICT input_data_base = input.const_data_ptr<IN_T>();
+  OUT_T* ET_RESTRICT output_data_base = out.mutable_data_ptr<OUT_T>();
 
   if (input.dim() == 0) {
     output_data_base[0] = 0;
@@ -56,7 +55,7 @@ void log_softmax_kernel(const Tensor& input, int64_t dim, Tensor& out) {
         0,
         outer_size,
         ::executorch::extension::internal::GRAIN_SIZE,
-        [&](const auto begin, const auto end) {
+        [&](const auto& begin, const auto& end) {
           at::native::serial_vec_log_softmax_lastdim_range(
               input_data_base,
               output_data_base,
@@ -104,18 +103,15 @@ void log_softmax_kernel(const Tensor& input, int64_t dim, Tensor& out) {
 template <
     typename OUT_T,
     std::enable_if_t<std::is_floating_point<OUT_T>::value, bool> = true>
-void log_softmax_wrapper(const Tensor& X, int64_t dim, Tensor& out) {
+bool log_softmax_wrapper(const Tensor& X, int64_t dim, Tensor& out) {
   auto input_scalar_type = X.scalar_type();
   switch (input_scalar_type) {
     // TODO: support Double as well
     case ScalarType::Float:
       log_softmax_kernel<float, OUT_T>(X, dim, out);
-      break;
+      return true;
     default:
-      ET_CHECK_MSG(
-          false,
-          "Unhandled input dtype %" PRId8,
-          static_cast<int8_t>(input_scalar_type));
+      return false; // Unsupported input dtype
   }
 }
 } // namespace
@@ -147,14 +143,13 @@ Tensor& opt_log_softmax_out(
   auto out_scalar_type = out.scalar_type();
   switch (out_scalar_type) {
     // TODO: support Double as well
-    case ScalarType::Float:
-      log_softmax_wrapper<float>(self, dim, out);
+    case ScalarType::Float: {
+      bool success = log_softmax_wrapper<float>(self, dim, out);
+      ET_KERNEL_CHECK(context, success, InvalidArgument, out);
       break;
+    }
     default:
-      ET_CHECK_MSG(
-          false,
-          "Unhandled out dtype %" PRId8,
-          static_cast<int8_t>(out_scalar_type));
+      ET_KERNEL_CHECK(context, false, InvalidArgument, out);
   }
   return out;
 }

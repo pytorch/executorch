@@ -107,21 +107,18 @@ def define_op_library(name, compiler_flags, deps):
             # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
             "-Wno-pass-failed",
         ] + compiler_flags + get_compiler_optimization_flags(),
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-        ] + augmented_deps + get_vec_deps(),
-        preprocessor_flags = get_vec_preprocessor_flags(),
         # sleef needs to be added as a direct dependency of the operator target when building for Android,
         # or a linker error may occur. Not sure why this happens; it seems that fbandroid_platform_deps of
         # dependencies are not transitive
-        fbandroid_platform_deps = [
-            (
-                "^android-arm64.*$",
-                [
-                    "fbsource//third-party/sleef:sleef",
-                ],
-            ),
-        ],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ] + augmented_deps + get_vec_deps() + select({
+            "DEFAULT": [],
+            "ovr_config//os:android-arm64": [
+                "fbsource//third-party/sleef:sleef",
+            ],
+        }),
+        preprocessor_flags = get_vec_preprocessor_flags(),
         # link_whole is necessary because the operators register themselves
         # via static initializers that run at program startup.
         # @lint-ignore BUCKLINT link_whole
@@ -153,6 +150,9 @@ OPTIMIZED_ATEN_OPS = (
             ":add_sub_impl",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
@@ -165,10 +165,24 @@ OPTIMIZED_ATEN_OPS = (
     ),
     op_target(
         name = "op_div",
+        # A bug in instruction selection in clang 19 for android seems to trigger some
+        # terrible, multiple hour, backend generation when building for asan with thinlto.
+        # generally maybe a good idea to just make this fully optimized anyway, but -O2
+        # is not sufficient to avoid it.
+        compiler_flags = [] if runtime.is_oss else select({
+            "DEFAULT": [],
+            "ovr_config//os:android": select({
+                "DEFAULT": [],
+                "ovr_config//toolchain/clang/constraints:17": ["-O3"],
+                "ovr_config//toolchain/clang/constraints:19": ["-O3"],
+            }),
+        }),
         deps = [
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
@@ -248,6 +262,8 @@ OPTIMIZED_ATEN_OPS = (
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
@@ -267,6 +283,8 @@ OPTIMIZED_ATEN_OPS = (
             ":add_sub_impl",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),

@@ -101,10 +101,9 @@ test_parameters = {test[0]: test[1:] for test in module_tests}
         "Requires dynamic output shape.",
         "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
         "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
-        "norm": "An error occurred when running the 'KeepDimsFalseToSqueezePass' pass after the following passes:",
     },
 )
-def test_torch_fns_FP(test_data):
+def test_torch_functions_tosa_FP(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineFP[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=True
@@ -129,11 +128,10 @@ def test_torch_fns_FP(test_data):
         "Requires dynamic output shape.",
         "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
         "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
-        "t": "MLETORCH-855: Issue with Quantization folding.",
     },
-    strict=False,
+    strict=True,
 )
-def test_torch_fns_INT(test_data):
+def test_torch_functions_tosa_INT(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineINT[input_t](
         module, inputs, "", use_to_edge_transform_and_lower=True

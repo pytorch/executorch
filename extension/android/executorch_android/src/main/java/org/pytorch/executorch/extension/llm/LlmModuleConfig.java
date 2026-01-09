@@ -34,6 +34,9 @@ public class LlmModuleConfig {
   /** Model type constant for text-and-vision multimodal models. */
   public static final int MODEL_TYPE_TEXT_VISION = 2;
 
+  /** Model type constant for generic multimodal models. */
+  public static final int MODEL_TYPE_MULTIMODAL = 2;
+
   /**
    * Creates a new Builder instance for constructing LlmModuleConfig objects.
    *
@@ -141,7 +144,7 @@ public class LlmModuleConfig {
     /**
      * Sets the model type (text-only or multimodal).
      *
-     * @param modelType One of MODEL_TYPE_TEXT or MODEL_TYPE_TEXT_VISION
+     * @param modelType One of MODEL_TYPE_TEXT, MODEL_TYPE_TEXT_VISION, MODEL_TYPE_MULTIMODAL
      * @return This builder instance for method chaining
      */
     public Builder modelType(int modelType) {

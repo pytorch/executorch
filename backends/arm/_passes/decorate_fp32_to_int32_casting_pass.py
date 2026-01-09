@@ -3,13 +3,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 
 def _get_decorated_ops(op):
@@ -30,18 +31,19 @@ class DecorateFp32toInt32CastingPass(ArmPass):
     To lower pytorch fp32 -> int32 casting to TOSA,
     we need to transform the value with Ceil, Floor, and Where.
     Before:
-        output = to_copy(x, dtype=torch.int32)
+        output = to_dim_order_copy(x, dtype=torch.int32)
     After:
         %zero = full((1,), 0.0, dtype=torch.float32)
         is_non_negative = x >= %zero
         floor_x = floor(x)
         ceil_x = ceil(x)
         decorated_x = where(is_non_negative, floor_x, ceil_x)
-        output = to_copy(decorated_x, dtype=torch.int32)
+        output = to_dim_order_copy(decorated_x, dtype=torch.int32)
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     targets = [
-        exir_ops.edge.aten._to_copy.default,
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     ]
 
@@ -54,6 +56,14 @@ class DecorateFp32toInt32CastingPass(ArmPass):
         output_dtype = meta["val"].dtype
 
         if not (input_dtype == torch.float32 and output_dtype == torch.int32):
+            return super().call_operator(op, args, kwargs, meta)
+
+        # For some ops, qparams dtype is inconsistent with fake tensor's dtype.
+        # Skip decorating if the input is quantized and thus not floating point.
+        if (
+            "output_qparams" in input.node.meta
+            and len(input.node.meta["output_qparams"]) > 0
+        ):
             return super().call_operator(op, args, kwargs, meta)
 
         op_full, op_ge, op_floor, op_ceil, op_where = _get_decorated_ops(op)

@@ -25,6 +25,7 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from executorch.exir.backend.test.demo_backend import DemoBackend
 from executorch.exir.backend.test.hta_partitioner_demo import (
     HTAPartitionerMultiplePatternsDemo,
     HTAPartitionerOnePatternDemo,
@@ -33,7 +34,6 @@ from executorch.exir.backend.test.op_partitioner_demo import (
     AddAttributePartitionerDemo,
     AddMulPartitionerDemo,
 )
-from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
 
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -297,7 +297,6 @@ class TestBackends(unittest.TestCase):
 
         executorch_module = _load_for_executorch_from_buffer(buff)
 
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(model_inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = add_mul_module(*model_inputs)
@@ -347,15 +346,17 @@ class TestBackends(unittest.TestCase):
 
         buff = exec_prog.buffer
 
+        executorch_module = _load_for_executorch_from_buffer(buff)
         # This line should raise an exception like
         # RuntimeError: failed with error 0x12
-        _load_for_executorch_from_buffer(buff)
+        inputs_flattened, _ = tree_flatten(model_inputs)
+        executorch_module.run_method("forward", tuple(inputs_flattened))
 
     @vary_segments
     def test_backend_with_compiler_out_of_range(self, extract_delegate_segments: bool):
         with self.assertRaisesRegex(
             RuntimeError,
-            "loading method forward failed with error 0x12",
+            "Failed to execute method forward, error: 0x12",
         ):
             self.run_model_in_unsupported_backend(
                 extract_delegate_segments=extract_delegate_segments
@@ -663,7 +664,7 @@ class TestBackends(unittest.TestCase):
             delegate=program_with_delegates._emitter_output.program.execution_plan[
                 0
             ].delegates[0],
-            expected_id=QnnBackend.__name__,
+            expected_id=DemoBackend.__name__,
             expected_processed=b"imqnncompiled",
         )
 
@@ -802,7 +803,7 @@ class TestBackends(unittest.TestCase):
             delegate=program_with_delegates._emitter_output.program.execution_plan[
                 0
             ].delegates[0],
-            expected_id=QnnBackend.__name__,
+            expected_id=DemoBackend.__name__,
             expected_processed=b"imqnncompiled",
         )
 
@@ -887,7 +888,6 @@ class TestBackends(unittest.TestCase):
         self.assertEqual(counter, 2)
 
         executorch_module = _load_for_executorch_from_buffer(executorch_prog.buffer)
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = m(*inputs)
@@ -1264,3 +1264,63 @@ class TestBackends(unittest.TestCase):
 
         gm = to_edge(export(ComposedM(), inputs, strict=True))
         gm.exported_program().module()(*inputs)
+
+    def test_delegate_info_full_delegate(self):
+        """
+        Test that _delegate_info_meta from BackendWithCompilerDemo ends up in the call_delegate node metadata
+        when using full delegation (to_backend directly).
+        """
+
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        sin_module = SinModule()
+        model_inputs = (torch.ones(1),)
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
+        max_value = model_inputs[0].shape[0]
+        compile_specs = [CompileSpec("max_value", bytes([max_value]))]
+        lowered_sin_module = to_backend(
+            "BackendWithCompilerDemo", edgeir_m.exported_program(), compile_specs
+        )
+
+        # Check that the lowered module has _delegate_info_meta in its meta
+        self.assertIn("_delegate_info_meta", lowered_sin_module.meta.keys())
+        self.assertEqual(lowered_sin_module.meta["_delegate_info_meta"], "test")
+
+    def test_delegate_info_partitioner(self):
+        """
+        Test that _delegate_info_meta from BackendWithCompilerDemo ends up in the call_delegate node metadata
+        when using partitioner-based delegation.
+        """
+
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        sin_module = SinModule()
+        model_inputs = (torch.ones(1),)
+        max_value = model_inputs[0].shape[0]
+
+        partitioner = AllNodePartitioner(
+            "BackendWithCompilerDemo", [CompileSpec("max_value", bytes([max_value]))]
+        )
+
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
+        lowered_m = edgeir_m.to_backend(partitioner)
+
+        # Check that the lowered submodule has _delegate_info_meta in its meta
+        lowered_submodules = get_lowered_submodules(
+            lowered_m.exported_program().graph_module
+        )
+        self.assertEqual(len(lowered_submodules), 1)
+
+        lowered_module = lowered_submodules[0][1]
+        self.assertIn("_delegate_info_meta", lowered_module.meta)
+        self.assertEqual(lowered_module.meta["_delegate_info_meta"], "test")

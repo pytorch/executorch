@@ -166,7 +166,9 @@ TEST_F(EValueTest, ToScalarType) {
 }
 
 TEST_F(EValueTest, toString) {
-  const EValue e("foo", 3);
+  auto string_ref =
+      std::make_unique<executorch::aten::ArrayRef<char>>("foo", 3);
+  const EValue e(string_ref.get());
   EXPECT_TRUE(e.isString());
   EXPECT_FALSE(e.isNone());
 
@@ -218,11 +220,12 @@ TEST_F(EValueTest, toOptionalTensorList) {
   EValue* values_p[2] = {&values[0], &values[1]};
   std::optional<executorch::aten::Tensor> storage[2];
   // wrap in array ref
-  BoxedEvalueList<std::optional<executorch::aten::Tensor>> a(
+  auto boxed_list = std::make_unique<
+      BoxedEvalueList<std::optional<executorch::aten::Tensor>>>(
       values_p, storage, 2);
 
   // create Evalue
-  EValue e(a);
+  EValue e(boxed_list.get());
   e.tag = Tag::ListOptionalTensor;
   EXPECT_TRUE(e.isListOptionalTensor());
 
@@ -277,4 +280,131 @@ TEST_F(EValueTest, ConstructFromNullPtrAborts) {
   std::unique_ptr<executorch::aten::Tensor> null_ptr;
 
   ET_EXPECT_DEATH({ EValue evalue(null_ptr); }, "");
+}
+
+TEST_F(EValueTest, StringConstructorNullCheck) {
+  executorch::aten::ArrayRef<char>* null_string_ptr = nullptr;
+  ET_EXPECT_DEATH({ EValue evalue(null_string_ptr); }, "");
+}
+
+TEST_F(EValueTest, BoolListConstructorNullCheck) {
+  executorch::aten::ArrayRef<bool>* null_bool_list_ptr = nullptr;
+  ET_EXPECT_DEATH({ EValue evalue(null_bool_list_ptr); }, "");
+}
+
+TEST_F(EValueTest, DoubleListConstructorNullCheck) {
+  executorch::aten::ArrayRef<double>* null_double_list_ptr = nullptr;
+  ET_EXPECT_DEATH({ EValue evalue(null_double_list_ptr); }, "");
+}
+
+TEST_F(EValueTest, IntListConstructorNullCheck) {
+  BoxedEvalueList<int64_t>* null_int_list_ptr = nullptr;
+  ET_EXPECT_DEATH({ EValue evalue(null_int_list_ptr); }, "");
+}
+
+TEST_F(EValueTest, TensorListConstructorNullCheck) {
+  BoxedEvalueList<executorch::aten::Tensor>* null_tensor_list_ptr = nullptr;
+  ET_EXPECT_DEATH({ EValue evalue(null_tensor_list_ptr); }, "");
+}
+
+TEST_F(EValueTest, OptionalTensorListConstructorNullCheck) {
+  BoxedEvalueList<std::optional<executorch::aten::Tensor>>*
+      null_optional_tensor_list_ptr = nullptr;
+  ET_EXPECT_DEATH({ EValue evalue(null_optional_tensor_list_ptr); }, "");
+}
+
+TEST_F(EValueTest, BoxedEvalueListConstructorNullChecks) {
+  std::array<int64_t, 3> storage = {0, 0, 0};
+  std::array<EValue, 3> values = {
+      EValue((int64_t)1), EValue((int64_t)2), EValue((int64_t)3)};
+  std::array<EValue*, 3> values_p = {&values[0], &values[1], &values[2]};
+
+  // Test null wrapped_vals
+  ET_EXPECT_DEATH(
+      { BoxedEvalueList<int64_t> list(nullptr, storage.data(), 3); }, "");
+
+  // Test null unwrapped_vals
+  ET_EXPECT_DEATH(
+      { BoxedEvalueList<int64_t> list(values_p.data(), nullptr, 3); }, "");
+
+  // Test negative size
+  ET_EXPECT_DEATH(
+      { BoxedEvalueList<int64_t> list(values_p.data(), storage.data(), -1); },
+      "");
+}
+
+TEST_F(EValueTest, toListOptionalTensorTypeCheck) {
+  // Create an EValue that's not a ListOptionalTensor
+  EValue e((int64_t)42);
+  EXPECT_TRUE(e.isInt());
+  EXPECT_FALSE(e.isListOptionalTensor());
+
+  // Should fail type check
+  ET_EXPECT_DEATH({ e.toListOptionalTensor(); }, "");
+}
+
+TEST_F(EValueTest, toStringNullPointerCheck) {
+  // Create an EValue with String tag but null pointer
+  EValue e;
+  e.tag = Tag::String;
+  e.payload.copyable_union.as_string_ptr = nullptr;
+
+  // Should pass isString() check but fail null pointer check
+  EXPECT_TRUE(e.isString());
+  ET_EXPECT_DEATH({ e.toString(); }, "");
+}
+
+TEST_F(EValueTest, toIntListNullPointerCheck) {
+  // Create an EValue with ListInt tag but null pointer
+  EValue e;
+  e.tag = Tag::ListInt;
+  e.payload.copyable_union.as_int_list_ptr = nullptr;
+
+  // Should pass isIntList() check but fail null pointer check
+  EXPECT_TRUE(e.isIntList());
+  ET_EXPECT_DEATH({ e.toIntList(); }, "");
+}
+
+TEST_F(EValueTest, toBoolListNullPointerCheck) {
+  // Create an EValue with ListBool tag but null pointer
+  EValue e;
+  e.tag = Tag::ListBool;
+  e.payload.copyable_union.as_bool_list_ptr = nullptr;
+
+  // Should pass isBoolList() check but fail null pointer check
+  EXPECT_TRUE(e.isBoolList());
+  ET_EXPECT_DEATH({ e.toBoolList(); }, "");
+}
+
+TEST_F(EValueTest, toDoubleListNullPointerCheck) {
+  // Create an EValue with ListDouble tag but null pointer
+  EValue e;
+  e.tag = Tag::ListDouble;
+  e.payload.copyable_union.as_double_list_ptr = nullptr;
+
+  // Should pass isDoubleList() check but fail null pointer check
+  EXPECT_TRUE(e.isDoubleList());
+  ET_EXPECT_DEATH({ e.toDoubleList(); }, "");
+}
+
+TEST_F(EValueTest, toTensorListNullPointerCheck) {
+  // Create an EValue with ListTensor tag but null pointer
+  EValue e;
+  e.tag = Tag::ListTensor;
+  e.payload.copyable_union.as_tensor_list_ptr = nullptr;
+
+  // Should pass isTensorList() check but fail null pointer check
+  EXPECT_TRUE(e.isTensorList());
+  ET_EXPECT_DEATH({ e.toTensorList(); }, "");
+}
+
+TEST_F(EValueTest, toListOptionalTensorNullPointerCheck) {
+  // Create an EValue with ListOptionalTensor tag but null pointer
+  EValue e;
+  e.tag = Tag::ListOptionalTensor;
+  e.payload.copyable_union.as_list_optional_tensor_ptr = nullptr;
+
+  // Should pass isListOptionalTensor() check but fail null pointer check
+  EXPECT_TRUE(e.isListOptionalTensor());
+  ET_EXPECT_DEATH({ e.toListOptionalTensor(); }, "");
 }

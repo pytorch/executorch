@@ -93,7 +93,8 @@ from executorch.exir.tensor import (
 from executorch.exir.types import LeafValueSpec, ValueSpec
 from torch._subclasses.fake_tensor import FakeTensor
 
-from torch.export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram, ExportGraphSignature
+from torch.fx.node import Node
 from torch.utils import _pytree as pytree
 
 from typing_extensions import TypeAlias
@@ -146,8 +147,6 @@ class _EmitterState:
     operators: List[Operator]
     delegates: List[BackendDelegate]
     operator_cache: Dict[Tuple[str, str], int]
-    # delegate_cache: the key is hash(delegated_payload) and the value is the index in delegates
-    delegate_cache: Dict[str, int]
     emit_stacktrace: bool
     emit_mutable_buffer_names: bool
 
@@ -209,11 +208,11 @@ _DelegateDebugIdentifierMap: TypeAlias = Union[
 ]
 
 
-# pyre-ignore[13]: Attribute `node` is never initialized.
 class _Emitter(torch.fx.Interpreter):
     """An abstract interpreter (https://wiki.mozilla.org/Abstract_Interpretation) used to emit the
     given traced torch.fx.GraphModule to the flatbuffer schema."""
 
+    # pyre-ignore[13]: Attribute `node` is never initialized.
     node: torch.fx.Node
 
     def __init__(
@@ -253,6 +252,7 @@ class _Emitter(torch.fx.Interpreter):
 
         self.concrete_output_ids: List[_AbstractValue] = []
         self.debug_handle_map: Dict[int, Union[int, List[int]]] = {}
+        self.instruction_id_to_num_outs_map: Dict[int, int] = {}
         self.instr_id_to_delegate_debug_id_map: Dict[
             int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]
         ] = {}
@@ -372,6 +372,21 @@ class _Emitter(torch.fx.Interpreter):
             )
         return allocation_info
 
+    def _save_to_external_constant_map(
+        self,
+        fqn: str,
+        buffer_idx: int,
+        constant_tag: str,
+    ) -> None:
+        """
+        Saves external constant to the map.
+        """
+        # buffer data should be in the external_constant_buffer already.
+        assert buffer_idx < len(self.program_state.external_constant_buffer)
+        if constant_tag not in self.program_state.external_constant_map:
+            self.program_state.external_constant_map[constant_tag] = {}
+        self.program_state.external_constant_map[constant_tag][fqn] = buffer_idx
+
     def _save_new_const_tensor(
         self,
         spec: TensorSpec,
@@ -403,11 +418,9 @@ class _Emitter(torch.fx.Interpreter):
             buffer_idx = len(self.program_state.external_constant_buffer)
             self.program_state.external_constant_hash[hashed] = buffer_idx
             self.program_state.external_constant_buffer.append(buffer_data)
-            if constant_tag not in self.program_state.external_constant_map:
-                self.program_state.external_constant_map[constant_tag] = {}
-            self.program_state.external_constant_map[constant_tag][
-                spec.extra_tensor_info.fully_qualified_name  # pyre-ignore Undefined attribute [16]: `Optional` has no attribute `fully_qualified_name`.
-            ] = buffer_idx
+            self._save_to_external_constant_map(
+                spec.extra_tensor_info.fully_qualified_name, buffer_idx, constant_tag
+            )
         # Tensor is mutable with initial state. Place into mutable segment
         elif allocation_info:
             buffer_idx = len(self.program_state.mutable_buffer)
@@ -466,6 +479,19 @@ class _Emitter(torch.fx.Interpreter):
                 and spec.extra_tensor_info.location == TensorDataLocation.EXTERNAL
             ):
                 buffer_idx = self.program_state.external_constant_hash.get(hashed, -1)
+                if buffer_idx != -1:
+                    # This constant already exists in the external_constant_buffer,
+                    # And doesn't need to be duplicated. However, the fqn is unique
+                    # and should be added. ie, we have the case: fqn0->data, fqn1->data.
+                    # When buffer_idx == 1, the data is new and added with
+                    # `_save_new_const_tensor` below.
+                    assert spec.extra_tensor_info.fully_qualified_name is not None
+                    assert constant_tag is not None
+                    self._save_to_external_constant_map(
+                        spec.extra_tensor_info.fully_qualified_name,
+                        buffer_idx,
+                        constant_tag,
+                    )
             else:
                 buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
 
@@ -918,22 +944,279 @@ class _Emitter(torch.fx.Interpreter):
 
         return subemitter_binding_output_values
 
+    def _emit_scan(
+        self,
+        args: Tuple[_Argument, ...],
+        subemitter_binding_output_values: List[_AbstractValue],
+    ) -> List[_AbstractValue]:
+        """Emits torch.scan.
+
+        Converts the higher order scan op into a loop constructed from jump instructions
+        and primitive operations. Scan differs from map in that it maintains a carry state
+        that evolves across iterations.
+
+        Scan signature: scan(combine_fn, init, xs, additional_inputs)
+            - combine_fn: GraphModule that takes (carry, x_slice, *additional_inputs)
+                          and returns (next_carry, y_slice)
+            - init: Initial carry state (list of tensors)
+            - xs: Input tensors to scan over (list of tensors, scanned along dim 0)
+            - additional_inputs: Additional arguments passed to combine_fn
+
+        Output: (final_carry, stacked_ys)
+            - final_carry: The carry state after the last iteration
+            - stacked_ys: All y outputs stacked along dim 0
+
+        Memory Layout:
+            - carry_outputs (subemitter_binding_output_values[:num_carry]):
+              Working carry buffers, initialized from init, updated each iteration
+            - y_outputs (subemitter_binding_output_values[num_carry:]):
+              Pre-allocated stacked output buffers, filled via et_copy_index
+
+        The combine_fn writes to its own temporary output buffers (concrete_output_ids).
+        After each iteration:
+            1. Copy combine_fn's carry output -> carry_outputs (for next iteration)
+            2. et_copy_index(y_outputs, combine_fn's y output, iter_idx)
+
+        This explicit copy approach is used because in-place op.out(x, out=x) is unsafe.
+        """
+        combine_fn, init, xs, additional_inputs = args
+
+        assert isinstance(subemitter_binding_output_values, (list, tuple)), (
+            f"Expected list for subemitter_binding_output_values. "
+            f"Got {type(subemitter_binding_output_values).__name__}: "
+            f"{subemitter_binding_output_values}."
+        )
+
+        assert isinstance(combine_fn, torch.fx.GraphModule)
+        assert isinstance(init, (list, tuple))
+        assert isinstance(xs, (list, tuple))
+        assert isinstance(additional_inputs, (list, tuple))
+
+        num_carry = len(init)
+        num_xs = len(xs)
+
+        carry_outputs = list(subemitter_binding_output_values[:num_carry])
+        y_outputs = list(subemitter_binding_output_values[num_carry:])
+
+        if num_xs < 1:
+            raise RuntimeError(
+                f"Scan requires at least one xs tensor to scan over but got {num_xs}"
+            )
+
+        iter_idx = self._emit_evalue(EValue(Int(0)))
+
+        op_index, op = self._get_operator(
+            name="aten::sym_size",
+            overload="int",
+        )
+        sym_size = self._emit_evalue(EValue(Int(0)))
+        kernel = Instruction(
+            KernelCall(
+                op_index=op_index,
+                args=[xs[0].id, self._emit_evalue(EValue(Int(0))).id, sym_size.id],
+            )
+        )
+        self.chain.instructions.append(kernel)
+
+        # Initialize carry_outputs from init
+        op_index_copy, _ = self._get_operator(name="aten::copy_")
+        for init_val, carry_out in zip(init, carry_outputs):
+            kernel = Instruction(
+                KernelCall(
+                    op_index=op_index_copy,
+                    args=[
+                        carry_out.id,
+                        init_val.id,
+                        self._emit_evalue(EValue(Bool(False))).id,
+                        carry_out.id,
+                    ],
+                )
+            )
+            self.chain.instructions.append(kernel)
+
+        # Slice each xs tensor for the current iteration
+        op_index_select, _ = self._get_operator(
+            name="aten::select_copy",
+            overload="int_out",
+        )
+        xs_slice_instructions = []
+        for x in xs:
+            kernel = Instruction(
+                KernelCall(
+                    op_index=op_index_select,
+                    args=[
+                        x.id,
+                        self._emit_evalue(EValue(Int(0))).id,
+                        iter_idx.id,
+                        -1,
+                        -1,
+                    ],
+                )
+            )
+            xs_slice_instructions.append(kernel)
+
+        jump_to_instruction = self.instruction_start_offset + len(
+            self.chain.instructions
+        )
+
+        for kernel in xs_slice_instructions:
+            self.chain.instructions.append(kernel)
+
+        # Emit combine_fn submodule
+        binding_input_values: List[Any] = []
+        binding_input_values.extend(carry_outputs)
+        binding_input_values.extend([-1] * num_xs)
+        binding_input_values.extend(additional_inputs)
+
+        scan_emitter = _Emitter(
+            combine_fn,
+            self.emitter_state,
+            self.program_state,
+            instruction_start_offset=self.instruction_start_offset
+            + len(self.chain.instructions),
+            binding_input_values=binding_input_values,
+            binding_output_values=None,
+        )
+        scan_emitter.run()
+
+        self._merge_chain(scan_emitter.chain)
+
+        for i, kernel in enumerate(xs_slice_instructions):
+            xs_placeholder_id = scan_emitter.binding_input_values[num_carry + i].id
+            kernel.instr_args.args[-1] = xs_placeholder_id
+            kernel.instr_args.args[-2] = xs_placeholder_id
+
+        concrete_outputs = scan_emitter.concrete_output_ids
+        carry_temp = concrete_outputs[:num_carry]
+        y_temp = concrete_outputs[num_carry:]
+
+        self._internal_assert_emitter(
+            len(carry_temp) == num_carry,
+            self.node,
+            f"Scan combine_fn should output {num_carry} carry values, got {len(carry_temp)}",
+        )
+        self._internal_assert_emitter(
+            len(y_temp) == len(y_outputs),
+            self.node,
+            f"Scan combine_fn should output {len(y_outputs)} y values, got {len(y_temp)}",
+        )
+
+        # Copy carry_temp -> carry_outputs for next iteration
+        for carry_t, carry_out in zip(carry_temp, carry_outputs):
+            kernel = Instruction(
+                KernelCall(
+                    op_index=op_index_copy,
+                    args=[
+                        carry_out.id,
+                        carry_t.id,
+                        self._emit_evalue(EValue(Bool(False))).id,
+                        carry_out.id,
+                    ],
+                )
+            )
+            self.chain.instructions.append(kernel)
+
+        # Copy y_temp to stacked y_outputs
+        op_index_copy_index, _ = self._get_operator(
+            name="executorch_prim::et_copy_index",
+            overload="tensor",
+        )
+        for y_t, y_out in zip(y_temp, y_outputs):
+            kernel = Instruction(
+                KernelCall(
+                    op_index=op_index_copy_index,
+                    args=[y_out.id, y_t.id, iter_idx.id],
+                )
+            )
+            self.chain.instructions.append(kernel)
+
+        # Increment iter_idx
+        op_index_add, _ = self._get_operator(
+            name="executorch_prim::add",
+            overload="Scalar",
+        )
+        kernel = Instruction(
+            KernelCall(
+                op_index=op_index_add,
+                args=[iter_idx.id, self._emit_evalue(EValue(Int(1))).id, iter_idx.id],
+            )
+        )
+        self.chain.instructions.append(kernel)
+
+        # Check if iteration is complete
+        jump_bool_value = self._emit_evalue(EValue(Bool(False)))
+        op_index_eq, _ = self._get_operator(
+            name="executorch_prim::eq",
+            overload="Scalar",
+        )
+        kernel = Instruction(
+            KernelCall(
+                op_index=op_index_eq,
+                args=[iter_idx.id, sym_size.id, jump_bool_value.id],
+            )
+        )
+        self.chain.instructions.append(kernel)
+
+        jf_beginning_loop = Instruction(
+            JumpFalseCall(
+                cond_value_index=jump_bool_value.id,
+                destination_instruction=jump_to_instruction,
+            )
+        )
+        self.chain.instructions.append(jf_beginning_loop)
+
+        # Reset iter_idx for potential re-runs
+        op_index_sub, _ = self._get_operator(
+            name="executorch_prim::sub",
+            overload="Scalar",
+        )
+        kernel = Instruction(
+            KernelCall(
+                op_index=op_index_sub,
+                args=[iter_idx.id, sym_size.id, iter_idx.id],
+            )
+        )
+        self.chain.instructions.append(kernel)
+
+        return subemitter_binding_output_values
+
     def _emit_control_flow(
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> _EmitterValue:
         """Wraps common logic for emitting all control flow operations.
 
-        See the more specific emission functions for more details on how cond or map get emitted.
+        See the more specific emission functions for more details on how cond, map, or scan get emitted.
         """
+        specs = self.node.meta["spec"]
+
+        # For scan/map, set the shape_dynamism for the stacked outputs (y_outputs) to DYNAMIC_BOUND
+        # BEFORE emitting the specs. This is because et_copy_index has cat shape semantics but
+        # stack memory behavior, so we need to be able to update the shape +1 for each iteration
+        # which we can't do for tensors marked static.
+        if target is torch.ops.higher_order.scan:
+            combine_fn, init, xs, additional_inputs = args
+            num_carry = len(init)
+            if isinstance(specs, (list, tuple)):
+                y_specs = specs[num_carry:]
+                for y_spec in y_specs:
+                    if isinstance(y_spec, TensorSpec):
+                        y_spec.shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
+        elif target is torch.ops.higher_order.map_impl:
+            assert len(specs) == 1
+            assert isinstance(specs[0], TensorSpec)
+            specs[0].shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
+
         subemitter_binding_output_values = pytree.tree_map(
             lambda spec: self._emit_spec(spec),
-            self.node.meta["spec"],
+            specs,
         )
 
         if target is torch.ops.higher_order.cond:
             return self._emit_cond(args, subemitter_binding_output_values)
         elif target is torch.ops.higher_order.map_impl:
             return self._emit_map(args, subemitter_binding_output_values)
+        elif target is torch.ops.higher_order.scan:
+            return self._emit_scan(args, subemitter_binding_output_values)
         else:
             raise InternalError(
                 self._emit_node_specific_error(
@@ -1003,7 +1286,11 @@ class _Emitter(torch.fx.Interpreter):
                     and node.meta.get("debug_handle") is not None
                 ):
                     debug_handle_list.append(node.meta.get("debug_handle"))
+            output_node = lowered_module.original_module.graph.output_node()
+            outputs = output_node.args[0]
+            num_outputs = len(outputs) if isinstance(outputs, (list, tuple)) else 1
             self.debug_handle_map[emitter_id] = debug_handle_list
+            self.instruction_id_to_num_outs_map[emitter_id] = num_outputs
             # Debug handle for this node is the emitter_id which is essentially the index of the
             # instruction in the chain.
             self.node.meta["debug_handle"] = emitter_id
@@ -1030,7 +1317,7 @@ class _Emitter(torch.fx.Interpreter):
         code, module hierarchy etc.
         """
         delegate_map = {}
-        if hasattr(lowered_module, "meta"):
+        if lowered_module.meta is not None:
             delegate_map = lowered_module.meta.get("debug_handle_map", {})
 
         self.instr_id_to_delegate_debug_id_map[delegate_instruction_id] = {
@@ -1086,7 +1373,7 @@ class _Emitter(torch.fx.Interpreter):
         delegate's blob."""
         processed_bytes = lowered_module.processed_bytes
         hashed = hashlib.sha256(processed_bytes).hexdigest()
-        delegate_index = self.emitter_state.delegate_cache.get(hashed)
+        delegate_index = self.program_state.backend_delegate_data_cache.get(hashed)
         delegate_ret = None
 
         if isinstance(self.node.meta["spec"], list):
@@ -1124,28 +1411,20 @@ class _Emitter(torch.fx.Interpreter):
         if delegate_index is None:
             # Allocate an entry for the data. TODO(T150113674): Reuse any duplicate entries if
             # present.
-            hashed = hashlib.sha256(processed_bytes).hexdigest()
-            data_index: Optional[int] = (
-                self.program_state.backend_delegate_data_cache.get(hashed)
+            delegate_index = len(self.program_state.backend_delegate_data_cache)
+            self.program_state.backend_delegate_data_cache[hashed] = delegate_index
+            self.program_state.backend_delegate_data.append(
+                BackendDelegateInlineData(data=processed_bytes)
             )
-            if data_index is None:
-                data_index = len(self.program_state.backend_delegate_data)
-                self.program_state.backend_delegate_data_cache[hashed] = data_index
-                self.program_state.backend_delegate_data.append(
-                    BackendDelegateInlineData(data=processed_bytes)
-                )
 
-            backend_delegate = BackendDelegate(
-                id=lowered_module.backend_id,
-                processed=BackendDelegateDataReference(
-                    location=DataLocation.INLINE, index=data_index
-                ),
-                compile_specs=lowered_module.compile_specs,
-            )
-            delegate_index = len(self.emitter_state.delegate_cache)
-            self.emitter_state.delegates.append(backend_delegate)
-            self.emitter_state.delegate_cache[hashed] = delegate_index
-
+        backend_delegate = BackendDelegate(
+            id=lowered_module.backend_id,
+            processed=BackendDelegateDataReference(
+                location=DataLocation.INLINE, index=delegate_index
+            ),
+            compile_specs=lowered_module.compile_specs,
+        )
+        self.emitter_state.delegates.append(backend_delegate)
         # TODO(angelayi) Will need to emit the kwargs too, in the correct order according to the
         # function's spec and with default arguments. This requires us to store the function's spec
         # in to_backend()
@@ -1158,12 +1437,17 @@ class _Emitter(torch.fx.Interpreter):
             delegate_args.append(elem.id)
 
         self.chain.instructions.append(
-            Instruction(DelegateCall(delegate_index=delegate_index, args=delegate_args))
+            Instruction(
+                DelegateCall(
+                    delegate_index=len(self.emitter_state.delegates) - 1,
+                    args=delegate_args,
+                )
+            )
         )
 
         return delegate_ret
 
-    def _get_operator(self, name: str, overload: str) -> Tuple[int, Operator]:
+    def _get_operator(self, name: str, overload: str = "") -> Tuple[int, Operator]:
         """Given a fully qualified name, lookups the operator in the ExecuTorch Program, or adds it
         if it is not already present"""
         key = (name, overload)
@@ -1484,6 +1768,7 @@ class _Emitter(torch.fx.Interpreter):
             torch.ops.higher_order.cond,
             torch.ops.higher_order.map_impl,
             torch.ops.higher_order.while_loop,
+            torch.ops.higher_order.scan,
         ):
             return self._emit_control_flow(target, args, kwargs)
 
@@ -1627,6 +1912,28 @@ class _TopLevelEmitter(_Emitter):
 
         if isinstance(target, str) and isinstance(spec, TensorSpec):
             fqn, is_mutable_buffer = self._find_fqn_for_placeholder(target, spec)
+
+            def _is_buffer(node: Node, graph_signature: ExportGraphSignature) -> bool:
+                """
+                Check if the node is buffer according to the provided graph signature.
+                If it is one return its fqn as well
+                """
+                if node.op == "placeholder":
+                    if isinstance(node.target, str):
+                        if node.target in graph_signature.inputs_to_buffers:
+                            return True
+                return False
+
+            # If the spec does not appear in the mutable section of the graph signature it still might
+            # overall be considered a mutable buffer if it has already been memory planned. This would
+            # suggest that the same abstract buffer is mutable in another entry point so we should
+            # compel it to be considered mutable in all entry points at emission just as the user did with
+            # memory planning.
+            is_mutable_buffer |= (
+                _is_buffer(self.node, self.exported_program.graph_signature)
+                and spec.mem_id is not None
+                and spec.mem_offset is not None
+            )
 
             # If the placeholder has a constant_tag, it is external to the PTE file
             # and requires a fqn and location=TensorDataLocation.EXTERNAL

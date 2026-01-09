@@ -1,0 +1,20 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+binary_scalar_texture:
+  parameter_names_with_default_values:
+    OPERATOR: power_of(X, Y)
+    NDIM: 3
+    DTYPE: float
+    PACKING: C_packed
+    STORAGE: texture3d
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+      - VALUE: int32
+  shader_variants:
+    - NAME: pow_scalar_texture3d

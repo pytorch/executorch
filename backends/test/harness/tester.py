@@ -1,3 +1,8 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import random
 from collections import Counter, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -62,6 +67,7 @@ class Tester:
             StageType.RUN_PASSES: [
                 StageType.PARTITION,
                 StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
             ],
             # TODO Make this Stage optional
             StageType.PARTITION: [StageType.TO_EXECUTORCH],
@@ -412,6 +418,8 @@ class Tester:
         # Wrap both outputs as tuple, since executor output is always a tuple even if single tensor
         if isinstance(reference_output, torch.Tensor):
             reference_output = (reference_output,)
+        elif isinstance(reference_output, OrderedDict):
+            reference_output = tuple(reference_output.values())
         if isinstance(stage_output, torch.Tensor):
             stage_output = (stage_output,)
 

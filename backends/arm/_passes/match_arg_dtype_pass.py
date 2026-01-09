@@ -3,7 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node, get_node_arg
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -26,7 +29,7 @@ def get_largest_dtype(dtype_1, dtype_2):
     return dtype_1 if DTYPE_RANK[dtype_1] > DTYPE_RANK[dtype_2] else dtype_2
 
 
-class MatchArgDtypePass(ExportPass):
+class MatchArgDtypePass(ArmPass):
     """Pass to match data types of non-condition input tensors.
 
     Edge dialect allows different data types for non-condition tensors, while TOSA
@@ -37,6 +40,8 @@ class MatchArgDtypePass(ExportPass):
     cast to int8 and then to the correct target data type.
 
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     targeted_ops = {exir_ops.edge.aten.sub.Tensor, exir_ops.edge.aten.where.self}
 

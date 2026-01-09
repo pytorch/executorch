@@ -19,7 +19,7 @@ There are three flows for delegating a program to a backend:
     is good for reusing lowered modules exported from other flows.
 1. Lower parts of a module according to a partitioner. This is good for
     lowering models that include both lowerable and non-lowerable nodes, and is
-    the most streamlined procecss.
+    the most streamlined process.
 
 ### Flow 1: Lowering the whole module
 

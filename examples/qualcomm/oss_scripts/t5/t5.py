@@ -11,10 +11,14 @@ import subprocess
 from multiprocessing.connection import Client
 
 import torch
-
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+    QnnExecuTorchGpuPrecision,
+)
 from executorch.backends.qualcomm.utils.utils import (
+    generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     to_edge_transform_and_lower_to_qnn,
@@ -28,6 +32,7 @@ from executorch.examples.qualcomm.oss_scripts.t5.t5_model import (
 )
 from executorch.examples.qualcomm.utils import (
     evaluate_squad,
+    get_backend_type,
     get_seq2seq_dataset_from_squad_csv,
     make_quantizer,
     replace_module_with_custom_class,
@@ -143,8 +148,10 @@ class T5:
         workspace,
         use_fp16=False,
         soc_model=QcomChipset.SM8650,
+        backend=QnnExecuTorchBackendType.kHtpBackend,
         skip_node_id_set=None,
         skip_node_op_set=None,
+        online_prepare=False,
         verbose=True,
     ):
         graph_names = [ENCODER, DECODER]
@@ -160,10 +167,26 @@ class T5:
                 self.exported_decoder,
             ]
 
-        backend_options = generate_htp_compiler_spec(use_fp16=use_fp16)
+        if backend == QnnExecuTorchBackendType.kGpuBackend and not online_prepare:
+            raise RuntimeError("Currently GPU backend only support online_prepare.")
+        backend_options = {
+            QnnExecuTorchBackendType.kGpuBackend: generate_gpu_compiler_spec(
+                **{
+                    "precision": (
+                        QnnExecuTorchGpuPrecision.kGpuPrecisionFp16
+                        if use_fp16
+                        else QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided
+                    )
+                }
+            ),
+            QnnExecuTorchBackendType.kHtpBackend: generate_htp_compiler_spec(
+                use_fp16=use_fp16
+            ),
+        }[backend]
         compile_spec = generate_qnn_executorch_compiler_spec(
             soc_model=soc_model,
             backend_options=backend_options,
+            online_prepare=online_prepare,
         )
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
             dict(zip(graph_names, modules)),
@@ -207,19 +230,13 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     data_size = 100
     max_hidden_seq_length = 384
     max_cache_length = 512
 
     tokenizer = AutoTokenizer.from_pretrained("google-t5/t5-small")
     model = AutoModelForSeq2SeqLM.from_pretrained("google-t5/t5-small").eval()
-    inputs, targets, input_list = get_seq2seq_dataset_from_squad_csv(
+    inputs, targets = get_seq2seq_dataset_from_squad_csv(
         args.dataset,
         tokenizer,
         data_size,
@@ -234,12 +251,19 @@ def main(args):
             max_hidden_seq_length=max_hidden_seq_length,
             max_cache_length=max_cache_length,
         )
-        quant_dtype = QuantDtype.use_16a8w
-        t5.quantize(inputs, quant_dtype)
+        backend = get_backend_type(args.backend)
+        quant_dtype = {
+            QnnExecuTorchBackendType.kGpuBackend: None,
+            QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_16a8w,
+        }[backend]
+        if quant_dtype:
+            t5.quantize(inputs, quant_dtype)
         t5.lowering_modules(
             args.artifact,
             soc_model=getattr(QcomChipset, args.model),
             use_fp16=True if quant_dtype is None else False,
+            backend=backend,
+            online_prepare=args.online_prepare,
         )
 
     if args.compile_only:
@@ -295,6 +319,7 @@ def main(args):
                 runner_args,
             ]
         )
+        backend = get_backend_type(args.backend)
         adb = SimpleADB(
             qnn_sdk=os.getenv("QNN_SDK_ROOT"),
             build_path=f"{args.build_folder}",
@@ -303,11 +328,13 @@ def main(args):
             device_id=args.device,
             host_id=args.host,
             soc_model=args.model,
+            shared_buffer=args.shared_buffer,
+            target=args.target,
             runner="examples/qualcomm/oss_scripts/t5/qnn_t5_runner",
+            backend=backend,
         )
         adb.push(
             inputs=inputs,
-            input_list=input_list,
             files=[spiece_model],
         )
         adb.execute(custom_runner_cmd=runner_cmd)
@@ -334,11 +361,6 @@ if __name__ == "__main__":
         type=str,
     )
     parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated t5 in the given directory.",
-        type=str,
-    )
-    parser.add_argument(
         "-d",
         "--dataset",
         help=(
@@ -351,6 +373,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

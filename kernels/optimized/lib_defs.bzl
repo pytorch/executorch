@@ -1,4 +1,3 @@
-load("@fbsource//tools/build_defs:default_platform_defs.bzl", "DEVSERVER_PLATFORM_REGEX")
 load("@fbsource//tools/build_defs:fb_native_wrapper.bzl", "fb_native")
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
@@ -10,6 +9,16 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 # Targets using the vec library must therefore call the get_vec_*_flags
 # functions in order to declare the required compiler flags needed in order to
 # access CPU vector intrinsics.
+
+def get_exported_linker_flags():
+    if not runtime.is_oss:
+        exported_linker_flags = select({
+            "DEFAULT": [],
+            "ovr_config//os:macos-arm64": ["-framework", "Accelerate"],
+            "ovr_config//os:macos-x86_64": ["-framework", "Accelerate"],
+        })
+        return exported_linker_flags
+    return []
 
 def get_vec_preprocessor_flags():
     if not runtime.is_oss:
@@ -51,14 +60,12 @@ def get_vec_deps():
     return []
 
 def get_vec_cxx_preprocessor_flags():
-    preprocessor_flags = [
-        (
-            DEVSERVER_PLATFORM_REGEX,
-            [
-                "-DCPU_CAPABILITY_AVX2",
-            ],
-        ),
-    ]
+    preprocessor_flags = select({
+        "DEFAULT": [],
+        "ovr_config//os:linux": [
+            "-DCPU_CAPABILITY_AVX2",
+        ],
+    })
     return preprocessor_flags
 
 def get_vec_fbcode_preprocessor_flags():
@@ -127,32 +134,20 @@ def define_libs(is_fbcode=False):
         exported_deps = [
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
-        cxx_platform_deps = select({
-            "DEFAULT": [
-                (
-                    DEVSERVER_PLATFORM_REGEX,
-                    [
-                        "fbsource//third-party/sleef:sleef",
-                    ],
-                ),
-            ],
-            "ovr_config//cpu:arm64": [
-                (
-                    DEVSERVER_PLATFORM_REGEX,
-                    [
-                        "fbsource//third-party/sleef:sleef",
-                    ],
-                ),
-            ],
-        }),
-        fbandroid_platform_deps = [
-            (
-                "^android-arm64.*$",
-                [
+        deps = select({
+            "DEFAULT": [],
+            "ovr_config//os:linux": [
+                "fbsource//third-party/sleef:sleef",
+            ] if not runtime.is_oss else [],
+        }) + select({
+            "DEFAULT": [],
+            "ovr_config//os:android": select({
+                "DEFAULT": [],
+                "ovr_config//cpu:arm64": [
                     "fbsource//third-party/sleef:sleef",
-                ],
-            ),
-        ],
+                ] if not runtime.is_oss else [],
+            }),
+        }),
     )
 
     runtime.cxx_library(
@@ -187,6 +182,30 @@ def define_libs(is_fbcode=False):
     ]
 
     for libblas_name, mkl_dep in [("libblas", "fbsource//third-party/mkl:mkl_lp64_omp"), ("libblas_mkl_noomp", "fbsource//third-party/mkl:mkl")]:
+        # Merge platform-specific kwargs
+        platform_kwargs = get_apple_framework_deps_kwargs(is_fbcode)
+        if not is_fbcode:
+            platform_kwargs.update({
+                "fbandroid_preprocessor_flags": select({
+                    "DEFAULT": [],
+                    "ovr_config//os:android": select({
+                        "DEFAULT": [],
+                        "ovr_config//cpu:arm64": [
+                            "-DET_BUILD_WITH_BLAS",
+                        ],
+                    }),
+                }),
+                "fbandroid_deps": select({
+                    "DEFAULT": [],
+                    "ovr_config//os:android": select({
+                        "DEFAULT": [],
+                        "ovr_config//cpu:arm64": [
+                            "fbsource//arvr/third-party/eigen:eigen3_blas",
+                        ],
+                    }),
+                }),
+            })
+
         runtime.cxx_library(
             name = libblas_name,
             srcs = native.glob([
@@ -195,6 +214,7 @@ def define_libs(is_fbcode=False):
             exported_headers = native.glob([
                 "blas/**/*.h",
             ]),
+            exported_linker_flags = get_exported_linker_flags(),
             compiler_flags = ["-Wno-pass-failed"] + select({
                 "ovr_config//runtime:fbcode": [],
                 # TODO: replace with get_compiler_optimization_flags from op_registration_util.bzl when that
@@ -207,22 +227,6 @@ def define_libs(is_fbcode=False):
                 "@EXECUTORCH_CLIENTS",
             ],
             preprocessor_flags = get_preprocessor_flags(),
-            fbandroid_platform_preprocessor_flags = [
-                (
-                    "^android-arm64.*$",
-                    [
-                        "-DET_BUILD_WITH_BLAS",
-                    ],
-                ),
-            ],
-            fbandroid_platform_deps = [
-                (
-                    "^android-arm64.*$",
-                    [
-                        "fbsource//arvr/third-party/eigen:eigen3_blas",
-                    ],
-                ),
-            ],
             fbobjc_exported_preprocessor_flags = [
                 "-DET_BUILD_WITH_BLAS",
                 "-DET_BUILD_FOR_APPLE",
@@ -237,5 +241,5 @@ def define_libs(is_fbcode=False):
                 "//executorch/runtime/core/exec_aten:lib",
                 "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             ],
-            **get_apple_framework_deps_kwargs(is_fbcode),
+            **platform_kwargs,
         )

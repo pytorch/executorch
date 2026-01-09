@@ -5,12 +5,11 @@
 
 import logging
 import tempfile
+from typing import Any, cast, Sequence
 
 import torch
-from executorch.backends.arm.arm_backend import get_intermediate_path
 from executorch.backends.arm.test.runner_utils import (
     get_input_quantization_params,
-    get_output_nodes,
     get_output_quantization_params,
 )
 
@@ -19,9 +18,29 @@ from executorch.backends.test.harness.stages import StageType
 logger = logging.getLogger(__name__)
 
 
-def _print_channels(result, reference, channels_close, C, H, W, rtol, atol):
+TensorLike = torch.Tensor | tuple[torch.Tensor, ...]
 
+
+def _ensure_tensor(value: TensorLike) -> torch.Tensor:
+    if isinstance(value, torch.Tensor):
+        return value
+    if value and isinstance(value[0], torch.Tensor):
+        return value[0]
+    raise TypeError("Expected a Tensor or a non-empty tuple of Tensors")
+
+
+def _print_channels(
+    result: torch.Tensor,
+    reference: torch.Tensor,
+    channels_close: Sequence[bool],
+    C: int,
+    H: int,
+    W: int,
+    rtol: float,
+    atol: float,
+) -> str:
     output_str = ""
+    exp = "000"
     booldata = False
     if reference.dtype == torch.bool or result.dtype == torch.bool:
         booldata = True
@@ -64,7 +83,15 @@ def _print_channels(result, reference, channels_close, C, H, W, rtol, atol):
     return output_str
 
 
-def _print_elements(result, reference, C, H, W, rtol, atol):
+def _print_elements(
+    result: torch.Tensor,
+    reference: torch.Tensor,
+    C: int,
+    H: int,
+    W: int,
+    rtol: float,
+    atol: float,
+) -> str:
     output_str = ""
     for y in range(H):
         res = "["
@@ -93,15 +120,17 @@ def _print_elements(result, reference, C, H, W, rtol, atol):
     return output_str
 
 
-def print_error_diffs(
-    tester,
-    result: torch.Tensor | tuple,
-    reference: torch.Tensor | tuple,
-    quantization_scale=None,
-    atol=1e-03,
-    rtol=1e-03,
-    qtol=0,
-):
+def print_error_diffs(  # noqa: C901
+    tester_or_result: Any,
+    result_or_reference: TensorLike,
+    reference: TensorLike | None = None,
+    # Force remaining args to be keyword-only to keep the two positional call patterns unambiguous.
+    *,
+    quantization_scale: float | None = None,
+    atol: float = 1e-03,
+    rtol: float = 1e-03,
+    qtol: float = 0,
+) -> None:
     """
     Prints the error difference between a result tensor and a reference tensor in NCHW format.
     Certain formatting rules are applied to clarify errors:
@@ -132,60 +161,81 @@ def print_error_diffs(
 
 
     """
+    if reference is None:
+        result = _ensure_tensor(cast(TensorLike, tester_or_result))
+        reference_tensor = _ensure_tensor(result_or_reference)
+    else:
+        result = _ensure_tensor(result_or_reference)
+        reference_tensor = _ensure_tensor(reference)
 
-    if isinstance(reference, tuple):
-        reference = reference[0]
-    if isinstance(result, tuple):
-        result = result[0]
-
-    if not result.shape == reference.shape:
+    if result.shape != reference_tensor.shape:
         raise ValueError(
-            f"Output needs to be of same shape: {result.shape} != {reference.shape}"
+            f"Output needs to be of same shape: {result.shape} != {reference_tensor.shape}"
         )
     shape = result.shape
+    rank = len(shape)
 
-    match len(shape):
-        case 4:
-            N, C, H, W = (shape[0], shape[1], shape[2], shape[3])
-        case 3:
-            N, C, H, W = (1, shape[0], shape[1], shape[2])
-        case 2:
-            N, C, H, W = (1, 1, shape[0], shape[1])
-        case 1:
-            N, C, H, W = (1, 1, 1, shape[0])
-        case 0:
-            N, C, H, W = (1, 1, 1, 1)
-        case _:
-            raise ValueError("Invalid tensor rank")
+    if rank == 5:
+        N, C, D, H, W = shape
+    elif rank == 4:
+        N, C, H, W = shape
+        D = 1
+    elif rank == 3:
+        C, H, W = shape
+        N, D = 1, 1
+    elif rank == 2:
+        H, W = shape
+        N, C, D = 1, 1, 1
+    elif rank == 1:
+        W = shape[0]
+        N, C, D, H = 1, 1, 1, 1
+    elif rank == 0:
+        N = C = D = H = W = 1
+    else:
+        raise ValueError("Invalid tensor rank")
+
+    if rank < 3:
+        C = 1
+    if rank < 2:
+        H = 1
+    if rank < 1:
+        W = 1
 
     if quantization_scale is not None:
         atol += quantization_scale * qtol
 
-    # Reshape tensors to 4D NCHW format
-    result = torch.reshape(result, (N, C, H, W))
-    reference = torch.reshape(reference, (N, C, H, W))
+    # Reshape tensors to 4D NCHW format, optionally folding depth into batch.
+    total_batches = N * D
+    result = torch.reshape(result, (total_batches, C, H, W))
+    reference_tensor = torch.reshape(reference_tensor, (total_batches, C, H, W))
 
     output_str = ""
-    for n in range(N):
-        output_str += f"BATCH {n}\n"
-        result_batch = result[n, :, :, :]
-        reference_batch = reference[n, :, :, :]
+    for idx in range(total_batches):
+        batch_idx = idx // D if D > 0 else idx
+        depth_idx = idx % D if D > 0 else 0
+        if D > 1:
+            output_str += f"BATCH {batch_idx} DEPTH {depth_idx}\n"
+        else:
+            output_str += f"BATCH {batch_idx}\n"
+
+        result_batch = result[idx, :, :, :]
+        reference_batch = reference_tensor[idx, :, :, :]
 
         is_close = torch.allclose(result_batch, reference_batch, rtol, atol)
         if is_close:
             output_str += ".\n"
         else:
-            channels_close = [None] * C
+            channels_close: list[bool] = [False] * C
             for c in range(C):
-                result_hw = result[n, c, :, :]
-                reference_hw = reference[n, c, :, :]
+                result_hw = result[idx, c, :, :]
+                reference_hw = reference_tensor[idx, c, :, :]
 
                 channels_close[c] = torch.allclose(result_hw, reference_hw, rtol, atol)
 
             if any(channels_close) or len(channels_close) == 1:
                 output_str += _print_channels(
-                    result[n, :, :, :],
-                    reference[n, :, :, :],
+                    result[idx, :, :, :],
+                    reference_tensor[idx, :, :, :],
                     channels_close,
                     C,
                     H,
@@ -195,7 +245,13 @@ def print_error_diffs(
                 )
             else:
                 output_str += _print_elements(
-                    result[n, :, :, :], reference[n, :, :, :], C, H, W, rtol, atol
+                    result[idx, :, :, :],
+                    reference_tensor[idx, :, :, :],
+                    C,
+                    H,
+                    W,
+                    rtol,
+                    atol,
                 )
         if reference_batch.dtype == torch.bool or result_batch.dtype == torch.bool:
             mismatches = (reference_batch != result_batch).sum().item()
@@ -203,9 +259,9 @@ def print_error_diffs(
             output_str += f"(BOOLEAN tensor) {mismatches} / {total} elements differ ({mismatches / total:.2%})\n"
 
     # Only compute numeric error metrics if tensor is not boolean
-    if reference.dtype != torch.bool and result.dtype != torch.bool:
-        reference_range = torch.max(reference) - torch.min(reference)
-        diff = torch.abs(reference - result).flatten()
+    if reference_tensor.dtype != torch.bool and result.dtype != torch.bool:
+        reference_range = torch.max(reference_tensor) - torch.min(reference_tensor)
+        diff = torch.abs(reference_tensor - result).flatten()
         diff = diff[diff.nonzero()]
         if not len(diff) == 0:
             diff_percent = diff / reference_range
@@ -232,21 +288,21 @@ def print_error_diffs(
 
 
 def dump_error_output(
-    tester,
-    reference_output,
-    stage_output,
-    quantization_scale=None,
-    atol=1e-03,
-    rtol=1e-03,
-    qtol=0,
-):
+    tester: Any,
+    reference_output: TensorLike,
+    stage_output: TensorLike,
+    quantization_scale: float | None = None,
+    atol: float = 1e-03,
+    rtol: float = 1e-03,
+    qtol: float = 0,
+) -> None:
     """
     Prints Quantization info and error tolerances, and saves the differing tensors to disc.
     """
     # Capture assertion error and print more info
     banner = "=" * 40 + "TOSA debug info" + "=" * 40
     logger.error(banner)
-    path_to_tosa_files = get_intermediate_path(tester.compile_spec)
+    path_to_tosa_files = tester.compile_spec.get_intermediate_path()
 
     if path_to_tosa_files is None:
         path_to_tosa_files = tempfile.mkdtemp(prefix="executorch_result_dump_")
@@ -254,9 +310,9 @@ def dump_error_output(
     export_stage = tester.stages.get(StageType.EXPORT, None)
     quantize_stage = tester.stages.get(StageType.QUANTIZE, None)
     if export_stage is not None and quantize_stage is not None:
-        output_nodes = get_output_nodes(export_stage.artifact)
+        output_node = export_stage.artifact.graph_module.graph.output_node()
         qp_input = get_input_quantization_params(export_stage.artifact)
-        qp_output = get_output_quantization_params(output_nodes)
+        qp_output = get_output_quantization_params(output_node)
         logger.error(f"Input QuantArgs: {qp_input}")
         logger.error(f"Output QuantArgs: {qp_output}")
 
@@ -275,11 +331,7 @@ def dump_error_output(
 
 
 if __name__ == "__main__":
-    import sys
-
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-
-    """ This is expected to produce the example output of print_diff"""
+    """This is expected to produce the example output of print_diff"""
     torch.manual_seed(0)
     a = torch.rand(3, 3, 2, 2) * 0.01
     b = a.clone().detach()

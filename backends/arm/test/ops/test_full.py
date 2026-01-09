@@ -117,7 +117,6 @@ def test_full_like_tosa_INT(test_data: Tuple):
         aten_op=[],
         exir_op=exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
@@ -144,52 +143,52 @@ def test_full_tosa_INT(test_data: Tuple):
 
 
 @common.SkipIfNoModelConverter
-def test_full_vgf_FP_only():
+def test_full_vgf_no_quant_only():
     pipeline = VgfPipeline[input_t1](
         Full(),
         (),
         aten_op=[],
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_full_vgf_FP_const():
+def test_full_vgf_no_quant_const():
     test_data = (torch.rand((2, 2, 3, 3)) * 10,)
     pipeline = VgfPipeline[input_t1](
         AddConstFull(),
         test_data,
         aten_op=[],
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AddVariableFull.test_parameters)
 @common.SkipIfNoModelConverter
-def test_full_vgf_FP(test_data: Tuple):
+def test_full_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         AddVariableFull(),
         test_data,
         aten_op=[],
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AddVariableFull.test_parameters)
 @common.SkipIfNoModelConverter
-def test_full_vgf_INT(test_data: Tuple):
+def test_full_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         AddVariableFull(),
         test_data,
         aten_op=[],
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -202,7 +201,6 @@ def test_full_u85_INT(test_data: Tuple):
         test_data,
         aten_ops=[],
         exir_ops=exir_op,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -216,7 +214,6 @@ def test_full_u55_INT(test_data: Tuple):
         test_data,
         aten_ops=[],
         exir_ops=exir_op,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

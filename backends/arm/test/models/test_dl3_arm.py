@@ -66,7 +66,6 @@ def test_dl3_u55_INT():
         TestDl3.model_example_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.change_args(
         "run_method_and_compare_outputs", rtol=1.0, atol=1.0
@@ -82,7 +81,6 @@ def test_dl3_u85_INT():
         TestDl3.model_example_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.change_args(
         "run_method_and_compare_outputs", rtol=1.0, atol=1.0
@@ -91,34 +89,30 @@ def test_dl3_u85_INT():
 
 
 @common.SkipIfNoModelConverter
-def test_dl3_vgf_INT():
+def test_dl3_vgf_quant():
     pipeline = VgfPipeline[input_t](
         TestDl3.dl3,
         TestDl3.model_example_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
+        run_on_vulkan_runtime=True,
+        quantize=True,
     )
-    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
-    # pipeline.change_args(
-    #     "run_method_and_compare_outputs", rtol=1.0, atol=1.0
-    # )
+    pipeline.change_args(
+        "run_method_and_compare_outputs", rtol=0.1, atol=0.1
+    )  # TODO: MLETORCH-1036 decrease tolerance
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_dl3_vgf_FP():
+def test_dl3_vgf_no_quant():
     pipeline = VgfPipeline[input_t](
         TestDl3.dl3,
         TestDl3.model_example_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
-    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
-    # pipeline.change_args(
-    #     "run_method_and_compare_outputs", rtol=1.0, atol=1.0
-    # )
     pipeline.run()

@@ -307,7 +307,6 @@ def test_convolution_1d_u55_INT(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
         qtol=1,
     )
@@ -323,7 +322,6 @@ def test_convolution_1d_u85_INT(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
         qtol=1,
     )
@@ -332,27 +330,27 @@ def test_convolution_1d_u85_INT(test_data):
 
 @common.parametrize("test_data", test_data_FP)
 @common.SkipIfNoModelConverter
-def test_convolution_1d_vgf_FP(test_data):
+def test_convolution_1d_vgf_no_quant(test_data):
     pipeline = VgfPipeline[input_t](
         test_data(),
         test_data().get_inputs(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_INT)
 @common.SkipIfNoModelConverter
-def test_convolution_1d_vgf_INT(test_data):
+def test_convolution_1d_vgf_quant(test_data):
     model, per_channel_quantization = test_data()
     pipeline = VgfPipeline[input_t](
         model,
         model.get_inputs(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
+        quantize=True,
     )
     pipeline.run()

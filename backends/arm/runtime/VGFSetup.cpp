@@ -24,6 +24,13 @@ namespace vgf {
 /* static function to map format to byte count */
 static uint32_t get_format_size(VkFormat format);
 
+// SPV_ARM_tensor does not support rank-0 representations according to the spec.
+// Use an unsqueezed dimension when the resource table contains an empty
+// shape. Tensors are output as rank 0 when copied back from the vgf backend.
+namespace {
+constexpr int64_t kScalarSentinelDimension = 1;
+}
+
 // Debug function to inspect memory properties
 static string memory_flags_to_string(VkMemoryPropertyFlags flags) {
   if (flags == 0)
@@ -73,6 +80,24 @@ void free_tensor(
   vkDestroyTensorViewARM(device, tensor_view, nullptr);
   vkDestroyTensorARM(device, tensor, nullptr);
   vkFreeMemory(device, memory, nullptr);
+}
+
+uint32_t get_memory_index(
+    VkPhysicalDevice vk_physical,
+    VkMemoryRequirements2 memory_requirements,
+    VkMemoryPropertyFlags aims) {
+  VkPhysicalDeviceMemoryProperties mem_properties;
+  vkGetPhysicalDeviceMemoryProperties(vk_physical, &mem_properties);
+
+  uint32_t memory_type = 0;
+  for (size_t i = 0; i < 31; ++i) {
+    if (memory_requirements.memoryRequirements.memoryTypeBits & (0x1 << i)) {
+      memory_type = i;
+      if ((mem_properties.memoryTypes[i].propertyFlags & aims) == aims)
+        break;
+    }
+  }
+  return memory_type;
 }
 
 /**
@@ -135,26 +160,18 @@ VkResult allocate_tensor(
   vkGetTensorMemoryRequirementsARM(
       device, &memory_requirements_info, &memory_requirements);
 
-  VkPhysicalDeviceMemoryProperties memProps;
-  vkGetPhysicalDeviceMemoryProperties(physical, &memProps);
+  VkMemoryPropertyFlags aims = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+  uint32_t memory_index = get_memory_index(physical, memory_requirements, aims);
 
   // Allocate memory
-  uint32_t memory_type = 0;
-  for (size_t j = 0; j < 31; ++j) {
-    if (memory_requirements.memoryRequirements.memoryTypeBits & (0x1 << j)) {
-      memory_type = j;
-      uint32_t aims = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-      if ((memProps.memoryTypes[j].propertyFlags & aims) == aims)
-        break;
-    }
-  }
   const VkMemoryAllocateInfo allocate_info = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
       .pNext = nullptr,
       .allocationSize = memory_requirements.memoryRequirements.size,
-      .memoryTypeIndex = memory_type};
+      .memoryTypeIndex = memory_index,
+  };
 
   vkAllocateMemory(device, &allocate_info, nullptr, memory);
 
@@ -213,8 +230,8 @@ static void debug_print_sequence(
       ET_LOG(
           Info,
           "      %d: %s",
-          i,
-          string(sequence_decoder->getName(input_names, i)).c_str());
+          j,
+          string(sequence_decoder->getName(input_names, j)).c_str());
     }
   }
 }
@@ -254,7 +271,11 @@ static void debug_print_resources(
             the_shape.size(),
             the_stride.size());
         for (int j = 0; j < the_shape.size(); j++) {
-          ET_LOG(Info, "      %d: dim %ld", j, the_shape[j]);
+          ET_LOG(
+              Info,
+              "      %d: dim %lld",
+              j,
+              static_cast<long long>(the_shape[j]));
         }
         // Allocate a tensor with bound memory
         break;
@@ -323,20 +344,23 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
   // Parse the sequences in the VGF (while there can be multiple sequences of
   // COMPUTE and GRAPH segments in the sequence, we currently expect a single
   // GRAPH segment to be present.
+  const int segment_id = 0;
+
   debug_print_sequence(sequence_decoder);
   if (sequence_decoder->modelSequenceTableSize() != 1) {
     ET_LOG(Error, "Expected sequence length 1");
     return false;
   }
-  if (sequence_decoder->getSegmentType(0) != vgflib::ModuleType::GRAPH) {
+  if (sequence_decoder->getSegmentType(segment_id) !=
+      vgflib::ModuleType::GRAPH) {
     ET_LOG(Error, "Expected segment to be of type GRAPH");
     return false;
   }
 
   // Extract first segment and it's associated module
   debug_print_modules(module_decoder);
-  auto segment_name = string(sequence_decoder->getSegmentName(0));
-  auto segment_module = sequence_decoder->getSegmentModuleIndex(0);
+  auto segment_name = string(sequence_decoder->getSegmentName(segment_id));
+  auto segment_module = sequence_decoder->getSegmentModuleIndex(segment_id);
 
   auto segment_m_name = string(module_decoder->getModuleName(segment_module));
   auto segment_m_entrypoint =
@@ -374,6 +398,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
     // Get tensor shape and strides
     auto shape = resource_decoder->getTensorShape(i);
     auto stride = resource_decoder->getTensorStride(i);
+    const auto shape_size = shape.size();
 
     switch (resource_decoder->getCategory(i)) {
       case vgflib::ResourceCategory::INPUT:
@@ -396,9 +421,9 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
         result = allocate_tensor(
             vk_physical,
             vk_device,
-            vgflib::ToVkFormat(resource_decoder->getVkFormat(i)),
-            static_cast<uint32_t>(shape.size()),
-            shape.begin(),
+            resource_format,
+            shape_size == 0 ? 1 : static_cast<uint32_t>(shape_size),
+            shape_size == 0 ? &kScalarSentinelDimension : shape.begin(),
             static_cast<uint32_t>(stride.size()),
             stride.begin(),
             &tensor_description,
@@ -409,8 +434,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
           ET_LOG(Error, "Failed to allocate tensor for VGF resource %d", i);
           return false;
         }
-        size_t e_size = get_format_size(
-            vgflib::ToVkFormat(resource_decoder->getVkFormat(i)));
+        size_t e_size = get_format_size(resource_format);
         if (0 == e_size) {
           ET_LOG(Error, "failed to get element size of VkFormat");
           return false;
@@ -436,9 +460,11 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
             .sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
             .pNext = nullptr,
             .tiling = VK_TENSOR_TILING_LINEAR_ARM,
-            .format = vgflib::ToVkFormat(resource_decoder->getVkFormat(i)),
-            .dimensionCount = static_cast<uint32_t>(shape.size()),
-            .pDimensions = shape.begin(),
+            .format = resource_format,
+            .dimensionCount =
+                shape_size == 0 ? 1 : static_cast<uint32_t>(shape_size),
+            .pDimensions =
+                shape_size == 0 ? &kScalarSentinelDimension : shape.begin(),
             // Note: stride_data of 0's causes size==0, null means stride==size
             .pStrides = (0 == stride.size() ? nullptr : stride.begin()),
             .usage = VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM,
@@ -454,13 +480,15 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
   }
 
   // Constants table - mapping of shader bindings to MRT's and their descriptors
-  for (int i = 0; i < constant_decoder->size(); i++) {
+  auto constant_indexes =
+      sequence_decoder->getSegmentConstantIndexes(segment_id);
+  for (uint32_t i : constant_indexes) {
     auto mrt_i = constant_decoder->getConstantMrtIndex(i);
     auto constant_data = constant_decoder->getConstant(i);
     constants.push_back(VkDataGraphPipelineConstantARM{
         .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CONSTANT_ARM,
         .pNext = &descriptors[mrt_i],
-        .id = mrt_i,
+        .id = i,
         .pConstantData = constant_data.begin(),
     });
   }
@@ -469,9 +497,11 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
   vector<VkDescriptorSetLayoutBinding> layout_bindings;
   vector<VkDataGraphPipelineResourceInfoARM> data_graph_resources;
 
-  auto set_count = sequence_decoder->getSegmentDescriptorSetInfosSize(0);
+  auto set_count =
+      sequence_decoder->getSegmentDescriptorSetInfosSize(segment_id);
   for (uint32_t d_idx = 0; d_idx < set_count; d_idx++) {
-    auto handle = sequence_decoder->getDescriptorBindingSlotsHandle(0, d_idx);
+    auto handle =
+        sequence_decoder->getDescriptorBindingSlotsHandle(segment_id, d_idx);
     auto binding_count = sequence_decoder->getBindingsSize(handle);
     for (int binding = 0; binding < binding_count; binding++) {
       auto binding_index =
@@ -560,8 +590,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
   // Alloc descriptor sets
   // currently, as we require modelSequenceTableSize to == 1
   // we can only get one descriptor set.
-  vector<VkDescriptorSet> descriptor_sets;
-  descriptor_sets.resize(1);
+  descriptor_sets.resize(layout_bindings.size());
   result = vkAllocateDescriptorSets(
       vk_device, &descriptor_set_info, descriptor_sets.data());
   if (result != VK_SUCCESS) {
@@ -570,7 +599,8 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
   }
 
   // write descriptor updates for every input
-  auto input_slots = sequence_decoder->getSegmentInputBindingSlotsHandle(0);
+  auto input_slots =
+      sequence_decoder->getSegmentInputBindingSlotsHandle(segment_id);
   auto input_size = sequence_decoder->getBindingsSize(input_slots);
   for (uint32_t i = 0; i < input_size; i++) {
     auto binding = sequence_decoder->getBindingSlotBinding(input_slots, i);
@@ -598,7 +628,8 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
   }
 
   // write descriptor updates for every output
-  auto output_slots = sequence_decoder->getSegmentOutputBindingSlotsHandle(0);
+  auto output_slots =
+      sequence_decoder->getSegmentOutputBindingSlotsHandle(segment_id);
   auto output_size = sequence_decoder->getBindingsSize(output_slots);
   for (uint32_t i = 0; i < output_size; i++) {
     auto binding = sequence_decoder->getBindingSlotBinding(output_slots, i);
@@ -676,7 +707,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
   );
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create DataGraphPipeline");
-    return result;
+    return false;
   }
 
   // prepare the graph pipeline session
@@ -690,26 +721,147 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
       vk_device, &pipeline_session_info, nullptr, &vk_session);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create DataGraphPipelineSession");
-    return result;
+    return false;
   }
 
   // Allocate command buffer
-  VkCommandBufferAllocateInfo allocate_info{
+  VkCommandBufferAllocateInfo buffer_allocate_info{
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
       .pNext = nullptr,
       .commandPool = vk_command_pool,
       .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
       .commandBufferCount = 1};
-  result = vkAllocateCommandBuffers(vk_device, &allocate_info, &vk_execute_cmd);
+  result = vkAllocateCommandBuffers(
+      vk_device, &buffer_allocate_info, &vk_execute_cmd);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to allocate command buffers");
-    return result;
+    return false;
+  }
+
+  // Allocate intermediates memory based on the pipeline requirements provided
+  // by the driver
+  VkDataGraphPipelineSessionBindPointRequirementsInfoARM
+      bind_point_requirements_info = {
+          .sType =
+              VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENTS_INFO_ARM,
+          .pNext = nullptr,
+          .session = vk_session,
+      };
+
+  uint32_t bind_point_count = 0;
+  result = vkGetDataGraphPipelineSessionBindPointRequirementsARM(
+      vk_device, &bind_point_requirements_info, &bind_point_count, nullptr);
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Failed to get session bind point count");
+    return false;
+  }
+
+  vector<VkDataGraphPipelineSessionBindPointRequirementARM>
+      bind_point_requirements;
+  bind_point_requirements.resize(bind_point_count);
+  result = vkGetDataGraphPipelineSessionBindPointRequirementsARM(
+      vk_device,
+      &bind_point_requirements_info,
+      &bind_point_count,
+      bind_point_requirements.data());
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Failed to get session bind point requirements");
+    return false;
+  }
+
+  // Given the bind points, just make individual allocations and bind them
+  for (const auto& bind_point_requirement : bind_point_requirements) {
+    // These are the only allowed type and bindpoint with the current spec
+    if (bind_point_requirement.bindPointType !=
+        VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM) {
+      ET_LOG(
+          Error,
+          "Expected VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM");
+      return false;
+    }
+    if (bind_point_requirement.bindPoint !=
+        VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM) {
+      ET_LOG(
+          Error,
+          "Expected VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM");
+      return false;
+    }
+    if (bind_point_requirement.numObjects != 1) {
+      ET_LOG(Error, "Expected only one object for the bindpoint");
+      return false;
+    }
+
+    VkDataGraphPipelineSessionMemoryRequirementsInfoARM memory_requirements_info = {
+        .sType =
+            VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_MEMORY_REQUIREMENTS_INFO_ARM,
+        .pNext = nullptr,
+        .session = vk_session,
+        .bindPoint = bind_point_requirement.bindPoint,
+        .objectIndex = 0, // NOTE: tied to numObjects assert above
+    };
+    VkMemoryRequirements2 memory_requirements;
+    vkGetDataGraphPipelineSessionMemoryRequirementsARM(
+        vk_device, &memory_requirements_info, &memory_requirements);
+
+    VkMemoryPropertyFlags aims = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    uint32_t memory_index =
+        get_memory_index(vk_physical, memory_requirements, aims);
+
+    VkMemoryAllocateInfo memory_allocate_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .allocationSize = memory_requirements.memoryRequirements.size,
+        .memoryTypeIndex = memory_index,
+    };
+
+    VkDeviceMemory memory;
+    result =
+        vkAllocateMemory(vk_device, &memory_allocate_info, nullptr, &memory);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to allocate memory for intermediates");
+      return false;
+    }
+    // so we can free this object in destructor
+    intermediates.push_back(memory);
+
+    VkBindDataGraphPipelineSessionMemoryInfoARM bind_info = {
+        .sType =
+            VK_STRUCTURE_TYPE_BIND_DATA_GRAPH_PIPELINE_SESSION_MEMORY_INFO_ARM,
+        .pNext = nullptr,
+        .session = vk_session,
+        .bindPoint = bind_point_requirement.bindPoint,
+        .objectIndex = 0, // NOTE: tied to numObjects assert above
+        .memory = memory,
+        .memoryOffset = 0,
+    };
+    result = vkBindDataGraphPipelineSessionMemoryARM(vk_device, 1, &bind_info);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to bind intermediates memory");
+      return false;
+    }
   }
 
   // Populate command once with our dispatch information
   VkCommandBufferBeginInfo beginInfo{
       VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   vkBeginCommandBuffer(vk_execute_cmd, &beginInfo);
+
+  // Sync what will be the data coming in from host
+  VkMemoryBarrier2 barrier = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+      .srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+      .srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT,
+      .dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+      .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
+  };
+  VkDependencyInfo dependency_info = {
+      .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+      .memoryBarrierCount = 1,
+      .pMemoryBarriers = &barrier,
+  };
+  vkCmdPipelineBarrier2(vk_execute_cmd, &dependency_info);
 
   // bind pipeline + descriptor set
   vkCmdBindPipeline(
@@ -728,6 +880,21 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
 
   // Dispatch the graph command
   vkCmdDispatchDataGraphARM(vk_execute_cmd, vk_session, nullptr);
+
+  // Sync data back
+  VkMemoryBarrier2 barrier_2 = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+      .srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+      .srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
+      .dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+      .dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
+  };
+  VkDependencyInfo dependency_info_2 = {
+      .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+      .memoryBarrierCount = 1,
+      .pMemoryBarriers = &barrier_2,
+  };
+  vkCmdPipelineBarrier2(vk_execute_cmd, &dependency_info_2);
 
   // end the command buffer
   vkEndCommandBuffer(vk_execute_cmd);
@@ -763,6 +930,9 @@ void VgfRepr::free_vgf() {
   for (int i = 0; i < IOs.size(); i++) {
     free_tensor(
         vk_device, IOs[i].tensor_view, IOs[i].tensor, IOs[i].tensor_memory);
+  }
+  for (auto memory : intermediates) {
+    vkFreeMemory(vk_device, memory, nullptr);
   }
 }
 

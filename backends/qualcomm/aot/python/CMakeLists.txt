@@ -9,9 +9,3 @@ target_sources(
   PyQnnManagerAdaptor PUBLIC ${CMAKE_CURRENT_LIST_DIR}/PyQnnManagerAdaptor.cpp
                              ${CMAKE_CURRENT_LIST_DIR}/PyQnnManagerAdaptor.h
 )
-
-# PyQnnWrapperAdaptor
-target_sources(
-  PyQnnWrapperAdaptor PUBLIC ${CMAKE_CURRENT_LIST_DIR}/PyQnnWrapperAdaptor.cpp
-                             ${CMAKE_CURRENT_LIST_DIR}/PyQnnWrapperAdaptor.h
-)

@@ -63,45 +63,107 @@ def test_tanh_tosa_INT(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
 def test_tanh_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Tanh(),
         (test_data(),),
         aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
 def test_tanh_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Tanh(),
         (test_data(),),
         aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_tanh_vgf_FP(test_data: Tuple):
-    pipeline = VgfPipeline[input_t1](
-        Tanh(), (test_data(),), aten_op, tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite)
-@common.SkipIfNoModelConverter
-def test_tanh_vgf_INT(test_data: Tuple):
+def test_tanh_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Tanh(),
         (test_data(),),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_tanh_vgf_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Tanh(),
+        (test_data(),),
+        aten_op,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+def test_tanh_16a8w_tosa_INT(test_data: torch.Tensor):
+    """Test tanh operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = TosaPipelineINT[input_t1](
+        Tanh(),
+        (test_data(),),
+        aten_op,
+        exir_op=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        tosa_extensions=["int16"],
+        epsilon=2**-16,
+        rtol=2e-03,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
+def test_tanh_16a8w_u55_INT16(test_data: torch.Tensor):
+    """Test tanh operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = EthosU55PipelineINT[input_t1](
+        Tanh(),
+        (test_data(),),
+        aten_op,
+        exir_ops=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        a16w8_quantization=True,
+        epsilon=2**-16,
+        rtol=2e-03,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_tanh_16a8w_u85_INT(test_data: torch.Tensor):
+    """Test tanh operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = EthosU85PipelineINT[input_t1](
+        Tanh(),
+        (test_data(),),
+        aten_op,
+        exir_ops=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        a16w8_quantization=True,
+        epsilon=2**-16,
+        rtol=2e-03,
     )
     pipeline.run()

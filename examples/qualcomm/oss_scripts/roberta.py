@@ -18,9 +18,13 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_masked_language_model_dataset,
     make_output_dir,
     parse_skip_delegation_node,
@@ -55,16 +59,21 @@ def main(args):
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_masked_language_model_dataset(
+        inputs, targets = get_masked_language_model_dataset(
             args.dataset, tokenizer, data_size
         )
 
     # Get the Roberta model.
     model = get_instance(args)
-    pte_filename = "roberta_qnn_q16"
+    pte_filename = "roberta_qnn"
 
     # lower to QNN
     passes_job = get_capture_program_passes()
+    backend = get_backend_type(args.backend)
+    quant_dtype = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_16a8w,
+    }[backend]
     build_executorch_binary(
         model,
         inputs[0],
@@ -73,9 +82,11 @@ def main(args):
         dataset=inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        quant_dtype=QuantDtype.use_16a8w,
+        quant_dtype=quant_dtype,
+        backend=backend,
         passes_job=passes_job,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -92,6 +103,9 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
@@ -109,7 +123,7 @@ def main(args):
     sample_input["attention_mask"] = sample_input["attention_mask"].to(torch.float32)
     sample_input = tuple(sample_input.values())
     golden = model(*sample_input)[0]
-    adb.push(inputs=[sample_input], input_list="input_0_0.raw input_0_1.raw\n")
+    adb.push(inputs=[sample_input])
     adb.execute()
     adb.pull(output_path=args.artifact)
 
@@ -121,7 +135,7 @@ def main(args):
     print(f"QNN output: {tokenizer.batch_decode(predictions.argmax(axis=2))}")
 
     # accuracy analysis
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
     adb.pull(output_path=args.artifact)
     goldens, predictions = [], []
@@ -167,6 +181,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

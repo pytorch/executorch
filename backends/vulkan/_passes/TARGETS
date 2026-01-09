@@ -35,20 +35,6 @@ runtime.python_library(
 )
 
 runtime.python_library(
-    name = "int4_weight_only_quantizer",
-    srcs = [
-        "int4_weight_only_quantizer.py",
-    ],
-    visibility = [
-        "//executorch/backends/...",
-    ],
-    deps = [
-        "//executorch/backends/vulkan:custom_ops_lib",
-        "//pytorch/ao:torchao",
-    ]
-)
-
-runtime.python_library(
     name = "squeeze_unsqueeze_inputs",
     srcs = [
         "squeeze_unsqueeze_inputs.py",
@@ -67,19 +53,6 @@ runtime.python_library(
 runtime.python_library(
     name = "remove_asserts",
     srcs = ["remove_asserts.py"],
-    visibility = [
-        "//executorch/backends/...",
-    ],
-    deps = [
-        "//caffe2:torch",
-        "//executorch/exir:pass_base",
-        "//executorch/exir/dialects:lib",
-    ],
-)
-
-runtime.python_library(
-    name = "remove_local_scalar_dense",
-    srcs = ["remove_local_scalar_dense_ops.py"],
     visibility = [
         "//executorch/backends/...",
     ],
@@ -119,6 +92,19 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "fold_qdq",
+    srcs = ["fold_qdq.py"],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:utils_lib",
+        "//executorch/exir:pass_base",
+    ],
+)
+
+runtime.python_library(
     name = "fuse_patterns",
     srcs = ["fuse_patterns.py"],
     visibility = [
@@ -144,12 +130,11 @@ runtime.python_library(
         "//executorch/examples/...",
     ],
     deps = [
+        ":fold_qdq",
         ":fuse_patterns",
         ":fuse_quantized_ops",
         ":insert_prepack_nodes",
-        ":int4_weight_only_quantizer",
         ":remove_asserts",
-        ":remove_local_scalar_dense",
         ":remove_redundant_ops",
         ":squeeze_unsqueeze_inputs",
         ":tag_memory_meta_pass",

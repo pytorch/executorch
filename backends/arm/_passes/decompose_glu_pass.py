@@ -3,9 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 
 # For FP case
@@ -36,8 +40,10 @@ def get_ops(op):
 class DecomposeGluPass(ArmPass):
     """Decomposes the GLU operator into hadamard product and sigmoid."""
 
+    _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
+
     def call_operator(self, op, args, kwargs, meta):
-        if op not in [edge_glu, aten_glu]:
+        if op not in [edge_glu, aten_glu] or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         hadamard_prod, sigmoid, slice_op = get_ops(op)

@@ -12,8 +12,12 @@ from multiprocessing.connection import Client
 import numpy as np
 import timm
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
     setup_common_args_and_variables,
@@ -23,34 +27,35 @@ from executorch.examples.qualcomm.utils import (
 
 
 def main(args):
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
     instance = timm.create_model("fbnetc_100", pretrained=True).eval()
 
     data_num = 100
-    inputs, targets, input_list = get_imagenet_dataset(
+    inputs, targets = get_imagenet_dataset(
         dataset_path=f"{args.dataset}",
         data_size=data_num,
         image_shape=(299, 299),
     )
 
-    pte_filename = "fbnet"
+    pte_filename = "fbnet_qnn"
 
+    backend = get_backend_type(args.backend)
+    quant_dtype = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_8a8w,
+    }[backend]
     build_executorch_binary(
         instance,
         inputs[0],
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
-        quant_dtype=QuantDtype.use_8a8w,
+        quant_dtype=quant_dtype,
+        backend=backend,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -64,8 +69,11 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -129,6 +137,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

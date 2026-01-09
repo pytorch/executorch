@@ -16,11 +16,13 @@
 #include <memory>
 #include <string>
 
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/token_generator.h>
+#include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/module/module.h>
 #include <pytorch/tokenizers/tokenizer.h>
@@ -30,8 +32,16 @@ namespace example {
 enum DecoderModelVersion {
   kLlama2 = 0,
   kLlama3,
-  kQwen2_5,
+  kGemma,
+  kGemma3,
+  kGranite,
   kPhi4,
+  kQwen2_5,
+  kQwen3,
+  kSmollm2_135m,
+  kSmollm3,
+  kCodegen,
+  kGlm,
 };
 
 enum KvBitWidth {
@@ -40,7 +50,7 @@ enum KvBitWidth {
 };
 
 template <typename T>
-class Runner {
+class Runner : public executorch::extension::llm::IRunner {
  public:
   explicit Runner(
       std::unique_ptr<executorch::extension::Module> module,
@@ -50,25 +60,31 @@ class Runner {
       const std::string& performance_output_path,
       const std::string& dump_logits_path,
       const float temperature = 0.8f,
-      const int eval_mode = EvalMode::kKVCached,
-      const std::string& kv_updater = "SmartMask",
+      const int eval_mode = EvalMode::kHybrid,
+      const bool shared_buffer = false,
       const int ngram = 0,
       const int window = 0,
       const int gcap = 0,
       std::unique_ptr<tokenizers::Tokenizer> tokenizer = nullptr);
 
-  bool is_loaded() const;
-  executorch::runtime::Error load();
+  bool is_loaded() const override;
+  executorch::runtime::Error load() override;
   // TODO: Support echo and warming
   executorch::runtime::Error generate(
       const std::string& prompt,
-      bool tokenized_prompt,
-      int32_t seq_len,
+      const executorch::extension::llm::GenerationConfig& config,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const executorch::llm::Stats&)> stats_callback = {},
-      bool echo = true,
-      bool warming = false);
-  void stop() {};
+      std::function<void(const executorch::llm::Stats&)> stats_callback = {})
+      override;
+
+  executorch::runtime::Error generate_from_prompt_or_file(
+      const std::string& prompt,
+      bool tokenized_prompt,
+      const executorch::extension::llm::GenerationConfig& config,
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const executorch::llm::Stats&)> stats_callback = {});
+  void stop() override {};
+  void reset() override {};
   executorch::runtime::Result<DecoderModelVersion> get_decoder_model_version();
 
  private:
@@ -85,6 +101,10 @@ class Runner {
   int ngram_{0};
   int window_{0};
   int gcap_{0};
+
+  // Defaults to StaticCahce, indicating that the model does not use a
+  // global/local architecture.
+  CacheMode cache_mode_{CacheMode::StaticCahce};
   int64_t cur_pos_{0};
 
   std::string tokenizer_path_;
@@ -92,8 +112,9 @@ class Runner {
   std::string dump_logits_path_;
   float temperature_;
   EvalMode eval_mode_;
+  bool shared_buffer_;
+
   DecoderModelVersion decoder_model_version_;
-  KVManagerMode kv_updater_;
   std::unique_ptr<IMemAlloc> buffer_manager_;
   std::unique_ptr<KVManager<T>> kv_manager_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;

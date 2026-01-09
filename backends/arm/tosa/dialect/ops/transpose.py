@@ -7,7 +7,7 @@ import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import TosaSpecification
 
 
 @register_fake_tosa_op(
@@ -26,9 +26,9 @@ def TRANSPOSE(a, perms):
     # By utilizing an edge IR passthrough operator we can keep the edge program in
     # channels-first/contiguous and get the desired behavior in the TOSA lowering.
 
-    if len(perms) not in (4, 5):
+    if len(perms) not in (4, 5, 6):
         raise TosaValueError(
-            f"Only 4D and 5D tensors are supported, got {len(perms)}: {perms}",
+            f"Only 4D, 5D and 6D tensors are supported, got {len(perms)}: {perms}",
             op="TRANSPOSE",
         )
 

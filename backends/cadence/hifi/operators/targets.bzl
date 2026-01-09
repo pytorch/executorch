@@ -2,7 +2,7 @@ load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 
-def define_operator(name: str, deps: list[str] | None = None) -> None:
+def define_operator(name: str, deps: list[str] | None = None, exported_headers: list[str] | None = None) -> None:
     op_name = "op_{}".format(name)
 
     # Deps used by all operators.
@@ -16,10 +16,13 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
         "//executorch/kernels/portable/cpu/util:elementwise_util",
         "//executorch/kernels/portable/cpu/pattern:bitwise_op",
         "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions",
-        "//executorch/kernels/portable/cpu/pattern:comparison_op"
+        "//executorch/kernels/portable/cpu/pattern:comparison_op",
+        "//executorch/backends/cadence/common:xt_macros"
     ]
     if deps == None:
         deps = []
+    if exported_headers == None:
+        exported_headers = ["operators.h"]
 
     runtime.cxx_library(
         name = op_name,
@@ -31,7 +34,7 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
         ],
         compatible_with = ["ovr_config//cpu:xtensa"],
         deps = deps + common_deps,
-        exported_headers = ["operators.h"],
+        exported_headers = exported_headers,
     )
 
 OPERATORS = [
@@ -44,6 +47,7 @@ OPERATORS = [
     "cat",
     "clamp",
     "dequantize_per_tensor",
+    "dequantize_per_tensor_asym8s",
     "div",
     "embedding",
     "eq",
@@ -63,32 +67,42 @@ OPERATORS = [
     "ne",
     "permute_copy",
     "pow",
-    "quantized_conv_nchw_out",
-    "quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor_out",
-    "quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor_out",
-    "quantized_conv_nhwc_out",
-    "quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor_out",
-    "quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor_out",
+    "quantized_conv2d_nchw_asym8sxsym8s_asym8s_per_tensor_out",
+    "quantized_conv2d_nchw_asym8uxsym8u_asym8u_per_tensor_out",
+    "quantized_conv1d_ncl_asym8sxsym8s_asym8s_per_tensor_out",
+    "quantized_conv1d_ncl_asym8uxsym8u_asym8u_per_tensor_out",
+    "quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_out",
+    "quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_out",
+    "quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_out",
+    "quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_out",
+    "quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_out",
+    "quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor_out",
+    "quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor_out",
+    "quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_out",
+    "quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_out",
+    "quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_out",
+    "quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_out",
+    "quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_out",
     "quantized_fully_connected_out",
     "quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_out",
     "quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out",
     "quantized_layer_norm",
-    "quantized_linear_out",
     "quantized_linear_asym8sxasym8s_asym8s_per_tensor_out",
     "quantized_linear_asym8uxasym8u_asym8u_per_tensor_out",
-    "quantized_matmul_out",
     "quantized_matmul_asym8sxasym8s_asym8s_out",
     "quantized_matmul_asym8uxasym8u_asym8u_out",
     "quantized_relu_out",
     "quantized_relu_asym8s_asym8s_per_tensor_out",
     "quantized_relu_asym8u_asym8u_per_tensor_out",
     "quantize_per_tensor",
+    "quantize_per_tensor_asym8s",
     "remainder",
     "rsqrt",
     "select_copy",
     "sigmoid",
     "slice_copy",
     "softmax",
+    "softmax_f32_f32",
     "split_with_sizes_copy",
     "sub",
     "tanh",
@@ -106,3 +120,14 @@ def define_common_targets():
     # Define build targets for all operators registered in the tables above.
     for op in OPERATORS:
         define_operator(op)
+
+    # quantized_linear_out and quantized_linear_per_tensor_out needs additional dependency for int16 support
+    define_operator("quantized_linear_out", deps=["//executorch/backends/cadence/generic/operators:op_quantized_linear"])
+    define_operator("quantized_linear_per_tensor_out", deps=["//executorch/backends/cadence/generic/operators:op_quantized_linear"])
+
+    # quantized_conv2d_nchw_out and quantized_conv2d_nhwc_out need additional dependency for int16 support
+    define_operator("quantized_conv2d_nchw_out", deps=["//executorch/backends/cadence/generic/operators:op_quantized_conv2d"])
+    define_operator("quantized_conv2d_nhwc_out", deps=["//executorch/backends/cadence/generic/operators:op_quantized_conv2d"])
+
+    # quantized_matmul_out needs additional dependency for int16 support
+    define_operator("quantized_matmul_out", deps=["//executorch/backends/cadence/generic/operators:op_quantized_matmul"], exported_headers=["op_quantized_matmul_out.h"])

@@ -34,6 +34,8 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchBackendOptions,
     QnnExecuTorchBackendType,
+    QnnExecuTorchGpuBackendOptions,
+    QnnExecuTorchGpuPrecision,
     QnnExecuTorchHtpBackendOptions,
     QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchHtpPrecision,
@@ -50,6 +52,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QNN_COMPILE_SPEC,
     QCOM_QUANTIZED_IO,
 )
+from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import QnnManagerContext
 
 from executorch.exir import EdgeCompileConfig, ExirExportedProgram, to_edge
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -58,6 +61,7 @@ from executorch.exir.program._program import (
     EdgeProgramManager,
     to_edge_transform_and_lower,
 )
+from tabulate import tabulate
 from torch._decomp import core_aten_decompositions, remove_decompositions
 from torch.export.exported_program import ExportedProgram
 from torch.fx import passes
@@ -157,7 +161,7 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 
         def forward(self, x):
             rank = x.dim()
-            x = x.unsqueeze(-1) if rank == 3 else x.reshape(1, *x.shape, 1)
+            x = x.reshape(*x.shape, 1) if rank == 3 else x.reshape(1, *x.shape, 1)
             x = torch.transpose(x, 1, 2)
             res = self.conv(x)
             res = torch.transpose(res, 1, 2)
@@ -184,8 +188,9 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 def dump_context_from_pte(pte_path) -> List[str]:
     """
     Dump compiled binaries under the same directory of pte_path.
-    For partitioned graph, there will be multiple files with names f"{graph_name}_{index}".
-    Where 'graph_name' comes from the compiler_specs and 'index' represents the execution order.
+    For partitioned graph, there will be multiple files with names f"{method_name}_{index}".
+    'method_name' refers to the name of a method in the nn.Module that was traced to
+    generate this program, while 'index' indicates the order of execution.
 
     Args:
         pte_path (str): The path of generated pte.
@@ -197,17 +202,9 @@ def dump_context_from_pte(pte_path) -> List[str]:
     with open(pte_path, "rb") as f:
         program_data = f.read()
 
-    program = deserialize_pte_binary(program_data)
+    program = deserialize_pte_binary(program_data).program
 
     ctx_path = os.path.dirname(pte_path)
-    dummy_compiler_specs = generate_qnn_executorch_compiler_spec(
-        soc_model=QcomChipset.SM8650,
-        backend_options=generate_htp_compiler_spec(use_fp16=False),
-    )
-    qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-        generate_qnn_executorch_option(dummy_compiler_specs)
-    )
-    qnn_mgr.Init()
     dumpfiles = []
     for execution_plan in program.execution_plan:
         for i, delegate in enumerate(execution_plan.delegates):
@@ -215,7 +212,7 @@ def dump_context_from_pte(pte_path) -> List[str]:
                 processed_bytes = program.backend_delegate_data[
                     delegate.processed.index
                 ].data
-                binary = qnn_mgr.StripProtocol(processed_bytes)
+                binary = PyQnnManagerAdaptor.StripProtocol(processed_bytes)
                 file_extension = ".bin"
                 if len(binary) == 0:
                     binary = processed_bytes
@@ -333,8 +330,9 @@ def to_edge_transform_and_lower_to_qnn(
     passes_job: Optional[Union[OrderedDict, Dict[str, OrderedDict]]] = None,
     skip_node_id_set: Optional[set] = None,
     skip_node_op_set: Optional[set] = None,
-    skip_mutable_buffer: bool = False,
-    generate_etrecord: bool = False,
+    skip_mutable_buffer: Optional[bool] = False,
+    generate_etrecord: Optional[bool] = False,
+    convert_linear_to_conv2d: Optional[bool] = False,
 ) -> EdgeProgramManager:
     """
     Transforms and lowers a given PyTorch module to the QNN backend.
@@ -359,8 +357,10 @@ def to_edge_transform_and_lower_to_qnn(
             Set of node IDs to skip during partitioning.
         skip_node_op_set (Optional[set]):
             Set of node operations to skip during partitioning.
-        skip_mutable_buffer (Optional[set]):
+        skip_mutable_buffer (Optional[bool]):
             Whether to skip delegating the mutable buffer in QNN backend.
+        convert_linear_to_conv2d (Optional[bool]):
+            Whether to convert linear to conv2d in some cases to improve performance in HTP backend.
 
     Returns:
         EdgeProgramManager:
@@ -432,19 +432,21 @@ def to_edge_transform_and_lower_to_qnn(
         # If placed in the to_edge_transform_passes, it will be executed
         # after the lift_constant_tensor_pass, causing the operation builder
         # to fail to correctly retrieve the parameter by the get_parameter.
-        aten_programs[graph_name] = QnnPassManager().transform_for_export_pipeline(ep)
+        aten_programs[graph_name] = QnnPassManager().transform_for_export_pipeline(
+            ep, convert_linear_to_conv2d=convert_linear_to_conv2d
+        )
         transform_passes[graph_name] = QnnPassManager().get_to_edge_transform_passes(
             ep, passes_job=passes_job[graph_name], dep_table=dep_table[graph_name]
         )
-
-    return to_edge_transform_and_lower(
-        aten_programs,
-        transform_passes=transform_passes,
-        partitioner=qnn_partitioners,
-        constant_methods=constant_methods,
-        compile_config=qnn_edge_config(),
-        generate_etrecord=generate_etrecord,
-    )
+    with QnnManagerContext(compiler_specs):
+        return to_edge_transform_and_lower(
+            aten_programs,
+            transform_passes=transform_passes,
+            partitioner=qnn_partitioners,
+            constant_methods=constant_methods,
+            compile_config=qnn_edge_config(),
+            generate_etrecord=generate_etrecord,
+        )
 
 
 def capture_program(
@@ -928,6 +930,47 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule):
         f.write(graph.get_dot_graph().create_svg())
 
 
+def generate_gpu_compiler_spec(
+    precision: QnnExecuTorchGpuPrecision = QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided,
+    use_memory_optimizations: bool = True,
+    use_node_optimizations: bool = True,
+    use_queue_recording: bool = True,
+    use_weight_sharing: bool = False,
+) -> QnnExecuTorchBackendOptions:
+    """
+    Helper function generating backend options for QNN HTP
+
+    Args:
+        precision:
+            kGpuPrecisionFp32 - Sets the precision mode to floating point 32-bit (FP32).
+            kGpuPrecisionFp16 - Sets the precision mode to floating point 16-bit (FP16).
+            kGpuPrecisionHybrid - Sets the precision mode to FP16 for storage and FP32 for calculations.
+            kGpuPrecisionUserProvided - Uses the tensor data type provided by the user.
+        use_memory_optimizations: If true, backend will share NATIVE tensor memory
+            based upon analysis of the network topology.
+        use_node_optimizations: If true, backend will fuse compatible operations into
+            one operation to improve performance.
+        use_queue_recording: If true, backend will use queue recording to improve performance.
+        use_weight_sharing: Used with multiple_graphs, where model size will be
+            reduced when operations have the same weights across multiple graphs.
+
+    Returns:
+        QnnExecuTorchGpuBackendOptions: backend options for QNN GPU.
+    """
+    # TODO: enable performance hint mechanism in runtime and make this as an option
+    gpu_options = QnnExecuTorchGpuBackendOptions()
+    gpu_options.precision = precision
+    gpu_options.use_memory_optimizations = use_memory_optimizations
+    gpu_options.use_node_optimizations = use_node_optimizations
+    gpu_options.use_queue_recording = use_queue_recording
+    gpu_options.use_weight_sharing = use_weight_sharing
+
+    return QnnExecuTorchBackendOptions(
+        backend_type=QnnExecuTorchBackendType.kGpuBackend,
+        gpu_options=gpu_options,
+    )
+
+
 def generate_htp_compiler_spec(
     use_fp16: bool,
     use_dlbc: bool = False,
@@ -982,8 +1025,8 @@ def generate_qnn_executorch_compiler_spec(
     optrace: bool = False,
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
-    graph_name: str = "forward",
     op_package_options: QnnExecuTorchOpPackageOptions = None,
+    use_mha2sha: bool = False,
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -996,6 +1039,7 @@ def generate_qnn_executorch_compiler_spec(
             SM8550(Snapdragon 8 Gen 2)
             SM8650(Snapdragon 8 Gen 3)
             SM8750(Snapdragon 8 Elite)
+            SM8850(Snapdragon 8 Elite Gen 5)
         backend_options: Options required by different backends.
         debug: Enable verbose logging. Disclaimer: this option must change in
             the near future.
@@ -1011,9 +1055,9 @@ def generate_qnn_executorch_compiler_spec(
         shared_buffer: Enables usage of shared buffer between application
             and backend for graph I/O.
         is_from_context_binary: True if current graph comes from pre-built context binary.
-        graph_name: Assign unique graph name if lowering multiple methods.
         op_package_options: Optional structure to specify op packages
             loaded and used by the backend.
+        use_mha2sha: This experimental parameter is used to decide whether to enable multi-head attention to single-head attention pass, aiming to reduce time consumption in AOT and improve performance on HTP.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -1036,11 +1080,10 @@ def generate_qnn_executorch_compiler_spec(
     qnn_executorch_options = QnnExecuTorchOptions(
         _soc_info_table[soc_model], backend_options
     )
-    qnn_executorch_options.graph_name = [graph_name]
     qnn_executorch_options.log_level = (
         QnnExecuTorchLogLevel.kLogLevelDebug
         if debug
-        else QnnExecuTorchLogLevel.kLogLevelWarn
+        else QnnExecuTorchLogLevel.kLogLevelError
     )
 
     qnn_executorch_options.dump_intermediate_outputs = dump_intermediate_outputs
@@ -1076,6 +1119,8 @@ def generate_qnn_executorch_compiler_spec(
     if op_package_options and len(op_package_options.op_package_infos) > 0:
         qnn_executorch_options.op_package_options = op_package_options
 
+    qnn_executorch_options.use_mha2sha = use_mha2sha
+
     return [
         CompileSpec(QCOM_QNN_COMPILE_SPEC, option_to_flatbuffer(qnn_executorch_options))
     ]
@@ -1084,33 +1129,76 @@ def generate_qnn_executorch_compiler_spec(
 def get_soc_to_arch_map():
     return {
         "SA8295": HtpArch.V68,
+        "SM8350": HtpArch.V68,
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
         "SM8550": HtpArch.V73,
+        "SA8255": HtpArch.V73,
         "SM8650": HtpArch.V75,
         "SM8750": HtpArch.V79,
+        "SM8850": HtpArch.V81,
         "SSG2115P": HtpArch.V73,
         "SSG2125P": HtpArch.V73,
         "SXR1230P": HtpArch.V73,
         "SXR2230P": HtpArch.V69,
         "SXR2330P": HtpArch.V79,
+        "QCS9100": HtpArch.V73,
+        "SAR2230P": HtpArch.V81,
+        "SW6100": HtpArch.V81,
+        "QCM6490": HtpArch.V68,
     }
 
 
 def get_soc_to_chipset_map():
     return {
         "SA8295": QcomChipset.SA8295,
+        "SM8350": QcomChipset.SM8350,
         "SM8450": QcomChipset.SM8450,
         "SM8475": QcomChipset.SM8475,
         "SM8550": QcomChipset.SM8550,
+        "SA8255": QcomChipset.SA8255,
         "SM8650": QcomChipset.SM8650,
         "SM8750": QcomChipset.SM8750,
+        "SM8850": QcomChipset.SM8850,
         "SSG2115P": QcomChipset.SSG2115P,
         "SSG2125P": QcomChipset.SSG2125P,
         "SXR1230P": QcomChipset.SXR1230P,
         "SXR2230P": QcomChipset.SXR2230P,
         "SXR2330P": QcomChipset.SXR2330P,
+        "QCS9100": QcomChipset.QCS9100,
+        "SAR2230P": QcomChipset.SAR2230P,
+        "SW6100": QcomChipset.SW6100,
+        "QCM6490": QcomChipset.QCM6490,
     }
+
+
+def show_nn_module_stack_for_quant_recipe(gm: torch.fx.GraphModule, supported_ops):
+    """
+    Print a quick preview of op targets and module stack.
+
+    Use this to inspect the FX graph and identify module stack, which helps you craft regex or op-target for quantization recipe.
+
+    """
+
+    module_metadata = {}
+    for node in gm.graph.nodes:
+        target = node.target
+        deepest_module = None
+        if node.op == "call_function" and "nn_module_stack" in node.meta:
+            deepest_module = list(node.meta["nn_module_stack"].values())[-1][0]
+        if node.target in supported_ops:
+            module_metadata.setdefault((target, deepest_module), []).append(node)
+
+    table_rows = []
+    for (target, module_stack), nodes in module_metadata.items():
+        node_names = ", ".join([node.name for node in nodes])
+        table_rows.append([str(target), module_stack, node_names])
+
+    print(
+        tabulate(
+            table_rows, headers=["Op Target", "Module Stack", "Nodes"], tablefmt="grid"
+        )
+    )
 
 
 def tag_quant_io(gm: torch.fx.GraphModule, get_quant_io_dtype_fn: Callable):

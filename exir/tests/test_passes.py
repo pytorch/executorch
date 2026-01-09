@@ -24,7 +24,17 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     QuantizationConfig,
 )
-from executorch.exir import EdgeCompileConfig, EdgeProgramManager, memory, to_edge
+from executorch.backends.xnnpack.utils.configs import (
+    get_xnnpack_executorch_backend_config,
+)
+
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    memory,
+    to_edge,
+    to_edge_transform_and_lower,
+)
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops, ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.emit import emit_program
@@ -64,6 +74,7 @@ from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
 from executorch.exir.program._program import lift_constant_tensor_pass
 from executorch.exir.schema import TensorShapeDynamism
+from executorch.exir.sym_util import eval_upper_bound
 from executorch.exir.tensor import TensorSpec
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.control_flow_models import FTCondDeadCode, FTMapBasic
@@ -103,6 +114,7 @@ lib = Library("DO_NOT_USE_TEST_ONLY", "DEF")
 
 lib.define("foo(Tensor self) -> (Tensor, Tensor)")
 lib.define("add_relu(Tensor self, Tensor other) -> Tensor")
+lib.define("unbacked(Tensor self) -> Tensor")
 
 
 @impl(lib, "foo", "CompositeExplicitAutograd")
@@ -120,6 +132,29 @@ def foo_out(
     a: torch.Tensor, out1: torch.Tensor, out2: torch.Tensor
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     return a + 1, None
+
+
+@impl(lib, "unbacked", "CPU")
+def unbacked(a: torch.Tensor) -> torch.Tensor:
+    return a[: a[0]]
+
+
+@torch.library.register_fake(f"{lib.ns}::unbacked")
+def meta_unbacked(x):
+    ctx = torch._custom_ops.get_ctx()
+    out_size = ctx.create_unbacked_symint()
+    return x.new_empty(out_size)
+
+
+lib.define("unbacked.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)")
+
+
+@impl(lib, "unbacked.out", "CPU")
+def unbacked_out(
+    x: torch.Tensor,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    return out.copy_(x[: x[0]])
 
 
 def simple_promote_dtype(
@@ -159,6 +194,7 @@ class TestPasses(unittest.TestCase):
             return Module
 
         Add = make_module(lambda x, y: (x + y) + x)
+        Sub = make_module(lambda x, y: (x - y) - x)
         Mult = make_module(lambda x, y: x * y)
         Minimum = make_module(torch.minimum)
         DivWithoutMode = make_module(torch.div)
@@ -174,6 +210,12 @@ class TestPasses(unittest.TestCase):
             (
                 Add,
                 exir_ops.edge.aten.add.Tensor,
+                2,
+                ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            ),
+            (
+                Sub,
+                exir_ops.edge.aten.sub.Tensor,
                 2,
                 ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             ),
@@ -593,6 +635,218 @@ class TestPasses(unittest.TestCase):
             self.assertIs(node.meta["spec"][0], node.args[0][0].meta["spec"])
 
         self.assertEqual(counter, 1)
+
+    def test_spec_prop_pass_unbacked_symint(self) -> None:
+        # Verify that the spec prop pass picks up on guards for
+        # unbacked symints.
+        class Unbacked(torch.nn.Module):
+            def forward(self, x):
+                output = torch.ops.DO_NOT_USE_TEST_ONLY.unbacked(x)
+                torch._constrain_as_size(output.shape[0], max=10)
+                return output
+
+        model = Unbacked()
+        gm = (
+            to_edge(export(model, (torch.LongTensor([5, 4, 3, 2, 1, 0, 1, 2]),)))
+            .exported_program()
+            .graph_module
+        )
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the custom op node. It should have a max size of 10.
+        op_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if n.target == exir_ops.edge.DO_NOT_USE_TEST_ONLY.unbacked.default
+        )
+        self.assertIsNotNone(op_node)
+
+        spec: TensorSpec = op_node.meta["spec"]
+        self.assertEqual(len(spec.shape), 1)  # Should be rank 1
+        upper_bound = eval_upper_bound(spec.shape[0])
+        self.assertEqual(upper_bound, 10)  # Should be a concrete value
+
+    def test_spec_prop_pass_cond(self) -> None:
+        class ModelWithCond(torch.nn.Module):
+            def true_fn(self, val):
+                return val * 2
+
+            def false_fn(self, val):
+                return val + 1
+
+            def forward(self, x):
+                return torch.cond(x[0] > 0, self.true_fn, self.false_fn, [x])
+
+        model = ModelWithCond()
+        inputs = (torch.ones(10),)
+        dynamic_shapes = {"x": {0: torch.export.Dim("x", min=1, max=20)}}
+
+        # Run the spec prop pass and sanity check the spec on the cond.
+        edge_program = to_edge(export(model, inputs, dynamic_shapes=dynamic_shapes))
+        gm = edge_program.exported_program().graph_module
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the cond node. It should have a max size of 20 (matching the dynamic shape upper bound).
+        cond_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "cond"
+        )
+        self.assertIsNotNone(cond_node)
+
+        # Spec for the cond node should be a single-element tuple
+        spec: tuple[TensorSpec] = cond_node.meta["spec"]
+        self.assertTrue(isinstance(spec, tuple))
+        self.assertEqual(len(spec), 1)
+
+        self.assertEqual(len(spec[0].shape), 1)  # Should be rank 1
+        upper_bound = eval_upper_bound(spec[0].shape[0])
+        self.assertEqual(upper_bound, 20)  # Should match dynamic shape bound
+
+    def test_spec_prop_pass_while(self) -> None:
+        class ModelWithWhile(torch.nn.Module):
+            def forward(self, i):
+                def loop_cond(i, acc):
+                    return i[0] > 0
+
+                def loop_body(i, acc):
+                    return i - 1, acc + i
+
+                _, acc = torch._higher_order_ops.while_loop(
+                    loop_cond, loop_body, (i, torch.zeros(10))
+                )
+                return acc
+
+        model = ModelWithWhile()
+        inputs = (torch.Tensor([5]),)
+
+        # Run the spec prop pass and sanity check the spec on the while.
+        edge_program = to_edge(export(model, inputs))
+        gm = edge_program.exported_program().graph_module
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the while node. It should have a max size of 10 (matching the torch.zeros(10) in the model).
+        while_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "while_loop"
+        )
+        self.assertIsNotNone(while_node)
+
+        # Spec for the while node should be a two-element tuple
+        spec: tuple[TensorSpec] = while_node.meta["spec"]
+        self.assertTrue(isinstance(spec, tuple))
+        self.assertEqual(len(spec), 2)
+
+        self.assertEqual(len(spec[1].shape), 1)  # Should be rank 1
+        upper_bound = eval_upper_bound(spec[1].shape[0])
+        self.assertEqual(upper_bound, 10)
+
+    def test_spec_prop_pass_scan(self) -> None:
+        from torch._higher_order_ops.scan import scan
+
+        class ModelWithScan(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return scan(combine_fn, init, xs)
+
+        model = ModelWithScan()
+        inputs = (torch.arange(15).float().reshape(5, 3),)
+
+        # Run the spec prop pass and sanity check the spec on the scan.
+        edge_program = to_edge(
+            export(model, inputs, strict=True),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        gm = edge_program.exported_program().graph_module
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the scan node.
+        scan_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "scan"
+        )
+        self.assertIsNotNone(scan_node)
+
+        # Spec for the scan node should be a two-element tuple (carry, stacked_outputs)
+        spec: Tuple[TensorSpec, TensorSpec] = scan_node.meta["spec"]
+        self.assertTrue(isinstance(spec, tuple))
+        self.assertEqual(len(spec), 2)
+
+        # Carry should have shape [3] (same as xs[0])
+        self.assertEqual(list(spec[0].shape), [3])
+        # Stacked outputs should have shape [5, 3] (same as xs)
+        self.assertEqual(list(spec[1].shape), [5, 3])
+
+    def test_spec_prop_pass_scan_dynamic_shape(self) -> None:
+        from torch._higher_order_ops.scan import scan
+
+        class ModelWithScan(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return scan(combine_fn, init, xs)
+
+        model = ModelWithScan()
+        inputs = (torch.arange(15).float().reshape(5, 3),)
+        dynamic_shapes = {"xs": {0: torch.export.Dim("seq_len", min=1, max=20)}}
+
+        # First verify that export preserves symbolic shapes
+        exported = export(model, inputs, dynamic_shapes=dynamic_shapes, strict=True)
+        scan_node_after_export = next(
+            n
+            for n in exported.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "scan"
+        )
+        val_after_export = scan_node_after_export.meta.get("val")
+        self.assertIsNotNone(val_after_export)
+        # After export, the stacked output should have a symbolic first dimension
+        self.assertIsInstance(val_after_export[1].shape[0], torch.SymInt)
+
+        # Run the spec prop pass and sanity check the spec on the scan.
+        edge_program = to_edge(
+            exported,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        gm = edge_program.exported_program().graph_module
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the scan node.
+        scan_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "scan"
+        )
+        self.assertIsNotNone(scan_node)
+
+        # Spec for the scan node should be a two-element tuple (carry, stacked_outputs)
+        spec: Tuple[TensorSpec, TensorSpec] = scan_node.meta["spec"]
+        self.assertTrue(isinstance(spec, tuple))
+        self.assertEqual(len(spec), 2)
+
+        # Carry should have static shape [3]
+        self.assertEqual(list(spec[0].shape), [3])
+        self.assertEqual(spec[0].shape_dynamism, TensorShapeDynamism.STATIC)
+
+        # Stacked outputs should have dynamic first dimension with upper bound 20
+        self.assertEqual(len(spec[1].shape), 2)
+        upper_bound = eval_upper_bound(spec[1].shape[0])
+        self.assertEqual(upper_bound, 20)
+        self.assertEqual(spec[1].shape_dynamism, TensorShapeDynamism.DYNAMIC_BOUND)
+        self.assertEqual(spec[1].shape[1], 3)  # Second dim is static
 
     def test_compile_fix_broken_ops(self) -> None:
         class ExportableLoop(nn.Module):
@@ -1185,7 +1439,7 @@ class TestPasses(unittest.TestCase):
         )
 
         edge._edge_programs["forward"] = constant_prop_pass(
-            edge.exported_program("forward")
+            edge.exported_program("forward"), _skip_dim_order=False
         )
 
         # Check (c_lifted_tensor_*) nodes are all replaced by _prop_tensor_constant.
@@ -1333,9 +1587,7 @@ class TestPasses(unittest.TestCase):
         value = torch.randn(32, 32, 32, 32)
 
         # Capture the model
-        m = torch.export.export_for_training(
-            M(32), (query, key, value), strict=True
-        ).module()
+        m = torch.export.export(M(32), (query, key, value), strict=True).module()
 
         # 8w16a quantization
         from torchao.quantization.pt2e import MinMaxObserver, PerChannelMinMaxObserver
@@ -1608,9 +1860,7 @@ class TestPasses(unittest.TestCase):
             m_eager: torch.nn.Module, example_inputs: Tuple[torch.Tensor]
         ) -> Tuple[EdgeProgramManager, int, int]:
             # program capture
-            m = torch.export.export_for_training(
-                m_eager, example_inputs, strict=True
-            ).module()
+            m = torch.export.export(m_eager, example_inputs, strict=True).module()
 
             quantizer = XNNPACKQuantizer()
             quantization_config = get_symmetric_quantization_config()
@@ -2019,3 +2269,64 @@ class TestPasses(unittest.TestCase):
         pass_result = constant_prop_pass(edge.exported_program())
         # 1 constant: a (= self.w @ self.cst)
         self.assertEqual(1, len(pass_result.constants))
+
+    def test_constant_prop_pass_zero_stride_tensors(self) -> None:
+        """
+        Test that constant propagation correctly handles tensors with zero strides
+        by converting them to contiguous tensors. Zero-stride tensors can be created
+        by operations like expand() and are not supported by ExecuTorch.
+        """
+
+        class ZeroStrideModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.const_param = torch.nn.Parameter(torch.tensor([1.0, 2.0, 3.0]))
+
+            def forward(self, x):
+                unsqueezed = self.const_param.unsqueeze(
+                    1
+                )  # Shape: (3, 1), strides: (1, 1)
+                # expand creates zero-stride tensor
+                expanded = unsqueezed.expand(3, 5)  # Shape: (3, 5), strides: (1, 0)
+
+                # Use the expanded tensor with the input to prevent elimination
+                result = x + expanded.sum()
+                return result
+
+        model = ZeroStrideModel()
+        x = torch.randn(3, 5)
+        exported = torch.export.export(model, (x,))
+
+        # Before constant prop: verify we have the parameter
+        self.assertIn("const_param", exported.state_dict)
+
+        const_prop_result = constant_prop_pass(exported)
+        lowered = to_edge_transform_and_lower(
+            const_prop_result,
+            partitioner=[XnnpackPartitioner()],
+        )
+
+        # Should go through
+        lowered.to_executorch(get_xnnpack_executorch_backend_config([SpecPropPass()]))
+        self.assertGreater(len(const_prop_result.constants), 0)
+
+        # Find the propagated constant tensor
+        prop_tensor = None
+        for constant_name, constant_tensor in const_prop_result.constants.items():
+            if constant_name.startswith("_prop_tensor_constant"):
+                prop_tensor = constant_tensor
+                break
+
+        # Verify the propagated tensor exists and has no zero strides
+        self.assertIsNotNone(prop_tensor)
+        self.assertNotIn(
+            0,
+            prop_tensor.stride(),
+            f"Propagated tensor still has zero stride: {prop_tensor.stride()}",
+        )
+
+        # Verify the tensor is contiguous
+        self.assertTrue(
+            prop_tensor.is_contiguous(),
+            f"Propagated tensor is not contiguous: {prop_tensor.stride()}",
+        )

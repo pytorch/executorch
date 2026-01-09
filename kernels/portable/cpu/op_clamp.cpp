@@ -34,6 +34,7 @@ bool is_out_of_bounds(CTYPE_CAST val_cast) {
 }
 
 ET_NODISCARD bool check_bounds(
+    KernelRuntimeContext& ctx,
     const Scalar& val_scalar,
     const torch::executor::native::ScalarType& val_type,
     const torch::executor::native::ScalarType& out_type,
@@ -44,9 +45,9 @@ ET_NODISCARD bool check_bounds(
   static constexpr const char op_name[] = "clamp.out";
 
   if (isIntegralType(out_type, /*includeBool=*/false)) {
-    const long val_long = utils::scalar_to<long>(val_scalar);
+    const int64_t val_long = utils::scalar_to<int64_t>(val_scalar);
     ET_SWITCH_INT_TYPES(out_type, ctx, op_name, CTYPE_OUT, [&]() {
-      if (is_out_of_bounds<CTYPE_OUT, long>(val_long)) {
+      if (is_out_of_bounds<CTYPE_OUT, int64_t>(val_long)) {
         ET_LOG(Error, "%s value out of bounds", val_name);
         is_valid = false;
       }
@@ -107,14 +108,14 @@ Tensor& clamp_out(
   if (has_min) {
     ET_KERNEL_CHECK(
         ctx,
-        check_bounds(min_opt.value(), min_type, out_type, "minimum"),
+        check_bounds(ctx, min_opt.value(), min_type, out_type, "minimum"),
         InvalidArgument,
         out);
   }
   if (has_max) {
     ET_KERNEL_CHECK(
         ctx,
-        check_bounds(max_opt.value(), max_type, out_type, "maximum"),
+        check_bounds(ctx, max_opt.value(), max_type, out_type, "maximum"),
         InvalidArgument,
         out);
   }
@@ -138,7 +139,7 @@ Tensor& clamp_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-        [has_min, min_opt, has_max, max_opt](const auto val_in) {
+        [has_min, min_opt, has_max, max_opt](const auto& val_in) {
           auto val_out = val_in;
           if (has_min) {
             val_out = utils::max_override(

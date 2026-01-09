@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
+from typing import Callable, Tuple
 
 import torch
 from executorch.backends.arm.test import common
@@ -35,6 +35,7 @@ class Sum(torch.nn.Module):
         "4d_dim_3_keep": lambda: (torch.rand(1, 2, 3, 4), 3, True),
         "4d_dims_keep": lambda: (torch.rand(1, 2, 8, 8), [2, 3, 0], True),
         "dim_None": lambda: (torch.rand(10), None, True),
+        "dim_None_4d_tensor": lambda: (torch.rand(10, 3, 2, 1), None, True),
     }
 
     def forward(self, x: torch.Tensor, dim: int, keepdim: bool):
@@ -71,7 +72,6 @@ def test_view_u55_INT_1_0(test_data: Tuple):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -84,28 +84,32 @@ def test_view_u85_INT_1_0(test_data: Tuple):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Sum.test_parameters)
 @common.SkipIfNoModelConverter
-def test_sum_dim_intlist_vgf_FP(test_data: input_t1):
-    pipeline = VgfPipeline[input_t1](
-        Sum(), test_data(), aten_op, tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", Sum.test_parameters)
-@common.SkipIfNoModelConverter
-def test_sum_dim_intlist_vgf_INT(test_data: input_t1):
+def test_sum_dim_intlist_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Sum(),
         test_data(),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        run_on_vulkan_runtime=True,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Sum.test_parameters)
+@common.SkipIfNoModelConverter
+def test_sum_dim_intlist_vgf_quant(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Sum(),
+        test_data(),
+        aten_op,
+        run_on_vulkan_runtime=True,
+        quantize=True,
     )
     pipeline.run()
 
@@ -118,7 +122,7 @@ reject_inputs = {
 
 
 @common.parametrize("test_data", reject_inputs)
-def test_view_u55_INT_not_delegated(test_data: Tuple):
+def test_view_u55_INT_failure_set(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Sum(),
         test_data(),
@@ -127,4 +131,31 @@ def test_view_u55_INT_not_delegated(test_data: Tuple):
         run_on_fvp=False,  # Run fails since we are missing a non partitioned sum op
     )
     pipeline.pop_stage("check_count.exir")
+    pipeline.run()
+
+
+input_t2 = tuple[torch.Tensor]
+
+
+class SumDefault(torch.nn.Module):
+    test_parameters = {
+        "rank1": lambda: (torch.rand(10),),
+        "rank2": lambda: (torch.rand(10, 1, 10),),
+        "rank4": lambda: (torch.rand(1, 1, 5, 8),),
+    }
+    aten_op = "torch.ops.aten.sum.default"
+
+    def forward(self, x: torch.Tensor):
+        return x.sum()
+
+
+@common.parametrize("test_data", SumDefault.test_parameters)
+def test_sum_tosa_FP(test_data: Callable[[], input_t2]):
+    pipeline = TosaPipelineFP[input_t2](SumDefault(), test_data(), SumDefault.aten_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", SumDefault.test_parameters)
+def test_sum_tosa_INT(test_data: Callable[[], input_t2]):
+    pipeline = TosaPipelineINT[input_t1](SumDefault(), test_data(), SumDefault.aten_op)
     pipeline.run()

@@ -26,22 +26,21 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
+# some toolchains might contain their own packages, skip them here
+find_package(gflags REQUIRED NO_CMAKE_FIND_ROOT_PATH)
+find_package(absl REQUIRED NO_CMAKE_FIND_ROOT_PATH)
+
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,
 # etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
-find_package(gflags REQUIRED)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 #
-# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
 #
-set(EXECUTORCH_SRCS_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
-)
-extract_sources(${EXECUTORCH_SRCS_FILE})
-include(${EXECUTORCH_SRCS_FILE})
+executorch_load_build_variables()
 
 get_filename_component(
   EXECUTORCH_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE

@@ -24,10 +24,12 @@ from .qconfig import (
     get_16a4w_qnn_qat_config,
     get_16a8w_qnn_ptq_config,
     get_16a8w_qnn_qat_config,
+    get_8a4w_qnn_ptq_config,
     get_8a8w_qnn_ptq_config,
     get_8a8w_qnn_qat_config,
     get_ptq_per_block_quant_config,
     get_ptq_per_channel_quant_config,
+    get_qat_per_block_quant_config,
     get_qat_per_channel_quant_config,
     QuantizationConfig,
 )
@@ -44,6 +46,7 @@ __all__ = [
     "get_16a16w_qnn_ptq_config",
     "get_8a8w_qnn_ptq_config",
     "get_8a8w_qnn_qat_config",
+    "get_8a4w_qnn_ptq_config",
     "get_16a4w_qnn_qat_config",
     "get_ptq_per_block_quant_config",
 ]
@@ -60,6 +63,7 @@ class QuantDtype(IntEnum):
     use_16a4w = 2
     use_16a4w_block = 3
     use_8a8w = 4
+    use_8a4w = 5
 
 
 QUANT_CONFIG_DICT = {
@@ -109,6 +113,15 @@ QUANT_CONFIG_DICT = {
         partial(get_ptq_per_channel_quant_config),
         None,
     ),
+    (QuantDtype.use_8a4w, False): (
+        get_8a4w_qnn_ptq_config,
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint8,
+            weight_dtype=torch.int4,
+        ),
+        None,
+    ),
     # QAT,
     (QuantDtype.use_16a4w, True): (
         get_16a4w_qnn_qat_config,
@@ -118,6 +131,19 @@ QUANT_CONFIG_DICT = {
             weight_dtype=torch.int4,
         ),
         None,
+    ),
+    (QuantDtype.use_16a4w_block, True): (
+        get_16a4w_qnn_qat_config,
+        partial(
+            get_qat_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int4,
+        ),
+        partial(
+            get_qat_per_block_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int4,
+        ),
     ),
     (QuantDtype.use_8a8w, True): (
         get_8a8w_qnn_qat_config,
@@ -134,6 +160,7 @@ class ModuleQConfig:
     is_conv_per_channel: bool = False
     is_linear_per_channel: bool = False
     act_observer: Optional[UniformQuantizationObserverBase] = None
+    eps: Optional[float] = None
 
     def __post_init__(self):
         if (self.quant_dtype, self.is_qat) not in QUANT_CONFIG_DICT:
@@ -146,36 +173,68 @@ class ModuleQConfig:
             per_block_quant_config_func,
         ) = QUANT_CONFIG_DICT[(self.quant_dtype, self.is_qat)]
         self.quant_config = (
-            quant_config_func(act_observer=self.act_observer)
+            quant_config_func(act_observer=self.act_observer, eps=self.eps)
             if self.act_observer
-            else quant_config_func()
+            else quant_config_func(eps=self.eps)
         )
-        self.per_channel_quant_config = (
-            per_channel_quant_config_func(act_observer=self.act_observer)
-            if self.act_observer
-            else per_channel_quant_config_func()
-        )
-        self.use_per_channel_weight_quant_ops = set()
+
+        # Assume per_channel_quant/per_block_quant only happen on axis_0 or axis_1, increase the range if there's a need
+        potential_axis = 2
+
+        self.per_channel_quant_config_list = []
+        for i in range(potential_axis):
+            self.per_channel_quant_config_list.append(
+                (
+                    per_channel_quant_config_func(
+                        act_observer=self.act_observer,
+                        ch_axis=i,
+                        eps=self.eps,
+                    )
+                    if self.act_observer
+                    else per_channel_quant_config_func(ch_axis=i, eps=self.eps)
+                )
+            )
+
+        # Key is the node target, and value is the axis to perform per channel quantization
+        self.op_axis_dict = {
+            torch.ops.aten.conv1d.default: 0,
+            torch.ops.aten.conv2d.default: 0,
+            torch.ops.aten.conv3d.default: 0,
+            torch.ops.aten.conv_transpose2d.input: 1,
+            torch.ops.aten.conv_transpose3d.input: 1,
+            torch.ops.aten.linear.default: 0,
+        }
+
+        self.use_per_channel_weight_quant_ops = {}
         if self.is_conv_per_channel:
+            conv_ops = [
+                torch.ops.aten.conv1d.default,
+                torch.ops.aten.conv2d.default,
+                torch.ops.aten.conv3d.default,
+                torch.ops.aten.conv_transpose2d.input,
+                torch.ops.aten.conv_transpose3d.input,
+            ]
             self.use_per_channel_weight_quant_ops.update(
-                {
-                    torch.ops.aten.conv1d.default,
-                    torch.ops.aten.conv2d.default,
-                    torch.ops.aten.conv_transpose2d.input,
-                }
+                {k: self.op_axis_dict[k] for k in conv_ops if k in self.op_axis_dict}
             )
         if self.is_linear_per_channel:
+            linear_ops = [torch.ops.aten.linear.default]
             self.use_per_channel_weight_quant_ops.update(
-                {
-                    torch.ops.aten.linear.default,
-                }
+                {k: self.op_axis_dict[k] for k in linear_ops if k in self.op_axis_dict}
             )
+
         if per_block_quant_config_func:
-            self.per_block_quant_config = (
-                per_block_quant_config_func(act_observer=self.act_observer)
-                if self.act_observer
-                else per_block_quant_config_func()
-            )
+            self.per_block_quant_config_list = []
+            for i in range(potential_axis):
+                self.per_block_quant_config_list.append(
+                    (
+                        per_block_quant_config_func(
+                            act_observer=self.act_observer, ch_axis=i
+                        )
+                        if self.act_observer
+                        else per_block_quant_config_func(ch_axis=i)
+                    )
+                )
 
 
 class QnnQuantizer(Quantizer):
@@ -212,10 +271,12 @@ class QnnQuantizer(Quantizer):
         self.submodule_qconfig_list: List[
             Tuple[Callable[[torch.fx.Node], bool], ModuleQConfig]
         ] = []
+
         self.block_size_map = {}
 
         self.custom_quant_annotations: Sequence[Callable] = []
         self.discard_nodes: Set[str] = set()
+        self.recipe = None
 
     def _annotate(self, gm: GraphModule) -> None:
         """
@@ -268,16 +329,22 @@ class QnnQuantizer(Quantizer):
         op = node.target
         if isinstance(op, str):
             return
-
+        config = self._get_submodule_qconfig(node)
         if block_size := self.block_size_map.get(node.name):
-            config = self.default_quant_config.per_block_quant_config
+            ch_axis = config.op_axis_dict.get(node.target, 0)
+            assert (
+                len(config.per_block_quant_config_list) > ch_axis
+            ), f"Unsupported per block quantization axis: {ch_axis}, please increase the range of per_block_quant_config_list"
+            config = config.per_block_quant_config_list[ch_axis]
             config.block_size = block_size
             return config
 
-        config = self._get_submodule_qconfig(node)
-
         if op in config.use_per_channel_weight_quant_ops:
-            return config.per_channel_quant_config
+            ch_axis = config.use_per_channel_weight_quant_ops[op]
+            assert (
+                len(config.per_channel_quant_config_list) > ch_axis
+            ), f"Unsupported per channel quantization axis: {ch_axis}, please increase the range of per_channel_quant_config_list"
+            return config.per_channel_quant_config_list[ch_axis]
 
         if op in self.quant_ops:
             return config.quant_config
@@ -312,14 +379,20 @@ class QnnQuantizer(Quantizer):
         """
         Annotates GraphModule during prepare_pt2e.
 
+        If a recipe is provided, it will be used to annotate the model.
+        Otherwise, fallback to the default annotation flow.
+
         Args:
             model (GraphModule): The FX GraphModule to annotate.
 
         Returns:
             GraphModule: The annotated model.
         """
-        self._annotate(model)
-        self._annotate_custom_annotation(model)
+        if self.recipe:
+            self.recipe.annotate(model)
+        else:
+            self._annotate(model)
+            self._annotate_custom_annotation(model)
 
         return model
 
@@ -339,6 +412,7 @@ class QnnQuantizer(Quantizer):
         is_conv_per_channel=False,
         is_linear_per_channel=False,
         act_observer=None,
+        eps=None,
     ) -> None:
         """
         Set the default quant config for quantizer.
@@ -349,14 +423,16 @@ class QnnQuantizer(Quantizer):
             is_conv_per_channel (bool, optional): Enables per-channel quantization for convolution operations.
             is_linear_per_channel (bool, optional): Enables per-channel quantization for linear (fully connected) operations.
             act_observer (Optional[UniformQuantizationObserverBase], optional): Custom observer for activation quantization. If not specified, the default observer is determined by `QUANT_CONFIG_DICT`.
+            eps (float): Minimum scale for quantization.
 
         """
         self.default_quant_config = ModuleQConfig(
             quant_dtype,
-            is_qat,
-            is_conv_per_channel,
-            is_linear_per_channel,
-            act_observer,
+            is_qat=is_qat,
+            is_conv_per_channel=is_conv_per_channel,
+            is_linear_per_channel=is_linear_per_channel,
+            act_observer=act_observer,
+            eps=eps,
         )
 
     def set_block_size_map(self, block_size_map: Dict[str, Tuple]) -> None:

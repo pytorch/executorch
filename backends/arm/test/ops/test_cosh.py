@@ -73,7 +73,11 @@ def test_cosh_u55_INT(test_data: Tuple):
 
 
 @common.XfailIfNoCorstone320
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data",
+    test_data_suite,
+    strict=False,
+)
 def test_cosh_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Cosh(), (test_data,), aten_ops=aten_op, exir_ops=exir_op
@@ -83,25 +87,25 @@ def test_cosh_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_cosh_vgf_FP(test_data: Tuple):
+def test_cosh_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Cosh(),
         (test_data,),
         [],
         [],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_cosh_vgf_INT(test_data: Tuple):
+def test_cosh_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Cosh(),
         (test_data,),
         [],
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

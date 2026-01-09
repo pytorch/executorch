@@ -1,4 +1,4 @@
-# Copyright 2023-2024 NXP
+# Copyright 2023-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,14 +18,13 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     create_channels_first_to_channels_last_permutation,
     create_channels_last_to_channels_first_permutation,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converter import (
-    NodeConverter,
-    Target,
-)
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+
+from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
 from torch.export import ExportedProgram
 from torch.fx import Node
 from torch.fx.graph import Graph
-
 
 # If executed on i.MX platform, there is no tensorflow module. And typically the intention is to use the tflite python
 # interpreter available in tflite_runtime
@@ -57,6 +56,13 @@ class EdgeProgramExecutor:
             return output.detach().numpy()
         elif isinstance(output, tuple) and len(output) == 1:
             return output[0].detach().numpy()
+        elif isinstance(output, tuple):
+            output_names = self.edge_program.graph_signature.user_outputs
+
+            return {
+                name: tensor.detach().numpy()
+                for (name, tensor) in zip(output_names, output)
+            }
 
         raise RuntimeError(
             "Edge program inference with multiple outputs not implemented"
@@ -189,6 +195,11 @@ def compare_output_arrays(
 
     assert tfl_output.shape == edge_output.shape, "Output shapes don't match!"
 
+    if (max_diff := np.abs(np.max(tfl_output - edge_output))) > 0.0:
+        logger.w(
+            f"Maximum absolute difference of the tensor '{output_name}': '{max_diff}'"
+        )
+
     assert np.allclose(
         tfl_output, edge_output, rtol=rtol, atol=atol, equal_nan=True
     ), f"Output values of the `{output_name}` tensor don't match!"
@@ -298,6 +309,7 @@ def convert_run_compare(
 ) -> (TFLiteExecutor, EdgeProgramExecutor):
 
     if tfl_model is None:
+        NodeFormatInference(edge_program).identify_node_formats()
         tfl_model, _ = EdgeProgramToIRConverter().convert_program(
             edge_program, conversion_config
         )
@@ -358,10 +370,16 @@ def convert_run_compare(
 
 
 def graph_contains_any_of_ops(graph: Graph, ops: list) -> bool:
-    return any(node.target in ops for node in graph.nodes)
+    return graph_contains_any(
+        graph, condition=lambda n: hasattr(n, "target") and n.target in ops
+    )
 
 
-target_support_check_function = Callable[[Node, Target], bool]
+def graph_contains_any(graph: Graph, condition: Callable[[Node], bool]) -> bool:
+    return any(map(condition, graph.nodes))
+
+
+target_support_check_function = Callable[[Node, NeutronTargetSpec], bool]
 
 
 class OverrideTargetSupportCheck:

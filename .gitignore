@@ -16,10 +16,13 @@ cmake-android-out/
 cmake-ios-out/
 cmake-out*
 cmake-out-android/
+build-android/
+build-x86/
 dist/
-ethos-u-scratch/
+arm-scratch/
 executorch.egg-info
 pip-out/
+build-profiling/
 
 # Any exported models and profiling outputs
 *.bin
@@ -59,7 +62,11 @@ xcuserdata/
 /include/
 /share/
 /version.py
-*.csv
+*_etdump
 
 # Android
 *.aar
+
+# Windows
+*.dll
+*.pyd

@@ -3,15 +3,21 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
 
 import operator
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
+from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
 def get_layer_norm_decomposition(op) -> tuple:
@@ -35,7 +41,7 @@ def get_layer_norm_decomposition(op) -> tuple:
             torch.ops.aten.add.Tensor,
             torch.ops.aten.rsqrt.default,
             torch.ops.aten.mul.Tensor,
-            torch.ops.aten.view_copy.default,
+            torch.ops.aten.reshape.default,
         )
     raise RuntimeError(f"Can't get layer_norm composition for op {op}")
 
@@ -56,11 +62,24 @@ class DecomposeLayerNormPass(ArmPass):
     Source: https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ComputeConstantOpsAOTPass,
+        DecomposeMeanDimPass,
+        DecomposeVarPass,
+        InsertTableOpsPass,
+    }
+
+    _TARGET_OPS = {
+        exir_ops.edge.aten.native_layer_norm.default,
+        torch.ops.aten.layer_norm.default,
+    }
+
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in (
-                exir_ops.edge.aten.native_layer_norm.default,
-                torch.ops.aten.layer_norm.default,
+            if (
+                node.op != "call_function"
+                or node.target not in DecomposeLayerNormPass._TARGET_OPS
+                or not self.allowed_to_transform(node.meta)
             ):
                 continue
 

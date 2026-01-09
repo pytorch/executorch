@@ -15,6 +15,7 @@
 #include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>
+#include <cmath>
 #include <limits>
 
 using namespace ::testing;
@@ -162,4 +163,98 @@ TEST(OpChooseQparamsPerTokenAsymmetricTensorOutTest, DynamicShapeFloat) {
 
   EXPECT_TENSOR_CLOSE_WITH_TOL(scale_out, new_expected_scale, 1e-4, 1e-4);
   EXPECT_TENSOR_EQ(zero_point_out, new_expected_zero_point);
+}
+
+TEST(
+    OpChooseQparamsPerTokenAsymmetricTensorOutTest,
+    LargeInputParallelization) {
+  et_pal_init();
+  TensorFactory<ScalarType::Float> tf_float;
+  TensorFactory<ScalarType::Double> tf_double;
+  TensorFactory<ScalarType::Long> tf_long;
+
+  // Create input with 8 tokens x 128 elements per token = 1024 total elements
+  // This exceeds the MIN_ELEMENTS_FOR_PARALLEL threshold of 512
+  const int num_tokens = 8;
+  const int token_size = 128;
+  std::vector<float> input_data(num_tokens * token_size);
+
+  // Generate test data with known min/max per token for easier verification
+  std::vector<float> expected_min(num_tokens);
+  std::vector<float> expected_max(num_tokens);
+
+  for (int i = 0; i < num_tokens; i++) {
+    float token_min = -1.0f * (i + 1);
+    float token_max = 2.0f * (i + 1);
+    expected_min[i] = token_min;
+    expected_max[i] = token_max;
+
+    for (int j = 0; j < token_size; j++) {
+      // Linearly interpolate between min and max
+      float t = j / static_cast<float>(token_size - 1);
+      input_data[i * token_size + j] = token_min + t * (token_max - token_min);
+    }
+  }
+
+  Tensor input = tf_float.make({num_tokens, token_size}, input_data);
+  Tensor scale_out = tf_double.zeros({num_tokens, 1});
+  Tensor zero_point_out = tf_long.zeros({num_tokens, 1});
+
+  choose_qparams_per_token_asymmetric_out(
+      input, ScalarType::Float, scale_out, zero_point_out);
+
+  // Manually calculate expected scale and zero_point using the same algorithm
+  // as calculate_scale_and_zero_point function
+  const int32_t qmin = -128;
+  const int32_t qmax = 127;
+  const float SMALL_SCALE_THRESHOLD = 6.1e-5f;
+
+  for (int i = 0; i < num_tokens; i++) {
+    float min = std::min(expected_min[i], 0.0f);
+    float max = std::max(expected_max[i], 0.0f);
+
+    // Calculate scale
+    double scale = (static_cast<double>(max) - min) / (qmax - qmin);
+    if (float(scale) == 0.0f || std::isinf(1.0f / float(scale))) {
+      scale = 0.1;
+    }
+
+    // Cut off small scale
+    if (scale < SMALL_SCALE_THRESHOLD) {
+      scale = SMALL_SCALE_THRESHOLD;
+      if (min == 0.0f) {
+        max = SMALL_SCALE_THRESHOLD * (qmax - qmin);
+      } else if (max == 0.0f) {
+        min = -SMALL_SCALE_THRESHOLD * (qmax - qmin);
+      } else {
+        float amplifier = SMALL_SCALE_THRESHOLD / scale;
+        min *= amplifier;
+        max *= amplifier;
+      }
+    }
+
+    // Calculate zero_point
+    double zero_point_from_min = qmin - min / scale;
+    double zero_point_from_max = qmax - max / scale;
+    double zero_point_from_min_error = std::abs(qmin) - std::abs(min / scale);
+    double zero_point_from_max_error = std::abs(qmax) - std::abs(max / scale);
+    double initial_zero_point =
+        zero_point_from_min_error < zero_point_from_max_error
+        ? zero_point_from_min
+        : zero_point_from_max;
+
+    int32_t nudged_zero_point = 0;
+    if (initial_zero_point < qmin) {
+      nudged_zero_point = qmin;
+    } else if (initial_zero_point > qmax) {
+      nudged_zero_point = qmax;
+    } else {
+      nudged_zero_point =
+          std::nearbyint(static_cast<float>(initial_zero_point));
+    }
+
+    // Verify computed values match expected
+    EXPECT_NEAR(scale_out.const_data_ptr<double>()[i], scale, 1e-6);
+    EXPECT_EQ(zero_point_out.const_data_ptr<int64_t>()[i], nudged_zero_point);
+  }
 }

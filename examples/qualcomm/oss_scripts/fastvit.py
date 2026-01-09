@@ -6,17 +6,12 @@
 
 import json
 import os
+
 from multiprocessing.connection import Client
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes.expand_broadcast_tensor_shape import (
-    ExpandBroadcastTensorShape,
-)
 
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
 from executorch.backends.qualcomm.quantizer.annotators import (
     QuantizationConfig,
     QuantizationSpec,
@@ -30,10 +25,13 @@ from executorch.backends.qualcomm.quantizer.qconfig import (
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
     make_quantizer,
@@ -65,61 +63,61 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     data_num = 100
-    inputs, targets, input_list = get_imagenet_dataset(
+    inputs, targets = get_imagenet_dataset(
         dataset_path=f"{args.dataset}",
         data_size=data_num,
         image_shape=(256, 256),
     )
 
     pte_filename = "fastvit_qnn"
-    quantizer = make_quantizer(quant_dtype=QuantDtype.use_8a8w)
 
-    # there are lots of outliers appearing in fastvit parameters
-    # we need to apply special configuration to saturate their impact
-    act_qspec = QuantizationSpec(
-        dtype=torch.uint8,
-        qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(
-            **{"averaging_constant": 0.02}
-        ),
-    )
-    weight_qspec = QuantizationSpec(
-        dtype=torch.int8,
-        quant_min=torch.iinfo(torch.int8).min + 1,
-        quant_max=torch.iinfo(torch.int8).max,
-        qscheme=torch.per_channel_symmetric,
-        ch_axis=0,
-        observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(
-            **{"steps": 200, "use_mse": True}
-        ),
-    )
-    # rewrite default per-channel ptq config
-    quantizer.default_quant_config.per_channel_quant_config = QuantizationConfig(
-        input_activation=act_qspec,
-        output_activation=act_qspec,
-        weight=weight_qspec,
-        bias=_derived_bias_quant_spec,
-    )
+    def get_custom_quantizer():
+        quantizer = make_quantizer(quant_dtype=QuantDtype.use_8a8w)
 
-    # rewrite default ptq config
-    q_config = quantizer.default_quant_config.quant_config
-    quantizer.default_quant_config.quant_config = QuantizationConfig(
-        input_activation=act_qspec,
-        output_activation=act_qspec,
-        weight=q_config.weight,
-        bias=q_config.bias,
-    )
+        # there are lots of outliers appearing in fastvit parameters
+        # we need to apply special configuration to saturate their impact
+        act_qspec = QuantizationSpec(
+            dtype=torch.uint8,
+            qscheme=torch.per_tensor_affine,
+            observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(
+                **{"averaging_constant": 0.01}
+            ),
+        )
+        weight_qspec = QuantizationSpec(
+            dtype=torch.int8,
+            quant_min=torch.iinfo(torch.int8).min + 1,
+            quant_max=torch.iinfo(torch.int8).max,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=0,
+            observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(
+                **{"steps": 100, "use_mse": True}
+            ),
+        )
+        # rewrite default per-channel ptq config
+        quantizer.default_quant_config.per_channel_quant_config = QuantizationConfig(
+            input_activation=act_qspec,
+            output_activation=act_qspec,
+            weight=weight_qspec,
+            bias=_derived_bias_quant_spec,
+        )
+
+        # rewrite default ptq config
+        q_config = quantizer.default_quant_config.quant_config
+        quantizer.default_quant_config.quant_config = QuantizationConfig(
+            input_activation=act_qspec,
+            output_activation=act_qspec,
+            weight=q_config.weight,
+            bias=q_config.bias,
+        )
+        return quantizer
 
     # lower to QNN
-    passes_job = get_capture_program_passes()
-    passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
+    backend = get_backend_type(args.backend)
+    quantizer = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: get_custom_quantizer(),
+    }[backend]
     build_executorch_binary(
         convert_linear_to_conv2d(get_instance(args.oss_repo, args.pretrained_weight)),
         inputs[0],
@@ -128,10 +126,10 @@ def main(args):
         dataset=inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        quant_dtype=QuantDtype.use_8a8w,
         custom_quantizer=quantizer,
-        passes_job=passes_job,
+        backend=backend,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -145,8 +143,11 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -218,6 +219,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

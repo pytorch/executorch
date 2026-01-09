@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -48,6 +49,9 @@ define_overridable_option(
   EXECUTORCH_ENABLE_EVENT_TRACER "Build with ET_EVENT_TRACER_ENABLED" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_ENABLE_BUNDLE_IO "Build with ET_BUNDLE_IO_ENABLED" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_OPTIMIZE_SIZE
   "Build executorch runtime optimizing for binary size" BOOL OFF
 )
@@ -66,12 +70,16 @@ define_overridable_option(
   "Build the optimized ops library for AOT export usage" BOOL OFF
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension" BOOL
+  EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER "Build the ASR runner extension" BOOL
   OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension" BOOL
+  ON # Required by executor_runner
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR "Build the Flat Tensor extension" BOOL
-  OFF
+  ON # Required by executor_runner
 )
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension" BOOL OFF
@@ -85,6 +93,10 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP
+  "Build the Named Data Map extension" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" BOOL OFF
@@ -146,6 +158,12 @@ define_overridable_option(
   EXECUTORCH_BUILD_CORTEX_M "Build the Cortex-M backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_CUDA "Build the CUDA backend" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_METAL "Build the Metal backend" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_VGF "Build the Arm VGF backend" BOOL OFF
 )
 define_overridable_option(
@@ -154,6 +172,10 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_WASM "Build the ExecuTorch JavaScript API" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_TOKENIZERS_WASM "Build the JavaScript Tokenizers API" BOOL
+  OFF
 )
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
@@ -170,6 +192,36 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." BOOL
   ${_default_executorch_build_cpuinfo}
+)
+
+# Threadpool size options. At most one can be specified. Note that the default
+# is managed in threadpool.cpp to allow the user to specify an alternate mode
+# without needing to explicitly set the default to off.
+define_overridable_option(
+  EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES
+  "Set the number of threads used for CPU parallel computation equal to the number of performant CPU cores."
+  BOOL
+  OFF
+)
+define_overridable_option(
+  EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES
+  "Set the number of threads used for CPU parallel computation equal to the number of logical CPU cores."
+  BOOL
+  OFF
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES REQUIRES
+  EXECUTORCH_BUILD_PTHREADPOOL EXECUTORCH_BUILD_CPUINFO
+)
+check_required_options_on(
+  IF_ON EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES REQUIRES
+  EXECUTORCH_BUILD_PTHREADPOOL EXECUTORCH_BUILD_CPUINFO
+)
+
+check_conflicting_options_on(
+  IF_ON EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES CONFLICTS_WITH
+  EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES
 )
 
 # TODO(jathu): move this to platform specific presets when created
@@ -240,6 +292,12 @@ define_overridable_option(
   BOOL
   FALSE
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_WHEEL_DO_NOT_USE
+  "On if in the wheel building process. Should only be used to guard code that is only needed for building the wheel."
+  BOOL
+  FALSE
+)
 
 # ------------------------------------------------------------------------------
 # Validations
@@ -249,6 +307,10 @@ define_overridable_option(
 
 check_required_options_on(
   IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_ENABLE_BUNDLE_IO REQUIRES EXECUTORCH_BUILD_DEVTOOLS
 )
 
 check_required_options_on(
@@ -273,6 +335,12 @@ check_required_options_on(
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_MODULE REQUIRES
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
+  EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
 )
 
 check_required_options_on(
@@ -331,6 +399,19 @@ check_conflicting_options_on(
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_WASM REQUIRES EXECUTORCH_BUILD_EXTENSION_MODULE
   EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_TOKENIZERS_WASM REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_LLM
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_CUDA REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_METAL REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})

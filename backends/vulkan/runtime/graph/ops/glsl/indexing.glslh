@@ -1,0 +1,462 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef INDEXING_GLSLH
+#define INDEXING_GLSLH
+
+#include "common.glslh"
+
+#extension GL_EXT_control_flow_attributes : require
+
+#define DIMLIMIT 8
+#define DIMLIMIT_DIV4 2
+
+//
+// Hashed layout utils
+//
+
+/*
+ * The hashed layout is a packed int32 where each group of 4 bits contain some
+ * information about the memory layout of a tensor buffer or texture. It is
+ * passed into shaders as a specialization constant and allows shader compilers
+ * to select optimized code paths suited for a particular memory layout.
+ *
+ * Currently the following information is packed into the layout integer:
+ * - bits 0-15: first 4 elements of the dim order array
+ *   - bits 0-3: dim_order[0]
+ *   - bits 4-7: dim_order[1]
+ *   - bits 8-11: dim_order[2]
+ *   - bits 12-15: dim_order[3]
+ */
+
+// Extracts the 4-bit packed value at the given position (0..7) from a 32-bit
+// int. Position 0 corresponds to the least-significant 4 bits; position 7 to
+// the most-significant.
+int extract_4b(const int packed, const int pos) {
+  return (packed >> (pos * 4)) & 0xF;
+}
+
+
+// Corresponds to dim_order[:4] = [0, 1, 2, 3]
+#define CONTIGUOUS_BUFFER_LAYOUT_ID 12816
+// Corresponds to dim_order[:4] = [2, 0, 1, 3]
+#define CHANNELS_LAST_BUFFER_LAYOUT_ID 12546
+
+// Used as a default value for hashed layout ints, representing the most common
+// layout used for buffer-backed tensors (i.e. contiguous buffers)
+#define CONTIG_LAYOUT_INT 12816
+
+int layout_id(const int hashed_layout) {
+  // Extract the first 16 bits
+  return hashed_layout & 0xFFFF;
+}
+
+bool is_contiguous(const int hashed_layout) {
+  return layout_id(hashed_layout) == CONTIGUOUS_BUFFER_LAYOUT_ID;
+}
+
+bool is_channels_last(const int hashed_layout) {
+  return layout_id(hashed_layout) == CHANNELS_LAST_BUFFER_LAYOUT_ID;
+}
+
+//
+// BufferMetadata
+//
+
+struct BufferMetadata {
+  uvec4 sizes[DIMLIMIT_DIV4];
+  uvec4 dim_order[DIMLIMIT_DIV4];
+  uvec4 strides[DIMLIMIT_DIV4];
+  uvec2 ndim_numel;
+};
+
+uint ndim(const BufferMetadata meta) {
+  return meta.ndim_numel[0];
+}
+
+int int_ndim(const BufferMetadata meta) {
+  return int(meta.ndim_numel[0]);
+}
+
+uint numel(const BufferMetadata meta) {
+  return meta.ndim_numel[1];
+}
+
+uint dim_order_at(const BufferMetadata meta, const int dim) {
+  return meta.dim_order[div_4(dim)][mod_4(dim)];
+}
+
+uint dim_order_at(const BufferMetadata meta, const uint dim) {
+  return meta.dim_order[div_4(dim)][mod_4(dim)];
+}
+
+uint stride_at(const BufferMetadata meta, const int dim) {
+  return meta.strides[div_4(dim)][mod_4(dim)];
+}
+
+uint stride_at(const BufferMetadata meta, const uint dim) {
+  return meta.strides[div_4(dim)][mod_4(dim)];
+}
+
+uint width(const BufferMetadata meta) {
+  return meta.sizes[0][0];
+}
+
+uint height(const BufferMetadata meta) {
+  return meta.sizes[0][1];
+}
+
+uint size_at(const BufferMetadata meta, const int dim) {
+  return meta.sizes[div_4(dim)][mod_4(dim)];
+}
+
+uint size_at(const BufferMetadata meta, const uint dim) {
+  return meta.sizes[div_4(dim)][mod_4(dim)];
+}
+
+bool are_equal(const BufferMetadata meta1, const BufferMetadata meta2) {
+  // sizes and strides must be the same to be considered equal
+  if (meta1.sizes[0] != meta2.sizes[0]) {
+    return false;
+  }
+  if (meta1.sizes[1] != meta2.sizes[1]) {
+    return false;
+  }
+  if (meta1.strides[0] != meta2.strides[0]) {
+    return false;
+  }
+  if (meta1.strides[1] != meta2.strides[1]) {
+    return false;
+  }
+  return true;
+}
+
+bool out_of_bounds(const uint bufi, const BufferMetadata meta) {
+  return bufi >= meta.ndim_numel[1];
+}
+
+//
+// TextureMetadata
+//
+
+struct TextureMetadata {
+  ivec4 sizes;
+  ivec3 limits;
+  ivec4 axis_map;
+  int packed_dim;
+};
+
+bool out_of_bounds(const ivec3 pos, const TextureMetadata meta) {
+  return any(greaterThanEqual(pos, meta.limits));
+}
+
+//
+// TensorIndex
+//
+
+struct TensorIndex {
+  uvec4 data[DIMLIMIT_DIV4];
+};
+
+void initialize(out TensorIndex tidx) {
+  tidx.data[0] = uvec4(0);
+  tidx.data[1] = uvec4(0);
+}
+
+uint idx_at(const TensorIndex tidx, const int dim) {
+  return tidx.data[div_4(dim)][mod_4(dim)];
+}
+
+uint idx_at(const TensorIndex tidx, const uint dim) {
+  return tidx.data[div_4(dim)][mod_4(dim)];
+}
+
+uint x(const TensorIndex tidx) {
+  return tidx.data[0][0];
+}
+
+//
+// TensorIndex4D (useful for texture backed tensors)
+//
+
+struct TensorIndex4D {
+  ivec4 data;
+};
+
+TensorIndex4D zero_tensor4d_idx() {
+  TensorIndex4D tidx;
+  tidx.data = ivec4(0);
+  return tidx;
+}
+
+bool out_of_bounds(const TensorIndex4D tidx, const BufferMetadata meta) {
+  return any(greaterThanEqual(tidx.data, meta.sizes[0]));
+}
+
+bool out_of_bounds(const TensorIndex4D tidx, const TextureMetadata meta) {
+  return any(greaterThanEqual(tidx.data, meta.sizes));
+}
+
+//
+// TextureElementIndex
+//
+
+struct TextureElementIndex {
+  ivec3 pos;
+  int comp;
+};
+
+//
+// Index Conversions
+//
+
+TensorIndex contiguous_idx_to_tensor_idx(
+    const BufferMetadata meta,
+    uint contiguous_idx) {
+  TensorIndex tidx;
+
+  uint contiguous_strides[DIMLIMIT];
+
+  contiguous_strides[0] = 1;
+  [[unroll]] for (int d = 1; d < DIMLIMIT; ++d) {
+    contiguous_strides[d] = size_at(meta, d - 1) * contiguous_strides[d - 1];
+  }
+
+  [[unroll]] for (int d = DIMLIMIT - 1; d >= 0; --d) {
+    tidx.data[div_4(d)][mod_4(d)] = contiguous_idx / contiguous_strides[d];
+    contiguous_idx = contiguous_idx % contiguous_strides[d];
+  }
+
+  return tidx;
+}
+
+uint tensor_idx_to_contiguous_idx(
+    const BufferMetadata meta,
+    const TensorIndex tidx) {
+  uint contiguous_strides[DIMLIMIT];
+
+  contiguous_strides[0] = 1;
+  [[unroll]] for (int d = 1; d < DIMLIMIT; ++d) {
+    contiguous_strides[d] = size_at(meta, d - 1) * contiguous_strides[d - 1];
+  }
+
+  uint contig_idx = 0;
+  [[unroll]] for (int d = 0; d < DIMLIMIT; ++d) {
+    contig_idx += contiguous_strides[d] * idx_at(tidx, d);
+  }
+
+  return contig_idx;
+}
+
+TensorIndex linear_idx_to_tensor_idx(
+    const BufferMetadata meta,
+    uint linear_idx) {
+  TensorIndex tidx;
+  initialize(tidx);
+  int dim = int_ndim(meta);
+  int i = 0;
+  for (int d = max(dim - 1, 0); d >= 0; d--) {
+    uint dim_idx = meta.dim_order[div_4(d)][mod_4(d)];
+    uint dim_stride = meta.strides[div_4(dim_idx)][mod_4(dim_idx)];
+
+    tidx.data[div_4(dim_idx)][mod_4(dim_idx)] = linear_idx / dim_stride;
+    linear_idx = linear_idx % dim_stride;
+  }
+  return tidx;
+}
+
+TensorIndex linear_idx_to_tensor_idx_contig_case(
+    const BufferMetadata meta,
+    uint linear_idx) {
+  TensorIndex tidx;
+
+  [[unroll]] for (int d = DIMLIMIT - 1; d >= 0; --d) {
+    tidx.data[div_4(d)][mod_4(d)] = linear_idx / stride_at(meta, d);
+    linear_idx = linear_idx % stride_at(meta, d);
+  }
+
+  return tidx;
+}
+
+TensorIndex linear_idx_to_tensor_idx_channelslast_case(
+    const BufferMetadata meta,
+    uint linear_idx) {
+  TensorIndex tidx;
+
+  const uint dim_order[DIMLIMIT] = uint[DIMLIMIT](2, 0, 1, 3, 6, 5, 4, 7);
+
+  [[unroll]] for (int d = DIMLIMIT - 1; d >= 0; --d) {
+    uint dim = dim_order[d];
+    tidx.data[div_4(dim)][mod_4(dim)] = linear_idx / stride_at(meta, dim);
+    linear_idx = linear_idx % stride_at(meta, dim);
+  }
+
+  return tidx;
+}
+
+TensorIndex linear_idx_to_tensor_idx(
+    const BufferMetadata meta,
+    uint linear_idx,
+    int hashed_layout) {
+  if (is_contiguous(hashed_layout)) {
+    return linear_idx_to_tensor_idx_contig_case(meta, linear_idx);
+  } else if (is_channels_last(hashed_layout)) {
+    return linear_idx_to_tensor_idx_channelslast_case(meta, linear_idx);
+  }
+  return linear_idx_to_tensor_idx(meta, linear_idx);
+}
+
+uint tensor_idx_to_linear_idx(
+    const BufferMetadata meta,
+    const TensorIndex tidx) {
+  uint lin_idx = 0;
+  [[unroll]] for (int d = 0; d < DIMLIMIT; ++d) {
+    lin_idx += stride_at(meta, d) * idx_at(tidx, d);
+  }
+
+  return lin_idx;
+}
+
+void clamp_tensor_idx(const BufferMetadata meta, inout TensorIndex tidx) {
+  tidx.data[0] = min(tidx.data[0], meta.sizes[0] - 1);
+  tidx.data[1] = min(tidx.data[1], meta.sizes[1] - 1);
+}
+
+// Does not account for axis mapping
+TensorIndex4D texture_pos_to_tensor4d_idx_simple(
+    const TextureMetadata meta, const ivec3 pos) {
+  TensorIndex4D tidx;
+  tidx.data.xyz = pos;
+  tidx.data.w = 0;
+  tidx.data[meta.packed_dim] *= 4;
+
+  // Compute batch idx accounting for batch concatenation, assuming channels as
+  // the concatenation dim.
+  if (meta.sizes.w > 1) {
+    int channels = meta.sizes.z;
+    if (meta.packed_dim == 2) {
+      channels = align_up_4(channels);
+    }
+    tidx.data.w = tidx.data.z / channels;
+    tidx.data.z = tidx.data.z % channels;
+  }
+  return tidx;
+}
+
+// Does not account for axis mapping
+ivec3 tensor4d_idx_to_texel_pos_simple(
+    const TextureMetadata meta, const TensorIndex4D tidx) {
+  ivec3 texel_pos;
+
+  const int packed_dim_idx = tidx.data[meta.packed_dim];
+
+  texel_pos = tidx.data.xyz;
+  texel_pos[meta.packed_dim] = div_4(packed_dim_idx);
+
+  // Account for batch concatenation, assuming channels as the concatenation dim
+  if (meta.sizes.w > 1) {
+    int channels_ntexels = meta.sizes.z;
+    if (meta.packed_dim == 2) {
+      channels_ntexels = div_up_4(channels_ntexels);
+    }
+    texel_pos.z += tidx.data.w * channels_ntexels;
+  }
+
+  return texel_pos;
+}
+
+// Does not account for axis mapping
+TextureElementIndex tensor4d_idx_to_texture_element_idx_simple(
+    const TextureMetadata meta, const TensorIndex4D tidx) {
+  const int packed_dim_idx = tidx.data[meta.packed_dim];
+  TextureElementIndex tex_idx;
+  tex_idx.pos = tidx.data.xyz;
+  tex_idx.pos[meta.packed_dim] = div_4(packed_dim_idx);
+  tex_idx.comp = mod_4(packed_dim_idx);
+
+  // Account for batch concatenation, assuming channels as the concatenation dim
+  if (meta.sizes.w > 1) {
+    int channels_ntexels = meta.sizes.z;
+    if (meta.packed_dim == 2) {
+      channels_ntexels = div_up_4(channels_ntexels);
+    }
+    tex_idx.pos.z += tidx.data.w * channels_ntexels;
+  }
+
+  return tex_idx;
+}
+
+uint tensor4d_idx_to_linear_idx(
+    const BufferMetadata meta,
+    const TensorIndex4D tidx) {
+  uint lin_idx = 0;
+  for (int d = 0; d < 4; ++d) {
+    lin_idx += meta.strides[0][d] * tidx.data[d];
+  }
+  return lin_idx;
+}
+
+//
+// Debug utilities
+//
+
+#ifdef DEBUG_MODE
+
+void printTensorIndex(const TensorIndex tidx) {
+    debugPrintfEXT(
+        "TensorIndex: tidx=[%u %u %u %u %u %u %u %u]\\n",
+        tidx.data[0][0], tidx.data[0][1], tidx.data[0][2], tidx.data[0][3],
+        tidx.data[1][0], tidx.data[1][1], tidx.data[1][2], tidx.data[1][3]
+    );
+}
+
+void printTensorIndex4D(const TensorIndex4D tidx) {
+    debugPrintfEXT(
+        "TensorIndex4D: [%u, %u, %u, %u]\\n",
+        tidx.data[0], tidx.data[1], tidx.data[2], tidx.data[3]
+    );
+}
+
+void printTextureElementIndex(const TextureElementIndex tex_idx) {
+    debugPrintfEXT(
+        "TextureElementIndex: pos=[%d %d %d] comp=%d\\n",
+        tex_idx.pos.x, tex_idx.pos.y, tex_idx.pos.z, tex_idx.comp
+    );
+}
+
+
+void printBufferMetadata(const BufferMetadata meta) {
+    debugPrintfEXT(
+        "BufferMetadata: ndim=%u numel=%u\\n  sizes=[%u %u %u %u %u %u %u %u]\\n  dim_order=[%u %u %u %u %u %u %u %u]\\n  strides=[%u %u %u %u %u %u %u %u]\\n",
+        meta.ndim_numel[0], meta.ndim_numel[1],
+        meta.sizes[0][0], meta.sizes[0][1], meta.sizes[0][2], meta.sizes[0][3],
+        meta.sizes[1][1], meta.sizes[1][1], meta.sizes[1][2], meta.sizes[1][3],
+        meta.dim_order[0][0], meta.dim_order[0][1],
+        meta.dim_order[0][2], meta.dim_order[0][3],
+        meta.dim_order[1][0], meta.dim_order[1][1],
+        meta.dim_order[1][2], meta.dim_order[1][3],
+        meta.strides[0][0], meta.strides[0][1],
+        meta.strides[0][2], meta.strides[0][3],
+        meta.strides[1][1], meta.strides[1][1],
+        meta.strides[1][2], meta.strides[1][3]
+    );
+}
+
+void printTextureMetadata(const TextureMetadata meta) {
+    debugPrintfEXT(
+        "TextureMetadata:\\n  sizes=[%u %u %u %u]\\n  limits=[%u %u %u]\\n  axis_map=[%u %u %u %u]\\n  packed_dim=%u\\n",
+        meta.sizes[0], meta.sizes[1], meta.sizes[2], meta.sizes[3],
+        meta.limits[0], meta.limits[1], meta.limits[2],
+        meta.axis_map[0], meta.axis_map[1], meta.axis_map[2], meta.axis_map[3],
+        meta.packed_dim
+    );
+}
+
+#endif
+
+#endif // INDEXING_GLSLH

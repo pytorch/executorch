@@ -6,6 +6,7 @@ import json
 import logging
 
 import shutil
+import tempfile
 import uuid
 from dataclasses import asdict, dataclass
 from enum import Enum
@@ -17,6 +18,10 @@ from typing import Any, Dict, final, List, Optional, Tuple
 import coremltools as ct
 import coremltools.optimize as cto
 from executorch.backends.apple.coreml import executorchcoreml
+from executorch.backends.apple.coreml.compiler.enumerated_shape_utils import (
+    _get_ct_inputs,
+    _SymbolicShapeToEnumeratedShapeMap,
+)
 from executorch.backends.apple.coreml.logging import get_coreml_log_level
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -37,6 +42,8 @@ class COMPILE_SPEC_KEYS(Enum):
     MIN_DEPLOYMENT_TARGET = "min_deployment_target"
     MODEL_COMPUTE_PRECISION = "model_compute_precision"
     OP_LINEAR_QUANTIZER_CONFIG = "op_linear_quantizer_config"
+    ENUMERATED_SHAPES = "enumerated_shapes"
+    PASS_PIPELINE = "pass_pipeline"
 
 
 class MODEL_PATHS(Enum):
@@ -143,7 +150,7 @@ class CoreMLBackend(BackendDetails):
     @staticmethod
     def min_deployment_target_from_compile_specs(
         compile_specs: List[CompileSpec],
-    ) -> ct.target:
+    ) -> Optional[ct.target]:
         """
         Returns the minimum deployment target by parsing the list of compile specs.
         """
@@ -215,12 +222,88 @@ class CoreMLBackend(BackendDetails):
         return None
 
     @staticmethod
+    def generate_pass_pipeline_compile_spec(pass_names: List[str]) -> CompileSpec:
+        """
+        Creates a compile spec representing the pass pipeline to be used by the CoreML backend
+        :param pass_names: the list of pass names
+        """
+        str_representation = json.dumps(pass_names)
+        byte_representation = str_representation.encode("utf-8")
+        return CompileSpec(COMPILE_SPEC_KEYS.PASS_PIPELINE.value, byte_representation)
+
+    @staticmethod
+    def pass_pipeline_from_compile_specs(
+        compile_specs: List[CompileSpec],
+    ) -> ct.PassPipeline:
+        """
+        Creates a PassPipeline from the list of compile specs, or returns the default if none are provided.
+        """
+        for compile_spec in compile_specs:
+            if compile_spec.key == COMPILE_SPEC_KEYS.PASS_PIPELINE.value:
+                pass_names_str = compile_spec.value.decode("utf-8")
+                pass_names = json.loads(pass_names_str)
+                return ct.PassPipeline(
+                    pass_names, pipeline_name="executorch_user_pipeline"
+                )
+
+        return ct.PassPipeline.DEFAULT
+
+    @staticmethod
+    def generate_enumerated_shapes_compile_spec(
+        ep: ExportedProgram,
+        enumerated_shapes: Dict[str, List[List[int]]],
+    ) -> CompileSpec:
+        """
+        Returns the compile spec representing the model enumerated shapes
+        enumerated_shapes is a dictionary for each input to its enumerated shapes, e.g.,
+
+        enumerated_shapes = {
+         {"x": [[1, 1, 24], [8, 9, 24]]
+         {"y": [[1, 6], [30, 6]],
+        ]
+
+        means the model can handle x can be shape [1, 1, 24] or [8, 9, 24] and y can be shape [1, 6] or [30, 6].
+
+        Only multiple inputs can have enumerated shapes if using iOS18 or later.
+        In this case, each input must have the same number of enumerated shapes, and these shapes are tied together
+        by their order in the list. For example, the model above can handle x with shape [1, 1, 24] and y with shape [1, 6],
+        or x with shape [8, 9, 24] and y with shape [30, 6], but not x with shape [1, 1, 24] and y with shape [30, 6].
+
+        Passing incorrect shapes at runtime will result in an error.
+        """
+        emap = _SymbolicShapeToEnumeratedShapeMap.from_exported_program(
+            ep,
+            enumerated_shapes,
+        )
+        str_representation = emap.to_json()
+        byte_representation = str_representation.encode("utf-8")
+        return CompileSpec(
+            COMPILE_SPEC_KEYS.ENUMERATED_SHAPES.value,
+            byte_representation,
+        )
+
+    @staticmethod
+    def enumerated_shapes_from_compile_specs(
+        compile_specs: List[CompileSpec],
+    ) -> cto.coreml.OpLinearQuantizerConfig:
+        """
+        Returns the model's post conversion quantization by parsing the list of compile specs.
+        """
+        for compile_spec in compile_specs:
+            if compile_spec.key == COMPILE_SPEC_KEYS.ENUMERATED_SHAPES.value:
+                emap_json = compile_spec.value.decode("utf-8")
+                emap = _SymbolicShapeToEnumeratedShapeMap.from_json(emap_json)
+                return emap
+        return None
+
+    @staticmethod
     def generate_compile_specs(
         compute_unit: ct.ComputeUnit = ct.ComputeUnit.ALL,
         minimum_deployment_target: Optional[ct.target] = None,
         compute_precision: ct.precision = ct.precision.FLOAT16,
         model_type: MODEL_TYPE = MODEL_TYPE.MODEL,
         op_linear_quantizer_config: Optional[Dict] = None,
+        pass_names: Optional[List[str]] = None,
     ) -> List[CompileSpec]:
         """
         Returns the list of compile specs that's used by CoreMLBackend to lower the module.
@@ -243,6 +326,10 @@ class CoreMLBackend(BackendDetails):
                 CoreMLBackend.generate_op_linear_quantizer_config_compile_spec(
                     op_linear_quantizer_config
                 )
+            )
+        if pass_names is not None:
+            compile_specs.append(
+                CoreMLBackend.generate_pass_pipeline_compile_spec(pass_names)
             )
 
         return compile_specs
@@ -362,7 +449,7 @@ class CoreMLBackend(BackendDetails):
         mlmodel: ct.models.MLModel, model_type: MODEL_TYPE
     ) -> PreprocessResult:
         identifier = "executorch_" + str(uuid.uuid4())
-        dir_path: Path = Path("tmp") / identifier
+        dir_path: Path = Path(tempfile.gettempdir()) / identifier
         model_dir_path: Path = dir_path / "lowered_module"
         model_spec: ct.proto.Model_pb2 = mlmodel.get_spec()
         logger.warning(
@@ -446,6 +533,31 @@ class CoreMLBackend(BackendDetails):
         op_linear_quantizer_config = (
             CoreMLBackend.op_linear_quantizer_config_from_compile_specs(compile_specs)
         )
+        enumerated_shapes = CoreMLBackend.enumerated_shapes_from_compile_specs(
+            compile_specs
+        )
+        pass_pipeline: ct.PassPipeline = CoreMLBackend.pass_pipeline_from_compile_specs(
+            compile_specs
+        )
+
+        # If using enumerated shapes, we need to pass the inputs to CoreML's convert() function
+        # explicitly
+        ct_inputs = None
+        if enumerated_shapes is not None:
+            ct_inputs = _get_ct_inputs(edge_program, enumerated_shapes)
+
+            # Check there are not multiple enumerated inputs if iOS is below 18
+            if (minimum_deployment_target is None) or (
+                minimum_deployment_target < ct.target.iOS18
+            ):
+                n_enumerated_inputs = 0
+                for ct_in in ct_inputs:
+                    if isinstance(ct_in.shape, ct.EnumeratedShapes):
+                        n_enumerated_inputs += 1
+                if n_enumerated_inputs > 1:
+                    raise ValueError(
+                        f"You're program has {n_enumerated_inputs}, but the minimum_deployment_target is set to {minimum_deployment_target}.  Multiple enumerated inputs requires iOS18 or later."
+                    )
 
         # Load the model if MODEL_TYPE is 'COMPILED_MODEL'. This step is necessary because
         # get_compiled_model_path() requires a loaded model.
@@ -454,11 +566,12 @@ class CoreMLBackend(BackendDetails):
             model=edge_program,
             source="pytorch",
             convert_to="mlprogram",
-            pass_pipeline=ct.PassPipeline.DEFAULT,
+            pass_pipeline=pass_pipeline,
             skip_model_load=skip_model_load,
             compute_precision=model_compute_precision,
             minimum_deployment_target=minimum_deployment_target,
             compute_units=compute_units,
+            inputs=ct_inputs,
         )
 
         if op_linear_quantizer_config is not None:

@@ -7,6 +7,7 @@
 import json
 import logging
 import os
+
 import re
 from multiprocessing.connection import Client
 
@@ -14,9 +15,13 @@ import numpy as np
 import piq
 import torch
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     make_output_dir,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
@@ -56,12 +61,6 @@ class SrDataset(Dataset):
     def _resize_img(self, file: str, scale: int):
         with Image.open(file) as img:
             return to_tensor(img.resize(tuple(self.input_size * scale))).unsqueeze(0)
-
-    def get_input_list(self):
-        input_list = ""
-        for i in range(len(self.lr)):
-            input_list += f"input_{i}_0.raw\n"
-        return input_list
 
 
 def get_b100(
@@ -107,12 +106,6 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     instance = EdsrModel()
     if args.ci:
         inputs = instance.get_example_inputs()
@@ -124,9 +117,14 @@ def main(args):
             args.hr_ref_dir, args.lr_dir, args.default_dataset, args.artifact
         )
 
-        inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
+        inputs, targets = dataset.lr, dataset.hr
 
-    pte_filename = "edsr_qnn_q8"
+    pte_filename = "edsr_qnn"
+    backend = get_backend_type(args.backend)
+    quant_dtype = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_8a8w,
+    }[backend]
     build_executorch_binary(
         instance.get_eager_model().eval(),
         (inputs[0],),
@@ -135,8 +133,10 @@ def main(args):
         [(input,) for input in inputs],
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        quant_dtype=QuantDtype.use_8a8w,
+        quant_dtype=quant_dtype,
+        backend=backend,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -151,8 +151,10 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -235,6 +237,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

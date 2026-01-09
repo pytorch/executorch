@@ -94,6 +94,8 @@ Llama 3.2 1B and 3B performance was measured on Android OnePlus 12 device. The p
   </tr>
 </table>
 
+[Please visit this section to try it on OpenVINO backend](../../openvino/llama/README.md).
+
 ## Llama 3/3.1 8B
 Since Llama 3 8B model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized (PTQ) model.
 
@@ -233,22 +235,16 @@ If you're interested in deploying on non-CPU backends, [please refer the non-cpu
 ## Step 3: Run on your computer to validate
 
 1. Build executorch with optimized CPU performance as follows. Build options available [here](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt#L59).
-    ```
-    cmake --preset llm -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out
-
-    cmake --build cmake-out -j16 --target install --config Release
-    ```
+```
+cmake --workflow llm-release
+```
 Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the section of Common Issues and Mitigations below for solutions.
 
 2. Build llama runner.
 ```
-cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
-	-DBUILD_TESTING=OFF \
-	-DCMAKE_BUILD_TYPE=Release \
-	-Bcmake-out/examples/models/llama \
-	examples/models/llama
-
-cmake --build cmake-out/examples/models/llama -j16 --config Release
+pushd examples/models/llama
+cmake --workflow --preset llama-release
+popd
 ```
 
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama/main.cpp#L18-L40).
@@ -264,7 +260,7 @@ If you an error about "RE2 failed to compile pattern with lookahead:...SUPPORT_R
 
 **1. Build llama runner binary for Android**
 
-*Pre-requisite*: Android NDK (tested with r27b) which can be downloaded from [here](https://developer.android.com/ndk/downloads). Note that the mac binary can be unpackaged and you can locate NDK folder from it.
+*Pre-requisite*: Android NDK (tested with r28c) which can be downloaded from [here](https://developer.android.com/ndk/downloads). Note that the mac binary can be unpackaged and you can locate NDK folder from it.
 
 **1.1 Set Android NDK**
 ```
@@ -333,10 +329,10 @@ adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --t
 
 ### iOS
 
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios) to for full instructions on building the iOS LLAMA Demo App. Rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
+Please refer to [this tutorial](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple) to for full instructions on building the iOS etLLM Demo App.
 
 ### Android
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android) to for full instructions on building the Android LLAMA Demo App.
+Please refer to [this tutorial](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android) to for full instructions on building the Android LLAMA Demo App.
 
 ## Running with low-bit kernels
 

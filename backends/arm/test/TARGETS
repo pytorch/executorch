@@ -1,10 +1,15 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":targets.bzl", "define_arm_tests")
 
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "conftest",
     srcs = ["conftest.py"],
     deps = [
@@ -14,39 +19,63 @@ python_library(
     ]
 )
 
-python_library(
+runtime.python_library(
     name = "runner_utils",
     srcs = ["runner_utils.py"],
     deps = [
         ":conftest",
-        "//executorch/backends/arm:arm_backend",
+        "//executorch/backends/arm:arm_compile_spec",
+        "//executorch/backends/arm:ethosu",
+        "//executorch/backends/arm/tosa:compile_spec",
+        "//executorch/backends/arm:vgf",
+        "//executorch/backends/arm/tosa:specification",
         "//executorch/exir:lib",
         "//executorch/exir/backend:compile_spec_schema",
     ]
 )
 
-python_library(
+runtime.python_library(
     name = "common",
     srcs = ["common.py"],
     deps = [
         ":runner_utils",
-        "//executorch/backends/arm:tosa_specification",
+        "//executorch/backends/arm/tosa:tosa",
         "fbsource//third-party/pypi/pytest:pytest",
     ]
 )
 
-python_library(
-    name = "arm_tester",
-    srcs = glob(["tester/*.py"]),
+runtime.python_library(
+    name = "arm_tester_serialize",
+    srcs = ["tester/serialize.py"],
+    deps = [
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/devtools/backend_debug:delegation_info",
+    ]
+)
+
+runtime.python_library(
+    name = "arm_tester_lib",
+    srcs = glob(["tester/*.py"], exclude = ["tester/serialize.py"]),
     deps = [
         ":common",
         "//executorch/backends/xnnpack/test/tester:tester",
-        "//executorch/backends/arm:ethosu_partitioner",
+        "//executorch/backends/arm:ethosu",
         "//executorch/backends/arm/quantizer:lib",
-        "//executorch/backends/arm:tosa_mapping",
+        "//executorch/backends/arm/tosa:mapping",
+        "//executorch/backends/arm:vgf",
+        "//executorch/backends/arm:_factory",
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/exir/backend:operator_support",
         "fbsource//third-party/pypi/tabulate:tabulate",
+    ]
+)
+
+
+runtime.python_library(
+    name = "arm_tester",
+    deps = [
+        "//executorch/backends/arm/test:arm_tester_lib",
+        "//executorch/backends/arm/test:arm_tester_serialize",
     ]
 )
 

@@ -1,14 +1,15 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import importlib.resources as _resources
 import os
 import sys
 from typing import Any, List
 
-import pkg_resources
 import yaml
 
 
@@ -27,9 +28,12 @@ def generate_header(d: dict):
     if os.path.isfile(ini_path):
         header_file = open(ini_path, encoding="utf-8").read()
     else:
-        header_file = pkg_resources.resource_string(
-            __package__, "supported_features_header.ini"
-        ).decode("utf-8")
+        assert (
+            __package__ is not None
+        ), "Can't find supported_features_header.ini when __package__ is None."
+        header_file = _resources.read_text(
+            __package__, "supported_features_header.ini", encoding="utf-8"
+        )
 
     return header_file.replace("$header_entries", "".join(generate_header_entry(d)))
 
@@ -74,9 +78,12 @@ def generate_definition(d: dict):
     if os.path.isfile(ini_path):
         definition_file = open(ini_path, encoding="utf-8").read()
     else:
-        definition_file = pkg_resources.resource_string(
-            __package__, "supported_features_definition.ini"
-        ).decode("utf-8")
+        assert (
+            __package__ is not None
+        ), "Can't find supported_features_header.ini when __package__ is None."
+        definition_file = _resources.read_text(
+            __package__, "supported_features_definition.ini", encoding="utf-8"
+        )
 
     return definition_file.replace(
         "$definition_entries", "".join(generate_definition_entry(d))

@@ -19,9 +19,13 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 
 from executorch.backends.qualcomm.quantizer.custom_annotation import annotate_eurobert
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_masked_language_model_dataset,
     make_output_dir,
     make_quantizer,
@@ -35,6 +39,9 @@ TRANSFORMERS_VERSION = "4.48.0"
 
 
 def main(args):
+    if args.compile_only and args.pre_gen_pte:
+        raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
+
     assert (
         transformers.__version__ >= TRANSFORMERS_VERSION
     ), f"Please ensure transformers version >= {TRANSFORMERS_VERSION}, current version is {transformers.__version__}"
@@ -42,12 +49,6 @@ def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     os.makedirs(args.artifact, exist_ok=True)
-
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
 
     module_id = "EuroBERT/EuroBERT-210m"
     tokenizer = AutoTokenizer.from_pretrained(module_id)
@@ -88,49 +89,70 @@ def main(args):
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_masked_language_model_dataset(
+        inputs, targets = get_masked_language_model_dataset(
             args.dataset, tokenizer, data_size
         )
 
-    pte_filename = "eurobert_qnn_q16"
+    pte_filename = "eurobert_qnn"
 
-    # lower to QNN
-    passes_job = get_capture_program_passes()
-    quantizer = make_quantizer(
-        quant_dtype=QuantDtype.use_16a16w,
-    )
-    quantizer.add_custom_quant_annotations((annotate_eurobert,))
-    with torch.no_grad():
-        build_executorch_binary(
-            model,
-            inputs[0],
-            args.model,
-            f"{args.artifact}/{pte_filename}",
-            dataset=inputs,
-            skip_node_id_set=skip_node_id_set,
-            skip_node_op_set=skip_node_op_set,
-            custom_quantizer=quantizer,
-            passes_job=passes_job,
-            shared_buffer=args.shared_buffer,
-        )
+    # Skip lowering/compilation if using pre-generated PTE
+    if not args.pre_gen_pte:
+        # lower to QNN
+        passes_job = get_capture_program_passes()
+
+        def get_custom_quantizer():
+            quantizer = make_quantizer(
+                quant_dtype=QuantDtype.use_16a16w,
+            )
+            quantizer.add_custom_quant_annotations((annotate_eurobert,))
+            return quantizer
+
+        backend = get_backend_type(args.backend)
+        quantizer = {
+            QnnExecuTorchBackendType.kGpuBackend: None,
+            QnnExecuTorchBackendType.kHtpBackend: get_custom_quantizer(),
+        }[backend]
+        with torch.no_grad():
+            build_executorch_binary(
+                model,
+                inputs[0],
+                args.model,
+                f"{args.artifact}/{pte_filename}",
+                dataset=inputs,
+                skip_node_id_set=skip_node_id_set,
+                skip_node_op_set=skip_node_op_set,
+                custom_quantizer=quantizer,
+                passes_job=passes_job,
+                backend=backend,
+                shared_buffer=args.shared_buffer,
+                online_prepare=args.online_prepare,
+            )
 
     if args.compile_only:
         return
 
+    pte_path = (
+        f"{args.pre_gen_pte}/{pte_filename}.pte"
+        if args.pre_gen_pte
+        else f"{args.artifact}/{pte_filename}.pte"
+    )
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
         build_path=f"{args.build_folder}",
-        pte_path=f"{args.artifact}/{pte_filename}.pte",
+        pte_path=pte_path,
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+        target=args.target,
+        backend=backend,
     )
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
     # accuracy analysis
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
     adb.pull(output_path=args.artifact)
     goldens, predictions = [], []
@@ -177,6 +199,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

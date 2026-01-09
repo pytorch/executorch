@@ -61,15 +61,15 @@ utils::uvec3 linear_qcsnw_tiled_global_wg_size(
 
   std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
   const int64_t M = utils::val_at(-2, mat1_sizes);
-  uint32_t out_tile_nrows = 4;
-  if (M % 6 == 0) {
-    out_tile_nrows = 2;
+  uint32_t out_tile_nrows = 1;
+  if (M % 3 == 0) {
+    out_tile_nrows = 3;
   } else if (M % 4 == 0) {
     out_tile_nrows = 4;
-  } else if (M % 1 == 0) {
-    out_tile_nrows = 1;
+  } else if (M % 2 == 0) {
+    out_tile_nrows = 2;
   } else {
-    out_tile_nrows = 4;
+    out_tile_nrows = 1;
   }
 
   // Number of output texels in the output tile
@@ -225,7 +225,8 @@ void add_linear_qcs8w_node(
   } else {
     pcs = {
         graph.logical_limits_pc_of(out_W_packed),
-        graph.sizes_pc_of(mat1_W_packed)};
+        graph.sizes_pc_of(mat1_W_packed),
+        graph.sizes_pc_of(q_mat2)};
   }
 
   const utils::uvec3 global_wg = {
@@ -308,19 +309,19 @@ void add_linear_qcsnw_tiled_node(
 
   std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1);
   const int64_t M = utils::val_at(-2, mat1_sizes);
-  uint32_t out_tile_nrows = 4;
-  if (M % 6 == 0) {
-    kernel_name += "_o4x2";
-    out_tile_nrows = 2;
+  uint32_t out_tile_nrows = 1;
+  if (M % 3 == 0) {
+    kernel_name += "_o4x3";
+    out_tile_nrows = 3;
   } else if (M % 4 == 0) {
     kernel_name += "_o4x4";
     out_tile_nrows = 4;
-  } else if (M % 1 == 0) {
+  } else if (M % 2 == 0) {
+    kernel_name += "_o4x2";
+    out_tile_nrows = 2;
+  } else {
     kernel_name += "_o4x1";
     out_tile_nrows = 1;
-  } else {
-    kernel_name += "_o4x4";
-    out_tile_nrows = 4;
   }
 
   // Number of output texels in the output tile
@@ -351,7 +352,9 @@ void add_linear_qcsnw_tiled_node(
       // Shader params buffers
       {},
       // Push Constants
-      {{graph.sizes_pc_of(out), graph.sizes_pc_of(mat1)}},
+      {{graph.sizes_pc_of(out),
+        graph.sizes_pc_of(mat1),
+        graph.sizes_pc_of(q_mat2)}},
       // Specialization Constants
       {},
       // Resize Args

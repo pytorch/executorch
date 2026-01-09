@@ -55,7 +55,10 @@ def test_abs_tosa_INT(test_data: torch.Tensor):
 @common.XfailIfNoCorstone300
 def test_abs_u55_INT(test_data: torch.Tensor):
     pipeline = EthosU55PipelineINT[input_t1](
-        Abs(), test_data(), aten_op, exir_op, run_on_fvp=True
+        Abs(),
+        test_data(),
+        aten_op,
+        exir_op,
     )
     pipeline.run()
 
@@ -64,28 +67,35 @@ def test_abs_u55_INT(test_data: torch.Tensor):
 @common.XfailIfNoCorstone320
 def test_abs_u85_INT(test_data: torch.Tensor):
     pipeline = EthosU85PipelineINT[input_t1](
-        Abs(), test_data(), aten_op, exir_op, run_on_fvp=True
+        Abs(),
+        test_data(),
+        aten_op,
+        exir_op,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Abs.test_parameters)
 @common.SkipIfNoModelConverter
-def test_abs_vgf_FP(test_data: input_t1):
-    pipeline = VgfPipeline[input_t1](
-        Abs(), test_data(), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", Abs.test_parameters)
-@common.SkipIfNoModelConverter
-def test_abs_vgf_INT(test_data: input_t1):
+def test_abs_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Abs(),
         test_data(),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Abs.test_parameters)
+@common.SkipIfNoModelConverter
+def test_abs_vgf_quant(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Abs(),
+        test_data(),
+        aten_op,
+        exir_op,
+        quantize=True,
     )
     pipeline.run()

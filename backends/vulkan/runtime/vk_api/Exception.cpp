@@ -10,6 +10,13 @@
 
 #include <sstream>
 
+#ifdef ETVK_BOOST_STACKTRACE_AVAILABLE
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif // _GNU_SOURCE
+#include <boost/stacktrace.hpp>
+#endif // ETVK_BOOST_STACKTRACE_AVAILABLE
+
 namespace vkcompute {
 namespace vkapi {
 
@@ -65,6 +72,11 @@ Error::Error(SourceLocation source_location, std::string msg)
   std::ostringstream oss;
   oss << "Exception raised from " << source_location_ << ": ";
   oss << msg_;
+#ifdef ETVK_BOOST_STACKTRACE_AVAILABLE
+  oss << "\n";
+  oss << "Stack trace:\n";
+  oss << boost::stacktrace::stacktrace();
+#endif // ETVK_BOOST_STACKTRACE_AVAILABLE
   what_ = oss.str();
 }
 
@@ -74,6 +86,11 @@ Error::Error(SourceLocation source_location, const char* cond, std::string msg)
   oss << "Exception raised from " << source_location_ << ": ";
   oss << "(" << cond << ") is false! ";
   oss << msg_;
+#ifdef ETVK_BOOST_STACKTRACE_AVAILABLE
+  oss << "\n";
+  oss << "Stack trace:\n";
+  oss << boost::stacktrace::stacktrace();
+#endif // ETVK_BOOST_STACKTRACE_AVAILABLE
   what_ = oss.str();
 }
 
@@ -91,6 +108,15 @@ std::ostream& operator<<(std::ostream& out, const VulkanExtension result) {
       break;
     case VulkanExtension::INT8_STORAGE:
       out << "VK_KHR_8bit_storage";
+      break;
+    case VulkanExtension::INTEGER_DOT_PRODUCT:
+      out << "VK_KHR_shader_integer_dot_product";
+      break;
+    case VulkanExtension::SHADER_INT64:
+      out << "shaderInt64";
+      break;
+    case VulkanExtension::SHADER_FLOAT64:
+      out << "shaderFloat64";
       break;
   }
   return out;

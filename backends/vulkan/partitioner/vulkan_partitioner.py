@@ -22,6 +22,8 @@ from executorch.backends.vulkan.op_registry import (
     vulkan_supported_ops,
 )
 
+from executorch.backends.vulkan.patterns import PatternMatch
+
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
     VkStorageType,
@@ -34,14 +36,13 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data
+from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.export.exported_program import ExportedProgram
 
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
-from torch.fx.passes.utils.matcher_utils import InternalMatch
 
 # pyre-ignore
 ops_not_to_decompose = [
@@ -58,25 +59,32 @@ class VulkanSupportedOperators(OperatorSupportBase):
         texture_limits: utils.ImageExtents,
         buffer_limit: int,
         require_dynamic_shape: bool = False,
+        skip_bool_tensors: bool = False,
         operator_blocklist: Optional[Set[OpKey]] = None,
         operator_allowlist: Optional[Set[OpKey]] = None,
-        fusable_subgraphs: Optional[List[InternalMatch]] = None,
+        fusable_subgraphs: Optional[List[PatternMatch]] = None,
+        nn_module_blocklist: Optional[Set[str]] = None,
+        nn_module_allowlist: Optional[Set[str]] = None,
     ) -> None:
         super().__init__()
         self.texture_limits: utils.ImageExtents = texture_limits
         self.buffer_limit = buffer_limit
         self.require_dynamic_shapes = require_dynamic_shape
+        self.skip_bool_tensors = skip_bool_tensors
         self.operator_blocklist: Set[OpKey] = (
             operator_blocklist if operator_blocklist is not None else set()
         )
         self.operator_allowlist = operator_allowlist
-        self.fusable_subgraphs: List[InternalMatch] = (
+        self.fusable_subgraphs: List[PatternMatch] = (
             fusable_subgraphs if fusable_subgraphs is not None else []
         )
         # Create a set of all nodes that are part of fusable subgraphs for quick lookup
         self.fusable_nodes: Set[torch.fx.Node] = set()
         for match in self.fusable_subgraphs:
-            self.fusable_nodes.update(match.nodes_map.values())
+            self.fusable_nodes.update(match.all_nodes)
+
+        self.nn_module_blocklist = nn_module_blocklist
+        self.nn_module_allowlist = nn_module_allowlist
 
     def op_node_is_compatible(  # noqa: C901: Function is too complex
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
@@ -110,6 +118,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
             if not has_impl(target):
                 return False, "no operator implementation"
             features = get_op_features(target)
+
+        # bool tensors are internally represented with int8 buffers, which may not be
+        # supported by some GPUs. Therefore, provide the option to skip these tensors.
+        if self.skip_bool_tensors and utils.op_contains_bool_tensor(node):
+            return False, f"op {utils.node_io_str(node)} contains bool tensor"
 
         # Get the possible tensor representations for each tensor participating in the
         # this operator. Then check that all tensors are representable as either a
@@ -171,40 +184,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         return False, False
 
-    def is_in_local_scalar_dense_chain(self, node: torch.fx.Node) -> Tuple[bool, bool]:
-        """
-        Scalar tensors are usually converted to scalar values in the graph via`
-        scalar_tensor[0].item()` in Python, which translates to a chain of
-        `local_scalar_dense(torch.select.int(scalar_tensor, 0, 0))` in the graph.
-        This function marks the entire chain as supported by the Vulkan delegate.
-
-        Later, within vulkan_preprocess there will be a graph transform which replaces
-        the chain with passing in the scalar tensor directly.
-
-        Similar to the `is_linear_permute` function, this function has 2 return values.
-        """
-        if node.target == exir_ops.edge.aten.select_copy.int:
-            if len(node.users) != 1:
-                return False, False
-            # pyre-ignore
-            if node.args[0].meta["val"].numel() != 1:
-                return False, False
-
-            local_scalar_dense = list(node.users.keys())[0]
-            if local_scalar_dense.target != torch.ops.aten._local_scalar_dense.default:
-                return False, False
-
-            return self.is_in_local_scalar_dense_chain(local_scalar_dense)
-
-        if node.target == torch.ops.aten._local_scalar_dense.default:
-            return True, all(self.node_is_compatible(user)[0] for user in node.users)
-
-        return False, False
-
     def log_skip(self, node: torch.fx.Node, reason: str) -> None:
         if node.op == "call_function":
             logger.info(
-                f"[Vulkan Partitioner] Due to [{reason}], skipping {node.format_node()}"
+                f"[Vulkan Partitioner] Due to [{reason}], skipping {utils.node_io_str(node)}"
             )
 
     def is_node_supported(
@@ -213,10 +196,26 @@ class VulkanSupportedOperators(OperatorSupportBase):
         r = self._is_node_supported(node)
         return r
 
-    def _is_node_supported(self, node: torch.fx.Node) -> bool:
-        # Check if this node is part of a fusable subgraph
-        if node.op == "call_function" and node in self.fusable_nodes:
-            return True
+    def _is_node_supported(self, node: torch.fx.Node) -> bool:  # noqa: C901
+        if node.op == "call_function":
+            # Apply nn module allowlist and blocklist
+            if self.nn_module_allowlist is not None:
+                if not utils.node_comes_from_any_nn_module_in_set(
+                    node, self.nn_module_allowlist
+                ):
+                    self.log_skip(node, "source nn.Module is not in allowlist")
+                    return False
+
+            if self.nn_module_blocklist is not None:
+                if utils.node_comes_from_any_nn_module_in_set(
+                    node, self.nn_module_blocklist
+                ):
+                    self.log_skip(node, "source nn.Module is in blocklist")
+                    return False
+
+            # Check if this node is part of a fusable subgraph
+            if node in self.fusable_nodes:
+                return True
 
         target = node.target
         if node.target == torch.ops.higher_order.auto_functionalized:
@@ -230,15 +229,6 @@ class VulkanSupportedOperators(OperatorSupportBase):
         elif is_linear_permute:
             # Skip so that the permute can be fused into a linear by another backend
             self.log_skip(node, "permute node of non compatible linear node")
-            return False
-
-        is_in_local_scalar_dense_chain, dst_node_is_compatible = (
-            self.is_in_local_scalar_dense_chain(node)
-        )
-        if is_in_local_scalar_dense_chain and dst_node_is_compatible:
-            return True
-        elif is_in_local_scalar_dense_chain:
-            self.log_skip(node, "local scalar dense of incompatible op node")
             return False
 
         features = None
@@ -311,6 +301,8 @@ class VulkanPartitioner(Partitioner):
         compile_options: Optional[Dict[str, Any]] = None,
         operator_blocklist: Optional[List[OpKey]] = None,
         operator_allowlist: Optional[List[OpKey]] = None,
+        nn_module_blocklist: Optional[List[str]] = None,
+        nn_module_allowlist: Optional[List[str]] = None,
     ) -> None:
         self.options: Dict[str, Any] = {}
         if compile_options is not None:
@@ -330,6 +322,20 @@ class VulkanPartitioner(Partitioner):
             for entry in operator_allowlist:
                 assert self.operator_allowlist is not None
                 self.operator_allowlist.add(entry)
+
+        self.nn_module_blocklist: Optional[Set[str]] = None
+        if nn_module_blocklist is not None:
+            self.nn_module_blocklist = set()
+            for entry in nn_module_blocklist or []:
+                assert self.nn_module_blocklist is not None
+                self.nn_module_blocklist.add(entry)
+
+        self.nn_module_allowlist: Optional[Set[str]] = None
+        if nn_module_allowlist is not None:
+            self.nn_module_allowlist = set()
+            for entry in nn_module_allowlist:
+                assert self.nn_module_allowlist is not None
+                self.nn_module_allowlist.add(entry)
 
     def ops_to_not_decompose(
         self, ep: ExportedProgram
@@ -359,9 +365,12 @@ class VulkanPartitioner(Partitioner):
                 texture_limits,
                 buffer_limit,
                 require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
+                skip_bool_tensors=self.options.get("skip_bool_tensors", False),
                 operator_blocklist=self.operator_blocklist,
                 operator_allowlist=self.operator_allowlist,
                 fusable_subgraphs=fusable_subgraphs,
+                nn_module_blocklist=self.nn_module_blocklist,
+                nn_module_allowlist=self.nn_module_allowlist,
             ),
             allows_single_node_partition=True,
         )
@@ -379,6 +388,7 @@ class VulkanPartitioner(Partitioner):
             logger.info(f"Found {pl} Vulkan subgraphs to be partitioned.")
 
         tag_constant_data(exported_program)
+        tag_mutated_buffer(exported_program)
 
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags

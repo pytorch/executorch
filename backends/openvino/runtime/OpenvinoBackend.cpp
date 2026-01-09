@@ -114,6 +114,26 @@ exr::Error OpenvinoBackend::execute(
         ov_type, input_shape, input_tensor.mutable_data_ptr());
 
     infer_request->set_input_tensor(i, ov_input_tensor);
+
+    if (args[i]->isInt()) {
+      int64_t* val = &(args[i]->payload.copyable_union.as_int);
+
+      // Create OpenVINO tensor from integer input
+      ov::Tensor ov_input_tensor(ov::element::i64, ov::Shape{1}, val);
+      infer_request->set_input_tensor(i, ov_input_tensor);
+    } else {
+      auto input_tensor = args[i]->toTensor();
+      ov::Shape input_shape(
+          input_tensor.sizes().begin(), input_tensor.sizes().end());
+
+      // Convert input tensor to OpenVINO tensor
+      ov::element::Type ov_type =
+          convert_to_openvino_type(input_tensor.scalar_type());
+      ov::Tensor ov_input_tensor(
+          ov_type, input_shape, input_tensor.mutable_data_ptr());
+
+      infer_request->set_input_tensor(i, ov_input_tensor);
+    }
   }
 
   // Set outputs
@@ -165,10 +185,14 @@ ov::element::Type OpenvinoBackend::convert_to_openvino_type(
   switch (scalar_type) {
     case exa::ScalarType::Float:
       return ov::element::f32;
+    case exa::ScalarType::Half:
+      return ov::element::f16;
     case exa::ScalarType::Int:
       return ov::element::i32;
     case exa::ScalarType::Char:
       return ov::element::i8;
+    case exa::ScalarType::Byte:
+      return ov::element::u8;
     case exa::ScalarType::Long:
       return ov::element::i64;
     case exa::ScalarType::Bool:

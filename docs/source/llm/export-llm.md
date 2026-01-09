@@ -4,7 +4,7 @@ Instead of needing to manually write code to call torch.export(), use ExecuTorch
 
 ## Prerequisites
 
-The LLM export functionality requires the `pytorch_tokenizers` package. If you encounter a `ModuleNotFoundError: No module named 'pytorch_tokenizers'` error, install it from the ExecutorTorch source code:
+The LLM export functionality requires the `pytorch_tokenizers` package. If you encounter a `ModuleNotFoundError: No module named 'pytorch_tokenizers'` error, install it from the ExecuTorch source code:
 
 ```bash
 pip install -e ./extension/llm/tokenizers/
@@ -20,11 +20,13 @@ As of this doc, the list of supported LLMs include the following:
 
 The up-to-date list of supported LLMs can be found in the code [here](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L32).
 
+**Note:** If you need to export models that are not on this list or other model architectures (such as Gemma, Mistral, BERT, T5, Whisper, etc.), see [Exporting LLMs with Optimum](export-llm-optimum.md) which supports a much wider variety of models from Hugging Face Hub.
+
 ## The export_llm API
 `export_llm` is ExecuTorch's high-level export API for LLMs. In this tutorial, we will focus on exporting Llama 3.2 1B using this API. `export_llm`'s arguments are specified either through CLI args or through a yaml configuration whose fields are defined in [`LlmConfig`](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py). To call `export_llm`:
 
 ```
-python -m executorch.examples.extension.llm.export.export_llm
+python -m executorch.extension.llm.export.export_llm
   --config <path-to-config-yaml>
   +base.<additional-CLI-overrides>
 ```
@@ -78,7 +80,7 @@ python -m extension.llm.export.export_llm \
 - `use_shared_embedding` can help for models with tied input/output embedding layers, given that you quantize using TorchAO low bit ops (`quantization.qmode: torchao:8da(\\d+)w` or `quantization.qmode: torchao:fpa(\d+)w`), see more [here](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L307).
 - `use_attention_sink` to extend generation by removing from the beginning of the KV cache when the max context length is reached.
 - `quantize_kv_cache` quantizes the KV cache in int8.
-- `local_global_attention` impements [Local-Global Attention](https://arxiv.org/abs/2411.09604), making specific attention layers use a much smaller localized sliding window KV cache.
+- `local_global_attention` implements [Local-Global Attention](https://arxiv.org/abs/2411.09604), making specific attention layers use a much smaller localized sliding window KV cache.
 
 ## Quantization
 Quantization options are defined by [`QuantizationConfig`](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L283). ExecuTorch does quantization in two ways:
@@ -92,7 +94,7 @@ The quantization modes are defined [here](https://github.com/pytorch/executorch/
 
 Common ones to use are:
 - `8da4w`: short for int8 dynamic activation + int4 weight quantization.
-- `int8`: int8 weight-only quanziation.
+- `int8`: int8 weight-only quantization.
 
 Group size is specified with:
 - `group_size`: 8, 32, 64, etc.
@@ -112,7 +114,7 @@ base:
   metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 model:
   use_kv_cache: True
-  use_sdpa_withp_kv_cache: True
+  use_sdpa_with_kv_cache: True
 quantization:
   embedding_quantize: 4,32
   qmode: 8da4w
@@ -142,7 +144,7 @@ base:
   metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 model:
   use_kv_cache: True
-  use_sdpa_withp_kv_cache: True
+  use_sdpa_with_kv_cache: True
 quantization:
   embedding_quantize: 4,32
   qmode: 8da4w

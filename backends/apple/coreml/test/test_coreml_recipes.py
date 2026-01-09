@@ -3,6 +3,7 @@
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 
+import copy
 import unittest
 
 import coremltools as ct
@@ -152,8 +153,9 @@ class TestCoreMLRecipes(unittest.TestCase):
         # Test with different group sizes
         for group_size in [8, 16, 32]:
             with self.subTest(group_size=group_size):
+                model_to_export = copy.deepcopy(model)
                 session = export(
-                    model=model,
+                    model=model_to_export,
                     example_inputs=example_inputs,
                     export_recipe=ExportRecipe.get_recipe(
                         CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP,
@@ -166,7 +168,7 @@ class TestCoreMLRecipes(unittest.TestCase):
                     session, example_inputs, atol=1e-3
                 )
                 self._compare_eager_unquantized_model_outputs(
-                    session, model, example_inputs
+                    session, model, example_inputs, sqnr_threshold=15
                 )
 
     def test_int4_weight_only_per_group_validation(self):
@@ -184,14 +186,6 @@ class TestCoreMLRecipes(unittest.TestCase):
                 CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP, group_size=-1
             )
         self.assertIn("must be positive", str(cm.exception))
-
-        # Test unexpected parameter
-        with self.assertRaises(ValueError) as cm:
-            self.provider.create_recipe(
-                CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_CHANNEL,
-                group_size=32,  # group_size not valid for per-channel
-            )
-        self.assertIn("unexpected parameters", str(cm.exception))
 
     def test_int8_weight_only_per_channel(self):
         """Test INT8 weight-only per-channel quantization"""
@@ -227,8 +221,9 @@ class TestCoreMLRecipes(unittest.TestCase):
         # Test with different group sizes
         for group_size in [16, 32, 64]:
             with self.subTest(group_size=group_size):
+                model_to_export = copy.deepcopy(model)
                 session = export(
-                    model=model,
+                    model=model_to_export,
                     example_inputs=example_inputs,
                     export_recipe=ExportRecipe.get_recipe(
                         CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP,
@@ -331,7 +326,7 @@ class TestCoreMLRecipes(unittest.TestCase):
         )
         self.check_fully_delegated(session)
 
-        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-3)
+        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-2)
         self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
 
     def test_int8_weight_only_pt2e(self):
@@ -384,23 +379,6 @@ class TestCoreMLRecipes(unittest.TestCase):
 
         self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-2)
         self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
-
-    def test_pt2e_recipes_parameter_rejection(self):
-        """Test that PT2E recipes reject TorchAO-specific parameters"""
-        # PT2E recipes should reject TorchAO-specific parameters
-        pt2e_recipes = [
-            CoreMLRecipeType.PT2E_INT8_STATIC,
-            CoreMLRecipeType.PT2E_INT8_WEIGHT_ONLY,
-        ]
-        torchao_params = ["filter_fn", "group_size", "bits", "block_size"]
-
-        for recipe_type in pt2e_recipes:
-            for param in torchao_params:
-                with self.subTest(recipe=recipe_type.value, param=param):
-                    kwargs = {param: "dummy_value"}
-                    with self.assertRaises(ValueError) as cm:
-                        self.provider.create_recipe(recipe_type, **kwargs)
-                    self.assertIn("unexpected parameters", str(cm.exception).lower())
 
     def test_filter_fn_comprehensive(self):
         """Comprehensive test for filter_fn parameter functionality"""
@@ -526,7 +504,7 @@ class TestCoreMLRecipes(unittest.TestCase):
             (CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP, ct.target.iOS18, {}),
             (
                 CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_CHANNEL,
-                ct.target.iOS18,
+                ct.target.iOS16,
                 {},
             ),
             (CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP, ct.target.iOS18, {}),

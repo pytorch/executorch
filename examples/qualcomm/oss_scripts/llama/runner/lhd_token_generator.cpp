@@ -61,6 +61,16 @@ void LhdTokenGenerator<T>::init_attention_mask(int32_t n_past) {
 
   this->kv_manager_->init_attention_mask(
       this->attention_mask_.data, attention_map, metadata_.ar_len, n_past);
+  // Initialize window attention mask with current position
+  if (metadata_.cache_mode == CacheMode::HybridCache) {
+    this->kv_manager_->init_attention_mask(
+        this->window_attention_mask_.data,
+        attention_map,
+        metadata_.ar_len,
+        n_past,
+        metadata_.sliding_window,
+        position_offset_);
+  }
 }
 
 template <typename T>
@@ -258,26 +268,8 @@ Result<int64_t> LhdTokenGenerator<T>::generate(
       }
     }
 
+    // Fill in the token and position data
     prepare_io(input_tokens, input_pos);
-    // Only update data pointer of the cache to the tensor for SHIFT_POINTER
-    // mode
-    bool updated = this->kv_manager_->update_cache_tensor(
-        this->k_cache_in_,
-        this->k_cache_out_,
-        this->v_cache_in_,
-        this->v_cache_out_,
-        metadata_.ar_len,
-        pos);
-    // Only update the output of module for SHIFT_POINTER mode
-    if (updated) {
-      // Update the output of the module
-      ET_CHECK_MSG(
-          this->decoder_runner_->set_outputs(
-              this->method_name_, this->output_tensors_) ==
-              executorch::runtime::Error::Ok,
-          "Failed to set output tensor for module %s",
-          this->method_name_.c_str());
-    }
 
     // Run inference
     auto logits_res =
@@ -378,6 +370,15 @@ Result<int64_t> LhdTokenGenerator<T>::generate(
     // Update attention mask with current position
     this->kv_manager_->update_attention_mask(
         this->attention_mask_.data, metadata_.ar_len, prev_pos, n_update);
+    if (metadata_.cache_mode == CacheMode::HybridCache) {
+      this->kv_manager_->update_attention_mask(
+          this->window_attention_mask_.data,
+          metadata_.ar_len,
+          prev_pos,
+          n_update,
+          metadata_.sliding_window,
+          position_offset_);
+    }
 
     // data-dependent terminating condition: we have n_eos_ number of EOS
     if (this->eos_ids_->count(cur_token) > 0) {

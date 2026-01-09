@@ -23,7 +23,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-aten_op = "torch.ops.aten.avg_pool2d.default"
+aten_op = "avg_pool2d.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"
 
 input_t = Tuple[torch.Tensor]
@@ -32,6 +32,15 @@ input_t = Tuple[torch.Tensor]
 class AvgPool2d(torch.nn.modules.AvgPool2d):
     def forward(self, *args, **kwargs):
         return super().forward(*args, **kwargs)
+
+
+class BecomesMeanInToEdge(torch.nn.Module):
+    """This averagepool will be converted to mean when lowering to edge. This causes the decompose_meandim  pass to not
+    trigger until the backend pipeline, which requires extra care.
+    """
+
+    def forward(self, x: torch.Tensor):
+        return torch.nn.functional.adaptive_avg_pool2d(x, (1, 1))
 
 
 test_modules = {
@@ -110,6 +119,9 @@ test_modules = {
         AvgPool2d(3, (1, 3), 1, count_include_pad=False),
         (torch.rand(1, 16, 54, 54),),
     ),
+    "becomes_mean_rank3": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 8, 8),)),
+    "becomes_mean_rank4": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 2, 8, 8),)),
+    "becomes_mean_rank5": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 2, 8, 8),)),
 }
 
 
@@ -142,6 +154,21 @@ def test_avg_pool2d_tosa_INT(test_module):
 
 
 @common.parametrize("test_module", test_modules)
+def test_avg_pool2d_tosa_INT_a16w8(test_module):
+    """Test avg_pool2d operation with int16 I/O quantization for TOSA INT."""
+    model, input_tensor = test_module()
+    pipeline = TosaPipelineINT[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op,
+        tosa_extensions=["int16"],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone300
 def test_avg_pool2d_u55_INT(test_module):
     model, input_tensor = test_module()
@@ -151,7 +178,23 @@ def test_avg_pool2d_u55_INT(test_module):
         input_tensor,
         aten_op,
         exir_op,
-        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.XfailIfNoCorstone300
+def test_avg_pool2d_16a8w_u55_INT(test_module):
+    """Test avg_pool2d with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    model, input_tensor = test_module()
+    pipeline = EthosU55PipelineINT[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
 
@@ -166,35 +209,51 @@ def test_avg_pool2d_u85_INT(test_module):
         input_tensor,
         aten_op,
         exir_op,
-        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.XfailIfNoCorstone320
+def test_avg_pool2d_16a8w_u85_INT(test_module):
+    """Test avg_pool2d with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    model, input_tensor = test_module()
+    pipeline = EthosU85PipelineINT[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
 @common.SkipIfNoModelConverter
-def test_avg_pool2d_vgf_FP(test_module):
+def test_avg_pool2d_vgf_no_quant(test_module):
     model, input_tensor = test_module()
     pipeline = VgfPipeline[input_t](
         model,
         input_tensor,
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
 @common.SkipIfNoModelConverter
-def test_avg_pool2d_vgf_INT(test_module):
+def test_avg_pool2d_vgf_quant(test_module):
     model, input_tensor = test_module()
     pipeline = VgfPipeline[input_t](
         model,
         input_tensor,
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 

@@ -38,7 +38,7 @@ done
 
 rm -rf "$OUTPUT"
 
-cmake -DBUCK2="$BUCK" \
+cmake \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE="$MODE" \
           -DEXECUTORCH_BUILD_DEVTOOLS=ON \

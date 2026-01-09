@@ -3,23 +3,25 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
 
 import logging
 from math import prod
+from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.fuse_view_copy_transform_pass import (
+    FuseViewCopyTransformPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 from .arm_pass_utils import create_node, get_first_fake_tensor
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
 
 
-class DecomposeEmbeddingPass(ExportPass):
+class DecomposeEmbeddingPass(ArmPass):
     """
     This pass decomposes embedding into index_select.
 
@@ -33,13 +35,15 @@ class DecomposeEmbeddingPass(ExportPass):
          i = indices is expected to be int32 before this pass
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = {FuseViewCopyTransformPass}
+
     aten_ops = (torch.ops.aten.embedding.default,)
     edge_ops = (exir_ops.edge.aten.embedding.default,)
 
     def get_decomposition(self, op):
         if op in self.aten_ops:
             return (
-                torch.ops.aten.view_copy.default,
+                torch.ops.aten.reshape.default,
                 torch.ops.aten.index_select.default,
             )
 
@@ -60,6 +64,8 @@ class DecomposeEmbeddingPass(ExportPass):
             if node.op != "call_function":
                 continue
             if node.target not in self.aten_ops + self.edge_ops:
+                continue
+            if not self.allowed_to_transform(node.meta):
                 continue
 
             args = node.args

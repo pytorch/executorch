@@ -33,7 +33,7 @@ VERBS="Add|Fix|Update|Refactor|Improve|Remove|Change|Implement|Create|Modify|"\
 "Handle|Ignore|Interpret|Instantiate|Invoke|Limit|Load|Modify|Permit|Print|"\
 "Profile|Recalculate|Reconstruct|Redefine|Redesign|Reevaluate|Relocate|Remap|"\
 "Render|Reposition|Request|Revert|Sanitize|Specify|Strengthen|Stub|Substitute|"\
-"Tag|Tweak|Unify|Unlock|Unset|Use|Validate|Verify|Rename"
+"Tag|Tweak|Unify|Unlock|Unset|Use|Validate|Verify|Rename|Relax"
 
 # Remote branch
 REMOTE=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
@@ -68,6 +68,11 @@ if [ -z "$COMMITS" ]; then
 fi
 
 for COMMIT in ${COMMITS}; do
+    if [ -n "$REMOTE" ] && git merge-base --is-ancestor "$COMMIT" "$REMOTE"; then
+        echo -e "${INFO} Skipping commit ${COMMIT} (already on $REMOTE)"
+        continue
+    fi
+
     # If commit header contains WIP, everything is ok
     git rev-list --format=%s --max-count=1 ${COMMIT} | grep -q WIP && \
          continue
@@ -95,8 +100,14 @@ for COMMIT in ${COMMITS}; do
     commit_files=$(git diff-tree --no-commit-id --name-only \
         --diff-filter=ACMR ${COMMIT} -r)
     for commited_file in $commit_files; do
-        head $commited_file | grep -q "$current_year Arm"
-        if [[ $? != 0 ]]; then
+        file_header=$(head "$commited_file")
+        if ! echo "$file_header" | grep -qi "Arm"; then
+            echo -e "${WARNING} No Arm copyright header in ${commited_file}"\
+            " (skipping license year check)"
+            continue
+        fi
+
+        if ! echo "$file_header" | grep -q "$current_year Arm"; then
             echo -e "${ERROR} Header in $commited_file did not contain"\
             "'$current_year Arm'"
             failed_license_check=true
@@ -177,13 +188,12 @@ for COMMIT in ${COMMITS}; do
         fi
     fi
 
-    # Op test checks
-    op_test_files=$(echo $commit_files | grep -oE 'backends/arm/test/ops/\S+')
-    if [ "$op_test_files" ]; then
+    # Test name checks
+    test_files=$(echo $commit_files | grep -oE 'backends/arm/test/\S+')
+    if [ "$test_files" ]; then
 
-        # Check that the tested op and target is parsed correctly from the test name
-        test_names=$(grep -h "def test_" $op_test_files | cut -d"(" -f1 | cut -d" " -f2)
-        python ./backends/arm/scripts/parse_test_names.py $test_names
+        # Check that the test name follows the specified convention
+        python ./backends/arm/scripts/parse_test_names.py $test_files
         if [ $? -ne 0 ]; then
             echo -e "${ERROR} Failed op test name check." >&2
             FAILED=1

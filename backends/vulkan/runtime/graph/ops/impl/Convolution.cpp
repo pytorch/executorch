@@ -105,7 +105,8 @@ ValueRef prepack_biases(
   ValueRef v = graph.add_tensor(
       {out_channels}, graph.dtype_of(weight), storage_type, memory_layout);
 
-  vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(graph, v);
+  vkapi::ShaderInfo shader =
+      get_nchw_to_tensor_shader(graph, v, graph.dtype_of(weight));
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
@@ -280,9 +281,6 @@ Conv2dMethod get_conv2d_method(
   if (!transposed && weight_sizes.at(0) == groups && weight_sizes.at(1) == 1) {
     return Conv2dMethod::Depthwise;
   }
-  if (groups > 1) {
-    VK_THROW("aten.convolution.default: groups > 1 is not supported yet!");
-  }
   if (transposed) {
     return Conv2dMethod::Transposed;
   }
@@ -367,6 +365,10 @@ utils::uvec3 conv2d_global_wg_size(
 
   if (method == Conv2dMethod::Depthwise || method == Conv2dMethod::Pointwise) {
     wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
+
+    if (shader.kernel_name.find("s1p0") != std::string::npos) {
+      wg_size[0] *= 4;
+    }
   }
 
   return wg_size;
@@ -601,7 +603,7 @@ void add_conv2d_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {},
+      {utils::safe_downcast<int32_t>(groups_val)},
       // Resize Args
       {weight_data, stride, padding, dilation, transposed, output_padding},
       // Resizing Logic

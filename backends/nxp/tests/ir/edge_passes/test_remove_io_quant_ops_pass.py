@@ -5,6 +5,7 @@
 
 import itertools
 
+import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
 import torch
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
@@ -50,7 +51,10 @@ def test_remove_io_quant_ops_pass__cifarnet():
     model = CifarNet().get_eager_model()
     input_shape = (1, 3, 32, 32)
     edge_program_manager = to_quantized_edge_program(
-        model, input_shape, remove_quant_io_ops=True
+        model,
+        input_shape,
+        remove_quant_io_ops=True,
+        use_neutron_for_format_conversion=False,
     )
 
     exec_prog = edge_program_manager.to_executorch(

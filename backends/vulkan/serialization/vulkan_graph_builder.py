@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import ctypes
+import hashlib
 import logging
 import operator
 from types import NoneType
@@ -25,6 +27,7 @@ from executorch.backends.vulkan.utils import (
     is_symint_node,
     TensorRepr,
 )
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.utils import DelegateMappingBuilder
 
 from executorch.exir.tensor import TensorSpec
@@ -47,15 +50,18 @@ class VkGraphBuilder:
         program: ExportedProgram,
         delegate_mapping_builder: DelegateMappingBuilder,
         downcast_64_bit: bool = True,
+        force_fp16: bool = False,
     ) -> None:
         self.program = program
         self.delegate_mapping_builder = delegate_mapping_builder
         self.downcast_64_bit = downcast_64_bit
+        self.force_fp16 = force_fp16
         self.chain = []
         self.values = []
         self.input_ids = []
         self.output_ids = []
         self.const_tensors = []
+        self.named_data_store = NamedDataStore()
 
         # Mapping from Node to VkValue id
         self.node_to_value_ids = {}
@@ -129,8 +135,42 @@ class VkGraphBuilder:
     def maybe_add_constant_tensor(self, node: Node) -> int:
         constant_id = -1
         if is_param_node(self.program, node):
-            constant_id = len(self.const_tensors)
-            self.const_tensors.append(self.get_param_tensor(node))
+            tensor = self.get_param_tensor(node)
+
+            effective_dtype = self.get_effective_dtype(tensor.dtype)
+
+            # Convert the tensor dtype if needed
+            if tensor.dtype != effective_dtype:
+                tensor = tensor.to(effective_dtype)
+
+            # Serialize tensor data to bytes
+            tensor = tensor.contiguous()
+            size = tensor.untyped_storage().nbytes()
+
+            if size > 0:
+                array_type = ctypes.c_char * size
+                array = ctypes.cast(
+                    tensor.untyped_storage().data_ptr(),
+                    ctypes.POINTER(array_type),
+                ).contents
+
+                # Generate SHA256 hash as the named key
+                tensor_bytes = bytes(array)
+                sha256_hash = hashlib.sha256(tensor_bytes)
+                named_key = sha256_hash.hexdigest()
+
+                # Add to named data store with 16-byte alignment (matching XNNPACK)
+                self.named_data_store.add_named_data(
+                    named_key, tensor_bytes, alignment=16
+                )
+
+                # Create VkBytes entry with named_key and set offset to indicate named data usage
+                constant_id = len(self.const_tensors)
+                self.const_tensors.append((named_key, size))
+            else:
+                # Handle empty tensors
+                constant_id = len(self.const_tensors)
+                self.const_tensors.append(None)
 
         return constant_id
 
@@ -190,6 +230,29 @@ class VkGraphBuilder:
         self.values.append(vk_graph_schema.VkValue(vk_graph_schema.SymInt(0)))
         return new_id
 
+    def get_effective_dtype(self, dtype: torch.dtype) -> torch.dtype:
+        if self.downcast_64_bit and dtype == torch.float64:
+            return torch.float32
+        elif self.downcast_64_bit and dtype == torch.int64:
+            return torch.int32
+        elif self.force_fp16 and dtype == torch.float32:
+            return torch.float16
+        else:
+            return dtype
+
+    def get_staging_dtype(self, dtype: torch.dtype) -> torch.dtype:
+        # Since 64 bit types are not guaranteed to be supported on all GPUs,
+        # the conversion between 32 bit and 64 bit types is handled on the CPU
+        # side. The conversion will occur when copying the staging buffer
+        # contents to/from ETensor data pointers, rather than in the shader to
+        # copy between GPU buffer/image to staging buffer.
+        if self.downcast_64_bit and dtype == torch.float64:
+            return torch.float32
+        elif self.downcast_64_bit and dtype == torch.int64:
+            return torch.int32
+        else:
+            return dtype
+
     def create_tensor_value(self, spec: TensorSpec, constant_id: int = -1) -> int:
         # Negative id indicates that this tensor will have its own dedicated memory.
         mem_obj_id = -1
@@ -204,14 +267,16 @@ class VkGraphBuilder:
             storage_type = spec.etvk_node_repr.storage_type
             memory_layout = spec.etvk_node_repr.memory_layout
 
-        # Apply downcast logic before getting VK datatype
-        effective_dtype = spec.dtype
-        if self.downcast_64_bit and spec.dtype == torch.float64:
-            effective_dtype = torch.float32
-        elif self.downcast_64_bit and spec.dtype == torch.int64:
-            effective_dtype = torch.int32
+        effective_dtype = self.get_effective_dtype(spec.dtype)
+        # For constant tensors, the datatype of the original tensor will have been
+        # converted to the effective dtype. Otherwise, the type of the staging buffer
+        # for inputs/outputs should match the original tensor dtype.
+        staging_dtype = (
+            effective_dtype if constant_id >= 0 else self.get_staging_dtype(spec.dtype)
+        )
 
         datatype = self.get_vk_datatype(effective_dtype)
+        staging_datatype = self.get_vk_datatype(staging_dtype)
 
         new_id = len(self.values)
         self.values.append(
@@ -223,6 +288,7 @@ class VkGraphBuilder:
                     mem_obj_id=mem_obj_id,
                     storage_type=storage_type,
                     memory_layout=memory_layout,
+                    staging_datatype=staging_datatype,
                 )
             )
         )
