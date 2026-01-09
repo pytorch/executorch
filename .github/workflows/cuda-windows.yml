@@ -1,0 +1,91 @@
+# Test ExecuTorch CUDA Windows Cross-Compilation Export
+# This workflow tests model export targeting CUDA Windows using optimum-executorch.
+# It runs on a Linux machine with CUDA and uses the executorch-ubuntu-22.04-cuda-windows
+# Docker image which has mingw and Windows CUDA SDK pre-installed for cross-compilation.
+
+name: Test CUDA Windows Export
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/*
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: false
+
+jobs:
+  export-model-cuda-windows-artifact:
+    name: export-model-cuda-windows-artifact
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - repo: "mistralai"
+            name: "Voxtral-Mini-3B-2507"
+          - repo: "openai"
+            name: "whisper-small"
+          - repo: "openai"
+            name: "whisper-large-v3-turbo"
+          - repo: "google"
+            name: "gemma-3-4b-it"
+        quant:
+            - "non-quantized"
+            - "quantized-int4-weight-only"
+        exclude:
+          # TODO: enable int4-weight-only on gemma3.
+          - model:
+              repo: "google"
+              name: "gemma-3-4b-it"
+            quant: "quantized-int4-weight-only"
+    with:
+      timeout: 90
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: 12.8
+      docker-image: ci-image:executorch-ubuntu-22.04-cuda-windows
+      submodules: recursive
+      upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-windows-${{ matrix.quant }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        echo "::group::Fix libstdc++ GLIBCXX version"
+        # The executorch pybindings require GLIBCXX_3.4.30 which conda's libstdc++ doesn't have.
+        # Replace conda's libstdc++ with the system version to fix ImportError.
+        # Verify system version has GLIBCXX_3.4.30
+        strings /usr/lib/x86_64-linux-gnu/libstdc++.so.6 | grep GLIBCXX_3.4.30
+        # Backup and replace conda's version
+        mv /opt/conda/lib/libstdc++.so.6 /opt/conda/lib/libstdc++.so.6.bak || true
+        ln -sf /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /opt/conda/lib/libstdc++.so.6
+        echo "::endgroup::"
+
+        echo "::group::Verify pre-installed dependencies"
+        x86_64-w64-mingw32-g++ --version
+        nvcc --version
+        echo "WINDOWS_CUDA_HOME=${WINDOWS_CUDA_HOME}"
+        ls -la "${WINDOWS_CUDA_HOME}"
+        echo "::endgroup::"
+
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Setup Huggingface"
+        pip install -U "huggingface_hub[cli]<1.0" accelerate
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        echo "::endgroup::"
+
+        source .ci/scripts/export_model_artifact.sh cuda-windows "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"

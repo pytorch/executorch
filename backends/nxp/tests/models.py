@@ -1,4 +1,4 @@
-# Copyright (c) 2024-2025 NXP
+# Copyright (c) 2024-2026 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -670,3 +670,12 @@ class MLP(torch.nn.Module):
 
     def forward(self, x):
         return self.sequential(x)
+
+
+class UnsqueezeAddModel(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x, y):
+        return torch.unsqueeze(x + y, self.dim)
