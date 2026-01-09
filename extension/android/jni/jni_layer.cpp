@@ -717,10 +717,10 @@ Java_org_pytorch_executorch_Module_nativeEtdump(
 } // extern "C"
 
 #ifdef EXECUTORCH_BUILD_LLAMA_JNI
-extern void register_natives_for_llm(JNIEnv* env);
+extern void register_natives_for_llm();
 #else
 // No op if we don't build LLM
-void register_natives_for_llm(JNIEnv* /* env */) {}
+void register_natives_for_llm() {}
 #endif
 
 #ifdef EXECUTORCH_BUILD_EXTENSION_TRAINING
@@ -785,7 +785,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
 
   // Register native methods
   register_natives_for_module(env);
-  register_natives_for_llm(env);
+  register_natives_for_llm();
   register_natives_for_runtime(env);
   register_natives_for_training(env);
 
