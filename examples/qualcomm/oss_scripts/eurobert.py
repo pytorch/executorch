@@ -19,9 +19,13 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 
 from executorch.backends.qualcomm.quantizer.custom_annotation import annotate_eurobert
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_masked_language_model_dataset,
     make_output_dir,
     make_quantizer,
@@ -89,16 +93,25 @@ def main(args):
             args.dataset, tokenizer, data_size
         )
 
-    pte_filename = "eurobert_qnn_q16"
+    pte_filename = "eurobert_qnn"
 
     # Skip lowering/compilation if using pre-generated PTE
     if not args.pre_gen_pte:
         # lower to QNN
         passes_job = get_capture_program_passes()
-        quantizer = make_quantizer(
-            quant_dtype=QuantDtype.use_16a16w,
-        )
-        quantizer.add_custom_quant_annotations((annotate_eurobert,))
+
+        def get_custom_quantizer():
+            quantizer = make_quantizer(
+                quant_dtype=QuantDtype.use_16a16w,
+            )
+            quantizer.add_custom_quant_annotations((annotate_eurobert,))
+            return quantizer
+
+        backend = get_backend_type(args.backend)
+        quantizer = {
+            QnnExecuTorchBackendType.kGpuBackend: None,
+            QnnExecuTorchBackendType.kHtpBackend: get_custom_quantizer(),
+        }[backend]
         with torch.no_grad():
             build_executorch_binary(
                 model,
@@ -110,7 +123,9 @@ def main(args):
                 skip_node_op_set=skip_node_op_set,
                 custom_quantizer=quantizer,
                 passes_job=passes_job,
+                backend=backend,
                 shared_buffer=args.shared_buffer,
+                online_prepare=args.online_prepare,
             )
 
     if args.compile_only:
@@ -131,6 +146,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
+        backend=backend,
     )
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
