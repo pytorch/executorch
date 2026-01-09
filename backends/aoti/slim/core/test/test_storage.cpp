@@ -190,7 +190,7 @@ TEST(StorageSharedPtrTest, SharedOwnership) {
   Storage storage1(new MaybeOwningStorage(CPU_DEVICE, kNbytes));
   void* data_ptr = storage1->data();
 
-  Storage storage2 = storage1;  // Copy, not reference - increments ref count
+  Storage storage2 = storage1; // Copy, not reference - increments ref count
 
   EXPECT_EQ(storage1.use_count(), 2);
   EXPECT_EQ(storage2.use_count(), 2);
@@ -227,9 +227,9 @@ TEST(StorageSharedPtrTest, ReferenceCountDecrement) {
   EXPECT_EQ(storage1.use_count(), 1);
 
   {
-    Storage storage2 = storage1;  // Copy increments ref count
+    Storage storage2 = storage1; // Copy increments ref count
     EXPECT_EQ(storage1.use_count(), 2);
-  }  // storage2 destroyed, ref count decrements
+  } // storage2 destroyed, ref count decrements
 
   EXPECT_EQ(storage1.use_count(), 1);
 }
