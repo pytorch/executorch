@@ -1,6 +1,6 @@
 /* Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2023-2025 Arm Limited and/or its affiliates.
+ * Copyright 2023-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -256,11 +256,12 @@ const int num_inferences = 1;
  * ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE and
  * ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE
  */
-const size_t temp_allocation_pool_size =
-    ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE;
-unsigned char __attribute__((
-    section(".bss.tensor_arena"),
-    aligned(16))) temp_allocation_pool[temp_allocation_pool_size];
+constexpr size_t temp_allocation_pool_size = 0;
+//    ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE;
+unsigned char* temp_allocation_pool = nullptr;
+// unsigned char __attribute__((
+//     section(".bss.tensor_arena"),
+//     aligned(16))) temp_allocation_pool[temp_allocation_pool_size];
 #if defined(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
 extern "C" {
 size_t ethosu_fast_scratch_size =
@@ -637,7 +638,10 @@ void runner_init(
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
   ctx.planned_spans.reserve(num_memory_planned_buffers);
   size_t planned_buffer_membase = ctx.method_allocator->used_size();
-
+  ET_LOG(
+      Info,
+      "Method meta, has %zu instructions",
+      method_meta->num_instructions());
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
     size_t buffer_size =
         static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());

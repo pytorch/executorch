@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -143,6 +144,7 @@ bool validate_depthwise_conv2d_arguments(
 Tensor& quantized_depthwise_conv2d_out(
     KernelRuntimeContext& context,
     const Tensor& input,
+    const Tensor& scratch,
     const Tensor& weight,
     const torch::executor::optional<Tensor>& bias,
     const IntArrayRef stride,
@@ -237,6 +239,25 @@ Tensor& quantized_depthwise_conv2d_out(
     return out;
   }
 
+#if 1
+  cmsis_context.buf = scratch.mutable_data_ptr<int8_t>();
+  cmsis_context.size = buffer_bytes;
+  ET_LOG(
+      Info,
+      "quantized_dw_conv2d_out: scratch buffer size - actual: (%d) needed: (%d)",
+      static_cast<int>(scratch.nbytes()),
+      static_cast<int>(buffer_bytes));
+
+  if (scratch.nbytes() < buffer_bytes) {
+    ET_LOG(
+        Error,
+        "quantized_dw_conv2d_out: scratch buffer not big enough - actual: (%d) needed: (%d)",
+        static_cast<int>(scratch.nbytes()),
+        static_cast<int>(buffer_bytes));
+    return out;
+  }
+#else
+
   auto buffer_or_error = context.allocate_temp(
       static_cast<size_t>(buffer_bytes), alignof(int16_t));
   if (!buffer_or_error.ok()) {
@@ -250,7 +271,7 @@ Tensor& quantized_depthwise_conv2d_out(
   }
   cmsis_context.buf = buffer_or_error.get();
   cmsis_context.size = buffer_bytes;
-
+#endif
   const arm_cmsis_nn_status status = arm_depthwise_conv_wrapper_s8(
       &cmsis_context,
       &dw_conv_params,
