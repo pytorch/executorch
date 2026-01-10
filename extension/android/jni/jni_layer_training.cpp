@@ -12,10 +12,12 @@
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/extension/training/module/training_module.h>
 #include <executorch/extension/training/optimizer/sgd.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 #include <executorch/runtime/platform/log.h>
 #include <cassert>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -28,19 +30,97 @@ using namespace torch::executor;
 
 namespace executorch::extension {
 
-// Forward declarations from jni_layer.cpp
+// Full implementation of TensorHybrid for training module (fbjni-based)
 class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
  public:
   constexpr static const char* kJavaDescriptor =
       "Lorg/pytorch/executorch/Tensor;";
 
   static facebook::jni::local_ref<TensorHybrid::javaobject>
-  newJTensorFromTensor(const executorch::aten::Tensor& tensor);
+  newJTensorFromTensor(const executorch::aten::Tensor& tensor) {
+    const auto scalarType = tensor.scalar_type();
+    if (scalar_type_to_java_dtype.count(scalarType) == 0) {
+      facebook::jni::throwNewJavaException(
+          "java/lang/IllegalArgumentException",
+          "executorch::aten::Tensor scalar type %d is not supported on java side",
+          static_cast<int>(scalarType));
+    }
+    int jdtype = scalar_type_to_java_dtype.at(scalarType);
+
+    const auto& tensor_shape = tensor.sizes();
+    std::vector<jlong> tensor_shape_vec;
+    for (const auto& s : tensor_shape) {
+      tensor_shape_vec.push_back(s);
+    }
+    facebook::jni::local_ref<jlongArray> jTensorShape =
+        facebook::jni::make_long_array(tensor_shape_vec.size());
+    jTensorShape->setRegion(
+        0, tensor_shape_vec.size(), tensor_shape_vec.data());
+
+    facebook::jni::local_ref<facebook::jni::JByteBuffer> jTensorBuffer =
+        facebook::jni::JByteBuffer::wrapBytes(
+            (uint8_t*)tensor.const_data_ptr(), tensor.nbytes());
+    jTensorBuffer->order(facebook::jni::JByteOrder::nativeOrder());
+
+    static auto cls = TensorHybrid::javaClassStatic();
+    static const auto jMethodNewTensor =
+        cls->getStaticMethod<facebook::jni::local_ref<TensorHybrid::javaobject>(
+            facebook::jni::local_ref<facebook::jni::JByteBuffer>,
+            facebook::jni::local_ref<jlongArray>,
+            jint,
+            facebook::jni::local_ref<jhybriddata>)>("nativeNewTensor");
+    return jMethodNewTensor(
+        cls, std::move(jTensorBuffer), std::move(jTensorShape), jdtype, nullptr);
+  }
 
   static TensorPtr newTensorFromJTensor(
-      facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor);
+      facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor) {
+    static const auto dtypeMethod =
+        TensorHybrid::javaClassStatic()->getMethod<jint()>("dtypeJniCode");
+    jint jdtype = dtypeMethod(jtensor);
+
+    static auto shapeField =
+        TensorHybrid::javaClassStatic()->getField<jlongArray>("shape");
+    auto jshape = jtensor->getFieldValue(shapeField);
+
+    static const auto dataBufferMethod =
+        TensorHybrid::javaClassStatic()
+            ->getMethod<facebook::jni::local_ref<facebook::jni::JBuffer>()>(
+                "getRawDataBuffer");
+    facebook::jni::local_ref<facebook::jni::JBuffer> jbuffer =
+        dataBufferMethod(jtensor);
+
+    const auto rank = jshape->size();
+
+    std::vector<jlong> shapeArr(rank);
+    jshape->getRegion(0, rank, shapeArr.data());
+
+    std::vector<executorch::aten::SizesType> sizes_vec;
+    sizes_vec.reserve(rank);
+
+    int64_t numel = 1;
+    for (int i = 0; i < rank; i++) {
+      sizes_vec.push_back(shapeArr[i]);
+    }
+    for (int i = rank - 1; i >= 0; --i) {
+      numel *= shapeArr[i];
+    }
+
+    JNIEnv* jni = facebook::jni::Environment::current();
+    void* dataPtr = jni->GetDirectBufferAddress(jbuffer.get());
+    if (java_dtype_to_scalar_type.count(jdtype) == 0) {
+      facebook::jni::throwNewJavaException(
+          "java/lang/IllegalArgumentException",
+          "Unknown Tensor jdtype: %d",
+          jdtype);
+    }
+
+    ScalarType scalarType = java_dtype_to_scalar_type.at(jdtype);
+    return from_blob(dataPtr, sizes_vec, scalarType);
+  }
 };
 
+// Full implementation of JEValue for training module (fbjni-based)
 class JEValue : public facebook::jni::JavaClass<JEValue> {
  public:
   constexpr static const char* kJavaDescriptor =
@@ -53,10 +133,69 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
   constexpr static int kTypeCodeBool = 5;
 
   static facebook::jni::local_ref<JEValue> newJEValueFromEValue(
-      runtime::EValue evalue);
+      runtime::EValue evalue) {
+    if (evalue.isTensor()) {
+      static auto jMethodTensor =
+          JEValue::javaClassStatic()
+              ->getStaticMethod<facebook::jni::local_ref<JEValue>(
+                  facebook::jni::local_ref<TensorHybrid::javaobject>)>("from");
+      return jMethodTensor(
+          JEValue::javaClassStatic(),
+          TensorHybrid::newJTensorFromTensor(evalue.toTensor()));
+    } else if (evalue.isInt()) {
+      static auto jMethodInt =
+          JEValue::javaClassStatic()
+              ->getStaticMethod<facebook::jni::local_ref<JEValue>(jlong)>(
+                  "from");
+      return jMethodInt(JEValue::javaClassStatic(), evalue.toInt());
+    } else if (evalue.isDouble()) {
+      static auto jMethodDouble =
+          JEValue::javaClassStatic()
+              ->getStaticMethod<facebook::jni::local_ref<JEValue>(jdouble)>(
+                  "from");
+      return jMethodDouble(JEValue::javaClassStatic(), evalue.toDouble());
+    } else if (evalue.isBool()) {
+      static auto jMethodBool =
+          JEValue::javaClassStatic()
+              ->getStaticMethod<facebook::jni::local_ref<JEValue>(jboolean)>(
+                  "from");
+      return jMethodBool(JEValue::javaClassStatic(), evalue.toBool());
+    } else if (evalue.isString()) {
+      static auto jMethodStr =
+          JEValue::javaClassStatic()
+              ->getStaticMethod<facebook::jni::local_ref<JEValue>(
+                  facebook::jni::local_ref<jstring>)>("from");
+      std::string str =
+          std::string(evalue.toString().begin(), evalue.toString().end());
+      return jMethodStr(
+          JEValue::javaClassStatic(), facebook::jni::make_jstring(str));
+    }
+    facebook::jni::throwNewJavaException(
+        "java/lang/IllegalArgumentException",
+        "Unknown EValue type: %d",
+        static_cast<int>(evalue.tag));
+    return nullptr;
+  }
 
   static TensorPtr JEValueToTensorImpl(
-      facebook::jni::alias_ref<JEValue> JEValue);
+      facebook::jni::alias_ref<JEValue> jevalue) {
+    static const auto typeCodeField =
+        JEValue::javaClassStatic()->getField<jint>("mTypeCode");
+    const auto typeCode = jevalue->getFieldValue(typeCodeField);
+    if (typeCode == JEValue::kTypeCodeTensor) {
+      static const auto jMethodGetTensor =
+          JEValue::javaClassStatic()
+              ->getMethod<facebook::jni::local_ref<TensorHybrid::javaobject>()>(
+                  "toTensor");
+      auto tensor = jMethodGetTensor(jevalue);
+      return TensorHybrid::newTensorFromJTensor(tensor);
+    }
+    facebook::jni::throwNewJavaException(
+        "java/lang/IllegalArgumentException",
+        "Unknown EValue typeCode: %d",
+        typeCode);
+    return nullptr;
+  }
 };
 
 class ExecuTorchTrainingJni
@@ -345,7 +484,7 @@ class SGDHybrid : public facebook::jni::HybridClass<SGDHybrid> {
 } // namespace executorch::extension
 
 // Function to register training module natives
-void register_natives_for_training() {
+void register_natives_for_training(JNIEnv* /* env */) {
   executorch::extension::ExecuTorchTrainingJni::registerNatives();
   executorch::extension::SGDHybrid::registerNatives();
 };

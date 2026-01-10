@@ -8,7 +8,6 @@
 
 package org.pytorch.executorch;
 
-import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 
@@ -33,10 +32,16 @@ public class ExecuTorchRuntime {
   }
 
   /** Get all registered ops. */
-  @DoNotStrip
-  public static native String[] getRegisteredOps();
+  public static String[] getRegisteredOps() {
+    return nativeGetRegisteredOps();
+  }
+
+  private static native String[] nativeGetRegisteredOps();
 
   /** Get all registered backends. */
-  @DoNotStrip
-  public static native String[] getRegisteredBackends();
+  public static String[] getRegisteredBackends() {
+    return nativeGetRegisteredBackends();
+  }
+
+  private static native String[] nativeGetRegisteredBackends();
 }
