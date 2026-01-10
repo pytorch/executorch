@@ -2,12 +2,12 @@
 
 # CoreML backend for delegating a EdgeProgram to CoreML.
 
+import hashlib
 import json
 import logging
 
 import shutil
 import tempfile
-import uuid
 from dataclasses import asdict, dataclass
 from enum import Enum
 
@@ -34,6 +34,16 @@ from executorch.backends.apple.coreml.compiler.torch_ops import *  # noqa: F401,
 
 logger = logging.getLogger(__name__)
 logger.setLevel(get_coreml_log_level(default_level=logging.WARNING))
+
+
+def _hash_directory(path: Path) -> str:
+    """Hash all files in a directory deterministically."""
+    hasher = hashlib.sha256()
+    for file_path in sorted(path.rglob("*")):
+        if file_path.is_file():
+            hasher.update(str(file_path.relative_to(path)).encode())
+            hasher.update(file_path.read_bytes())
+    return hasher.hexdigest()[:32]
 
 
 class COMPILE_SPEC_KEYS(Enum):
@@ -448,10 +458,18 @@ class CoreMLBackend(BackendDetails):
     def preprocess_model(
         mlmodel: ct.models.MLModel, model_type: MODEL_TYPE
     ) -> PreprocessResult:
-        identifier = "executorch_" + str(uuid.uuid4())
-        dir_path: Path = Path(tempfile.gettempdir()) / identifier
+        dir_path: Path = Path(tempfile.mkdtemp())
         model_dir_path: Path = dir_path / "lowered_module"
         model_spec: ct.proto.Model_pb2 = mlmodel.get_spec()
+
+        # Save model first to compute content hash for deterministic identifier.
+        model_path = model_dir_path / MODEL_PATHS.MODEL.value
+        mlmodel.save(str(model_path))
+
+        # Generate deterministic identifier from model contents.
+        content_hash = _hash_directory(model_path)
+        identifier = "executorch_" + content_hash
+
         logger.warning(
             f"The model with identifier {identifier} was exported with CoreML specification version {model_spec.specificationVersion}, and it will not run on all version of iOS/macOS."
             " See https://apple.github.io/coremltools/mlmodel/Format/Model.html#model for information on what OS versions are compatible with this specifcation version."
@@ -462,10 +480,6 @@ class CoreMLBackend(BackendDetails):
             model_spec=model_spec,
             identifier=identifier,
         )
-
-        # Save model.
-        model_path = model_dir_path / MODEL_PATHS.MODEL.value
-        mlmodel.save(str(model_path))
         # Extract delegate mapping file.
         model_debug_info: Optional[ModelDebugInfo] = CoreMLBackend.get_model_debug_info(
             model_path
