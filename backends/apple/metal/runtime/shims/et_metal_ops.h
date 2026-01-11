@@ -28,6 +28,28 @@ AOTITorchError aoti_torch_mps_mm_out(
     AOTITensorHandle mat2);
 
 /**
+ * ExecutorTorch implementation of aoti_torch_mps_addmm_out.
+ * Performs: out = beta * input + alpha * (mat1 @ mat2)
+ */
+AOTITorchError aoti_torch_mps_addmm_out(
+    AOTITensorHandle out,
+    AOTITensorHandle input,
+    AOTITensorHandle mat1,
+    AOTITensorHandle mat2,
+    int64_t beta,
+    int64_t alpha);
+
+/**
+ * ExecutorTorch implementation of aoti_torch_mps_bmm_out.
+ * Performs batched matrix multiplication: out = self @ mat2
+ * All tensors must be 3-D with matching batch dimensions.
+ */
+AOTITorchError aoti_torch_mps_bmm_out(
+    AOTITensorHandle out,
+    AOTITensorHandle self,
+    AOTITensorHandle mat2);
+
+/**
  * ExecutorTorch implementation of aoti_torch_mps_convolution.
  * Performs 2D convolution operation - matches PyTorch AOTI signature
  */
