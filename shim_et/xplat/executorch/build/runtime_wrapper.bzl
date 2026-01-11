@@ -105,9 +105,9 @@ def _patch_build_mode_flags(kwargs):
         # @oss-disable: "ovr_config//build_mode:opt": ["-D__ET_BUILD_MODE_OPT=1"],
     }) + select({
         "DEFAULT": [],
-        # @oss-disable: "ovr_config//build_mode:asan": ["-D__ET_BUILD_MODE_ASAN=1"],
-        # @oss-disable: "ovr_config//build_mode:tsan": ["-D__ET_BUILD_MODE_TSAN=1"],
-        # @oss-disable: "ovr_config//build_mode:ubsan": ["-D__ET_BUILD_MODE_UBSAN=1"],
+        # @oss-disable: "ovr_config//build_mode:sanitizer_type[asan]": ["-D__ET_BUILD_MODE_ASAN=1"],
+        # @oss-disable: "ovr_config//build_mode:sanitizer_type[tsan]": ["-D__ET_BUILD_MODE_TSAN=1"],
+        # @oss-disable: "ovr_config//build_mode:sanitizer_type[ubsan]": ["-D__ET_BUILD_MODE_UBSAN=1"],
         # @oss-disable: "ovr_config//build_mode:lto-fat": ["-D__ET_BUILD_MODE_LTO=1"],
         # @oss-disable: "ovr_config//build_mode:code-coverage": ["-D__ET_BUILD_MODE_COV=1"],
     })
