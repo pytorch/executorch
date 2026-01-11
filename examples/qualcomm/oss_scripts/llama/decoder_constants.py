@@ -4,6 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# eval methods
+PROMPT_EVAL = "prompt_eval"
+TASKS_EVAL = "tasks_eval"
+SQNR_EVAL = "sqnr_eval"
+
 # filenames for vision model
 VISION_ENCODER_INPUT_FILENAME = "vision_encoder_input"
 

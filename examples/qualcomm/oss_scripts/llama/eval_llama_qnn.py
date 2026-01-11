@@ -212,7 +212,7 @@ def prepare_model(args):
 def prequant_algorithm(model, prefill_config, args):
     # TODO: use dtype of model checkpoint
     model = model.to(device=args.device, dtype=torch.float)
-    inputs = model.get_example_inputs(use_kv_cache=False)
+    inputs = model.get_example_inputs()
     tokens, atten_mask = inputs
     tokens.to(args.device)
     for mask in atten_mask.masks:
@@ -306,6 +306,7 @@ def eager_eval_quanty(
 def eval_llm(args):
     tokenizer = prepare_tokenizer(args)
     model, prefill_config = prepare_model(args)
+    get_example_inputs = model.get_example_inputs
     model, config, inputs, scales_state_dict = prequant_algorithm(
         model, prefill_config, args
     )
@@ -319,7 +320,7 @@ def eval_llm(args):
         )
 
         quantizer = make_custom_quantizer(
-            quant_dtype, args.range_setting, custom_annotations, args.quant_linear_only
+            quant_dtype, custom_annotations, args.quant_linear_only
         )
 
         with torch.no_grad():
@@ -337,7 +338,7 @@ def eval_llm(args):
         logging.info("Observers added, starting calibration...")
         graph_module_inference(
             use_kv_cache=False,
-            get_example_inputs=lambda use_kv_cache=False: inputs,
+            example_input=get_example_inputs(),
             module=model,
             tokenizer=tokenizer,
             ar_len=args.max_seq_len,
@@ -371,7 +372,7 @@ def eval_llm(args):
     logging.info("Evaluation of QDQ model:")
     graph_module_inference(
         use_kv_cache=False,
-        get_example_inputs=lambda use_kv_cache=False: inputs,
+        example_input=get_example_inputs(),
         module=model,
         tokenizer=tokenizer,
         ar_len=args.max_seq_len,

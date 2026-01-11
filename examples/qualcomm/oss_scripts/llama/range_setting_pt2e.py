@@ -22,12 +22,6 @@ from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer
     PerChannelParamObserver,
 )
 
-from executorch.backends.qualcomm.quantizer.qconfig import (
-    _derived_bias_quant_spec,
-    QuantizationConfig,
-)
-from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-
 from executorch.examples.qualcomm.utils import make_quantizer
 
 from torchao.prototype.quantization.module_swap import (
@@ -46,7 +40,6 @@ from torchao.prototype.quantization.module_swap.range_setting_methods import (
 )
 
 from torchao.quantization.pt2e import MinMaxObserver, PerChannelMinMaxObserver
-from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 
 class WrappedLlamaModel(nn.Module):
@@ -201,49 +194,14 @@ def compute_scales(model, data, weight_bits, act_bits, num_points=1600):
     return scales_state_dict
 
 
-def make_custom_quantizer(
-    quant_dtype, range_setting=None, custom_annotations=(), linear_only=False
-):
+def make_custom_quantizer(quant_dtype, custom_annotations=(), linear_only=False):
     quantizer = make_quantizer(
         quant_dtype=quant_dtype,
         per_channel_conv=True,
         per_channel_linear=True,
         act_observer=MinMaxObserver,
     )
-    if range_setting in ("mse_weight_only", "mse_with_act_loss"):
-        assert (
-            quant_dtype != QuantDtype.use_16a4w_block
-        ), "Range setting only supported for per-channel quantization"
-        if range_setting == "mse_weight_only":
-            observer = PerChannelMSEObserver.with_args(
-                **{"steps": 1600, "use_mse": True}
-            )
-        else:
-            observer = PerChannelFixedQParamsObserver.with_args(**{"eps": 2**-12})
-        weight_dtype = (
-            torch.int4
-            if quant_dtype in (QuantDtype.use_16a4w, QuantDtype.use_16a4w_block)
-            else torch.int8
-        )
-        per_channel_q_config = quantizer.default_quant_config.quant_config
-        weight_qspec = QuantizationSpec(
-            dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
-            quant_min=(
-                -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
-            ),
-            quant_max=(
-                7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max
-            ),
-            qscheme=torch.per_channel_symmetric,
-            ch_axis=0,
-            observer_or_fake_quant_ctr=observer,
-        )
-        quantizer.default_quant_config.per_channel_quant_config = QuantizationConfig(
-            input_activation=per_channel_q_config.input_activation,
-            output_activation=per_channel_q_config.output_activation,
-            weight=weight_qspec,
-            bias=_derived_bias_quant_spec,
-        )
+
     if linear_only:
         all_keys = set(OP_ANNOTATOR.keys())
         conv_keys = {

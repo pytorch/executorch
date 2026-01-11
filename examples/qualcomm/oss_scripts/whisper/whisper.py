@@ -475,7 +475,7 @@ def inference_whisper(args, inputs, target):
         adb.push(inputs=inputs, files=[tokenizer_json])
         adb.execute(custom_runner_cmd=runner_cmd)
 
-        adb.pull(output_path=args.artifact, callback=post_process)
+        adb.pull(host_output_path=args.artifact, callback=post_process)
     wer = eval_metric(outputs, target)
 
     if args.ip and args.port != -1:
