@@ -503,11 +503,14 @@ def build_executorch_binary(
         ), "Graph with partitions are currently unsupported."
 
         lowered_module_node = lowered_module_nodes[0]
-        lower_module = getattr(
+        lowered_module = getattr(
             edge_prog_mgr.exported_program().graph_module, lowered_module_node.name
         )
-        edge_module = lower_module.original_module.module()
-        qnn_intermediate_debugger.set_edge_module(edge_module=edge_module)
+        edge_module = lowered_module.original_module.module()
+        qnn_intermediate_debugger._set_edge_module(
+            edge_module=edge_module,
+            debug_handle_map=lowered_module.meta["debug_handle_map"],
+        )
 
     executorch_config = ExecutorchBackendConfig(
         # For shared buffer, user must pass the memory address
