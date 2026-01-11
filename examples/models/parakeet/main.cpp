@@ -6,11 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <optional>
+#include <unordered_set>
 #include <string>
 #include <vector>
 
@@ -27,7 +30,7 @@ DEFINE_string(model_path, "parakeet.pte", "Path to Parakeet model (.pte).");
 DEFINE_string(audio_path, "", "Path to input audio file (.wav).");
 DEFINE_string(
     tokenizer_path,
-    "tokenizer.json",
+    "tokenizer.model",
     "Path to SentencePiece tokenizer model file.");
 DEFINE_string(
     data_path,
@@ -44,6 +47,242 @@ namespace {
 // TDT duration values
 const std::vector<int> DURATIONS = {0, 1, 2, 3, 4};
 
+struct TokenTimestamp {
+  uint64_t token_id;
+  std::string token_piece;
+  std::string token_text;
+  int64_t start_offset;
+  int64_t end_offset;
+};
+
+struct WordTimestamp {
+  std::string word;
+  int64_t start_offset;
+  int64_t end_offset;
+};
+
+struct SegmentTimestamp {
+  std::string segment;
+  int64_t start_offset;
+  int64_t end_offset;
+};
+
+std::string decode_token_sequence(
+    const std::vector<uint64_t>& tokens,
+    tokenizers::Tokenizer* tokenizer) {
+  std::string result;
+  uint64_t prev_token = tokenizer->bos_tok();
+  for (uint64_t token : tokens) {
+    auto decode_result = tokenizer->decode(prev_token, token);
+    if (decode_result.ok()) {
+      result += decode_result.get();
+    }
+    prev_token = token;
+  }
+  return result;
+}
+
+std::vector<WordTimestamp> get_words_offsets(
+    const std::vector<TokenTimestamp>& tokens,
+    tokenizers::Tokenizer* tokenizer,
+    const std::unordered_set<std::string>& supported_punctuation,
+    const std::string& word_delimiter_char = " ") {
+  std::vector<WordTimestamp> word_offsets;
+  if (tokens.empty()) {
+    return word_offsets;
+  }
+
+  size_t previous_token_index = 0;
+  std::vector<size_t> built_tokens;
+
+  auto is_curr_punctuation = [&](const std::string& token_text) {
+    return token_text != word_delimiter_char &&
+        supported_punctuation.count(token_text) > 0;
+  };
+
+  auto is_word_start = [&](const std::string& token_piece,
+                           const std::string& token_text,
+                           const std::string& next_non_delim_token) {
+    const bool next_is_punctuation =
+        supported_punctuation.count(next_non_delim_token) > 0;
+    return token_piece != token_text ||
+        (token_text == word_delimiter_char && !next_is_punctuation);
+  };
+
+  for (size_t i = 0; i < tokens.size(); i++) {
+    const auto& token = tokens[i];
+
+    const bool curr_punctuation = is_curr_punctuation(token.token_text);
+
+    std::string next_non_delim_token;
+    for (size_t j = i + 1; j < tokens.size(); j++) {
+      if (tokens[j].token_text != word_delimiter_char) {
+        next_non_delim_token = tokens[j].token_text;
+        break;
+      }
+    }
+
+    if (is_word_start(token.token_piece, token.token_text, next_non_delim_token) &&
+        !curr_punctuation) {
+      if (!built_tokens.empty()) {
+        std::vector<uint64_t> built_ids;
+        built_ids.reserve(built_tokens.size());
+        for (size_t idx : built_tokens) {
+          built_ids.push_back(tokens[idx].token_id);
+        }
+        word_offsets.push_back(
+            {decode_token_sequence(built_ids, tokenizer),
+             tokens[previous_token_index].start_offset,
+             tokens[i - 1].end_offset});
+      }
+
+      built_tokens.clear();
+
+      if (token.token_text != word_delimiter_char) {
+        built_tokens.push_back(i);
+        previous_token_index = i;
+      }
+    } else if (curr_punctuation && built_tokens.empty() && !word_offsets.empty()) {
+      auto& last_built_word = word_offsets.back();
+      last_built_word.end_offset = token.end_offset;
+      if (!last_built_word.word.empty() && last_built_word.word.back() == ' ') {
+        last_built_word.word.pop_back();
+      }
+      last_built_word.word += token.token_text;
+    } else if (curr_punctuation && !built_tokens.empty()) {
+      const auto& last = tokens[built_tokens.back()].token_piece;
+      if (last == " " || last == "_" || last == "▁") {
+        built_tokens.pop_back();
+      }
+      built_tokens.push_back(i);
+    } else {
+      if (built_tokens.empty()) {
+        previous_token_index = i;
+      }
+      built_tokens.push_back(i);
+    }
+  }
+
+  // Match NeMo behavior: inject first start_offset and append any remaining
+  // built tokens as the final word.
+  if (word_offsets.empty()) {
+    if (!built_tokens.empty()) {
+      std::vector<uint64_t> built_ids;
+      built_ids.reserve(built_tokens.size());
+      for (size_t idx : built_tokens) {
+        built_ids.push_back(tokens[idx].token_id);
+      }
+      word_offsets.push_back(
+          {decode_token_sequence(built_ids, tokenizer),
+           tokens[0].start_offset,
+           tokens.back().end_offset});
+    }
+  } else {
+    word_offsets[0].start_offset = tokens[0].start_offset;
+
+    if (!built_tokens.empty()) {
+      std::vector<uint64_t> built_ids;
+      built_ids.reserve(built_tokens.size());
+      for (size_t idx : built_tokens) {
+        built_ids.push_back(tokens[idx].token_id);
+      }
+      word_offsets.push_back(
+          {decode_token_sequence(built_ids, tokenizer),
+           tokens[previous_token_index].start_offset,
+           tokens.back().end_offset});
+    }
+  }
+
+  return word_offsets;
+}
+
+std::vector<SegmentTimestamp> get_segment_offsets(
+    const std::vector<WordTimestamp>& word_offsets,
+    const std::vector<std::string>& segment_delimiters = {".", "?", "!"},
+    const std::optional<int64_t>& segment_gap_threshold = std::nullopt) {
+  std::vector<SegmentTimestamp> segment_offsets;
+  if (word_offsets.empty()) {
+    return segment_offsets;
+  }
+
+  std::vector<std::string> segment_words;
+  size_t previous_word_index = 0;
+
+  for (size_t i = 0; i < word_offsets.size(); i++) {
+    const auto& offset = word_offsets[i];
+    const auto& word = offset.word;
+
+    if (segment_gap_threshold.has_value() && !segment_words.empty()) {
+      const int64_t gap_between_words =
+          offset.start_offset - word_offsets[i - 1].end_offset;
+      if (gap_between_words >= segment_gap_threshold.value()) {
+        std::string segment;
+        for (size_t j = 0; j < segment_words.size(); j++) {
+          if (j > 0) {
+            segment += " ";
+          }
+          segment += segment_words[j];
+        }
+        segment_offsets.push_back(
+            {segment,
+             word_offsets[previous_word_index].start_offset,
+             word_offsets[i - 1].end_offset});
+        segment_words = {word};
+        previous_word_index = i;
+        continue;
+      }
+    }
+
+    const bool is_delimiter_word = std::find(
+                                      segment_delimiters.begin(),
+                                      segment_delimiters.end(),
+                                      word) != segment_delimiters.end();
+
+    const bool ends_with_delimiter = !word.empty() &&
+        std::find(
+            segment_delimiters.begin(),
+            segment_delimiters.end(),
+            std::string(1, word.back())) != segment_delimiters.end();
+
+    if (!word.empty() && (ends_with_delimiter || is_delimiter_word)) {
+      segment_words.push_back(word);
+      if (!segment_words.empty()) {
+        std::string segment;
+        for (size_t j = 0; j < segment_words.size(); j++) {
+          if (j > 0) {
+            segment += " ";
+          }
+          segment += segment_words[j];
+        }
+        segment_offsets.push_back({segment,
+                                  word_offsets[previous_word_index].start_offset,
+                                  offset.end_offset});
+      }
+      segment_words.clear();
+      previous_word_index = i + 1;
+      continue;
+    }
+
+    segment_words.push_back(word);
+  }
+
+  if (!segment_words.empty()) {
+    std::string segment;
+    for (size_t j = 0; j < segment_words.size(); j++) {
+      if (j > 0) {
+        segment += " ";
+      }
+      segment += segment_words[j];
+    }
+    segment_offsets.push_back(
+        {segment,
+         word_offsets[previous_word_index].start_offset,
+         word_offsets.back().end_offset});
+  }
+
+  return segment_offsets;
+}
+
 std::vector<int64_t> greedy_decode_executorch(
     Module& model,
     const ::executorch::aten::Tensor& encoder_output,
@@ -52,7 +291,9 @@ std::vector<int64_t> greedy_decode_executorch(
     int64_t vocab_size,
     int64_t num_rnn_layers = 2,
     int64_t pred_hidden = 640,
-    int64_t max_symbols_per_step = 10) {
+    int64_t max_symbols_per_step = 10,
+    std::vector<int64_t>* token_start_offsets = nullptr,
+    std::vector<int64_t>* token_durations = nullptr) {
   std::vector<int64_t> hypothesis;
   int64_t num_token_classes = vocab_size + 1;
 
@@ -209,6 +450,12 @@ std::vector<int64_t> greedy_decode_executorch(
       symbols_on_frame = 0;
     } else {
       hypothesis.push_back(k);
+      if (token_start_offsets != nullptr) {
+        token_start_offsets->push_back(t);
+      }
+      if (token_durations != nullptr) {
+        token_durations->push_back(dur);
+      }
 
       // Update decoder state
       std::vector<int64_t> token_data = {k};
@@ -271,19 +518,12 @@ std::vector<int64_t> greedy_decode_executorch(
 std::string tokens_to_text(
     const std::vector<int64_t>& tokens,
     tokenizers::Tokenizer* tokenizer) {
-  // Decode tokens to text one by one
-  std::string result;
-  uint64_t prev_token = 0;
-  for (size_t i = 0; i < tokens.size(); i++) {
-    uint64_t token = static_cast<uint64_t>(tokens[i]);
-    auto decode_result = tokenizer->decode(prev_token, token);
-    if (decode_result.ok()) {
-      result += decode_result.get();
-    }
-    prev_token = token;
+  std::vector<uint64_t> ids;
+  ids.reserve(tokens.size());
+  for (int64_t t : tokens) {
+    ids.push_back(static_cast<uint64_t>(t));
   }
-
-  return result;
+  return decode_token_sequence(ids, tokenizer);
 }
 
 } // namespace
@@ -381,10 +621,17 @@ int main(int argc, char** argv) {
   auto vocab_size_result = model->execute("vocab_size", empty_inputs);
   auto blank_id_result = model->execute("blank_id", empty_inputs);
   auto sample_rate_result = model->execute("sample_rate", empty_inputs);
+  auto window_stride_result = model->execute("window_stride", empty_inputs);
+  auto encoder_subsampling_factor_result =
+      model->execute("encoder_subsampling_factor", empty_inputs);
+  auto supported_punctuation_result =
+      model->execute("supported_punctuation", empty_inputs);
 
   if (!num_rnn_layers_result.ok() || !pred_hidden_result.ok() ||
       !vocab_size_result.ok() || !blank_id_result.ok() ||
-      !sample_rate_result.ok()) {
+      !sample_rate_result.ok() || !window_stride_result.ok() ||
+      !encoder_subsampling_factor_result.ok() ||
+      !supported_punctuation_result.ok()) {
     ET_LOG(
         Error,
         "Failed to query model metadata. Make sure the model was exported with constant_methods.");
@@ -396,17 +643,32 @@ int main(int argc, char** argv) {
   int64_t num_rnn_layers = num_rnn_layers_result.get()[0].toInt();
   int64_t pred_hidden = pred_hidden_result.get()[0].toInt();
   int64_t sample_rate = sample_rate_result.get()[0].toInt();
+  double window_stride = window_stride_result.get()[0].toDouble();
+  int64_t encoder_subsampling_factor =
+      encoder_subsampling_factor_result.get()[0].toInt();
+
+  std::unordered_set<std::string> supported_punctuation;
+  for (const auto& ev : supported_punctuation_result.get()) {
+    if (!ev.isString()) {
+      continue;
+    }
+    supported_punctuation.insert(std::string(ev.toString()));
+  }
 
   ET_LOG(
       Info,
-      "Model metadata: vocab_size=%lld, blank_id=%lld, num_rnn_layers=%lld, pred_hidden=%lld, sample_rate=%lld",
+      "Model metadata: vocab_size=%lld, blank_id=%lld, num_rnn_layers=%lld, pred_hidden=%lld, sample_rate=%lld, window_stride=%.6f, encoder_subsampling_factor=%lld",
       static_cast<long long>(vocab_size),
       static_cast<long long>(blank_id),
       static_cast<long long>(num_rnn_layers),
       static_cast<long long>(pred_hidden),
-      static_cast<long long>(sample_rate));
+      static_cast<long long>(sample_rate),
+      window_stride,
+      static_cast<long long>(encoder_subsampling_factor));
 
   ET_LOG(Info, "Running TDT greedy decode...");
+  std::vector<int64_t> token_start_offsets;
+  std::vector<int64_t> token_durations;
   auto tokens = greedy_decode_executorch(
       *model,
       encoded,
@@ -414,7 +676,10 @@ int main(int argc, char** argv) {
       blank_id,
       vocab_size,
       num_rnn_layers,
-      pred_hidden);
+      pred_hidden,
+      /*max_symbols_per_step=*/10,
+      &token_start_offsets,
+      &token_durations);
 
   ET_LOG(Info, "Decoded %zu tokens", tokens.size());
 
@@ -433,6 +698,83 @@ int main(int argc, char** argv) {
   // Convert tokens to text
   std::string text = tokens_to_text(tokens, tokenizer.get());
   std::cout << "Transcription tokens: " << text << std::endl;
+
+  // Compute timestamps matching NeMo's TDT timestamp behavior.
+  if (tokens.size() != token_start_offsets.size() ||
+      tokens.size() != token_durations.size()) {
+    ET_LOG(Error, "Token/timestamp length mismatch");
+    return 1;
+  }
+
+  std::vector<TokenTimestamp> char_timestamps;
+  char_timestamps.reserve(tokens.size());
+
+  for (size_t i = 0; i < tokens.size(); i++) {
+    const uint64_t token_id = static_cast<uint64_t>(tokens[i]);
+
+    auto piece_result = tokenizer->id_to_piece(token_id);
+    if (!piece_result.ok()) {
+      ET_LOG(
+          Error,
+          "id_to_piece failed for token=%llu",
+          (unsigned long long)token_id);
+      return 1;
+    }
+
+    auto text_result = tokenizer->decode(tokenizer->bos_tok(), token_id);
+    if (!text_result.ok()) {
+      ET_LOG(Error, "decode failed for token=%llu", (unsigned long long)token_id);
+      return 1;
+    }
+
+    const int64_t start_offset = token_start_offsets[i];
+    const int64_t end_offset = start_offset + token_durations[i];
+
+    char_timestamps.push_back(
+        {token_id,
+         piece_result.get(),
+         text_result.get(),
+         start_offset,
+         end_offset});
+  }
+
+  // NeMo TDT punctuation refinement: snap punctuation to the end of the
+  // previous token.
+  for (size_t i = 1; i < char_timestamps.size(); i++) {
+    if (supported_punctuation.count(char_timestamps[i].token_text) > 0) {
+      char_timestamps[i].start_offset = char_timestamps[i - 1].end_offset;
+      char_timestamps[i].end_offset = char_timestamps[i].start_offset;
+    }
+  }
+
+  auto word_timestamps =
+      get_words_offsets(char_timestamps, tokenizer.get(), supported_punctuation);
+  auto segment_timestamps = get_segment_offsets(word_timestamps);
+
+  const double frame_to_seconds =
+      window_stride * static_cast<double>(encoder_subsampling_factor);
+
+  std::cout << "\nSegment timestamps:" << std::endl;
+  for (const auto& stamp : segment_timestamps) {
+    const double start = stamp.start_offset * frame_to_seconds;
+    const double end = stamp.end_offset * frame_to_seconds;
+    std::cout << start << "s - " << end << "s : " << stamp.segment << std::endl;
+  }
+
+  std::cout << "\nWord timestamps:" << std::endl;
+  for (const auto& stamp : word_timestamps) {
+    const double start = stamp.start_offset * frame_to_seconds;
+    const double end = stamp.end_offset * frame_to_seconds;
+    std::cout << start << "s - " << end << "s : " << stamp.word << std::endl;
+  }
+
+  std::cout << "\nChar timestamps:" << std::endl;
+  for (const auto& stamp : char_timestamps) {
+    const double start = stamp.start_offset * frame_to_seconds;
+    const double end = stamp.end_offset * frame_to_seconds;
+    std::cout << start << "s - " << end << "s : " << stamp.token_text
+              << std::endl;
+  }
 
   ET_LOG(Info, "Done!");
   return 0;
