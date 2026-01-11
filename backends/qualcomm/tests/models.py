@@ -1463,14 +1463,14 @@ class LogSoftmax(torch.nn.Module):
 
 
 class MaxPool2d(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size=3, stride=1, padding=1, ceil_mode=True):
         super().__init__()
         self.max_pool2d = torch.nn.MaxPool2d(
-            kernel_size=3,
-            stride=1,
-            padding=1,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
             dilation=1,
-            ceil_mode=True,
+            ceil_mode=ceil_mode,
         )
 
     def forward(self, x):
