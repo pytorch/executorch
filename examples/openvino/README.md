@@ -13,6 +13,11 @@ examples/openvino
 └── llama
     ├── README.md                       # Documentation for Llama example
     └── llama3_2_ov_4wo.yaml            # Configuration file for exporting Llama3.2 with OpenVINO backend
+└── stable_diffusion
+    ├── README.md                       # Documentation for Stable Diffusion example
+    ├── export_lcm.py                   # Script for exporting models
+    ├── openvino_lcm.py                 # Script for inference execution
+    └── requirements.txt                # Requirements file for Stable Diffusion example
 ```
 
 # Build Instructions for Examples
