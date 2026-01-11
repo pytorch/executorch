@@ -6,9 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <jni.h>
+
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -30,9 +33,6 @@
 #include <executorch/extension/threadpool/threadpool.h>
 #endif
 
-#include <fbjni/ByteBuffer.h>
-#include <fbjni/fbjni.h>
-
 #if defined(EXECUTORCH_BUILD_QNN)
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
 #endif
@@ -45,6 +45,10 @@ namespace llm = ::executorch::extension::llm;
 using ::executorch::runtime::Error;
 
 namespace {
+
+// Global JavaVM pointer for obtaining JNIEnv in callbacks
+JavaVM* g_jvm = nullptr;
+
 bool utf8_check_validity(const char* str, size_t length) {
   for (size_t i = 0; i < length; ++i) {
     uint8_t byte = static_cast<uint8_t>(str[i]);
@@ -79,47 +83,70 @@ bool utf8_check_validity(const char* str, size_t length) {
 }
 
 std::string token_buffer;
+
+// Helper to convert jstring to std::string
+std::string jstring_to_string(JNIEnv* env, jstring jstr) {
+  if (jstr == nullptr) {
+    return "";
+  }
+  const char* chars = env->GetStringUTFChars(jstr, nullptr);
+  if (chars == nullptr) {
+    return "";
+  }
+  std::string result(chars);
+  env->ReleaseStringUTFChars(jstr, chars);
+  return result;
+}
+
+// Helper to convert Java List<String> to std::vector<std::string>
+std::vector<std::string> jlist_to_string_vector(JNIEnv* env, jobject jlist) {
+  std::vector<std::string> result;
+  if (jlist == nullptr) {
+    return result;
+  }
+
+  jclass list_class = env->FindClass("java/util/List");
+  if (list_class == nullptr) {
+    env->ExceptionClear();
+    return result;
+  }
+
+  jmethodID size_method = env->GetMethodID(list_class, "size", "()I");
+  jmethodID get_method =
+      env->GetMethodID(list_class, "get", "(I)Ljava/lang/Object;");
+
+  if (size_method == nullptr || get_method == nullptr) {
+    env->ExceptionClear();
+    env->DeleteLocalRef(list_class);
+    return result;
+  }
+
+  jint size = env->CallIntMethod(jlist, size_method);
+  for (jint i = 0; i < size; ++i) {
+    jobject str_obj = env->CallObjectMethod(jlist, get_method, i);
+    if (str_obj != nullptr) {
+      result.push_back(jstring_to_string(env, static_cast<jstring>(str_obj)));
+      env->DeleteLocalRef(str_obj);
+    }
+  }
+
+  env->DeleteLocalRef(list_class);
+  return result;
+}
+
 } // namespace
 
 namespace executorch_jni {
 
-class ExecuTorchLlmCallbackJni
-    : public facebook::jni::JavaClass<ExecuTorchLlmCallbackJni> {
+// Model type category constants
+constexpr int MODEL_TYPE_CATEGORY_LLM = 1;
+constexpr int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
+constexpr int MODEL_TYPE_MEDIATEK_LLAMA = 3;
+constexpr int MODEL_TYPE_QNN_LLAMA = 4;
+
+// Native handle class that holds the runner state
+class ExecuTorchLlmNative {
  public:
-  constexpr static const char* kJavaDescriptor =
-      "Lorg/pytorch/executorch/extension/llm/LlmCallback;";
-
-  void onResult(std::string result) const {
-    static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
-    static const auto method =
-        cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onResult");
-
-    token_buffer += result;
-    if (!utf8_check_validity(token_buffer.c_str(), token_buffer.size())) {
-      ET_LOG(
-          Info, "Current token buffer is not valid UTF-8. Waiting for more.");
-      return;
-    }
-    result = token_buffer;
-    token_buffer = "";
-    facebook::jni::local_ref<jstring> s = facebook::jni::make_jstring(result);
-    method(self(), s);
-  }
-
-  void onStats(const llm::Stats& result) const {
-    static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
-    static const auto on_stats_method =
-        cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onStats");
-    on_stats_method(
-        self(),
-        facebook::jni::make_jstring(
-            executorch::extension::llm::stats_to_json_string(result)));
-  }
-};
-
-class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
- private:
-  friend HybridBase;
   float temperature_ = 0.0f;
   int model_type_category_;
   std::unique_ptr<llm::IRunner> runner_;
@@ -127,37 +154,13 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       multi_modal_runner_;
   std::vector<llm::MultimodalInput> prefill_inputs_;
 
- public:
-  constexpr static auto kJavaDescriptor =
-      "Lorg/pytorch/executorch/extension/llm/LlmModule;";
-
-  constexpr static int MODEL_TYPE_CATEGORY_LLM = 1;
-  constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
-  constexpr static int MODEL_TYPE_MEDIATEK_LLAMA = 3;
-  constexpr static int MODEL_TYPE_QNN_LLAMA = 4;
-
-  static facebook::jni::local_ref<jhybriddata> initHybrid(
-      facebook::jni::alias_ref<jclass>,
+  ExecuTorchLlmNative(
+      JNIEnv* env,
       jint model_type_category,
-      facebook::jni::alias_ref<jstring> model_path,
-      facebook::jni::alias_ref<jstring> tokenizer_path,
+      jstring model_path,
+      jstring tokenizer_path,
       jfloat temperature,
-      facebook::jni::alias_ref<facebook::jni::JList<jstring>::javaobject>
-          data_files) {
-    return makeCxxInstance(
-        model_type_category,
-        model_path,
-        tokenizer_path,
-        temperature,
-        data_files);
-  }
-
-  ExecuTorchLlmJni(
-      jint model_type_category,
-      facebook::jni::alias_ref<jstring> model_path,
-      facebook::jni::alias_ref<jstring> tokenizer_path,
-      jfloat temperature,
-      facebook::jni::alias_ref<jobject> data_files = nullptr) {
+      jobject data_files) {
     temperature_ = temperature;
 #if defined(ET_USE_THREADPOOL)
     // Reserve 1 thread for the main thread.
@@ -171,44 +174,30 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 #endif
 
     model_type_category_ = model_type_category;
-    std::vector<std::string> data_files_vector;
+    std::string model_path_str = jstring_to_string(env, model_path);
+    std::string tokenizer_path_str = jstring_to_string(env, tokenizer_path);
+    std::vector<std::string> data_files_vector =
+        jlist_to_string_vector(env, data_files);
+
     if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       multi_modal_runner_ = llm::create_multimodal_runner(
-          model_path->toStdString().c_str(),
-          llm::load_tokenizer(tokenizer_path->toStdString()));
+          model_path_str.c_str(), llm::load_tokenizer(tokenizer_path_str));
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      if (data_files != nullptr) {
-        // Convert Java List<String> to C++ std::vector<string>
-        auto list_class = facebook::jni::findClassStatic("java/util/List");
-        auto size_method = list_class->getMethod<jint()>("size");
-        auto get_method =
-            list_class->getMethod<facebook::jni::local_ref<jobject>(jint)>(
-                "get");
-
-        jint size = size_method(data_files);
-        for (jint i = 0; i < size; ++i) {
-          auto str_obj = get_method(data_files, i);
-          auto jstr = facebook::jni::static_ref_cast<jstring>(str_obj);
-          data_files_vector.push_back(jstr->toStdString());
-        }
-      }
       runner_ = executorch::extension::llm::create_text_llm_runner(
-          model_path->toStdString(),
-          llm::load_tokenizer(tokenizer_path->toStdString()),
-          data_files_vector);
+          model_path_str, llm::load_tokenizer(tokenizer_path_str), data_files_vector);
 #if defined(EXECUTORCH_BUILD_QNN)
     } else if (model_type_category == MODEL_TYPE_QNN_LLAMA) {
       std::unique_ptr<executorch::extension::Module> module = std::make_unique<
           executorch::extension::Module>(
-          model_path->toStdString().c_str(),
+          model_path_str.c_str(),
           data_files_vector,
           executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
       std::string decoder_model = "llama3"; // use llama3 for now
       runner_ = std::make_unique<example::Runner<uint16_t>>( // QNN runner
           std::move(module),
           decoder_model.c_str(),
-          model_path->toStdString().c_str(),
-          tokenizer_path->toStdString().c_str(),
+          model_path_str.c_str(),
+          tokenizer_path_str.c_str(),
           "",
           "");
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
@@ -216,249 +205,528 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(
-          model_path->toStdString().c_str(),
-          tokenizer_path->toStdString().c_str());
+          model_path_str.c_str(), tokenizer_path_str.c_str());
       // Interpret the model type as LLM
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
     }
   }
+};
 
-  jint generate(
-      facebook::jni::alias_ref<jstring> prompt,
-      jint seq_len,
-      facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
-      jboolean echo) {
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
-      prefill_inputs_.clear();
-      if (!prompt->toStdString().empty()) {
-        inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
+// Helper class for callback invocation
+class CallbackHelper {
+ public:
+  CallbackHelper(JNIEnv* env, jobject callback)
+      : env_(env), callback_(nullptr), callback_class_(nullptr) {
+    if (callback != nullptr) {
+      callback_ = env_->NewGlobalRef(callback);
+      jclass local_class = env_->GetObjectClass(callback);
+      callback_class_ = static_cast<jclass>(env_->NewGlobalRef(local_class));
+      env_->DeleteLocalRef(local_class);
+      on_result_method_ = env_->GetMethodID(
+          callback_class_, "onResult", "(Ljava/lang/String;)V");
+      on_stats_method_ =
+          env_->GetMethodID(callback_class_, "onStats", "(Ljava/lang/String;)V");
+    }
+  }
+
+  ~CallbackHelper() {
+    if (g_jvm == nullptr) {
+      return;
+    }
+    // Get the current JNIEnv (might be different thread)
+    JNIEnv* env = nullptr;
+    int status = g_jvm->GetEnv((void**)&env, JNI_VERSION_1_6);
+    if (status == JNI_EDETACHED) {
+      g_jvm->AttachCurrentThread(&env, nullptr);
+    }
+    if (env != nullptr) {
+      if (callback_ != nullptr) {
+        env->DeleteGlobalRef(callback_);
       }
-      executorch::extension::llm::GenerationConfig config{
-          .echo = static_cast<bool>(echo),
-          .seq_len = seq_len,
-          .temperature = temperature_,
-      };
-      multi_modal_runner_->generate(
-          std::move(inputs),
-          config,
-          [callback](const std::string& result) { callback->onResult(result); },
-          [callback](const llm::Stats& result) { callback->onStats(result); });
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      executorch::extension::llm::GenerationConfig config{
-          .echo = static_cast<bool>(echo),
-          .seq_len = seq_len,
-          .temperature = temperature_,
-      };
-      runner_->generate(
-          prompt->toStdString(),
-          config,
-          [callback](std::string result) { callback->onResult(result); },
-          [callback](const llm::Stats& result) { callback->onStats(result); });
-    }
-    return 0;
-  }
-
-  // Returns status_code
-  // Contract is valid within an AAR (JNI + corresponding Java code)
-  jint append_text_input(facebook::jni::alias_ref<jstring> prompt) {
-    prefill_inputs_.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-    return 0;
-  }
-
-  // Returns status_code
-  jint append_images_input(
-      facebook::jni::alias_ref<jintArray> image,
-      jint width,
-      jint height,
-      jint channels) {
-    std::vector<llm::Image> images;
-    if (image == nullptr) {
-      return static_cast<jint>(Error::EndOfMethod);
-    }
-    auto image_size = image->size();
-    if (image_size != 0) {
-      std::vector<jint> image_data_jint(image_size);
-      std::vector<uint8_t> image_data(image_size);
-      image->getRegion(0, image_size, image_data_jint.data());
-      for (int i = 0; i < image_size; i++) {
-        image_data[i] = image_data_jint[i];
+      if (callback_class_ != nullptr) {
+        env->DeleteGlobalRef(callback_class_);
       }
-      llm::Image image_runner{std::move(image_data), width, height, channels};
-      prefill_inputs_.emplace_back(
-          llm::MultimodalInput{std::move(image_runner)});
-    }
-
-    return 0;
-  }
-
-  // Returns status_code
-  jint append_normalized_images_input(
-      facebook::jni::alias_ref<jfloatArray> image,
-      jint width,
-      jint height,
-      jint channels) {
-    std::vector<llm::Image> images;
-    if (image == nullptr) {
-      return static_cast<jint>(Error::EndOfMethod);
-    }
-    auto image_size = image->size();
-    if (image_size != 0) {
-      std::vector<jfloat> image_data_jfloat(image_size);
-      std::vector<float> image_data(image_size);
-      image->getRegion(0, image_size, image_data_jfloat.data());
-      for (int i = 0; i < image_size; i++) {
-        image_data[i] = image_data_jfloat[i];
-      }
-      llm::Image image_runner{std::move(image_data), width, height, channels};
-      prefill_inputs_.emplace_back(
-          llm::MultimodalInput{std::move(image_runner)});
-    }
-
-    return 0;
-  }
-
-  // Returns status_code
-  jint append_audio_input(
-      facebook::jni::alias_ref<jbyteArray> data,
-      jint batch_size,
-      jint n_bins,
-      jint n_frames) {
-    if (data == nullptr) {
-      return static_cast<jint>(Error::EndOfMethod);
-    }
-    auto data_size = data->size();
-    if (data_size != 0) {
-      std::vector<jbyte> data_jbyte(data_size);
-      std::vector<uint8_t> data_u8(data_size);
-      data->getRegion(0, data_size, data_jbyte.data());
-      for (int i = 0; i < data_size; i++) {
-        data_u8[i] = data_jbyte[i];
-      }
-      llm::Audio audio{std::move(data_u8), batch_size, n_bins, n_frames};
-      prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
-    }
-    return 0;
-  }
-
-  // Returns status_code
-  jint append_audio_input_float(
-      facebook::jni::alias_ref<jfloatArray> data,
-      jint batch_size,
-      jint n_bins,
-      jint n_frames) {
-    if (data == nullptr) {
-      return static_cast<jint>(Error::EndOfMethod);
-    }
-    auto data_size = data->size();
-    if (data_size != 0) {
-      std::vector<jfloat> data_jfloat(data_size);
-      std::vector<float> data_f(data_size);
-      data->getRegion(0, data_size, data_jfloat.data());
-      for (int i = 0; i < data_size; i++) {
-        data_f[i] = data_jfloat[i];
-      }
-      llm::Audio audio{std::move(data_f), batch_size, n_bins, n_frames};
-      prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
-    }
-    return 0;
-  }
-
-  // Returns status_code
-  jint append_raw_audio_input(
-      facebook::jni::alias_ref<jbyteArray> data,
-      jint batch_size,
-      jint n_channels,
-      jint n_samples) {
-    if (data == nullptr) {
-      return static_cast<jint>(Error::EndOfMethod);
-    }
-    auto data_size = data->size();
-    if (data_size != 0) {
-      std::vector<jbyte> data_jbyte(data_size);
-      std::vector<uint8_t> data_u8(data_size);
-      data->getRegion(0, data_size, data_jbyte.data());
-      for (int i = 0; i < data_size; i++) {
-        data_u8[i] = data_jbyte[i];
-      }
-      llm::RawAudio audio{
-          std::move(data_u8), batch_size, n_channels, n_samples};
-      prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
-    }
-    return 0;
-  }
-
-  void stop() {
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      multi_modal_runner_->stop();
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      runner_->stop();
     }
   }
 
-  void reset_context() {
-    if (runner_ != nullptr) {
-      runner_->reset();
+  void onResult(const std::string& result) {
+    JNIEnv* env = getEnv();
+    if (env == nullptr || callback_ == nullptr || on_result_method_ == nullptr) {
+      return;
     }
-    if (multi_modal_runner_ != nullptr) {
-      multi_modal_runner_->reset();
+
+    std::string current_result = result;
+    token_buffer += current_result;
+    if (!utf8_check_validity(token_buffer.c_str(), token_buffer.size())) {
+      ET_LOG(
+          Info, "Current token buffer is not valid UTF-8. Waiting for more.");
+      return;
+    }
+    current_result = token_buffer;
+    token_buffer = "";
+
+    jstring jstr = env->NewStringUTF(current_result.c_str());
+    if (jstr != nullptr) {
+      env->CallVoidMethod(callback_, on_result_method_, jstr);
+      env->DeleteLocalRef(jstr);
     }
   }
 
-  jint load() {
-    int result = -1;
-    std::stringstream ss;
+  void onStats(const llm::Stats& stats) {
+    JNIEnv* env = getEnv();
+    if (env == nullptr || callback_ == nullptr || on_stats_method_ == nullptr) {
+      return;
+    }
 
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      result = static_cast<jint>(multi_modal_runner_->load());
-      if (result != 0) {
-        ss << "Failed to load multimodal runner: [" << result << "]";
-      }
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      result = static_cast<jint>(runner_->load());
-      if (result != 0) {
-        ss << "Failed to load llm runner: [" << result << "]";
-      }
-    } else {
-      ss << "Invalid model type category: " << model_type_category_
-         << ". Valid values are: " << MODEL_TYPE_CATEGORY_LLM << " or "
-         << MODEL_TYPE_CATEGORY_MULTIMODAL;
+    std::string stats_json =
+        executorch::extension::llm::stats_to_json_string(stats);
+    jstring jstr = env->NewStringUTF(stats_json.c_str());
+    if (jstr != nullptr) {
+      env->CallVoidMethod(callback_, on_stats_method_, jstr);
+      env->DeleteLocalRef(jstr);
     }
-    if (result != 0) {
-      executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
-    }
-    return result; // 0 on success to keep backward compatibility
   }
 
-  static void registerNatives() {
-    registerHybrid({
-        makeNativeMethod("initHybrid", ExecuTorchLlmJni::initHybrid),
-        makeNativeMethod("generate", ExecuTorchLlmJni::generate),
-        makeNativeMethod("stop", ExecuTorchLlmJni::stop),
-        makeNativeMethod("load", ExecuTorchLlmJni::load),
-        makeNativeMethod(
-            "appendImagesInput", ExecuTorchLlmJni::append_images_input),
-        makeNativeMethod(
-            "appendNormalizedImagesInput",
-            ExecuTorchLlmJni::append_normalized_images_input),
-        makeNativeMethod(
-            "appendAudioInput", ExecuTorchLlmJni::append_audio_input),
-        makeNativeMethod(
-            "appendAudioInputFloat",
-            ExecuTorchLlmJni::append_audio_input_float),
-        makeNativeMethod(
-            "appendRawAudioInput", ExecuTorchLlmJni::append_raw_audio_input),
-        makeNativeMethod(
-            "appendTextInput", ExecuTorchLlmJni::append_text_input),
-        makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
-    });
+ private:
+  JNIEnv* getEnv() {
+    if (g_jvm == nullptr) {
+      return nullptr;
+    }
+    JNIEnv* env = nullptr;
+    int status = g_jvm->GetEnv((void**)&env, JNI_VERSION_1_6);
+    if (status == JNI_EDETACHED) {
+      g_jvm->AttachCurrentThread(&env, nullptr);
+    }
+    return env;
   }
+
+  JNIEnv* env_;
+  jobject callback_;
+  jclass callback_class_ = nullptr;
+  jmethodID on_result_method_ = nullptr;
+  jmethodID on_stats_method_ = nullptr;
 };
 
 } // namespace executorch_jni
 
-void register_natives_for_llm() {
-  executorch_jni::ExecuTorchLlmJni::registerNatives();
+extern "C" {
+
+JNIEXPORT jlong JNICALL
+Java_org_pytorch_executorch_extension_llm_LlmModule_nativeCreate(
+    JNIEnv* env,
+    jobject /* this */,
+    jint model_type_category,
+    jstring model_path,
+    jstring tokenizer_path,
+    jfloat temperature,
+    jobject data_files) {
+  auto* native = new executorch_jni::ExecuTorchLlmNative(
+      env, model_type_category, model_path, tokenizer_path, temperature, data_files);
+  return reinterpret_cast<jlong>(native);
+}
+
+JNIEXPORT void JNICALL
+Java_org_pytorch_executorch_extension_llm_LlmModule_nativeDestroy(
+    JNIEnv* /* env */,
+    jobject /* this */,
+    jlong native_handle) {
+  auto* native =
+      reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
+  delete native;
+}
+
+JNIEXPORT jint JNICALL
+Java_org_pytorch_executorch_extension_llm_LlmModule_nativeGenerate(
+    JNIEnv* env,
+    jobject /* this */,
+    jlong native_handle,
+    jstring prompt,
+    jint seq_len,
+    jobject callback,
+    jboolean echo) {
+  auto* native =
+      reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
+  if (native == nullptr) {
+    return -1;
+  }
+
+  std::string prompt_str = jstring_to_string(env, prompt);
+
+  // Create a shared callback helper for use in lambdas
+  auto callback_helper =
+      std::make_shared<executorch_jni::CallbackHelper>(env, callback);
+
+  if (native->model_type_category_ ==
+      executorch_jni::MODEL_TYPE_CATEGORY_MULTIMODAL) {
+    std::vector<llm::MultimodalInput> inputs = native->prefill_inputs_;
+    native->prefill_inputs_.clear();
+    if (!prompt_str.empty()) {
+      inputs.emplace_back(llm::MultimodalInput{prompt_str});
+    }
+    executorch::extension::llm::GenerationConfig config{
+        .echo = static_cast<bool>(echo),
+        .seq_len = seq_len,
+        .temperature = native->temperature_,
+    };
+    native->multi_modal_runner_->generate(
+        std::move(inputs),
+        config,
+        [callback_helper](const std::string& result) {
+          callback_helper->onResult(result);
+        },
+        [callback_helper](const llm::Stats& result) {
+          callback_helper->onStats(result);
+        });
+  } else if (
+      native->model_type_category_ ==
+      executorch_jni::MODEL_TYPE_CATEGORY_LLM) {
+    executorch::extension::llm::GenerationConfig config{
+        .echo = static_cast<bool>(echo),
+        .seq_len = seq_len,
+        .temperature = native->temperature_,
+    };
+    native->runner_->generate(
+        prompt_str,
+        config,
+        [callback_helper](std::string result) {
+          callback_helper->onResult(result);
+        },
+        [callback_helper](const llm::Stats& result) {
+          callback_helper->onStats(result);
+        });
+  }
+  return 0;
+}
+
+JNIEXPORT void JNICALL
+Java_org_pytorch_executorch_extension_llm_LlmModule_nativeStop(
+    JNIEnv* /* env */,
+    jobject /* this */,
+    jlong native_handle) {
+  auto* native =
+      reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
+  if (native == nullptr) {
+    return;
+  }
+
+  if (native->model_type_category_ ==
+      executorch_jni::MODEL_TYPE_CATEGORY_MULTIMODAL) {
+    native->multi_modal_runner_->stop();
+  } else if (
+      native->model_type_category_ ==
+      executorch_jni::MODEL_TYPE_CATEGORY_LLM) {
+    native->runner_->stop();
+  }
+}
+
+JNIEXPORT jint JNICALL
+Java_org_pytorch_executorch_extension_llm_LlmModule_nativeLoad(
+    JNIEnv* env,
+    jobject /* this */,
+    jlong native_handle) {
+  auto* native =
+      reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
+  if (native == nullptr) {
+    return -1;
+  }
+
+  int result = -1;
+  std::stringstream ss;
+
+  if (native->model_type_category_ ==
+      executorch_jni::MODEL_TYPE_CATEGORY_MULTIMODAL) {
+    result = static_cast<jint>(native->multi_modal_runner_->load());
+    if (result != 0) {
+      ss << "Failed to load multimodal runner: [" << result << "]";
+    }
+  } else if (
+      native->model_type_category_ ==
+      executorch_jni::MODEL_TYPE_CATEGORY_LLM) {
+    result = static_cast<jint>(native->runner_->load());
+    if (result != 0) {
+      ss << "Failed to load llm runner: [" << result << "]";
+    }
+  } else {
+    ss << "Invalid model type category: " << native->model_type_category_
+       << ". Valid values are: "
+       << executorch_jni::MODEL_TYPE_CATEGORY_LLM << " or "
+       << executorch_jni::MODEL_TYPE_CATEGORY_MULTIMODAL;
+  }
+  if (result != 0) {
+    executorch::jni_helper::throwExecutorchException(
+        env, static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+  }
+  return result; // 0 on success to keep backward compatibility
+}
+
+JNIEXPORT jint JNICALL
+Java_org_pytorch_executorch_extension_llm_LlmModule_nativeAppendTextInput(
+    JNIEnv* env,
+    jobject /* this */,
+    jlong native_handle,
+    jstring prompt) {
+  auto* native =
+      reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
+  if (native == nullptr) {
+    return -1;
+  }
+
+  std::string prompt_str = jstring_to_string(env, prompt);
+  native->prefill_inputs_.emplace_back(llm::MultimodalInput{prompt_str});
+  return 0;
+}
+
+JNIEXPORT jint JNICALL
+Java_org_pytorch_executorch_extension_llm_LlmModule_nativeAppendImagesInput(
+    JNIEnv* env,
+    jobject /* this */,
+    jlong native_handle,
+    jintArray image,
+    jint width,
+    jint height,
+    jint channels) {
+  auto* native =
+      reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
+  if (native == nullptr) {
+    return -1;
+  }
+
+  if (image == nullptr) {
+    return static_cast<jint>(Error::EndOfMethod);
+  }
+
+  jsize image_size = env->GetArrayLength(image);
+  if (image_size != 0) {
+    std::vector<jint> image_data_jint(image_size);
+    std::vector<uint8_t> image_data(image_size);
+    env->GetIntArrayRegion(image, 0, image_size, image_data_jint.data());
+    for (int i = 0; i < image_size; i++) {
+      image_data[i] = static_cast<uint8_t>(image_data_jint[i]);
+    }
+    llm::Image image_runner{std::move(image_data), width, height, channels};
+    native->prefill_inputs_.emplace_back(
+        llm::MultimodalInput{std::move(image_runner)});
+  }
+
+  return 0;
+}
+
+JNIEXPORT jint JNICALL
+Java_org_pytorch_executorch_extension_llm_LlmModule_nativeAppendNormalizedImagesInput(
+    JNIEnv* env,
+    jobject /* this */,
+    jlong native_handle,
+    jfloatArray image,
+    jint width,
+    jint height,
+    jint channels) {
+  auto* native =
+      reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
+  if (native == nullptr) {
+    return -1;
+  }
+
+  if (image == nullptr) {
+    return static_cast<jint>(Error::EndOfMethod);
+  }
+
+  jsize image_size = env->GetArrayLength(image);
+  if (image_size != 0) {
+    std::vector<jfloat> image_data_jfloat(image_size);
+    std::vector<float> image_data(image_size);
+    env->GetFloatArrayRegion(image, 0, image_size, image_data_jfloat.data());
+    for (int i = 0; i < image_size; i++) {
+      image_data[i] = image_data_jfloat[i];
+    }
+    llm::Image image_runner{std::move(image_data), width, height, channels};
+    native->prefill_inputs_.emplace_back(
+        llm::MultimodalInput{std::move(image_runner)});
+  }
+
+  return 0;
+}
+
+JNIEXPORT jint JNICALL
+Java_org_pytorch_executorch_extension_llm_LlmModule_nativeAppendAudioInput(
+    JNIEnv* env,
+    jobject /* this */,
+    jlong native_handle,
+    jbyteArray data,
+    jint batch_size,
+    jint n_bins,
+    jint n_frames) {
+  auto* native =
+      reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
+  if (native == nullptr) {
+    return -1;
+  }
+
+  if (data == nullptr) {
+    return static_cast<jint>(Error::EndOfMethod);
+  }
+
+  jsize data_size = env->GetArrayLength(data);
+  if (data_size != 0) {
+    std::vector<jbyte> data_jbyte(data_size);
+    std::vector<uint8_t> data_u8(data_size);
+    env->GetByteArrayRegion(data, 0, data_size, data_jbyte.data());
+    for (int i = 0; i < data_size; i++) {
+      data_u8[i] = static_cast<uint8_t>(data_jbyte[i]);
+    }
+    llm::Audio audio{std::move(data_u8), batch_size, n_bins, n_frames};
+    native->prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
+  }
+  return 0;
+}
+
+JNIEXPORT jint JNICALL
+Java_org_pytorch_executorch_extension_llm_LlmModule_nativeAppendAudioInputFloat(
+    JNIEnv* env,
+    jobject /* this */,
+    jlong native_handle,
+    jfloatArray data,
+    jint batch_size,
+    jint n_bins,
+    jint n_frames) {
+  auto* native =
+      reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
+  if (native == nullptr) {
+    return -1;
+  }
+
+  if (data == nullptr) {
+    return static_cast<jint>(Error::EndOfMethod);
+  }
+
+  jsize data_size = env->GetArrayLength(data);
+  if (data_size != 0) {
+    std::vector<jfloat> data_jfloat(data_size);
+    std::vector<float> data_f(data_size);
+    env->GetFloatArrayRegion(data, 0, data_size, data_jfloat.data());
+    for (int i = 0; i < data_size; i++) {
+      data_f[i] = data_jfloat[i];
+    }
+    llm::Audio audio{std::move(data_f), batch_size, n_bins, n_frames};
+    native->prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
+  }
+  return 0;
+}
+
+JNIEXPORT jint JNICALL
+Java_org_pytorch_executorch_extension_llm_LlmModule_nativeAppendRawAudioInput(
+    JNIEnv* env,
+    jobject /* this */,
+    jlong native_handle,
+    jbyteArray data,
+    jint batch_size,
+    jint n_channels,
+    jint n_samples) {
+  auto* native =
+      reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
+  if (native == nullptr) {
+    return -1;
+  }
+
+  if (data == nullptr) {
+    return static_cast<jint>(Error::EndOfMethod);
+  }
+
+  jsize data_size = env->GetArrayLength(data);
+  if (data_size != 0) {
+    std::vector<jbyte> data_jbyte(data_size);
+    std::vector<uint8_t> data_u8(data_size);
+    env->GetByteArrayRegion(data, 0, data_size, data_jbyte.data());
+    for (int i = 0; i < data_size; i++) {
+      data_u8[i] = static_cast<uint8_t>(data_jbyte[i]);
+    }
+    llm::RawAudio audio{std::move(data_u8), batch_size, n_channels, n_samples};
+    native->prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
+  }
+  return 0;
+}
+
+JNIEXPORT void JNICALL
+Java_org_pytorch_executorch_extension_llm_LlmModule_nativeResetContext(
+    JNIEnv* /* env */,
+    jobject /* this */,
+    jlong native_handle) {
+  auto* native =
+      reinterpret_cast<executorch_jni::ExecuTorchLlmNative*>(native_handle);
+  if (native == nullptr) {
+    return;
+  }
+
+  if (native->runner_ != nullptr) {
+    native->runner_->reset();
+  }
+  if (native->multi_modal_runner_ != nullptr) {
+    native->multi_modal_runner_->reset();
+  }
+}
+
+} // extern "C"
+
+void register_natives_for_llm(JNIEnv* env) {
+  // Store the JavaVM for later use in callbacks
+  env->GetJavaVM(&g_jvm);
+
+  jclass llm_module_class =
+      env->FindClass("org/pytorch/executorch/extension/llm/LlmModule");
+  if (llm_module_class == nullptr) {
+    ET_LOG(Error, "Failed to find LlmModule class");
+    env->ExceptionClear();
+    return;
+  }
+
+  // clang-format off
+  static const JNINativeMethod methods[] = {
+      {"nativeCreate",
+       "(ILjava/lang/String;Ljava/lang/String;FLjava/util/List;)J",
+       reinterpret_cast<void*>(
+           Java_org_pytorch_executorch_extension_llm_LlmModule_nativeCreate)},
+      {"nativeDestroy", "(J)V",
+       reinterpret_cast<void*>(
+           Java_org_pytorch_executorch_extension_llm_LlmModule_nativeDestroy)},
+      {"nativeGenerate",
+       "(JLjava/lang/String;ILorg/pytorch/executorch/extension/llm/LlmCallback;Z)I",
+       reinterpret_cast<void*>(
+           Java_org_pytorch_executorch_extension_llm_LlmModule_nativeGenerate)},
+      {"nativeStop", "(J)V",
+       reinterpret_cast<void*>(
+           Java_org_pytorch_executorch_extension_llm_LlmModule_nativeStop)},
+      {"nativeLoad", "(J)I",
+       reinterpret_cast<void*>(
+           Java_org_pytorch_executorch_extension_llm_LlmModule_nativeLoad)},
+      {"nativeAppendTextInput", "(JLjava/lang/String;)I",
+       reinterpret_cast<void*>(
+           Java_org_pytorch_executorch_extension_llm_LlmModule_nativeAppendTextInput)},
+      {"nativeAppendImagesInput", "(J[IIII)I",
+       reinterpret_cast<void*>(
+           Java_org_pytorch_executorch_extension_llm_LlmModule_nativeAppendImagesInput)},
+      {"nativeAppendNormalizedImagesInput", "(J[FIII)I",
+       reinterpret_cast<void*>(
+           Java_org_pytorch_executorch_extension_llm_LlmModule_nativeAppendNormalizedImagesInput)},
+      {"nativeAppendAudioInput", "(J[BIII)I",
+       reinterpret_cast<void*>(
+           Java_org_pytorch_executorch_extension_llm_LlmModule_nativeAppendAudioInput)},
+      {"nativeAppendAudioInputFloat", "(J[FIII)I",
+       reinterpret_cast<void*>(
+           Java_org_pytorch_executorch_extension_llm_LlmModule_nativeAppendAudioInputFloat)},
+      {"nativeAppendRawAudioInput", "(J[BIII)I",
+       reinterpret_cast<void*>(
+           Java_org_pytorch_executorch_extension_llm_LlmModule_nativeAppendRawAudioInput)},
+      {"nativeResetContext", "(J)V",
+       reinterpret_cast<void*>(
+           Java_org_pytorch_executorch_extension_llm_LlmModule_nativeResetContext)},
+  };
+  // clang-format on
+
+  int num_methods = sizeof(methods) / sizeof(methods[0]);
+  int result = env->RegisterNatives(llm_module_class, methods, num_methods);
+  if (result != JNI_OK) {
+    ET_LOG(Error, "Failed to register native methods for LlmModule");
+  }
+
+  env->DeleteLocalRef(llm_module_class);
 }
