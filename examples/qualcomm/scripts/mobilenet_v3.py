@@ -16,6 +16,7 @@ import torch
 from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
     parse_skip_delegation_node,
@@ -46,6 +47,7 @@ def main(args):
         )
     pte_filename = "mv3_qnn_float16"
     instance = MV3Model()
+    backend = get_backend_type(args.backend)
     build_executorch_binary(
         instance.get_eager_model().eval(),
         instance.get_example_inputs(),
@@ -54,7 +56,9 @@ def main(args):
         inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
+        backend=backend,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -70,6 +74,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
+        backend=backend,
     )
     adb.push(inputs=inputs)
     adb.execute()
