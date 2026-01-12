@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,14 +7,14 @@ import numpy as np
 
 from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.base_optimization import (
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.optimizations.base_optimization import (
     BaseOptimization,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.pattern_matcher import (
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.pattern_matcher import (
     Op,
     PatternMatcher,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.tensor_rules import (
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.tensor_rules import (
     TensorDimensionsMatch,
     TensorHasRank,
     TensorIsChannelsFirst,

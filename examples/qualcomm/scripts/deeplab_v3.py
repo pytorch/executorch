@@ -15,9 +15,13 @@ import numpy as np
 import torch
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_backend_type,
     make_output_dir,
     parse_skip_delegation_node,
     segmentation_metrics,
@@ -78,9 +82,13 @@ def main(args):
             data_size=data_num, dataset_dir=args.artifact, download=args.download
         )
 
-    pte_filename = "dl3_qnn_q8"
+    pte_filename = "dl3_qnn"
     instance = DeepLabV3ResNet101Model()
-
+    backend = get_backend_type(args.backend)
+    quant_dtype = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_8a8w,
+    }[backend]
     build_executorch_binary(
         instance.get_eager_model().eval(),
         instance.get_example_inputs(),
@@ -89,8 +97,10 @@ def main(args):
         inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        quant_dtype=QuantDtype.use_8a8w,
+        quant_dtype=quant_dtype,
+        backend=backend,
         shared_buffer=args.shared_buffer,
+        online_prepare=args.online_prepare,
     )
 
     if args.compile_only:
@@ -106,6 +116,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
         target=args.target,
+        backend=backend,
     )
     adb.push(inputs=inputs)
     adb.execute()
