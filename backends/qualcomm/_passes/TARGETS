@@ -7,9 +7,7 @@ runtime.python_library(
     srcs = glob([
         "*.py",
     ]),
-    visibility = [
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/backends/transforms:addmm_mm_to_linear",
         "//executorch/backends/transforms:decompose_sdpa",
