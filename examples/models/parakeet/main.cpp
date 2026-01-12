@@ -873,8 +873,14 @@ int main(int argc, char** argv) {
       supported_punctuation.size());
 
   // for simplicity, compute all levels of timestamps regardless of mode
-  const auto tokens_with_text_info = get_tokens_with_text_info(
+  std::vector<TokenWithTextInfo> tokens_with_text_info;
+  try {
+    tokens_with_text_info = get_tokens_with_text_info(
       decoded_tokens, *tokenizer, supported_punctuation);
+  } catch (const std::exception& e) {
+    ET_LOG(Error, "Failed to get tokens with text info: %s", e.what());
+    return 1;
+  }
   const auto word_offsets = get_words_offsets(
       tokens_with_text_info, *tokenizer, supported_punctuation);
   const auto segment_offsets = get_segment_offsets(word_offsets);
