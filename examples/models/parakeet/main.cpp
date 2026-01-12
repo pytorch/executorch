@@ -49,6 +49,12 @@ namespace {
 // TDT duration values
 const std::vector<int> DURATIONS = {0, 1, 2, 3, 4};
 
+struct DecodedToken {
+  int64_t token_id;
+  int64_t start_offset;
+  int64_t duration;
+};
+
 struct TokenTimestamp {
   uint64_t token_id;
   std::string token_piece;
@@ -357,18 +363,16 @@ std::vector<SegmentTimestamp> get_segment_offsets(
   return segment_offsets;
 }
 
-std::vector<int64_t> greedy_decode_executorch(
+std::vector<DecodedToken> greedy_decode_executorch(
     Module& model,
     const ::executorch::aten::Tensor& encoder_output,
     int64_t encoder_len,
     int64_t blank_id,
     int64_t vocab_size,
-    std::vector<int64_t>& token_start_offsets,
-    std::vector<int64_t>& token_durations,
     int64_t num_rnn_layers = 2,
     int64_t pred_hidden = 640,
     int64_t max_symbols_per_step = 10) {
-  std::vector<int64_t> hypothesis;
+  std::vector<DecodedToken> hypothesis;
   int64_t num_token_classes = vocab_size + 1;
 
   // Transpose encoder output from [1, enc_dim, time] to [1, time, enc_dim]
@@ -523,9 +527,7 @@ std::vector<int64_t> greedy_decode_executorch(
       t += std::max(dur, (int64_t)1);
       symbols_on_frame = 0;
     } else {
-      hypothesis.push_back(k);
-      token_start_offsets.push_back(t);
-      token_durations.push_back(dur);
+      hypothesis.push_back({k, t, dur});
 
       // Update decoder state
       std::vector<int64_t> token_data = {k};
@@ -726,21 +728,23 @@ int main(int argc, char** argv) {
       static_cast<long long>(encoder_subsampling_factor));
 
   ET_LOG(Info, "Running TDT greedy decode...");
-  std::vector<int64_t> token_start_offsets;
-  std::vector<int64_t> token_durations;
-  auto tokens = greedy_decode_executorch(
+  auto decoded_tokens = greedy_decode_executorch(
       *model,
       encoded,
       encoded_len,
       blank_id,
       vocab_size,
-      token_start_offsets,
-      token_durations,
       num_rnn_layers,
       pred_hidden,
       /*max_symbols_per_step=*/10);
 
-  ET_LOG(Info, "Decoded %zu tokens", tokens.size());
+  ET_LOG(Info, "Decoded %zu tokens", decoded_tokens.size());
+
+  std::vector<int64_t> tokens;
+  tokens.reserve(decoded_tokens.size());
+  for (const auto& tok : decoded_tokens) {
+    tokens.push_back(tok.token_id);
+  }
 
   // Load tokenizer
   ET_LOG(Info, "Loading tokenizer from: %s", FLAGS_tokenizer_path.c_str());
@@ -766,17 +770,12 @@ int main(int argc, char** argv) {
   std::cout << "Transcription tokens: " << text << std::endl;
 
   // Compute timestamps matching NeMo's TDT timestamp behavior.
-  if (tokens.size() != token_start_offsets.size() ||
-      tokens.size() != token_durations.size()) {
-    ET_LOG(Error, "Token/timestamp length mismatch");
-    return 1;
-  }
-
   std::vector<TokenTimestamp> char_timestamps;
-  char_timestamps.reserve(tokens.size());
+  char_timestamps.reserve(decoded_tokens.size());
 
-  for (size_t i = 0; i < tokens.size(); i++) {
-    const uint64_t token_id = static_cast<uint64_t>(tokens[i]);
+  for (size_t i = 0; i < decoded_tokens.size(); i++) {
+    const auto& decoded_token = decoded_tokens[i];
+    const uint64_t token_id = static_cast<uint64_t>(decoded_token.token_id);
 
     auto piece_result = tokenizer->id_to_piece(token_id);
     if (!piece_result.ok()) {
@@ -794,8 +793,8 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    const int64_t start_offset = token_start_offsets[i];
-    const int64_t end_offset = start_offset + token_durations[i];
+    const int64_t start_offset = decoded_token.start_offset;
+    const int64_t end_offset = start_offset + decoded_token.duration;
 
     char_timestamps.push_back(
         {token_id,
