@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,8 +10,7 @@ from typing import cast, Iterator, Tuple
 
 import executorch.backends.nxp.backend.ir.converter.builder.model_builder as model_builder
 from executorch.backends.nxp.backend.ir import logger
-from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
-from executorch.backends.nxp.backend.ir.tflite_optimizer.graph_utils import (
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.graph_utils import (
     builtin_operator_for_op_type,
     create_tensor_to_operator_dictionaries,
     InputTensorToOpsMap,
@@ -19,8 +18,13 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.graph_utils import (
     operator_is_type,
     OutputTensorToOpMap,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.operator_rules import OpRule
-from executorch.backends.nxp.backend.ir.tflite_optimizer.tensor_rules import TensorRule
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.operator_rules import (
+    OpRule,
+)
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.tensor_rules import (
+    TensorRule,
+)
+from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 
 
 class OperatorBlock(ABC):

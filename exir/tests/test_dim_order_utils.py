@@ -44,6 +44,6 @@ class TestDimOrderUtils(unittest.TestCase):
         y = torch.randn(5, 6)
         M(x, y)
 
-        expo_prog = torch.export.export_for_training(M, (x, y))
+        expo_prog = torch.export.export(M, (x, y))
         edge_prog = to_edge_transform_and_lower(expo_prog)
         edge_prog.to_executorch()

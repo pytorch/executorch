@@ -104,6 +104,52 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbedding) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
+TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingInt32Indices) {
+  et_pal_init();
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Int> tfi;
+
+  int64_t quant_min = -2;
+  int64_t quant_max = 1;
+
+  Tensor weight_scales = tf.make({3}, {0.5, 1.0, 1.5});
+  Tensor weight_zero_points = tf.make({3}, {1, -2, 0});
+
+  Tensor qweight = tfb.make({3, 1}, {236, 134, 228});
+
+  Tensor indices = tfi.make({3}, {0, 2, 1});
+
+  Tensor out = tf.zeros({3, 4});
+  Tensor expected = tf.make(
+      {3, 4}, {-1.5, 0.0, -0.5, 0.0, -3.0, -1.5, 0.0, 1.5, 2.0, 1.0, 0.0, 2.0});
+
+  quantized_embedding_2bit_out(
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      quant_min,
+      quant_max,
+      indices,
+      out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+
+  out = tf.zeros({3, 4});
+  auto context = KernelRuntimeContext();
+  torch::executor::native::quantized_embedding_2bit_out(
+      context,
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      quant_min,
+      quant_max,
+      indices,
+      out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
 TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingDeath1) {
   et_pal_init();
   TensorFactory<ScalarType::Byte> tfb;
