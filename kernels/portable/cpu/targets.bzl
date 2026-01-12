@@ -47,11 +47,7 @@ def define_common_targets():
         ],
         srcs = [],
         exported_headers = ["vec_ops.h"],
-        visibility = [
-            "//executorch/kernels/portable/...",
-            "//executorch/kernels/quantized/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # Only for use by targets in this directory. Defines constants like M_PI
@@ -62,9 +58,7 @@ def define_common_targets():
         exported_headers = [
             "math_constants.h",
         ],
-        visibility = [
-            "//executorch/kernels/portable/...", "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # Only for use by targets in this directory.
@@ -72,13 +66,7 @@ def define_common_targets():
         name = "scalar_utils",
         srcs = [],
         exported_headers = ["scalar_utils.h", "selective_build.h"],
-        visibility = [
-            "//executorch/kernels/fb/...",
-            "//executorch/kernels/optimized/cpu/...",
-            "//executorch/kernels/portable/cpu/...",
-            "//executorch/kernels/portable/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
         ],
@@ -91,11 +79,11 @@ def define_common_targets():
     runtime.filegroup(
         name = "portable_source_files",
         srcs = native.glob(["*.cpp"]),
-        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.filegroup(
         name = "portable_header_files",
         srcs = native.glob(["*.h"]),
-        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )

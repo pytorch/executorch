@@ -24,10 +24,7 @@ def define_common_targets():
             exported_headers=[
                 "TestUtil.h",
             ],
-            visibility = [
-                "//executorch/kernels/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_kernel else [],
             exported_deps = [
                 "//executorch/runtime/core:core",
@@ -53,10 +50,7 @@ def define_common_targets():
                 "ScalarOverflowTestMacros.h",
                 "UnaryUfuncRealHBBF16ToFloatHBF16Test.h",
             ],
-            visibility = [
-                "//executorch/kernels/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_kernel else [],
             exported_deps = [
                 ":supported_features_header",
@@ -151,10 +145,7 @@ def define_common_targets():
     runtime.filegroup(
         name = "test_srcs",
         srcs = TEST_SRCS,
-        visibility = [
-            "//executorch/kernels/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.genrule(
@@ -163,10 +154,7 @@ def define_common_targets():
         cmd = "cp $(location :test_srcs)/* $OUT",
         outs = {f: [f] for f in TEST_SRCS},
         default_outs = ["."],
-        visibility = [
-            "//executorch/kernels/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     codegen_function_header_wrapper("executorch/kernels/aten", "aten")
