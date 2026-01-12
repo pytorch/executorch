@@ -7,10 +7,15 @@
  *
  */
 #include <executorch/backends/samsung/runtime/enn_executor.h>
+#include <executorch/backends/samsung/runtime/enn_shared_memory_manager.h>
 #include <executorch/backends/samsung/runtime/logging.h>
 #include <executorch/backends/samsung/runtime/profile.hpp>
-#include <inttypes.h>
 
+#include <android/log.h>
+#include <inttypes.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -19,23 +24,54 @@ namespace torch {
 namespace executor {
 namespace enn {
 
+uint32_t get_size_from_fd(int fd) {
+  if (fd < 0) {
+    ET_LOG(Error, "get_size_from_fd(), invalid fd(%d)\n", fd);
+    return 0;
+  } else {
+    off_t file_size = lseek(fd, 0, SEEK_END);
+    if (file_size < 0) {
+      return 0;
+    } else {
+      return static_cast<uint32_t>(file_size);
+    }
+  }
+}
+
 Error EnnExecutor::initialize(const char* binary_buf_addr, size_t buf_size) {
   EXYNOS_ATRACE_FUNCTION_LINE();
+  auto _sm_instance = executorch::backends::enn::shared_memory_manager::
+      SharedMemoryManager::getInstance();
   const EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
-  auto ret = enn_api_inst->EnnInitialize();
-  ET_CHECK_OR_RETURN_ERROR(
-      ret == ENN_RET_SUCCESS, Internal, "Enn initialize failed.");
+  EnnReturn ret;
 
   ET_LOG(Info, "Start to open model %p, %ld", binary_buf_addr, buf_size);
-  ret = enn_api_inst->EnnOpenModelFromMemory(
-      binary_buf_addr, buf_size, &model_id_);
 
+  EnnBufferPtr _out;
+  if (_sm_instance->query(&_out, binary_buf_addr, buf_size)) {
+    int fd;
+    if (_out->va == binary_buf_addr &&
+        !enn_api_inst->EnnGetFileDescriptorFromEnnBuffer(_out, &fd)) {
+      ret = enn_api_inst->EnnOpenModelFromFd(fd, &model_id_);
+      ET_LOG(Info, "Opened Model From File Descriptor");
+      if (ret == ENN_RET_SUCCESS) {
+        ET_LOG(Info, "Buffer Loading finished with fd, so fd would be closed");
+        _sm_instance->free(_out->va);
+      }
+    }
+  }
+  if (!model_id_) {
+    ET_LOG(Info, "Opened Model From Memory");
+    ret = enn_api_inst->EnnOpenModelFromMemory(
+        binary_buf_addr, buf_size, &model_id_);
+  }
   ET_CHECK_OR_RETURN_ERROR(
       ret == ENN_RET_SUCCESS,
       Internal,
       "Failed to load Enn model from buffer %d",
       (int)ret);
   ET_LOG(Info, "Open successfully.");
+
   NumberOfBuffersInfo buffers_info;
   ret = enn_api_inst->EnnAllocateAllBuffersWithSessionId(
       model_id_, &alloc_buffer_, &buffers_info, 0, true);

@@ -40,7 +40,7 @@ class EnnExecutor {
   ~EnnExecutor();
 
  private:
-  EnnModelId model_id_;
+  EnnModelId model_id_ = 0ULL;
   EnnBufferPtr* alloc_buffer_ = nullptr;
   int32_t num_of_inputs_ = 0;
   int32_t num_of_outputs_ = 0;
