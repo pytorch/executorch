@@ -44,3 +44,16 @@ def define_common_targets():
             ],
             **backend_kwargs
         )
+
+        runtime.cxx_test(
+            name = "test_from_etensor" + backend_suffix,
+            srcs = [
+                "test_from_etensor.cpp",
+            ],
+            deps = [
+                "//executorch/backends/aoti/slim/core:storage",
+                "//executorch/backends/aoti/slim/factory:from_etensor",
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            ],
+            **backend_kwargs
+        )
