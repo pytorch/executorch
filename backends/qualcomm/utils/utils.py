@@ -1146,6 +1146,7 @@ def get_soc_to_arch_map():
         "SAR2230P": HtpArch.V81,
         "SW6100": HtpArch.V81,
         "QCM6490": HtpArch.V68,
+        "SM8845": HtpArch.V81,
     }
 
 
@@ -1169,6 +1170,7 @@ def get_soc_to_chipset_map():
         "SAR2230P": QcomChipset.SAR2230P,
         "SW6100": QcomChipset.SW6100,
         "QCM6490": QcomChipset.QCM6490,
+        "SM8845": QcomChipset.SM8845,
     }
 
 
