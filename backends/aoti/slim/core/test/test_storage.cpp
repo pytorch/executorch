@@ -367,7 +367,7 @@ TEST_P(StorageSharedPtrParamTest, SharedOwnership) {
   Storage storage1(new MaybeOwningStorage(device(), kNbytes));
   void* data_ptr = storage1->data();
 
-  Storage storage2 = storage1;
+  Storage storage2 = storage1; // Copy, not reference - increments ref count
 
   EXPECT_EQ(storage1.use_count(), 2);
   EXPECT_EQ(storage2.use_count(), 2);

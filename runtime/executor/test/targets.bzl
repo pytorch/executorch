@@ -81,11 +81,7 @@ def define_common_targets(is_fbcode = False):
         exported_headers = [
             "managed_memory_manager.h",
         ],
-        visibility = [
-            "//executorch/runtime/executor/test/...",
-            "//executorch/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/core:memory_allocator",
             "//executorch/runtime/executor:memory_manager",
