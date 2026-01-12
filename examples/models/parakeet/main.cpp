@@ -46,7 +46,6 @@ using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 
 namespace {
-
 // Matches output type of tokenizers::Tokenizer methods
 using TokenId = uint64_t;
 
@@ -162,6 +161,21 @@ std::string decode_token_sequence(
   return result;
 }
 
+// convenience overload
+std::string decode_token_sequence(
+    const std::vector<DecodedToken>& decoded_tokens,
+    const tokenizers::Tokenizer& tokenizer) {
+  std::vector<TokenId> token_ids;
+  token_ids.reserve(decoded_tokens.size());
+  for (const auto& tok : decoded_tokens) {
+    token_ids.push_back(tok.token_id);
+  }
+  return decode_token_sequence(token_ids, tokenizer);
+}
+
+// ref:
+// https://github.com/NVIDIA-NeMo/NeMo/blob/bf583c9/nemo/collections/asr/parts/utils/timestamp_utils.py#L54
+// assumes BPE tokenizer type
 std::vector<TextWithOffsets> get_words_offsets(
     const std::vector<TokenTimestamp>& tokens,
     const tokenizers::Tokenizer& tokenizer,
@@ -224,7 +238,8 @@ std::vector<TextWithOffsets> get_words_offsets(
         previous_token_index = i;
       }
     } else if (
-        curr_punctuation && build_token_indices.empty() && !word_offsets.empty()) {
+        curr_punctuation && build_token_indices.empty() &&
+        !word_offsets.empty()) {
       auto& last_built_word = word_offsets.back();
       last_built_word.end_offset = token.end_offset;
       if (!last_built_word.text.empty() && last_built_word.text.back() == ' ') {
@@ -278,6 +293,8 @@ std::vector<TextWithOffsets> get_words_offsets(
   return word_offsets;
 }
 
+// ref
+// https://github.com/NVIDIA-NeMo/NeMo/blob/bf583c9/nemo/collections/asr/parts/utils/timestamp_utils.py#L227
 std::vector<TextWithOffsets> get_segment_offsets(
     const std::vector<TextWithOffsets>& word_offsets,
     const std::vector<std::string>& segment_delimiters = {".", "?", "!"},
@@ -589,21 +606,6 @@ std::vector<DecodedToken> greedy_decode_executorch(
   return hypothesis;
 }
 
-std::string tokens_to_text(
-    const std::vector<DecodedToken>& decoded_tokens,
-    const tokenizers::Tokenizer& tokenizer) {
-  std::string result;
-  TokenId prev_token = tokenizer.bos_tok();
-  for (const auto& tok : decoded_tokens) {
-    auto decode_result = tokenizer.decode(prev_token, tok.token_id);
-    if (decode_result.ok()) {
-      result += decode_result.get();
-    }
-    prev_token = tok.token_id;
-  }
-  return result;
-}
-
 } // namespace
 
 int main(int argc, char** argv) {
@@ -759,7 +761,7 @@ int main(int argc, char** argv) {
   }
 
   // Convert tokens to text
-  std::string text = tokens_to_text(decoded_tokens, *tokenizer);
+  std::string text = decode_token_sequence(decoded_tokens, *tokenizer);
   std::cout << "Transcription tokens: " << text << std::endl;
 
   std::unordered_set<std::string> supported_punctuation =
