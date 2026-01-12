@@ -33,32 +33,27 @@ void* loadApiFunction(void* handle, const char* name, bool optional) {
   return fn;
 }
 
-std::mutex EnnApi::instance_mutex_;
-
 EnnApi* EnnApi::getEnnApiInstance() {
-  std::lock_guard<std::mutex> lgd(instance_mutex_);
   static EnnApi enn_api;
-  if (!enn_api.getInitialize()) {
-    auto status = enn_api.loadApiLib();
-    if (status == Error::Ok) {
-      ENN_LOG_INFO("Loading ENN API library Completed.")
-      enn_api.initialize_ = true;
-    } else {
-      ENN_LOG_ERROR("Failed to load enn api library. %s", dlerror());
-    }
-  }
   return &enn_api;
 }
 
-EnnApi::~EnnApi() {
-  std::lock_guard<std::mutex> lgd(instance_mutex_);
-  if (getInitialize()) {
-    unloadApiLib();
+EnnApi::EnnApi() {
+  auto status = loadApiLib();
+  if (status == Error::Ok) {
+    ET_LOG(Info, "Loading ENN API library Completed.");
+    EnnInitialize();
+    initialize_ = true;
+  } else {
+    ET_LOG(Error, "Failed to load enn api library. %s", dlerror());
   }
 }
 
-bool EnnApi::getInitialize() const {
-  return initialize_;
+EnnApi::~EnnApi() {
+  if (initialize_) {
+    EnnDeinitialize();
+    unloadApiLib();
+  }
 }
 
 Error EnnApi::loadApiLib() {
@@ -76,6 +71,7 @@ Error EnnApi::loadApiLib() {
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnUnsetFastIpc, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnExecuteModelFastIpc, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnExecuteModel, this);
+  ENN_LOAD_API_FUNC(libenn_public_api_, EnnCreateBuffer, this);
   ENN_LOAD_API_FUNC(
       libenn_public_api_, EnnExecuteModelWithSessionIdAsync, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnExecuteModelWithSessionIdWait, this);
@@ -87,13 +83,18 @@ Error EnnApi::loadApiLib() {
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnBufferCommit, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnGetBuffersInfo, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnReleaseBuffers, this);
+  ENN_LOAD_API_FUNC(libenn_public_api_, EnnCreateBuffer, this);
+  ENN_LOAD_API_FUNC(libenn_public_api_, EnnReleaseBuffer, this);
+  ENN_LOAD_API_FUNC(
+      libenn_public_api_, EnnGetFileDescriptorFromEnnBuffer, this);
+  ENN_LOAD_API_FUNC(libenn_public_api_, EnnOpenModelFromFd, this);
 
   return Error::Ok;
 }
 
 Error EnnApi::unloadApiLib() {
   if (dlclose(libenn_public_api_) != 0) {
-    ENN_LOG_ERROR("Failed to close ENN API library. %s", dlerror());
+    ET_LOG(Error, "Failed to close ENN API library. %s", dlerror());
     return Error::Internal;
   }
   libenn_public_api_ = nullptr;

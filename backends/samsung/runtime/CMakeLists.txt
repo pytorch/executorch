@@ -17,6 +17,7 @@ if(${ANDROID})
     enn_backend
     PRIVATE ${CMAKE_CURRENT_LIST_DIR}/enn_backend.cpp
             ${CMAKE_CURRENT_LIST_DIR}/enn_executor.cpp
+            ${CMAKE_CURRENT_LIST_DIR}/enn_shared_memory_manager.cpp
             ${CMAKE_CURRENT_LIST_DIR}/enn_api_implementation.cpp
   )
 endif()
