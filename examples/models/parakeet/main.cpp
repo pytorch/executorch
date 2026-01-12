@@ -39,6 +39,10 @@ DEFINE_string(
     data_path,
     "",
     "Path to data file (.ptd) for delegate data (optional, required for CUDA).");
+DEFINE_string(
+    timestamps,
+    "none",
+    "Timestamp output mode: none|token|word|segment|all");
 
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
@@ -52,18 +56,28 @@ using TokenId = uint64_t;
 // TDT duration values
 const std::vector<int> DURATIONS = {0, 1, 2, 3, 4};
 
-struct DecodedToken {
-  TokenId token_id;
+struct TimestampOutputMode {
+  bool token = false;
+  bool word = false;
+  bool segment = false;
+
+  bool enabled() const {
+    return token || word || segment;
+  }
+};
+
+struct Token {
+  TokenId id;
   int64_t start_offset;
   int64_t duration;
 };
 
-struct FrameAlignedToken {
-  TokenId token_id;
+struct TokenWithTextInfo {
+  TokenId id;
   // Raw vocabulary piece for the token_id (i.e., "##ing", "▁hello")
-  std::string token_piece;
+  std::string raw_piece;
   // Decoded text for the token_id (i.e., "ing", " hello")
-  std::string token_text;
+  std::string decoded_text;
   int64_t start_offset;
   int64_t end_offset;
 };
@@ -73,6 +87,39 @@ struct TextWithOffsets {
   int64_t start_offset;
   int64_t end_offset;
 };
+
+std::string to_lower_ascii(std::string s) {
+  for (char& ch : s) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  return s;
+}
+
+TimestampOutputMode parse_timestamp_output_mode(const std::string& raw_arg) {
+  if (raw_arg.empty()) {
+    throw std::invalid_argument(
+        "Invalid --timestamps value (empty). Expected: token, word, segment, all.");
+  }
+  const std::string mode = to_lower_ascii(raw_arg);
+  if (mode == "none") {
+    return {false, false, false};
+  }
+  if (mode == "token") {
+    return {true, false, false};
+  }
+  if (mode == "word") {
+    return {false, true, false};
+  }
+  if (mode == "segment") {
+    return {false, false, true};
+  }
+  if (mode == "all") {
+    return {true, true, true};
+  }
+  throw std::invalid_argument(
+      "Invalid --timestamps value '" + raw_arg +
+      "'. Expected: token, word, segment, all.");
+}
 
 bool is_whitespace_only(const std::string& token) {
   if (token.empty()) {
@@ -163,21 +210,63 @@ std::string decode_token_sequence(
 
 // convenience overload
 std::string decode_token_sequence(
-    const std::vector<DecodedToken>& decoded_tokens,
+    const std::vector<Token>& decoded_tokens,
     const tokenizers::Tokenizer& tokenizer) {
   std::vector<TokenId> token_ids;
   token_ids.reserve(decoded_tokens.size());
   for (const auto& tok : decoded_tokens) {
-    token_ids.push_back(tok.token_id);
+    token_ids.push_back(tok.id);
   }
   return decode_token_sequence(token_ids, tokenizer);
+}
+
+// throws if any tokenizer calls fail
+std::vector<TokenWithTextInfo> get_tokens_with_text_info(
+    const std::vector<Token>& tokens,
+    const tokenizers::Tokenizer& tokenizer,
+    const std::unordered_set<std::string>& supported_punctuation) {
+  std::vector<TokenWithTextInfo> tokens_with_text;
+  tokens_with_text.reserve(tokens.size());
+
+  for (const auto& token : tokens) {
+    auto piece_result = tokenizer.id_to_piece(token.id);
+    if (!piece_result.ok()) {
+      throw std::runtime_error(
+          "id_to_piece failed for token=" + std::to_string(token.id));
+    }
+
+    auto text_result = tokenizer.decode(tokenizer.bos_tok(), token.id);
+    if (!text_result.ok()) {
+      throw std::runtime_error(
+          "decode failed for token=" + std::to_string(token.id));
+    }
+
+    tokens_with_text.push_back(
+        {token.id,
+         piece_result.get(),
+         text_result.get(),
+         token.start_offset,
+         token.start_offset + token.duration});
+  }
+
+  // NeMo TDT punctuation refinement pass: snap punctuation to the end of the
+  // previous token.
+  // https://github.com/NVIDIA-NeMo/NeMo/blob/bf583c9/nemo/collections/asr/parts/submodules/rnnt_decoding.py#L1169-L1189
+  for (size_t i = 1; i < tokens_with_text.size(); i++) {
+    if (supported_punctuation.count(tokens_with_text[i].decoded_text) > 0) {
+      tokens_with_text[i].start_offset = tokens_with_text[i - 1].end_offset;
+      tokens_with_text[i].end_offset = tokens_with_text[i].start_offset;
+    }
+  }
+
+  return tokens_with_text;
 }
 
 // ref:
 // https://github.com/NVIDIA-NeMo/NeMo/blob/bf583c9/nemo/collections/asr/parts/utils/timestamp_utils.py#L54
 // assumes BPE tokenizer type
 std::vector<TextWithOffsets> get_words_offsets(
-    const std::vector<FrameAlignedToken>& tokens,
+    const std::vector<TokenWithTextInfo>& tokens,
     const tokenizers::Tokenizer& tokenizer,
     const std::unordered_set<std::string>& supported_punctuation,
     const std::string& word_delimiter_char = " ") {
@@ -206,24 +295,24 @@ std::vector<TextWithOffsets> get_words_offsets(
   for (size_t i = 0; i < tokens.size(); i++) {
     const auto& token = tokens[i];
 
-    const bool curr_punctuation = is_curr_punctuation(token.token_text);
+    const bool curr_punctuation = is_curr_punctuation(token.decoded_text);
 
     std::string next_non_delim_token;
     for (size_t j = i + 1; j < tokens.size(); j++) {
-      if (tokens[j].token_text != word_delimiter_char) {
-        next_non_delim_token = tokens[j].token_text;
+      if (tokens[j].decoded_text != word_delimiter_char) {
+        next_non_delim_token = tokens[j].decoded_text;
         break;
       }
     }
 
     if (is_word_start(
-            token.token_piece, token.token_text, next_non_delim_token) &&
+            token.raw_piece, token.decoded_text, next_non_delim_token) &&
         !curr_punctuation) {
       if (!build_token_indices.empty()) {
         std::vector<TokenId> built_ids;
         built_ids.reserve(build_token_indices.size());
         for (size_t idx : build_token_indices) {
-          built_ids.push_back(tokens[idx].token_id);
+          built_ids.push_back(tokens[idx].id);
         }
         word_offsets.push_back(
             {decode_token_sequence(built_ids, tokenizer),
@@ -233,7 +322,7 @@ std::vector<TextWithOffsets> get_words_offsets(
 
       build_token_indices.clear();
 
-      if (token.token_text != word_delimiter_char) {
+      if (token.decoded_text != word_delimiter_char) {
         build_token_indices.push_back(i);
         previous_token_index = i;
       }
@@ -245,9 +334,9 @@ std::vector<TextWithOffsets> get_words_offsets(
       if (!last_built_word.text.empty() && last_built_word.text.back() == ' ') {
         last_built_word.text.pop_back();
       }
-      last_built_word.text += token.token_text;
+      last_built_word.text += token.decoded_text;
     } else if (curr_punctuation && !build_token_indices.empty()) {
-      const auto& last = tokens[build_token_indices.back()].token_piece;
+      const auto& last = tokens[build_token_indices.back()].raw_piece;
       if (last == " " || last == "_" || last == "▁") {
         build_token_indices.pop_back();
       }
@@ -267,7 +356,7 @@ std::vector<TextWithOffsets> get_words_offsets(
       std::vector<TokenId> built_ids;
       built_ids.reserve(build_token_indices.size());
       for (const size_t idx : build_token_indices) {
-        built_ids.push_back(tokens[idx].token_id);
+        built_ids.push_back(tokens[idx].id);
       }
       word_offsets.push_back(
           {decode_token_sequence(built_ids, tokenizer),
@@ -281,7 +370,7 @@ std::vector<TextWithOffsets> get_words_offsets(
       std::vector<TokenId> built_ids;
       built_ids.reserve(build_token_indices.size());
       for (size_t idx : build_token_indices) {
-        built_ids.push_back(tokens[idx].token_id);
+        built_ids.push_back(tokens[idx].id);
       }
       word_offsets.push_back(
           {decode_token_sequence(built_ids, tokenizer),
@@ -382,7 +471,7 @@ std::vector<TextWithOffsets> get_segment_offsets(
   return segment_offsets;
 }
 
-std::vector<DecodedToken> greedy_decode_executorch(
+std::vector<Token> greedy_decode_executorch(
     Module& model,
     const ::executorch::aten::Tensor& encoder_output,
     int64_t encoder_len,
@@ -391,7 +480,7 @@ std::vector<DecodedToken> greedy_decode_executorch(
     int64_t num_rnn_layers = 2,
     int64_t pred_hidden = 640,
     int64_t max_symbols_per_step = 10) {
-  std::vector<DecodedToken> hypothesis;
+  std::vector<Token> hypothesis;
   int64_t num_token_classes = vocab_size + 1;
 
   // Transpose encoder output from [1, enc_dim, time] to [1, time, enc_dim]
@@ -611,6 +700,14 @@ std::vector<DecodedToken> greedy_decode_executorch(
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
+  TimestampOutputMode timestamp_mode;
+  try {
+    timestamp_mode = parse_timestamp_output_mode(FLAGS_timestamps);
+  } catch (const std::invalid_argument& e) {
+    ET_LOG(Error, "%s", e.what());
+    return 1;
+  }
+
   if (FLAGS_audio_path.empty()) {
     ET_LOG(Error, "audio_path flag must be provided.");
     return 1;
@@ -761,8 +858,13 @@ int main(int argc, char** argv) {
 
   // Convert tokens to text
   std::string text = decode_token_sequence(decoded_tokens, *tokenizer);
-  std::cout << "Transcription tokens: " << text << std::endl;
+  std::cout << "Transcribed text: " << text << std::endl;
 
+  if (!timestamp_mode.enabled()) {
+    return 0;
+  }
+
+  ET_LOG(Info, "Computing timestamps...");
   std::unordered_set<std::string> supported_punctuation =
       derive_supported_punctuation(*tokenizer);
   ET_LOG(
@@ -770,77 +872,44 @@ int main(int argc, char** argv) {
       "Derived supported_punctuation size=%zu",
       supported_punctuation.size());
 
-  // Compute timestamps matching NeMo's TDT timestamp behavior.
-  std::vector<FrameAlignedToken> char_timestamps;
-  char_timestamps.reserve(decoded_tokens.size());
-
-  for (const auto& decoded_token : decoded_tokens) {
-    const TokenId token_id = decoded_token.token_id;
-
-    auto piece_result = tokenizer->id_to_piece(token_id);
-    if (!piece_result.ok()) {
-      ET_LOG(Error, "id_to_piece failed for token=%llu", token_id);
-      return 1;
-    }
-
-    auto text_result = tokenizer->decode(tokenizer->bos_tok(), token_id);
-    if (!text_result.ok()) {
-      ET_LOG(
-          Error,
-          "decode failed for token=%llu",
-          static_cast<unsigned long long>(token_id));
-      return 1;
-    }
-
-    const int64_t start_offset = decoded_token.start_offset;
-    const int64_t end_offset = start_offset + decoded_token.duration;
-
-    char_timestamps.push_back(
-        {token_id,
-         piece_result.get(),
-         text_result.get(),
-         start_offset,
-         end_offset});
-  }
-
-  // NeMo TDT punctuation refinement: snap punctuation to the end of the
-  // previous token.
-  for (size_t i = 1; i < char_timestamps.size(); i++) {
-    if (supported_punctuation.count(char_timestamps[i].token_text) > 0) {
-      char_timestamps[i].start_offset = char_timestamps[i - 1].end_offset;
-      char_timestamps[i].end_offset = char_timestamps[i].start_offset;
-    }
-  }
-
-  auto word_timestamps =
-      get_words_offsets(char_timestamps, *tokenizer, supported_punctuation);
-  auto segment_timestamps = get_segment_offsets(word_timestamps);
+  // for simplicity, compute all levels of timestamps regardless of mode
+  const auto tokens_with_text_info = get_tokens_with_text_info(
+      decoded_tokens, *tokenizer, supported_punctuation);
+  const auto word_offsets = get_words_offsets(
+      tokens_with_text_info, *tokenizer, supported_punctuation);
+  const auto segment_offsets = get_segment_offsets(word_offsets);
 
   const double frame_to_seconds =
       window_stride * static_cast<double>(encoder_subsampling_factor);
 
-  std::cout << "\nSegment timestamps:" << std::endl;
-  for (const auto& stamp : segment_timestamps) {
-    const double start = stamp.start_offset * frame_to_seconds;
-    const double end = stamp.end_offset * frame_to_seconds;
-    std::cout << start << "s - " << end << "s : " << stamp.text << std::endl;
+  if (timestamp_mode.segment) {
+    std::cout << "\nSegment timestamps:" << std::endl;
+    for (const auto& segment : segment_offsets) {
+      const double start = segment.start_offset * frame_to_seconds;
+      const double end = segment.end_offset * frame_to_seconds;
+      std::cout << start << "s - " << end << "s : " << segment.text
+                << std::endl;
+    }
   }
 
-  std::cout << "\nWord timestamps:" << std::endl;
-  for (const auto& stamp : word_timestamps) {
-    const double start = stamp.start_offset * frame_to_seconds;
-    const double end = stamp.end_offset * frame_to_seconds;
-    std::cout << start << "s - " << end << "s : " << stamp.text << std::endl;
+  if (timestamp_mode.word) {
+    std::cout << "\nWord timestamps:" << std::endl;
+    for (const auto& word : word_offsets) {
+      const double start = word.start_offset * frame_to_seconds;
+      const double end = word.end_offset * frame_to_seconds;
+      std::cout << start << "s - " << end << "s : " << word.text << std::endl;
+    }
   }
 
-  std::cout << "\nChar timestamps:" << std::endl;
-  for (const auto& stamp : char_timestamps) {
-    const double start = stamp.start_offset * frame_to_seconds;
-    const double end = stamp.end_offset * frame_to_seconds;
-    std::cout << start << "s - " << end << "s : " << stamp.token_text
-              << std::endl;
+  if (timestamp_mode.token) {
+    std::cout << "\nToken timestamps:" << std::endl;
+    for (const auto& token : tokens_with_text_info) {
+      const double start = token.start_offset * frame_to_seconds;
+      const double end = token.end_offset * frame_to_seconds;
+      std::cout << start << "s - " << end << "s : " << token.decoded_text
+                << std::endl;
+    }
   }
 
-  ET_LOG(Info, "Done!");
   return 0;
 }
