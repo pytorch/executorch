@@ -127,10 +127,7 @@ def define_libs(is_fbcode=False):
             "vec/**/*.h",
         ]),
         header_namespace = "executorch/kernels/optimized",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
@@ -157,10 +154,7 @@ def define_libs(is_fbcode=False):
             "utils/**/*.h",
         ]),
         header_namespace = "executorch/kernels/optimized",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             # Needed to access the ET_INLINE macro
             "//executorch/runtime/platform:compiler",
@@ -222,10 +216,7 @@ def define_libs(is_fbcode=False):
                 "DEFAULT": ["-Os"],
             }),
             header_namespace = "executorch/kernels/optimized",
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             preprocessor_flags = get_preprocessor_flags(),
             fbobjc_exported_preprocessor_flags = [
                 "-DET_BUILD_WITH_BLAS",
