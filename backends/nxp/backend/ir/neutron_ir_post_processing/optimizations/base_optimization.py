@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.ir.converter.builder import model_builder
-from executorch.backends.nxp.backend.ir.tflite_optimizer.graph_utils import (
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.graph_utils import (
     create_tensor_to_operator_dictionaries,
     InputTensorToOpsMap,
     OutputTensorToOpMap,
