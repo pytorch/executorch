@@ -15,4 +15,13 @@ run_ootb_tests_ethos_u() {
     echo "${FUNCNAME}: PASS"
 }
 
+run_ootb_tests_tosa() {
+    echo "$FUNCNAME: Running out-of-the-box tests for TOSA"
+    jupyter nbconvert \
+        --to notebook \
+        --execute backends/arm/scripts/TOSA_minimal_example.ipynb
+    echo "${FUNCNAME}: PASS"
+}
+
 run_ootb_tests_ethos_u
+run_ootb_tests_tosa
