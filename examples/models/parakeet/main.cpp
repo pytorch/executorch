@@ -58,7 +58,7 @@ struct DecodedToken {
   int64_t duration;
 };
 
-struct TokenTimestamp {
+struct FrameAlignedToken {
   TokenId token_id;
   // Raw vocabulary piece for the token_id (i.e., "##ing", "▁hello")
   std::string token_piece;
@@ -177,7 +177,7 @@ std::string decode_token_sequence(
 // https://github.com/NVIDIA-NeMo/NeMo/blob/bf583c9/nemo/collections/asr/parts/utils/timestamp_utils.py#L54
 // assumes BPE tokenizer type
 std::vector<TextWithOffsets> get_words_offsets(
-    const std::vector<TokenTimestamp>& tokens,
+    const std::vector<FrameAlignedToken>& tokens,
     const tokenizers::Tokenizer& tokenizer,
     const std::unordered_set<std::string>& supported_punctuation,
     const std::string& word_delimiter_char = " ") {
@@ -733,7 +733,7 @@ int main(int argc, char** argv) {
       static_cast<long long>(pred_hidden),
       static_cast<long long>(sample_rate),
       window_stride,
-      static_cast<long long>(encoder_subsampling_factor));
+      encoder_subsampling_factor);
 
   ET_LOG(Info, "Running TDT greedy decode...");
   auto decoded_tokens = greedy_decode_executorch(
@@ -743,8 +743,7 @@ int main(int argc, char** argv) {
       blank_id,
       vocab_size,
       num_rnn_layers,
-      pred_hidden,
-      /*max_symbols_per_step=*/10);
+      pred_hidden);
 
   ET_LOG(Info, "Decoded %zu tokens", decoded_tokens.size());
 
@@ -772,7 +771,7 @@ int main(int argc, char** argv) {
       supported_punctuation.size());
 
   // Compute timestamps matching NeMo's TDT timestamp behavior.
-  std::vector<TokenTimestamp> char_timestamps;
+  std::vector<FrameAlignedToken> char_timestamps;
   char_timestamps.reserve(decoded_tokens.size());
 
   for (const auto& decoded_token : decoded_tokens) {
@@ -787,7 +786,9 @@ int main(int argc, char** argv) {
     auto text_result = tokenizer->decode(tokenizer->bos_tok(), token_id);
     if (!text_result.ok()) {
       ET_LOG(
-          Error, "decode failed for token=%llu", (unsigned long long)token_id);
+          Error,
+          "decode failed for token=%llu",
+          static_cast<unsigned long long>(token_id));
       return 1;
     }
 
