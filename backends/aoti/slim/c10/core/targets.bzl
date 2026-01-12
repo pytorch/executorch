@@ -54,11 +54,24 @@ def define_common_targets():
         ],
     )
 
+    # Header-only library for Contiguity
+    runtime.cxx_library(
+        name = "contiguity",
+        headers = [
+            "Contiguity.h",
+        ],
+        visibility = ["@EXECUTORCH_CLIENTS"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+        ],
+    )
+
     # Combined c10 core library
     runtime.cxx_library(
         name = "core",
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [
+            ":contiguity",
             ":device",
             ":device_type",
             ":scalar_type",

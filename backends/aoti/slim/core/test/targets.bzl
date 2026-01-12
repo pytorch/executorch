@@ -12,3 +12,25 @@ def define_common_targets():
             "//executorch/backends/aoti/slim/core:storage",
         ],
     )
+
+    runtime.cxx_test(
+        name = "test_slimtensor_basic",
+        srcs = [
+            "test_slimtensor_basic.cpp",
+        ],
+        deps = [
+            "//executorch/backends/aoti/slim/core:slimtensor",
+            "//executorch/backends/aoti/slim/core:storage",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "test_slimtensor_copy",
+        srcs = [
+            "test_slimtensor_copy.cpp",
+        ],
+        deps = [
+            "//executorch/backends/aoti/slim/core:slimtensor",
+            "//executorch/backends/aoti/slim/core:storage",
+        ],
+    )
