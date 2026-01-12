@@ -89,7 +89,7 @@ TEST_F(EValueTest, TypeMismatchFatals) {
         auto e = EValue(true);
         e.toInt();
       },
-      "");
+      "EValue is not an int");
 }
 
 TEST_F(EValueTest, NoneByDefault) {
@@ -279,38 +279,45 @@ TEST_F(EValueTest, ConstructFromTensorWrapper) {
 TEST_F(EValueTest, ConstructFromNullPtrAborts) {
   std::unique_ptr<executorch::aten::Tensor> null_ptr;
 
-  ET_EXPECT_DEATH({ EValue evalue(null_ptr); }, "");
+  ET_EXPECT_DEATH({ EValue evalue(null_ptr); }, "Pointer is null");
 }
 
 TEST_F(EValueTest, StringConstructorNullCheck) {
   executorch::aten::ArrayRef<char>* null_string_ptr = nullptr;
-  ET_EXPECT_DEATH({ EValue evalue(null_string_ptr); }, "");
+  ET_EXPECT_DEATH(
+      { EValue evalue(null_string_ptr); }, "pointer cannot be null");
 }
 
 TEST_F(EValueTest, BoolListConstructorNullCheck) {
   executorch::aten::ArrayRef<bool>* null_bool_list_ptr = nullptr;
-  ET_EXPECT_DEATH({ EValue evalue(null_bool_list_ptr); }, "");
+  ET_EXPECT_DEATH(
+      { EValue evalue(null_bool_list_ptr); }, "pointer cannot be null");
 }
 
 TEST_F(EValueTest, DoubleListConstructorNullCheck) {
   executorch::aten::ArrayRef<double>* null_double_list_ptr = nullptr;
-  ET_EXPECT_DEATH({ EValue evalue(null_double_list_ptr); }, "");
+  ET_EXPECT_DEATH(
+      { EValue evalue(null_double_list_ptr); }, "pointer cannot be null");
 }
 
 TEST_F(EValueTest, IntListConstructorNullCheck) {
   BoxedEvalueList<int64_t>* null_int_list_ptr = nullptr;
-  ET_EXPECT_DEATH({ EValue evalue(null_int_list_ptr); }, "");
+  ET_EXPECT_DEATH(
+      { EValue evalue(null_int_list_ptr); }, "pointer cannot be null");
 }
 
 TEST_F(EValueTest, TensorListConstructorNullCheck) {
   BoxedEvalueList<executorch::aten::Tensor>* null_tensor_list_ptr = nullptr;
-  ET_EXPECT_DEATH({ EValue evalue(null_tensor_list_ptr); }, "");
+  ET_EXPECT_DEATH(
+      { EValue evalue(null_tensor_list_ptr); }, "pointer cannot be null");
 }
 
 TEST_F(EValueTest, OptionalTensorListConstructorNullCheck) {
   BoxedEvalueList<std::optional<executorch::aten::Tensor>>*
       null_optional_tensor_list_ptr = nullptr;
-  ET_EXPECT_DEATH({ EValue evalue(null_optional_tensor_list_ptr); }, "");
+  ET_EXPECT_DEATH(
+      { EValue evalue(null_optional_tensor_list_ptr); },
+      "pointer cannot be null");
 }
 
 TEST_F(EValueTest, BoxedEvalueListConstructorNullChecks) {
@@ -321,16 +328,18 @@ TEST_F(EValueTest, BoxedEvalueListConstructorNullChecks) {
 
   // Test null wrapped_vals
   ET_EXPECT_DEATH(
-      { BoxedEvalueList<int64_t> list(nullptr, storage.data(), 3); }, "");
+      { BoxedEvalueList<int64_t> list(nullptr, storage.data(), 3); },
+      "wrapped_vals cannot be null");
 
   // Test null unwrapped_vals
   ET_EXPECT_DEATH(
-      { BoxedEvalueList<int64_t> list(values_p.data(), nullptr, 3); }, "");
+      { BoxedEvalueList<int64_t> list(values_p.data(), nullptr, 3); },
+      "unwrapped_vals cannot be null");
 
   // Test negative size
   ET_EXPECT_DEATH(
       { BoxedEvalueList<int64_t> list(values_p.data(), storage.data(), -1); },
-      "");
+      "size cannot be negative");
 }
 
 TEST_F(EValueTest, toListOptionalTensorTypeCheck) {
@@ -340,7 +349,7 @@ TEST_F(EValueTest, toListOptionalTensorTypeCheck) {
   EXPECT_FALSE(e.isListOptionalTensor());
 
   // Should fail type check
-  ET_EXPECT_DEATH({ e.toListOptionalTensor(); }, "");
+  ET_EXPECT_DEATH({ e.toListOptionalTensor(); }, "EValue is not a");
 }
 
 TEST_F(EValueTest, toStringNullPointerCheck) {
@@ -351,7 +360,7 @@ TEST_F(EValueTest, toStringNullPointerCheck) {
 
   // Should pass isString() check but fail null pointer check
   EXPECT_TRUE(e.isString());
-  ET_EXPECT_DEATH({ e.toString(); }, "");
+  ET_EXPECT_DEATH({ e.toString(); }, "string pointer is null");
 }
 
 TEST_F(EValueTest, toIntListNullPointerCheck) {
@@ -362,7 +371,7 @@ TEST_F(EValueTest, toIntListNullPointerCheck) {
 
   // Should pass isIntList() check but fail null pointer check
   EXPECT_TRUE(e.isIntList());
-  ET_EXPECT_DEATH({ e.toIntList(); }, "");
+  ET_EXPECT_DEATH({ e.toIntList(); }, "int list pointer is null");
 }
 
 TEST_F(EValueTest, toBoolListNullPointerCheck) {
@@ -373,7 +382,7 @@ TEST_F(EValueTest, toBoolListNullPointerCheck) {
 
   // Should pass isBoolList() check but fail null pointer check
   EXPECT_TRUE(e.isBoolList());
-  ET_EXPECT_DEATH({ e.toBoolList(); }, "");
+  ET_EXPECT_DEATH({ e.toBoolList(); }, "bool list pointer is null");
 }
 
 TEST_F(EValueTest, toDoubleListNullPointerCheck) {
@@ -384,7 +393,7 @@ TEST_F(EValueTest, toDoubleListNullPointerCheck) {
 
   // Should pass isDoubleList() check but fail null pointer check
   EXPECT_TRUE(e.isDoubleList());
-  ET_EXPECT_DEATH({ e.toDoubleList(); }, "");
+  ET_EXPECT_DEATH({ e.toDoubleList(); }, "double list pointer is null");
 }
 
 TEST_F(EValueTest, toTensorListNullPointerCheck) {
@@ -395,7 +404,7 @@ TEST_F(EValueTest, toTensorListNullPointerCheck) {
 
   // Should pass isTensorList() check but fail null pointer check
   EXPECT_TRUE(e.isTensorList());
-  ET_EXPECT_DEATH({ e.toTensorList(); }, "");
+  ET_EXPECT_DEATH({ e.toTensorList(); }, "tensor list pointer is null");
 }
 
 TEST_F(EValueTest, toListOptionalTensorNullPointerCheck) {
@@ -406,5 +415,5 @@ TEST_F(EValueTest, toListOptionalTensorNullPointerCheck) {
 
   // Should pass isListOptionalTensor() check but fail null pointer check
   EXPECT_TRUE(e.isListOptionalTensor());
-  ET_EXPECT_DEATH({ e.toListOptionalTensor(); }, "");
+  ET_EXPECT_DEATH({ e.toListOptionalTensor(); }, "pointer is null");
 }
