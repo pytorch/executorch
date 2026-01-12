@@ -14,7 +14,6 @@
 #include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>
-#include <limits>
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
@@ -90,6 +89,52 @@ TEST(OpQuantizedEmbedding4bTest, TestGroupWiseQuantizedEmbedding) {
       {-2.0, 0.0, 11.0, 12.0, -12.5, 15.0, 0.0, 21.0, 3.0, -7.5, -12.0, -4.0});
 
   quantized_embedding_4bit_out(
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      quant_min,
+      quant_max,
+      indices,
+      out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(OpQuantizedEmbedding4bTest, TestGroupWiseQuantizedEmbeddingInt32Indices) {
+  et_pal_init();
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Int> tfi;
+
+  int64_t quant_min = -8;
+  int64_t quant_max = 7;
+
+  Tensor weight_scales = tf.make({3}, {0.5, 1.0, 1.5});
+  Tensor weight_zero_points = tf.make({3}, {1, -5, 0});
+
+  Tensor qweight = tfb.make({3, 2}, {89, 239, 163, 72, 11, 126});
+
+  Tensor indices = tfi.make({3}, {0, 2, 1});
+
+  Tensor out = tf.zeros({3, 4});
+  Tensor expected = tf.make(
+      {3, 4}, {-2.0, 0.0, 2.5, 3.0, -12.0, 4.5, -1.5, 9.0, 7.0, 0.0, 1.0, 5.0});
+
+  quantized_embedding_4bit_out(
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      quant_min,
+      quant_max,
+      indices,
+      out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+
+  out = tf.zeros({3, 4});
+  auto context = KernelRuntimeContext();
+  torch::executor::native::quantized_embedding_4bit_out(
+      context,
       qweight,
       weight_scales,
       weight_zero_points,
