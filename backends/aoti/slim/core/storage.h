@@ -12,7 +12,7 @@
 
 #ifdef CUDA_AVAILABLE
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
-#include <executorch/backends/aoti/slim/cuda/guard.h>
+#include <executorch/backends/aoti/slim/cuda/Guard.h>
 #endif
 
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
