@@ -63,7 +63,7 @@ def quantize_module(
     quantizer = EnnQuantizer()
     quantizer.setup_quant_params(precision, is_per_channel, is_qat)
     logging.info("Export nn module for quantization...")
-    exported_module = torch.export.export_for_training(module, inputs).module()
+    exported_module = torch.export.export(module, inputs).module()
     DecomposeScaledDotProductAttention()(exported_module)
     logging.info("Quantizing the module...")
     annotated_module = prepare_pt2e(exported_module, quantizer)
