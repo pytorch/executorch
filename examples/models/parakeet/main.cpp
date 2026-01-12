@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <fstream>
@@ -46,31 +47,30 @@ using ::executorch::runtime::EValue;
 
 namespace {
 
+// Matches output type of tokenizers::Tokenizer methods
+using TokenId = uint64_t;
+
 // TDT duration values
 const std::vector<int> DURATIONS = {0, 1, 2, 3, 4};
 
 struct DecodedToken {
-  int64_t token_id;
+  TokenId token_id;
   int64_t start_offset;
   int64_t duration;
 };
 
 struct TokenTimestamp {
-  uint64_t token_id;
+  TokenId token_id;
+  // Raw vocabulary piece for the token_id (i.e., "##ing", "▁hello")
   std::string token_piece;
+  // Decoded text for the token_id (i.e., "ing", " hello")
   std::string token_text;
   int64_t start_offset;
   int64_t end_offset;
 };
 
-struct WordTimestamp {
-  std::string word;
-  int64_t start_offset;
-  int64_t end_offset;
-};
-
-struct SegmentTimestamp {
-  std::string segment;
+struct TextWithOffsets {
+  std::string text;
   int64_t start_offset;
   int64_t end_offset;
 };
@@ -112,13 +112,15 @@ bool is_special_token(const std::string& token) {
   return false;
 }
 
+// Matches NeMo extract_punctuation_from_vocab method
+// https://github.com/NVIDIA-NeMo/NeMo/blob/b90a528/nemo/collections/asr/parts/utils/tokenizer_utils.py#L20
 std::unordered_set<std::string> derive_supported_punctuation(
     const tokenizers::Tokenizer& tokenizer) {
   std::unordered_set<std::string> punctuation;
 
   const int32_t vocab_size = tokenizer.vocab_size();
   for (int32_t id = 0; id < vocab_size; id++) {
-    const auto piece_result = tokenizer.id_to_piece(static_cast<uint64_t>(id));
+    const auto piece_result = tokenizer.id_to_piece(static_cast<TokenId>(id));
     if (!piece_result.ok()) {
       continue;
     }
@@ -146,11 +148,11 @@ std::unordered_set<std::string> derive_supported_punctuation(
 }
 
 std::string decode_token_sequence(
-    const std::vector<uint64_t>& tokens,
+    const std::vector<TokenId>& tokens,
     const tokenizers::Tokenizer& tokenizer) {
   std::string result;
-  uint64_t prev_token = tokenizer.bos_tok();
-  for (uint64_t token : tokens) {
+  TokenId prev_token = tokenizer.bos_tok();
+  for (const TokenId token : tokens) {
     auto decode_result = tokenizer.decode(prev_token, token);
     if (decode_result.ok()) {
       result += decode_result.get();
@@ -160,18 +162,18 @@ std::string decode_token_sequence(
   return result;
 }
 
-std::vector<WordTimestamp> get_words_offsets(
+std::vector<TextWithOffsets> get_words_offsets(
     const std::vector<TokenTimestamp>& tokens,
     const tokenizers::Tokenizer& tokenizer,
     const std::unordered_set<std::string>& supported_punctuation,
     const std::string& word_delimiter_char = " ") {
-  std::vector<WordTimestamp> word_offsets;
+  std::vector<TextWithOffsets> word_offsets;
   if (tokens.empty()) {
     return word_offsets;
   }
 
   size_t previous_token_index = 0;
-  std::vector<size_t> built_tokens;
+  std::vector<size_t> build_token_indices;
 
   auto is_curr_punctuation = [&](const std::string& token_text) {
     return token_text != word_delimiter_char &&
@@ -203,10 +205,10 @@ std::vector<WordTimestamp> get_words_offsets(
     if (is_word_start(
             token.token_piece, token.token_text, next_non_delim_token) &&
         !curr_punctuation) {
-      if (!built_tokens.empty()) {
-        std::vector<uint64_t> built_ids;
-        built_ids.reserve(built_tokens.size());
-        for (size_t idx : built_tokens) {
+      if (!build_token_indices.empty()) {
+        std::vector<TokenId> built_ids;
+        built_ids.reserve(build_token_indices.size());
+        for (size_t idx : build_token_indices) {
           built_ids.push_back(tokens[idx].token_id);
         }
         word_offsets.push_back(
@@ -215,41 +217,41 @@ std::vector<WordTimestamp> get_words_offsets(
              tokens[i - 1].end_offset});
       }
 
-      built_tokens.clear();
+      build_token_indices.clear();
 
       if (token.token_text != word_delimiter_char) {
-        built_tokens.push_back(i);
+        build_token_indices.push_back(i);
         previous_token_index = i;
       }
     } else if (
-        curr_punctuation && built_tokens.empty() && !word_offsets.empty()) {
+        curr_punctuation && build_token_indices.empty() && !word_offsets.empty()) {
       auto& last_built_word = word_offsets.back();
       last_built_word.end_offset = token.end_offset;
-      if (!last_built_word.word.empty() && last_built_word.word.back() == ' ') {
-        last_built_word.word.pop_back();
+      if (!last_built_word.text.empty() && last_built_word.text.back() == ' ') {
+        last_built_word.text.pop_back();
       }
-      last_built_word.word += token.token_text;
-    } else if (curr_punctuation && !built_tokens.empty()) {
-      const auto& last = tokens[built_tokens.back()].token_piece;
+      last_built_word.text += token.token_text;
+    } else if (curr_punctuation && !build_token_indices.empty()) {
+      const auto& last = tokens[build_token_indices.back()].token_piece;
       if (last == " " || last == "_" || last == "▁") {
-        built_tokens.pop_back();
+        build_token_indices.pop_back();
       }
-      built_tokens.push_back(i);
+      build_token_indices.push_back(i);
     } else {
-      if (built_tokens.empty()) {
+      if (build_token_indices.empty()) {
         previous_token_index = i;
       }
-      built_tokens.push_back(i);
+      build_token_indices.push_back(i);
     }
   }
 
   // Match NeMo behavior: inject first start_offset and append any remaining
   // built tokens as the final word.
   if (word_offsets.empty()) {
-    if (!built_tokens.empty()) {
-      std::vector<uint64_t> built_ids;
-      built_ids.reserve(built_tokens.size());
-      for (size_t idx : built_tokens) {
+    if (!build_token_indices.empty()) {
+      std::vector<TokenId> built_ids;
+      built_ids.reserve(build_token_indices.size());
+      for (const size_t idx : build_token_indices) {
         built_ids.push_back(tokens[idx].token_id);
       }
       word_offsets.push_back(
@@ -260,10 +262,10 @@ std::vector<WordTimestamp> get_words_offsets(
   } else {
     word_offsets[0].start_offset = tokens[0].start_offset;
 
-    if (!built_tokens.empty()) {
-      std::vector<uint64_t> built_ids;
-      built_ids.reserve(built_tokens.size());
-      for (size_t idx : built_tokens) {
+    if (!build_token_indices.empty()) {
+      std::vector<TokenId> built_ids;
+      built_ids.reserve(build_token_indices.size());
+      for (size_t idx : build_token_indices) {
         built_ids.push_back(tokens[idx].token_id);
       }
       word_offsets.push_back(
@@ -276,11 +278,11 @@ std::vector<WordTimestamp> get_words_offsets(
   return word_offsets;
 }
 
-std::vector<SegmentTimestamp> get_segment_offsets(
-    const std::vector<WordTimestamp>& word_offsets,
+std::vector<TextWithOffsets> get_segment_offsets(
+    const std::vector<TextWithOffsets>& word_offsets,
     const std::vector<std::string>& segment_delimiters = {".", "?", "!"},
     const std::optional<int64_t>& segment_gap_threshold = std::nullopt) {
-  std::vector<SegmentTimestamp> segment_offsets;
+  std::vector<TextWithOffsets> segment_offsets;
   if (word_offsets.empty()) {
     return segment_offsets;
   }
@@ -290,7 +292,7 @@ std::vector<SegmentTimestamp> get_segment_offsets(
 
   for (size_t i = 0; i < word_offsets.size(); i++) {
     const auto& offset = word_offsets[i];
-    const auto& word = offset.word;
+    const auto& word = offset.text;
 
     if (segment_gap_threshold.has_value() && !segment_words.empty()) {
       const int64_t gap_between_words =
@@ -524,10 +526,10 @@ std::vector<DecodedToken> greedy_decode_executorch(
     int64_t dur = DURATIONS[dur_idx];
 
     if (k == blank_id) {
-      t += std::max(dur, (int64_t)1);
+      t += std::max(dur, static_cast<int64_t>(1));
       symbols_on_frame = 0;
     } else {
-      hypothesis.push_back({k, t, dur});
+      hypothesis.push_back({static_cast<TokenId>(k), t, dur});
 
       // Update decoder state
       std::vector<int64_t> token_data = {k};
@@ -588,14 +590,18 @@ std::vector<DecodedToken> greedy_decode_executorch(
 }
 
 std::string tokens_to_text(
-    const std::vector<int64_t>& tokens,
+    const std::vector<DecodedToken>& decoded_tokens,
     const tokenizers::Tokenizer& tokenizer) {
-  std::vector<uint64_t> ids;
-  ids.reserve(tokens.size());
-  for (int64_t t : tokens) {
-    ids.push_back(static_cast<uint64_t>(t));
+  std::string result;
+  TokenId prev_token = tokenizer.bos_tok();
+  for (const auto& tok : decoded_tokens) {
+    auto decode_result = tokenizer.decode(prev_token, tok.token_id);
+    if (decode_result.ok()) {
+      result += decode_result.get();
+    }
+    prev_token = tok.token_id;
   }
-  return decode_token_sequence(ids, tokenizer);
+  return result;
 }
 
 } // namespace
@@ -740,12 +746,6 @@ int main(int argc, char** argv) {
 
   ET_LOG(Info, "Decoded %zu tokens", decoded_tokens.size());
 
-  std::vector<int64_t> tokens;
-  tokens.reserve(decoded_tokens.size());
-  for (const auto& tok : decoded_tokens) {
-    tokens.push_back(tok.token_id);
-  }
-
   // Load tokenizer
   ET_LOG(Info, "Loading tokenizer from: %s", FLAGS_tokenizer_path.c_str());
   auto tokenizer =
@@ -758,6 +758,10 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  // Convert tokens to text
+  std::string text = tokens_to_text(decoded_tokens, *tokenizer);
+  std::cout << "Transcription tokens: " << text << std::endl;
+
   std::unordered_set<std::string> supported_punctuation =
       derive_supported_punctuation(*tokenizer);
   ET_LOG(
@@ -765,24 +769,16 @@ int main(int argc, char** argv) {
       "Derived supported_punctuation size=%zu",
       supported_punctuation.size());
 
-  // Convert tokens to text
-  std::string text = tokens_to_text(tokens, *tokenizer);
-  std::cout << "Transcription tokens: " << text << std::endl;
-
   // Compute timestamps matching NeMo's TDT timestamp behavior.
   std::vector<TokenTimestamp> char_timestamps;
   char_timestamps.reserve(decoded_tokens.size());
 
-  for (size_t i = 0; i < decoded_tokens.size(); i++) {
-    const auto& decoded_token = decoded_tokens[i];
-    const uint64_t token_id = static_cast<uint64_t>(decoded_token.token_id);
+  for (const auto& decoded_token : decoded_tokens) {
+    const TokenId token_id = decoded_token.token_id;
 
     auto piece_result = tokenizer->id_to_piece(token_id);
     if (!piece_result.ok()) {
-      ET_LOG(
-          Error,
-          "id_to_piece failed for token=%llu",
-          (unsigned long long)token_id);
+      ET_LOG(Error, "id_to_piece failed for token=%llu", token_id);
       return 1;
     }
 
@@ -824,14 +820,14 @@ int main(int argc, char** argv) {
   for (const auto& stamp : segment_timestamps) {
     const double start = stamp.start_offset * frame_to_seconds;
     const double end = stamp.end_offset * frame_to_seconds;
-    std::cout << start << "s - " << end << "s : " << stamp.segment << std::endl;
+    std::cout << start << "s - " << end << "s : " << stamp.text << std::endl;
   }
 
   std::cout << "\nWord timestamps:" << std::endl;
   for (const auto& stamp : word_timestamps) {
     const double start = stamp.start_offset * frame_to_seconds;
     const double end = stamp.end_offset * frame_to_seconds;
-    std::cout << start << "s - " << end << "s : " << stamp.word << std::endl;
+    std::cout << start << "s - " << end << "s : " << stamp.text << std::endl;
   }
 
   std::cout << "\nChar timestamps:" << std::endl;
