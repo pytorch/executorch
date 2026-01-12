@@ -46,9 +46,7 @@ def define_common_targets():
         deps = [
             ":xnnpack_aot_lib",
         ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # executor_runner for XNNPACK Backend and portable kernels.

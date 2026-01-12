@@ -7,10 +7,7 @@ runtime.python_library(
     srcs = glob([
         "*.py",
     ]),
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/exir:lib",
         "//executorch/exir/backend:partitioner",
