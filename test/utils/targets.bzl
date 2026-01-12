@@ -19,11 +19,7 @@ def define_common_targets():
                 "alignment.h",
                 "DeathTest.h",
             ],
-            visibility = [
-                "//executorch/...",
-                "//pytorch/tokenizers/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//executorch/runtime/platform:platform",
                 "//executorch/runtime/core:core",

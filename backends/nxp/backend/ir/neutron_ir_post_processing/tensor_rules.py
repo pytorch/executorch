@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,16 +10,16 @@ import executorch.backends.nxp.backend.ir.converter.builder.model_builder as mod
 
 import numpy as np
 from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
-from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.base_optimization import (
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.optimizations.base_optimization import (
     InputTensorToOpsMap,
     OutputTensorToOpMap,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.pattern_matcher import (
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.pattern_matcher import (
     NameToTensorMap,
     operator_is_type,
 )
+from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
+from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 
 
 class TensorRule(ABC):
