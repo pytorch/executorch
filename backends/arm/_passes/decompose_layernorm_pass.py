@@ -90,6 +90,11 @@ class DecomposeLayerNormPass(ArmPass):
             args = node.args
             meta = node.meta
             match len(args):
+                case 6:
+                    # torch.ops.aten.layer_norm.default has 6 args:
+                    # (input, normalized_shape, weight, bias, eps, cudnn_enable)
+                    # cudnn_enable is not used in the decomposition
+                    x, normalized_shape, weights, bias, epsilon, _cudnn_enable = args
                 case 5:
                     x, normalized_shape, weights, bias, epsilon = args
                 case 4:

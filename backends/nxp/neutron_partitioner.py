@@ -79,6 +79,7 @@ class QDQClusterRecognizer:
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten.sigmoid.default,
         exir_ops.edge.aten.tanh.default,
+        exir_ops.edge.aten.clone.default,
         exir_ops.edge.dim_order_ops._clone_dim_order.default,
     ]
 

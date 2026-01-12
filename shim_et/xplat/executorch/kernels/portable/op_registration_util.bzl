@@ -116,13 +116,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         srcs = [
             "{}.cpp".format(name),
         ],
-        visibility = [
-            "//executorch/kernels/portable/test/...",
-            "//executorch/kernels/quantized/...",
-            "//executorch/kernels/optimized/test/...",
-            "//executorch/kernels/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
         compiler_flags = select({

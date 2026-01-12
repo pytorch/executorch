@@ -158,10 +158,7 @@ def define_common_targets(is_fbcode = False):
     runtime.python_binary(
         name = "gen_vulkan_spv_bin",
         main_module = "runtime.gen_vulkan_spv",
-        visibility = [
-            "//executorch/backends/vulkan/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             ":gen_vulkan_spv_lib",
         ],
@@ -241,10 +238,7 @@ def define_common_targets(is_fbcode = False):
             ]),
             labels = get_labels(no_volk),
             platforms = get_platforms(),
-            visibility = [
-                "//executorch/backends/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             fbobjc_frameworks = select({
                 "DEFAULT": [],
                 "ovr_config//os:macos": [
@@ -270,12 +264,7 @@ def define_common_targets(is_fbcode = False):
             ]),
             labels = get_labels(no_volk),
             platforms = get_platforms(),
-            visibility = [
-                "//executorch/backends/...",
-                "//executorch/extension/pybindings/...",
-                "//executorch/test/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 ":vulkan_graph_runtime_shaderlib{}".format(suffix),
                 "//executorch/runtime/backend:interface",
@@ -309,12 +298,7 @@ def define_common_targets(is_fbcode = False):
             ]),
             labels = get_labels(no_volk),
             platforms = get_platforms(),
-            visibility = [
-                "//executorch/backends/...",
-                "//executorch/extension/pybindings/...",
-                "//executorch/test/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 ":vulkan_graph_runtime{}".format(suffix),
                 "//executorch/backends/vulkan/serialization:vk_delegate_schema",
@@ -353,11 +337,7 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "custom_ops_lib.py"
             ],
-            visibility = [
-                "//executorch/...",
-                "//executorch/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/vulkan/patterns:vulkan_patterns",
@@ -369,11 +349,7 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "op_registry.py",
             ],
-            visibility = [
-                "//executorch/...",
-                "//executorch/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 ":custom_ops_lib",
                 ":utils_lib",
@@ -388,11 +364,7 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "vulkan_preprocess.py",
             ],
-            visibility = [
-                "//executorch/...",
-                "//executorch/vulkan/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//executorch/backends/transforms:addmm_mm_to_linear",
                 "//executorch/backends/transforms:fuse_batch_norm_with_conv",

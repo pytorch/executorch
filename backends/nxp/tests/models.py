@@ -1,4 +1,4 @@
-# Copyright (c) 2024-2025 NXP
+# Copyright (c) 2024-2026 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -633,6 +633,38 @@ class ConvActivationModule(torch.nn.Module):
         return self.activation(x)
 
 
+class GRUModel(nn.Module):
+    def __init__(self, num_layers=1):
+        super().__init__()
+        self.gru = torch.nn.GRU(8, 8, num_layers=num_layers)
+
+    def forward(self, input_):
+        # `input_` has shape [sequence_length, batch_size, input_size] ([8, 1, 8])
+        return self.gru(
+            input_, None
+        )  # The initial hidden is `None`, which will result in a `Zeros` node being added.
+
+
+class SplitWithSize(torch.nn.Module):
+    def __init__(self, split_size, dim):
+        super().__init__()
+        self.split_size = split_size
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor]:
+        return torch.split(x, self.split_size, self.dim)
+
+
+class SplitWithSections(torch.nn.Module):
+    def __init__(self, sections, dim):
+        super().__init__()
+        self.sections = sections
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor]:
+        return torch.split(x, self.sections, self.dim)
+
+
 class MiniConvNetWithRegressionHead(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -670,3 +702,12 @@ class MLP(torch.nn.Module):
 
     def forward(self, x):
         return self.sequential(x)
+
+
+class UnsqueezeAddModel(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x, y):
+        return torch.unsqueeze(x + y, self.dim)
