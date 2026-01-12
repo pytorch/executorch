@@ -299,8 +299,9 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
         # All the conditions satisfied, we advance.
         return True
 
-    def advance_quantize_op(self, graph_module: torch.fx.GraphModule):
+    def advance_quantize_op(self, graph_module: torch.fx.GraphModule) -> bool:
         graph = graph_module.graph
+        modified = False
         for node in reversed(graph.nodes):
             if get_overload_packet(node.target) not in (
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor,
@@ -339,15 +340,19 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
             # We can safely remove the quant node and trivially quantizable op
             graph.erase_node(node)
             graph.erase_node(trivially_quantizable_op)
+            modified = True
 
-        graph_module.recompile()
-        graph_module.graph.eliminate_dead_code()
+        return modified
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         self.graph_module = graph_module
-        self.advance_quantize_op(graph_module)
-        result = super().call(graph_module)
-        return result
+        modified = self.advance_quantize_op(graph_module)
+        if modified:
+            graph_module.recompile()
+            graph_module.graph.eliminate_dead_code()
+            return super().call(graph_module)
+
+        return PassResult(graph_module, False)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -474,14 +479,21 @@ class PostponeDequantizeOpBelowUseChainPass(ExportPass):
         # the graph (up to 3 times max, to avoid potential infinite loops)
         self.graph_module = graph_module
         iter_count = 0
-        modified = True
+        local_modified = False
+        overall_modified = False
 
-        while modified and iter_count < 3:
-            modified = self.postpone_dequantize_op(self.graph_module)
-            self.graph_module = super().call(self.graph_module).graph_module
+        while local_modified or iter_count == 0:
+            local_modified = self.postpone_dequantize_op(self.graph_module)
+            overall_modified |= local_modified
+
+            if local_modified:
+                self.graph_module = super().call(self.graph_module).graph_module
+
             iter_count += 1
+            if iter_count == 3:
+                break
 
-        return super().call(self.graph_module)
+        return PassResult(self.graph_module, overall_modified)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
