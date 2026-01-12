@@ -7,10 +7,7 @@ runtime.python_library(
     srcs = [
         "vulkan_partitioner.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/backends/vulkan:op_registry",
         "//executorch/backends/vulkan:utils_lib",

@@ -206,12 +206,7 @@ def define_common_targets():
             for fname in DELEGATED_MODULES_TO_EXPORT
         },
         default_outs = ["."],
-        visibility = [
-            "//executorch/runtime/executor/test/...",
-            "//executorch/backends/test/...",
-            "//executorch/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         env = {"PYTORCH_DISABLE_JUSTKNOBS": "1",},
     )
 

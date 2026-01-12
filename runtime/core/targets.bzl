@@ -50,10 +50,7 @@ def define_common_targets():
             "result.h",
             "span.h",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_preprocessor_flags = get_core_flags(),
         exported_deps = [
             "//executorch/runtime/core/portable_type/c10/c10:c10",
@@ -82,10 +79,7 @@ def define_common_targets():
             ":core",
             "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     for aten_mode in get_aten_mode_options():
@@ -96,10 +90,7 @@ def define_common_targets():
                 "evalue.h",
             ],
             srcs = ["evalue.cpp"],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 ":core",
                 ":tag",
@@ -114,10 +105,7 @@ def define_common_targets():
                 "event_tracer_hooks.h",
                 "event_tracer_hooks_delegate.h",
             ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_preprocessor_flags = get_event_tracer_flags() + get_sdk_flags(),
             exported_deps = [
                 "//executorch/runtime/platform:platform",
@@ -130,10 +118,7 @@ def define_common_targets():
             exported_headers = [
                 "named_data_map.h",
             ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 ":tensor_layout" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
