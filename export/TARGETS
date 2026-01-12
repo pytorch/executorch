@@ -7,10 +7,7 @@ runtime.python_library(
     srcs = [
         "recipe.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//caffe2:torch",
         "//executorch/exir/backend:backend_api",
@@ -24,10 +21,7 @@ runtime.python_library(
     srcs = [
         "export.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":recipe",
         ":stages",
@@ -42,10 +36,7 @@ runtime.python_library(
     srcs = [
         "stages.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":recipe",
         ":types",
@@ -63,10 +54,7 @@ runtime.python_library(
     srcs = [
         "__init__.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":export",
         ":recipe",
@@ -82,10 +70,7 @@ runtime.python_library(
     srcs = [
         "recipe_registry.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":recipe",
         ":recipe_provider"
