@@ -1,0 +1,110 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "parakeet-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/parakeet",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "parakeet-cpu",
+            "displayName": "Parakeet runner (CPU)",
+            "inherits": ["parakeet-base"]
+        },
+        {
+            "name": "parakeet-cuda",
+            "displayName": "Parakeet runner (CUDA)",
+            "inherits": ["parakeet-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        },
+        {
+            "name": "parakeet-metal",
+            "displayName": "Parakeet runner (Metal)",
+            "inherits": ["parakeet-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_METAL": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "parakeet-cpu",
+            "displayName": "Build Parakeet runner (CPU)",
+            "configurePreset": "parakeet-cpu",
+            "targets": ["parakeet_runner"]
+        },
+        {
+            "name": "parakeet-cuda",
+            "displayName": "Build Parakeet runner (CUDA)",
+            "configurePreset": "parakeet-cuda",
+            "targets": ["parakeet_runner"]
+        },
+        {
+            "name": "parakeet-metal",
+            "displayName": "Build Parakeet runner (Metal)",
+            "configurePreset": "parakeet-metal",
+            "targets": ["parakeet_runner"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "parakeet-cpu",
+            "displayName": "Configure and build Parakeet runner (CPU)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "parakeet-cpu"
+                },
+                {
+                    "type": "build",
+                    "name": "parakeet-cpu"
+                }
+            ]
+        },
+        {
+            "name": "parakeet-cuda",
+            "displayName": "Configure and build Parakeet runner (CUDA)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "parakeet-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "parakeet-cuda"
+                }
+            ]
+        },
+        {
+            "name": "parakeet-metal",
+            "displayName": "Configure and build Parakeet runner (Metal)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "parakeet-metal"
+                },
+                {
+                    "type": "build",
+                    "name": "parakeet-metal"
+                }
+            ]
+        }
+    ]
+}
