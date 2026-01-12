@@ -184,17 +184,7 @@ def _patch_kwargs_common(kwargs):
     """
     env.remove_unsupported_kwargs(kwargs)
 
-    # Be careful about dependencies on executorch targets for now, so that we
-    # don't pick up unexpected clients while things are still in flux.
-    if not kwargs.pop("_is_external_target", False):
-        for target in kwargs.get("visibility", []):
-            if not (target == "PUBLIC" or target.startswith("//executorch") or target.startswith("//pytorch/tokenizers") or target.startswith("@")):
-                fail("Please manage all external visibility using the " +
-                     "EXECUTORCH_CLIENTS list in " +
-                     "//executorch/build/fb/clients.bzl. " +
-                     "Found external visibility target \"{}\".".format(target))
-    else:
-        kwargs.pop("_is_external_target", None)
+    kwargs.pop("_is_external_target", False)
 
     # Convert `[exported_]external_deps` entries into real deps if necessary.
     _resolve_external_deps(kwargs)
