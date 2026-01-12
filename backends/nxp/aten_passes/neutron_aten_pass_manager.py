@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,6 +7,12 @@ from typing import Callable
 
 import torch
 
+from executorch.backends.nxp.aten_passes.convert_unsqueeze_to_view import (
+    ConvertUnsqueezeToViewPass,
+)
+from executorch.backends.nxp.aten_passes.decompose_split_to_slices_pass import (
+    DecomposeSplitToSlicesPass,
+)
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_conv_pass import (
     FuseBatchNormWithConvPass,
 )
@@ -42,6 +48,7 @@ class NeutronAtenPassManager(PassManager):
         self, neutron_target_spec: NeutronTargetSpec, passes: list[PassType] = None
     ):
         passes: list[PassType] = passes or [
+            DecomposeSplitToSlicesPass(),
             FuseBatchNormWithConvPass(),
             FuseBatchNormWithLinearPass(),
             SplitGroupConvolution(),
@@ -49,6 +56,7 @@ class NeutronAtenPassManager(PassManager):
             RemoveNodesWithKnownOutputs(),
             FuseLinearAndAddPass(),
             MoveActivationBeforeConcat(neutron_target_spec),
+            ConvertUnsqueezeToViewPass(),
         ]
 
         super().__init__(passes)
