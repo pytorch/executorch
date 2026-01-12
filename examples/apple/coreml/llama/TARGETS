@@ -10,10 +10,7 @@ runtime.python_library(
     ],
     _is_external_target = True,
     base_module = "executorch.examples.apple.coreml.llama",
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//caffe2:torch",
         "//executorch/examples/models/llama:llama_transformer",
@@ -27,10 +24,7 @@ runtime.python_library(
     ],
     _is_external_target = True,
     base_module = "executorch.examples.apple.coreml.llama",
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//caffe2:torch",
     ],
@@ -42,10 +36,7 @@ runtime.python_binary(
         "export.py",
     ],
     main_function = "executorch.examples.apple.coreml.llama.export.main",
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "fbsource//third-party/pypi/coremltools:coremltools",
         ":llama_transformer",

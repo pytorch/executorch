@@ -70,6 +70,7 @@ runtime.python_test(
         "test_update_cross_attn_cache.py",
     ],
     preload_deps = [
+        ":custom_ops_aot_lib",
         ":custom_ops_aot_py",
     ],
     deps = [

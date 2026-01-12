@@ -25,7 +25,7 @@ def define_common_targets():
         name = "add_sub_impl",
         srcs = [],
         exported_headers = ["op_add_sub_impl.h"],
-        visibility = ["//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS",],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core:core",
             "//executorch/kernels/portable/cpu/util:broadcast_indexes_range",
@@ -39,7 +39,7 @@ def define_common_targets():
         name = "fft_utils",
         srcs = [],
         exported_headers = ["fft_utils.h"],
-        visibility = ["//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS",],
+        visibility = ["PUBLIC"],
         exported_deps = [] if runtime.is_oss else ["fbsource//third-party/pocket_fft:pocketfft"],
     )
 
@@ -47,7 +47,7 @@ def define_common_targets():
         name = "binary_ops",
         srcs = ["binary_ops.cpp"],
         exported_headers = ["binary_ops.h"],
-        visibility = ["//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS",],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/kernel:kernel_includes",
@@ -68,7 +68,7 @@ def define_common_targets():
         name = "moments_utils",
         srcs = [],
         exported_headers = ["moments_utils.h"],
-        visibility = ["//executorch/kernels/optimized/...", "@EXECUTORCH_CLIENTS",],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/kernels/optimized:libvec",
@@ -80,11 +80,11 @@ def define_common_targets():
     runtime.filegroup(
         name = "optimized_source_files",
         srcs = native.glob(["*.cpp"]),
-        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
 
     runtime.filegroup(
         name = "optimized_header_files",
         srcs = native.glob(["*.h"]),
-        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
     )
