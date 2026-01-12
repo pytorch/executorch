@@ -236,10 +236,6 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
       static_cast<size_t>(encoder_output_tensor.size(0)),
       static_cast<size_t>(encoder_output_tensor.size(1)),
       static_cast<size_t>(encoder_output_tensor.size(2)));
-  ET_LOG(
-      Info,
-      "Encoder first value: %f",
-      static_cast<float>(encoder_output_tensor.mutable_data_ptr<float>()[0]));
 
   auto encoder_output_ptr = std::make_shared<::executorch::aten::Tensor>(
       std::move(encoder_output_tensor));

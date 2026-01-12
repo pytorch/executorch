@@ -25,10 +25,7 @@ runtime.cxx_library(
     srcs = [
         "quantized_ops_aot_register.cpp",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/extension/aten_util:aten_bridge",
         "//executorch/kernels/quantized/cpu:op_dequantize",
