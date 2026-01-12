@@ -484,13 +484,6 @@ class GenerateCatNopConstraints(PassBase):
         # If any of the tensors to be concatenated is slice_nop or cat_nop, bail
         if any(self.is_slice_view(arg) for arg in cat_tensors):
             return False
-
-        # If any of the tensors already has a relative placement constraint,
-        # we cannot add a new constraint for this cat without conflicting.
-        # This can happen when a tensor is used in multiple cat operations.
-        if any(self.has_relative_placement_constraint(arg) for arg in cat_tensors):
-            return False
-
         # If the same tensor appears multiple times in the cat inputs,
         # we cannot place it at multiple different offsets relative to the output.
         if len(cat_tensors) != len(set(cat_tensors)):

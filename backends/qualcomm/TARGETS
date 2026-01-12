@@ -8,10 +8,7 @@ define_common_targets()
 runtime.python_library(
     name = "preprocess",
     srcs = ["qnn_preprocess.py"],
-    visibility = [
-        "//executorch/backends/qualcomm/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/backends/qualcomm/_passes:passes",
     ],
