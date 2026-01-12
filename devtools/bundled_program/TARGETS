@@ -10,10 +10,7 @@ runtime.python_library(
     srcs = [
         "core.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":config",
         ":version",
@@ -29,10 +26,7 @@ runtime.python_library(
     srcs = [
         "config.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
         "//caffe2:torch",
