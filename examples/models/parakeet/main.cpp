@@ -107,12 +107,12 @@ bool is_special_token(const std::string& token) {
 }
 
 std::unordered_set<std::string> derive_supported_punctuation(
-    tokenizers::Tokenizer* tokenizer) {
+    const tokenizers::Tokenizer& tokenizer) {
   std::unordered_set<std::string> punctuation;
 
-  const int32_t vocab_size = tokenizer->vocab_size();
+  const int32_t vocab_size = tokenizer.vocab_size();
   for (int32_t id = 0; id < vocab_size; id++) {
-    const auto piece_result = tokenizer->id_to_piece(static_cast<uint64_t>(id));
+    const auto piece_result = tokenizer.id_to_piece(static_cast<uint64_t>(id));
     if (!piece_result.ok()) {
       continue;
     }
@@ -141,11 +141,11 @@ std::unordered_set<std::string> derive_supported_punctuation(
 
 std::string decode_token_sequence(
     const std::vector<uint64_t>& tokens,
-    tokenizers::Tokenizer* tokenizer) {
+    const tokenizers::Tokenizer& tokenizer) {
   std::string result;
-  uint64_t prev_token = tokenizer->bos_tok();
+  uint64_t prev_token = tokenizer.bos_tok();
   for (uint64_t token : tokens) {
-    auto decode_result = tokenizer->decode(prev_token, token);
+    auto decode_result = tokenizer.decode(prev_token, token);
     if (decode_result.ok()) {
       result += decode_result.get();
     }
@@ -156,7 +156,7 @@ std::string decode_token_sequence(
 
 std::vector<WordTimestamp> get_words_offsets(
     const std::vector<TokenTimestamp>& tokens,
-    tokenizers::Tokenizer* tokenizer,
+    const tokenizers::Tokenizer& tokenizer,
     const std::unordered_set<std::string>& supported_punctuation,
     const std::string& word_delimiter_char = " ") {
   std::vector<WordTimestamp> word_offsets;
@@ -363,11 +363,11 @@ std::vector<int64_t> greedy_decode_executorch(
     int64_t encoder_len,
     int64_t blank_id,
     int64_t vocab_size,
+    std::vector<int64_t>& token_start_offsets,
+    std::vector<int64_t>& token_durations,
     int64_t num_rnn_layers = 2,
     int64_t pred_hidden = 640,
-    int64_t max_symbols_per_step = 10,
-    std::vector<int64_t>* token_start_offsets = nullptr,
-    std::vector<int64_t>* token_durations = nullptr) {
+    int64_t max_symbols_per_step = 10) {
   std::vector<int64_t> hypothesis;
   int64_t num_token_classes = vocab_size + 1;
 
@@ -524,12 +524,8 @@ std::vector<int64_t> greedy_decode_executorch(
       symbols_on_frame = 0;
     } else {
       hypothesis.push_back(k);
-      if (token_start_offsets != nullptr) {
-        token_start_offsets->push_back(t);
-      }
-      if (token_durations != nullptr) {
-        token_durations->push_back(dur);
-      }
+      token_start_offsets.push_back(t);
+      token_durations.push_back(dur);
 
       // Update decoder state
       std::vector<int64_t> token_data = {k};
@@ -591,7 +587,7 @@ std::vector<int64_t> greedy_decode_executorch(
 
 std::string tokens_to_text(
     const std::vector<int64_t>& tokens,
-    tokenizers::Tokenizer* tokenizer) {
+    const tokenizers::Tokenizer& tokenizer) {
   std::vector<uint64_t> ids;
   ids.reserve(tokens.size());
   for (int64_t t : tokens) {
@@ -738,11 +734,11 @@ int main(int argc, char** argv) {
       encoded_len,
       blank_id,
       vocab_size,
+      token_start_offsets,
+      token_durations,
       num_rnn_layers,
       pred_hidden,
-      /*max_symbols_per_step=*/10,
-      &token_start_offsets,
-      &token_durations);
+      /*max_symbols_per_step=*/10);
 
   ET_LOG(Info, "Decoded %zu tokens", tokens.size());
 
@@ -759,14 +755,14 @@ int main(int argc, char** argv) {
   }
 
   std::unordered_set<std::string> supported_punctuation =
-      derive_supported_punctuation(tokenizer.get());
+      derive_supported_punctuation(*tokenizer);
   ET_LOG(
       Info,
       "Derived supported_punctuation size=%zu",
       supported_punctuation.size());
 
   // Convert tokens to text
-  std::string text = tokens_to_text(tokens, tokenizer.get());
+  std::string text = tokens_to_text(tokens, *tokenizer);
   std::cout << "Transcription tokens: " << text << std::endl;
 
   // Compute timestamps matching NeMo's TDT timestamp behavior.
@@ -818,8 +814,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  auto word_timestamps = get_words_offsets(
-      char_timestamps, tokenizer.get(), supported_punctuation);
+  auto word_timestamps =
+      get_words_offsets(char_timestamps, *tokenizer, supported_punctuation);
   auto segment_timestamps = get_segment_offsets(word_timestamps);
 
   const double frame_to_seconds =
