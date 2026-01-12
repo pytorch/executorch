@@ -4,9 +4,7 @@ load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library", "
 def define_common_targets():
     runtime.export_file(
         name = "quantized.yaml",
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # Excluding embedding_byte ops because we choose to define them
@@ -35,7 +33,7 @@ def define_common_targets():
     exir_custom_ops_aot_lib(
         name = "custom_ops_generated_lib",
         yaml_target = ":quantized.yaml",
-        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         kernels = [":quantized_operators_aten"],
         deps = [
             ":quantized_ops_need_aot_registration",
@@ -47,10 +45,7 @@ def define_common_targets():
     exir_custom_ops_aot_lib(
         name = "aot_lib",
         yaml_target = ":quantized.yaml",
-        visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         kernels = [":quantized_operators_aten"],
         deps = [
             ":quantized_ops_need_aot_registration",
@@ -61,10 +56,7 @@ def define_common_targets():
         name = "all_quantized_ops",
         ops_schema_yaml_target = ":quantized.yaml",
         define_static_targets = True,
-        visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     # On Windows we can only compile these two ops currently, so adding a
@@ -87,10 +79,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "quantized_operators" + aten_suffix,
             srcs = [],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             exported_deps = [
                 "//executorch/kernels/quantized/cpu:quantized_cpu" + aten_suffix,
             ],
@@ -110,10 +99,7 @@ def define_common_targets():
                 custom_ops_requires_aot_registration = False,
                 aten_mode = aten_mode,
                 support_exceptions = support_exceptions,
-                visibility = [
-                    "//executorch/...",
-                    "@EXECUTORCH_CLIENTS",
-                ],
+                visibility = ["PUBLIC"],
                 define_static_targets = True,
             )
 
@@ -131,10 +117,7 @@ def define_common_targets():
                     ":q_dq_ops",
                 ],
                 support_exceptions = support_exceptions,
-                visibility = [
-                    "//executorch/...",
-                    "@EXECUTORCH_CLIENTS",
-                ],
+                visibility = ["PUBLIC"],
             )
 
     runtime.python_library(
@@ -143,8 +126,5 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
         ],
-        visibility = [
-            "//executorch/kernels/quantized/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )

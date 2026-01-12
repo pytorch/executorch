@@ -1,6 +1,6 @@
 #
 # Copyright 2023 Martin Pavella
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -11,10 +11,10 @@ from typing import Callable
 
 from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.permute_fully_connected_weights_after_reshape import (
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.optimizations.permute_fully_connected_weights_after_reshape import (
     PermuteFullyConnectedWeightsAfterReshape,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_transpose_operators import (
+from executorch.backends.nxp.backend.ir.neutron_ir_post_processing.optimizations.prune_transpose_operators import (
     FuseTransposeOperators,
     RemoveIdentityTransposeOperators,
 )
