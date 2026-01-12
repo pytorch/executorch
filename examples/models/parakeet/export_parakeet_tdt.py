@@ -380,20 +380,44 @@ def _create_xnnpack_partitioners(programs):
     return partitioner, programs
 
 
+def _linear_bias_decomposition(input, weight, bias=None):
+    """Decompose linear with bias into matmul + add."""
+    # linear(input, weight) = input @ weight.T
+    # Use matmul instead of mm to handle batched inputs (3D+)
+    weight_t = torch.ops.aten.t.default(weight)
+    out = torch.ops.aten.matmul.default(input, weight_t)
+    if bias is not None:
+        return torch.ops.aten.add.Tensor(out, bias)
+    return out
+
+
 def _create_metal_partitioners(programs):
     """Create Metal partitioners for all programs except preprocessor."""
     from executorch.backends.apple.metal.metal_backend import MetalBackend
     from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
 
     print("\nLowering to ExecuTorch with Metal...")
+
+    # Run decompositions for non-preprocessor programs
+    updated_programs = {}
+    for key, ep in programs.items():
+        # print(f"Running decompositions for {key}")
+        # print(ep.graph_module)
+        if key != "preprocessor":
+            updated_programs[key] = ep.run_decompositions(
+                {torch.ops.aten.linear.default: _linear_bias_decomposition}
+            )
+        else:
+            updated_programs[key] = ep
+
     partitioner = {}
-    for key in programs.keys():
+    for key in updated_programs.keys():
         if key == "preprocessor":
             partitioner[key] = []
         else:
             compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
             partitioner[key] = [MetalPartitioner(compile_specs)]
-    return partitioner, programs
+    return partitioner, updated_programs
 
 
 def _create_cuda_partitioners(programs, is_windows=False):
