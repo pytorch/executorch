@@ -113,6 +113,18 @@ void metal_cleanup_resources() {
     }
 }
 
+void metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer) {
+    id<MTLDevice> device = get_metal_device();
+    id<MTLBuffer> subBuffer = [device newBufferWithBytesNoCopy:ptr
+                                                        length:nbytes
+                                                        options:MTLResourceCPUCacheModeWriteCombined | MTLResourceStorageModeShared
+                                                    deallocator:nil];
+
+    if (map_ptr_to_buffer) {
+        ptr_to_mtl_buffer[ptr] = subBuffer;  // Map contents to buffer
+    }
+}
+
 bool metal_is_device_pointer(void* ptr) {
     return ptr_to_mtl_buffer.find(ptr) != ptr_to_mtl_buffer.end();
 }

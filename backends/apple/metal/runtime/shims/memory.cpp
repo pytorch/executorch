@@ -430,9 +430,6 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       InvalidArgument,
       "aoti_torch__reinterpret_tensor failed: ret_new_tensor is null");
 
-  // Check if storage_offset is not 0 - return error if not
-  ET_CHECK_OK_OR_RETURN_ERROR(validate_storage_offset(storage_offset));
-
   // Get the device info from the source tensor to perform device_index
   // validation
   int32_t device_type = 0;
@@ -470,6 +467,10 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       "Memory address %p is not being tracked by reference counting system",
       data_ptr);
 
+  // Handle storage offset by adjusting the data pointer
+  void* adjusted_data = static_cast<char*>(data_ptr) +
+      (storage_offset * dtype_to_element_size(dtype));
+
   // Convert sizes using utility function from utils.h
   std::vector<aten::SizesType> sizes = convert_sizes_to_vector(ndim, sizes_ptr);
 
@@ -480,7 +481,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   // Create new tensor view that reinterprets the same memory with different
   // shape/strides This creates a view, not a copy - the data pointer is shared
   std::shared_ptr<Tensor> tensor = executorch::extension::from_blob(
-      data_ptr, // Reuse the same memory from source tensor
+      adjusted_data, // Use adjusted data pointer with storage offset applied
       sizes, // New sizes with explicit SizesType
       strides, // New strides with explicit StridesType
       dtype_to_scalar_type(dtype) // Convert dtype with explicit type casting
@@ -496,11 +497,23 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
   *ret_new_tensor = tensor.get();
 
+  if (adjusted_data != data_ptr) {
+    ET_LOG(
+        Debug,
+        "aoti_torch__reinterpret_tensor: Adjusted original_data=%p, storage_offset=%lld, element_size=%zu, adjusted_data=%p",
+        data_ptr,
+        storage_offset,
+        dtype_to_element_size(dtype),
+        adjusted_data);
+
+    metal_buffer_nocopy(adjusted_data, tensor->nbytes(), true);
+  }
+
   // Increment the reference count for this memory address only if it is owned
   // by tensor
-  memory_to_n_tensor[data_ptr] = memory_to_n_tensor[data_ptr] == NOT_OWN
+  memory_to_n_tensor[adjusted_data] = memory_to_n_tensor[adjusted_data] == NOT_OWN
       ? NOT_OWN
-      : memory_to_n_tensor[data_ptr] + 1;
+      : memory_to_n_tensor[adjusted_data] + 1;
 
   ET_LOG(Debug, "aoti_torch__reinterpret_tensor: successfull");
   return Error::Ok;
