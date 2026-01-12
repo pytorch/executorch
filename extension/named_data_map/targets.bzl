@@ -11,9 +11,7 @@ def define_common_targets():
             exported_headers = [
                 "merged_data_map.h",
             ],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
             deps = [
                 "//executorch/runtime/core:named_data_map" + aten_suffix,
                 "//executorch/runtime/core:core",
