@@ -80,11 +80,7 @@ TEST_P(SlimTensorBasicDeviceTest, ConstructWithStorage) {
   EXPECT_EQ(tensor.numel(), 24u);
   EXPECT_TRUE(tensor.is_contiguous());
 
-  if (device().is_cpu()) {
-    EXPECT_TRUE(tensor.is_cpu());
-  } else {
-    EXPECT_TRUE(tensor.is_cuda());
-  }
+  EXPECT_EQ(device().is_cpu(), tensor.is_cpu());
 }
 
 TEST_P(SlimTensorBasicDeviceTest, ConstructWithStorageOffset) {
@@ -153,14 +149,11 @@ TEST_P(SlimTensorBasicDeviceTest, Dtype) {
 TEST_P(SlimTensorBasicDeviceTest, Device) {
   SlimTensor tensor = make_2x3_tensor();
 
-  if (device().is_cpu()) {
-    EXPECT_TRUE(tensor.is_cpu());
-    EXPECT_EQ(tensor.device_type(), c10::DeviceType::CPU);
-  } else {
-    EXPECT_TRUE(tensor.is_cuda());
-    EXPECT_EQ(tensor.device_type(), c10::DeviceType::CUDA);
-  }
+  // Check device type and index
+  EXPECT_EQ(tensor.device_type(), device().type());
   EXPECT_EQ(tensor.device_index(), device().index());
+  EXPECT_EQ(tensor.is_cpu(), device().is_cpu());
+  EXPECT_EQ(tensor.is_cuda(), device().is_cuda());
 }
 
 TEST_P(SlimTensorBasicDeviceTest, Numel) {

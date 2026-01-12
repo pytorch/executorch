@@ -65,11 +65,7 @@ executorch_pybindings(
 runtime.python_library(
     name = "portable_lib",
     srcs = ["portable_lib.py"],
-    visibility = [
-        "//executorch/exir/...",
-        "//executorch/runtime/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":_portable_lib",
         "//executorch/exir:_warnings",
