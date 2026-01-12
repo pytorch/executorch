@@ -23,3 +23,13 @@ def define_common_targets():
             "//executorch/backends/aoti/slim/c10/core:scalar_type",
         ],
     )
+
+    runtime.cxx_test(
+        name = "test_sizes_and_strides",
+        srcs = [
+            "test_sizes_and_strides.cpp",
+        ],
+        deps = [
+            "//executorch/backends/aoti/slim/c10/core:sizes_and_strides",
+        ],
+    )
