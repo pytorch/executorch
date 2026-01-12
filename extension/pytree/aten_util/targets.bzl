@@ -11,10 +11,7 @@ def define_common_targets():
         name = "ivalue_util",
         srcs = ["ivalue_util.cpp"],
         exported_headers = ["ivalue_util.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/extension/pytree:pytree",
             "//executorch/runtime/platform:platform",
