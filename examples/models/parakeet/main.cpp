@@ -9,18 +9,20 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <exception>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <optional>
-#include <unordered_set>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <gflags/gflags.h>
 
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/wav_loader.h>
+#include <executorch/extension/llm/tokenizers/third-party/llama.cpp-unicode/include/unicode.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
@@ -66,6 +68,76 @@ struct SegmentTimestamp {
   int64_t start_offset;
   int64_t end_offset;
 };
+
+bool is_whitespace_only(const std::string& token) {
+  if (token.empty()) {
+    return true;
+  }
+
+  try {
+    const auto codepoints = unicode_cpts_from_utf8(token);
+    for (const auto cp : codepoints) {
+      if (!unicode_cpt_flags(cp).is_whitespace) {
+        return false;
+      }
+    }
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+bool is_special_token(const std::string& token) {
+  if (token.size() >= 2 && token.front() == '[' && token.back() == ']') {
+    return true;
+  }
+  if (token.size() >= 2 && token.front() == '<' && token.back() == '>') {
+    return true;
+  }
+  if (token.rfind("##", 0) == 0) {
+    return true;
+  }
+  if (token.rfind(u8"▁", 0) == 0) {
+    return true;
+  }
+  if (is_whitespace_only(token)) {
+    return true;
+  }
+  return false;
+}
+
+std::unordered_set<std::string> derive_supported_punctuation(
+    tokenizers::Tokenizer* tokenizer) {
+  std::unordered_set<std::string> punctuation;
+
+  const int32_t vocab_size = tokenizer->vocab_size();
+  for (int32_t id = 0; id < vocab_size; id++) {
+    const auto piece_result = tokenizer->id_to_piece(static_cast<uint64_t>(id));
+    if (!piece_result.ok()) {
+      continue;
+    }
+    const std::string& piece = piece_result.get();
+    if (is_special_token(piece)) {
+      continue;
+    }
+
+    try {
+      const auto codepoints = unicode_cpts_from_utf8(piece);
+      for (const auto cp : codepoints) {
+        if (unicode_cpt_flags(cp).is_punctuation) {
+          punctuation.insert(unicode_cpt_to_utf8(cp));
+        }
+      }
+    } catch (const std::exception&) {
+      ET_LOG(
+          Error,
+          "Failed to decode token piece '%s' to codepoints",
+          piece.c_str());
+    }
+  }
+
+  return punctuation;
+}
 
 std::string decode_token_sequence(
     const std::vector<uint64_t>& tokens,
@@ -122,7 +194,8 @@ std::vector<WordTimestamp> get_words_offsets(
       }
     }
 
-    if (is_word_start(token.token_piece, token.token_text, next_non_delim_token) &&
+    if (is_word_start(
+            token.token_piece, token.token_text, next_non_delim_token) &&
         !curr_punctuation) {
       if (!built_tokens.empty()) {
         std::vector<uint64_t> built_ids;
@@ -142,7 +215,8 @@ std::vector<WordTimestamp> get_words_offsets(
         built_tokens.push_back(i);
         previous_token_index = i;
       }
-    } else if (curr_punctuation && built_tokens.empty() && !word_offsets.empty()) {
+    } else if (
+        curr_punctuation && built_tokens.empty() && !word_offsets.empty()) {
       auto& last_built_word = word_offsets.back();
       last_built_word.end_offset = token.end_offset;
       if (!last_built_word.word.empty() && last_built_word.word.back() == ' ') {
@@ -233,10 +307,9 @@ std::vector<SegmentTimestamp> get_segment_offsets(
       }
     }
 
-    const bool is_delimiter_word = std::find(
-                                      segment_delimiters.begin(),
-                                      segment_delimiters.end(),
-                                      word) != segment_delimiters.end();
+    const bool is_delimiter_word =
+        std::find(segment_delimiters.begin(), segment_delimiters.end(), word) !=
+        segment_delimiters.end();
 
     const bool ends_with_delimiter = !word.empty() &&
         std::find(
@@ -254,9 +327,10 @@ std::vector<SegmentTimestamp> get_segment_offsets(
           }
           segment += segment_words[j];
         }
-        segment_offsets.push_back({segment,
-                                  word_offsets[previous_word_index].start_offset,
-                                  offset.end_offset});
+        segment_offsets.push_back(
+            {segment,
+             word_offsets[previous_word_index].start_offset,
+             offset.end_offset});
       }
       segment_words.clear();
       previous_word_index = i + 1;
@@ -624,14 +698,11 @@ int main(int argc, char** argv) {
   auto window_stride_result = model->execute("window_stride", empty_inputs);
   auto encoder_subsampling_factor_result =
       model->execute("encoder_subsampling_factor", empty_inputs);
-  auto supported_punctuation_result =
-      model->execute("supported_punctuation", empty_inputs);
 
   if (!num_rnn_layers_result.ok() || !pred_hidden_result.ok() ||
       !vocab_size_result.ok() || !blank_id_result.ok() ||
       !sample_rate_result.ok() || !window_stride_result.ok() ||
-      !encoder_subsampling_factor_result.ok() ||
-      !supported_punctuation_result.ok()) {
+      !encoder_subsampling_factor_result.ok()) {
     ET_LOG(
         Error,
         "Failed to query model metadata. Make sure the model was exported with constant_methods.");
@@ -646,14 +717,6 @@ int main(int argc, char** argv) {
   double window_stride = window_stride_result.get()[0].toDouble();
   int64_t encoder_subsampling_factor =
       encoder_subsampling_factor_result.get()[0].toInt();
-
-  std::unordered_set<std::string> supported_punctuation;
-  for (const auto& ev : supported_punctuation_result.get()) {
-    if (!ev.isString()) {
-      continue;
-    }
-    supported_punctuation.insert(std::string(ev.toString()));
-  }
 
   ET_LOG(
       Info,
@@ -695,6 +758,13 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  std::unordered_set<std::string> supported_punctuation =
+      derive_supported_punctuation(tokenizer.get());
+  ET_LOG(
+      Info,
+      "Derived supported_punctuation size=%zu",
+      supported_punctuation.size());
+
   // Convert tokens to text
   std::string text = tokens_to_text(tokens, tokenizer.get());
   std::cout << "Transcription tokens: " << text << std::endl;
@@ -723,7 +793,8 @@ int main(int argc, char** argv) {
 
     auto text_result = tokenizer->decode(tokenizer->bos_tok(), token_id);
     if (!text_result.ok()) {
-      ET_LOG(Error, "decode failed for token=%llu", (unsigned long long)token_id);
+      ET_LOG(
+          Error, "decode failed for token=%llu", (unsigned long long)token_id);
       return 1;
     }
 
@@ -747,8 +818,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  auto word_timestamps =
-      get_words_offsets(char_timestamps, tokenizer.get(), supported_punctuation);
+  auto word_timestamps = get_words_offsets(
+      char_timestamps, tokenizer.get(), supported_punctuation);
   auto segment_timestamps = get_segment_offsets(word_timestamps);
 
   const double frame_to_seconds =

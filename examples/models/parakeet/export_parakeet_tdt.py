@@ -2,11 +2,9 @@
 
 import argparse
 import os
-import re
 import shutil
 import tarfile
 import tempfile
-import unicodedata
 
 import torch
 import torchaudio
@@ -17,29 +15,6 @@ from executorch.exir import (
 )
 from executorch.exir.passes import MemoryPlanningPass
 from torch.export import Dim, export
-
-
-_SPECIAL_TOKEN_PATTERNS = [
-    re.compile(r"^\[.*\]$"),
-    re.compile(r"^<.*>$"),
-    re.compile(r"^##"),
-    re.compile(r"^▁"),
-    re.compile(r"^\s*$"),
-]
-
-
-def _extract_punctuation_from_vocab(vocab: list[str]) -> list[str]:
-    def is_special_token(token: str) -> bool:
-        return any(pattern.match(token) for pattern in _SPECIAL_TOKEN_PATTERNS)
-
-    punctuation: set[str] = set()
-    for token in vocab:
-        if is_special_token(token):
-            continue
-        for char in token:
-            if unicodedata.category(char).startswith("P"):
-                punctuation.add(char)
-    return sorted(punctuation)
 
 
 def load_audio(audio_path: str, sample_rate: int = 16000) -> torch.Tensor:
@@ -379,12 +354,6 @@ def export_all(model):
     window_stride = float(model.preprocessor._cfg.window_stride)
     encoder_subsampling_factor = int(getattr(model.encoder, "subsampling_factor", 8))
 
-    tokenizer_vocab = getattr(model.tokenizer, "vocab", None)
-    supported_punctuation = (
-        _extract_punctuation_from_vocab(tokenizer_vocab)
-        if isinstance(tokenizer_vocab, list)
-        else []
-    )
     metadata = {
         "num_rnn_layers": num_layers,
         "pred_hidden": pred_hidden,
@@ -394,7 +363,6 @@ def export_all(model):
         "sample_rate": sample_rate,
         "window_stride": window_stride,
         "encoder_subsampling_factor": encoder_subsampling_factor,
-        "supported_punctuation": supported_punctuation,
     }
 
     return programs, metadata
