@@ -91,10 +91,15 @@ class SplitLinearModule(torch.nn.Module):
 
 
 def replace_linear_with_split_linear(
-    model, out_target_split_size, out_max_splits, in_target_split_size, in_max_splits=1
+    model, out_target_split_size, out_max_splits, in_target_split_size, in_max_splits=1, fqn_filer=None,
 ):
+    if fqn_filer is None:
+        fqn_filer = lambda fqn: True
+
     for name, module in model.named_children():
-        if isinstance(module, torch.nn.Linear):
+        should_split = isinstance(module, torch.nn.Linear) and fqn_filer(name)
+        print("TESTING", name, "WILL SPLIT", should_split)
+        if should_split:
             assert module.bias is None, "SplitLinearModule does not support bias"
             new_module = SplitLinearModule(
                 module.in_features,
@@ -113,4 +118,5 @@ def replace_linear_with_split_linear(
                 out_max_splits,
                 in_target_split_size,
                 in_max_splits,
+                fqn_filer,
             )
